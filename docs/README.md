@@ -1,11 +1,11 @@
-## The UI Toolkit is a Python3/PySide2 dynamic ui loader and event handler.
+## The UI Toolkit is a Python3/PySide2 dynamic UI loader and event handler.
 
 
 ## Design:
 
 ##### 
 
-*This is a Python3/PySide2 UI toolkit with a QUiLoader at it's core. Dynamic UI are loaded on demand and subclassed with convienience properties and automatic slot connections that make getting a full featured UI up and running quick and easy.*
+*This is a Python3/PySide2 dynamic UI toolkit with a QUiLoader at it's core. Dynamic UI are loaded on demand and subclassed with convienience properties and automatic slot connections that make getting a full featured UI up and running quick and easy.*
 
 <!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/toolkit_demo.gif) \*Example re-opening the last scene, renaming a material, and selecting geometry by that material. -->
 
@@ -23,6 +23,7 @@ Example | Description
 [switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | *Loads dynamic ui and custom widgets on demand. Assigns properties and provides convenience 
 [events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | *Event handling for dynamic ui.*
 [stylesheet](https://github.com/m3trik/tentacle/blob/main/uitk/stylesheet.py) | *Define stylesheet presets and have them auto applied to your UI when initilized.*
+[widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | *A directory for any custom widgets.*
 ---
 
 ## Installation:
