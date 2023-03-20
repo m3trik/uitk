@@ -1,4 +1,4 @@
-## The UI Toolkit is a Python3/PySide2 dynamic ui loader.
+## The UI Toolkit is a Python3/PySide2 dynamic ui loader and event handler.
 
 
 ## Design:
