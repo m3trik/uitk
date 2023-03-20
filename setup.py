@@ -13,7 +13,7 @@ setuptools.setup(
 	version=__version__,
 	author='Ryan Simpson',
 	author_email='m3trik@outlook.com',
-	description='A Python3/PySide2 marking menu style toolkit for Maya, 3ds Max, and Blender.',
+	description='A Python3/PySide2 marking menu for Maya, 3ds Max, and Blender.',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
 	url='https://github.com/m3trik/uitk',
