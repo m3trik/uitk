@@ -14,16 +14,15 @@
 ---
 
 <!-- ## Structure: -->
-
 <!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/dependancy_graph.jpg) -->
 
 
 Example | Description
 ------- | -------
-[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | *Loads dynamic ui and custom widgets on demand. Assigns properties and provides convenience 
-[events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | *Event handling for dynamic ui.*
-[stylesheet](https://github.com/m3trik/tentacle/blob/main/uitk/stylesheet.py) | *Define stylesheet presets and have them auto applied to your UI when initilized.*
-[widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | *A directory for any custom widgets.*
+[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | *Load dynamic UI, assign convenience properties, and handle slot connections.*
+[events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | *Event handling for dynamic UI widgets.*
+[stylesheet](https://github.com/m3trik/tentacle/blob/main/uitk/stylesheet.py) | *Define stylesheet presets and have them auto applied to your UI on initialization.*
+[widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | *A source directory for custom widgets.*
 ---
 
 ## Installation:
