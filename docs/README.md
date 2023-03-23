@@ -1,19 +1,19 @@
 ## UITK
 
 <!-- short_description_start -->
-uitk is a versatile dynamic UI toolkit for loading user interfaces, widgets, and event handling in Python using PySide2. 
-Using naming convention, the module provides a convenient way to load UI files, register custom widgets, manage slots 
-and styles, and interact with widgets. It aims to simplify the development and management of complex user interfaces.
+uitk is a versatile package for managing user interfaces, widgets, and event handling in Python using PySide2. Using naming convention, the switchboard module provides a convenient way to load UI files, register custom widgets, manage slots and styles, and interact with widgets. It aims to simplify the development and management of complex user interfaces.
 <!-- short_description_end -->
 
 ## Features
 
 - Dynamically load UI files
 - Register and use custom widgets
-- Manage widgets and their styles
-- Manage slots and event handling
-- Support for submenu styles
-- Store and retrieve UI history
+- Subclass the MainWindows with utility properties
+- Initialize child widgets with utility properties
+- Manages slot connections and event handling
+- Supports UI heirarchy navigation and submenus
+- Supports UI tags for custom event behavior.
+- Store and retrieve UI and slot history
 - Garbage collection protection for widgets
 
 <!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/toolkit_demo.gif) \*Example re-opening the last scene, renaming a material, and selecting geometry by that material. -->
