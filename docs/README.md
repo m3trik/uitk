@@ -1,21 +1,27 @@
-## The UI Toolkit is a Python3/PySide2 dynamic UI loader and event handler.
+## UITK (PySide2 Dynamic UI Toolkit)
 
+<!-- short_description_start -->
+uitk is a versatile package for managing user interfaces, widgets, and event handling in Python using PySide2 (Qt). 
+Using naming convention, the module provides a convenient way to load UI files, register custom widgets, manage slots 
+and styles, and interact with widgets. It aims to simplify the development and management of complex user interfaces.
+<!-- short_description_end -->
 
-## Design:
+## Features
 
-##### 
-
-*This is a Python3/PySide2 dynamic UI toolkit with a QUiLoader at it's core. Dynamic UI are loaded on demand and subclassed with convienience properties and automatic slot connections that make getting a full featured UI up and running quick and easy.*
+- Dynamically load UI files
+- Register and use custom widgets
+- Manage widgets and their styles
+- Manage slots and event handling
+- Support for submenu styles
+- Store and retrieve UI history
+- Garbage collection protection for widgets
 
 <!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/toolkit_demo.gif) \*Example re-opening the last scene, renaming a material, and selecting geometry by that material. -->
 
-## 
-
+## Design:
 ---
-
 <!-- ## Structure: -->
 <!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/dependancy_graph.jpg) -->
-
 
 Example | Description
 ------- | -------
@@ -37,39 +43,43 @@ python -m pip install uitk
 ```
 
 ## Basic Example:
-	1) Create a subclass of Switchboard to load your project ui and connect slots for the UI events.
-```	
-Class MyProject():
-	...
+	Create an instance of Switchboard to load your project ui and connect slots for the UI events.
+```python
+from PySide2 import QtWidgets
+from uitk import Switchboard
 
-Class MyProject_slots(MyProject):
-	def __init__(self):
-		super().__init__()
+class MyProject():
+    ...
 
-		#slot classes are given the `get_switchboard_instance` function when they are initialized.
-		self.loader = self.get_switchboard_instance()
+class MySlots(MyProject):
+    def __init__(self):
+        self.sb = self.get_switchboard_instance()
 
-		#access the current ui
-		print (self.sb.ui)
+    def MyButtonsObjectName(self):
+        print("Button clicked!")
 
-class MyProject_loader(Switchboard):
-	def __init__(self, parent=None, **kwargs):
-		super().__init__(parent)
 
-		#specify the location of your ui.
-		self.ui_location = 'path/to/your/dynamic ui file(s)'
+sb = Switchboard(slots_location=MySlots)
+ui = sb.example #Get the UI using it's name
 
-		#give the slots directory or the class itself.
-		self.slots_location = MyProject_slots
+print ('ui:'.ljust(20), ui) #The loaded UI
+print ('ui name:'.ljust(20), ui.name) #The UI filename
+print ('ui path:'.ljust(20), ui.path) #The directory path containing the UI file
+print ('ui tags:'.ljust(20), ui.tags) #Any UI tags as a list
+print ('ui level:'.ljust(20), ui.level) #The UI level
+print ('is current ui:'.ljust(20), ui.isCurrentUi) #True if the UI is set as current
+print ('is submenu:'.ljust(20), ui.isSubmenu) #True if the UI is a submenu
+print ('is initialized:'.ljust(20), ui.isInitialized) #True after the UI is first shown
+print ('is connected:'.ljust(20), ui.isConnected) #True if the UI is connected to its slots
+print ('slots:'.ljust(20), ui.slots) #The associated slots class instance
+print ('method:'.ljust(20), ui.MyButtonsObjectName.getSlot())
+print ('widget from method:'.ljust(20), sb.getWidgetFromMethod(ui.MyButtonsObjectName.getSlot()))
+for w in ui.widgets: print ('child widget:'.ljust(20), (w.name or type(w).__name__).ljust(20), w.prefix.ljust(20), w.type.ljust(15), w.derivedType.ljust(15), id(w)) #All the widgets of the UI
+
+ui.show(app_exec=True)
 ```
-	2) Instantiate the subclass and show the UI.
+<!-- ## Advanced Example:
+```python
+
 ```
-loader = MyProject_loader()
-loader.ui.show()
-```
-	3) Run the app, show the window, wait for input, then terminate program with the status code returned from app.
-```
-exit_code = sb.app.exec_()
-if exit_code != -1:
-	sys.exit(exit_code)
-```
+ -->

@@ -62,11 +62,6 @@ class Switchboard(QUiLoader, StyleSheet):
 		2. Instantiate the subclass and show the UI.
 			sb = MyProject_sb()
 			sb.ui.show()
-
-		3. Run the app, show the window, wait for input, then terminate program with the status code returned from app.
-			exit_code = sb.app.exec_()
-			if exit_code != -1:
-				sys.exit(exit_code)
 	"""
 	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
 
@@ -532,6 +527,9 @@ class Switchboard(QUiLoader, StyleSheet):
 		if not inspect.isclass(clss):
 			return None
 
+		ui_class = type(ui) # Check if the ui is a QtWidget derived class
+		assert issubclass(ui_class, QtWidgets.QWidget), f'# Error: {__file__} in setSlots\n#\tUI must be a QtWidget derived class, but got {ui_class}'
+
 		setattr(clss, 'get_switchboard_instance', lambda slots_inst: self) #set an attribute for the slots class that returns it's switchboard instance. ie. <Your_slots_class>.get_switchboard_instance()
 
 		try:
@@ -819,11 +817,13 @@ class Switchboard(QUiLoader, StyleSheet):
 			return self._currentUi
 
 		except AttributeError as error:
+
 			if len(self._loadedUi)==1: #if only one ui is loaded set that ui as current.
 				ui = self._loadedUi.pop()
 				self._loadedUi.add(ui)
 				self.setCurrentUi(ui)
 				return ui
+
 			elif self.ui_location.endswith('.ui'): #if the ui location is set to a single ui, then load and set that ui as current.
 				ui = self.loadUi(self.ui_location)
 				self.setCurrentUi(ui)
@@ -1720,7 +1720,6 @@ if __name__=='__main__':
 	from uitk.slots.example import Example
 	sb = Switchboard(slots_location=Example) #set relative paths, and explicity set the slots class instead of providing a path like: slots='slots/maya', which in this case would produce the same result with just a little more overhead.
 	ui = sb.example #get the ui by it's name.
-	ui.show()
 
 	print ('ui:'.ljust(25), sb.ui)
 	print ('ui name:'.ljust(25), sb.ui.name)
@@ -1730,9 +1729,7 @@ if __name__=='__main__':
 	print ('widget from method tb000:'.ljust(25), sb.getWidgetFromMethod(ui.tb000.getSlot()))
 	# for w in ui.widgets: print ('child widget:'.ljust(25), (w.name or type(w).__name__).ljust(25), w.prefix.ljust(25), w.type.ljust(15), w.derivedType.ljust(15), id(w))
 
-	exit_code = app.exec_()
-	if exit_code != -1:
-		sys.exit(exit_code) # run app, show window, wait for input, then terminate program with a status code returned from app.
+	ui.show(app_exec=True)
 
 print (__name__) #module name
 # --------------------------------------------------------------------------------------------

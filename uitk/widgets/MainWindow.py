@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import sys
 from functools import partial
 from PySide2 import QtCore, QtGui, QtWidgets
 from pythontk import File
@@ -7,7 +8,9 @@ from uitk.widgets.attributes import Attributes
 
 
 class MainWindow(QtWidgets.QMainWindow, Attributes):
-	def __init__(self, switchboard_instance, file, **kwargs):
+	onShow = QtCore.Signal()
+
+	def __init__(self, switchboard_instance, file, connectOnShow=True, **kwargs):
 		'''Represents a main window in a GUI application.
 		Inherits from QtWidgets.QMainWindow class, providing additional functionality for 
 		managing user interface (UI) elements.
@@ -15,7 +18,24 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		Parameters:
 			switchboard_instance (obj): An instance of the switchboard class
 			file_path (str): The full path to the UI file
+			connectOnShow (bool): While True, the UI will be set as current and connections established when it becomes visible.
 			**kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
+
+		Attributes:
+			onShow: A signal that is emitted when the window is shown.
+			sb: An instance of the switchboard class.
+			name: The name of the UI file.
+			path: The directory path containing the UI file.
+			level: The UI level.
+			isSubmenu: True if the UI is a submenu.
+			isInitialized: True after the UI is first shown.
+			isConnected: True if the UI is connected to its slots.
+			preventHide: While True, the hide method is disabled.
+			connectOnShow: If True, the UI will be set as current and connections established when it becomes visible.
+			base: The base UI name.
+			tags: Any UI tags as a list.
+			_widgets: All the widgets of the UI.
+			_deferred: A dictionary of deferred methods.
 
 		Properties:
 			<UI>.name (str): The UI filename
@@ -26,9 +46,7 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 			<UI>.isCurrentUi (bool): True if the UI is set as current
 			<UI>.isSubmenu (bool): True if the UI is a submenu
 			<UI>.isInitialized (bool): True after the UI is first shown
-			<UI>.connect (bool): Connect the UI's signals to it's slots.
 			<UI>.isConnected (bool): True if the UI is connected to its slots
-			<UI>.connectOnShow (bool): While True, the UI will be set as current on show
 			<UI>.preventHide (bool): While True, the hide method is disabled
 			<UI>.widgets (list): All the widgets of the UI
 			<UI>.slots (obj): The slots class instance
@@ -45,7 +63,7 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		self.isInitialized = False
 		self.isConnected = False
 		self.preventHide = False
-		self.connectOnShow = True
+		self.connectOnShow = connectOnShow
 		self.base = next(iter(self.name.split('_')))
 		self.tags = self.name.split('#')[1:]
 		self._widgets = set()
@@ -59,6 +77,8 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 
 		if self.level>2:
 			self.sb.setStyle(self, style=self.sb.style)
+
+		self.onShow.connect(self._connectOnShow)
 
 
 	def __getattr__(self, attr_name):
@@ -163,9 +183,31 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		self.sb.setCurrentUi(self)
 
 
-	def connect(self):
+	def setConnections(self):
 		"""Connects the widget's signals to their respective slots."""
-		self.sb.setConnections(self)
+		if not self.isConnected:
+			self.sb.setConnections(self)
+
+
+	def _connectOnShow(self):
+		"""Connects the widget's signals to their respective slots when the widget becomes visible.
+		"""
+		if self.connectOnShow:
+			self.sb.setConnections(self)
+
+
+	def show(self, app_exec=False):
+		"""Show the MainWindow.
+
+		Parameters:
+			app_exec (bool): Execute the given PySide2 application, display its window, wait for user input, 
+					and then terminate the program with a status code returned from the application.
+		"""
+		if app_exec:
+			exit_code = self.sb.app.exec_()
+			if exit_code != -1:
+				sys.exit(exit_code)
+		super().show()
 
 
 	def on_child_polished(self, w):
@@ -188,15 +230,15 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 			state (bool): Whether the widget is being shown or hidden.
 		"""
 		if state: #visible
-			if self.connectOnShow and not self.isConnected:
-				self.sb.setConnections(self)
 			self.activateWindow()
 			# self.raise_()
 			self.setWindowFlags(self.windowFlags()|QtCore.Qt.WindowStaysOnTopHint)
+			super().setVisible(True)
+			self.onShow.emit()
 			self.isInitialized = True
-		elif self.preventHide: #invisible
-			return
-		super().setVisible(state)
+
+		elif not self.preventHide: #invisible
+			super().setVisible(False)
 
 # -----------------------------------------------------------------------------
 
