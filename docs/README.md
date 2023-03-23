@@ -23,7 +23,7 @@ and styles, and interact with widgets. It aims to simplify the development and m
 <!-- ## Structure: -->
 <!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/dependancy_graph.jpg) -->
 
-Example | Description
+Module | Description
 ------- | -------
 [switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | *Load dynamic UI, assign convenience properties, and handle slot connections.*
 [events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | *Event handling for dynamic UI widgets.*
