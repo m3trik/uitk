@@ -45,7 +45,6 @@ python -m pip install uitk
 ## Basic Example:
 	Create an instance of Switchboard to load your project ui and connect slots for the UI events.
 ```python
-from PySide2 import QtWidgets
 from uitk import Switchboard
 
 class MyProject():

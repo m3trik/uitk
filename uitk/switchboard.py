@@ -1714,20 +1714,33 @@ class Switchboard(QUiLoader, StyleSheet):
 # --------------------------------------------------------------------------------------------
 
 if __name__=='__main__':
+	class MyProject():
+	    ...
 
-	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
+	class MySlots(MyProject):
+	    def __init__(self):
+	        self.sb = self.get_switchboard_instance()
 
-	from uitk.slots.example import Example
-	sb = Switchboard(slots_location=Example) #set relative paths, and explicity set the slots class instead of providing a path like: slots='slots/maya', which in this case would produce the same result with just a little more overhead.
-	ui = sb.example #get the ui by it's name.
+	    def MyButtonsObjectName(self):
+	        print("Button clicked!")
 
-	print ('ui:'.ljust(25), sb.ui)
-	print ('ui name:'.ljust(25), sb.ui.name)
-	print ('connected state:'.ljust(25), ui.isConnected)
-	print ('slots:'.ljust(25), ui.slots)
-	print ('method tb000:'.ljust(25), ui.tb000.getSlot())
-	print ('widget from method tb000:'.ljust(25), sb.getWidgetFromMethod(ui.tb000.getSlot()))
-	# for w in ui.widgets: print ('child widget:'.ljust(25), (w.name or type(w).__name__).ljust(25), w.prefix.ljust(25), w.type.ljust(15), w.derivedType.ljust(15), id(w))
+
+	sb = Switchboard(slots_location=MySlots)
+	ui = sb.example
+
+	print ('ui:'.ljust(20), ui)
+	print ('ui name:'.ljust(20), ui.name)
+	print ('ui path:'.ljust(20), ui.path) #The directory path containing the UI file
+	print ('ui tags:'.ljust(20), ui.tags) #Any UI tags as a list
+	print ('ui level:'.ljust(20), ui.level) #The UI level
+	print ('is current ui:'.ljust(20), ui.isCurrentUi) #True if the UI is set as current
+	print ('is submenu:'.ljust(20), ui.isSubmenu) #True if the UI is a submenu
+	print ('is initialized:'.ljust(20), ui.isInitialized) #True after the UI is first shown
+	print ('is connected:'.ljust(20), ui.isConnected) #True if the UI is connected to its slots
+	print ('slots:'.ljust(20), ui.slots) #The associated slots class instance
+	print ('method:'.ljust(20), ui.MyButtonsObjectName.getSlot())
+	print ('widget from method:'.ljust(20), sb.getWidgetFromMethod(ui.MyButtonsObjectName.getSlot()))
+	for w in ui.widgets: print ('child widget:'.ljust(20), (w.name or type(w).__name__).ljust(20), w.prefix.ljust(20), w.type.ljust(15), w.derivedType.ljust(15), id(w)) #All the widgets of the UI
 
 	ui.show(app_exec=True)
 
