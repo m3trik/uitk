@@ -43,7 +43,7 @@ python -m pip install uitk
 ```
 
 ## Basic Example:
-	Create an instance of Switchboard to load your project ui and connect slots for the UI events.
+Create an instance of Switchboard to load your dynamic ui.
 ```python
 from uitk import Switchboard
 
@@ -59,21 +59,22 @@ class MySlots(MyProject):
 
 
 sb = Switchboard(slots_location=MySlots)
-ui = sb.example #Get the UI using it's name
+ui = sb.example #Get the UI using it's name (or sb.getUi(<name>))
 
-print ('ui:'.ljust(20), ui) #The loaded UI
-print ('ui name:'.ljust(20), ui.name) #The UI filename
+print ('ui:'.ljust(20), sb.ui) #The current UI
+print ('ui name:'.ljust(20), ui.name) #The UI's filename.
 print ('ui path:'.ljust(20), ui.path) #The directory path containing the UI file
 print ('ui tags:'.ljust(20), ui.tags) #Any UI tags as a list
 print ('ui level:'.ljust(20), ui.level) #The UI level
 print ('is current ui:'.ljust(20), ui.isCurrentUi) #True if the UI is set as current
 print ('is submenu:'.ljust(20), ui.isSubmenu) #True if the UI is a submenu
-print ('is initialized:'.ljust(20), ui.isInitialized) #True after the UI is first shown
 print ('is connected:'.ljust(20), ui.isConnected) #True if the UI is connected to its slots
+print ('is initialized:'.ljust(20), ui.isInitialized) #True after the UI is first shown
 print ('slots:'.ljust(20), ui.slots) #The associated slots class instance
-print ('method:'.ljust(20), ui.MyButtonsObjectName.getSlot())
+print ('method:'.ljust(20), ui.MyButtonsObjectName.getSlot()) #The associated slot
 print ('widget from method:'.ljust(20), sb.getWidgetFromMethod(ui.MyButtonsObjectName.getSlot()))
-for w in ui.widgets: print ('child widget:'.ljust(20), (w.name or type(w).__name__).ljust(20), w.prefix.ljust(20), w.type.ljust(15), w.derivedType.ljust(15), id(w)) #All the widgets of the UI
+print ('widget:'.ljust(20), ui.MyButtonsObjectName) #Get a widget from the UI by it's name
+print ('all widgets:'.ljust(20), [(w.name or w.type) for w in ui.widgets]) #All widgets of the UI
 
 ui.show(app_exec=True)
 ```
