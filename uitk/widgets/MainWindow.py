@@ -56,6 +56,10 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		self.sb = switchboard_instance
 		self.name = File.formatPath(file, 'name')
 		setattr(self.sb, self.name, self)
+		if '#' in self.name: #set an alternate attribute name with legal characters.
+			legal_name = self.name.replace('#', '_')
+			if not hasattr(self.sb, legal_name):
+				setattr(self.sb, legal_name, self)
 
 		self.path = File.formatPath(file, 'path')
 		self.level = self.sb._getUiLevelFromDir(file)

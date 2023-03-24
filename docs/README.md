@@ -77,8 +77,6 @@ for w in ui.widgets: print ('child widget:'.ljust(20), (w.name or type(w).__name
 
 ui.show(app_exec=True)
 ```
-<!-- ## Advanced Example:
-```python
+## Advanced Example:
 
-```
- -->
+(https://github.com/m3trik/tentacle)
