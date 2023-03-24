@@ -43,7 +43,7 @@ python -m pip install uitk
 ```
 
 ## Basic Example:
-Create an instance of Switchboard to load your dynamic ui.
+Create an instance of Switchboard to load and connect your dynamic ui.
 ```python
 from uitk import Switchboard
 
