@@ -43,7 +43,7 @@ python -m pip install uitk
 ```
 
 ## Basic Example:
-Create an instance of Switchboard to load your dynamic ui.
+Create an instance of Switchboard to load and connect your dynamic ui.
 ```python
 from uitk import Switchboard
 
@@ -71,10 +71,10 @@ print ('is submenu:'.ljust(20), ui.isSubmenu) #True if the UI is a submenu
 print ('is connected:'.ljust(20), ui.isConnected) #True if the UI is connected to its slots
 print ('is initialized:'.ljust(20), ui.isInitialized) #True after the UI is first shown
 print ('slots:'.ljust(20), ui.slots) #The associated slots class instance
-print ('method:'.ljust(20), ui.MyButtonsObjectName.getSlot()) #The associated slot
-print ('widget from method:'.ljust(20), sb.getWidgetFromMethod(ui.MyButtonsObjectName.getSlot()))
+print ('slot:'.ljust(20), ui.MyButtonsObjectName.getSlot()) #The associated slot
+print ('widget from slot:'.ljust(20), sb.getWidgetFromMethod(ui.MyButtonsObjectName.getSlot()))
 print ('widget:'.ljust(20), ui.MyButtonsObjectName) #Get a widget from the UI by it's name
-print ('all widgets:'.ljust(20), [(w.name or w.type) for w in ui.widgets]) #All widgets of the UI
+print ('widgets:'.ljust(20), [(w.name or w.type) for w in ui.widgets]) #All widgets of the UI
 
 ui.show(app_exec=True)
 ```
