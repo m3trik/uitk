@@ -6,7 +6,7 @@ import inspect
 
 
 __package__ = 'uitk'
-__version__ = '0.6.4'
+__version__ = '0.6.6'
 
 
 # Define a dictionary to map class names to their respective modules

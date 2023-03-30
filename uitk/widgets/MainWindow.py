@@ -236,7 +236,7 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		if state: #visible
 			self.activateWindow()
 			# self.raise_()
-			self.setWindowFlags(self.windowFlags()|QtCore.Qt.WindowStaysOnTopHint)
+			self.setWindowFlags(self.windowFlags())#|QtCore.Qt.WindowStaysOnTopHint
 			super().setVisible(True)
 			self.onShow.emit()
 			self.isInitialized = True

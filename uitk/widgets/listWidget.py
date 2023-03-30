@@ -51,40 +51,44 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 		_addList(self, w):
 			Adds an expanding list to the specified widget.
 
-		_hideLists(self, lw):
+		_hideLists(self, listWidget):
 			Hides the specified list and all previous lists in its hierarchy.
 
 		eventFilter(self, w, event):
 			Filters events for the specified widget.
 
 	"""
-	def __init__(self, parent=None, child_height=19, position='topRight', **kwargs):
+	def __init__(self, parent=None, position='right', offset=4, child_height=19, drag_interaction=False, **kwargs):
 		"""Initializes a new instance of the ListWidget class.
 
 		Parameters:
 			parent (obj): The parent object.
-			child_height (int): The height of child widgets.
 			position (str): The position of the menu relative to the parent widget.
+					valid values are: 'right', 'left', 'top', 'bottom'
+			hild_height (int): The height of child widgets.
+			drag_interaction (bool): Interact with the list while in the mouse drag state.
 			**kwargs: Additional keyword arguments to pass to the widget.
 		"""
 		super().__init__(parent)
 
-		self.child_height = child_height
 		self.position = position
+		self.offset = offset
+		self.child_height = child_height
+		self.drag_interaction = drag_interaction
 		self.setAttributes(**kwargs)
 
 
 	def convert(self, items, to='QLabel', **kwargs):
 		"""Converts the given items to a specified widget type.
 
-        Parameters:
-            items (list, tuple, set, dict): The items to convert.
-            to (str): The widget type to convert the items to.
-            **kwargs: Additional keyword arguments to pass to the widget.
+		Parameters:
+			items (list, tuple, set, dict): The items to convert.
+			to (str): The widget type to convert the items to.
+			**kwargs: Additional keyword arguments to pass to the widget.
 
-        Example:
-            self.convert(self.getItems(), 'QPushButton') #construct the list using the existing contents.
-        """
+		Example:
+			self.convert(self.getItems(), 'QPushButton') #construct the list using the existing contents.
+		"""
 		lst = lambda x: list(x) if isinstance(x, (list, tuple, set, dict)) else [x] #assure 'x' is a list.
 
 		for item in lst(items):
@@ -95,7 +99,7 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 
 	def getItems(self):
 		"""Returns a list of items in the list widget.
-        """
+		"""
 		return [self.item(i) for i in range(self.count())]
 
 
@@ -193,7 +197,7 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 		super().addItem(wItem)
 
 		w.__class__.list = property( #add an expandable list to the widget.
-			lambda w: w.lw if hasattr(w, 'lw') else self._addList(w)
+			lambda w: w.listWidget if hasattr(w, 'listWidget') else self._addList(w)
 		)
 
 		self.setAttributes(w, **kwargs) #set any additional given keyword args for the widget.
@@ -214,66 +218,90 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 		Returns:
 			obj: The added ListWidget object.
 		"""
-		lw = ListWidget(self.window(), setVisible=False)
-		w.lw = lw
-		w.lw.prev = self
+		listWidget = ListWidget(self.window(), 
+			position=self.position, 
+			offset=self.offset, 
+			child_height=self.child_height, 
+			drag_interaction=self.drag_interaction, 
+			setVisible=False
+		)
+		w.listWidget = listWidget
+		w.listWidget.prev = self
 
-		w.lw.root = self
-		while hasattr(w.lw.root, 'prev'):
-			w.lw.root = w.lw.root.prev
+		w.listWidget.root = self
+		while hasattr(w.listWidget.root, 'prev'):
+			w.listWidget.root = w.listWidget.root.prev
 
-		return w.lw
+		return w.listWidget
 
 
-	def _hideLists(self, lw):
+	def _hideLists(self, listWidget, force=False):
 		"""Hide the given list and all previous lists in its hierarchy.
 
 		This method hides the given list and all previous lists in its hierarchy, up to the point where the cursor
 		is within the list's boundaries.
 
 		Parameters:
-			lw (obj): ListWidget object to start hiding from.
+			listWidget (obj): ListWidget object to start hiding from.
 		"""
-		while hasattr(lw, 'prev'):
-			if lw.rect().contains(lw.mapFromGlobal(QtGui.QCursor.pos())):
+		while hasattr(listWidget, 'prev'):
+			if (not force) and listWidget.rect().contains(listWidget.mapFromGlobal(QtGui.QCursor.pos())):
 				break
-			lw.hide()
-			lw = lw.prev
+			listWidget.hide()
+			listWidget = listWidget.prev
 
 
 	def eventFilter(self, w, event):
-		'''
-		'''
+		"""Handles specific Qt events for the given widget w and event type.
+
+		The function processes Enter, MouseButtonRelease, and Leave events to show, click, or hide the list widgets
+		depending on the mouse cursor position and the defined position of the list.
+
+		Args:
+			w (QWidget): The widget for which the event is being filtered.
+			event (QEvent): The event to be filtered.
+
+		Returns:
+			bool: The result of the event filtering by calling the superclass eventFilter method.
+		"""
 		if event.type() == QtCore.QEvent.Enter:
 			try:
-				if self.position == 'topRight':
-					pos = self.window().mapFromGlobal(w.mapToGlobal(w.rect().topRight()))
-				elif self.position == 'topLeft':
-					pos = self.window().mapFromGlobal(w.mapToGlobal(w.rect().topLeft()))
-				elif self.position == 'bottomRight':
-					pos = self.window().mapFromGlobal(w.mapToGlobal(w.rect().bottomRight()))
-				elif self.position == 'bottomLeft':
-					pos = self.window().mapFromGlobal(w.mapToGlobal(w.rect().bottomLeft()))
+				w.list.show() #show the list first so that the correct size can be queried.
+				w.updateGeometry()
+
+				parent_list_width = self.geometry().width()
+				child_widget_height = w.height()
+				child_widget_width = w.width()
+				new_list_width = w.list.geometry().width()
+
+				if self.position == 'right':
+					pos = self.window().mapFromGlobal(w.mapToGlobal(QtCore.QPoint(parent_list_width - self.offset, 0)))
+				elif self.position == 'left':
+					pos = self.window().mapFromGlobal(w.mapToGlobal(QtCore.QPoint(-new_list_width + self.offset, 0)))
+				elif self.position == 'top':
+					pos = self.window().mapFromGlobal(w.mapToGlobal(QtCore.QPoint((child_widget_width - new_list_width) // 2, -child_widget_height + self.offset)))
+				elif self.position == 'bottom':
+					pos = self.window().mapFromGlobal(w.mapToGlobal(QtCore.QPoint((child_widget_width - new_list_width) // 2, child_widget_height - self.offset)))
 				else:
-					raise ValueError("Invalid position value. Must be one of 'topRight', 'topLeft', 'bottomRight', 'bottomLeft'")
+					raise ValueError("Invalid position value. Must be one of 'right', 'left', 'top', 'bottom'")
 
 				w.list.move(pos)
-				w.list.show()
 			except AttributeError:
 				pass
 
 		elif event.type()==QtCore.QEvent.MouseButtonRelease:
-			if QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())==w:
+			if self.drag_interaction and QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())==w:
 				try:
-					if not self==w.lw.root:
+					if not self==w.listWidget.root:
 						try:
 							self.itemClicked.disconnect()
 						except RuntimeError:
 							pass
-						self.itemClicked.connect(w.lw.root.itemClicked)
+						self.itemClicked.connect(w.listWidget.root.itemClicked)
 						index = self.indexAt(w.pos()) #Get the index of the item that contains the widget.
 						wItem = self.item(index.row()) #Get the QListWidgetItem object.
 						self.itemClicked.emit(wItem)
+						self._hideLists(w.listWidget, force=True) #assure the child lists are hidden after mouse release.
 				except AttributeError:
 					pass
 
@@ -282,8 +310,8 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 				if not w.list.rect().contains(w.list.mapFromGlobal(QtGui.QCursor.pos())):
 					if hasattr(w, 'prev'):
 						self.hide()
-					if hasattr(w, 'lw'):
-						w.lw.hide()
+					if hasattr(w, 'listWidget'):
+						w.listWidget.hide()
 			except AttributeError:
 				pass
 
