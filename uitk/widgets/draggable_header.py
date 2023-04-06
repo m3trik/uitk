@@ -8,30 +8,28 @@ from uitk.widgets.menu import MenuInstance
 from uitk.widgets.pushButton_optionBox import PushButton_optionBox
 
 
-class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichText, TextOverlay):
-	'''Draggable/Checkable pushbutton.
+class Draggable_header(QtWidgets.QLabel, MenuInstance, Attributes, RichText, TextOverlay):
+	'''Draggable/Checkable QLabel.
 	'''
 	__mousePressPos = QtCore.QPoint()
 
 	def __init__(self, parent=None, **kwargs):
-		QtWidgets.QPushButton.__init__(self, parent)
+		QtWidgets.QLabel.__init__(self, parent)
 
 		self.setStyleSheet(parent.styleSheet()) if parent else None
 
-		self.setCheckable(True)
+		self.checkable = True
+		self.checked = False
 
 		self.setStyleSheet('''
-			QPushButton {
-				border: 1px solid black;
+			QLabel {
 				background-color: rgba(127,127,127,2);
+				border: 1px solid transparent;
 			}
 
-			QPushButton::hover {
+			QLabel::hover {
 				background-color: rgba(127,127,127,2);
-			}
-
-			QPushButton:checked::hover {
-				background-color: rgba(127,127,127,2);
+				border: 1px solid transparent;
 			}''')
 
 		self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
@@ -44,6 +42,19 @@ class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichT
 		self.optionBox = None
 
 		self.setAttributes(**kwargs)
+
+
+	def setCheckable(self, state):
+		self.checkable = state
+
+
+	def isChecked(self):
+		return self.checked
+
+
+	def setChecked(self, state):
+		if self.checkable:
+			self.checked = state
 
 
 	def mousePressEvent(self, event):
@@ -61,7 +72,7 @@ class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichT
 		if event.button()==QtCore.Qt.RightButton:
 			self.ctxMenu.show()
 
-		QtWidgets.QPushButton.mousePressEvent(self, event)
+		QtWidgets.QLabel.mousePressEvent(self, event)
 
 
 	def mouseMoveEvent(self, event):
@@ -83,7 +94,7 @@ class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichT
 		except AttributeError as error:
 			pass
 
-		QtWidgets.QPushButton.mouseMoveEvent(self, event)
+		QtWidgets.QLabel.mouseMoveEvent(self, event)
 
 
 	def mouseReleaseEvent(self, event):
@@ -93,19 +104,19 @@ class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichT
 		'''
 		self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
 
-		moveAmount = event.globalPos() -self.__mousePressPos
+		moveAmount = event.globalPos() - self.__mousePressPos
 
-		if moveAmount.manhattanLength() >5: #if widget moved:
-			self.setChecked(True) #setChecked to prevent window from closing.
+		if moveAmount.manhattanLength() > 5:  # if widget moved:
+			self.setChecked(True)  # setChecked to prevent window from closing.
 			self.window().preventHide = True
 		else:
-			self.setChecked(not self.isChecked()) #toggle check state
+			self.setChecked(not self.isChecked())  # toggle check state
 
 		self.window().preventHide = self.isChecked()
-		if not self.window().preventHide: #prevent the parent window from hiding if checked.
+		if not self.window().preventHide:  # prevent the parent window from hiding if checked.
 			self.window().hide()
 
-		QtWidgets.QPushButton.mouseReleaseEvent(self, event)
+		QtWidgets.QLabel.mouseReleaseEvent(self, event)
 
 
 	def createOptionBox(self):
@@ -126,7 +137,7 @@ class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichT
 			if not self.optionBox:
 				self.createOptionBox()
 
-		QtWidgets.QPushButton.showEvent(self, event)
+		QtWidgets.QLabel.showEvent(self, event)
 
 
 	def hideEvent(self, event):
@@ -135,7 +146,7 @@ class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichT
 			event = <QEvent>
 		'''
 
-		QtWidgets.QPushButton.hideEvent(self, event)
+		QtWidgets.QLabel.hideEvent(self, event)
 
 # -----------------------------------------------------------------------------
 
@@ -153,7 +164,7 @@ if __name__ == "__main__":
 	import sys
 	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
 		
-	w = PushButtonDraggable()
+	w = Draggable_header()
 	w.show()
 
 	sys.exit(app.exec_())

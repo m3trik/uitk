@@ -486,7 +486,7 @@ class Menu(QtWidgets.QMenu, Attributes):
 			self.move(pos) # self.move(getCenter(self, pos))
 
 			if self.getChildWidgets(inc=['QCheckBox']): #if the menu contains checkboxes:
-				self.uncheckAllButton.show()
+				self.toggleAllButton.show()
 
 		super().showEvent(event)
 

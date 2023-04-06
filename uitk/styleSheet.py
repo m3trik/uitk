@@ -21,12 +21,18 @@ class StyleSheet(QtCore.QObject):
 
 	# Set the style for a specific widget:
 		QWidget#mainWindow ('#' syntax, followed by the widget's objectName)
+
+	# Add multiple child widgets to a single CSS rule by separating them with a space:
+		QListWidget QPushButton, QListWidget QLabel { ... }
+
+	# Use the wildcard * to match any child widget of a widget, like this:
+		QListWidget * { ... }
 	'''
 	_colorValues = {
 			'standard': {
 				'FOREGROUND'		: 'rgb(75,75,75)',
 				'BACKGROUND'		: 'rgb(100,100,100)',
-				'BACKGROUND_ALPHA'	: 'rgba(100,100,100,{ALPHA})',
+				'BACKGROUND_ALPHA'	: 'rgba(100,100,100,150)',
 				'WIDGET_BACKGROUND'	: 'rgb(125,125,125)',
 				'PRESSED'			: 'rgb(127,127,127)',
 				'HOVER'				: 'rgb(82,133,166)',
@@ -36,13 +42,13 @@ class StyleSheet(QtCore.QObject):
 				'TEXT_HOVER'		: 'rgb(255,255,255)',
 				'TEXT_BACKGROUND'	: 'rgb(50,50,50)',
 				'BORDER'			: 'rgb(50,50,50)',
-				'HIGHLIGHT'			: 'yellow',
+				'HIGHLIGHT'			: 'rgb(255,255,190)',
 			},
 
 			'dark': {
 				'FOREGROUND'		: 'rgb(50,50,50)',
 				'BACKGROUND'		: 'rgb(100,100,100)',
-				'BACKGROUND_ALPHA'	: 'rgba(70,70,70,{ALPHA})',
+				'BACKGROUND_ALPHA'	: 'rgba(70,70,70,150)',
 				'WIDGET_BACKGROUND'	: 'rgb(60,60,60)',
 				'PRESSED'			: 'rgb(127,127,127)',
 				'HOVER'				: 'rgb(82,133,166)',
@@ -52,7 +58,7 @@ class StyleSheet(QtCore.QObject):
 				'TEXT_HOVER'		: 'rgb(255,255,255)',
 				'TEXT_BACKGROUND'	: 'rgb(50,50,50)',
 				'BORDER'			: 'rgb(40,40,40)',
-				'HIGHLIGHT'			: 'yellow',
+				'HIGHLIGHT'			: 'rgb(255,255,190)',
 			}
 		}
 
@@ -69,11 +75,15 @@ class StyleSheet(QtCore.QObject):
 			QWidget {
 				background-color: transparent;
 			}
-			QWidget#hud_widget {
-				background-color: {BACKGROUND_ALPHA};
-			}
 			QWidget::item:selected {
 				background-color: {HOVER};
+			}
+			QWidget#hud_widget {
+				background-color: rgba(127,127,127,0.01);
+			}
+			QWidget#main_widget{
+				background-color: {BACKGROUND_ALPHA};
+				border: 1px solid {BORDER};
 			}
 			''',
 
@@ -595,16 +605,17 @@ class StyleSheet(QtCore.QObject):
 
 		'QListWidget': '''
 			QListWidget {
-				background-color: {BACKGROUND};
+				background-color: {WIDGET_BACKGROUND};
 				color: {TEXT};
-				alternate-background-color: {BACKGROUND};
+				border: 1px solid {BORDER};
+				alternate-background-color: {WIDGET_BACKGROUND};
 				background-attachment: fixed; /* fixed, scroll */
 			}
 			QListWidget::item:alternate {
-				background-color: {BACKGROUND};
+				background-color: {WIDGET_BACKGROUND};
 			}
 			QListWidget::item:selected {
-				border: 1px solid {HOVER};
+				border: 1px solid {BORDER};
 			}
 			QListWidget::item:selected:!active {
 				background-color: {HOVER};
@@ -617,6 +628,9 @@ class StyleSheet(QtCore.QObject):
 			QListWidget::item:hover {
 				background-color: {HOVER};
 				color: {TEXT_HOVER};
+			}
+			QListWidget * {
+				border: 0px solid {BORDER};
 			} 
 			''',
 
@@ -1028,7 +1042,7 @@ class StyleSheet(QtCore.QObject):
 
 
 	@classmethod
-	def setStyle(cls, widgets, ratio=6, style='standard', hideMenuButton=False, alpha=255, **kwargs):
+	def setStyle(cls, widgets, ratio=6, style='standard', hideMenuButton=False, **kwargs):
 		'''Set the styleSheet for the given widgets.
 		Set the style for a specific widget by using the '#' syntax and the widget's objectName. ie. QWidget#mainWindow
 
@@ -1037,7 +1051,6 @@ class StyleSheet(QtCore.QObject):
 			ratio (int): The ratio of widget size, text length in relation to the amount of padding applied.
 			style (str): Color mode. ie. 'standard' or 'dark'
 			hideMenuButton (boool) = Hide the menu button of a widget that has one.
-			alpha (int): Set the background alpha transparency between 0 and 255.
 
 		'''
 		from uitk.switchboard import Switchboard
@@ -1046,7 +1059,7 @@ class StyleSheet(QtCore.QObject):
 			widget_type = Switchboard.getDerivedType(widget, name=True)
 
 			try:
-				s = cls.getStyleSheet(widget_type, style=style, alpha=alpha, **kwargs)
+				s = cls.getStyleSheet(widget_type, style=style, **kwargs)
 			except KeyError as error: #given widget has no attribute 'styleSheet'.
 				# print (__name__.ljust(26), 'setStyle (getStyleSheet)', widget.objectName().ljust(26), widget.__class__.__name__.ljust(25), error)
 				continue;

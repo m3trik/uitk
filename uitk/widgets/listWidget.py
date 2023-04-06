@@ -58,7 +58,7 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 			Filters events for the specified widget.
 
 	"""
-	def __init__(self, parent=None, position='right', offset=4, child_height=19, drag_interaction=False, **kwargs):
+	def __init__(self, parent=None, position='right', offset=4, child_height=18, max_child_width=400, drag_interaction=False, **kwargs):
 		"""Initializes a new instance of the ListWidget class.
 
 		Parameters:
@@ -74,27 +74,10 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 		self.position = position
 		self.offset = offset
 		self.child_height = child_height
+		self.child_width = 120
+		self.max_child_width = max_child_width
 		self.drag_interaction = drag_interaction
 		self.setAttributes(**kwargs)
-
-
-	def convert(self, items, to='QLabel', **kwargs):
-		"""Converts the given items to a specified widget type.
-
-		Parameters:
-			items (list, tuple, set, dict): The items to convert.
-			to (str): The widget type to convert the items to.
-			**kwargs: Additional keyword arguments to pass to the widget.
-
-		Example:
-			self.convert(self.getItems(), 'QPushButton') #construct the list using the existing contents.
-		"""
-		lst = lambda x: list(x) if isinstance(x, (list, tuple, set, dict)) else [x] #assure 'x' is a list.
-
-		for item in lst(items):
-			i = self.indexFromItem(item).row() #get the row as an int from the items QModelIndex.
-			item = self.takeItem(i)
-			self.add(to, setText=item.text(), **kwargs)
 
 
 	def getItems(self):
@@ -195,6 +178,10 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 		wItem.getData = lambda i=wItem: self.getData(i)
 		w.installEventFilter(self)
 		super().addItem(wItem)
+
+		widget_width = w.geometry().width()
+		if widget_width > self.child_width:
+			self.child_width = min(widget_width, self.max_child_width)
 
 		w.__class__.list = property( #add an expandable list to the widget.
 			lambda w: w.listWidget if hasattr(w, 'listWidget') else self._addList(w)
@@ -329,9 +316,30 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 	def showEvent(self, event):
 		'''
 		'''
-		self.resize(self.sizeHint().width(), (self.child_height+2)*self.count())
+		# self.resize(self.sizeHint().width(), (self.child_height+2)*self.count())
+		new_list_height = (self.child_height + 2) * self.count()
+		self.resize(self.child_width, new_list_height)
 
 		super().showEvent(event)
+
+
+	def convert(self, items, to='QLabel', **kwargs):
+		"""Converts the given items to a specified widget type.
+
+		Parameters:
+			items (list, tuple, set, dict): The items to convert.
+			to (str): The widget type to convert the items to.
+			**kwargs: Additional keyword arguments to pass to the widget.
+
+		Example:
+			self.convert(self.getItems(), 'QPushButton') #construct the list using the existing contents.
+		"""
+		lst = lambda x: list(x) if isinstance(x, (list, tuple, set, dict)) else [x] #assure 'x' is a list.
+
+		for item in lst(items):
+			i = self.indexFromItem(item).row() #get the row as an int from the items QModelIndex.
+			item = self.takeItem(i)
+			self.add(to, setText=item.text(), **kwargs)
 
 # -----------------------------------------------------------------------------
 
@@ -364,7 +372,6 @@ if __name__ == "__main__":
 	window.resize(765, 255)
 	window.show()
 	sys.exit(app.exec_())
-
 
 # -----------------------------------------------------------------------------
 # Notes
