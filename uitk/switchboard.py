@@ -28,9 +28,9 @@ class Switchboard(QUiLoader, StyleSheet):
 		ui_location (str/obj): Set the directory of the dynamic UI, or give the dynamic UI objects.
 		widgets (str/obj): Set the directory of any custom widgets, or give the widget objects.
 		slots (str/obj): Set the directory of where the slot classes will be imported, or give the slot class itself.
-		preloadUi (bool): Load all UI immediately. Otherwise UI will be loaded as required.
+		preload (bool): Load all UI immediately. Otherwise UI will be loaded as required.
 		style (str)(dict): Stylesheet color mode. ie. 'standard', 'dark', or a user defined color scheme.
-		submenuStyle (str)(dict): The stylesheet color mode for submenus.
+		submenu_style (str)(dict): The stylesheet color mode for submenus.
 
 	Methods:
 		loadUi(uiPath): Load the UI file located at uiPath.
@@ -66,7 +66,7 @@ class Switchboard(QUiLoader, StyleSheet):
 	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
 
 	def __init__(self, parent=None, ui_location='', widgets_location='', slots_location='', 
-		preloadUi=False, style='standard', submenuStyle='dark'):
+		preload=False, style='standard', submenu_style='dark'):
 		super().__init__(parent)
 		'''
 		'''
@@ -80,7 +80,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		self.slots_location = slots_location or f'{self.moduleDir}/slots'
 
 		self.style = style
-		self.submenuStyle = submenuStyle
+		self.submenu_style = submenu_style
 
 		self._uiHistory = [] #A list of previously loaded ui.
 		self._wgtHistory = [] #A list of previously used widgets.
@@ -106,7 +106,7 @@ class Switchboard(QUiLoader, StyleSheet):
 			'QProgressBar':'valueChanged',
 		}
 
-		if preloadUi:
+		if preload:
 			self.loadAllUi()
 
 
@@ -207,7 +207,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Get the directory where the slot classes will be imported from.
 
 		Return:
-			(str)(obj) slots class directory path or slots class object.
+			(str/obj) slots class directory path or slots class object.
 		'''
 		try:
 			return self._slots_location
@@ -294,7 +294,7 @@ class Switchboard(QUiLoader, StyleSheet):
 
 		Parameters:
 			ui (obj): A previously loaded dynamic ui object.
-			widgets (obj)(list): A widget or list of widgets to be added.
+			widgets (obj/list): A widget or list of widgets to be added.
 			recursive (bool): Whether to recursively add child widgets (default=True).
 			kwargs (): Keyword arguments to set additional widget attributes.
 
@@ -314,10 +314,10 @@ class Switchboard(QUiLoader, StyleSheet):
 			w.prefix = self.getprefix(w.name) #returns an string alphanumberic prefix if name startswith a series of alphanumberic charsinst is followed by three integers. ie. 'cmb' from 'cmb015'
 			w.getSlot = lambda w=w, u=ui: getattr(self.getSlots(u), w.name, None)
 
-			if (ui.isSubmenu or self.getUi(ui, level=2)) and not w.prefix=='i':
-				self.setStyle(w, style=self.submenuStyle, alpha=0)
+			if w.ui.level>=2 and not w.prefix=='i':
+				self.setStyle(w, style=self.submenu_style)
 			else:
-				self.setStyle(w, style=self.style, alpha=0.01)
+				self.setStyle(w, style=self.style)
 
 			setAttributes(w, **kwargs)
 			setattr(ui, w.name, w)
@@ -411,7 +411,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		ending at the first digit.
 
 		Parameters:
-			widget (str)(obj): The widget or its object name as a string.
+			widget (str/obj): The widget or its object name as a string.
 
 		Return:
 			(str) The prefix of the widget's object name as a string.
@@ -634,11 +634,11 @@ class Switchboard(QUiLoader, StyleSheet):
 		Registered widgets can be accessed as properties. ex. sb.PushButton()
 
 		Parameters:
-			widgets (str)(obj)(list): A filepath to a dir containing widgets or to the widget itself. 
+			widgets (str/obj/list): A filepath to a dir containing widgets or to the widget itself. 
 						ie. 'O:/Cloud/Code/_scripts/uitk/uitk/ui/widgets' or the widget(s) themselves. 
 
 		Return:
-			(obj)(list) list if widgets given as a list.
+			(obj/list) list if widgets given as a list.
 
 		Example: registerWidgets(<class 'widgets.menu.Menu'>) #register using widget class object.
 		Example: registerWidgets('O:/Cloud/Code/_scripts/uitk/uitk/ui/widgets/menu.py') #register using path to widget module.
@@ -674,7 +674,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		Parameters:
 			path (str): The path to the directory containing the ui files to load.
 				If no path is given all ui from the default 'ui_location' will be loaded.
-			widgets (str)(obj)(list): A filepath to a dir containing widgets or to the widget itself.
+			widgets (str/obj/list): A filepath to a dir containing widgets or to the widget itself.
 						ie. 'O:/Cloud/Code/_scripts/uitk/uitk/ui/widgets' or the widget(s) themselves.
 
 		Return:
@@ -689,7 +689,7 @@ class Switchboard(QUiLoader, StyleSheet):
 
 		Parameters:
 			file (str): The full file path to the ui file.
-			widgets (str)(obj)(list): A filepath to a dir containing widgets or the widget(s) itself.
+			widgets (str/obj/list): A filepath to a dir containing widgets or the widget(s) itself.
 						ie. 'O:/Cloud/Code/_scripts/uitk/uitk/ui/widgets' or the widget(s) themselves.
 		Return:
 			(obj) QMainWindow object.
@@ -725,11 +725,11 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Get a dynamic ui using its string name, or if no argument is given, return the current ui.
 
 		Parameters:
-			ui (str)(obj)(list): The ui or name(s) of the ui.
-			level (int)(list): Integer(s) representing the level to include.
+			ui (str/obj/list): The ui or name(s) of the ui.
+			level (int/list): Integer(s) representing the level to include.
 						ex. 2 for submenu, 3 for main menu, or [2, 3] for both.
 		Return:
-			(str)(list) list if 'level' given as a list.
+			(str/list) list if 'level' given as a list.
 		'''
 		if not ui:
 			ui = self.ui
@@ -758,11 +758,11 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Extends `getUi` to get the ui(s) at the given level(s).
 
 		Parameters:
-			ui (str)(obj)(list): The ui or name(s) of the ui.
-			level (int)(list): Integer(s) representing the level to include.
+			ui (str/obj/list): The ui or name(s) of the ui.
+			level (int/list): Integer(s) representing the level to include.
 						ex. 2 for submenu, 3 for main menu, or [2, 3] for both.
 		Return:
-			(str)(list) list if 'level' given as a list.
+			(str/list) list if 'level' given as a list.
 		'''
 		if isinstance(ui, str):
 			ui, *tags = ui.split('#')
@@ -859,12 +859,12 @@ class Switchboard(QUiLoader, StyleSheet):
 
 		Parameters:
 			allowDuplicates (bool): Applicable when returning asList. Allows for duplicate names in the returned list.
-			omitLevel (int)(list): Remove instances of the given ui level(s) from the results. Default is [] which omits nothing.
+			omitLevel (int/list): Remove instances of the given ui level(s) from the results. Default is [] which omits nothing.
 			allowCurrent (bool): Allow the currentName. Default is off.
 			asList (bool): Returns the full list of previously called names. By default duplicates are removed.
 
 		Return:
-			(str)(list) if 'asList': returns [list of string names]
+			(str/list) if 'asList': returns [list of string names]
 		'''
 		self._uiHistory = self._uiHistory[-200:] #keep original list length restricted to last 200 elements
 		hist = self._uiHistory.copy() #work on a copy of the list, keeping the original intact
@@ -893,7 +893,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		If the type is a standard widget, the derived type will be that widget's type.
 
 		Parameters:
-			widget (str)(obj): QWidget or it's objectName.
+			widget (str/obj): QWidget or it's objectName.
 			name (bool): Return the class or the class name.
 			module (str): The name of the base class module to check for.
 			inc (list): Widget types to include. All other will be omitted. Exclude takes dominance over include. Meaning, if the same attribute is in both lists, it will be excluded.
@@ -916,7 +916,7 @@ class Switchboard(QUiLoader, StyleSheet):
 
 		Parameters:
 			name (str): The object name of the widget. ie. 'b000'
-			ui (str)(obj): ui, or name of ui. ie. 'polygons'. If no nothing is given, the current ui will be used.
+			ui (str/obj): ui, or name of ui. ie. 'polygons'. If no nothing is given, the current ui will be used.
 							A ui object can be passed into this parameter, which will be used to get it's corresponding name.
 		Return:
 			(obj) if name:  widget object with the given name from the current ui.
@@ -933,8 +933,8 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Get widgets of the given types.
 
 		Parameters:
-			types (str)(list): A widget class name, or list of widget class names. ie. 'QPushbutton' or ['QPushbutton', 'QComboBox']
-			ui (str)(obj): Parent ui name, or ui object. ie. 'polygons' or <polygons>
+			types (str/list): A widget class name, or list of widget class names. ie. 'QPushbutton' or ['QPushbutton', 'QComboBox']
+			ui (str/obj): Parent ui name, or ui object. ie. 'polygons' or <polygons>
 							If no name is given, the current ui will be used.
 			derivedType (bool): Get by using the parent class of custom widgets.
 
@@ -954,10 +954,10 @@ class Switchboard(QUiLoader, StyleSheet):
 		Parameters:
 			widget (obj): The widget to get the object name of.
 					If no widget is given, names of all widgets will be returned.
-			ui (str)(obj): The parent ui, or ui name. ie. <polygons> or 'polygons'
+			ui (str/obj): The parent ui, or ui name. ie. <polygons> or 'polygons'
 					If no name is given, the current ui will be used.
 		Return:
-			(str)(list)
+			(str/list)
 			if widget: (str) the widget objectName for the given widget.
 			if ui: the widget objectNames for widgets of the given ui name.
 			if not ui: the widget objectNames for widgets of the current ui.
@@ -991,8 +991,8 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Get the method(s) associated with the given ui / widget.
 
 		Parameters:
-			ui (str)(obj): The ui name, or ui object. ie. 'polygons' or <polygons>
-			widget (str)(obj): widget, widget's objectName, or method name.
+			ui (str/obj): The ui name, or ui object. ie. 'polygons' or <polygons>
+			widget (str/obj): widget, widget's objectName, or method name.
 
 		Return:
 			if widget: corresponding method object to given widget.
@@ -1020,7 +1020,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Get all signals for a given widget.
 
 		Parameters:
-			w (str)(obj): The widget to get signals for.
+			w (str/obj): The widget to get signals for.
 			d (bool): Return signals from all derived classes instead of just the given widget class.
 				ex. get: QObject, QWidget, QAbstractButton, QPushButton signals from 'QPushButton'
 			exc (list): Exclude any classes in this list. ex. exc=[QtCore.QObject, 'QWidget']
@@ -1105,7 +1105,7 @@ class Switchboard(QUiLoader, StyleSheet):
 
 		Parameters:
 			ui (obj): A previously loaded dynamic ui object.
-			widgets (obj)(list): QWidget(s)
+			widgets (obj/list): QWidget(s)
 		'''
 		if widgets is None:
 			if ui.isConnected:
@@ -1139,7 +1139,7 @@ class Switchboard(QUiLoader, StyleSheet):
 
 		Parameters:
 			ui (obj): A previously loaded dynamic ui object.
-			widgets (obj)(list): QWidget
+			widgets (obj/list): QWidget
 		'''
 		# print ('disconnectSlots:', ui.name) #debug
 		if widgets is None:
@@ -1169,10 +1169,10 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Connect multiple signals to multiple slots at once.
 
 		Parameters:
-			widgets (str)(obj)(list): ie. 'chk000-2' or [tb.ctxMenu.chk000, tb.ctxMenu.chk001]
-			signals (str)(list): ie. 'toggled' or ['toggled']
-			slots (obj)(list): ie. self.cmb002 or [self.cmb002]
-			clss (obj)(list): if the widgets arg is given as a string, then the class it belongs to can be explicitly given. else, the current ui will be used.
+			widgets (str/obj/list): ie. 'chk000-2' or [tb.ctxMenu.chk000, tb.ctxMenu.chk001]
+			signals (str/list): ie. 'toggled' or ['toggled']
+			slots (obj/list): ie. self.cmb002 or [self.cmb002]
+			clss (obj/list): if the widgets arg is given as a string, then the class it belongs to can be explicitly given. else, the current ui will be used.
 
 		ex call: connect_('chk000-2', 'toggled', self.cmb002, tb.ctxMenu)
 		*or connect_([tb.ctxMenu.chk000, tb.ctxMenu.chk001], 'toggled', self.cmb002)
@@ -1258,7 +1258,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		Parameters:
 			frm (obj): The widget to transfer attribute values from.
 			to (obj): The widget to transfer attribute values to.
-			attributes (str)(list)(dict): The attribute(s) to sync. ie. a setter attribute 'setChecked' or a dict containing getter:setter pairs. ie. {'isChecked':'setChecked'}
+			attributes (str/list)(dict): The attribute(s) to sync. ie. a setter attribute 'setChecked' or a dict containing getter:setter pairs. ie. {'isChecked':'setChecked'}
 		'''
 		if not attributes:
 			attributes = self.attributesGetSet
@@ -1453,7 +1453,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Set the given checkbox's check states to reflect the specified axis.
 
 		Parameters:
-			checkboxes (str)(list): 3 or 4 (or six with explicit negative values) checkboxes.
+			checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes.
 			axis (str): Axis to set. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
 
 		ex call: setAxisForCheckBoxes('chk000-3', '-X') #optional ui arg for the checkboxes
@@ -1475,7 +1475,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Get the intended axis value as a string by reading the multiple checkbox's check states.
 
 		Parameters:
-			checkboxes (str)(list): 3 or 4 (or six with explicit negative values) checkboxes. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
+			checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
 
 		Return:
 			(str) axis value. ie. '-X'		
@@ -1502,7 +1502,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''Protect the given object from garbage collection.
 
 		Parameters:
-			obj (obj)(list): The obj(s) to add to the protected list.
+			obj (obj/list): The obj(s) to add to the protected list.
 			clear (bool): Clear the set before adding any given object(s).
 
 		Return:
@@ -1544,7 +1544,7 @@ class Switchboard(QUiLoader, StyleSheet):
 				Disabling this option will cause overlapping windows to flash as 
 				their attribute is changed and restored.
 		Return:
-			(obj)(list) list if not topWidgetOnly.
+			(obj/list) list if not topWidgetOnly.
 
 		Example: getWidgetAt(QtGui.QCursor.pos())
 		'''
@@ -1767,7 +1767,7 @@ print (__name__) #module name
 # 		followed by at least three integers. ex. i000 (alphanum,int,int,int)
 
 # 		Parameters:
-# 			widget (str)(obj): A widget or it's object name.
+# 			widget (str/obj): A widget or it's object name.
 
 # 		Return:
 # 			(str)

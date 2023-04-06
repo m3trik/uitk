@@ -57,7 +57,7 @@ class ComboBox(QtWidgets.QComboBox, MenuInstance, Attributes, RichText, TextOver
 		'''Add items to the combobox's standard modelView without triggering any signals.
 
 		Parameters:
-			items (str)(list)(dict): A string, list of strings, or dict with 'string':data pairs to fill the comboBox with.
+			items (str/list)(dict): A string, list of strings, or dict with 'string':data pairs to fill the comboBox with.
 			header (str): An optional value for the first index of the comboBox's list.
 			clear (bool): Clear any previous items before adding new.
 			ascending (bool): Insert in ascending order. New item(s) will be added to the top of the list.
