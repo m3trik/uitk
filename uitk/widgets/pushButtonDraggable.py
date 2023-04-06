@@ -22,7 +22,7 @@ class PushButtonDraggable(QtWidgets.QPushButton, MenuInstance, Attributes, RichT
 
 		self.setStyleSheet('''
 			QPushButton {
-				border: 1px solid transparent;
+				border: 1px solid black;
 				background-color: rgba(127,127,127,2);
 			}
 

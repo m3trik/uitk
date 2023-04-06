@@ -2,7 +2,7 @@
 # coding=utf-8
 from PySide2 import QtCore
 
-from pythontk.Iter import makeList
+from pythontk import makeList
 
 
 class StyleSheet(QtCore.QObject):
@@ -61,6 +61,7 @@ class StyleSheet(QtCore.QObject):
 		'QMainWindow': '''
 			QMainWindow {
 				background-color: {BACKGROUND_ALPHA};
+				border: 1px solid {BORDER};
 			}
 			''',
 
@@ -1032,7 +1033,7 @@ class StyleSheet(QtCore.QObject):
 		Set the style for a specific widget by using the '#' syntax and the widget's objectName. ie. QWidget#mainWindow
 
 		Parameters:
-			widgets (obj)(list): A widget or list of widgets.
+			widgets (obj/list): A widget or list of widgets.
 			ratio (int): The ratio of widget size, text length in relation to the amount of padding applied.
 			style (str): Color mode. ie. 'standard' or 'dark'
 			hideMenuButton (boool) = Hide the menu button of a widget that has one.

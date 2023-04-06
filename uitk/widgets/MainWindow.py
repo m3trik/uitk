@@ -55,10 +55,11 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		super().__init__()
 
 		self.sb = switchboard_instance
+
 		self.name = File.formatPath(file, 'name')
-		setattr(self.sb, self.name, self)
+		setattr(self.sb, self.name, self) #set an attribute using the actual file name.
 		legal_name = re.sub(r'[^0-9a-zA-Z]', '_', self.name)
-		if self.name != legal_name: #if the name contains illegal chars; set an alternate attribute name with legal characters.
+		if self.name != legal_name: #if the name contains illegal chars; set an alternate attribute using legal characters.
 			setattr(self.sb, legal_name, self)
 
 		self.path = File.formatPath(file, 'path')
@@ -74,9 +75,23 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		self._deferred = {}
 
 		ui = self.sb.load(file)
-		self.setWindowFlags(ui.windowFlags())
+
+		if self.level>2:
+			self.setParent(self.sb.parent().parent() or self.sb.parent())
+		if self.level<3:
+			ui.setParent(self.sb.parent())
+
 		self.setCentralWidget(ui.centralWidget())
 		self.transferProperties(ui, self)
+
+		flags = QtCore.Qt.CustomizeWindowHint
+		flags &= ~QtCore.Qt.WindowTitleHint
+		flags &= ~QtCore.Qt.WindowSystemMenuHint
+		flags &= ~QtCore.Qt.WindowMinMaxButtonsHint
+		flags |= ui.windowFlags()
+		self.setWindowFlags(flags)
+
+		self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
 		self.setAttributes(**kwargs)
 
 		if self.level>2:
@@ -106,54 +121,6 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 			return found_widget
 
 		raise AttributeError(f'{self.__class__.__name__} has no attribute `{attr_name}`')
-
-
-	def event(self, event):
-		"""Handles events that are sent to the widget.
-
-		Parameters:
-			event (QtCore.QEvent): The event that was sent to the widget.
-
-		Return:
-			bool: True if the event was handled, otherwise False.
-
-		Notes:
-			This method is called automatically by Qt when an event is sent to the widget.
-			If the event is a `QEvent.ChildPolished` event, it calls the `on_child_polished`
-			method with the child widget as an argument. Otherwise, it calls the superclass
-			implementation of `event`.
-		"""
-		if event.type() == QtCore.QEvent.ChildPolished:
-			child = event.child()
-			self.on_child_polished(child)
-		return super().event(event)
-
-
-	def defer(self, func, *args, priority=0):
-		"""Defer execution of a function until later. The function is added to a dictionary of deferred 
-		methods, with a specified priority. Lower priority values will be executed before higher ones.
-		
-		Parameters:
-			func (function): The function to defer.
-			*args: Any arguments to be passed to the function.
-			priority (int, optional): The priority of the deferred method. Lower values will be executed 
-					first. Defaults to 0.
-		"""
-		method = partial(func, *args)
-		if priority in self._deferred:
-			self._deferred[priority] += (method,)
-		else:
-			self._deferred[priority] = (method,)
-
-
-	def trigger_deferred(self):
-		"""Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
-		will be applied at this point. Once all deferred methods have executed, the dictionary is cleared.
-		"""
-		for priority in sorted(self._deferred):
-			for method in self._deferred[priority]:
-				method()
-		self._deferred.clear()
 
 
 	@property
@@ -244,6 +211,54 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		elif not self.preventHide: #invisible
 			super().setVisible(False)
 
+
+	def trigger_deferred(self):
+		"""Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
+		will be applied at this point. Once all deferred methods have executed, the dictionary is cleared.
+		"""
+		for priority in sorted(self._deferred):
+			for method in self._deferred[priority]:
+				method()
+		self._deferred.clear()
+
+
+	def defer(self, func, *args, priority=0):
+		"""Defer execution of a function until later. The function is added to a dictionary of deferred 
+		methods, with a specified priority. Lower priority values will be executed before higher ones.
+		
+		Parameters:
+			func (function): The function to defer.
+			*args: Any arguments to be passed to the function.
+			priority (int, optional): The priority of the deferred method. Lower values will be executed 
+					first. Defaults to 0.
+		"""
+		method = partial(func, *args)
+		if priority in self._deferred:
+			self._deferred[priority] += (method,)
+		else:
+			self._deferred[priority] = (method,)
+
+
+	def event(self, event):
+		"""Handles events that are sent to the widget.
+
+		Parameters:
+			event (QtCore.QEvent): The event that was sent to the widget.
+
+		Return:
+			bool: True if the event was handled, otherwise False.
+
+		Notes:
+			This method is called automatically by Qt when an event is sent to the widget.
+			If the event is a `QEvent.ChildPolished` event, it calls the `on_child_polished`
+			method with the child widget as an argument. Otherwise, it calls the superclass
+			implementation of `event`.
+		"""
+		if event.type() == QtCore.QEvent.ChildPolished:
+			child = event.child()
+			self.on_child_polished(child)
+		return super().event(event)
+
 # -----------------------------------------------------------------------------
 
 
@@ -258,7 +273,6 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 
 if __name__ == "__main__":
 	import sys
-
 
 # -----------------------------------------------------------------------------
 # Notes

@@ -311,7 +311,7 @@ class Menu(QtWidgets.QMenu, Attributes):
 		'''Add items to the QMenu.
 
 		Parameters:
-			widget (str)(obj): The widget to add. ie. 'QLabel', QtWidgets.QLabel, QtWidgets.QLabel()
+			widget (str/obj): The widget to add. ie. 'QLabel', QtWidgets.QLabel, QtWidgets.QLabel()
 			lable (str): Add a label. (which is actually a checkbox. by default it is not checkable)
 			checkableLabel (bool): The label is checkable.
 
@@ -414,7 +414,7 @@ class Menu(QtWidgets.QMenu, Attributes):
 			name (bool): Return the last active widgets name as a string.
 
 		Return:
-			(obj)(str)(list) dependant on flags.
+			(obj)(str/list) dependant on flags.
 
 		ex. slot connection to the last active child widget:
 			cmb.returnPressed.connect(lambda m=cmb.ctxMenu.lastActiveChild: getattr(self, m(name=1))()) #connect to the last pressed child widget's corresponding method after return pressed. ie. self.lbl000 if cmb.lbl000 was clicked last.

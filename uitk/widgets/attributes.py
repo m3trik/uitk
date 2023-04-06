@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
+from pythontk import moveDecimalPoint
 
 
 class Attributes(object):
@@ -151,32 +152,10 @@ class Attributes(object):
 
 		elif isinstance(value, float):
 			decimals = str(value)[::-1].find('.') #get decimal places
-			step = Attributes.moveDecimalPoint(1, -decimals)
+			step = moveDecimalPoint(1, -decimals)
 
 			self.setAttributes(spinbox, setValue=value, setMinimum=minimum, setMaximum=maximum, 
 				setSingleStep=step, setDecimals=decimals, setButtonSymbols_='NoButtons',)
-
-
-	@staticmethod
-	def moveDecimalPoint(num, decimal_places):
-		'''Move the decimal place in a given number.
-
-		Parameters:
-			decimal_places (int): decimal places to move. (works only with values 0 and below.)
-		
-		Return:
-			(float) the given number with it's decimal place moved by the desired amount.
-		
-		ex. moveDecimalPoint(11.05, -2) Return: 0.1105
-		'''
-		for _ in range(abs(decimal_places)):
-
-			if decimal_places>0:
-				num *= 10; #shifts decimal place right
-			else:
-				num /= 10.; #shifts decimal place left
-
-		return float(num)
 
 
 	@staticmethod
@@ -235,7 +214,25 @@ Promoting a widget in designer to use a custom class:
 
 # depricated ------------------------------------------------------------------------
 
+# def moveDecimalPoint(num, decimal_places):
+# 		'''Move the decimal place in a given number.
 
+# 		Parameters:
+# 			decimal_places (int): decimal places to move. (works only with values 0 and below.)
+		
+# 		Return:
+# 			(float) the given number with it's decimal place moved by the desired amount.
+		
+# 		ex. moveDecimalPoint(11.05, -2) Return: 0.1105
+# 		'''
+# 		for _ in range(abs(decimal_places)):
+
+# 			if decimal_places>0:
+# 				num *= 10; #shifts decimal place right
+# 			else:
+# 				num /= 10.; #shifts decimal place left
+
+# 		return float(num)
 
 
 
