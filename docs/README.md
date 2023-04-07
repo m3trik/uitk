@@ -52,7 +52,7 @@ class MyProject():
 
 class MySlots(MyProject):
     def __init__(self):
-        self.sb = self.get_switchboard_instance()
+        self.sb = self.switchboard()
 
     def MyButtonsObjectName(self):
         print("Button clicked!")
