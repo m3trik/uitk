@@ -168,17 +168,20 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 
 
 	def show(self, app_exec=False):
-		"""Show the MainWindow.
+			""" Show the MainWindow.
 
-		Parameters:
-			app_exec (bool): Execute the given PySide2 application, display its window, wait for user input, 
-					and then terminate the program with a status code returned from the application.
-		"""
-		if app_exec:
-			exit_code = self.sb.app.exec_()
-			if exit_code != -1:
-				sys.exit(exit_code)
-		super().show()
+			Parameters:
+				app_exec (bool, optional): Execute the given PySide2 application, display its window, wait for user input, 
+						and then terminate the program with a status code returned from the application.
+						Defaults to False.
+			Raises:
+				SystemExit: Raised if the exit code returned from the PySide2 application is not -1.
+			"""
+			if app_exec:
+				exit_code = self.sb.app.exec_()
+				if exit_code != -1:
+					sys.exit(exit_code)
+			super().show()
 
 
 	def on_child_polished(self, w):
