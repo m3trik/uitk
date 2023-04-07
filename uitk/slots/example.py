@@ -9,7 +9,7 @@ class Example():
 		# super().__init__(*args, **kwargs)
 		'''
 		'''
-		self.sb = self.get_switchboard_instance()
+		self.sb = self.switchboard()
 
 		# ctx = self.sb.animation.draggable_header.ctxMenu
 		# if not ctx.containsMenuItems:

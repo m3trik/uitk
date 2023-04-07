@@ -50,7 +50,7 @@ class Switchboard(QUiLoader, StyleSheet):
 			Class MyProject_slots(MyProject):
 				def __init__(self):
 					super().__init__()
-					self.sb = self.get_switchboard_instance() #slot classes are given the `get_switchboard_instance` function when they are initialized.
+					self.sb = self.switchboard() #slot classes are given the `switchboard` function when they are initialized.
 					print (self.sb.ui) #access the current ui. if a single ui is loaded that will automatically be assigned as current, else you must set a ui as current using: self.sb.ui = self.sb.getUi(<ui_name>)
 
 			class MyProject_sb(Switchboard):
@@ -515,7 +515,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''This function sets the slot class for a loaded dynamic UI object. It takes a UI object and 
 		a class or class instance and sets the class as the slots location for the given UI. It then 
 		initializes the widgets and returns the slot class instance. The slots class is given an 
-		attribute `get_switchboard_instance` which can be called to retrieve it's switchboard instance.
+		attribute `switchboard` which can be called to retrieve it's switchboard instance.
 
 		Parameters:
 			ui (obj): A previously loaded dynamic ui object.
@@ -530,7 +530,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		ui_class = type(ui) # Check if the ui is a QtWidget derived class
 		assert issubclass(ui_class, QtWidgets.QWidget), f'# Error: {__file__} in setSlots\n#\tUI must be a QtWidget derived class, but got {ui_class}'
 
-		setattr(clss, 'get_switchboard_instance', lambda slots_inst: self) #set an attribute for the slots class that returns it's switchboard instance. ie. <Your_slots_class>.get_switchboard_instance()
+		setattr(clss, 'switchboard', lambda slots_inst: self) #set an attribute for the slots class that returns it's switchboard instance. ie. <Your_slots_class>.switchboard()
 
 		try:
 			ui._slots = clss() if callable(clss) else clss
@@ -1719,7 +1719,7 @@ if __name__=='__main__':
 
 	class MySlots(MyProject):
 	    def __init__(self):
-	        self.sb = self.get_switchboard_instance()
+	        self.sb = self.switchboard()
 
 	    def MyButtonsObjectName(self):
 	        print("Button clicked!")
