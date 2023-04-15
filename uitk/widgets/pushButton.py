@@ -5,7 +5,7 @@ from PySide2 import QtWidgets, QtCore
 from uitk.widgets.attributes import Attributes
 from uitk.widgets.text import RichText, TextOverlay
 from uitk.widgets.menu import MenuInstance
-from uitk.widgets.pushButton_optionBox import PushButton_optionBox
+from uitk.widgets.optionBox import OptionBox
 
 
 class PushButton(QtWidgets.QPushButton, MenuInstance, Attributes, RichText, TextOverlay):
@@ -67,7 +67,7 @@ class PushButton(QtWidgets.QPushButton, MenuInstance, Attributes, RichText, Text
 	def createOptionBox(self):
 		'''
 		'''
-		self.optionBox = PushButton_optionBox(self) #create an option box
+		self.optionBox = OptionBox(self) #create an option box
 		self.optionBox.create()
 
 

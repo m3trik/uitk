@@ -5,10 +5,10 @@ from PySide2 import QtCore, QtGui, QtWidgets
 from uitk.widgets.attributes import Attributes
 from uitk.widgets.text import RichText, TextOverlay
 from uitk.widgets.menu import MenuInstance
-from uitk.widgets.pushButton_optionBox import PushButton_optionBox
+from uitk.widgets.optionBox import OptionBox
 
 
-class Draggable_header(QtWidgets.QLabel, MenuInstance, Attributes, RichText, TextOverlay):
+class DraggableHeader(QtWidgets.QLabel, MenuInstance, Attributes, RichText, TextOverlay):
 	'''Draggable/Checkable QLabel.
 	'''
 	__mousePressPos = QtCore.QPoint()
@@ -122,7 +122,7 @@ class Draggable_header(QtWidgets.QLabel, MenuInstance, Attributes, RichText, Tex
 	def createOptionBox(self):
 		'''
 		'''
-		self.optionBox = PushButton_optionBox(self) #create an option box
+		self.optionBox = OptionBox(self) #create an option box
 		self.optionBox.create()
 
 
@@ -164,7 +164,7 @@ if __name__ == "__main__":
 	import sys
 	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
 		
-	w = Draggable_header()
+	w = DraggableHeader()
 	w.show()
 
 	sys.exit(app.exec_())

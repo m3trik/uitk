@@ -60,22 +60,22 @@ class Menu(QtWidgets.QMenu, Attributes):
 
 
 	@property
-	def draggable_header(self):
+	def draggableHeader(self):
 		'''Get the draggable header.
 		'''
 		try:
-			return self._draggable_header
+			return self._draggableHeader
 
 		except AttributeError as error:
-			from uitk.widgets.pushButtonDraggable import PushButtonDraggable
-			dh = PushButtonDraggable()
+			from uitk.widgets.draggableHeader import DraggableHeader
+			dh = DraggableHeader()
 
 			wAction = QtWidgets.QWidgetAction(self)
 			wAction.setDefaultWidget(dh)
 			self.insertAction_(wAction)
 
-			self._draggable_header = dh
-			return self._draggable_header
+			self._draggableHeader = dh
+			return self._draggableHeader
 
 
 	@property
@@ -154,7 +154,7 @@ class Menu(QtWidgets.QMenu, Attributes):
 				except AttributeError as error:
 					pass
 
-		self.draggable_header.setText(title)
+		self.draggableHeader.setText(title)
 		super().setTitle(title)
 
 
@@ -506,7 +506,7 @@ class Menu(QtWidgets.QMenu, Attributes):
 			if not self.title():
 				self.setTitle()
 
-			if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggable_header':
+			if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggableHeader':
 				# print (f'show menu | title: {self.title()} | {self.parent().objectName()} has attr released.') #debug
 				self.applyButton.show()
 
@@ -668,7 +668,7 @@ Promoting a widget in designer to use a custom class:
 	# 	if not self.title():
 	# 			self.setTitle()
 
-	# 	if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggable_header':
+	# 	if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggableHeader':
 	# 		# print (f'show menu | title: {self.title()} | {self.parent().objectName()} has attr released.') #debug
 	# 		self.applyButton.show()
 

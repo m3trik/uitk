@@ -57,11 +57,6 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		self.sb = switchboard_instance
 
 		self.name = File.formatPath(file, 'name')
-		setattr(self.sb, self.name, self) #set an attribute using the actual file name.
-		legal_name = re.sub(r'[^0-9a-zA-Z]', '_', self.name)
-		if self.name != legal_name: #if the name contains illegal chars; set an alternate attribute using legal characters.
-			setattr(self.sb, legal_name, self)
-
 		self.path = File.formatPath(file, 'path')
 		self.level = self.sb._getUiLevelFromDir(file)
 		self.isSubmenu = self.level==2
@@ -91,6 +86,7 @@ class MainWindow(QtWidgets.QMainWindow, Attributes):
 		flags |= ui.windowFlags()
 		self.setWindowFlags(flags)
 
+		self.setLegalAttribute(self.sb, self.name, self, also_set_original=True)
 		self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
 		self.setAttributes(**kwargs)
 

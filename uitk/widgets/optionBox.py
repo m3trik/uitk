@@ -7,7 +7,7 @@ from uitk.widgets.text import RichText
 from uitk.widgets.menu import MenuInstance
 
 
-class PushButton_optionBox(QtWidgets.QPushButton, Attributes, RichText):
+class OptionBox(QtWidgets.QPushButton, Attributes, RichText):
 	'''
 	'''
 	def __init__(self, parent, showMenuOnMouseOver=False, **kwargs):
@@ -125,7 +125,7 @@ if __name__ == "__main__":
 	parent.setText('Parent')
 	parent.resize(120, 20)
 
-	w = PushButton_optionBox(parent,
+	w = OptionBox(parent,
 		setText='<hl style="color:black;">⧉</hl>'
 	)
 

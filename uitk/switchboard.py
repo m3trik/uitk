@@ -16,13 +16,6 @@ from uitk.styleSheet import StyleSheet
 class Switchboard(QUiLoader, StyleSheet):
 	"""Load dynamic UI, assign convenience properties, and handle slot connections.
 
-	Properties:
-		sb: The instance of this class holding all properties.
-		sb.ui: Returns the current UI.
-		sb.<uiFileName>: Accesses the UI loaded from uiFileName.
-		sb.<customWidgetClassName>: Accesses the custom widget with the specified class name.
-		sb.<slotsClassName>: Accesses the slots class of the specified class name.
-
 	Parameters:
 		parent (obj): A QtObject derived class.
 		ui_location (str/obj): Set the directory of the dynamic UI, or give the dynamic UI objects.
@@ -31,6 +24,13 @@ class Switchboard(QUiLoader, StyleSheet):
 		preload (bool): Load all UI immediately. Otherwise UI will be loaded as required.
 		style (str)(dict): Stylesheet color mode. ie. 'standard', 'dark', or a user defined color scheme.
 		submenu_style (str)(dict): The stylesheet color mode for submenus.
+
+	Properties:
+		sb: The instance of this class holding all properties.
+		sb.ui: Returns the current UI.
+		sb.<uiFileName>: Accesses the UI loaded from uiFileName.
+		sb.<customWidgetClassName>: Accesses the custom widget with the specified class name.
+		sb.<slotsClassName>: Accesses the slots class of the specified class name.
 
 	Methods:
 		loadUi(uiPath): Load the UI file located at uiPath.
@@ -71,8 +71,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''
 		'''
 		calling_frame = inspect.currentframe().f_back
-		calling_file = calling_frame.f_code.co_filename
-		self.defaultDir = os.path.abspath(os.path.dirname(calling_file)) #the calling modules directory.
+		self.defaultDir = self.getModuleDirFromFrame(calling_frame) #the calling modules directory.
 		self.moduleDir = File.getFilepath(__file__) #the directory of this module.
 
 		self.ui_location = ui_location or f'{self.moduleDir}/ui' #use the relative filepath of this module if None is given.
@@ -289,6 +288,24 @@ class Switchboard(QUiLoader, StyleSheet):
 		return hist
 
 
+	@staticmethod
+	def getModuleDirFromFrame(frame):
+		"""Retrieves the directory path of the given calling frame.
+
+		This method uses the inspect module to find the frame of the calling module
+		and extracts its directory path.
+
+		Parameters:
+			frame (frame): The frame object of the module.
+
+		Returns:
+			str: The absolute directory path of the module.
+		"""
+		calling_file = frame.f_code.co_filename
+		default_dir = os.path.abspath(os.path.dirname(calling_file))
+		return default_dir
+
+
 	def initWidgets(self, ui, widgets, recursive=True, returnAllWidgets=False, **kwargs):
 		"""Add widgets as attributes of the ui while giving additional attributes to the widgets themselves.
 
@@ -311,10 +328,10 @@ class Switchboard(QUiLoader, StyleSheet):
 			w.type = w.__class__.__name__
 			w.derivedType = self.getDerivedType(w, name=True)
 			w.signals = self.getDefaultSignals(w) #default widget signals as list. ie. [<widget.valueChanged>]
-			w.prefix = self.getprefix(w.name) #returns an string alphanumberic prefix if name startswith a series of alphanumberic charsinst is followed by three integers. ie. 'cmb' from 'cmb015'
+			w.baseName = self.getBaseName(w.name) #returns an string stripped of trailing not letter chars. ie. 'cmb' from 'cmb015'
 			w.getSlot = lambda w=w, u=ui: getattr(self.getSlots(u), w.name, None)
 
-			if w.ui.level>=2 and not w.prefix=='i':
+			if w.ui.level>=2 and not w.baseName=='i':
 				self.setStyle(w, style=self.submenu_style)
 			else:
 				self.setStyle(w, style=self.style)
@@ -322,7 +339,7 @@ class Switchboard(QUiLoader, StyleSheet):
 			setAttributes(w, **kwargs)
 			setattr(ui, w.name, w)
 			added_widgets.add(w)
-			# print (0, 'initWidgts:', w.ui.name.ljust(26), w.prefix.ljust(25), (w.name or type(w).__name__).ljust(25), w.type.ljust(15), w.derivedType.ljust(15), id(w)) #debug
+			# print (0, 'initWidgts:', w.ui.name.ljust(26), w.baseName.ljust(25), (w.name or type(w).__name__).ljust(25), w.type.ljust(15), w.derivedType.ljust(15), id(w)) #debug
 
 			if recursive:
 				child_widgets = w.findChildren(QtWidgets.QWidget)
@@ -338,10 +355,10 @@ class Switchboard(QUiLoader, StyleSheet):
 		Returns all items between the opening and closing statements of the given property.
 
 		So 'customwidget' would return:
-			[('class', 'PushButtonDraggable'), ('extends', 'QPushButton'), ('header', 'widgets.pushbuttondraggable.h')]
+			[('class', 'DraggableHeader'), ('extends', 'QPushButton'), ('header', 'widgets.pushbuttondraggable.h')]
 		from:
 			<customwidget>
-				<class>PushButtonDraggable</class>
+				<class>DraggableHeader</class>
 				<extends>QPushButton</extends>
 				<header>widgets.pushbuttondraggable.h</header>
 			</customwidget>
@@ -405,29 +422,29 @@ class Switchboard(QUiLoader, StyleSheet):
 
 
 	@staticmethod
-	def getprefix(widget):
-		'''Return the prefix of a widget's object name.
-		A valid prefix is an alphanumeric character sequence at the beginning of the widget's object name,
-		ending at the first digit.
+	def getBaseName(widget):
+		'''Return the base name of a widget's object name.
+		A base name is defined as a character sequence at the beginning of the widget's object name,
+		ending at the last letter character.
 
 		Parameters:
 			widget (str/obj): The widget or its object name as a string.
 
 		Return:
-			(str) The prefix of the widget's object name as a string.
+			(str) The base name of the widget's object name as a string.
 
 		Example:
-			getprefix('someName00') #returns: 'someName'
-			getprefix('someName') #returns: 'someName'
-			getprefix('some0Name') #returns: 'some'
+			getBaseName('some_name') #returns: 'some_name'
+			getBaseName('some_name_') #returns: 'some_name'
+			getBaseName('some_name_03') #returns: 'some_name'
 		'''
 		import re
 
 		if not isinstance(widget, str):
 			widget = widget.objectName()
 
-		match = re.search(r'^\D*', widget)
-		return widget[:match.end()]
+		match = re.search(r'^\w*[a-zA-Z]', widget)
+		return match.group() if match else widget
 
 
 	@staticmethod
@@ -707,7 +724,7 @@ class Switchboard(QUiLoader, StyleSheet):
 			lst = self.getPropertyFromUiFile(file, 'customwidget')
 			for l in lst: #get any custom widgets from the ui file.
 				try:
-					className = l[0][1] #ie. 'PushButtonDraggable' from ('class', 'PushButtonDraggable')
+					className = l[0][1] #ie. 'DraggableHeader' from ('class', 'DraggableHeader')
 					derivedType = l[1][1] #ie. 'QPushButton' from ('extends', 'QPushButton')
 				except IndexError as error:
 					continue
@@ -1016,11 +1033,11 @@ class Switchboard(QUiLoader, StyleSheet):
 		return next(iter(w.getSlot() for w in ui.widgets if w.getSlot()==widget.getSlot()), None)
 
 
-	def getSignals(self, w, d=True, exc=[]):
+	def getSignals(self, widget, d=True, exc=[]):
 		'''Get all signals for a given widget.
 
 		Parameters:
-			w (str/obj): The widget to get signals for.
+			widget (str/obj): The widget to get signals for.
 			d (bool): Return signals from all derived classes instead of just the given widget class.
 				ex. get: QObject, QWidget, QAbstractButton, QPushButton signals from 'QPushButton'
 			exc (list): Exclude any classes in this list. ex. exc=[QtCore.QObject, 'QWidget']
@@ -1054,7 +1071,7 @@ class Switchboard(QUiLoader, StyleSheet):
 		return signals
 
 
-	def getDefaultSignals(self, w):
+	def getDefaultSignals(self, widget):
 		'''Get the default signals for a given widget type.
 
 		Parameters:
@@ -1065,9 +1082,9 @@ class Switchboard(QUiLoader, StyleSheet):
 		'''
 		signals=[]
 		try: #if the widget type has a default signal assigned in the signals dict; get the signal.
-			signalTypes = self.defaultSignals[w.derivedType]
+			signalTypes = self.defaultSignals[widget.derivedType]
 			for s in Iter.makeList(signalTypes): #assure 'signalTypes' is a list.
-				signal = getattr(w, s, None)
+				signal = getattr(widget, s, None)
 				signals.append(signal)
 
 		except KeyError:
@@ -1305,40 +1322,44 @@ class Switchboard(QUiLoader, StyleSheet):
 				[getattr(w, property_)(value) for w in widgets] #set the property state for each widget in the list.
 
 
-	@staticmethod
 	def unpackNames(nameString):
-		'''Get a list of individual names from a single name string.
-		If you are looking to get multiple objects from a name string, call 'getWidgetsFromStr' directly instead.
+		"""Unpacks a comma-separated string of names and returns a list of individual names.
 
 		Parameters:
-			nameString = string consisting of widget names separated by commas. ie. 'v000, b004-6'
+			nameString (str): A string consisting of widget names separated by commas.
+							  Names may include ranges with hyphens, e.g., 'chk021-23, 25, tb001'.
+		Returns:
+			list: A list of unpacked names, e.g., ['chk021', 'chk022', 'chk023', 'chk025', 'tb001'].
+		"""
+		def expand_name_range(prefix, start, stop):
+			"""Generate a list of names with a given prefix and a range of numbers."""
+			return [prefix + str(num).zfill(3) for num in range(start, stop + 1)]
 
-		Return:
-			unpacked names. ie. ['v000','b004','b005','b006']
+		def extract_parts(name):
+			"""Extract alphabetic and numeric parts from a given name using regular expressions."""
+			return re.findall(r'([a-zA-Z]+)|(\d+)', name)
 
-		Example: unpackNames('chk021-23, 25, tb001')
-		'''
-		packed_names = [n.strip() for n in nameString.split(',') #build list of all widgets passed in containing '-' 
-							if '-' in n or n.strip().isdigit()]
+		names = re.split(r',\s*', nameString)
+		unpacked_names = []
+		last_prefix = None
 
-		otherNames = [n.strip() for n in nameString.split(',') #all widgets passed in not containing '-'
-							if '-' not in n and not n.strip().isdigit()]
+		for name in names:
+			parts = extract_parts(name)
+			digits = [int(p[1]) for p in parts if p[1]]
 
-		unpacked_names=[] #unpack the packed names:
-		for name in packed_names:
-			if '-' in name:
-				name = name.split('-') #ex. split 'b000-8'
-				prefix = name[0].strip('0123456789') #ex. split 'b' from 'b000'
-				start = int(name[0].strip('abcdefghijklmnopqrstuvwxyz') or 0) #start range. #ex. '000' #converting int('000') returns None, if case; assign 0.
-				stop = int(name[1])+1 #end range. #ex. '8' from 'b000-8' becomes 9, for range up to 9 but not including 9.
-				unpacked_names.extend([str(prefix)+'000'[:-len(str(num))]+str(num) for num in range(start,stop)]) #build list of name strings within given range
-				last_name = name
+			if len(digits) == 1:
+				if not parts[0][0]:
+					unpacked_names.append(last_prefix + str(digits[0]).zfill(3))
+				else:
+					last_prefix = parts[0][0]
+					unpacked_names.append(name)
+			elif len(digits) == 2:
+				prefix = parts[0][0]
+				start, stop = digits
+				unpacked_names.extend(expand_name_range(prefix, start, stop))
 				last_prefix = prefix
-			else:
-				num = name
-				unpacked_names.extend([str(last_prefix)+'000'[:-len(str(num))]+str(num)])
 
-		return otherNames+unpacked_names
+		return unpacked_names
 
 
 	@classmethod
@@ -1370,16 +1391,16 @@ class Switchboard(QUiLoader, StyleSheet):
 
 
 	@staticmethod
-	def getCenter(w):
+	def getCenter(widget):
 		'''Get the center point of a given widget.
 
 		Parameters:
-			w (obj): The widget to query.
+			widget (obj): The widget to query.
 
 		Return:
 			(obj) QPoint
 		'''
-		return QtGui.QCursor.pos() - w.rect().center()
+		return QtGui.QCursor.pos() - widget.rect().center()
 
 
 	@staticmethod
@@ -1399,27 +1420,27 @@ class Switchboard(QUiLoader, StyleSheet):
 
 
 	@staticmethod
-	def moveAndCenterWidget(w, p, offsetX=2, offsetY=2):
+	def moveAndCenterWidget(widget, pos, offsetX=2, offsetY=2):
 		'''Move and center the given widget on the given point.
 
 		Parameters:
-			w (obj): The widget to resize.
-			p (obj): A point to move to.
+			widget (obj): The widget to resize.
+			pos (obj): A point to move to.
 			offsetX (int): The desired offset on the x axis. 2 is center. 
 			offsetY (int): The desired offset on the y axis.
 		'''
-		width = p.x()-(w.width()/offsetX)
-		height = p.y()-(w.height()/offsetY)
+		width = pos.x()-(widget.width()/offsetX)
+		height = pos.y()-(widget.height()/offsetY)
 
-		w.move(QtCore.QPoint(width, height)) #center a given widget at a given position.
+		widget.move(QtCore.QPoint(width, height)) #center a given widget at a given position.
 
 
 	@staticmethod
-	def centerWidgetOnScreen(w):
+	def centerWidgetOnScreen(widget):
 		'''
 		'''
 		centerPoint = QtGui.QScreen.availableGeometry(QtWidgets.QApplication.primaryScreen()).center()
-		w.move(centerPoint - w.frameGeometry().center())
+		widget.move(centerPoint - widget.frameGeometry().center())
 
 
 	def toggleWidgets(self, *args, **kwargs):
@@ -1715,14 +1736,14 @@ class Switchboard(QUiLoader, StyleSheet):
 
 if __name__=='__main__':
 	class MyProject():
-	    ...
+		...
 
 	class MySlots(MyProject):
-	    def __init__(self):
-	        self.sb = self.switchboard()
+		def __init__(self):
+			self.sb = self.switchboard()
 
-	    def MyButtonsObjectName(self):
-	        print("Button clicked!")
+		def MyButtonsObjectName(self):
+			print("Button clicked!")
 
 
 	sb = Switchboard(slots_location=MySlots)
@@ -1740,7 +1761,7 @@ if __name__=='__main__':
 	print ('slots:'.ljust(20), ui.slots) #The associated slots class instance
 	print ('method:'.ljust(20), ui.MyButtonsObjectName.getSlot())
 	print ('widget from method:'.ljust(20), sb.getWidgetFromMethod(ui.MyButtonsObjectName.getSlot()))
-	for w in ui.widgets: print ('child widget:'.ljust(20), (w.name or type(w).__name__).ljust(20), w.prefix.ljust(20), w.type.ljust(15), w.derivedType.ljust(15), id(w)) #All the widgets of the UI
+	for w in ui.widgets: print ('child widget:'.ljust(20), (w.name or type(w).__name__).ljust(20), w.baseName.ljust(20), w.type.ljust(15), w.derivedType.ljust(15), id(w)) #All the widgets of the UI
 
 	ui.show(app_exec=True)
 
@@ -1754,6 +1775,42 @@ print (__name__) #module name
 # deprecated:
 # --------------------------------------------------------------------------------------------
 
+
+	# @staticmethod
+	# def unpackNames(nameString):
+	# 	'''Get a list of individual names from a single name string.
+	# 	If you are looking to get multiple objects from a name string, call 'getWidgetsFromStr' directly instead.
+
+	# 	Parameters:
+	# 		nameString = string consisting of widget names separated by commas. ie. 'v000, b004-6'
+
+	# 	Return:
+	# 		unpacked names. ie. ['v000','b004','b005','b006']
+
+	# 	Example: unpackNames('chk021-23, 25, tb001')
+	# 	'''
+	# 	packed_names = [n.strip() for n in nameString.split(',') #build list of all widgets passed in containing '-' 
+	# 						if '-' in n or n.strip().isdigit()]
+
+	# 	otherNames = [n.strip() for n in nameString.split(',') #all widgets passed in not containing '-'
+	# 						if '-' not in n and not n.strip().isdigit()]
+
+	# 	unpacked_names=[] #unpack the packed names:
+	# 	for name in packed_names:
+	# 		if '-' in name:
+	# 			name = name.split('-') #ex. split 'b000-8'
+	# 			prefix = name[0].strip('0123456789') #ex. split 'b' from 'b000'
+	# 			start = int(name[0].strip('abcdefghijklmnopqrstuvwxyz') or 0) #start range. #ex. '000' #converting int('000') returns None, if case; assign 0.
+	# 			stop = int(name[1])+1 #end range. #ex. '8' from 'b000-8' becomes 9, for range up to 9 but not including 9.
+	# 			unpacked_names.extend([str(prefix)+'000'[:-len(str(num))]+str(num) for num in range(start,stop)]) #build list of name strings within given range
+	# 			last_name = name
+	# 			last_prefix = prefix
+	# 		else:
+	# 			num = name
+	# 			unpacked_names.extend([str(last_prefix)+'000'[:-len(str(num))]+str(num)])
+
+	# 	return otherNames+unpacked_names
+
 	# def __getattr__(self, attr_name):
 	# 	found_widget = self.sb._getWidgetFromUi(self, attr_name)
 	# 	if found_widget:
@@ -1761,7 +1818,7 @@ print (__name__) #module name
 	# 		return found_widget
 	# 	raise AttributeError(f'{self.__class__.__name__} has no attribute `{attr_name}`')
 
-# def getprefix(widget):
+# def getBaseName(widget):
 # 		'''Query a widgets prefix.
 # 		A valid prefix is returned when the given widget's objectName startswith an alphanumeric char, 
 # 		followed by at least three integers. ex. i000 (alphanum,int,int,int)

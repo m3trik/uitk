@@ -5,8 +5,30 @@ from pythontk import moveDecimalPoint
 
 
 class Attributes(object):
-	'''Methods for setting widget Attributes.
-	'''
+	"""Methods for setting widget Attributes.
+	"""
+
+	def setLegalAttribute(self, obj, name, value, also_set_original=False):
+		"""If the original name contains illegal characters, this method sets an attribute using 
+		a legal name created by replacing illegal characters with underscores. The original name
+		attribute is also assigned if also_set_original is True.
+
+		Parameters: 
+			obj (object): The object to which the attribute will be assigned
+			name (str): The original name to be assigned
+			value (): The value to be assigned to the attribute
+			also_set_original (bool): Whether to keep the original attribute if an alternative legal name is created
+		"""
+		import re
+
+		legal_name = re.sub(r'[^0-9a-zA-Z]', '_', name)
+		if name != legal_name:  # if the name contains illegal chars; set an alternate attribute using legal characters.
+			setattr(obj, legal_name, value)
+			if also_set_original:
+				setattr(obj, name, value)
+		else:
+			setattr(obj, name, value)
+
 
 	def setAttributes(self, obj=None, **kwargs):
 		'''Works with attributes passed in as a dict or kwargs.

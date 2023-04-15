@@ -1,15 +1,17 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
+from uitk.widgets.attributes import Attributes
 
 
-class Region(QtWidgets.QWidget):
+class Region(QtWidgets.QWidget, Attributes):
 	"""A custom QWidget that represents a region with a specified shape and size.
 	Emits an onEnter signal when the mouse cursor enters the region.
 	"""
 	onEnter = QtCore.Signal()
+	onLeave = QtCore.Signal()
 
-	def __init__(self, parent, position=(0, 0), size=(45, 45), shape=QtGui.QRegion.Ellipse, mouseTracking=False):
+	def __init__(self, parent, position=(0, 0), size=(45, 45), shape=QtGui.QRegion.Ellipse, transparentForMouseEvents=False, **kwargs):
 		"""Initialize the Region widget.
 
 		Parameters:
@@ -18,12 +20,10 @@ class Region(QtWidgets.QWidget):
 				of the region. Default is (0, 0).
 			size (QSize or tuple, optional): A tuple of (width, height) specifying the size of the region. Default is (45, 45).
 			shape (QRegion.Shape, optional): The shape of the region (default is QtGui.QRegion.Ellipse).
-			mouseTracking (bool, optional): Whether to enable mouse tracking for the region. Default is False.
+			transparentForMouseEvents (bool): Allow events to pass through to the widget's underlying parent or sibling widgets.
+			**kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
 		"""
 		super().__init__(parent)
-
-		self.setMouseTracking(mouseTracking)
-		self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
 
 		if not isinstance(position, QtCore.QPoint):
 			position = QtCore.QPoint(position[0], position[1])
@@ -43,26 +43,46 @@ class Region(QtWidgets.QWidget):
 		self.cursor_inside = False # Track whether the cursor is inside the region.
 
 		self.setVisible(True)
+		self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, transparentForMouseEvents)
+		self.setAttributes(**kwargs)
 
-		self.window().installEventFilter(self)
+		self.event_filter = RegionEventFilter(self)
+		self.window().installEventFilter(self.event_filter)
 
 
-	def eventFilter(self, obj, event):
-		"""Filter mouse move events and emit the onEnter signal when the mouse cursor enters the region.
-
-		Parameters:
-			obj (QObject): The object that is the target of the event.
-			event (QEvent): The event that is being filtered.
-
-		Returns:
-			bool: Whether the event has been handled. If the event is handled, it is stopped; otherwise, it is propagated.
+	def hide_top_level_children(self):
+		"""Hide all top-level child widgets of the Region instance.
 		"""
-		if self.isVisible() and event.type() == QtCore.QEvent.MouseMove:
-			cursor_inside_now = self.region.contains(self.mapFromGlobal(QtGui.QCursor.pos()))
-			if cursor_inside_now and not self.cursor_inside:
-				self.onEnter.emit()
-			self.cursor_inside = cursor_inside_now
-		return super().eventFilter(obj, event)
+		for child in self.children():
+			if isinstance(child, QtWidgets.QWidget):
+				child.hide()
+
+
+	def show_top_level_children(self):
+		"""Show all top-level child widgets of the Region instance.
+		"""
+		for child in self.children():
+			if isinstance(child, QtWidgets.QWidget):
+				child.show()
+
+
+
+class RegionEventFilter(QtCore.QObject):
+    def __init__(self, region):
+        super().__init__()
+        self.region = region
+
+    def eventFilter(self, obj, event):
+        if self.region.isVisible() and event.type() == QtCore.QEvent.MouseMove:
+            cursor_inside_now = self.region.region.contains(self.region.mapFromGlobal(QtGui.QCursor.pos()))
+            if cursor_inside_now and not self.region.cursor_inside:
+                self.region.onEnter.emit()
+                print('emit enter', obj.objectName())
+            elif not cursor_inside_now and self.region.cursor_inside:
+                self.region.onLeave.emit()
+                print('emit leave', obj.objectName())
+            self.region.cursor_inside = cursor_inside_now
+        return super().eventFilter(obj, event)
 
 # -----------------------------------------------------------------------------
 

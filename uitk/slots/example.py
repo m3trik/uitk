@@ -11,7 +11,7 @@ class Example():
 		'''
 		self.sb = self.switchboard()
 
-		# ctx = self.sb.animation.draggable_header.ctxMenu
+		# ctx = self.sb.animation.draggableHeader.ctxMenu
 		# if not ctx.containsMenuItems:
 		# 	ctx.add(self.sb.ComboBox, setObjectName='cmb000', setToolTip='')
 
@@ -27,10 +27,10 @@ class Example():
 		# 	ctx.add('QCheckBox', setText='Relative', setObjectName='chk002', setChecked=False, setToolTip='Start time position as relative or absolute.')
 
 
-	def draggable_header(self, state=None):
+	def draggableHeader(self, state=None):
 		'''
 		'''
-		dh = self.sb.example.draggable_header
+		dh = self.sb.example.draggableHeader
 
 
 	def cmb000(self, state=None):
