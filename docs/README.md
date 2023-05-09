@@ -2,6 +2,10 @@
 
 ## UITK
 
+```diff
+- PERSONAL PROJECT. WORK IN PROGRESS ..
+```
+
 <!-- short_description_start -->
 uitk is a versatile package for managing user interfaces, widgets, and event handling in Python using PySide2. Using naming convention, the switchboard module provides a convenient way to load UI files, register custom widgets, manage slots and styles, and interact with widgets. It aims to simplify the development and management of complex user interfaces.
 <!-- short_description_end -->
