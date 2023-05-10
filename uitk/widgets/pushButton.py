@@ -1,131 +1,116 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-
 from uitk.widgets.attributes import Attributes
 from uitk.widgets.text import RichText, TextOverlay
 from uitk.widgets.menu import MenuInstance
 from uitk.widgets.optionBox import OptionBox
 
 
-class PushButton(QtWidgets.QPushButton, MenuInstance, Attributes, RichText, TextOverlay):
-	'''
-	'''
-	def __init__(self, parent=None, showMenuOnMouseOver=False, **kwargs):
-		QtWidgets.QPushButton.__init__(self, parent)
+class PushButton(
+    QtWidgets.QPushButton, MenuInstance, Attributes, RichText, TextOverlay
+):
+    """ """
 
-		self.setStyleSheet(parent.styleSheet()) if parent else None
+    def __init__(self, parent=None, showMenuOnMouseOver=False, **kwargs):
+        QtWidgets.QPushButton.__init__(self, parent)
 
-		self.menu_.position = 'topRight'
-		self.showMenuOnMouseOver = showMenuOnMouseOver
+        self.menu_.position = "topRight"
+        self.showMenuOnMouseOver = showMenuOnMouseOver
 
-		self.setAttribute(QtCore.Qt.WA_SetStyle) #Indicates that the widget has a style of its own.
+        # override built-ins
+        self.text = self.richText
+        self.setText = self.setRichText
+        self.sizeHint = self.richTextSizeHint
 
-		#override built-ins
-		self.text = self.richText
-		self.setText = self.setRichText
-		self.sizeHint = self.richTextSizeHint
+        self.optionBox = None
 
-		self.optionBox = None
+        self.set_attributes(**kwargs)
 
-		self.setAttributes(**kwargs)
+    def enterEvent(self, event):
+        """
+        Parameters:
+                event = <QEvent>
+        """
+        if self.showMenuOnMouseOver:
+            self.menu_.show()
 
+        QtWidgets.QPushButton.enterEvent(self, event)
 
-	def enterEvent(self, event):
-		'''
-		Parameters:
-			event = <QEvent>
-		'''
-		if self.showMenuOnMouseOver:
-			self.menu_.show()
+    def mousePressEvent(self, event):
+        """
+        Parameters:
+                event = <QEvent>
+        """
+        if event.button() == QtCore.Qt.RightButton:
+            self.ctxMenu.show()
 
-		QtWidgets.QPushButton.enterEvent(self, event)
+        QtWidgets.QPushButton.mousePressEvent(self, event)
 
+    def leaveEvent(self, event):
+        """
+        Parameters:
+                event = <QEvent>
+        """
+        if self.showMenuOnMouseOver:
+            self.menu_.hide()
 
-	def mousePressEvent(self, event):
-		'''
-		Parameters:
-			event = <QEvent>
-		'''
-		if event.button()==QtCore.Qt.RightButton:
-			self.ctxMenu.show()
+        QtWidgets.QPushButton.leaveEvent(self, event)
 
-		QtWidgets.QPushButton.mousePressEvent(self, event)
+    def createOptionBox(self):
+        """ """
+        self.optionBox = OptionBox(self)  # create an option box
+        self.optionBox.create()
 
+    def showEvent(self, event):
+        """
+        Parameters:
+                event = <QEvent>
+        """
+        if self.ctxMenu.containsMenuItems:
+            if not self.optionBox:
+                self.createOptionBox()
 
-	def leaveEvent(self, event):
-		'''
-		Parameters:
-			event = <QEvent>
-		'''
-		if self.showMenuOnMouseOver:
-			self.menu_.hide()
-
-		QtWidgets.QPushButton.leaveEvent(self, event)
-
-
-	def createOptionBox(self):
-		'''
-		'''
-		self.optionBox = OptionBox(self) #create an option box
-		self.optionBox.create()
-
-
-	def showEvent(self, event):
-		'''
-		Parameters:
-			event = <QEvent>
-		'''
-		if self.ctxMenu.containsMenuItems:
-			if not self.optionBox:
-				self.createOptionBox()
-
-		QtWidgets.QPushButton.showEvent(self, event)
-
-
-
-
-
-
-
+        QtWidgets.QPushButton.showEvent(self, event)
 
 
 if __name__ == "__main__":
-	import sys
-	from PySide2.QtCore import QSize
-	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
+    import sys
+    from PySide2.QtCore import QSize
 
-	w = PushButton(
-		parent=None,
-		setObjectName='b000',
-		setText='<hl style="color:black;">A QPushButton <hl style="color:violet;"><b>with Rich Text</b></hl>',
-		resize=QSize(125, 45),
-		setWhatsThis='',
-		# setVisible=True,
-	)
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
+        sys.argv
+    )  # return the existing QApplication object, or create a new one if none exists.
 
-	w.show()
-	sys.exit(app.exec_())
+    w = PushButton(
+        parent=None,
+        setObjectName="b000",
+        setText='<hl style="color:black;">A QPushButton <hl style="color:violet;"><b>with Rich Text</b></hl>',
+        resize=QSize(125, 45),
+        setWhatsThis="",
+        # setVisible=True,
+    )
 
+    w.show()
+    sys.exit(app.exec_())
 
 
 # -----------------------------------------------------------------------------
 # Notes
 # -----------------------------------------------------------------------------
 
-'''
+"""
 Promoting a widget in designer to use a custom class:
->	In Qt Designer, select all the widgets you want to replace, 
-		then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace, 
+        then right-click them and select 'Promote to...'. 
 
->	In the dialog:
-		Base Class:		Class from which you inherit. ie. QWidget
-		Promoted Class:	Name of the class. ie. "MyWidget"
-		Header File:	Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
+>   In the dialog:
+        Base Class:     Class from which you inherit. ie. QWidget
+        Promoted Class: Name of the class. ie. "MyWidget"
+        Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->	Then click "Add", "Promote", 
-		and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
-'''
+>   Then click "Add", "Promote", 
+        and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
+"""
 
 # Deprecated: --------------------
-

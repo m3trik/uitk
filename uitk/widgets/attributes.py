@@ -4,260 +4,279 @@ from PySide2 import QtCore, QtGui, QtWidgets
 from pythontk import moveDecimalPoint
 
 
-class Attributes(object):
-	"""Methods for setting widget Attributes.
-	"""
+class Attributes:
+    """Methods for setting widget Attributes."""
 
-	def setLegalAttribute(self, obj, name, value, also_set_original=False):
-		"""If the original name contains illegal characters, this method sets an attribute using 
-		a legal name created by replacing illegal characters with underscores. The original name
-		attribute is also assigned if also_set_original is True.
+    def set_legal_attribute(self, obj, name, value, also_set_original=False):
+        """If the original name contains illegal characters, this method sets an attribute using
+        a legal name created by replacing illegal characters with underscores. The original name
+        attribute is also assigned if also_set_original is True.
 
-		Parameters: 
-			obj (object): The object to which the attribute will be assigned
-			name (str): The original name to be assigned
-			value (): The value to be assigned to the attribute
-			also_set_original (bool): Whether to keep the original attribute if an alternative legal name is created
-		"""
-		import re
+        Parameters:
+                obj (object): The object to which the attribute will be assigned
+                name (str): The original name to be assigned
+                value (): The value to be assigned to the attribute
+                also_set_original (bool): Whether to keep the original attribute if an alternative legal name is created
+        """
+        import re
 
-		legal_name = re.sub(r'[^0-9a-zA-Z]', '_', name)
-		if name != legal_name:  # if the name contains illegal chars; set an alternate attribute using legal characters.
-			setattr(obj, legal_name, value)
-			if also_set_original:
-				setattr(obj, name, value)
-		else:
-			setattr(obj, name, value)
+        legal_name = re.sub(r"[^0-9a-zA-Z]", "_", name)
+        if (
+            name != legal_name
+        ):  # if the name contains illegal chars; set an alternate attribute using legal characters.
+            setattr(obj, legal_name, value)
+            if also_set_original:
+                setattr(obj, name, value)
+        else:
+            setattr(obj, name, value)
 
+    def set_attributes(self, obj=None, **kwargs):
+        """Works with attributes passed in as a dict or kwargs.
+        If attributes are passed in as a dict, kwargs are ignored.
 
-	def setAttributes(self, obj=None, **kwargs):
-		'''Works with attributes passed in as a dict or kwargs.
-		If attributes are passed in as a dict, kwargs are ignored.
+        Parameters:
+                obj (obj): the child obj or widgetAction to set attributes for. (default=self)
+                **kwargs = The keyword arguments to set.
+        """
+        if not kwargs:  # if no attributes given.
+            return
 
-		Parameters:
-			obj (obj): the child obj or widgetAction to set attributes for. (default=self)
-			**kwargs = The keyword arguments to set.
-		'''
-		if not kwargs: #if no attributes given.
-			return
+        if not obj:
+            obj = self
 
-		if not obj:
-			obj = self
+        for attr, value in kwargs.items():
+            try:
+                getattr(obj, attr)(value)
 
-		for attr, value in kwargs.items():
-			try:
-				getattr(obj, attr)(value)
+            except:
+                # print ('set_attributes:', attr, value)
+                self.setCustomAttribute(obj, attr, value)
 
-			except:
-				#print ('setAttributes:', attr, value)
-				self.setCustomAttribute(obj, attr, value)
+    def setCustomAttribute(self, w, attr, value):
+        """Attributes that throw an AttributeError in 'set_attributes' are sent here, where they can be assigned a value.
+        Custom attributes can be set using a trailing underscore convention to aid readability, and differentiate them from standard attributes.
 
+        Parameters:
+                w (obj): The child widget or widgetAction to set attributes for.
+                attr (str): Custom keyword attribute.
+                value (str): The value corresponding to the given attr.
 
-	def setCustomAttribute(self, w, attr, value):
-		'''Attributes that throw an AttributeError in 'setAttributes' are sent here, where they can be assigned a value.
-		Custom attributes can be set using a trailing underscore convention to aid readability, and differentiate them from standard attributes.
+        attributes:
+                copy_ (obj): The widget to copy attributes from.
+                setSize_ (list): The size as an x and y value. ie. (40, 80)
+                setWidth_ (int): The desired width.
+                setHeight_ (int): The desired height.
+                setPosition_ (QPoint)(str): Move to the given global position and center. valid: <QPoint>, 'cursor',
+                addMenu_ (QMenu) = Used for adding additional menus to a parent menu. ex. parentMenu = Menu(); childMenu = Menu('Create', addMenu_=parentMenu)
+                insertSeparator_ (bool): Insert a line separater before the new widget.
+                setLayoutDirection_ (str): Set the layout direction using a string value. ie. 'LeftToRight'
+                setAlignment_ (str): Set the alignment using a string value. ie. 'AlignVCenter'
+                setButtonSymbols_ (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
+                setMinMax_ (str): Set the min, max, and step value using a string value. ex. '.01-10 step.1'
+                setCheckState_ (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
+        """
+        if attr == "copy_":
+            w.setObjectName(value.objectName())
+            w.resize(value.size())
+            w.setText(value.text())
+            w.setWhatsThis(value.whatsThis())
 
-		Parameters:
-			w (obj): The child widget or widgetAction to set attributes for.
-			attr (str): Custom keyword attribute.
-			value (str): The value corresponding to the given attr.
+        elif attr == "setSize_":
+            x, y = value
+            w.resize(QtCore.QSize(x, y))
 
-		attributes:
-			copy_ (obj): The widget to copy attributes from.
-			setSize_ (list): The size as an x and y value. ie. (40, 80)
-			setWidth_ (int): The desired width.
-			setHeight_ (int): The desired height.
-			setPosition_ (QPoint)(str): Move to the given global position and center. valid: <QPoint>, 'cursor', 
-			addMenu_ (QMenu) = Used for adding additional menus to a parent menu. ex. parentMenu = Menu(); childMenu = Menu('Create', addMenu_=parentMenu)
-			insertSeparator_ (bool): Insert a line separater before the new widget.
-			setLayoutDirection_ (str): Set the layout direction using a string value. ie. 'LeftToRight'
-			setAlignment_ (str): Set the alignment using a string value. ie. 'AlignVCenter'
-			setButtonSymbols_ (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
-			setMinMax_ (str): Set the min, max, and step value using a string value. ex. '.01-10 step.1'
-			setCheckState_ (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
-		'''
-		if attr=='copy_':
-			w.setObjectName(value.objectName())
-			w.resize(value.size())
-			w.setText(value.text())
-			w.setWhatsThis(value.whatsThis())
+        elif attr == "setWidth_":
+            w.setFixedWidth(value)
+            # w.resize(value, w.size().height())
 
-		elif attr=='setSize_':
-			x, y = value
-			w.resize(QtCore.QSize(x, y))
+        elif attr == "setHeight_":
+            w.setFixedHeight(value)
+            # w.resize(w.size().width(), value)
 
-		elif attr=='setWidth_':
-			w.setFixedWidth(value)
-			# w.resize(value, w.size().height())
+        elif attr == "setPosition_":
+            if value == "cursor":
+                value = QtGui.QCursor.pos()
+            w.move(w.mapFromGlobal(value - w.rect().center()))  # move and center
 
-		elif attr=='setHeight_':
-			w.setFixedHeight(value)
-			# w.resize(w.size().width(), value)
+        elif attr == "addMenu_":
+            value.addMenu(w)
 
-		elif attr=='setPosition_':
-			if value=='cursor':
-				value = QtGui.QCursor.pos()
-			w.move(w.mapFromGlobal(value - w.rect().center())) #move and center
+        elif attr == "insertSeparator_":
+            if w.__class__.__name__ == "QAction":
+                self.insertSeparator(w)
 
-		elif attr=='addMenu_':
-			value.addMenu(w)
+        elif attr == "setLayoutDirection_":
+            self.set_attributes(w, setLayoutDirection=getattr(QtCore.Qt, value))
 
-		elif attr=='insertSeparator_':
-			if w.__class__.__name__=='QAction':
-				self.insertSeparator(w)
+        elif attr == "setAlignment_":
+            self.set_attributes(w, setAlignment=getattr(QtCore.Qt, value))
 
-		elif attr=='setLayoutDirection_':
-			self.setAttributes(w, setLayoutDirection=getattr(QtCore.Qt, value))
+        elif attr == "setButtonSymbols_":
+            self.set_attributes(
+                w, setButtonSymbols=getattr(QtWidgets.QAbstractSpinBox, value)
+            )
 
-		elif attr=='setAlignment_':
-			self.setAttributes(w, setAlignment=getattr(QtCore.Qt, value))
+        # presets
+        elif attr == "setMinMax_":
+            self.setMinMax(w, value)
 
-		elif attr=='setButtonSymbols_':
-			self.setAttributes(w, setButtonSymbols=getattr(QtWidgets.QAbstractSpinBox, value))
+        elif attr == "setSpinBoxByValue_":
+            self.setSpinBoxByValue(w, value)
 
-		#presets
-		elif attr=='setMinMax_':
-			self.setMinMax(w, value)
+        elif attr == "setCheckState_":
+            state = {
+                0: QtCore.Qt.CheckState.Unchecked,
+                1: QtCore.Qt.CheckState.PartiallyChecked,
+                2: QtCore.Qt.CheckState.Checked,
+            }
+            w.setCheckState(state[value])
 
-		elif attr=='setSpinBoxByValue_':
-			self.setSpinBoxByValue(w, value)
+        else:
+            print("Error: {} has no attribute {}".format(w, attr))
 
-		elif attr=='setCheckState_':
-			state = {0:QtCore.Qt.CheckState.Unchecked, 1:QtCore.Qt.CheckState.PartiallyChecked, 2:QtCore.Qt.CheckState.Checked}
-			w.setCheckState(state[value])
+    def setMinMax(self, spinbox, value):
+        """Set the minimum, maximum, and step values for a spinbox using a shorthand string value.
 
-		else:
-			print('Error: {} has no attribute {}'.format(w, attr))
+        Parameters:
+                spinbox (obj): spinbox widget.
+                value (str): value as shorthand string. ie. '0.00-100 step1'
+        """
+        stepStr = value.split()[1].strip("step")
+        step = float(stepStr)
+        decimals = len(stepStr.split(".")[-1])
 
+        spanStr = value.split("-")
+        minimum = float(spanStr[0])
+        maximum = float(spanStr[1].split()[0])
 
-	def setMinMax(self, spinbox, value):
-		'''Set the minimum, maximum, and step values for a spinbox using a shorthand string value.
+        if hasattr(spinbox, "setDecimals"):
+            self.set_attributes(spinbox, setDecimals=decimals)
 
-		Parameters:
-			spinbox (obj): spinbox widget.
-			value (str): value as shorthand string. ie. '0.00-100 step1'
-		'''
-		stepStr = value.split()[1].strip('step')
-		step = float(stepStr)
-		decimals = len(stepStr.split('.')[-1])
+        self.set_attributes(
+            spinbox,
+            setMinimum=minimum,
+            setMaximum=maximum,
+            setSingleStep=step,
+            setButtonSymbols_="NoButtons",
+        )
 
-		spanStr = value.split('-')
-		minimum = float(spanStr[0])
-		maximum = float(spanStr[1].split()[0])
+    def setSpinBoxByValue(self, spinbox, value):
+        """Set a spinbox's attributes according to a given value.
 
-		if hasattr(spinbox, 'setDecimals'):
-			self.setAttributes(spinbox, setDecimals=decimals)
+        Parameters:
+                spinbox (obj): spinbox widget.
+                value (multi) = attribute value.
+        """
+        maximum = spinbox.maximum()
+        minimum = -maximum
 
-		self.setAttributes(spinbox, setMinimum=minimum, setMaximum=maximum, setSingleStep=step, setButtonSymbols_='NoButtons')
+        if isinstance(value, (int, bool)):
+            step = spinbox.singleStep()
 
+            if isinstance(value, bool):
+                value = int(value)
+                minimum = 0
+                maximum = 1
 
-	def setSpinBoxByValue(self, spinbox, value):
-		'''Set a spinbox's attributes according to a given value.
+            self.set_attributes(
+                spinbox,
+                setValue=value,
+                setMinimum=minimum,
+                setMaximum=maximum,
+                setSingleStep=step,
+                setButtonSymbols_="NoButtons",
+            )
 
-		Parameters:
-			spinbox (obj): spinbox widget.
-			value (multi) = attribute value.
-		'''
-		maximum = spinbox.maximum()
-		minimum = -maximum
+        elif isinstance(value, float):
+            decimals = str(value)[::-1].find(".")  # get decimal places
+            step = moveDecimalPoint(1, -decimals)
 
-		if isinstance(value, (int, bool)):
-			step = spinbox.singleStep()
+            self.set_attributes(
+                spinbox,
+                setValue=value,
+                setMinimum=minimum,
+                setMaximum=maximum,
+                setSingleStep=step,
+                setDecimals=decimals,
+                setButtonSymbols_="NoButtons",
+            )
 
-			if isinstance(value, bool):
-				value = int(value)
-				minimum = 0
-				maximum = 1
+    @staticmethod
+    def transfer_properties(source, target):
+        """Transfers the properties of a source widget to a target widget.
 
-			self.setAttributes(spinbox, setValue=value, setMinimum=minimum, setMaximum=maximum, 
-				setSingleStep=step, setButtonSymbols_='NoButtons',)
+        This function retrieves the meta-object of the source widget and iterates over its properties.
+        For each property, it gets the corresponding value from the source widget and sets it on the target widget.
 
-		elif isinstance(value, float):
-			decimals = str(value)[::-1].find('.') #get decimal places
-			step = moveDecimalPoint(1, -decimals)
+        Parameters:
+                source (QWidget): The widget to copy properties from.
+                target (QWidget): The widget to copy properties to.
+        """
+        source_meta_obj = source.metaObject()
 
-			self.setAttributes(spinbox, setValue=value, setMinimum=minimum, setMaximum=maximum, 
-				setSingleStep=step, setDecimals=decimals, setButtonSymbols_='NoButtons',)
+        for idx in range(
+            source_meta_obj.propertyCount()
+        ):  # Iterate over all properties of the source widget.
+            prop = source_meta_obj.property(idx)
+            attr_name = prop.name()
 
-
-	@staticmethod
-	def transferProperties(source, target):
-		"""Transfers the properties of a source widget to a target widget.
-
-		This function retrieves the meta-object of the source widget and iterates over its properties.
-		For each property, it gets the corresponding value from the source widget and sets it on the target widget.
-
-		Parameters:
-			source (QWidget): The widget to copy properties from.
-			target (QWidget): The widget to copy properties to.
-		"""
-		source_meta_obj = source.metaObject()
-
-		for idx in range(source_meta_obj.propertyCount()): #Iterate over all properties of the source widget.
-			prop = source_meta_obj.property(idx)
-			attr_name = prop.name()
-
-			value = source.property(attr_name) #Get the value of the corresponding property in the source widget.
-			target.setProperty(attr_name, value) #Set the value of the property on the target widget.
-
-
-
-
-
-
-
+            value = source.property(
+                attr_name
+            )  # Get the value of the corresponding property in the source widget.
+            target.setProperty(
+                attr_name, value
+            )  # Set the value of the property on the target widget.
 
 
 if __name__ == "__main__":
-	import sys
-	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
+    import sys
 
-	sys.exit(app.exec_())
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
+        sys.argv
+    )  # return the existing QApplication object, or create a new one if none exists.
 
+    sys.exit(app.exec_())
 
 
 # -----------------------------------------------------------------------------
 # Notes
 # -----------------------------------------------------------------------------
 
-'''
+"""
 Promoting a widget in designer to use a custom class:
->	In Qt Designer, select all the widgets you want to replace, 
-		then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace, 
+        then right-click them and select 'Promote to...'. 
 
->	In the dialog:
-		Base Class:		Class from which you inherit. ie. QWidget
-		Promoted Class:	Name of the class. ie. "MyWidget"
-		Header File:	Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
+>   In the dialog:
+        Base Class:     Class from which you inherit. ie. QWidget
+        Promoted Class: Name of the class. ie. "MyWidget"
+        Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->	Then click "Add", "Promote", 
-		and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
-'''
+>   Then click "Add", "Promote", 
+        and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
+"""
 
 # depricated ------------------------------------------------------------------------
 
 # def moveDecimalPoint(num, decimal_places):
-# 		'''Move the decimal place in a given number.
+#       '''Move the decimal place in a given number.
 
-# 		Parameters:
-# 			decimal_places (int): decimal places to move. (works only with values 0 and below.)
-		
-# 		Return:
-# 			(float) the given number with it's decimal place moved by the desired amount.
-		
-# 		ex. moveDecimalPoint(11.05, -2) Return: 0.1105
-# 		'''
-# 		for _ in range(abs(decimal_places)):
+#       Parameters:
+#           decimal_places (int): decimal places to move. (works only with values 0 and below.)
 
-# 			if decimal_places>0:
-# 				num *= 10; #shifts decimal place right
-# 			else:
-# 				num /= 10.; #shifts decimal place left
+#       Returns:
+#           (float) the given number with it's decimal place moved by the desired amount.
 
-# 		return float(num)
+#       ex. moveDecimalPoint(11.05, -2) Returns: 0.1105
+#       '''
+#       for _ in range(abs(decimal_places)):
 
+#           if decimal_places>0:
+#               num *= 10; #shifts decimal place right
+#           else:
+#               num /= 10.; #shifts decimal place left
 
-
+#       return float(num)
 
 
 # --------------------------------------------------------------------------------------------

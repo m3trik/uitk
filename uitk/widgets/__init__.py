@@ -5,15 +5,14 @@ import pkgutil
 import inspect
 
 
-__package__ = 'uitk.widgets'
+__package__ = "uitk.widgets"
 
 
 # Define a dictionary to map class names to their respective modules
 CLASS_TO_MODULE = {}
 
 # Build the CLASS_TO_MODULE dictionary by iterating over all submodules of the package
-for importer, modname, ispkg in \
-        pkgutil.walk_packages(__path__, __name__ + '.'):
+for importer, modname, ispkg in pkgutil.walk_packages(__path__, __name__ + "."):
     module = importlib.import_module(modname)
     for name, obj in module.__dict__.items():
         if inspect.isclass(obj):
@@ -21,6 +20,7 @@ for importer, modname, ispkg in \
 
 # Define a dictionary to store imported module objects
 IMPORTED_MODULES = {}
+
 
 def __getattr__(name):
     # Check if the requested attribute is a class we need to import
@@ -38,26 +38,20 @@ def __getattr__(name):
     # If the requested attribute is not a class we handle, raise an AttributeError
     raise AttributeError(f"module {__package__} has no attribute '{name}'")
 
+
 # --------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------------------------
 # Notes
 # --------------------------------------------------------------------------------------------
 
-'''
+"""
 EXAMPLE USE CASE:
 import uitk.widgets as wgts
 
 wgts.PushButton #get a specific widget.
-'''
+"""
 
 # --------------------------------------------------------------------------------------------
 # deprecated:
@@ -65,12 +59,12 @@ wgts.PushButton #get a specific widget.
 
 
 # def __getattr__(attr_name):
-# 	"""This function dynamically imports a module and returns an attribute from the module. 
+# 	"""This function dynamically imports a module and returns an attribute from the module.
 
 # 	Parameters:
-# 		attr_name (str): The name of the attribute to be imported. The name should be in the format 
+# 		attr_name (str): The name of the attribute to be imported. The name should be in the format
 # 					'module_name.attribute_name' or just 'attribute_name'.
-# 	Return:
+# 	Returns:
 # 		(obj) The attribute specified by the `attr_name` argument.
 
 # 	:Raises:
