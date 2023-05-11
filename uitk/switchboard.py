@@ -7,6 +7,7 @@ import importlib
 import itertools
 import logging
 import inspect
+from collections import defaultdict
 from typing import List, Union
 from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtUiTools import QUiLoader
@@ -116,11 +117,12 @@ class Switchboard(QUiLoader):
         self.persist = persist
         self.set_legal_name_no_tags_attr = set_legal_name_no_tags_attr
 
-        self._uiHistory = []  # previously loaded ui.
+        self._loadedUi = {}  # all loaded ui.
+        self._uiHistory = []  # ordered ui history.
         self._wgtHistory = []  # previously used widgets.
         self._registeredWidgets = {}  # all registered custom widgets.
-        self._slot_instances = {}  # any slots that have been instantiated.
-        self._loadedUi = {}  # all loaded ui.
+        self._slot_instances = {}  # slot classes that have been instantiated.
+        self._connected_slots = defaultdict(list)  # currently connected slots.
         self._synced_pairs = set()  # hashed values representing synced widgets.
         self._gcProtect = set()  # objects protected from garbage collection.
 
@@ -337,7 +339,7 @@ class Switchboard(QUiLoader):
             (tuple) list of methods.
         """
         # limit to last 10 elements and get methods from widget history.
-        cmds = [w.getSlot() for w in self._wgtHistory[-10:]]
+        cmds = [w.get_slot() for w in self._wgtHistory[-10:]]
         # remove any duplicates (keeping the last element). [hist.remove(l) for l in hist[:] if hist.count(l)>1] #
         hist = tuple(dict.fromkeys(cmds[::-1]))[::-1]
         return hist
@@ -429,13 +431,13 @@ class Switchboard(QUiLoader):
             # get the default widget signals as list. ie. [<widget.valueChanged>]
             w.signals = self.get_default_signals(w)
             # get a string stripped of trailing non-letter chars. ie. 'cmb' from 'cmb015'
-            w.baseName = self.get_base_name(w.name)
-            w.getSlot = lambda w=w, u=ui: getattr(self.get_slots(u), w.name, None)
+            w.base_name = self.get_base_name(w.name)
+            w.get_slot = lambda w=w, u=ui: getattr(self.get_slots(u), w.name, None)
 
             set_attributes(w, **kwargs)
             setattr(ui, w.name, w)
             added_widgets.add(w)
-            # logging.info(0, 'initWidgts:', w.ui.name.ljust(26), w.baseName.ljust(25), (w.name or type(w).__name__).ljust(25), w.type.ljust(15), w.derived_type.ljust(15), id(w)) #debug
+            # logging.info(0, 'initWidgts:', w.ui.name.ljust(26), w.base_name.ljust(25), (w.name or type(w).__name__).ljust(25), w.type.ljust(15), w.derived_type.ljust(15), id(w)) #debug
 
             if recursive:
                 child_widgets = w.findChildren(QtWidgets.QWidget)
@@ -689,7 +691,7 @@ class Switchboard(QUiLoader):
         if isinstance(clss, str):
             clss_path = clss  # Save the path for future reference
         else:  # Derive path from class object
-            module_path = inspect.getfile(clss.__class__)
+            module_path = inspect.getfile(clss)
             clss_path = os.path.abspath(module_path)
 
         if clss_path not in self._slot_instances:
@@ -721,6 +723,10 @@ class Switchboard(QUiLoader):
 
         if hasattr(ui, "_slots"):
             return ui._slots
+
+        if inspect.isclass(self.slots_location):
+            clss = self.slots_location
+            return self.set_slots(ui, clss)
 
         try:
             found_path = self._find_slots_class_module(ui)
@@ -1141,7 +1147,7 @@ class Switchboard(QUiLoader):
                 w
                 for u in self._loadedUi.values()
                 for w in u.widgets
-                if w.getSlot() == method
+                if w.get_slot() == method
             ),
             None,
         )
@@ -1158,17 +1164,19 @@ class Switchboard(QUiLoader):
             else: all of the methods associated to the given ui name as a list.
 
         Example:
-            sb.getSlot('polygons', <b022>)() #call method <b022> of the 'polygons' class
+            sb.get_slot('polygons', <b022>)() #call method <b022> of the 'polygons' class
         """
         if ui is None or isinstance(ui, str):
             ui = self.get_ui(ui)
 
         if widget is None:  # get all methods for the given ui name.
-            return [w.getSlot() for w in ui.widgets]
+            return [w.get_slot() for w in ui.widgets]
 
         elif isinstance(widget, str):
             return next(
-                iter(w.getSlot() for w in ui.widgets if w.getSlot().__name__ == widget),
+                iter(
+                    w.get_slot() for w in ui.widgets if w.get_slot().__name__ == widget
+                ),
                 None,
             )
 
@@ -1176,7 +1184,7 @@ class Switchboard(QUiLoader):
             self.init_widgets(ui, widget)
 
         return next(
-            iter(w.getSlot() for w in ui.widgets if w.getSlot() == widget.getSlot()),
+            iter(w.get_slot() for w in ui.widgets if w.get_slot() == widget.get_slot()),
             None,
         )
 
@@ -1240,13 +1248,7 @@ class Switchboard(QUiLoader):
         return signals
 
     def connect_slots(self, ui, widgets=None):
-        """Connect signals to slots for the widgets of the given ui.
-        Works with both single slots or multiple slots given as a list.
-
-        Parameters:
-            ui (obj): A previously loaded dynamic ui object.
-            widgets (obj/list): QWidget(s)
-        """
+        """Connect signals to slots for the widgets of the given ui."""
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Incorrect datatype: {type(ui)}")
 
@@ -1254,71 +1256,37 @@ class Switchboard(QUiLoader):
             if ui.is_connected:
                 return
             widgets = ui.widgets
-        # logging.info(f"connect_slots: {ui.name}\n\t{[w.objectName() for w in Iter.makeList(widgets)]}") #debug
 
-        # convert 'widgets' to a list if it is not one already.
-        for w in Iter.makeList(widgets):
-            # logging.info(f"           >: {w.name} {w.getSlot()}") #debug
-            if w.getSlot() and w.signals:
-                for s in w.signals:
-                    if not s:
-                        continue
-                    try:
-                        if isinstance(w.getSlot(), (list, set, tuple)):
-                            # connect to multiple slots from a list.
-                            map(s.connect, w.getSlot())
-                        else:
-                            # connect single slot (ex. main and cameras ui)
-                            s.connect(w.getSlot())
-                        # add the widget to the widget history set on connect. (*args prevents 'w' from being overwritten by the parameter emitted by the signal.)
-                        s.connect(lambda *args, w=w: self._wgtHistory.append(w))
-
-                    except Exception as error:
-                        logging.error(
-                            f"# {__file__} in connect_slots\n#\t{ui.name} {w.name} {s} {w.getSlot()}\n#\t{error}."
-                        )
-
-        if widgets is None:
-            ui.is_connected = True  # set ui state as slots connected.
+        for widget in Iter.makeList(widgets):
+            slot = widget.get_slot()
+            if slot:
+                signals = [signal for signal in widget.signals if signal is not None]
+                for signal in signals:
+                    if slot not in self._connected_slots[signal]:
+                        signal.connect(slot)
+                        self._connected_slots[signal].append(slot)
+                    signal.connect(lambda *args, w=widget: self._wgtHistory.append(w))
+        ui.is_connected = True
 
     def disconnect_slots(self, ui, widgets=None):
-        """Disconnect signals from slots for the widgets of the given ui.
-        Works with both single slots or multiple slots given as a list.
-
-        Parameters:
-            ui (obj): A previously loaded dynamic ui object.
-            widgets (obj/list): QWidget
-        """
+        """Disconnect signals from slots for the widgets of the given ui."""
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Incorrect datatype: {type(ui)}")
 
-        # logging.info(f"disconnect_slots: {ui.name}")  # debug
         if widgets is None:
             if not ui.is_connected:
                 return
             widgets = ui.widgets
 
-        # convert 'widgets' to a list if it is not one already.
-        for w in Iter.makeList(widgets):
-            # logging.info(f"           >: {w.name} {w.getSlot()}")  # debug
-            if w.getSlot() and w.signals:
-                for s in w.signals:
-                    if not s:
-                        continue
-                    try:
-                        # disconnect all #map(signal.disconnect, slot) #disconnect multiple slots from a list.
-                        if isinstance(w.getSlot(), (list, set, tuple)):
-                            s.disconnect()
-                        else:  # disconnect single slot (main and cameras ui)
-                            s.disconnect(w.getSlot())
-
-                    except Exception as error:
-                        logging.error(
-                            f"# {__file__} in disconnect_slots\n#\t{ui.name} {w.name} {s} {w.getSlot()}\n#\t{error}."
-                        )
-
-        if widgets is None:
-            ui.is_connected = False  # set ui state as slots disconnected.
+        for widget in Iter.makeList(widgets):
+            slot = widget.get_slot()
+            if slot:
+                signals = [signal for signal in widget.signals if signal is not None]
+                for signal in signals:
+                    if slot in self._connected_slots[signal]:
+                        signal.disconnect(slot)
+                        self._connected_slots[signal].remove(slot)
+        ui.is_connected = False
 
     def connect_multi(self, widgets, signals, slots, clss=None):
         """Connect multiple signals to multiple slots at once.
@@ -1895,9 +1863,6 @@ class Switchboard(QUiLoader):
 
 # --------------------------------------------------------------------------------------------
 
-
-# --------------------------------------------------------------------------------------------
-
 if __name__ == "__main__":
 
     class MyProject:
@@ -1912,34 +1877,29 @@ if __name__ == "__main__":
 
     sb = Switchboard(slots_location=MyProjectSlots)
     ui = sb.example
+    ui.connect_slots()
 
     print("ui:".ljust(20), ui)
     print("ui name:".ljust(20), ui.name)
     print("ui path:".ljust(20), ui.path)  # The directory path containing the UI file
-    print(
-        "is current ui:".ljust(20), ui.is_current_ui
-    )  # True if the UI is set as current
-    print(
-        "is initialized:".ljust(20), ui.is_initialized
-    )  # True after the UI is first shown
-    print(
-        "is connected:".ljust(20), ui.is_connected
-    )  # True if the UI is connected to its slots
+    print("is current ui:".ljust(20), ui.is_current)
+    print("is initialized:".ljust(20), ui.is_initialized)
+    print("is connected:".ljust(20), ui.is_connected)
     print("slots:".ljust(20), ui.slots)  # The associated slots class instance
-    print("method:".ljust(20), ui.MyButtonsObjectName.getSlot())
+    print("method:".ljust(20), ui.MyButtonsObjectName.get_slot())
     print(
         "widget from method:".ljust(20),
-        sb.get_widget_from_method(ui.MyButtonsObjectName.getSlot()),
+        sb.get_widget_from_method(ui.MyButtonsObjectName.get_slot()),
     )
-    for w in ui.widgets:
+    for w in ui.widgets:  # All the widgets of the UI
         print(
             "child widget:".ljust(20),
             (w.name or type(w).__name__).ljust(20),
-            w.baseName.ljust(20),
+            w.base_name.ljust(20),
             w.type.ljust(15),
             w.derived_type.ljust(15),
             id(w),
-        )  # All the widgets of the UI
+        )
 
     ui.show(app_exec=True)
 

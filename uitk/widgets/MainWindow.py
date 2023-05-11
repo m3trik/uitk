@@ -47,7 +47,7 @@ class MainWindow(QtWidgets.QMainWindow, StateManager, Attributes, StyleSheet):
         Properties:
             <UI>.name (str): The UI filename.
             <UI>.path (str): The directory path containing the UI file.
-            <UI>.is_current_ui (bool): True if the UI is set as current.
+            <UI>.is_current (bool): True if the UI is set as current.
             <UI>.is_initialized (bool): True after the UI is first shown.
             <UI>.is_connected (bool): True if the UI is connected to its slots.
             <UI>.connect_on_show: Establish connections when the UI becomes visible.
@@ -150,7 +150,7 @@ class MainWindow(QtWidgets.QMainWindow, StateManager, Attributes, StyleSheet):
         return isinstance(self.parent(), QtWidgets.QStackedWidget)
 
     @property
-    def is_current_ui(self):
+    def is_current(self):
         """Returns True if the widget is the currently active UI, False otherwise."""
         return self == self.sb.get_current_ui()
 
@@ -233,8 +233,7 @@ class MainWindow(QtWidgets.QMainWindow, StateManager, Attributes, StyleSheet):
 
     def connect_slots(self):
         """Connects the widget's signals to their respective slots."""
-        if not self.is_connected:
-            self.sb.connect_slots(self)
+        self.sb.connect_slots(self)
 
     def _connect_on_show(self):
         """Connects the widget's signals to their respective slots when the widget becomes visible."""
@@ -329,9 +328,6 @@ class MainWindow(QtWidgets.QMainWindow, StateManager, Attributes, StyleSheet):
             exit_code = self.sb.app.exec_()
             if exit_code != -1:
                 sys.exit(exit_code)
-
-
-# -----------------------------------------------------------------------------
 
 
 # -----------------------------------------------------------------------------
