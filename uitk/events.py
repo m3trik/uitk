@@ -11,7 +11,7 @@ class EventFactoryFilter(QtCore.QObject):
     Forwards events to event handlers dynamically based on the event type.
 
     Parameters:
-            parent (QWidget, optional): The parent widget for the event filter. Defaults to None.
+        parent (QWidget, optional): The parent widget for the event filter. Defaults to None.
     """
 
     def __init__(self, parent=None, forward_events_to=None, event_name_prefix=""):
@@ -25,17 +25,17 @@ class EventFactoryFilter(QtCore.QObject):
         """Get a formatted event method name string from a given event type using a regular expression.
 
         Parameters:
-                event_type (QEvent.Type): The event type whose method name needs to be generated.
-                prefix (str, optional): A prefix for the event method names. Defaults to an empty string.
+            event_type (QEvent.Type): The event type whose method name needs to be generated.
+            prefix (str, optional): A prefix for the event method names. Defaults to an empty string.
 
         Returns:
-                str: The formatted event method name.
+            str: The formatted event method name.
 
         Examples:
-                format_event_name(QtCore.QEvent.Type.Enter) returns 'enterEvent'
-                format_event_name(QtCore.QEvent.Type.MouseButtonPress) returns 'mousePressEvent'
-                format_event_name(QtCore.QEvent.Type.Enter, prefix='ef_') returns 'ef_enterEvent'
-                format_event_name(QtCore.QEvent.Type.MouseButtonPress, prefix='ef_') returns 'ef_mousePressEvent'
+            format_event_name(QtCore.QEvent.Type.Enter) returns 'enterEvent'
+            format_event_name(QtCore.QEvent.Type.MouseButtonPress) returns 'mousePressEvent'
+            format_event_name(QtCore.QEvent.Type.Enter, prefix='ef_') returns 'ef_enterEvent'
+            format_event_name(QtCore.QEvent.Type.MouseButtonPress, prefix='ef_') returns 'ef_mousePressEvent'
         """
         event_name = re.sub(
             r"^.*\.([A-Z])([^B]*)(?:Button)?(.*)$",
@@ -50,11 +50,11 @@ class EventFactoryFilter(QtCore.QObject):
         method derived from the event type string.
 
         Parameters:
-                widget (QWidget): The widget that the event filter is applied to.
-                event (QEvent): The event that needs to be processed.
+            widget (QWidget): The widget that the event filter is applied to.
+            event (QEvent): The event that needs to be processed.
 
         Returns:
-                bool: True if the event was handled, False otherwise.
+            bool: True if the event was handled, False otherwise.
         """
         try:
             event_handler = getattr(
@@ -80,17 +80,21 @@ class MouseTracking(QtCore.QObject):
     This method can be customized to implement the desired behavior for such widgets.
 
     Usage:
-            mouse_tracking = MouseTracking(parent_widget)
-            where parent_widget is the widget whose child widgets you want to track.
+        mouse_tracking = MouseTracking(parent_widget)
+        where parent_widget is the widget whose child widgets you want to track.
 
     Attributes:
-            _prev_mouse_over (list): Previous list of widgets under the mouse cursor.
-            _mouse_over (list): Current list of widgets under the mouse cursor.
-            _filtered_widgets (set): Set of widgets that have been processed for special handling (eg. widgets with a viewport).
+        _prev_mouse_over (list): Previous list of widgets under the mouse cursor.
+        _mouse_over (list): Current list of widgets under the mouse cursor.
+        _filtered_widgets (set): Set of widgets that have been processed for special handling (eg. widgets with a viewport).
     """
 
     def __init__(self, parent):
         super().__init__(parent)
+
+        if not isinstance(parent, QtWidgets.QWidget):
+            raise TypeError("Parent must be a QWidget derived type")
+
         self._prev_mouse_over = []
         self._mouse_over = []
         parent.installEventFilter(self)
@@ -147,11 +151,20 @@ class MouseTracking(QtCore.QObject):
 
     def eventFilter(self, watched, event):
         if event.type() == QtCore.QEvent.MouseMove:
-            if isinstance(self.parent(), QtWidgets.QStackedWidget):
-                current_widget = self.parent().currentWidget()
-                self.track(current_widget.findChildren(QtWidgets.QWidget))
-            else:
-                self.track(self.parent().findChildren(QtWidgets.QWidget))
+            try:
+                parent = self.parent()
+
+                if isinstance(parent, QtWidgets.QStackedWidget):
+                    current_widget = parent.currentWidget()
+                    widgets = current_widget.findChildren(QtWidgets.QWidget)
+                else:
+                    widgets = parent.findChildren(QtWidgets.QWidget)
+
+                self.track(widgets)
+            except AttributeError:
+                pass
+            except TypeError:
+                pass
 
         return super().eventFilter(watched, event)
 

@@ -1,11 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.attributes import Attributes
 from uitk.widgets.menu import MenuInstance
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class LineEdit(QtWidgets.QLineEdit, MenuInstance, Attributes):
+class LineEdit(QtWidgets.QLineEdit, MenuInstance, AttributesMixin):
     """ """
 
     shown = QtCore.Signal()

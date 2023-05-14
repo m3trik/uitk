@@ -1,10 +1,10 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.attributes import Attributes
+from PySide2 import QtCore, QtWidgets
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class MessageBox(QtWidgets.QMessageBox, Attributes):
+class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
     """Displays a message box with HTML formatting for a set time before closing.
 
     Parameters:

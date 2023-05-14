@@ -2,14 +2,14 @@
 # coding=utf-8
 from typing import Optional
 from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.attributes import Attributes
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class Menu(QtWidgets.QMenu, Attributes):
+class Menu(QtWidgets.QMenu, AttributesMixin):
     """
     Parameters:
             menu_type (str): Menu style. valid parameters are: 'standard', 'context', 'form'
-            title (str): Text displayed at the menu's header.
+            title (str): TextMixin displayed at the menu's header.
             padding (int): Area surrounding the menu.
             childHeight (int): The minimum height of any child widgets (excluding the 'Apply' button).
             prevent_hide (bool): Prevent the menu from hiding.
@@ -155,7 +155,7 @@ class Menu(QtWidgets.QMenu, Attributes):
         If no title is given, the fuction will attempt to use the menu parents text.
 
         Parameters:
-                title (str): Text to apply to the menu's header.
+                title (str): TextMixin to apply to the menu's header.
         """
         if not title:
             try:

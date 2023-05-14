@@ -1,12 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.attributes import Attributes
-from uitk.widgets.text import RichText
-from uitk.widgets.menu import MenuInstance
+from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.text import RichText
 
 
-class OptionBox(QtWidgets.QPushButton, Attributes, RichText):
+class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
     """ """
 
     def __init__(self, parent, box_text="⧉", showMenuOnMouseOver=False, **kwargs):

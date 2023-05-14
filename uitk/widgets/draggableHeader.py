@@ -1,14 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.attributes import Attributes
-from uitk.widgets.text import RichText, TextOverlay
 from uitk.widgets.menu import MenuInstance
 from uitk.widgets.optionBox import OptionBox
+from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
 class DraggableHeader(
-    QtWidgets.QLabel, MenuInstance, Attributes, RichText, TextOverlay
+    QtWidgets.QLabel, MenuInstance, AttributesMixin, RichText, TextOverlay
 ):
     """Draggable/Checkable QLabel."""
 

@@ -5,7 +5,7 @@ from PySide2 import QtCore, QtGui, QtWidgets
 
 class RichText:
     """Rich text support for widgets.
-    Text with rich text formatting will be set as rich text, otherwise it will be handled as usual.
+    TextMixin with rich text formatting will be set as rich text, otherwise it will be handled as usual.
 
     ex. <font style="color: rgb(80,180,100)">Operation successful.</font>
     ex. <hl style="color:red;">Error:</hl>
@@ -192,7 +192,7 @@ class RichText:
         """Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.
 
         Parameters:
-                alignment (str/obj): Text alignment. valid values are: 'AlignLeft', 'AlignCenter', 'AlignRight' or QtCore.Qt.AlignLeft etc.
+                alignment (str/obj): TextMixin alignment. valid values are: 'AlignLeft', 'AlignCenter', 'AlignRight' or QtCore.Qt.AlignLeft etc.
         """
         if isinstance(alignment, str):
             alignment = getattr(QtCore.Qt, alignment)
@@ -244,7 +244,7 @@ class TextOverlay:
                 text (str): The desired widget's display text.
                 index (int): For setting text requires an index. ie. comboBox
                 color (str):  The desired text color.
-                alignment (str/obj): Text alignment. valid values are: 'AlignLeft', 'AlignCenter', 'AlignRight' or QtCore.Qt.AlignLeft etc.
+                alignment (str/obj): TextMixin alignment. valid values are: 'AlignLeft', 'AlignCenter', 'AlignRight' or QtCore.Qt.AlignLeft etc.
         """
         self.textOverlayLabel.setText(text)
 
@@ -258,7 +258,7 @@ class TextOverlay:
         """Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.
 
         Parameters:
-                alignment (str/obj): Text alignment. valid values are: 'AlignLeft', 'AlignCenter', 'AlignRight' or QtCore.Qt.AlignLeft etc.
+                alignment (str/obj): TextMixin alignment. valid values are: 'AlignLeft', 'AlignCenter', 'AlignRight' or QtCore.Qt.AlignLeft etc.
         """
         if isinstance(alignment, str):
             alignment = getattr(QtCore.Qt, alignment)

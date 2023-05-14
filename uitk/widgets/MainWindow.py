@@ -1,18 +1,23 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-import re
 import logging
 from functools import partial
-from PySide2 import QtCore, QtGui, QtWidgets
+from PySide2 import QtCore, QtWidgets
 from pythontk import File
-from uitk.widgets.stateManager import StateManager
-from uitk.widgets.attributes import Attributes
-from uitk.widgets.docking import Docking
-from uitk.widgets.styleSheet import StyleSheet
+from uitk.widgets.mixins.state_manager import StateManagerMixin
+from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.docking import DockingMixin
+from uitk.widgets.mixins.style_sheet import StyleSheetMixin
 
 
-class MainWindow(QtWidgets.QMainWindow, StateManager, Attributes, StyleSheet):
+class MainWindow(
+    QtWidgets.QMainWindow,
+    StateManagerMixin,
+    AttributesMixin,
+    DockingMixin,
+    StyleSheetMixin,
+):
     on_show = QtCore.Signal()
 
     def __init__(
@@ -34,13 +39,13 @@ class MainWindow(QtWidgets.QMainWindow, StateManager, Attributes, StyleSheet):
             switchboard_instance (obj): An instance of the switchboard class.
             ui_filepath (str): The full path to a UI file.
             connect_on_show (bool): While True, the UI will be set as current and connections established when it becomes visible.
-            set_name_attr (bool): If True, sets the name attribute for the object. Defaults to True.
-            set_legal_name_attr (bool): If True, sets the legal name attribute for the object (provinding there are no conflicts). Defaults to True.
-            set_legal_name_no_tags_attr (bool): If True, sets the legal name without tags attribute for the object (provinding there are no conflicts). Defaults to False.
+            set_name_attr (bool): If True, sets a switchboard attribute using the UI name. Defaults to True.
+            set_legal_name_attr (bool): If True, sets a switchboard attribute using the UI legal name (provinding there are no conflicts). Defaults to True.
+            set_legal_name_no_tags_attr (bool): If True, sets a switchboard attribute using the UI legal name without tags(provinding there are no conflicts). Defaults to False.
             suppress_warnings (bool): Suppress legal name warning messages if True.
             **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
 
-        Attributes:
+        AttributesMixin:
             on_show: A signal that is emitted when the window is shown.
             sb: An instance of the switchboard class.
 
@@ -92,8 +97,8 @@ class MainWindow(QtWidgets.QMainWindow, StateManager, Attributes, StyleSheet):
         self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
         self.set_attributes(**kwargs)
 
-        self.docking = Docking(self)
-        self.docking.docking_enabled = True
+        # self.docking = DockingMixin(self)
+        # self.docking.docking_enabled = True
 
         self.set_style()  # Set the stylesheet
         self.load_widget_states()  # Load widget states

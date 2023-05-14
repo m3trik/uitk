@@ -1,11 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.attributes import Attributes
-from uitk.widgets.convert import Convert
+from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.convert import ConvertMixin
 
 
-class Region(QtWidgets.QWidget, Attributes, Convert):
+class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
     """A custom QWidget that represents a region with a specified shape and size.
     Emits an on_enter signal when the mouse cursor enters the region.
     """

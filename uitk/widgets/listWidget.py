@@ -1,60 +1,60 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.attributes import Attributes
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class ListWidget(QtWidgets.QListWidget, Attributes):
+class ListWidget(QtWidgets.QListWidget, AttributesMixin):
     """A QListWidget subclass that adds functionality for adding and getting items, and for expanding and hiding sub-lists.
 
-    Attributes:
-            parent (obj): The parent object.
-            child_height (int): The height of child widgets.
-            position (str): The position of the menu relative to the parent widget.
-            **kwargs: Additional keyword arguments to pass to the widget.
+    AttributesMixin:
+        parent (obj): The parent object.
+        child_height (int): The height of child widgets.
+        position (str): The position of the menu relative to the parent widget.
+        **kwargs: Additional keyword arguments to pass to the widget.
 
     Methods:
-            __init__(self, parent=None, child_height=19, position='topLeft', **kwargs):
-                    Initializes a new instance of the ListWidget class.
+        __init__(self, parent=None, child_height=19, position='topLeft', **kwargs):
+                Initializes a new instance of the ListWidget class.
 
-            convert(self, items, to='QLabel', **kwargs):
-                    Converts the given items to a specified widget type.
+        convert(self, items, to='QLabel', **kwargs):
+                Converts the given items to a specified widget type.
 
-            getItems(self):
-                    Returns a list of items in the list widget.
+        getItems(self):
+                Returns a list of items in the list widget.
 
-            getItemsByText(self, text):
-                    Returns a list of items in the list widget that have the specified text.
+        getItemsByText(self, text):
+                Returns a list of items in the list widget that have the specified text.
 
-            getItemWidgets(self):
-                    Returns a list of widgets in the list widget.
+        getItemWidgets(self):
+                Returns a list of widgets in the list widget.
 
-            getItemWidgetsByText(self, text):
-                    Returns a list of widgets in the list widget that have the specified text.
+        getItemWidgetsByText(self, text):
+                Returns a list of widgets in the list widget that have the specified text.
 
-            setData(self, wItem, data, typ=QtCore.Qt.UserRole):
-                    Sets data for the specified item widget.
+        setData(self, wItem, data, typ=QtCore.Qt.UserRole):
+                Sets data for the specified item widget.
 
-            getData(self, wItem, typ=QtCore.Qt.UserRole):
-                    Returns the data for the specified item widget.
+        getData(self, wItem, typ=QtCore.Qt.UserRole):
+                Returns the data for the specified item widget.
 
-            addItem(self, i):
-                    Adds an item to the list widget.
+        addItem(self, i):
+                Adds an item to the list widget.
 
-            addItems(self, items):
-                    Adds multiple items to the list widget.
+        addItems(self, items):
+                Adds multiple items to the list widget.
 
-            add(self, w, data=None, **kwargs):
-                    Adds a widget to the list widget.
+        add(self, w, data=None, **kwargs):
+                Adds a widget to the list widget.
 
-            _addList(self, w):
-                    Adds an expanding list to the specified widget.
+        _addList(self, w):
+                Adds an expanding list to the specified widget.
 
-            _hideLists(self, listWidget):
-                    Hides the specified list and all previous lists in its hierarchy.
+        _hideLists(self, listWidget):
+                Hides the specified list and all previous lists in its hierarchy.
 
-            eventFilter(self, w, event):
-                    Filters events for the specified widget.
+        eventFilter(self, w, event):
+                Filters events for the specified widget.
     """
 
     def __init__(
@@ -71,14 +71,13 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
         """Initializes a new instance of the ListWidget class.
 
         Parameters:
-                parent (obj): The parent object.
-                position (str): The position of the menu relative to the parent widget.
-                                valid values are: 'right', 'left', 'top', 'bottom'
-                child_width (int): The width of child widgets.
-                child_height (int): The height of child widgets.
-                max_child_width (int): The maximum allowed width of child widgets.
-                drag_interaction (bool): Interact with the list while in the mouse drag state.
-                **kwargs: Additional keyword arguments to pass to the widget.
+            parent (obj): The parent object.
+            position (str): The position of the menu relative to the parent widget. valid values are: 'right', 'left', 'top', 'bottom'
+            child_width (int): The width of child widgets.
+            child_height (int): The height of child widgets.
+            max_child_width (int): The maximum allowed width of child widgets.
+            drag_interaction (bool): Interact with the list while in the mouse drag state.
+            **kwargs: Additional keyword arguments to pass to the widget.
         """
         super().__init__(parent)
 
@@ -137,15 +136,15 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
         the widget can be passed as keyword arguments.
 
         Parameters:
-                w (str or obj): Widget object or string representation of a widget class name to be added to the menu.
-                data (optional): Data to be associated with the added item(s).
-                kwargs: Additional attributes for the widget.
+            w (str or obj): Widget object or string representation of a widget class name to be added to the menu.
+            data (optional): Data to be associated with the added item(s).
+            kwargs: Additional attributes for the widget.
 
         Returns:
-                obj: The added item object.
+            obj: The added item object.
 
         Example call:
-                menu().add(w='QAction', setText='', insertSeparator=True)
+            menu().add(w='QAction', setText='', insertSeparator=True)
         """
         if isinstance(w, (dict, list, tuple, set)):
             if isinstance(data, (list, tuple, set)):
@@ -153,9 +152,8 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
             return self.addItems(w)
 
         try:  # get the widget from string class name.
-            w = getattr(QtWidgets, w)(
-                self
-            )  # ex. QtWidgets.QAction(self) object from string.
+            w = getattr(QtWidgets, w)(self)
+            # ex. QtWidgets.QAction(self) object from string.
         except AttributeError:  # if w is a widget object instead of string.
             try:
                 w = w()  # ex. QtWidgets.QAction(self) object.
@@ -163,9 +161,8 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
                 pass
 
         typ = w.__class__.__name__
-        if (
-            typ == "str"
-        ):  # if 'w' is still a string; create a label and use the str value as the label's text.
+        # if 'w' is still a string; create a label and use the str value as the label's text.
+        if typ == "str":
             lbl = QtWidgets.QLabel(self)
             lbl.setText(w)
             w = lbl
@@ -187,9 +184,8 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
             lambda w: w.listWidget if hasattr(w, "listWidget") else self._addList(w)
         )
 
-        self.set_attributes(
-            w, **kwargs
-        )  # set any additional given keyword args for the widget.
+        # set any additional given keyword args for the widget.
+        self.set_attributes(w, **kwargs)
         self.raise_()
 
         return w
@@ -201,13 +197,13 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
         object and is initially hidden.
 
         Parameters:
-                w (obj): Widget object to which the expandable list will be added.
+            w (obj): Widget object to which the expandable list will be added.
 
         Returns:
-                obj: The added ListWidget object.
+            obj: The added ListWidget object.
         """
         listWidget = ListWidget(
-            self.window(),
+            self.parent(),
             position=self.position,
             offset=self.offset,
             child_height=self.child_height,
@@ -230,7 +226,7 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
         is within the list's boundaries.
 
         Parameters:
-                listWidget (obj): ListWidget object to start hiding from.
+            listWidget (obj): ListWidget object to start hiding from.
         """
         while hasattr(listWidget, "prev"):
             if (not force) and listWidget.rect().contains(
@@ -247,11 +243,11 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
         depending on the mouse cursor position and the defined position of the list.
 
         Parameters:
-                w (QWidget): The widget for which the event is being filtered.
-                event (QEvent): The event to be filtered.
+            w (QWidget): The widget for which the event is being filtered.
+            event (QEvent): The event to be filtered.
 
         Returns:
-                bool: The result of the event filtering by calling the superclass eventFilter method.
+            bool: The result of the event filtering by calling the superclass eventFilter method.
         """
         if event.type() == QtCore.QEvent.Enter:
             try:
@@ -356,26 +352,22 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
         """Converts the given items to a specified widget type.
 
         Parameters:
-                items (list, tuple, set, dict): The items to convert.
-                to (str): The widget type to convert the items to.
-                **kwargs: Additional keyword arguments to pass to the widget.
+            items (list, tuple, set, dict): The items to convert.
+            to (str): The widget type to convert the items to.
+            **kwargs: Additional keyword arguments to pass to the widget.
 
         Example:
-                self.convert(self.getItems(), 'QPushButton') #construct the list using the existing contents.
+            self.convert(self.getItems(), 'QPushButton') #construct the list using the existing contents.
         """
-        lst = (
-            lambda x: list(x) if isinstance(x, (list, tuple, set, dict)) else [x]
-        )  # assure 'x' is a list.
+        # assure 'x' is a list.
+        lst = lambda x: list(x) if isinstance(x, (list, tuple, set, dict)) else [x]
 
         for item in lst(items):
-            i = self.indexFromItem(
-                item
-            ).row()  # get the row as an int from the items QModelIndex.
+            # get the row as an int from the items QModelIndex.
+            i = self.indexFromItem(item).row()
+
             item = self.takeItem(i)
             self.add(to, setText=item.text(), **kwargs)
-
-
-# -----------------------------------------------------------------------------
 
 
 # -----------------------------------------------------------------------------
@@ -383,9 +375,8 @@ class ListWidget(QtWidgets.QListWidget, Attributes):
 if __name__ == "__main__":
     import sys
 
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
-        sys.argv
-    )  # return the existing QApplication object, or create a new one if none exists.
+    # return the existing QApplication object, or create a new one if none exists.
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
     window = QtWidgets.QWidget()
     lw = ListWidget(window)

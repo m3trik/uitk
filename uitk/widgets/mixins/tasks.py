@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-import os, sys, time
+import sys, time
 from PySide2 import QtCore, QtWidgets, QtGui
 
 
@@ -43,7 +43,7 @@ class WorkIndicator(QtWidgets.QDialog):
         self.accept()
 
 
-class Task(QtCore.QThread):
+class TasksMixin(QtCore.QThread):
     complete = QtCore.Signal()
 
     def __init__(self):
@@ -80,11 +80,11 @@ if __name__ == "__main__":
             layout = QtWidgets.QVBoxLayout()
             self.setLayout(layout)
 
-            button = QtWidgets.QPushButton("Perform Long Running Task")
+            button = QtWidgets.QPushButton("Perform Long Running TasksMixin")
             button.clicked.connect(self.perform_long_running_task)
             layout.addWidget(button)
 
-            self.task = Task()
+            self.task = TasksMixin()
 
         def perform_long_running_task(self):
             # Create a separate thread to perform the long running task.

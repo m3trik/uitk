@@ -1,14 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.attributes import Attributes
-from uitk.widgets.text import RichText, TextOverlay
 from uitk.widgets.menu import MenuInstance
 from uitk.widgets.optionBox import OptionBox
+from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
 class PushButton(
-    QtWidgets.QPushButton, MenuInstance, Attributes, RichText, TextOverlay
+    QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText, TextOverlay
 ):
     """ """
 
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     w = PushButton(
         parent=None,
         setObjectName="b000",
-        setText='<hl style="color:black;">A QPushButton <hl style="color:violet;"><b>with Rich Text</b></hl>',
+        setText='<hl style="color:black;">A QPushButton <hl style="color:violet;"><b>with Rich TextMixin</b></hl>',
         resize=QSize(125, 45),
         setWhatsThis="",
         # setVisible=True,

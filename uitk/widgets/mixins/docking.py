@@ -74,7 +74,7 @@ class DockingOverlay(QWidget):
 class DockingWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Docking Window")
+        self.setWindowTitle("DockingMixin Window")
         self.setGeometry(300, 100, 400, 300)
         self.setWindowFlags(Qt.Tool)
         self.docked_widgets = []
@@ -133,7 +133,7 @@ class CustomDockWidget(QDockWidget):
         return super().eventFilter(watched, event)
 
 
-class Docking(QObject):
+class DockingMixin(QObject):
     dock_position_changed = Signal()
     tool_windows = []
     docked_window_groups = []
@@ -254,7 +254,7 @@ if __name__ == "__main__":
             layout.addWidget(QLabel(title))
             self.setCentralWidget(central_widget)
 
-            self.docking = Docking(self)
+            self.docking = DockingMixin(self)
             self.docking.docking_enabled = True
 
     app = QApplication.instance() or QApplication(sys.argv)

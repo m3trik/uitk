@@ -1,11 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.attributes import Attributes
 from uitk.widgets.menu import MenuInstance
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class Label(QtWidgets.QLabel, MenuInstance, Attributes):
+class Label(QtWidgets.QLabel, MenuInstance, AttributesMixin):
     """ """
 
     clicked = QtCore.Signal()

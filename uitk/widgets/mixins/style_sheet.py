@@ -6,10 +6,10 @@ from PySide2 import QtCore, QtWidgets
 from pythontk import makeList, getDerivedType, listify
 
 
-class StyleSheet(QtCore.QObject):
-    """StyleSheet class is responsible for generating, modifying, and applying CSS style sheets for various Qt widgets.
+class StyleSheetMixin(QtCore.QObject):
+    """StyleSheetMixin class is responsible for generating, modifying, and applying CSS style sheets for various Qt widgets.
     The class also provides utility functions to adjust the appearance of widgets based on their properties or conditions.
-    The StyleSheet class offers multiple style presets (e.g., 'standard' and 'dark') and allows the user to create custom
+    The StyleSheetMixin class offers multiple style presets (e.g., 'standard' and 'dark') and allows the user to create custom
     style presets by providing a color value dictionary.
 
     Methods:
@@ -24,17 +24,17 @@ class StyleSheet(QtCore.QObject):
     - hide_menu_button(widget_type): Set the menu button as transparent.
     """
 
-    color_values = {
+    themes = {
         "standard": {
             "MAIN_FOREGROUND": "rgb(75,75,75)",
             "MAIN_BACKGROUND": "rgb(100,100,100)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(100,100,100,150)",
+            "MAIN_BACKGROUND_ALPHA": "rgba(100,100,100,185)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",
             "BUTTON_PRESSED": "rgb(127,127,127)",
             "BUTTON_HOVER": "rgb(82,133,166)",
             "TEXT_COLOR": "rgb(255,255,255)",
             "TEXT_CHECKED": "rgb(0,0,0)",
-            "TEXT_DISABLED": "rgb(150,150,150)",
+            "TEXT_DISABLED": "rgba(150,150,150,175)",
             "TEXT_HOVER": "rgb(255,255,255)",
             "TEXT_BACKGROUND": "rgb(50,50,50)",
             "BORDER_COLOR": "rgb(50,50,50)",
@@ -45,13 +45,13 @@ class StyleSheet(QtCore.QObject):
         "dark": {
             "MAIN_FOREGROUND": "rgb(50,50,50)",
             "MAIN_BACKGROUND": "rgb(100,100,100)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,150)",
+            "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,185)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
             "BUTTON_PRESSED": "rgb(127,127,127)",
             "BUTTON_HOVER": "rgb(82,133,166)",
             "TEXT_COLOR": "rgb(200,200,200)",
             "TEXT_CHECKED": "rgb(0,0,0)",
-            "TEXT_DISABLED": "rgba(185,185,185,50)",
+            "TEXT_DISABLED": "rgba(185,185,185,175)",
             "TEXT_HOVER": "rgb(255,255,255)",
             "TEXT_BACKGROUND": "rgb(50,50,50)",
             "BORDER_COLOR": "rgb(40,40,40)",
@@ -234,13 +234,31 @@ class StyleSheet(QtCore.QObject):
             }
             """,
         "QAbstractButton": """
-            QAbstractButton:hover {
+            QAbstractButton {
                 background-color: {WIDGET_BACKGROUND};
+                color: {TEXT_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                padding: 1px;
+            }
+            QAbstractButton:hover {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_HOVER};
             }
             QAbstractButton:pressed {
                 background-color: {BUTTON_PRESSED};
             }
-            """,
+            QAbstractButton:checked {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_CHECKED};
+            }
+            QAbstractButton:disabled {
+                background-color: {DISABLED_BACKGROUND};
+                color: {TEXT_DISABLED};
+            }
+            QAbstractButton:focus {
+                border-color: {BORDER_COLOR};
+            }
+        """,
         "QComboBox": """
             QComboBox {
                 background-color: {WIDGET_BACKGROUND};
@@ -971,7 +989,7 @@ class StyleSheet(QtCore.QObject):
                 widget = self
             else:
                 raise ValueError(
-                    "A 'widget' argument is required when 'StyleSheet' is not inherited by a custom widget class."
+                    "A 'widget' argument is required when 'StyleSheetMixin' is not inherited by a custom widget class."
                 )
 
         widget_type = getDerivedType(widget, module="QtWidgets", return_name=True)
@@ -1029,7 +1047,7 @@ class StyleSheet(QtCore.QObject):
         else:
             return {
                 k: v.format(**{k.upper(): v for k, v in kwargs.items()})
-                for k, v in cls.color_values[style].items()
+                for k, v in cls.themes[style].items()
             }
 
     @staticmethod
@@ -1110,7 +1128,7 @@ if __name__ == "__main__":
     pass
 
 # else:
-#   styleSheet = StyleSheet()
+#   styleSheet = StyleSheetMixin()
 
 # module name
 # print (__name__)

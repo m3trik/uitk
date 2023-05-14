@@ -1,10 +1,10 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.attributes import Attributes
+from PySide2 import QtWidgets
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class ProgressBar(QtWidgets.QProgressBar, Attributes):
+class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     """ex. for n, i in enumerate(lst):
     if not self.sb.ui.progressBar.step(n, len(lst)): #register progress while checking for cancellation:
             break

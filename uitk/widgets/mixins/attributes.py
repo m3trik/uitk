@@ -4,8 +4,8 @@ from PySide2 import QtCore, QtGui, QtWidgets
 from pythontk import moveDecimalPoint
 
 
-class Attributes:
-    """Methods for setting widget Attributes."""
+class AttributesMixin:
+    """Methods for setting widget AttributesMixin."""
 
     def set_legal_attribute(self, obj, name, value, also_set_original=False):
         """If the original name contains illegal characters, this method sets an attribute using
@@ -53,7 +53,7 @@ class Attributes:
                 self.setCustomAttribute(obj, attr, value)
 
     def setCustomAttribute(self, w, attr, value):
-        """Attributes that throw an AttributeError in 'set_attributes' are sent here, where they can be assigned a value.
+        """AttributesMixin that throw an AttributeError in 'set_attributes' are sent here, where they can be assigned a value.
         Custom attributes can be set using a trailing underscore convention to aid readability, and differentiate them from standard attributes.
 
         Parameters:
