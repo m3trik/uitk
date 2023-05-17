@@ -575,7 +575,7 @@ class Switchboard(QUiLoader):
         Example: get_property_from_ui_file(file, 'customwidget')
         """
         f = open(file)
-        # logging.info(f.read()) #debug
+        # self.logger.info(f.read()) #debug
         content = list(f.readlines())
 
         result = []
@@ -732,7 +732,7 @@ class Switchboard(QUiLoader):
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
             except ModuleNotFoundError:
-                logging.info(traceback.format_exc())
+                self.logger.info(traceback.format_exc())
                 return {}
 
             cls_members = inspect.getmembers(
@@ -747,7 +747,7 @@ class Switchboard(QUiLoader):
             try:
                 files = os.listdir(path)
             except FileNotFoundError:
-                logging.info(traceback.format_exc())
+                self.logger.info(traceback.format_exc())
                 return {}
 
             widgets = {}
@@ -819,7 +819,7 @@ class Switchboard(QUiLoader):
         try:
             found_path = self._find_slots_class_module(ui)
         except ValueError:
-            logging.info(traceback.format_exc())
+            self.logger.info(traceback.format_exc())
             found_path = None
 
         if not found_path:
@@ -830,7 +830,7 @@ class Switchboard(QUiLoader):
                         found_path = self._find_slots_class_module(relative_ui)
                         break
                     except ValueError:
-                        logging.info(traceback.format_exc())
+                        self.logger.info(traceback.format_exc())
 
         if found_path:
             slots_instance = self.set_slots(ui, found_path)
@@ -908,11 +908,13 @@ class Switchboard(QUiLoader):
         if clss is None:
             clss = inspect.getmembers(mod, inspect.isclass)[0][1]
             if clss:
-                logging.warning(
+                self.logger.warning(
                     f"Slot class '{cls_name}' not found for '{ui.name}'. Using '{clss}' instead."
                 )
             else:
-                logging.warning(f"Slot class '{cls_name}' not found for '{ui.name}'.")
+                self.logger.warning(
+                    f"Slot class '{cls_name}' not found for '{ui.name}'."
+                )
 
         return clss
 
@@ -949,7 +951,7 @@ class Switchboard(QUiLoader):
                 result.append(w)
 
             except Exception:
-                logging.info(traceback.format_exc())
+                self.logger.info(traceback.format_exc())
 
         # if 'widgets' is given as a list; return a list.
         return formatReturn(result, widgets)
@@ -1090,7 +1092,7 @@ class Switchboard(QUiLoader):
 
         self._current_ui = ui
         self._ui_history.append(ui)
-        # logging.info(f"_ui_history: {u.name for u in self._ui_history}")  # debug
+        # self.logger.info(f"_ui_history: {u.name for u in self._ui_history}")  # debug
 
     def ui_history(
         self,
@@ -1623,7 +1625,7 @@ class Switchboard(QUiLoader):
                 widgets.append(w)
             except AttributeError:
                 if not suppress_error:
-                    logging.info(traceback.format_exc())
+                    self.logger.info(traceback.format_exc())
 
         return widgets
 
@@ -1763,7 +1765,7 @@ class Switchboard(QUiLoader):
                     prefix = "-"
                 else:
                     axis = chk.text()
-        # logging.info(f"prefix: {prefix} axis: {axis}") #debug
+        # self.logger.info(f"prefix: {prefix} axis: {axis}") #debug
         return prefix + axis  # ie. '-X'
 
     def gc_protect(self, obj=None, clear=False):
@@ -1921,7 +1923,7 @@ class Switchboard(QUiLoader):
         from re import sub
 
         # strip everything between '<' and '>' (html tags)
-        logging.info(f"# {sub('<.*?>', '', string)}")
+        self.logger.info(f"# {sub('<.*?>', '', string)}")
 
         self._messageBox.setText(string)
         self._messageBox.exec_()

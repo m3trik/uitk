@@ -200,7 +200,7 @@ class MainWindow(
         if set_attr:
             if legal_name and name != legal_name:
                 if legal_name in self.sb.ui_files:
-                    logging.warning(
+                    self.logger.warning(
                         f"Legal name '{legal_name}' already exists. Attribute not set."
                     )
                 else:
@@ -223,7 +223,7 @@ class MainWindow(
         if set_attr:
             if legal_name_no_tags and name != legal_name_no_tags:
                 if legal_name_no_tags in self.sb.ui_files:
-                    logging.warning(
+                    self.logger.warning(
                         f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
                     )
                 else:
