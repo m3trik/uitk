@@ -28,7 +28,7 @@ class MainWindow(
         set_name_attr=True,
         set_legal_name_attr=True,
         set_legal_name_no_tags_attr=False,
-        suppress_warnings=False,
+        log_level=logging.WARNING,
         **kwargs,
     ):
         """Represents a main window in a GUI application.
@@ -36,13 +36,13 @@ class MainWindow(
         managing user interface (UI) elements.
 
         Parameters:
-            switchboard_instance (obj): An instance of the switchboard class.
+            switchboard_instance (QUiLoader): An instance of the switchboard class.
             ui_filepath (str): The full path to a UI file.
             connect_on_show (bool): While True, the UI will be set as current and connections established when it becomes visible.
             set_name_attr (bool): If True, sets a switchboard attribute using the UI name. Defaults to True.
             set_legal_name_attr (bool): If True, sets a switchboard attribute using the UI legal name (provinding there are no conflicts). Defaults to True.
-            set_legal_name_no_tags_attr (bool): If True, sets a switchboard attribute using the UI legal name without tags(provinding there are no conflicts). Defaults to False.
-            suppress_warnings (bool): Suppress legal name warning messages if True.
+            set_legal_name_no_tags_attr (bool): If True, sets a switchboard attribute using the UI legal name without tags (provinding there are no conflicts). Defaults to False.
+            log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
             **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
 
         AttributesMixin:
@@ -55,7 +55,7 @@ class MainWindow(
             <UI>.is_current (bool): True if the UI is set as current.
             <UI>.is_initialized (bool): True after the UI is first shown.
             <UI>.is_connected (bool): True if the UI is connected to its slots.
-            <UI>.connect_on_show: Establish connections when the UI becomes visible.
+            <UI>.connect_on_show: Establish connections immediately before the UI becomes visible.
             <UI>.prevent_hide (bool): While True, the hide method is disabled.
             <UI>.widgets (list): All the widgets of the UI.
             <UI>.slots (obj): The slots class instance.
@@ -64,12 +64,19 @@ class MainWindow(
         """
         super().__init__()
 
-        self.suppress_warnings = suppress_warnings
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(log_level)
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
 
         self.sb = switchboard_instance
-        self.name = self._set_name_attr(ui_filepath, set_name_attr)
-        self.legal_name = self._set_legal_name_attr(self.name, set_legal_name_attr)
-        self.legal_name_no_tags = self._set_legal_name_no_tags_attr(
+        self.name = self._set_name(ui_filepath, set_name_attr)
+        self.legal_name = self._set_legal_name(self.name, set_legal_name_attr)
+        self.legal_name_no_tags = self._set_legal_name_no_tags(
             self.name, set_legal_name_no_tags_attr
         )
         self.path = File.formatPath(ui_filepath, "path")
@@ -163,12 +170,12 @@ class MainWindow(
         """Sets the widget as the currently active UI."""
         self.sb.set_current_ui(self)
 
-    def _set_name_attr(self, file, set_attr=False) -> str:
+    def _set_name(self, file, set_attr=False) -> str:
         """Sets name attribute for the object.
 
         Parameters:
             file (str): The file path.
-            set_attr (bool): If True, sets the name attribute. Defaults to False.
+            set_attr (bool): If True, sets a switchboard attribute using the name. Defaults to False.
 
         Returns:
             str: The name attribute.
@@ -178,12 +185,12 @@ class MainWindow(
             setattr(self.sb, name, self)
         return name
 
-    def _set_legal_name_attr(self, name, set_attr=False) -> str:
+    def _set_legal_name(self, name, set_attr=False) -> str:
         """Sets legal name attribute for the object.
 
         Parameters:
             name (str): The name to generate the legal name from.
-            set_attr (bool): If True, sets the legal name attribute. Defaults to False.
+            set_attr (bool): If True, sets a switchboard attribute using the legal name. Defaults to False.
 
         Returns:
             str: The legal name attribute.
@@ -193,37 +200,35 @@ class MainWindow(
         if set_attr:
             if legal_name and name != legal_name:
                 if legal_name in self.sb.ui_files:
-                    if not self.suppress_warnings:
-                        logging.warning(
-                            f"Legal name '{legal_name}' already exists. Attribute not set."
-                        )
+                    logging.warning(
+                        f"Legal name '{legal_name}' already exists. Attribute not set."
+                    )
                 else:
                     setattr(self.sb, legal_name, self)
         return legal_name
 
-    def _set_legal_name_no_tags_attr(self, name, set_attr=False) -> str:
+    def _set_legal_name_no_tags(self, name, set_attr=False) -> str:
         """Sets legal name without tags attribute for the object.
 
         Parameters:
             name (str): The name to generate the legal name without tags from.
-            set_attr (bool): If True, sets the legal name without tags attribute. Defaults to False.
+            set_attr (bool): If True, sets a switchboard attribute using the legal name without tags. Defaults to False.
 
         Returns:
             str: The legal name without tags attribute.
         """
-        name_without_tags = "".join(name.split("#")[0])
-        legal_name_notags = self.sb.convert_to_legal_name(name_without_tags)
+        name_no_tags = "".join(name.split("#")[0])
+        legal_name_no_tags = self.sb.convert_to_legal_name(name_no_tags)
 
         if set_attr:
-            if legal_name_notags and name != legal_name_notags:
-                if legal_name_notags in self.sb.ui_files:
-                    if not self.suppress_warnings:
-                        logging.warning(
-                            f"Legal name without tags '{legal_name_notags}' already exists. Attribute not set."
-                        )
+            if legal_name_no_tags and name != legal_name_no_tags:
+                if legal_name_no_tags in self.sb.ui_files:
+                    logging.warning(
+                        f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
+                    )
                 else:
-                    setattr(self.sb, legal_name_notags, self)
-        return legal_name_notags
+                    setattr(self.sb, legal_name_no_tags, self)
+        return legal_name_no_tags
 
     @staticmethod
     def _parse_tags(name):
@@ -303,7 +308,8 @@ class MainWindow(
         return super().event(event)
 
     def setVisible(self, state):
-        """Called every time the widget is shown or hidden on screen. If the widget is set to be prevented from hiding, it will not be hidden when state is False.
+        """Called every time the widget is shown or hidden on screen.
+        If the widget is set to be prevented from hiding, it will not be hidden when state is False.
 
         Parameters:
             state (bool): Whether the widget is being shown or hidden.
@@ -311,9 +317,9 @@ class MainWindow(
         if state:  # visible
             self.activateWindow()
             self.setWindowFlags(self.windowFlags())
-            super().setVisible(True)
             self.on_show.emit()
             self.is_initialized = True
+            super().setVisible(True)
 
         elif not self.prevent_hide:  # invisible
             super().setVisible(False)

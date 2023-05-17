@@ -81,12 +81,19 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
         """
         super().__init__(parent)
 
+        if position not in ["right", "left", "top", "bottom"]:
+            raise ValueError(
+                "Invalid position. Must be 'right', 'left', 'top', or 'bottom'."
+            )
+
         self.position = position
         self.offset = offset
         self.child_width = child_width
         self.child_height = child_height
         self.max_child_width = max_child_width
         self.drag_interaction = drag_interaction
+
+        self.viewport().installEventFilter(self)
         self.set_attributes(**kwargs)
 
     def getItems(self):
@@ -160,9 +167,9 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
             except TypeError:
                 pass
 
-        typ = w.__class__.__name__
-        # if 'w' is still a string; create a label and use the str value as the label's text.
-        if typ == "str":
+        if isinstance(
+            w, str
+        ):  # if 'w' is still a string; create a label and use the str value as the label's text.
             lbl = QtWidgets.QLabel(self)
             lbl.setText(w)
             w = lbl
@@ -202,6 +209,11 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
         Returns:
             obj: The added ListWidget object.
         """
+        if self.position not in ["right", "left", "top", "bottom"]:
+            raise ValueError(
+                "Invalid position. Must be 'right', 'left', 'top', or 'bottom'."
+            )
+
         listWidget = ListWidget(
             self.parent(),
             position=self.position,
@@ -237,18 +249,6 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
             listWidget = listWidget.prev
 
     def eventFilter(self, w, event):
-        """Handles specific Qt events for the given widget w and event type.
-
-        The function processes Enter, MouseButtonRelease, and Leave events to show, click, or hide the list widgets
-        depending on the mouse cursor position and the defined position of the list.
-
-        Parameters:
-            w (QWidget): The widget for which the event is being filtered.
-            event (QEvent): The event to be filtered.
-
-        Returns:
-            bool: The result of the event filtering by calling the superclass eventFilter method.
-        """
         if event.type() == QtCore.QEvent.Enter:
             try:
                 w.list.show()
@@ -320,6 +320,11 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
                 except AttributeError:
                     pass
 
+        elif event.type() == QtCore.QEvent.MouseMove:
+            # check if the mouse left the list widget
+            if not self.rect().contains(self.mapFromGlobal(QtGui.QCursor.pos())):
+                self.hide()
+
         elif event.type() == QtCore.QEvent.Leave:
             try:
                 if not w.list.rect().contains(
@@ -378,7 +383,7 @@ if __name__ == "__main__":
     # return the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
-    window = QtWidgets.QWidget()
+    window = QtWidgets.QMainWindow()
     lw = ListWidget(window)
     w1 = lw.add("QPushButton", setObjectName="b001", setText="Button 1")
     w1.list.add("list A")
@@ -389,6 +394,10 @@ if __name__ == "__main__":
 
     # print (lw.getItems())
     # print (lw.getItemWidgets())
+    from mixins import style_sheet
+
+    style = style_sheet.StyleSheetMixin()
+    style.set_style("dark", window)
 
     window.resize(765, 255)
     window.show()

@@ -611,7 +611,7 @@ class StyleSheetMixin(QtCore.QObject):
                 background-color: {WIDGET_BACKGROUND};
             }
             QListWidget::item:selected {
-                border: 1px solid {BORDER_COLOR};
+                border: 1px solid {HIGHLIGHT_COLOR};
             }
             QListWidget::item:selected:!active {
                 background-color: {BUTTON_HOVER};
@@ -624,6 +624,18 @@ class StyleSheetMixin(QtCore.QObject):
             QListWidget::item:hover {
                 background-color: {BUTTON_HOVER};
                 color: {TEXT_HOVER};
+            }
+            QListWidget QPushButton {
+                background-color: {WIDGET_BACKGROUND};
+                color: {TEXT_COLOR};
+                border: 0px solid {BORDER_COLOR};
+                padding: 1px;
+            }
+            QListWidget QLabel {
+                background-color: {WIDGET_BACKGROUND};
+                color: {TEXT_COLOR};
+                border: 0px solid {BORDER_COLOR};
+                padding: 1px;
             }
             QListWidget * {
                 border: none;

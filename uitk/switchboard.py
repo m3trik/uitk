@@ -80,7 +80,7 @@ class Switchboard(QUiLoader):
         preload (bool): Load all UI immediately. Otherwise UI will be loaded as required.
         persist (bool): Do not assign the UI's slots attribute a None value when a class is not found.
         set_legal_name_no_tags_attr (bool): If True, sets the legal name without tags attribute for the object (provinding there are no conflicts). Defaults to False.
-        suppress_warnings (bool): Suppress legal name warning messages if True.
+        log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 
     Properties:
         sb: The instance of this class holding all properties.
@@ -163,12 +163,19 @@ class Switchboard(QUiLoader):
         preload=False,
         persist=False,
         set_legal_name_no_tags_attr=False,
-        suppress_warnings=False,
+        log_level=logging.WARNING,
     ):
         super().__init__(parent)
         """
         """
-        self.suppress_warnings = suppress_warnings
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(log_level)
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
 
         calling_frame = inspect.currentframe().f_back
         self.default_dir = self.get_module_dir_from_frame(
@@ -385,7 +392,7 @@ class Switchboard(QUiLoader):
         Returns:
             (obj)
         """
-        return self.get_prev_ui()
+        return self.ui_history()
 
     @property
     def prev_command(self) -> object:
@@ -900,15 +907,12 @@ class Switchboard(QUiLoader):
 
         if clss is None:
             clss = inspect.getmembers(mod, inspect.isclass)[0][1]
-            if not self.suppress_warnings:
-                if clss:
-                    logging.warning(
-                        f"Slot class '{cls_name}' not found for '{ui.name}'. Using '{clss}' instead."
-                    )
-                else:
-                    logging.warning(
-                        f"Slot class '{cls_name}' not found for '{ui.name}'."
-                    )
+            if clss:
+                logging.warning(
+                    f"Slot class '{cls_name}' not found for '{ui.name}'. Using '{clss}' instead."
+                )
+            else:
+                logging.warning(f"Slot class '{cls_name}' not found for '{ui.name}'.")
 
         return clss
 
@@ -997,7 +1001,7 @@ class Switchboard(QUiLoader):
             self,
             file,
             set_legal_name_no_tags_attr=self.set_legal_name_no_tags_attr,
-            suppress_warnings=self.suppress_warnings,
+            log_level=self.logger.getEffectiveLevel(),
         )
         self._loadedUi[ui.name] = ui
         return ui
@@ -1088,54 +1092,51 @@ class Switchboard(QUiLoader):
         self._ui_history.append(ui)
         # logging.info(f"_ui_history: {u.name for u in self._ui_history}")  # debug
 
-    def get_prev_ui(
+    def ui_history(
         self,
+        index=None,
         allow_duplicates=False,
-        allow_current=False,
-        as_list=False,
         inc=[],
         exc=[],
     ):
-        """Get ui from history.
-        ex. _ui_history list: ['previousName2', 'previousName1', 'currentName']
+        """Get the UI history.
 
         Parameters:
-            allow_duplicates (bool): Applicable when returning as_list. Allows for duplicate names in the returned list.
-            allow_current (bool): Allow the currentName. Default is off.
-            as_list (bool): Returns the full list of previously called names. By default duplicates are removed.
-            inc (str)(int)(obj/list): The objects(s) to include.
+            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
+            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
+            inc (str/int/list): The objects(s) to include.
                             supports using the '*' operator: startswith*, *endswith, *contains*
                             Will include all items that satisfy ANY of the given search terms.
                             meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
                             strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str)(int)(obj/list): The objects(s) to exclude. Similar to include.
-                            exlude take precidence over include.
+            exc (str/int/list): The objects(s) to exclude. Similar to include.
+                            exclude take precedence over include.
+
         Returns:
-            (str/list) if 'as_list': returns [list of string names]
+            (str/list): String of a single UI name or list of UI names based on the index or slice.
+
+        Examples:
+            ui_history() -> ['previousName4', 'previousName3', 'previousName2', 'previousName1', 'currentName']
+            ui_history(-2) -> 'previousName1'
+            ui_history(slice(-3, None)) -> ['previousName2', 'previousName1', 'currentName']
         """
         # keep original list length restricted to last 200 elements
         self._ui_history = self._ui_history[-200:]
-        # work on a copy of the list, keeping the original intact
-        hist = self._ui_history.copy()
-
-        if not allow_current:  # remove the last index. (currentName)
-            hist = hist[:-1]
-
         # remove any previous duplicates if they exist; keeping the last added element.
         if not allow_duplicates:
-            [hist.remove(u) for u in hist[:] if hist.count(u) > 1]
+            self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
 
         filtered = Iter.filterWithMappedValues(
-            hist, Iter.filterList, lambda u: u.name, inc, exc
+            self._ui_history, Iter.filterList, lambda u: u.name, inc, exc
         )
 
-        if as_list:
-            return filtered  # return entire list after being modified by any flags such as 'allow_duplicates'.
+        if index is None:
+            return filtered  # return entire list if index is None
         else:
             try:
-                return filtered[-1]  # return the previous ui name if one exists.
-            except:
-                return None
+                return filtered[index]  # return UI(s) based on the index
+            except IndexError:
+                return [] if isinstance(index, int) else None
 
     def get_ui_relatives(
         self,
