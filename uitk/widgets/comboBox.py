@@ -6,7 +6,9 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class ComboBox(QtWidgets.QComboBox, MenuInstance, AttributesMixin, RichText, TextOverlay):
+class ComboBox(
+    QtWidgets.QComboBox, MenuInstance, AttributesMixin, RichText, TextOverlay
+):
     """ """
 
     returnPressed = QtCore.Signal()
@@ -268,8 +270,8 @@ if __name__ == "__main__":
         sys.argv
     )  # return the existing QApplication object, or create a new one if none exists.
 
-    w = ComboBox(popupStyle="qmenu")
-    w.show()
+    cmb = ComboBox(popupStyle="qmenu")
+    cmb.show()
     sys.exit(app.exec_())
 
 

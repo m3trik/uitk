@@ -9,16 +9,16 @@ from pythontk import makeList, getDerivedType, listify
 class StyleSheetMixin(QtCore.QObject):
     """StyleSheetMixin class is responsible for generating, modifying, and applying CSS style sheets for various Qt widgets.
     The class also provides utility functions to adjust the appearance of widgets based on their properties or conditions.
-    The StyleSheetMixin class offers multiple style presets (e.g., 'standard' and 'dark') and allows the user to create custom
-    style presets by providing a color value dictionary.
+    The StyleSheetMixin class offers multiple theme presets (e.g., 'standard' and 'dark') and allows the user to create custom
+    theme presets by providing a color value dictionary.
 
     Methods:
-    - get_color_values(cls, style="standard", **kwargs): Return the colorValues dict with any of the bracketed
+    - get_color_values(cls, theme="standard", **kwargs): Return the colorValues dict with any of the bracketed
                 placeholders replaced by the value of any given kwargs of the same name.
     - remove_leading_whitespace(s): Remove the same amount of leading whitespace from each line in the input string
                 as present in the first line.
-    - get_style_sheet(cls, widget_type=None, style="standard", **kwargs): Get the styleSheet for the given widget type.
-    - set_style(cls, widget, ratio=6, style="standard", hide_menu_button=False, append_to_existing=False, **kwargs): Set the
+    - get_style_sheet(cls, widget_type=None, theme="standard", **kwargs): Get the styleSheet for the given widget type.
+    - set_style(cls, widget, ratio=6, theme="standard", hide_menu_button=False, append_to_existing=False, **kwargs): Set the
                 styleSheet for the given widgets.
     - adjust_padding(widget_type): Remove padding when the text length / widget width ratio is below a given amount.
     - hide_menu_button(widget_type): Set the menu button as transparent.
@@ -71,7 +71,7 @@ class StyleSheetMixin(QtCore.QObject):
                 background-color: rgba(127,127,127,0.005);
                 border: none;
             }
-            """,
+        """,
         "QWidget": """
             QWidget {
                 background-color: transparent;
@@ -86,7 +86,7 @@ class StyleSheetMixin(QtCore.QObject):
                 background-color: {MAIN_BACKGROUND_ALPHA};
                 border: 1px solid {BORDER_COLOR};
             }
-            """,
+        """,
         "QStackedWidget": """
             QStackedWidget {
                 background-color: {MAIN_BACKGROUND};
@@ -98,51 +98,157 @@ class StyleSheetMixin(QtCore.QObject):
                 color: {TEXT_COLOR};
                 font-size: 8;
             }
-            QStackedWidget QPushButton {
+        """,
+        "QGroupBox": """
+            QGroupBox {
+                border: 2px transparent;
+                border-radius: 1px;
+                margin: 10px 0px 0px 0px; /* top, right, bottom, left */ /* leave space at the top for the title */
+                background-color: {MAIN_BACKGROUND_ALPHA};
+            }
+            QGroupBox::title {
+                top: -12px;
+                left: 2px;
+                subcontrol-position: top left; /* position at the top center */
+                background-color: {MAIN_BACKGROUND_ALPHA};
+                color: {TEXT_COLOR};
+            }
+        """,
+        "QMenu": """
+            QMenu {
+                background-color: {MAIN_BACKGROUND_ALPHA};
+                border: 1px solid {BORDER_COLOR};
+                margin: 0px; /* spacing around the menu */
+            }
+            QMenu::item {
+                padding: 2px 2px 2px 2px; /* top, right, bottom, left */
+                border: 1px solid transparent; /* reserve space for selection border */
+            }
+            QMenu::item:selected {
+                border-color: {BUTTON_HOVER};
+                background-color: {MAIN_BACKGROUND};
+            }
+            QMenu::icon:checked { /* appearance of a 'checked' icon */
+                background-color: gray;
+                border: 1px inset gray;
+                position: absolute;
+                top: 1px;
+                right: 1px;
+                bottom: 1px;
+                left: 1px;
+            }
+            QMenu::separator {
+                height: 2px;
+                background-color: {MAIN_BACKGROUND};
+                margin: 0px 5px 0px 10px; /* top, right, bottom, left */
+            }
+            QMenu::indicator {
+                width: 13px;
+                height: 13px;
+            }
+        """,
+        "QMenuBar": """
+            QMenuBar {
+                background-color: {MAIN_BACKGROUND};
+                spacing: 1px; /* spacing between menu bar items */
+            }
+            QMenuBar::item {
+                padding: 1px 4px;
+                background-color: transparent;
+                border-radius: 1px;
+            }
+            QMenuBar::item:selected { /* when selected using mouse or keyboard */
+                background-color: {BUTTON_HOVER};
+            }
+            QMenuBar::item:pressed {
+                background-color: gray;
+            }
+        """,
+        "QLabel": """
+            QLabel {
                 background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
-                font-size: 8;
                 border: 1px solid {BORDER_COLOR};
+                border-radius: 1px;
+                margin: 0px 0px 0px 0px; /* top, right, bottom, left */
+                padding: 0px 5px 0px 5px; /* top, right, bottom, left */
             }
-            """,
-        "QPushButton": """
-            QPushButton {
+            QLabel::hover {
+                border: 1px solid {BORDER_COLOR};
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_HOVER};
+            }
+            QLabel::enabled {
+                color: {TEXT_COLOR};
+            }
+            QLabel::disabled {
+                color: {TEXT_DISABLED};
+            }
+        """,
+        "QAbstractButton": """
+            QAbstractButton {
                 border-style: outset;
                 border-radius: 1px;
                 border: 1px solid {BORDER_COLOR};
                 padding: 0px 5px 0px 5px; /* top, right, bottom, left */
                 background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
+                spacing: 5px;
             }
-            QPushButton#toggle_expand {
-                border-style: outset;
-                border-radius: 1px;
-                border: none;
-                padding: 0px 0px 0px 0px; /* top, right, bottom, left */
-                background-color: {MAIN_BACKGROUND};
-                color: {TEXT_COLOR};
-            }
-            QPushButton::enabled {
-                color: {TEXT_COLOR};
-            }
-            QPushButton::disabled {
-                color: {TEXT_DISABLED};
-            }
-            QPushButton::checked {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QPushButton::hover {
+            QAbstractButton::hover {
                 background-color: {BUTTON_HOVER};
                 color: {TEXT_HOVER};
             }
-            QPushButton::checked::hover {
+            QAbstractButton::hover:checked {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_HOVER};
+            }
+            QAbstractButton::enabled {
+                color: {TEXT_COLOR};
+            }
+            QAbstractButton::disabled {
+                color: {TEXT_DISABLED};
+            }
+            QAbstractButton::checked {
                 background-color: {BUTTON_HOVER};
                 color: {TEXT_CHECKED};
             }
-            QPushButton::pressed {
-                background-color: {BUTTON_PRESSED};
-                color: {TEXT_COLOR};
+            QAbstractButton::checked:hover {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_CHECKED};
+            }
+            QAbstractButton::indicator {
+                width: 0px;
+                height: 0px;
+                border: none;
+            }
+            QAbstractButton::indicator::unchecked {
+                image: none;
+            }
+            QAbstractButton::indicator:unchecked:hover {
+                image: none;
+            }
+            QAbstractButton::indicator:unchecked:pressed {
+                image: none;
+            }
+            QAbstractButton::indicator::checked {
+                image: none;
+            }
+            QAbstractButton::indicator:checked:hover {
+                image: none;
+            }
+            QAbstractButton::indicator:checked:pressed {
+                image: none;
+            }
+        """,
+        "QPushButton": """
+            QPushButton {
+                /* styles inherited from QAbstractButton */
+            }
+            QPushButton#toggle_expand {
+                border: none;
+                padding: 0px 0px 0px 0px; /* top, right, bottom, left */
+                background-color: {MAIN_BACKGROUND};
             }
             QPushButton:flat {
                 border: none; /* no border for a flat push button */
@@ -150,37 +256,10 @@ class StyleSheetMixin(QtCore.QObject):
             QPushButton:default {
                 border-color: navy; /* make the default button prominent */
             }
-            """,
+        """,
         "QToolButton": """
             QToolButton {
-                border-style: outset;
-                border-radius: 1px;
-                border: 1px solid {BORDER_COLOR};
-                padding: 0px 5px 0px 5px; /* top, right, bottom, left */
-                background-color: {WIDGET_BACKGROUND}; /* The background will not appear unless you set the border property. */
-                color: {TEXT_COLOR};
-            }
-            QToolButton::enabled {
-                color: {TEXT_COLOR};
-            }
-            QToolButton::disabled {
-                color: {TEXT_DISABLED};
-            }
-            QToolButton::hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QToolButton::checked {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QToolButton::checked::hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QToolButton::pressed, QToolButton::menu-button:pressed {
-                background-color: {BUTTON_PRESSED};
-                color: {TEXT_COLOR};
+                /* styles inherited from QAbstractButton */
             }
             QToolButton[popupMode="1"] { /* only for MenuButtonPopup */
                 padding-right: 2px; /* make way for the popup button */
@@ -195,33 +274,17 @@ class StyleSheetMixin(QtCore.QObject):
                 subcontrol-position: bottom right;
                 padding: 0px 5px 5px 0px; /* top, right, bottom, left */
             }
-            QToolButton::menu-indicator:pressed, QToolButton::menu-indicator:open {
-                position: relative;
-                top: 2px; left: 2px; /* shift the arrow by 2 px */
-            }
-            /* When the Button displays arrows, the ::up-arrow, ::down-arrow, ::left-arrow and ::right-arrow subcontrols are used. */
             QToolButton::down-arrow, QToolButton::up-arrow, QToolButton::left-arrow, QToolButton::right-arrow {
                 image: none;
                 padding: 0px 15px 0px 0px; /* top, right, bottom, left */
             }
             QToolButton::down-arrow:hover, QToolButton::up-arrow:hover, QToolButton::left-arrow:hover, QToolButton::right-arrow:hover {
-                background-color: {BUTTON_HOVER};
                 padding: 0px 5px 0px 0px; /* top, right, bottom, left */
             }
             /* the subcontrols below are used only in the MenuButtonPopup mode */
             QToolButton::menu-button {
                 border: 1px solid {TEXT_COLOR};
                 margin: 4px 2px 4px 0px; /* top, right, bottom, left */
-            }
-            QToolButton::menu-button::enabled {
-                color: {TEXT_COLOR};
-            }
-            QToolButton::menu-button::disabled {
-                color: {TEXT_DISABLED};
-                border: 1px solid transparent;
-            }
-            QToolButton::menu-button:hover{
-                border: 1px solid {TEXT_HOVER};
             }
             QToolButton::menu-button:pressed {
                 background-color: transparent;
@@ -230,33 +293,55 @@ class StyleSheetMixin(QtCore.QObject):
             QToolButton::menu-arrow {
                 image: none;
             }
-            QToolButton::menu-arrow:open {
+        """,
+        "QCheckBox": """
+            QCheckBox {
+                /* style inherited from QAbstractButton */
             }
-            """,
-        "QAbstractButton": """
-            QAbstractButton {
+        """,
+        "QRadioButton": """
+            QRadioButton {
+                /* style inherited from QAbstractButton */
+            }
+        """,
+        "QAbstractSpinBox": """
+            QAbstractSpinBox {
                 background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
                 border: 1px solid {BORDER_COLOR};
-                padding: 1px;
             }
-            QAbstractButton:hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QAbstractButton:pressed {
-                background-color: {BUTTON_PRESSED};
-            }
-            QAbstractButton:checked {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QAbstractButton:disabled {
-                background-color: {DISABLED_BACKGROUND};
+            QAbstractSpinBox::disabled {
                 color: {TEXT_DISABLED};
             }
-            QAbstractButton:focus {
-                border-color: {BORDER_COLOR};
+            QAbstractSpinBox::hover {
+                background-color: {WIDGET_BACKGROUND};
+                color: {TEXT_HOVER};
+                border: 1px solid {BORDER_COLOR};
+            }
+            QScrollBar:left-arrow, QScrollBar::right-arrow, QScrollBar::up-arrow, QScrollBar::down-arrow {
+                border: 1px solid {BUTTON_PRESSED};
+                width: 3px;
+                height: 3px;
+            }
+            QAbstractSpinBox::up-arrow, QAbstractSpinBox::down-arrow {
+                width: 3px;
+                height: 3px;
+                border: 1px solid {BUTTON_PRESSED};
+            }
+            QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
+                border: 1px solid {BUTTON_PRESSED};
+                background-color: {WIDGET_BACKGROUND};
+                subcontrol-origin: border;
+            }
+        """,
+        "QSpinBox": """
+            QSpinBox {
+                /* style inherited from QAbstractSpinBox */
+            }
+        """,
+        "QDoubleSpinBox": """
+            QDoubleSpinBox {
+                /* style inherited from QAbstractSpinBox */
             }
         """,
         "QComboBox": """
@@ -310,7 +395,7 @@ class StyleSheetMixin(QtCore.QObject):
             QComboBox QAbstractItemView {
                 selection-background-color: {BUTTON_HOVER};
             }
-            """,
+        """,
         "QFrame": """
             QFrame {
                 border: 1px solid {BORDER_COLOR};
@@ -324,213 +409,7 @@ class StyleSheetMixin(QtCore.QObject):
             QFrame QLabel:hover {
                 background: {BUTTON_HOVER};
             }
-            """,
-        "QListView": """
-            QListView {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-                alternate-background-color: {MAIN_BACKGROUND};
-                background-attachment: fixed; /* fixed, scroll */
-                border: 1px solid {BORDER_COLOR};
-            }
-            QListView::item {
-                background-color: {MAIN_BACKGROUND};
-                color: {TEXT_COLOR};
-            }
-            QListView::item:alternate {
-                background-color: {MAIN_BACKGROUND};
-            }
-            QListView::item:selected {
-                border: 1px solid {BORDER_COLOR};
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QListView::item:selected:!active {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_COLOR};
-            }
-            QListView::item:selected:active {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_COLOR};
-            }
-            QListView::item:hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            """,
-        "QSpinBox": """
-            QSpinBox {
-            background-color: {WIDGET_BACKGROUND};
-            color: {TEXT_COLOR};
-            border: 1px solid {BORDER_COLOR};
-            }
-            QSpinBox::disabled {
-                color: {TEXT_DISABLED};
-            }
-            QSpinBox::hover {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_HOVER};
-                border: 1px solid {BORDER_COLOR};
-            }
-            """,
-        "QDoubleSpinBox": """
-            QDoubleSpinBox {
-            background-color: {WIDGET_BACKGROUND};
-            color: {TEXT_COLOR};
-            border: 1px solid {BORDER_COLOR};
-            }
-            QDoubleSpinBox::disabled {
-                color: {TEXT_DISABLED};
-            }
-            QDoubleSpinBox::hover {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_HOVER};
-                border: 1px solid {BORDER_COLOR};
-            }
-            """,
-        "QAbstractSpinBox": """
-            QScrollBar:left-arrow, QScrollBar::right-arrow, QScrollBar::up-arrow, QScrollBar::down-arrow {
-                border: 1px solid {BUTTON_PRESSED};
-                width: 3px;
-                height: 3px;
-            }
-            QAbstractSpinBox::up-arrow, QAbstractSpinBox::down-arrow {
-                width: 3px;
-                height: 3px;
-                border: 1px solid {BUTTON_PRESSED};
-            }
-            QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
-                border: 1px solid {BUTTON_PRESSED};
-                background-color: {WIDGET_BACKGROUND};
-                subcontrol-origin: border;
-            }
-            """,
-        "QCheckBox": """
-            QCheckBox {
-                border-style: outset;
-                border-radius: 1px;
-                border: 1px solid {BORDER_COLOR};
-                padding: 0px 5px 0px 5px; /* top, right, bottom, left */
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-                spacing: 5px;
-            }
-            QCheckBox::hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QCheckBox::hover:checked {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QCheckBox::enabled {
-                color: {TEXT_COLOR};
-            }
-            QCheckBox::disabled {
-                color: {TEXT_DISABLED};
-            }
-            QCheckBox::disabled:checked {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_DISABLED};
-            }
-            QCheckBox::checked {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QCheckBox::checked:hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QCheckBox::indeterminate {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QCheckBox::indeterminate:hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QCheckBox::indicator {
-                width: 0px;
-                height: 0px;
-                border: none;
-            }
-            QCheckBox::indicator::unchecked {
-                image: none;
-            }
-            QCheckBox::indicator:unchecked:hover {
-                image: none;
-            }
-            QCheckBox::indicator:unchecked:pressed {
-                image: none;
-            }
-            QCheckBox::indicator::checked {
-                image: none;
-            }
-            QCheckBox::indicator:checked:hover {
-                image: none;
-            }
-            QCheckBox::indicator:checked:pressed {
-                image: none;
-            }
-            QCheckBox::indicator:indeterminate:checked {
-                image: none;
-            }
-            QCheckBox::indicator:indeterminate:hover {
-                image: none;
-            }
-            QCheckBox::indicator:indeterminate:pressed {
-                image: none;
-            }
-            """,
-        "QRadioButton": """
-            QRadioButton {
-                border-style: outset;
-                border-radius: 1px;
-                border: 1px solid {BORDER_COLOR};
-                padding: 0px 5px 0px 5px; /* top, right, bottom, left */
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-            }
-            QRadioButton::hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QRadioButton::hover:checked {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QRadioButton::enabled {
-                color: {TEXT_COLOR};
-            }
-            QRadioButton::disabled {
-                color: {TEXT_DISABLED};
-            }
-            QRadioButton::checked {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QRadioButton::checked:hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_CHECKED};
-            }
-            QRadioButton::indicator {
-                width: 0px;
-                height: 0px;
-                border: none;
-            }
-            QRadioButton::indicator::unchecked {
-                image: none;
-            }
-            QRadioButton::indicator:unchecked:hover {
-                image: none;
-            }
-            QRadioButton::indicator::checked {
-                image: none;
-            }
-            QRadioButton::indicator:checked:hover {
-                image: none;
-            }
-            """,
+        """,
         "QAbstractItemView": """
             QAbstractItemView {
                 show-decoration-selected: 1;
@@ -539,7 +418,7 @@ class StyleSheetMixin(QtCore.QObject):
                 alternate-background-color: {MAIN_BACKGROUND};
                 min-width: 150px;
             }
-            """,
+        """,
         "QHeaderView": """
             QHeaderView {
                 border: 1px solid {BUTTON_PRESSED};
@@ -552,12 +431,12 @@ class StyleSheetMixin(QtCore.QObject):
             QHeaderView::section:selected, QHeaderView::section::checked {
                 background-color: {MAIN_BACKGROUND};
             }
-            """,
-        "QTableView": """
-            QTableView {
-                gridline-color: {BUTTON_PRESSED};
+        """,
+        "QPlainTextEdit": """
+            QPlainTextEdit {
+                /* No specific styling applied */
             }
-            """,
+        """,
         "QLineEdit": """
             QLineEdit {
                 border: 1px solid {BORDER_COLOR};
@@ -577,7 +456,7 @@ class StyleSheetMixin(QtCore.QObject):
             QLineEdit:read-only {
                 background-color: {MAIN_BACKGROUND};
             }
-            """,
+        """,
         "QTextEdit": """
             QTextEdit {
                 border: 1px solid {BORDER_COLOR};
@@ -594,472 +473,262 @@ class StyleSheetMixin(QtCore.QObject):
                 selection-background-color: {TEXT_BACKGROUND};
                 selection-color: white;
             }
-            """,
-        "QPlainTextEdit": """
-            QPlainTextEdit {
-            }
-            """,
+        """,
         "QListWidget": """
             QListWidget {
+                /* style inherited from QAbstractItemView */
+            }
+        """,
+        "QListView": """
+            QListView {
+                /* style inherited from QAbstractItemView */
+            }
+        """,
+        "QAbstractItemView": """
+            QAbstractItemView {
                 background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                alternate-background-color: {WIDGET_BACKGROUND};
-                background-attachment: fixed; /* fixed, scroll */
-            }
-            QListWidget::item:alternate {
-                background-color: {WIDGET_BACKGROUND};
-            }
-            QListWidget::item:selected {
-                border: 1px solid {HIGHLIGHT_COLOR};
-            }
-            QListWidget::item:selected:!active {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_COLOR};
-            }
-            QListWidget::item:selected:active {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_COLOR};
-            }
-            QListWidget::item:hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QListWidget QPushButton {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-                border: 0px solid {BORDER_COLOR};
-                padding: 1px;
-            }
-            QListWidget QLabel {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-                border: 0px solid {BORDER_COLOR};
-                padding: 1px;
-            }
-            QListWidget * {
-                border: none;
-            }
-            """,
-        "QTreeWidget": """
-            QTreeWidget {
-                background-color: transparent;
-                border:none;
-            }
-            QTreeWidget::item {
-                height: 20px;
-            }
-            QTreeWidget::item:enabled {
-                color: {TEXT_COLOR};
-            }
-            QTreeWidget::item:disabled {
-                color: {TEXT_DISABLED};
-            }
-            QTreeView::item:hover {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-            QTreeView::item:selected {
-                background-color: none;
-            }
-            """,
-        "QToolBox": """
-            QToolBox {
-                background-color: {MAIN_BACKGROUND};
                 color: {TEXT_COLOR};
                 alternate-background-color: {MAIN_BACKGROUND};
                 background-attachment: fixed; /* fixed, scroll */
-                icon-size: 0px;
+                border: 1px solid {BORDER_COLOR};
             }
-            QToolBox QScrollArea QWidget {
-                background-color: transparent;
-            }
-            QToolBox QToolBoxButton {
-                image: url(:/none);
-            }
-            QToolBox QAbstractButton {
-                background-image: url(:/none);
-                image: url(:/none);
-            }
-            QToolBox::tab {
-                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                             stop: 0 {MAIN_BACKGROUND}, stop: 1 {MAIN_BACKGROUND});
-                color: {TEXT_COLOR};
-                border-radius: 1px;
-            }
-            QToolBox::tab:selected {
-                /* font: italic; */ /* italicize selected tabs */
-                color: {TEXT_COLOR};
-                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                             stop: 0 {MAIN_BACKGROUND}, stop: 1 {MAIN_BACKGROUND});
-            }
-            """,
-        "QAbstractSpinBox": """
-            QAbstractSpinBox {
-                padding-right: 0px;
-            }
-            """,
-        "QSlider": """
-            QSlider {
-                border: 1px solid black;
+            QAbstractItemView::item:alternate {
                 background-color: {MAIN_BACKGROUND};
             }
-            QSlider::groove:horizontal {
-                height: 18px;
-                margin: 0px 0px 0px 0px;
-                background-color: {MAIN_BACKGROUND};
-            }
-            QSlider::groove:vertical {
-                width: 0px;
-                margin: 0px 0px 0px 0px;
-                background-color: {MAIN_BACKGROUND};
-            }
-            QSlider::handle {
-                width: 10px;
-                height: 15px;
-                border: 1px solid black;
-                background-color: gray;
-                margin: -1px 0px -1px 0px;
-                border-radius: 1px;
-            }
-            QSlider::handle:hover {
-                background-color: darkgray;
-            }
-            QSlider::add-page:vertical, QSlider::sub-page:horizontal {
+            QAbstractItemView::item:selected {
+                border: 1px solid {BORDER_COLOR};
                 background-color: {BUTTON_HOVER};
+                color: {TEXT_CHECKED};
             }
-            QSlider::sub-page:vertical, QSlider::add-page:horizontal {
-                background-color: {MAIN_BACKGROUND};
-            }
-            QSlider::tickmark {
-                width: 5px;
-                height: 5px;
-                margin: 0px -3px 0px 0px;
-                border-radius: 2.5px;
-                background-color: black;
-            }
-            QSlider::tickmark:not(sub-page) {
-                width: 10px;
-                height: 10px;
-                margin: 0px -5px 0px 0px;
-                border-radius: 5px;
-                background-color: black;
-            }
-            QSlider::tickmark:sub-page {
-                width: 5px;
-                height: 5px;
-                margin: 0px -3px 0px 0px;
-                border-radius: 2.5px;
-                background-color: lightgray;
-            }
-            """,
-        "QScrollBar": """
-            QScrollBar {
-                border: 1px solid transparent;
-                background-color: {MAIN_BACKGROUND};
-            }
-            QScrollBar:horizontal {
-                height: 15px;
-                margin: 0px 0px 0px 32px; /* top, right, bottom, left */
-            }
-            QScrollBar:vertical {
-                width: 15px;
-                margin: 32px 0px 0px 0px; /* top, right, bottom, left */
-            }
-            QScrollBar::handle {
-                background-color: {BUTTON_PRESSED};
-                border: 1px solid transparent;
-            }
-            QScrollBar::handle:horizontal {
-                border-width: 0px 1px 0px 1px;
-            }
-            QScrollBar::handle:vertical {
-                border-width: 1px 0px 1px 0px;
-            }
-            QScrollBar::handle:horizontal {
-                min-width: 20px;
-            }
-            QScrollBar::handle:vertical {
-                min-height: 20px;
-            }
-            QScrollBar::add-line, QScrollBar::sub-line {
-                background-color:{MAIN_BACKGROUND};
-                border: 1px solid {BUTTON_PRESSED};
-                subcontrol-origin: margin;
-            }
-            QScrollBar::add-line {
-                position: absolute;
-            }
-            QScrollBar::add-line:horizontal {
-                width: 15px;
-                subcontrol-position: left;
-                left: 15px;
-            }
-            QScrollBar::add-line:vertical {
-                height: 15px;
-                subcontrol-position: top;
-                top: 15px;
-            }
-            QScrollBar::sub-line:horizontal {
-                width: 15px;
-                subcontrol-position: top left;
-            }
-            QScrollBar::sub-line:vertical {
-                height: 15px;
-                subcontrol-position: top;
-            }
-            QScrollBar::add-page, QScrollBar::sub-page {
-                background-color: none;
-            }
-            """,
-        "QGroupBox": """
-            QGroupBox {
-                border: 2px transparent;
-                border-radius: 1px;
-                margin: 10px 0px 0px 0px; /* top, right, bottom, left */ /* leave space at the top for the title */
-                background-color: rgba(75,75,75,125);
-            }
-            QGroupBox::title {
-                top: -12px;
-                left: 2px;
-                subcontrol-position: top left; /* position at the top center */
-                background-color: transparent;
-                color: {TEXT_COLOR};
-            }
-            """,
-        "QTabBar": """
-            QTabBar {
-                margin: 0px 0px 0px 2px; /* top, right, bottom, left */
-            }
-            QTabBar::tab {
-                border-radius: 1px;
-                padding-top: 1px;
-                margin-top: 1px;
-            }
-            QTabBar::tab:selected {
-                background-color: {MAIN_BACKGROUND};
-            }
-            """,
-        "QMenu": """
-            QMenu {
-                background-color: transparent;
-                border: 1px solid {BORDER_COLOR};
-                margin: 0px; /* spacing around the menu */
-            }
-            QMenu::item {
-                padding: 2px 2px 2px 2px; /* top, right, bottom, left */
-                border: 1px solid transparent; /* reserve space for selection border */
-            }
-            QMenu::item:selected {
-                border-color: {BUTTON_HOVER};
-                background-color: {MAIN_BACKGROUND};
-            }
-            QMenu::icon:checked { /* appearance of a 'checked' icon */
-                background-color: gray;
-                border: 1px inset gray;
-                position: absolute;
-                top: 1px;
-                right: 1px;
-                bottom: 1px;
-                left: 1px;
-            }
-            QMenu::separator {
-                height: 2px;
-                background-color: {MAIN_BACKGROUND};
-                margin: 0px 5px 0px 10px; /* top, right, bottom, left */
-            }
-            QMenu::indicator {
-                width: 13px;
-                height: 13px;
-            }
-            """,
-        "QMenuBar": """
-            QMenuBar {
-                background-color: {MAIN_BACKGROUND};
-                spacing: 1px; /* spacing between menu bar items */
-            }
-            QMenuBar::item {
-                padding: 1px 4px;
-                background-color: transparent;
-                border-radius: 1px;
-            }
-            QMenuBar::item:selected { /* when selected using mouse or keyboard */
+            QAbstractItemView::item:selected:!active {
                 background-color: {BUTTON_HOVER};
-            }
-            QMenuBar::item:pressed {
-                background-color: {TEXT_HOVER};
-            }
-            """,
-        "QLabel": """
-            QLabel {
-                background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 1px;
-                margin: 0px 0px 0px 0px; /* top, right, bottom, left */
-                padding: 0px 5px 0px 5px; /* top, right, bottom, left */
             }
-            QLabel::hover {
-                border: 1px solid {BORDER_COLOR};
+            QAbstractItemView::item:selected:active {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_COLOR};
+            }
+            QAbstractItemView::item:hover {
                 background-color: {BUTTON_HOVER};
                 color: {TEXT_HOVER};
             }
-            QLabel::enabled {
+        """,
+        "QTableView": """
+            QTableView {
+                /* style inherited from QAbstractItemView */
+            }
+        """,
+        "QTreeView": """
+            QTreeView {
+                /* style inherited from QAbstractItemView */
+            }
+        """,
+        "QTreeView QHeaderView": """
+            QTreeView QHeaderView {
+                /* style inherited from QHeaderView */
+            }
+        """,
+        "QTreeView::branch": """
+            QTreeView::branch {
+                background: palette(base);
+                border-image: none;
+                border-width: 0;
+                border-style: solid;
+                border-color: {MAIN_BACKGROUND};
+            }
+        """,
+        "QComboBox": """
+            QComboBox {
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 1px;
+                padding: 1px 18px 1px 3px;
+                background-color: {MAIN_FOREGROUND};
+                color: {TEXT_COLOR};
+                min-width: 50;
+            }
+            QComboBox:editable {
+                background-color: {MAIN_FOREGROUND};
                 color: {TEXT_COLOR};
             }
-            QLabel::disabled {
-                color: {TEXT_DISABLED};
+            QComboBox:!editable, QComboBox::drop-down:editable {
+                background: {MAIN_BACKGROUND};
             }
-            """,
-        "QToolTip": """
-            QToolTip {
+        """,
+        "QMenu": """
+            QMenu {
+                border: 1px solid {BORDER_COLOR};
                 background-color: {MAIN_BACKGROUND};
                 color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
             }
-            """,
+            QMenu::item:selected {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_HOVER};
+            }
+        """,
+        "QMenuBar": """
+            QMenuBar {
+                border: 1px solid {BORDER_COLOR};
+                background-color: {MAIN_BACKGROUND};
+                color: {TEXT_COLOR};
+            }
+            QMenuBar::item:selected {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_HOVER};
+            }
+        """,
+        "QSlider": """
+            QSlider {
+                border: none;
+            }
+            QSlider::groove:horizontal {
+                border: 1px solid {BORDER_COLOR};
+                height: 2px;
+                background: {WIDGET_BACKGROUND};
+            }
+            QSlider::handle:horizontal {
+                width: 13px;
+                margin-top: -6px;
+                margin-bottom: -6px;
+                border: 1px solid {BUTTON_PRESSED};
+                border-radius: 2px;
+                background: {BUTTON_HOVER};
+            }
+            QSlider::add-page:horizontal {
+                background: {BUTTON_PRESSED};
+            }
+            QSlider::sub-page:horizontal {
+                background: {BUTTON_HOVER};
+            }
+        """,
         "QProgressBar": """
             QProgressBar {
-                border: none;
-                border-radius: 5px;
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 1px;
                 text-align: center;
-                margin: 0px 0px 0px 0px; /* top, right, bottom, left */
+                padding: 1px;
+                background-color: {MAIN_BACKGROUND};
             }
             QProgressBar::chunk {
-                width: 1px;
-                margin: 0px;
                 background-color: {BUTTON_HOVER};
+                width: 10px;
+                margin: 0.5px;
             }
-            """,
-        "QSplitter": """
-            QSplitter::handle {
-                image: url(images/splitter.png);
-            }
-            QSplitter::handle:horizontal {
-                width: 2px;
-            }
-            QSplitter::handle:vertical {
-                height: 2px;
-            }
-            QSplitter::handle:pressed {
-                url(images/splitter_pressed.png);
-            }
-            """,
-        "QSplitterHandle": """
-            QSplitter::handle:horizontal {
-                border-left: 1px solid lightGray;
-            }
-            QSplitter::handle:vertical {
-                border-bottom: 1px solid lightGray;
-            }
-            """,
-        "QTabWidget": """
-            QTabWidget {
-            }
-            """,
-        "QRubberBand": """
-            QRubberBand {
-                color: 0px solid gray;
-            }
-            """,
-        "QVBoxLayout": """
-            'QVBoxLayout' {
-            }
-            """,
-        "QHBoxLayout": """
-            'QHBoxLayout' {
-            }
-            """,
-        "QGridLayout": """
-            'QGridLayout' {
-            }
-            """,
+        """,
     }
+
+    def get_style_sheet(self, widget_type=None, style="standard", **kwargs):
+        """Get the styleSheet for the given widget type.
+        By default it will return all stylesheets as one multi-line css string.
+
+        Parameters:
+            widget_type (str): The class name of the widget. ie. 'QLabel'
+            style (str): The color value set to use. valid values are: 'standard', 'dark'
+
+        Returns:
+            (str) css styleSheet
+        """
+        css = (
+            "".join(self.style_sheets.values())
+            if widget_type is None
+            else self.style_sheets.get(widget_type, "")
+        )
+
+        if not css:
+            print(
+                f"# Error: {__file__} in get_style_sheet\n#\tKeyError: '{widget_type}'"
+            )
+            return ""
+
+        for k, v in self.get_color_values(style=style, **kwargs).items():
+            css = css.replace(f"{{{k.upper()}}}", v)
+
+        return self.remove_leading_whitespace(css)
+
+    @staticmethod
+    def get_super_type(widget_type):
+        """Get the name of the immediate superclass of a widget type"""
+        widget_class = getattr(QtWidgets, widget_type, None)
+        if widget_class is not None:
+            super_class = widget_class.__base__
+            return super_class.__name__
+        return None
+
+    def get_style_hierarchy(self, widget_type, theme="standard", **kwargs):
+        """Recursively find and apply styles from the most abstract class to the specific class"""
+        super_type = self.get_super_type(widget_type)
+
+        # Try to get the style for the current widget type
+        try:
+            s = self.get_style_sheet(widget_type, theme=theme, **kwargs)
+        except KeyError:
+            s = ""
+
+        # If this widget type has a superclass and it's not QWidget (since we already have a style for QWidget),
+        # get the style of its superclass
+        if super_type and super_type != "QWidget":
+            try:
+                super_s = self.get_style_sheet(super_type, theme=theme, **kwargs)
+            except KeyError:
+                super_s = ""
+        else:
+            super_s = ""
+
+        return super_s, s
 
     @listify
     def set_style(
         self,
-        style="standard",
+        theme="standard",
         widget: Union[QtWidgets.QWidget, None] = None,
-        ratio=6,
-        hide_menu_button=False,
-        append_to_existing=False,
         **kwargs,
     ):
         """Set the styleSheet for the given widgets.
-        Set the style for a specific widget by using the '#' syntax and the widget's objectName. ie. QWidget#mainWindow
+        Set the theme for a specific widget by using the '#' syntax and the widget's objectName. ie. QWidget#mainWindow
 
         Parameters:
-            widgets (obj/list): A widget or list of widgets.
-            ratio (int): The ratio of widget size, text length in relation to the amount of padding applied.
-            style (str): Color mode. ie. 'standard' or 'dark'
-            hide_menu_button (boool) = Hide the menu button of a widget that has one.
-            append_to_existing (bool) = Append the new stylesheet to the widget's existing stylesheet.
+            theme (str): Color mode. ie. 'standard' or 'dark'
+            widget (obj/list): The widget to set the theme of.
         """
         if widget is None:
-            if isinstance(self, QtWidgets.QWidget):
-                widget = self
-            else:
-                raise ValueError(
-                    "A 'widget' argument is required when 'StyleSheetMixin' is not inherited by a custom widget class."
-                )
+            widget = self
 
-        widget_type = getDerivedType(widget, module="QtWidgets", return_name=True)
+        if not isinstance(widget, QtWidgets.QWidget):
+            raise ValueError(
+                f"Invalid datatype for widget: {type(widget)}, expected QWidget."
+            )
 
         # If the widget is a QMainWindow, apply the combined stylesheet
-        if widget_type == "QMainWindow":
-            s = self.get_style_sheet(style=style, **kwargs)
-        else:
-            try:
-                s = self.get_style_sheet(widget_type, style=style, **kwargs)
-            except KeyError as error:  # given widget has no attribute 'styleSheet'.
-                # print (__name__.ljust(26), 'setStyle (get_style_sheet)', widget.objectName().ljust(26), widget.__class__.__name__.ljust(25), error)
-                return
+        if widget is self:
+            final_style = self.get_style_sheet(theme=theme, **kwargs)
+        else:  # Otherwise, apply the abstract style first, then the specific widget style
+            widget_type = getDerivedType(widget, module="QtWidgets", return_name=True)
+            super_s, s = self.get_style_hierarchy(widget_type, theme=theme, **kwargs)
+            final_style = super_s + "\n" + s
 
-        if hide_menu_button:
-            s = s + self.hide_menu_button(widget_type)
-
-        try:
-            length = (  # a 'NoneType' error will be thrown if the widget does not contain text.
-                len(widget.text())
-                if hasattr(widget, "text")
-                else len(str(widget.value()))
-            )
-            # ratio of widget size, text length (using integer division).
-            if widget.size().width() // length > ratio:
-                s = s + self.adjust_padding(widget_type)
-        except (AttributeError, ZeroDivisionError) as error:
-            # print (__name__.ljust(26), 'setStyle (adjustPadding)', widget.objectName().ljust(26), widget.__class__.__name__.ljust(25), error)
-            pass
-
-        # append_to_existing style changes to an existing style sheet.
-        if append_to_existing and widget.styleSheet():
-            s = s + widget.styleSheet()
-
-        widget.setStyleSheet(s)
+        widget.setStyleSheet(final_style)
 
     @classmethod
-    def get_color_values(cls, style="standard", **kwargs):
+    def get_color_values(cls, theme="standard", **kwargs):
         """Return the colorValues dict with any of the bracketed placeholders
         replaced by the value of any given kwargs of the same name.
 
         Parameters:
-            style (str)(dict): The color value set to use. valid values are: 'standard', 'dark'
-                        or pass your own style as a dict.
+            theme (str)(dict): The color value set to use. valid values are: 'standard', 'dark'
+                        or pass your own theme as a dict.
             **kwargs () = Keyword arguments matching the string of any bracketed placeholders.
                         case insensitive.  ex. alpha=255
         Returns:
             (dict) The color values with placeholder values. ex. {'MAIN_BACKGROUND_ALPHA': 'rgba(100,100,100,75)', etc..
         """
-        if isinstance(style, dict):
+        if isinstance(theme, dict):
             return {
                 k: v.format(**{k.upper(): v for k, v in kwargs.items()})
-                for k, v in style.items()
+                for k, v in theme.items()
             }
         else:
             return {
                 k: v.format(**{k.upper(): v for k, v in kwargs.items()})
-                for k, v in cls.themes[style].items()
+                for k, v in cls.themes[theme].items()
             }
 
     @staticmethod
@@ -1082,38 +751,24 @@ class StyleSheetMixin(QtCore.QObject):
             )
         return s
 
-    @classmethod
-    def get_style_sheet(cls, widget_type=None, style="standard", **kwargs):
-        """Get the styleSheet for the given widget type.
-        By default it will return all stylesheets as one multi-line css string.
-
-        Parameters:
-            widget_type (str): The class name of the widget. ie. 'QLabel'
-            style (str): The color value set to use. valid values are: 'standard', 'dark'
-
-        Returns:
-            (str) css styleSheet
-        """
-        css = (
-            "".join(cls.style_sheets.values())
-            if widget_type is None
-            else cls.style_sheets.get(widget_type, "")
-        )
-
-        if not css:
-            print(
-                f"# Error: {__file__} in get_style_sheet\n#\tKeyError: '{widget_type}'"
-            )
-            return ""
-
-        for k, v in cls.get_color_values(style=style, **kwargs).items():
-            css = css.replace(f"{{{k.upper()}}}", v)
-
-        return cls.remove_leading_whitespace(css)
-
     @staticmethod
     def adjust_padding(widget_type):
-        """Remove padding when the text length / widget width ratio is below a given amount."""
+        """Remove padding when the text length / widget width ratio is below a given amount.
+
+        Example:
+            try:
+                length = (  # a 'NoneType' error will be thrown if the widget does not contain text.
+                    len(widget.text())
+                    if hasattr(widget, "text")
+                    else len(str(widget.value()))
+                )
+            except (AttributeError, ZeroDivisionError) as error:
+                print (__name__.ljust(26), 'setStyle (adjustPadding)', widget.objectName().ljust(26), widget.__class__.__name__.ljust(25), error)
+
+            # ratio of widget size, text length (using integer division).
+            if widget.size().width() // length > ratio:
+                final_style = final_style + self.adjust_padding(widget_type)
+        """
         return """
             {0} {{
                 padding: 0px 0px 0px 0px;

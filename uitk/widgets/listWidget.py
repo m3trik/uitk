@@ -44,16 +44,16 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
         addItems(self, items):
                 Adds multiple items to the list widget.
 
-        add(self, w, data=None, **kwargs):
+        add(self, x, data=None, **kwargs):
                 Adds a widget to the list widget.
 
-        _addList(self, w):
+        _addList(self, widget):
                 Adds an expanding list to the specified widget.
 
         _hideLists(self, listWidget):
                 Hides the specified list and all previous lists in its hierarchy.
 
-        eventFilter(self, w, event):
+        eventFilter(self, watched, event):
                 Filters events for the specified widget.
     """
 
@@ -93,6 +93,8 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
         self.max_child_width = max_child_width
         self.drag_interaction = drag_interaction
 
+        self.widgets = []
+
         self.viewport().installEventFilter(self)
         self.set_attributes(**kwargs)
 
@@ -122,89 +124,88 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
         """ """
         return wItem.data(typ)
 
-    def addItem(self, i):
+    def addItem(self, item):
         """ """
-        return self.add(i)
+        return self.add(item)
 
     def addItems(self, items):
         """ """
-        if isinstance(items, dict):
-            return [self.add(w, d) for w, d in items.items()]
+        return self.add(items)
 
-        else:
-            return [self.add(w) for w in items]
-
-    def add(self, w, data=None, **kwargs):
+    def add(self, x, data=None, **kwargs):
         """Add items to the menu.
 
-        This method adds items to the menu, either as a single item or multiple items from a collection.
+        This method adds item(s) to the menu, either as a single item or multiple items from a collection.
         The added item can be a widget object or a string representation of a widget class name. If the input
         is a string, it creates a label and sets the input string as the label's text. Additional attributes for
         the widget can be passed as keyword arguments.
 
         Parameters:
-            w (str or obj): Widget object or string representation of a widget class name to be added to the menu.
+            x (str/QWidget): Widget or string representation of a the widget.
             data (optional): Data to be associated with the added item(s).
-            kwargs: Additional attributes for the widget.
+            kwargs: Set attributes for the widget using keyword arguments.
 
         Returns:
-            obj: The added item object.
+            obj: The added item.
 
         Example call:
-            menu().add(w='QAction', setText='', insertSeparator=True)
+            menu().add('QAction', setText='My Item', insertSeparator=True)
         """
-        if isinstance(w, (dict, list, tuple, set)):
-            if isinstance(data, (list, tuple, set)):
-                w = dict(zip(w, data))
-            return self.addItems(w)
+        if isinstance(x, dict):
+            return [self.add(key, data=val, **kwargs) for key, val in x.items()]
+        elif isinstance(x, (list, tuple, set)):
+            if isinstance(data, (list, tuple, set)) and len(x) == len(data):
+                return [self.add(item, data=d, **kwargs) for item, d in zip(x, data)]
+            else:
+                return [self.add(item, **kwargs) for item in x]
 
         try:  # get the widget from string class name.
-            w = getattr(QtWidgets, w)(self)
+            x = getattr(QtWidgets, x)(self)
             # ex. QtWidgets.QAction(self) object from string.
-        except AttributeError:  # if w is a widget object instead of string.
+        except AttributeError:  # if x is a widget object instead of string.
             try:
-                w = w()  # ex. QtWidgets.QAction(self) object.
+                x = x()  # ex. QtWidgets.QAction(self) object.
             except TypeError:
                 pass
 
-        if isinstance(
-            w, str
-        ):  # if 'w' is still a string; create a label and use the str value as the label's text.
-            lbl = QtWidgets.QLabel(self)
-            lbl.setText(w)
-            w = lbl
+        # if 'x' is still a string; create a label and use the str value as the label's text.
+        if isinstance(x, str):
+            label = QtWidgets.QLabel(self)
+            label.setText(x)
+            x = label
+            self.widgets.append(label)
 
         wItem = QtWidgets.QListWidgetItem(self)
-        w.setFixedHeight(self.child_height)
-        wItem.setSizeHint(w.size())
-        self.setItemWidget(wItem, w)
+        x.setFixedHeight(self.child_height)
+        wItem.setSizeHint(x.size())
+        self.setItemWidget(wItem, x)
         self.setData(wItem, data)
         wItem.getData = lambda i=wItem: self.getData(i)
-        w.installEventFilter(self)
+        x.installEventFilter(self)
         super().addItem(wItem)
 
-        widget_width = w.geometry().width()
+        widget_width = x.geometry().width()
         if widget_width > self.child_width:
             self.child_width = min(widget_width, self.max_child_width)
 
-        w.__class__.list = property(  # add an expandable list to the widget.
-            lambda w: w.listWidget if hasattr(w, "listWidget") else self._addList(w)
+        x.__class__.list = property(  # add an expandable list to the widget.
+            lambda x: x.listWidget if hasattr(x, "listWidget") else self._addList(x)
         )
 
         # set any additional given keyword args for the widget.
-        self.set_attributes(w, **kwargs)
+        self.set_attributes(x, **kwargs)
         self.raise_()
 
-        return w
+        return x
 
-    def _addList(self, w):
+    def _addList(self, widget):
         """Add an expanding list to the given widget.
 
         This method adds an expandable list to the given widget. The expanding list is created as a ListWidget
         object and is initially hidden.
 
         Parameters:
-            w (obj): Widget object to which the expandable list will be added.
+            widget (obj): Widget object to which the expandable list will be added.
 
         Returns:
             obj: The added ListWidget object.
@@ -222,14 +223,14 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
             drag_interaction=self.drag_interaction,
             setVisible=False,
         )
-        w.listWidget = listWidget
-        w.listWidget.prev = self
+        widget.listWidget = listWidget
+        widget.listWidget.prev = self
 
-        w.listWidget.root = self
-        while hasattr(w.listWidget.root, "prev"):
-            w.listWidget.root = w.listWidget.root.prev
+        widget.listWidget.root = self
+        while hasattr(widget.listWidget.root, "prev"):
+            widget.listWidget.root = widget.listWidget.root.prev
 
-        return w.listWidget
+        return widget.listWidget
 
     def _hideLists(self, listWidget, force=False):
         """Hide the given list and all previous lists in its hierarchy.
@@ -248,29 +249,33 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
             listWidget.hide()
             listWidget = listWidget.prev
 
-    def eventFilter(self, w, event):
+    def eventFilter(self, watched, event):
         if event.type() == QtCore.QEvent.Enter:
             try:
-                w.list.show()
-                w.updateGeometry()
+                watched.list.show()
+                watched.updateGeometry()
 
                 parent_list_width = self.geometry().width()
-                child_widget_height = w.height()
-                child_widget_width = w.width()
-                new_list_width = w.list.geometry().width()
-                new_list_height = w.list.height()  # Get the new list height
+                child_widget_height = watched.height()
+                child_widget_width = watched.width()
+                new_list_width = watched.list.geometry().width()
+                new_list_height = watched.list.height()  # Get the new list height
 
                 if self.position == "right":
                     pos = self.window().mapFromGlobal(
-                        w.mapToGlobal(QtCore.QPoint(parent_list_width - self.offset, 0))
+                        watched.mapToGlobal(
+                            QtCore.QPoint(parent_list_width - self.offset, 0)
+                        )
                     )
                 elif self.position == "left":
                     pos = self.window().mapFromGlobal(
-                        w.mapToGlobal(QtCore.QPoint(-new_list_width + self.offset, 0))
+                        watched.mapToGlobal(
+                            QtCore.QPoint(-new_list_width + self.offset, 0)
+                        )
                     )
                 elif self.position == "top":
                     pos = self.window().mapFromGlobal(
-                        w.mapToGlobal(
+                        watched.mapToGlobal(
                             QtCore.QPoint(
                                 (child_widget_width - new_list_width) // 2,
                                 -new_list_height + self.offset,
@@ -279,7 +284,7 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
                     )
                 elif self.position == "bottom":
                     pos = self.window().mapFromGlobal(
-                        w.mapToGlobal(
+                        watched.mapToGlobal(
                             QtCore.QPoint(
                                 (child_widget_width - new_list_width) // 2,
                                 child_widget_height - self.offset,
@@ -291,31 +296,31 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
                         "Invalid position value. Must be one of 'right', 'left', 'top', 'bottom'"
                     )
 
-                w.list.move(pos)
+                watched.list.move(pos)
             except AttributeError:
                 pass
 
         elif event.type() == QtCore.QEvent.MouseButtonRelease:
             if (
                 self.drag_interaction
-                and QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos()) == w
+                and QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos()) == watched
             ):
                 try:
-                    if not self == w.listWidget.root:
+                    if not self == watched.listWidget.root:
                         try:
                             self.itemClicked.disconnect()
                         except RuntimeError:
                             pass
-                        self.itemClicked.connect(w.listWidget.root.itemClicked)
+                        self.itemClicked.connect(watched.listWidget.root.itemClicked)
                         index = self.indexAt(
-                            w.pos()
+                            watched.pos()
                         )  # Get the index of the item that contains the widget.
                         wItem = self.item(
                             index.row()
                         )  # Get the QListWidgetItem object.
                         self.itemClicked.emit(wItem)
                         self._hideLists(
-                            w.listWidget, force=True
+                            watched.listWidget, force=True
                         )  # assure the child lists are hidden after mouse release.
                 except AttributeError:
                     pass
@@ -327,17 +332,17 @@ class ListWidget(QtWidgets.QListWidget, AttributesMixin):
 
         elif event.type() == QtCore.QEvent.Leave:
             try:
-                if not w.list.rect().contains(
-                    w.list.mapFromGlobal(QtGui.QCursor.pos())
+                if not watched.list.rect().contains(
+                    watched.list.mapFromGlobal(QtGui.QCursor.pos())
                 ):
-                    if hasattr(w, "prev"):
+                    if hasattr(watched, "prev"):
                         self.hide()
-                    if hasattr(w, "listWidget"):
-                        w.listWidget.hide()
+                    if hasattr(watched, "listWidget"):
+                        watched.listWidget.hide()
             except AttributeError:
                 pass
 
-        return super().eventFilter(w, event)
+        return super().eventFilter(watched, event)
 
     def leaveEvent(self, event):
         """ """

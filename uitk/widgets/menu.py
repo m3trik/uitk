@@ -8,7 +8,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 class Menu(QtWidgets.QMenu, AttributesMixin):
     """
     Parameters:
-            menu_type (str): Menu style. valid parameters are: 'standard', 'context', 'form'
+            menu_type (str): The desired menu type. valid parameters are: 'standard', 'context', 'form'
             title (str): TextMixin displayed at the menu's header.
             padding (int): Area surrounding the menu.
             childHeight (int): The minimum height of any child widgets (excluding the 'Apply' button).
@@ -56,22 +56,6 @@ class Menu(QtWidgets.QMenu, AttributesMixin):
         self.menu_timer = QtCore.QTimer()
         self.menu_timer.setSingleShot(True)
         self.menu_timer.timeout.connect(self.hide_on_leave)
-
-        self.setStyleSheet(
-            f"""
-            QMenu {{
-                background-color: rgba(50,50,50,{self.alpha});
-                padding: {self.padding}px {self.padding}px {self.padding}px {self.padding}px;
-            }}
-
-            QMenu::item {{
-                background-color: transparent;
-                spacing: 0px;
-                border: 1px solid transparent;
-                margin: 0px;
-            }}
-            """
-        )
 
         self.set_attributes(**kwargs)
 
@@ -206,7 +190,7 @@ class Menu(QtWidgets.QMenu, AttributesMixin):
                 (obj) QLayout.
         """
         form = QtWidgets.QWidget(self)
-        form.setStyleSheet(f"QWidget {{background-color:rgba(50,50,50,{self.alpha});}}")
+        # form.setStyleSheet(f"QWidget {{background-color:rgba(50,50,50,{self.alpha});}}")
 
         layout = QtWidgets.QFormLayout(form)
         layout.setVerticalSpacing(0)
@@ -245,7 +229,7 @@ class Menu(QtWidgets.QMenu, AttributesMixin):
                 (obj) QLayout.
         """
         form = QtWidgets.QWidget(self)
-        form.setStyleSheet(f"QWidget {{background-color:rgba(50,50,50,{self.alpha});}}")
+        # form.setStyleSheet(f"QWidget {{background-color:rgba(50,50,50,{self.alpha});}}")
 
         layout = QtWidgets.QVBoxLayout(form)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -291,7 +275,7 @@ class Menu(QtWidgets.QMenu, AttributesMixin):
         w.setObjectName("apply_button")
         w.setToolTip("Execute the command.")
         w.released.connect(
-            lambda: self.parent().released.emit()
+            lambda: self.parent().clicked.emit()
         )  # trigger the released signal on the parent when the apply button is released.
         w.setMinimumSize(119, 26)
 
@@ -381,9 +365,9 @@ class Menu(QtWidgets.QMenu, AttributesMixin):
                 l.setObjectName(label)
                 if not checkableLabel:
                     l.setCheckable(False)
-                    l.setStyleSheet(
-                        "QCheckBox::hover {background-color: rgb(100,100,100); color: white;}"
-                    )
+                    # l.setStyleSheet(
+                    #     "QCheckBox::hover {background-color: rgb(100,100,100); color: white;}"
+                    # )
                 layout = self.getFormLayout()  # get the default form layout.
                 layout.addRow(l, w)
                 self.childWidgets.add(l)  # add the widget to the childWidgets list.
