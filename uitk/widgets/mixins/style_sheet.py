@@ -600,6 +600,54 @@ class StyleSheetMixin(QtCore.QObject):
                 background: {BUTTON_HOVER};
             }
         """,
+        "QScrollBar": """
+            QScrollBar:vertical {
+                background: {MAIN_BACKGROUND};
+                width: 15px;
+                margin: 15px 0 15px 0;
+                border: 1px solid {BORDER_COLOR};
+            }
+            QScrollBar::handle:vertical {
+                background: {WIDGET_BACKGROUND};
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                border: 1px solid {BORDER_COLOR};
+                background: {BUTTON_PRESSED};
+                height: 15px;
+                subcontrol-position: top;
+                subcontrol-origin: margin;
+            }
+            QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {
+                background: {BUTTON_HOVER};
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+            QScrollBar:horizontal {
+                background: {MAIN_BACKGROUND};
+                height: 15px;
+                margin: 0 15px 0 15px;
+                border: 1px solid {BORDER_COLOR};
+            }
+            QScrollBar::handle:horizontal {
+                background: {WIDGET_BACKGROUND};
+                min-width: 20px;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                border: 1px solid {BORDER_COLOR};
+                background: {BUTTON_PRESSED};
+                width: 15px;
+                subcontrol-position: left;
+                subcontrol-origin: margin;
+            }
+            QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
+                background: {BUTTON_HOVER};
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
+        """,
         "QProgressBar": """
             QProgressBar {
                 border: 1px solid {BORDER_COLOR};
@@ -659,21 +707,21 @@ class StyleSheetMixin(QtCore.QObject):
 
         # Try to get the style for the current widget type
         try:
-            s = self.get_style_sheet(widget_type, theme=theme, **kwargs)
+            style = self.get_style_sheet(widget_type, theme=theme, **kwargs)
         except KeyError:
-            s = ""
+            style = ""
 
         # If this widget type has a superclass and it's not QWidget (since we already have a style for QWidget),
         # get the style of its superclass
         if super_type and super_type != "QWidget":
             try:
-                super_s = self.get_style_sheet(super_type, theme=theme, **kwargs)
+                super_style = self.get_style_sheet(super_type, theme=theme, **kwargs)
             except KeyError:
-                super_s = ""
+                super_style = ""
         else:
-            super_s = ""
+            super_style = ""
 
-        return super_s, s
+        return super_style, style
 
     @listify
     def set_style(
@@ -702,8 +750,10 @@ class StyleSheetMixin(QtCore.QObject):
             final_style = self.get_style_sheet(theme=theme, **kwargs)
         else:  # Otherwise, apply the abstract style first, then the specific widget style
             widget_type = getDerivedType(widget, module="QtWidgets", return_name=True)
-            super_s, s = self.get_style_hierarchy(widget_type, theme=theme, **kwargs)
-            final_style = super_s + "\n" + s
+            super_style, style = self.get_style_hierarchy(
+                widget_type, theme=theme, **kwargs
+            )
+            final_style = super_style + "\n" + style
 
         widget.setStyleSheet(final_style)
 
@@ -732,24 +782,26 @@ class StyleSheetMixin(QtCore.QObject):
             }
 
     @staticmethod
-    def remove_leading_whitespace(s):
+    def remove_leading_whitespace(style_sheet):
         """Remove the same amount of leading whitespace from each line in the input string as
         present in the first line.
 
         Parameters:
-            s (str): Input string containing lines with leading whitespace.
+            style_sheet (str): Input string containing lines with leading whitespace.
 
         Returns:
             (str): Output string with leading whitespace removed from each line.
         """
-        s = s.strip("\n")  # Remove leading and trailing newline characters
-        lines = s.splitlines()
+        style_sheet = style_sheet.strip(
+            "\n"
+        )  # Remove leading and trailing newline characters
+        lines = style_sheet.splitlines()
         if lines:
             leading_whitespace = re.match(r"^(\s*)", lines[0]).group(1)
-            s = "\n".join(
+            style_sheet = "\n".join(
                 [re.sub(f"^{leading_whitespace}", "", line) for line in lines]
             )
-        return s
+        return style_sheet
 
     @staticmethod
     def adjust_padding(widget_type):

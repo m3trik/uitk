@@ -114,7 +114,7 @@ class CustomDockWidget(QDockWidget):
         else:
             self.docked.emit(self)
 
-    def eventFilter(self, watched, event):
+    def eventFilter(self, widget, event):
         if event.type() == QEvent.MouseMove:
             if self.isFloating():
                 # Check if any part of the dock widget is inside the docking window
@@ -130,7 +130,7 @@ class CustomDockWidget(QDockWidget):
                         self.parent().hide()
             else:
                 print("Mouse moved while docked")
-        return super().eventFilter(watched, event)
+        return super().eventFilter(widget, event)
 
 
 class DockingMixin(QObject):
@@ -223,7 +223,7 @@ class DockingMixin(QObject):
         self.dock_position = None
         self.dock_window = None
 
-    def eventFilter(self, watched, event):
+    def eventFilter(self, widget, event):
         if not self.docking_enabled:
             return False
 

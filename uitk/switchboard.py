@@ -166,14 +166,7 @@ class Switchboard(QUiLoader):
         super().__init__(parent)
         """
         """
-        # Set up logging
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(log_level)
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        )
-        self.logger.addHandler(handler)
+        self._init_logger(log_level)
 
         calling_frame = inspect.currentframe().f_back
         self.default_dir = self.get_module_dir_from_frame(
@@ -205,6 +198,16 @@ class Switchboard(QUiLoader):
 
         if preload_ui:
             self.load_all_ui()
+
+    def _init_logger(self, log_level):
+        """Initializes logger."""
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(log_level)
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
 
     def __getattr__(self, attr_name):
         """If an unknown attribute matches the name of a UI in the current UI directory; load and return it.
@@ -721,8 +724,11 @@ class Switchboard(QUiLoader):
             w.signals = self.get_default_signals(w)
             # get a string stripped of trailing non-letter chars. ie. 'cmb' from 'cmb015'
             w.base_name = self.get_base_name(w.name)
-            w.get_slot = lambda w=w, u=ui: getattr(self.get_slots(u), w.name, None)
+            w.get_slot = lambda w=w: self.get_method_by_name(ui, w.name)
+            w.get_init = lambda w=w: self.get_method_by_name(ui, w.name + "_init")
+            w.is_initialized = False
 
+            w.installEventFilter(self)
             setAttributes(w, **kwargs)
             setattr(ui, w.name, w)
             added_widgets.add(w)
@@ -734,6 +740,16 @@ class Switchboard(QUiLoader):
 
         ui._widgets.update(added_widgets)
         return added_widgets if not return_all_widgets else ui._widgets
+
+    def eventFilter(self, widget, event):
+        if event.type() == QtCore.QEvent.Show:
+            init = widget.get_init()
+
+            if init and not widget.is_initialized:
+                init(widget)
+                widget.is_initialized = True
+        # Continue processing other events as usual
+        return super().eventFilter(widget, event)
 
     def set_slots(self, ui, clss):
         """This method sets the slot class instance for a loaded dynamic UI object. It takes a UI and
@@ -1229,41 +1245,21 @@ class Switchboard(QUiLoader):
             None,
         )
 
-    def get_method(self, ui, widget=None):
-        """Get the method(s) associated with the given ui / widget.
+    def get_method_by_name(self, ui, method_name):
+        """
+        Get a method associated with a UI by its name.
+
+        This method searches for a method that is associated with a given UI and
+        has a specific name. If no such method is found, None is returned.
 
         Parameters:
-            ui (str/obj): The ui name, or ui object. ie. 'polygons' or <polygons>
-            widget (str/obj): widget, widget's objectName, or method name.
+            ui (QWidget): A previously loaded dynamic ui object.
+            method_name (str): The name of the method to search for.
 
         Returns:
-            if widget: corresponding method object to given widget.
-            else: all of the methods associated to the given ui name as a list.
-
-        Example:
-            sb.get_slot('polygons', <b022>)() #call method <b022> of the 'polygons' class
+            obj/None: The method object with the given name, or None if no such method is found.
         """
-        if ui is None or isinstance(ui, str):
-            ui = self.get_ui(ui)
-
-        if widget is None:  # get all methods for the given ui name.
-            return [w.get_slot() for w in ui.widgets]
-
-        elif isinstance(widget, str):
-            return next(
-                iter(
-                    w.get_slot() for w in ui.widgets if w.get_slot().__name__ == widget
-                ),
-                None,
-            )
-
-        elif not widget in ui._widgets:
-            self.init_widgets(ui, widget)
-
-        return next(
-            iter(w.get_slot() for w in ui.widgets if w.get_slot() == widget.get_slot()),
-            None,
-        )
+        return getattr(ui.slots, method_name, None)
 
     def get_signals(self, widget, d=True, exc=[]):
         """Get all signals for a given widget.
@@ -1331,7 +1327,7 @@ class Switchboard(QUiLoader):
         If a connection already exists, it is not made again.
 
         Parameters:
-            ui (QWidget): The dynamic UI object containing widgets.
+            ui (QWidget): A previously loaded dynamic ui object.
             widgets (Iterable[QtWidgets.QWidget], optional): A specific set of widgets for which
                 to connect slots. If not provided, all widgets from the ui are used.
 
@@ -1354,30 +1350,37 @@ class Switchboard(QUiLoader):
             slot = widget.get_slot()
             self.logger.info(f"Widget: {widget}, Slot: {slot}")
             if slot:
-                # Get signals from slot decorator, or default signals if not present
-                signals = getattr(
-                    slot, "signals", [self.default_signals.get(widget.derived_type)]
-                )
-                for signal_name in signals:
-                    signal = getattr(widget, signal_name, None)
-                    self.logger.info(f"Signal Name: {signal_name}, Signal: {signal}")
-                    if signal:
-                        if slot not in self._connected_slots[signal]:
-                            signal.connect(slot)
-                            self._connected_slots[signal].append(slot)
+                # Connect slot
+                self._connect_slot(widget, slot)
 
-                    elif signal_name in self.default_signals:
-                        signal = getattr(
-                            widget, self.default_signals[signal_name], None
-                        )
+            # Connect init slot if exists
+            init_slot = widget.get_init()
+            if init_slot:
+                self._connect_slot(widget, init_slot)
 
-                    try:  # append the slot to _slot_history each time the signal is triggered.
-                        signal.connect(
-                            lambda *args, s=slot: self._slot_history.append(s)
-                        )
-                    except AttributeError:  # signal is NoneType
-                        pass
         ui.is_connected = True
+
+    def _connect_slot(self, widget, slot):
+        """Helper method to connect a slot to its signals"""
+        # Get signals from slot decorator, or default signals if not present
+        signals = getattr(
+            slot, "signals", [self.default_signals.get(widget.derived_type)]
+        )
+        for signal_name in signals:
+            signal = getattr(widget, signal_name, None)
+            self.logger.info(f"Signal Name: {signal_name}, Signal: {signal}")
+            if signal:
+                if slot not in self._connected_slots[signal]:
+                    signal.connect(slot)
+                    self._connected_slots[signal].append(slot)
+
+            elif signal_name in self.default_signals:
+                signal = getattr(widget, self.default_signals[signal_name], None)
+
+            try:  # append the slot to _slot_history each time the signal is triggered.
+                signal.connect(lambda *args, s=slot: self._slot_history.append(s))
+            except AttributeError:  # signal is NoneType
+                pass
 
     def disconnect_slots(self, ui, widgets=None):
         """Disconnects the signals from their respective slots for the widgets of the given ui.
@@ -1385,7 +1388,7 @@ class Switchboard(QUiLoader):
         Only disconnects the slots that are connected via `connect_slots`.
 
         Parameters:
-            ui (QWidget): The dynamic UI object containing widgets.
+            ui (QWidget): A previously loaded dynamic ui object.
             widgets (Iterable[QWidget], optional): A specific set of widgets for which
                 to disconnect slots. If not provided, all widgets from the ui are used.
 
@@ -2053,6 +2056,61 @@ logging.info(__name__)  # module name
 # --------------------------------------------------------------------------------------------
 # deprecated:
 # --------------------------------------------------------------------------------------------
+
+# def connect_slots(self, ui, widgets=None):
+#     """Connects the signals to their respective slots for the widgets of the given ui.
+
+#     This function ensures that existing signal-slot connections are not repeated.
+#     If a connection already exists, it is not made again.
+
+#     Parameters:
+#         ui (QWidget): The dynamic UI object containing widgets.
+#         widgets (Iterable[QtWidgets.QWidget], optional): A specific set of widgets for which
+#             to connect slots. If not provided, all widgets from the ui are used.
+
+#     Raises:
+#         ValueError: If ui is not an instance of QWidget.
+
+#     Side effect:
+#         If successful, sets `ui.is_connected` to True indicating that
+#         the slots for the UI's widgets are connected.
+#     """
+#     if not isinstance(ui, QtWidgets.QWidget):
+#         raise ValueError(f"Invalid datatype: {type(ui)}")
+
+#     if widgets is None:
+#         if ui.is_connected:
+#             return
+#         widgets = ui.widgets
+
+#     for widget in Iter.makeList(widgets):
+#         slot = widget.get_slot()
+#         self.logger.info(f"Widget: {widget}, Slot: {slot}")
+#         if slot:
+#             # Get signals from slot decorator, or default signals if not present
+#             signals = getattr(
+#                 slot, "signals", [self.default_signals.get(widget.derived_type)]
+#             )
+#             for signal_name in signals:
+#                 signal = getattr(widget, signal_name, None)
+#                 self.logger.info(f"Signal Name: {signal_name}, Signal: {signal}")
+#                 if signal:
+#                     if slot not in self._connected_slots[signal]:
+#                         signal.connect(slot)
+#                         self._connected_slots[signal].append(slot)
+
+#                 elif signal_name in self.default_signals:
+#                     signal = getattr(
+#                         widget, self.default_signals[signal_name], None
+#                     )
+
+#                 try:  # append the slot to _slot_history each time the signal is triggered.
+#                     signal.connect(
+#                         lambda *args, s=slot: self._slot_history.append(s)
+#                     )
+#                 except AttributeError:  # signal is NoneType
+#                     pass
+#     ui.is_connected = True
 
 # def show_and_connect(self, ui, connect_on_show=True):
 #     """Register the uiName in history as current,

@@ -64,14 +64,7 @@ class MainWindow(
         """
         super().__init__()
 
-        # Set up logging
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(log_level)
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        )
-        self.logger.addHandler(handler)
+        self._init_logger(logging.INFO)
 
         self.sb = switchboard_instance
         self.name = self._set_name(ui_filepath, set_name_attr)
@@ -111,6 +104,16 @@ class MainWindow(
         self.load_widget_states()  # Load widget states
 
         self.on_show.connect(self._connect_on_show)
+
+    def _init_logger(self, log_level):
+        """Initializes logger."""
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(log_level)
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
 
     def __getattr__(self, attr_name):
         """Looks for the widget in the parent class.
@@ -199,6 +202,7 @@ class MainWindow(
 
         if set_attr:
             if legal_name and name != legal_name:
+                print(3, legal_name)
                 if legal_name in self.sb.ui_files:
                     self.logger.warning(
                         f"Legal name '{legal_name}' already exists. Attribute not set."
