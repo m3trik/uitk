@@ -72,7 +72,7 @@ class MainWindow(
         self.legal_name_no_tags = self._set_legal_name_no_tags(
             self.name, set_legal_name_no_tags_attr
         )
-        self.path = File.formatPath(ui_filepath, "path")
+        self.path = File.format_path(ui_filepath, "path")
         self.tags = self._parse_tags(self.name)
         self.is_initialized = False
         self.is_connected = False
@@ -100,7 +100,7 @@ class MainWindow(
         # self.docking = DockingMixin(self)
         # self.docking.docking_enabled = True
 
-        self.set_style()  # Set the stylesheet
+        # self.set_style()  # Set the stylesheet
         self.load_widget_states()  # Load widget states
 
         self.on_show.connect(self._connect_on_show)
@@ -183,7 +183,7 @@ class MainWindow(
         Returns:
             str: The name attribute.
         """
-        name = File.formatPath(file, "name")
+        name = File.format_path(file, "name")
         if set_attr:
             setattr(self.sb, name, self)
         return name

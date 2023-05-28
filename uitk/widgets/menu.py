@@ -427,7 +427,7 @@ class Menu(QtWidgets.QMenu, AttributesMixin):
         # print(args, kwargs, widget.objectName() if hasattr(widget, 'objectName') else None)
         return self._lastActiveChild[-1]
 
-    def lastActiveChild(self, name=False, asList=False):
+    def lastActiveChild(self, name=False, as_list=False):
         """Get the given widget set as last active.
         Contains a list of the last 10 active child widgets.
 
@@ -446,10 +446,10 @@ class Menu(QtWidgets.QMenu, AttributesMixin):
         if name:
             lastActive = str(self._lastActiveChild[-1].objectName())
 
-        elif name and asList:
+        elif name and as_list:
             lastActive = [str(w.objectName()) for w in self._lastActiveChild]
 
-        elif asList:
+        elif as_list:
             lastActive = [w for w in self._lastActiveChild]
 
         else:

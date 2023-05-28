@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from pythontk import moveDecimalPoint
+from pythontk import move_decimal_point
 
 
 class AttributesMixin:
@@ -189,7 +189,7 @@ class AttributesMixin:
 
         elif isinstance(value, float):
             decimals = str(value)[::-1].find(".")  # get decimal places
-            step = moveDecimalPoint(1, -decimals)
+            step = move_decimal_point(1, -decimals)
 
             self.set_attributes(
                 spinbox,
@@ -258,7 +258,7 @@ Promoting a widget in designer to use a custom class:
 
 # depricated ------------------------------------------------------------------------
 
-# def moveDecimalPoint(num, decimal_places):
+# def move_decimal_point(num, decimal_places):
 #       '''Move the decimal place in a given number.
 
 #       Parameters:
@@ -267,7 +267,7 @@ Promoting a widget in designer to use a custom class:
 #       Returns:
 #           (float) the given number with it's decimal place moved by the desired amount.
 
-#       ex. moveDecimalPoint(11.05, -2) Returns: 0.1105
+#       ex. move_decimal_point(11.05, -2) Returns: 0.1105
 #       '''
 #       for _ in range(abs(decimal_places)):
 

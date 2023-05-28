@@ -3,7 +3,7 @@
 from typing import Union
 import re
 from PySide2 import QtCore, QtWidgets
-from pythontk import makeList, getDerivedType, listify
+from pythontk import get_derived_type, listify
 
 
 class StyleSheetMixin(QtCore.QObject):
@@ -93,10 +93,6 @@ class StyleSheetMixin(QtCore.QObject):
             }
             QStackedWidget QFrame {
                 background-color: {MAIN_BACKGROUND};
-            }
-            QStackedWidget QFrame QLabel {
-                color: {TEXT_COLOR};
-                font-size: 8;
             }
         """,
         "QGroupBox": """
@@ -406,30 +402,8 @@ class StyleSheetMixin(QtCore.QObject):
                 font-size: 8;
                 margin: 0px;
             }
-            QFrame QLabel:hover {
-                background: {BUTTON_HOVER};
-            }
-        """,
-        "QAbstractItemView": """
-            QAbstractItemView {
-                show-decoration-selected: 1;
-                selection-background-color: {BUTTON_HOVER};
-                selection-color: {MAIN_BACKGROUND};
-                alternate-background-color: {MAIN_BACKGROUND};
-                min-width: 150px;
-            }
-        """,
-        "QHeaderView": """
-            QHeaderView {
-                border: 1px solid {BUTTON_PRESSED};
-            }
-            QHeaderView::section {
-                background-color: {BUTTON_PRESSED};
-                border: 1px solid {BUTTON_PRESSED};
-                padding: 1px;
-            }
-            QHeaderView::section:selected, QHeaderView::section::checked {
-                background-color: {MAIN_BACKGROUND};
+            QFrame:hover {
+                background-color: {BUTTON_HOVER};
             }
         """,
         "QPlainTextEdit": """
@@ -474,16 +448,6 @@ class StyleSheetMixin(QtCore.QObject):
                 selection-color: white;
             }
         """,
-        "QListWidget": """
-            QListWidget {
-                /* style inherited from QAbstractItemView */
-            }
-        """,
-        "QListView": """
-            QListView {
-                /* style inherited from QAbstractItemView */
-            }
-        """,
         "QAbstractItemView": """
             QAbstractItemView {
                 background-color: {WIDGET_BACKGROUND};
@@ -513,6 +477,29 @@ class StyleSheetMixin(QtCore.QObject):
                 color: {TEXT_HOVER};
             }
         """,
+        "QListWidget": """
+            QListWidget {
+                /* style inherited from QAbstractItemView */
+            }
+        """,
+        "QListView": """
+            QListView {
+                /* style inherited from QAbstractItemView */
+            }
+        """,
+        "QHeaderView": """
+            QHeaderView {
+                border: 1px solid {BUTTON_PRESSED};
+            }
+            QHeaderView::section {
+                background-color: {BUTTON_PRESSED};
+                border: 1px solid {BUTTON_PRESSED};
+                padding: 1px;
+            }
+            QHeaderView::section:selected, QHeaderView::section::checked {
+                background-color: {MAIN_BACKGROUND};
+            }
+        """,
         "QTableView": """
             QTableView {
                 /* style inherited from QAbstractItemView */
@@ -535,45 +522,6 @@ class StyleSheetMixin(QtCore.QObject):
                 border-width: 0;
                 border-style: solid;
                 border-color: {MAIN_BACKGROUND};
-            }
-        """,
-        "QComboBox": """
-            QComboBox {
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 1px;
-                padding: 1px 18px 1px 3px;
-                background-color: {MAIN_FOREGROUND};
-                color: {TEXT_COLOR};
-                min-width: 50;
-            }
-            QComboBox:editable {
-                background-color: {MAIN_FOREGROUND};
-                color: {TEXT_COLOR};
-            }
-            QComboBox:!editable, QComboBox::drop-down:editable {
-                background: {MAIN_BACKGROUND};
-            }
-        """,
-        "QMenu": """
-            QMenu {
-                border: 1px solid {BORDER_COLOR};
-                background-color: {MAIN_BACKGROUND};
-                color: {TEXT_COLOR};
-            }
-            QMenu::item:selected {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
-            }
-        """,
-        "QMenuBar": """
-            QMenuBar {
-                border: 1px solid {BORDER_COLOR};
-                background-color: {MAIN_BACKGROUND};
-                color: {TEXT_COLOR};
-            }
-            QMenuBar::item:selected {
-                background-color: {BUTTON_HOVER};
-                color: {TEXT_HOVER};
             }
         """,
         "QSlider": """
@@ -723,7 +671,7 @@ class StyleSheetMixin(QtCore.QObject):
 
         return super_style, style
 
-    @listify
+    @listify(arg_name="widget")
     def set_style(
         self,
         theme="standard",
@@ -749,7 +697,7 @@ class StyleSheetMixin(QtCore.QObject):
         if widget is self:
             final_style = self.get_style_sheet(theme=theme, **kwargs)
         else:  # Otherwise, apply the abstract style first, then the specific widget style
-            widget_type = getDerivedType(widget, module="QtWidgets", return_name=True)
+            widget_type = get_derived_type(widget, module="QtWidgets", return_name=True)
             super_style, style = self.get_style_hierarchy(
                 widget_type, theme=theme, **kwargs
             )

@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import os
 import importlib
 import pkgutil
 import inspect
@@ -7,6 +8,7 @@ import inspect
 
 __package__ = "uitk"
 __version__ = "0.6.7"
+__path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 
 # Define a dictionary to map class names to their respective modules
