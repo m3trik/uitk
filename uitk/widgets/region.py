@@ -126,6 +126,18 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
             self.on_leave.emit()
         super().leaveEvent(event)
 
+    def hideEvent(self, event):
+        """Overrides the QWidget.hideEvent method. Emits the on_leave signal when
+        the widget is hidden.
+
+        Parameters:
+                event (QEvent): The event object passed to the method.
+        """
+        if self.visible_on_mouse_over:
+            self.hide_top_level_children()
+        self.cursor_inside = False
+        super().hideEvent(event)
+
     def childEvent(self, event):
         """Overrides the QWidget.childEvent method. Hides the child widget if the
         visible_on_mouse_over flag is set to True.
@@ -135,6 +147,7 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
         """
         if self.visible_on_mouse_over and event.type() == QtCore.QEvent.ChildAdded:
             self.hide_top_level_children()
+
         super().childEvent(event)
 
 

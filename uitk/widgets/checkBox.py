@@ -46,7 +46,7 @@ class CheckBox(QtWidgets.QCheckBox, MenuInstance, AttributesMixin, RichText, Tex
         else:
             return 1 if self.isChecked() else 0
 
-    def setCheckState_(self, state):
+    def set_check_state(self, state):
         """Set the state of a checkbox as an integer value.
         Simplifies working with tri-state checkboxes.
 
@@ -74,8 +74,8 @@ class CheckBox(QtWidgets.QCheckBox, MenuInstance, AttributesMixin, RichText, Tex
                 (QEvent)
         """
         if event.button() == QtCore.Qt.RightButton:
-            if self.ctxMenu:
-                self.ctxMenu.show()
+            if self.ctx_menu:
+                self.ctx_menu.show()
 
         super().mousePressEvent(event)
 

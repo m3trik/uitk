@@ -40,7 +40,7 @@ class DraggableHeader(
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
 
-        self.optionBox = None
+        self.option_box = None
 
         self.set_attributes(**kwargs)
 
@@ -69,9 +69,9 @@ class DraggableHeader(
             self.window().prevent_hide = True
 
         if event.button() == QtCore.Qt.RightButton:
-            self.ctxMenu.show()
+            self.ctx_menu.show()
 
-        QtWidgets.QLabel.mousePressEvent(self, event)
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         """
@@ -89,10 +89,10 @@ class DraggableHeader(
 
             self.window().move(self.window().mapFromGlobal(curPos + diff))
             self.__mouseMovePos = globalPos
-        except AttributeError as error:
+        except AttributeError:
             pass
 
-        QtWidgets.QLabel.mouseMoveEvent(self, event)
+        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         """
@@ -115,36 +115,12 @@ class DraggableHeader(
         ):  # prevent the parent window from hiding if checked.
             self.window().hide()
 
-        QtWidgets.QLabel.mouseReleaseEvent(self, event)
+        super().mouseReleaseEvent(event)
 
     def createOptionBox(self):
-        """ """
-        self.optionBox = OptionBox(self)  # create an option box
-        self.optionBox.create()
-
-    def showEvent(self, event):
-        """
-        Parameters:
-                event = <QEvent>
-        """
-        if self.ctxMenu.containsMenuItems:
-            # self.ctxMenu.setTitle(self.text())
-            # self.setTextOverlay('⧉', alignment='AlignRight')
-            if not self.optionBox:
-                self.createOptionBox()
-
-        QtWidgets.QLabel.showEvent(self, event)
-
-    def hideEvent(self, event):
-        """
-        Parameters:
-                event = <QEvent>
-        """
-
-        QtWidgets.QLabel.hideEvent(self, event)
-
-
-# -----------------------------------------------------------------------------
+        """Create an option menu box"""
+        self.option_box = OptionBox()
+        self.option_box.wrap(self)
 
 
 # -----------------------------------------------------------------------------

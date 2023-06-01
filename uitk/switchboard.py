@@ -158,7 +158,7 @@ class Switchboard(QUiLoader):
         ui_name_delimiters=(".", "#"),
         preload_ui=False,
         set_legal_name_no_tags_attr=False,
-        log_level=logging.INFO,
+        log_level=logging.WARNING,
     ):
         super().__init__(parent)
         """
@@ -520,7 +520,7 @@ class Switchboard(QUiLoader):
             return widget_dict
         else:
             raise ValueError(
-                f"Invalid datatype for _construct_widget_files_dict: {type(ui_dir)}, expected str, list, tuple, or set."
+                f"Invalid datatype for _construct_widget_files_dict: {type(self.widgets_location)}, expected str, list, tuple, or set."
             )
 
     def _construct_slots_files_dict(self) -> dict:
@@ -547,7 +547,7 @@ class Switchboard(QUiLoader):
                 return {}
         else:
             raise ValueError(
-                f"Invalid datatype for _construct_slots_files_dict: {type(ui_dir)}, expected str or class."
+                f"Invalid datatype for _construct_slots_files_dict: {type(self.slots_location)}, expected str or class."
             )
 
     @staticmethod
@@ -713,16 +713,20 @@ class Switchboard(QUiLoader):
     def init_widgets(
         self, ui, widgets, recursive=True, return_all_widgets=False, **kwargs
     ) -> set:
-        """Add widgets as attributes of the ui while giving additional attributes to the widgets themselves.
+        """Add widgets as attributes of the UI object while adding additional attributes to the widgets themselves.
+
+        This method iterates over a list of widgets, assigns the widget as an attribute to the UI,
+        and also assigns additional attributes to the widget itself for easier access and better management.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
-            widgets (obj/list): A widget or list of widgets to be added.
-            recursive (bool): Whether to recursively add child widgets (default=True).
-            kwargs (): Keyword arguments to set additional widget attributes.
+            ui (QWidget): A dynamic UI object that has been previously loaded.
+            widgets (obj/list): A widget or a list of widgets that will be added as attributes.
+            recursive (bool): If true, will recursively add child widgets as attributes (default=True).
+            return_all_widgets (bool): If true, will return all widgets in the UI, not just the newly added ones (default=False).
+            kwargs (dict): Additional widget attributes as keyword arguments.
 
         Returns:
-            (set) The added widgets.
+            set: The set of added widgets. If 'return_all_widgets' is True, it returns all widgets in the UI.
         """
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: {type(ui)}")
@@ -755,13 +759,26 @@ class Switchboard(QUiLoader):
         return added_widgets if not return_all_widgets else ui._widgets
 
     def eventFilter(self, widget, event):
+        """Filter out specific events related to the widget.
+
+        The function checks if the widget is shown. If so, it attempts to call the widget's initialization slot if it hasn't been initialized yet.
+        Note: the function always continues to process other events.
+
+        Parameters:
+            widget (QWidget): The widget that the event applies to.
+            event (QEvent): The event that is being filtered.
+
+        Returns:
+            bool: The returned value of the parent class's eventFilter method.
+                  This method must return False to continue event processing,
+                  and True to stop the event from propagating further.
+        """
         if event.type() == QtCore.QEvent.Show:
             slot_init = widget.get_slot_init()
 
             if slot_init and not widget.is_initialized:
                 widget.is_initialized = True  # set as initialized before calling init where you can choose to un-initialize it.
                 slot_init(widget)
-                self._slot_history.append(slot_init)
 
         # Continue processing other events as usual
         return super().eventFilter(widget, event)
@@ -917,12 +934,10 @@ class Switchboard(QUiLoader):
             clss = inspect.getmembers(mod, inspect.isclass)[0][1]
             if clss:
                 self.logger.warning(
-                    f"Slot class '{cls_name}' not found for '{ui.name}'. Using '{clss}' instead."
+                    f"Slot class '{cls_name}' not found. Using '{clss}' instead."
                 )
             else:
-                self.logger.warning(
-                    f"Slot class '{cls_name}' not found for '{ui.name}'."
-                )
+                self.logger.warning(f"Slot class '{cls_name}' not found.")
 
         return clss
 
@@ -1013,6 +1028,7 @@ class Switchboard(QUiLoader):
             set_legal_name_no_tags_attr=self.set_legal_name_no_tags_attr,
             log_level=self.logger.getEffectiveLevel(),
         )
+
         self._loaded_ui[ui.name] = ui
         return ui
 
@@ -1086,7 +1102,9 @@ class Switchboard(QUiLoader):
         self._ui_history.append(ui)
         # self.logger.info(f"_ui_history: {u.name for u in self._ui_history}")  # debug
 
-    def slot_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
+    def slot_history(
+        self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[]
+    ):
         """Get the slot history.
 
         Parameters:
@@ -1099,12 +1117,25 @@ class Switchboard(QUiLoader):
                             strings containing 'Normal'. NOT strings satisfying both terms.
             exc (str/int/list): The objects(s) to exclude. Similar to include.
                             exclude take precedence over include.
+            add (object/list, optional): New entrie(s) to append to the slot history.
+            remove (object/list, optional): Entry/entries to remove from the slot history.
 
         Returns:
-            (str/list): String of a single slot name or list of slot names based on the index or slice.
+            (object/list): Slot method(s) based on index or slice.
         """
         # keep original list length restricted to last 200 elements
         self._slot_history = self._slot_history[-200:]
+        # append new entries to the history
+        if add:
+            self._slot_history.extend(Iter.make_list(add))
+        # remove entries from the history
+        if remove:
+            remove_items = Iter.make_list(remove)
+            for item in remove_items:
+                try:
+                    self._slot_history.remove(item)
+                except ValueError:
+                    print(f"Item {item} not found in history.")
         # remove any previous duplicates if they exist; keeping the last added element.
         if not allow_duplicates:
             self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
@@ -1274,10 +1305,11 @@ class Switchboard(QUiLoader):
         Returns:
             obj/None: The method object with the given name, or None if no such method is found.
         """
-        return getattr(ui.slots, method_name, None)
+        slots = self.get_slots(ui)
+        return getattr(slots, method_name, None)
 
-    def get_signals(self, widget, derived=True, exc=[]):
-        """Get all signals for a given widget.
+    def get_available_signals(self, widget, derived=True, exc=[]):
+        """Get all available signals for a type of widget.
 
         Parameters:
             widget (str/obj): The widget to get signals for.
@@ -1288,18 +1320,18 @@ class Switchboard(QUiLoader):
         Returns:
             (set)
 
-        Example: get_signals(QtWidgets.QPushButton)
+        Example: get_available_signals(QtWidgets.QPushButton)
             would return:
-                    clicked (QAbstractButton)
-                    pressed (QAbstractButton)
-                    released (QAbstractButton)
-                    toggled (QAbstractButton)
-                    customContextMenuRequested (QWidget)
-                    windowIconChanged (QWidget)
-                    windowIconTextChanged (QWidget)
-                    windowTitleChanged (QWidget)
-                    destroyed (QObject)
-                    objectNameChanged (QObject)
+                clicked (QAbstractButton)
+                pressed (QAbstractButton)
+                released (QAbstractButton)
+                toggled (QAbstractButton)
+                customContextMenuRequested (QWidget)
+                windowIconChanged (QWidget)
+                windowIconTextChanged (QWidget)
+                windowTitleChanged (QWidget)
+                destroyed (QObject)
+                objectNameChanged (QObject)
         """
         signals = set()
         clss = widget if isinstance(widget, type) else type(widget)
@@ -1317,6 +1349,7 @@ class Switchboard(QUiLoader):
 
     def get_default_signals(self, widget):
         """Get the default signals for a given widget type.
+        The default signals are those specified in the default signals dictionary.
 
         Parameters:
             widget (str): A previously initialized widget.
@@ -1336,8 +1369,7 @@ class Switchboard(QUiLoader):
         return signals
 
     def connect_slots(self, ui, widgets=None):
-        """
-        Connects the signals to their respective slots for the widgets of the given ui.
+        """Connects the signals to their respective slots for the widgets of the given ui.
 
         This function ensures that existing signal-slot connections are not repeated.
         If a connection already exists, it is not made again.
@@ -1367,8 +1399,6 @@ class Switchboard(QUiLoader):
 
             if slot:
                 self._connect_slot(widget, slot)
-                # update slot history after a successful connection
-                self._slot_history.append(slot)
 
         ui.is_connected = True
 
@@ -1393,6 +1423,11 @@ class Switchboard(QUiLoader):
             "signals",
             Iter.make_list(self.default_signals.get(widget.derived_type)),
         )
+
+        def slot_wrapper(*args, **kwargs):
+            self.slot_history(add=slot)  # update slot history before calling the slot
+            slot(*args, **kwargs)
+
         for signal_name in signals:
             if not isinstance(signal_name, str):
                 raise TypeError(
@@ -1400,13 +1435,13 @@ class Switchboard(QUiLoader):
                 )
             signal = getattr(widget, signal_name, None)
             if signal:
-                signal.connect(slot)
+                signal.connect(slot_wrapper)
                 if widget not in self._connected_slots:
                     self._connected_slots[widget] = {}
-                self._connected_slots[widget][signal_name] = slot
+                self._connected_slots[widget][signal_name] = slot_wrapper
             else:
-                raise TypeError(
-                    f"No valid signal '{signal_name}' found for widget {widget.name}"
+                self.logger.warning(
+                    f"No valid signal '{signal_name}' found for {widget.ui.name}.{widget.name}"
                 )
 
     def disconnect_slots(self, ui, widgets=None, disconnect_all=False):
@@ -1451,15 +1486,15 @@ class Switchboard(QUiLoader):
         """Connect multiple signals to multiple slots at once.
 
         Parameters:
-            widgets (str/obj/list): ie. 'chk000-2' or [tb.ctxMenu.chk000, tb.ctxMenu.chk001]
+            widgets (str/obj/list): ie. 'chk000-2' or [tb.ctx_menu.chk000, tb.ctx_menu.chk001]
             signals (str/list): ie. 'toggled' or ['toggled']
             slots (obj/list): ie. self.cmb002 or [self.cmb002]
             clss (obj/list): if the widgets arg is given as a string, then the class it belongs to can be explicitly given.
                     else, the current ui will be used.
         Example:
-            connect_('chk000-2', 'toggled', self.cmb002, tb.ctxMenu)
-            connect_([tb.ctxMenu.chk000, tb.ctxMenu.chk001], 'toggled', self.cmb002)
-            connect_(tb.ctxMenu.chk015, 'toggled',
+            connect_('chk000-2', 'toggled', self.cmb002, tb.ctx_menu)
+            connect_([tb.ctx_menu.chk000, tb.ctx_menu.chk001], 'toggled', self.cmb002)
+            connect_(tb.ctx_menu.chk015, 'toggled',
             [lambda state: self.rigging.tb004.setText('Unlock Transforms' if state else 'Lock Transforms'),
             lambda state: self.rigging_submenu.tb004.setText('Unlock Transforms' if state else 'Lock Transforms')])
         """
@@ -1698,7 +1733,7 @@ class Switchboard(QUiLoader):
         return QtGui.QCursor.pos() - widget.rect().center()
 
     @staticmethod
-    def resize_and_center_widget(widget, padding_x=30, padding_y=6):
+    def resize_and_center_widget(widget, padding_x=25, padding_y=0):
         """Adjust the given widget's size to fit contents and re-center.
 
         Parameters:
@@ -1707,10 +1742,12 @@ class Switchboard(QUiLoader):
             padding_y (int): Any additional height to be applied.
         """
         p1 = widget.rect().center()
-        widget.resize(
-            widget.sizeHint().width() + padding_x,
-            widget.sizeHint().height() + padding_y,
-        )
+
+        x = widget.minimumSizeHint().width() if padding_x else widget.width()
+        y = widget.minimumSizeHint().height() if padding_y else widget.height()
+
+        widget.resize(x + padding_x, y + padding_y)
+
         p2 = widget.rect().center()
         diff = p1 - p2
         widget.move(widget.pos() + diff)

@@ -26,37 +26,37 @@ class StyleSheetMixin(QtCore.QObject):
 
     themes = {
         "standard": {
-            "MAIN_FOREGROUND": "rgb(75,75,75)",
-            "MAIN_BACKGROUND": "rgb(100,100,100)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(100,100,100,185)",
-            "WIDGET_BACKGROUND": "rgb(125,125,125)",
-            "BUTTON_PRESSED": "rgb(127,127,127)",
+            "MAIN_FOREGROUND": "rgb(255,255,255)",  # Bright white for better contrast
+            "MAIN_BACKGROUND": "rgb(70,70,70)",  # Slightly darker than widget background
+            "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,185)",
+            "WIDGET_BACKGROUND": "rgb(125,125,125)",  # As per your request
+            "BUTTON_PRESSED": "rgb(120,120,120)",  # Slightly darker than widget background
             "BUTTON_HOVER": "rgb(82,133,166)",
-            "TEXT_COLOR": "rgb(255,255,255)",
-            "TEXT_CHECKED": "rgb(0,0,0)",
+            "TEXT_COLOR": "rgb(255,255,255)",  # Bright white for better contrast
+            "TEXT_CHECKED": "rgb(255,255,255)",  # Bright white for better contrast
             "TEXT_DISABLED": "rgba(150,150,150,175)",
-            "TEXT_HOVER": "rgb(255,255,255)",
-            "TEXT_BACKGROUND": "rgb(50,50,50)",
-            "BORDER_COLOR": "rgb(50,50,50)",
+            "TEXT_HOVER": "rgb(255,255,255)",  # Bright white for better contrast
+            "TEXT_BACKGROUND": "rgb(70,70,70)",  # Same as main background
+            "BORDER_COLOR": "rgb(40,40,40)",  # Slightly darker than widget background
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
         },
         "dark": {
-            "MAIN_FOREGROUND": "rgb(50,50,50)",
-            "MAIN_BACKGROUND": "rgb(100,100,100)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,185)",
-            "WIDGET_BACKGROUND": "rgb(60,60,60)",
-            "BUTTON_PRESSED": "rgb(127,127,127)",
+            "MAIN_FOREGROUND": "rgb(200,200,200)",  # Lighter color for better contrast
+            "MAIN_BACKGROUND": "rgb(90,90,90)",  # Darker than widget background
+            "MAIN_BACKGROUND_ALPHA": "rgba(90,90,90,185)",
+            "WIDGET_BACKGROUND": "rgb(60,60,60)",  # As per your request
+            "BUTTON_PRESSED": "rgb(50,50,50)",  # Slightly darker than widget background
             "BUTTON_HOVER": "rgb(82,133,166)",
-            "TEXT_COLOR": "rgb(200,200,200)",
-            "TEXT_CHECKED": "rgb(0,0,0)",
-            "TEXT_DISABLED": "rgba(185,185,185,175)",
-            "TEXT_HOVER": "rgb(255,255,255)",
-            "TEXT_BACKGROUND": "rgb(50,50,50)",
-            "BORDER_COLOR": "rgb(40,40,40)",
+            "TEXT_COLOR": "rgb(220,220,220)",  # Lighter color for better contrast
+            "TEXT_CHECKED": "rgb(255,255,255)",  # Bright white for better contrast
+            "TEXT_DISABLED": "rgba(150,150,150,175)",
+            "TEXT_HOVER": "rgb(255,255,255)",  # Bright white for better contrast
+            "TEXT_BACKGROUND": "rgb(30,30,30)",  # Same as main background
+            "BORDER_COLOR": "rgb(20,20,20)",  # Slightly darker than widget background
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
-            "DISABLED_BACKGROUND": "rgb(45,45,45)",
+            "DISABLED_BACKGROUND": "rgb(35,35,35)",  # Slightly darker than main background
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
         },
     }
@@ -67,24 +67,14 @@ class StyleSheetMixin(QtCore.QObject):
                 background-color: {MAIN_BACKGROUND_ALPHA};
                 border: 1px solid {BORDER_COLOR};
             }
-            QMainWindow#translucent_window {
-                background-color: rgba(127,127,127,0.005);
-                border: none;
-            }
         """,
         "QWidget": """
             QWidget {
                 background-color: transparent;
+                border: none;
             }
             QWidget::item:selected {
                 background-color: {BUTTON_HOVER};
-            }
-            QWidget#hud_widget {
-                background-color: rgba(127,127,127,0.01);
-            }
-            QWidget#main_widget {
-                background-color: {MAIN_BACKGROUND_ALPHA};
-                border: 1px solid {BORDER_COLOR};
             }
         """,
         "QStackedWidget": """
@@ -99,11 +89,12 @@ class StyleSheetMixin(QtCore.QObject):
             QGroupBox {
                 border: 2px transparent;
                 border-radius: 1px;
-                margin: 10px 0px 0px 0px; /* top, right, bottom, left */ /* leave space at the top for the title */
+                padding: 1px 1px 1px 1px; /* top, right, bottom, left */
+                margin: 12px 0px 1px 0px; /* top, right, bottom, left */ /* leave space at the top for the title */
                 background-color: {MAIN_BACKGROUND_ALPHA};
             }
             QGroupBox::title {
-                top: -12px;
+                top: -13px;
                 left: 2px;
                 subcontrol-position: top left; /* position at the top center */
                 background-color: {MAIN_BACKGROUND_ALPHA};
@@ -117,7 +108,7 @@ class StyleSheetMixin(QtCore.QObject):
                 margin: 0px; /* spacing around the menu */
             }
             QMenu::item {
-                padding: 2px 2px 2px 2px; /* top, right, bottom, left */
+                padding: 0px 1px 0px 1px; /* top, right, bottom, left */
                 border: 1px solid transparent; /* reserve space for selection border */
             }
             QMenu::item:selected {
@@ -167,7 +158,7 @@ class StyleSheetMixin(QtCore.QObject):
                 border: 1px solid {BORDER_COLOR};
                 border-radius: 1px;
                 margin: 0px 0px 0px 0px; /* top, right, bottom, left */
-                padding: 0px 5px 0px 5px; /* top, right, bottom, left */
+                padding: 0px 2px 0px 2px; /* top, right, bottom, left */
             }
             QLabel::hover {
                 border: 1px solid {BORDER_COLOR};
@@ -183,13 +174,13 @@ class StyleSheetMixin(QtCore.QObject):
         """,
         "QAbstractButton": """
             QAbstractButton {
+                background-color: {WIDGET_BACKGROUND};
+                color: {TEXT_COLOR};
                 border-style: outset;
                 border-radius: 1px;
                 border: 1px solid {BORDER_COLOR};
-                padding: 0px 5px 0px 5px; /* top, right, bottom, left */
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-                spacing: 5px;
+                padding: 0px 1px 0px 1px; /* top, right, bottom, left */
+                spacing: 1px;
             }
             QAbstractButton::hover {
                 background-color: {BUTTON_HOVER};
@@ -610,6 +601,45 @@ class StyleSheetMixin(QtCore.QObject):
                 margin: 0.5px;
             }
         """,
+        # ... custom classes ...
+        "translucentBgNoBorder": """
+            .translucentBgNoBorder {
+                background-color: rgba(127,127,127,0.005);
+                border: none;
+                color: {TEXT_COLOR};
+                selection-background-color: {TEXT_BACKGROUND};
+                selection-color: {HIGHLIGHT_COLOR};
+            }
+        """,
+        "translucentBgWithBorder": """
+            .translucentBgWithBorder {
+                background-color: {MAIN_BACKGROUND_ALPHA};
+                border: 1px solid {BORDER_COLOR};
+                color: {TEXT_COLOR};
+                selection-background-color: {TEXT_BACKGROUND};
+                selection-color: {HIGHLIGHT_COLOR};
+            }
+        """,
+        "noBorder": """
+            .noBorder {
+                border: 0px none;
+            }
+        """,
+        "withBorder": """
+            .withBorder {
+                border: 1px solid {BORDER_COLOR};
+            }
+        """,
+        "noPadding": """
+            .noPadding {
+                padding: 0px 0px 0px 0px; /* top, right, bottom, left */
+            }
+        """,
+        "textBold": """
+            .textBold {
+                font-weight: bold;
+            }
+        """,
     }
 
     def get_style_sheet(self, widget_type=None, style="standard", **kwargs):
@@ -676,6 +706,7 @@ class StyleSheetMixin(QtCore.QObject):
         self,
         theme="standard",
         widget: Union[QtWidgets.QWidget, None] = None,
+        style_class="",
         **kwargs,
     ):
         """Set the styleSheet for the given widgets.
@@ -684,6 +715,7 @@ class StyleSheetMixin(QtCore.QObject):
         Parameters:
             theme (str): Color mode. ie. 'standard' or 'dark'
             widget (obj/list): The widget to set the theme of.
+            style_class: Assign a custom style class to the widget.
         """
         if widget is None:
             widget = self
@@ -692,6 +724,9 @@ class StyleSheetMixin(QtCore.QObject):
             raise ValueError(
                 f"Invalid datatype for widget: {type(widget)}, expected QWidget."
             )
+
+        if style_class:
+            widget.setProperty("class", style_class)
 
         # If the widget is a QMainWindow, apply the combined stylesheet
         if widget is self:

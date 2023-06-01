@@ -24,10 +24,10 @@ class Label(QtWidgets.QLabel, MenuInstance, AttributesMixin):
         """
         if event.button() == QtCore.Qt.LeftButton:
             self.clicked.emit()
-            self.menu_.show()
+            self.option_menu.show()
 
         if event.button() == QtCore.Qt.RightButton:
-            self.ctxMenu.show()
+            self.ctx_menu.show()
 
         QtWidgets.QLabel.mousePressEvent(self, event)
 
@@ -51,8 +51,8 @@ if __name__ == "__main__":
 
     w = Label(setText="QLabel", setVisible=True)
     w.resize(w.sizeHint().width(), 19)
-    menuItem = w.menu_.add(Label, setText="menu item")
-    ctxMenuItem = w.ctxMenu.add(Label, setText="context menu item")
+    menuItem = w.option_menu.add(Label, setText="menu item")
+    ctxMenuItem = w.ctx_menu.add(Label, setText="context menu item")
     print(menuItem, ctxMenuItem)
     # w.show()
     sys.exit(app.exec_())

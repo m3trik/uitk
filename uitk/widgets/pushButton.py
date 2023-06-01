@@ -15,7 +15,7 @@ class PushButton(
     def __init__(self, parent=None, showMenuOnMouseOver=False, **kwargs):
         QtWidgets.QPushButton.__init__(self, parent)
 
-        self.menu_.position = "topRight"
+        self.option_menu.position = "topRight"
         self.showMenuOnMouseOver = showMenuOnMouseOver
 
         # override built-ins
@@ -23,7 +23,7 @@ class PushButton(
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
 
-        self.optionBox = None
+        self.option_box = None
 
         self.set_attributes(**kwargs)
 
@@ -33,9 +33,9 @@ class PushButton(
                 event = <QEvent>
         """
         if self.showMenuOnMouseOver:
-            self.menu_.show()
+            self.option_menu.show()
 
-        QtWidgets.QPushButton.enterEvent(self, event)
+        super().enterEvent(event)
 
     def mousePressEvent(self, event):
         """
@@ -43,9 +43,9 @@ class PushButton(
                 event = <QEvent>
         """
         if event.button() == QtCore.Qt.RightButton:
-            self.ctxMenu.show()
+            self.ctx_menu.show()
 
-        QtWidgets.QPushButton.mousePressEvent(self, event)
+        super().mousePressEvent(event)
 
     def leaveEvent(self, event):
         """
@@ -53,26 +53,29 @@ class PushButton(
                 event = <QEvent>
         """
         if self.showMenuOnMouseOver:
-            self.menu_.hide()
+            self.option_menu.hide()
 
-        QtWidgets.QPushButton.leaveEvent(self, event)
+        super().leaveEvent(event)
 
     def createOptionBox(self):
-        """ """
-        self.optionBox = OptionBox(self)  # create an option box
-        self.optionBox.create()
+        """Create an option menu box"""
+        self.option_box = OptionBox()
+        self.option_box.option_menu = self.option_menu
+        self.option_box.wrap(self)
 
     def showEvent(self, event):
         """
         Parameters:
                 event = <QEvent>
         """
-        if self.ctxMenu.containsMenuItems:
-            if not self.optionBox:
+        if self.option_menu.containsMenuItems:
+            if not self.option_box:
                 self.createOptionBox()
 
-        QtWidgets.QPushButton.showEvent(self, event)
+        super().showEvent(event)
 
+
+# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
@@ -84,8 +87,8 @@ if __name__ == "__main__":
 
     w = PushButton(
         parent=None,
-        setObjectName="b000",
-        setText='<hl style="color:black;">A QPushButton <hl style="color:violet;"><b>with Rich TextMixin</b></hl>',
+        setObjectName="button_test",
+        setText='<hl style="color:black;">A QPushButton <hl style="color:violet;"><b>with Rich Text</b></hl>',
         resize=QSize(125, 45),
         setWhatsThis="",
         # setVisible=True,

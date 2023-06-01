@@ -23,7 +23,7 @@ class ComboBox(
         """
         self.popupStyle = popupStyle
 
-        # self.menu_.visible = False #built-in method isVisible() not working.
+        # self.option_menu.visible = False #built-in method isVisible() not working.
         self.view().installEventFilter(self)
 
         self.set_attributes(**kwargs)
@@ -174,7 +174,7 @@ class ComboBox(
         self.beforePopupShown.emit()
 
         if not self.popupStyle == "modelView":
-            self.menu_.show() if not self.menu_.isVisible() else self.menu_.hide()
+            self.option_menu.show() if not self.option_menu.isVisible() else self.option_menu.hide()
             return
 
         else:
@@ -188,15 +188,15 @@ class ComboBox(
         self.beforePopupHidden.emit()
 
         if not self.popupStyle == "modelView":
-            self.menu_.hide()
-            # self.menu_.visible=False
+            self.option_menu.hide()
+            # self.option_menu.visible=False
         else:
             super().hidePopup()
 
     def clear(self):
         """"""
         if not self.popupStyle == "modelView":
-            self.menu_.clear()
+            self.option_menu.clear()
         else:
             super().clear()
 
@@ -223,7 +223,7 @@ class ComboBox(
                 event=<QEvent>
         """
         if event.button() == QtCore.Qt.RightButton:
-            self.ctxMenu.show()
+            self.ctx_menu.show()
 
         super().mousePressEvent(event)
 
@@ -243,8 +243,8 @@ class ComboBox(
         Parameters:
                 event=<QEvent>
         """
-        if self.ctxMenu.containsMenuItems:
-            # self.ctxMenu.setTitle(self.itemText(0))
+        if self.ctx_menu.containsMenuItems:
+            # self.ctx_menu.setTitle(self.itemText(0))
             self.setTextOverlay("⧉", alignment="AlignRight")
             self.setItemText(0, self.itemText(0))  # set text: comboBox
 

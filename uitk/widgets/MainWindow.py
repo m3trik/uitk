@@ -64,7 +64,7 @@ class MainWindow(
         """
         super().__init__()
 
-        self._init_logger(logging.INFO)
+        self._init_logger(log_level)
 
         self.sb = switchboard_instance
         self.name = self._set_name(ui_filepath, set_name_attr)
@@ -202,7 +202,6 @@ class MainWindow(
 
         if set_attr:
             if legal_name and name != legal_name:
-                print(3, legal_name)
                 if legal_name in self.sb.ui_files:
                     self.logger.warning(
                         f"Legal name '{legal_name}' already exists. Attribute not set."

@@ -23,8 +23,8 @@ class LineEdit(QtWidgets.QLineEdit, MenuInstance, AttributesMixin):
         Parameters:
                 event=<QEvent>
         """
-        if self.ctxMenu:
-            self.ctxMenu.show()
+        if self.ctx_menu:
+            self.ctx_menu.show()
         else:
             QtWidgets.QLineEdit.ctxMenuEvent(self, event)
 
