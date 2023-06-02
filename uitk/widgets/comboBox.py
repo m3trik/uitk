@@ -243,7 +243,7 @@ class ComboBox(
         Parameters:
                 event=<QEvent>
         """
-        if self.ctx_menu.containsMenuItems:
+        if self.ctx_menu.contains_items:
             # self.ctx_menu.setTitle(self.itemText(0))
             self.setTextOverlay("⧉", alignment="AlignRight")
             self.setItemText(0, self.itemText(0))  # set text: comboBox

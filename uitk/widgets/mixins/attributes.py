@@ -118,7 +118,8 @@ class AttributesMixin:
             self.set_limits(w, value)
 
         elif attr == "set_spinbox_by_value":
-            self.set_spinbox_by_value(w, value)
+            if isinstance(w, QtWidgets.QAbstractSpinBox):
+                self.set_spinbox_by_value(w, value)
 
         elif attr == "set_check_state":
             state = {

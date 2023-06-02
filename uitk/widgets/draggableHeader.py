@@ -25,6 +25,7 @@ class DraggableHeader(
             QLabel {
                 background-color: rgba(127,127,127,2);
                 border: 1px solid transparent;
+                font-weight: bold;
             }
 
             QLabel::hover {

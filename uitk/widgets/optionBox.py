@@ -93,7 +93,7 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
             event (QMouseEvent): The mouse press event.
         """
         if event.button() == QtCore.Qt.LeftButton:
-            if self.option_menu.containsMenuItems:
+            if self.option_menu.contains_items:
                 self.option_menu.show()
 
         super().mousePressEvent(event)

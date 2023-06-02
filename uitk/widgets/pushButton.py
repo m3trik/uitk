@@ -68,7 +68,7 @@ class PushButton(
         Parameters:
                 event = <QEvent>
         """
-        if self.option_menu.containsMenuItems:
+        if self.option_menu.contains_items:
             if not self.option_box:
                 self.createOptionBox()
 

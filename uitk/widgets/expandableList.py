@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import inspect
 from PySide2 import QtCore, QtGui, QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
 
@@ -176,9 +177,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         This method recursively removes all items from the list, including items from all nested sublists.
         """
-        for i in reversed(
-            range(self.layout.count())
-        ):  # We're going backwards to avoid index errors.
+        # We're going backwards to avoid index errors.
+        for i in reversed(range(self.layout.count())):
             widget = self.layout.itemAt(i).widget()
             if widget:
                 # If the widget has a sublist, clear it too
@@ -222,12 +222,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 widget = QtWidgets.QLabel()
                 widget.setText(x)
 
-        elif isinstance(x, QtWidgets.QWidget):
-            widget = x() if callable(x) else x
+        elif isinstance(x, QtWidgets.QWidget) or (
+            inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
+        ):
+            widget = x(self) if callable(x) else x
 
         else:
             raise TypeError(
-                f"Unsupported item type: expected str, QWidget, or a collection (list, tuple, set, map, dict), but got '{type(x)}'"
+                f"Unsupported item type: expected str, QWidget, a subclass of QWidget, or a collection (list, tuple, set, map, dict), but got '{type(x)}'"
             )
 
         widget.item_text = lambda i=widget: self.get_item_text(i)
@@ -252,7 +254,6 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         widget.installEventFilter(self)
 
         self.resize(self.sizeHint())
-
         self.layout.invalidate()
 
         return widget
