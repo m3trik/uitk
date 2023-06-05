@@ -33,7 +33,7 @@ class Example:
         """ """
         cmb = self.sb.example.cmb000
 
-    def tb000(self, state=None):
+    def tb000(self, *args, **kwargs):
         """ """
         tb = self.sb.example.tb000
 

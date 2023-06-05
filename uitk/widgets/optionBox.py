@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.menu import MenuInstance
+from uitk.widgets.mixins.menu_instance import MenuInstance
 from uitk.widgets.mixins.text import RichText
 from uitk.widgets.mixins.attributes import AttributesMixin
 
@@ -31,20 +31,24 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
 
-        self.set_attributes(**kwargs)
+        self.setStyleSheet("OptionBox {border: none;}")
+
         if not self.text():
             self.setText("⧉")
 
-    def transfer_border_style(self, wrapped_widget, container):
-        """Transfers the border style from the wrapped widget to the container and removes
-        the border from the wrapped widget and option box.
+        self.set_attributes(**kwargs)
+
+    def remove_border_for_widget(self, wrapped_widget):
+        """Removes the border from the wrapped widget and the instance of this class.
+        This is achieved by applying a class-specific style sheet to both widgets.
 
         Parameters:
-            wrapped_widget (QWidget): The widget that was originally wrapped by the option box.
-            container (QWidget): The container widget holding the wrapped widget and option box.
+            wrapped_widget (QWidget): The widget that is being wrapped by the option box.
         """
-        self.setStyleSheet("border: none;")
-        wrapped_widget.setStyleSheet("border: none;")
+        wrapped_widget.setStyleSheet(
+            wrapped_widget.__class__.__name__ + " {border: none;}"
+        )
+        self.setStyleSheet(self.__class__.__name__ + " {border: none;}")
 
     def wrap(self, wrapped_widget):
         """Wraps the option box around another widget. This involves creating a container
@@ -82,7 +86,7 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
         layout.addWidget(self, 1)
 
         self.wrapped_widget = wrapped_widget
-        self.transfer_border_style(wrapped_widget, container)
+        self.remove_border_for_widget(wrapped_widget)
         container.setVisible(True)
 
     def mousePressEvent(self, event):

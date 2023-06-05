@@ -1,8 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.menu import MenuInstance
-from uitk.widgets.optionBox import OptionBox
+from uitk.widgets.mixins.menu_instance import MenuInstance
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 

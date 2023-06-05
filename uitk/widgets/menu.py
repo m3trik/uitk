@@ -2,11 +2,13 @@
 # coding=utf-8
 import inspect
 from PySide2 import QtCore, QtGui, QtWidgets
+from pythontk import cached_property
+from uitk.widgets.draggableHeader import DraggableHeader
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
 class Menu(QtWidgets.QWidget, AttributesMixin):
-    """"""
+    """ """
 
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
@@ -39,24 +41,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
 
         # Create a new layout with no margins
         self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.setContentsMargins(12, 12, 12, 12)
+        self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(1)
 
-        # Create a form layout inside the vertical layout
-        self.gridLayout = QtWidgets.QGridLayout()
-        self.gridLayout.setContentsMargins(0, 0, 0, 0)
-        self.gridLayout.setSpacing(1)
-
-        # Add form layout to the top level layout
-        self.layout.addLayout(self.gridLayout)
-
-        # Create DraggableHeader instance and add it to the layout
-        from uitk.widgets.draggableHeader import DraggableHeader
-
-        self.draggableHeader = DraggableHeader(self)
-        self.layout.insertWidget(0, self.draggableHeader)
-        self.layout.insertWidget(2, self.apply_button)
-
+        self.init_default_layout()
         self.setLayout(self.layout)
 
         self.setSizePolicy(
@@ -66,34 +54,70 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         self.installEventFilter(self)
         self.set_attributes(**kwargs)
 
+    def setCentralWidget(self, widget):
+        """Set a widget as the central widget, replacing the current one."""
+        current_central_widget = getattr(self, "_central_widget", None)
+        if current_central_widget:
+            current_central_widget.deleteLater()  # delete the current central widget
+        self._central_widget = widget  # set the new central widget
+        self._central_widget.setProperty("class", "centralWidget")  # for stylesheet
+        self.layout.addWidget(self._central_widget)  # add it to the layout
+
+    def centralWidget(self):
+        """Return the central widget."""
+        return self._central_widget
+
+    def init_default_layout(self):
+        """ """
+        # Create a central widget and set it to the layout
+        self.setCentralWidget(QtWidgets.QWidget(self))
+
+        # Create a QVBoxLayout inside the central widget
+        self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
+        self.centralWidgetLayout.setContentsMargins(12, 12, 12, 12)
+        self.centralWidgetLayout.setSpacing(1)
+
+        # Create a form layout inside the QVBoxLayout
+        self.gridLayout = QtWidgets.QGridLayout()
+        self.gridLayout.setContentsMargins(0, 0, 0, 0)
+        self.gridLayout.setSpacing(1)
+
+        # Create DraggableHeader instance and add it to the central widget layout
+        self.draggable_header = DraggableHeader(self)
+        self.centralWidgetLayout.addWidget(self.draggable_header)
+
+        # Add grid layout to the central widget layout
+        self.centralWidgetLayout.addLayout(self.gridLayout)
+
+        # Add apply button to the central widget layout
+        self.centralWidgetLayout.addWidget(self.apply_button)
+
+    def get_all_children(self):
+        children = self.findChildren(QtWidgets.QWidget)
+        return children
+
     @property
     def contains_items(self):
         """Check if the QMenu contains any items."""
         return bool(self.gridLayout.count())
 
-    @property
+    @cached_property
     def apply_button(self):
         """Property that returns an apply button."""
-        button = getattr(self, "_apply_button", None)
-        if button is None:
-            if not self.parent():
-                return None
+        if not self.parent():
+            return None
 
-            parent = self.parent()
-            parent_name = parent.objectName() or id(parent)
-            button = QtWidgets.QPushButton("Apply")
-            button.setObjectName(f"{parent_name}_apply_button")
-            button.setToolTip("Execute the command.")
-            button.released.connect(lambda: self.parent().clicked.emit())
-            button.setMinimumSize(119, 26)
-            button.hide()
+        button = QtWidgets.QPushButton("Apply")
+        button.setToolTip("Execute the command.")
+        button.released.connect(lambda: self.parent().clicked.emit())
+        button.setMinimumSize(119, 26)
+        button.hide()
 
-            self._apply_button = button
         return button
 
     def title(self):
         """ """
-        self.draggableHeader.text()
+        self.draggable_header.text()
 
     def setTitle(self, title="") -> None:
         """Set the menu's title to the given string.
@@ -113,7 +137,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
             if title:
                 title = title.upper()
 
-        self.draggableHeader.setText(title)
+        self.draggable_header.setText(title)
 
     def get_items(self):
         """Get all items in the list.
@@ -128,11 +152,30 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         return items
 
     def get_item(self, identifier):
-        """Return a QAction or QWidgetAction by index or text."""
+        """Return a QAction or QWidgetAction by index or text.
+
+        Parameters:
+            identifier (int or str): If an int, treats it as an index. If a str, treats it as the text of the item.
+
+        Raises:
+            ValueError: If the identifier is not an integer (index) or string (text).
+
+        Returns:
+            QAction or QWidgetAction: The item found by the identifier.
+        """
+        items = self.get_items()
+
         if isinstance(identifier, int):  # get by index
-            item = ...
+            if identifier < 0 or identifier >= len(items):
+                raise ValueError("Index out of range.")
+            item = items[identifier]
         elif isinstance(identifier, str):  # get by text
-            item = ...
+            for i in items:
+                if i.text() == identifier:
+                    item = i
+                    break
+            else:
+                raise ValueError("No item found with the given text.")
         else:
             raise ValueError(
                 f"Expected an integer (index) or string (text), got '{type(identifier)}'"
@@ -422,38 +465,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
             super().hide()
 
 
-class MenuInstance:
-    """Get a Menu and ctx_menu instance."""
-
-    @property
-    def option_menu(self) -> QtWidgets.QMenu:
-        """Get the standard menu."""
-        try:
-            return self._option_menu
-        except AttributeError:
-            self._option_menu = Menu(self, position="bottomLeft")
-            return self._option_menu
-
-    @option_menu.setter
-    def option_menu(self, menu: QtWidgets.QMenu):
-        """Set the standard menu."""
-        self._option_menu = menu
-
-    @property
-    def ctx_menu(self) -> QtWidgets.QMenu:
-        """Get the context menu."""
-        try:
-            return self._ctx_menu
-        except AttributeError:
-            self._ctx_menu = Menu(self, position="cursorPos")
-            return self._ctx_menu
-
-    @ctx_menu.setter
-    def ctx_menu(self, menu: QtWidgets.QMenu):
-        """Set the context menu."""
-        self._ctx_menu = menu
-
-
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -462,27 +473,20 @@ if __name__ == "__main__":
     # return the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
-    # # create parent menu containing two submenus:
-    # m = Menu(position="cursorPos")
-    # m1 = Menu("Create", add_menu=m)
-    # m1.add("QAction", setText="Action", insert_separator=True)
-    # m1.add("QAction", setText="Action", insert_separator=True)
-    # m1.add("QPushButton", setText="Button")
-
-    # m2 = Menu("Cameras", add_menu=m)
-    # m2.add("QAction", setText="Action", insert_separator=True)
-    # m2.add("QAction", setText="Action", insert_separator=True)
-    # m2.add("QPushButton", setText="Button")
-    # m.show()
-
     # # grid layout example
     menu = Menu(position="cursorPos", setTitle="Drag Me")
-
+    print(menu)
     # a = menu.add(["Label A", "Label B"])
     a = menu.add("Label A")
     b = menu.add("Label B")
     c = menu.add("QDoubleSpinBox", set_spinbox_by_value=1.0, row=0, col=1)
     d = menu.add("QDoubleSpinBox", set_spinbox_by_value=2.0, row=1, col=1)
+
+    menu.on_item_interacted.connect(lambda x: print(x))
+
+    from uitk.widgets.mixins.style_sheet import StyleSheet
+
+    StyleSheet().set_style(widget=menu, theme="dark")
 
     menu.show()
     print(menu.get_items())
@@ -536,7 +540,7 @@ Promoting a widget in designer to use a custom class:
 #   if not self.title():
 #           self.setTitle()
 
-#   if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggableHeader':
+#   if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggable_header':
 #       # print (f'show menu | title: {self.title()} | {self.parent().objectName()} has attr released.') #debug
 #       self.applyButton.show()
 

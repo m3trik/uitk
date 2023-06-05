@@ -15,8 +15,6 @@ from pythontk import (
     File,
     Str,
     Iter,
-    get_derived_type,
-    set_attributes,
     format_return,
 )
 
@@ -573,10 +571,10 @@ class Switchboard(QUiLoader):
         Returns all items between the opening and closing statements of the given property.
 
         So 'customwidget' would return:
-                [('class', 'DraggableHeader'), ('extends', 'QPushButton'), ('header', 'widgets.pushbuttondraggable.h')]
+                [('class', 'MyCustomWidget'), ('extends', 'QPushButton'), ('header', 'widgets.pushbuttondraggable.h')]
         from:
             <customwidget>
-                    <class>DraggableHeader</class>
+                    <class>MyCustomWidget</class>
                     <extends>QPushButton</extends>
                     <header>widgets.pushbuttondraggable.h</header>
             </customwidget>
@@ -710,54 +708,6 @@ class Switchboard(QUiLoader):
                     widgets.update(self._get_widgets_from_dir(mod_path))
             return widgets
 
-    def init_widgets(
-        self, ui, widgets, recursive=True, return_all_widgets=False, **kwargs
-    ) -> set:
-        """Add widgets as attributes of the UI object while adding additional attributes to the widgets themselves.
-
-        This method iterates over a list of widgets, assigns the widget as an attribute to the UI,
-        and also assigns additional attributes to the widget itself for easier access and better management.
-
-        Parameters:
-            ui (QWidget): A dynamic UI object that has been previously loaded.
-            widgets (obj/list): A widget or a list of widgets that will be added as attributes.
-            recursive (bool): If true, will recursively add child widgets as attributes (default=True).
-            return_all_widgets (bool): If true, will return all widgets in the UI, not just the newly added ones (default=False).
-            kwargs (dict): Additional widget attributes as keyword arguments.
-
-        Returns:
-            set: The set of added widgets. If 'return_all_widgets' is True, it returns all widgets in the UI.
-        """
-        if not isinstance(ui, QtWidgets.QWidget):
-            raise ValueError(f"Invalid datatype: {type(ui)}")
-
-        added_widgets = set()
-        for w in Iter.make_list(widgets):
-            if w in ui._widgets or w in added_widgets or not self.is_widget(w):
-                continue
-
-            w.ui = ui
-            w.name = w.objectName()
-            w.type = w.__class__.__name__
-            w.derived_type = get_derived_type(w, module="QtWidgets", return_name=True)
-            w.base_name = self.get_base_name(w.name)  # strip trailing non-letter chars.
-            w.get_slot = lambda w=w: self.get_method_by_name(ui, w.name)
-            w.get_slot_init = lambda w=w: self.get_method_by_name(ui, w.name + "_init")
-            w.is_initialized = False
-
-            w.installEventFilter(self)
-            set_attributes(w, **kwargs)
-            setattr(ui, w.name, w)
-            added_widgets.add(w)
-            # print('initWidgts:', w.ui.name.ljust(26), w.base_name.ljust(25), (w.name or type(w).__name__).ljust(25), w.type.ljust(15), w.derived_type.ljust(15), id(w)) #debug
-
-            if recursive:
-                child_widgets = w.findChildren(QtWidgets.QWidget)
-                self.init_widgets(ui, child_widgets, **kwargs)
-
-        ui._widgets.update(added_widgets)
-        return added_widgets if not return_all_widgets else ui._widgets
-
     def eventFilter(self, widget, event):
         """Filter out specific events related to the widget.
 
@@ -818,7 +768,7 @@ class Switchboard(QUiLoader):
         ui._slots = self._slot_instances[clss_path]
         setattr(self, ui._slots.__class__.__name__, ui._slots)
 
-        self.init_widgets(ui, ui.findChildren(QtWidgets.QWidget))
+        # ui.init_widgets(ui.findChildren(QtWidgets.QWidget))
         return ui._slots
 
     def get_slots(self, ui):
@@ -1012,7 +962,7 @@ class Switchboard(QUiLoader):
             for sublist in lst:  # get any custom widgets from the ui file.
                 try:
                     className = sublist[0][1]
-                    # ie. 'DraggableHeader' from ('class', 'DraggableHeader')
+                    # ie. 'MyCustomWidget' from ('class', 'MyCustomWidget')
                     # derived_type = sublist[1][1]
                     # ie. 'QPushButton' from ('extends', 'QPushButton')
                 except IndexError:
@@ -1402,31 +1352,67 @@ class Switchboard(QUiLoader):
 
         ui.is_connected = True
 
-    def _connect_slot(self, widget, slot):
-        """
-        Connects a slot to its corresponding signals for a given widget.
+    def _create_slot_wrapper(self, slot, widget):
+        """Returns a slot wrapper function that includes the widget as a parameter if possible.
+        The slot wrapper function is designed to handle different widget-specific signal values
+        as keyword arguments.
 
-        This function attempts to fetch signals from the slot decorator. If it fails to fetch them,
-        it resorts to the default signals based on the widget's derived type. For each fetched signal,
-        the function checks if the signal is a valid attribute of the widget. If it is, it connects
-        the slot to this signal and appends the slot to the connected slots list.
+        The signal values are passed to the slot function as keyword arguments based on the type
+        of the widget. For instance, a slot connected to a QCheckBox will receive the checkbox's
+        state as a keyword argument. The signal-specific keyword arguments include:
+
+        - QCheckBox: 'state'
+        - QRadioButton: 'toggled'
+        - QComboBox: 'index'
+        - QLineEdit: 'text'
+        - QSlider, QSpinBox: 'value'
+
+        If the slot function does not accept the widget or signal-specific keyword argument, it
+        is called with positional arguments as a fallback. If any other exception occurs during
+        the execution of the slot, a RuntimeError is raised with a description of the exception.
 
         Parameters:
-            widget (QtWidgets.QWidget): A widget for which the slot is connected to the signals.
-            slot (method): The slot method to connect to the signals.
+            slot (callable): The slot function to be wrapped. This is typically a method of a class.
+            widget (QWidget): The widget that the slot is connected to. This widget is passed to
+            the slot function as a keyword argument, and its signal value is also passed as a
+            keyword argument.
 
-        Raises:
-            TypeError: If the signal name is not a string or if no valid signal was found for the widget.
+        Returns:
+            callable: The slot wrapper function. This function can be connected to a widget signal
+            and is responsible for calling the original slot function with the appropriate arguments.
+        """
+
+        def slot_wrapper(*args, **kwargs):
+            try:
+                kwargs["widget"] = widget
+                slot(*args, **kwargs)
+            except TypeError:  # fallback in case slot doesn't accept a widget parameter
+                try:
+                    del kwargs["widget"]
+                    slot(*args, **kwargs)
+                except Exception as e:  # catch-all for other exceptions
+                    raise RuntimeError(f"Failed to call slot function: {e}")
+
+            self.slot_history(add=slot)
+
+        return slot_wrapper
+
+    def _connect_slot(self, widget, slot):
+        """Connects a slot to its associated signals for a widget.
+
+        The signals to be connected are defined in the slot's 'signals' attribute.
+        If the slot doesn't have a 'signals' attribute, the widget's default signals are used instead.
+        If a signal name isn't a string or no valid signal is found for the widget, a warning is logged.
+
+        Parameters:
+            widget (QWidget): The widget to connect the slot to.
+            slot (object): The slot to be connected.
         """
         signals = getattr(
             slot,
             "signals",
             Iter.make_list(self.default_signals.get(widget.derived_type)),
         )
-
-        def slot_wrapper(*args, **kwargs):
-            self.slot_history(add=slot)  # update slot history before calling the slot
-            slot(*args, **kwargs)
 
         for signal_name in signals:
             if not isinstance(signal_name, str):
@@ -1435,6 +1421,7 @@ class Switchboard(QUiLoader):
                 )
             signal = getattr(widget, signal_name, None)
             if signal:
+                slot_wrapper = self._create_slot_wrapper(slot, widget)
                 signal.connect(slot_wrapper)
                 if widget not in self._connected_slots:
                     self._connected_slots[widget] = {}
@@ -2085,6 +2072,7 @@ if __name__ == "__main__":
 
     sb = Switchboard(slots_location=MyProjectSlots)
     ui = sb.example
+    ui.set_style(theme="dark")
 
     print("ui:".ljust(20), ui)
     print("ui name:".ljust(20), ui.name)
@@ -2118,6 +2106,48 @@ logging.info(__name__)  # module name
 # --------------------------------------------------------------------------------------------
 # deprecated:
 # --------------------------------------------------------------------------------------------
+
+# def _connect_slot(self, widget, slot):
+#     """
+#     Connects a slot to its corresponding signals for a given widget.
+
+#     This function attempts to fetch signals from the slot decorator. If it fails to fetch them,
+#     it resorts to the default signals based on the widget's derived type. For each fetched signal,
+#     the function checks if the signal is a valid attribute of the widget. If it is, it connects
+#     the slot to this signal and appends the slot to the connected slots list.
+
+#     Parameters:
+#         widget (QtWidgets.QWidget): A widget for which the slot is connected to the signals.
+#         slot (method): The slot method to connect to the signals.
+
+#     Raises:
+#         TypeError: If the signal name is not a string or if no valid signal was found for the widget.
+#     """
+#     signals = getattr(
+#         slot,
+#         "signals",
+#         Iter.make_list(self.default_signals.get(widget.derived_type)),
+#     )
+
+#     def slot_wrapper(*args, **kwargs):
+#         self.slot_history(add=slot)  # update slot history before calling the slot
+#         slot(*args, **kwargs)
+
+#     for signal_name in signals:
+#         if not isinstance(signal_name, str):
+#             raise TypeError(
+#                 f"Signal name must be a string, not '{type(signal_name)}'"
+#             )
+#         signal = getattr(widget, signal_name, None)
+#         if signal:
+#             signal.connect(slot_wrapper)
+#             if widget not in self._connected_slots:
+#                 self._connected_slots[widget] = {}
+#             self._connected_slots[widget][signal_name] = slot_wrapper
+#         else:
+#             self.logger.warning(
+#                 f"No valid signal '{signal_name}' found for {widget.ui.name}.{widget.name}"
+#             )
 
 # def connect_slots(self, ui, widgets=None):
 #     """Connects the signals to their respective slots for the widgets of the given ui.

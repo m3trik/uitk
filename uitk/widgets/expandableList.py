@@ -493,9 +493,9 @@ if __name__ == "__main__":
 
     lw.on_item_interacted.connect(lambda x: print(x))
 
-    from uitk.widgets.mixins.style_sheet import StyleSheetMixin
+    from uitk.widgets.mixins.style_sheet import StyleSheet
 
-    StyleSheetMixin().set_style(widget=lw.get_items(), theme="dark")
+    StyleSheet().set_style(widget=lw.get_items(), theme="dark")
 
     window.resize(765, 255)
     window.show()

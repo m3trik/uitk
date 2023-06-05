@@ -4,11 +4,11 @@ import sys
 import logging
 from functools import partial
 from PySide2 import QtCore, QtWidgets
-from pythontk import File
+from pythontk import File, listify, get_derived_type, set_attributes
 from uitk.widgets.mixins.state_manager import StateManagerMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.docking import DockingMixin
-from uitk.widgets.mixins.style_sheet import StyleSheetMixin
+from uitk.widgets.mixins.style_sheet import StyleSheet
 
 
 class MainWindow(
@@ -16,7 +16,7 @@ class MainWindow(
     StateManagerMixin,
     AttributesMixin,
     DockingMixin,
-    StyleSheetMixin,
+    StyleSheet,
 ):
     on_show = QtCore.Signal()
 
@@ -59,7 +59,6 @@ class MainWindow(
             <UI>.prevent_hide (bool): While True, the hide method is disabled.
             <UI>.widgets (list): All the widgets of the UI.
             <UI>.slots (obj): The slots class instance.
-            <UI>._widgets: All the widgets of the UI.
             <UI>._deferred: A dictionary of deferred methods.
         """
         super().__init__()
@@ -78,7 +77,7 @@ class MainWindow(
         self.is_connected = False
         self.prevent_hide = False
         self.connect_on_show = connect_on_show
-        self._widgets = set()
+        self.widgets = set()
         self._deferred = {}
 
         ui = self.sb.load(ui_filepath)
@@ -100,8 +99,11 @@ class MainWindow(
         # self.docking = DockingMixin(self)
         # self.docking.docking_enabled = True
 
-        # self.set_style()  # Set the stylesheet
-        self.load_widget_states()  # Load widget states
+        # self.load_widget_states()  # Load widget states
+
+        # Initialize all child widgets
+        for child in self.findChildren(QtWidgets.QWidget):
+            self.init_widget(child)
 
         self.on_show.connect(self._connect_on_show)
 
@@ -132,23 +134,44 @@ class MainWindow(
         """
         found_widget = self.sb._get_widget_from_ui(self, attr_name)
         if found_widget:
-            self.sb.init_widgets(self, found_widget)
+            self.init_widget(found_widget)
             return found_widget
 
         raise AttributeError(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    @property
-    def widgets(self):
-        """Returns a list of the widgets in the widget's widget dictionary or initializes the widget dictionary and returns all the widgets found in the widget's children.
+    @listify
+    def init_widget(self, widget, **kwargs):
+        """Assign additional attributes to the widget for easier access and better management.
 
-        Returns:
-            set: A set of the widgets in the widget's widget dictionary or all the widgets found in the widget's children.
+        Parameters:
+            widget (obj): A widget that will be added as attributes.
+            kwargs (dict): Additional widget attributes as keyword arguments.
+
         """
-        return self._widgets or self.sb.init_widgets(
-            self, self.findChildren(QtWidgets.QWidget), return_all_widgets=True
+        if widget in self.widgets or not isinstance(widget, QtWidgets.QWidget):
+            return
+
+        widget.ui = self
+        widget.name = widget.objectName()
+        widget.type = widget.__class__.__name__
+        widget.derived_type = get_derived_type(
+            widget, module="QtWidgets", return_name=True
         )
+        widget.base_name = self.sb.get_base_name(
+            widget.name
+        )  # strip trailing non-letter chars.
+        widget.get_slot = lambda w=widget: self.sb.get_method_by_name(self, widget.name)
+        widget.get_slot_init = lambda w=widget: self.sb.get_method_by_name(
+            self, widget.name + "_init"
+        )
+        widget.is_initialized = False
+
+        widget.installEventFilter(self.sb)
+        set_attributes(widget, **kwargs)
+        setattr(self, widget.name, widget)
+        self.widgets.add(widget)
 
     @property
     def slots(self):
@@ -254,13 +277,14 @@ class MainWindow(
             self.connect_slots()
 
     def on_child_polished(self, w):
-        """Called after a child widget is polished. Initializes the widget dictionary with the child widget and connects its signals to their respective slots if the widget is connected.
+        """Called after a child widget is polished.
+        Initializes the widget dictionary with the child widget and connects its signals to their respective slots if the widget is connected.
 
         Parameters:
             w (QWidget): The polished child widget.
         """
-        if w not in self._widgets:
-            self.sb.init_widgets(self, w)
+        if w not in self.widgets:
+            self.init_widget(w)
             self.trigger_deferred()
             if self.is_connected:
                 self.sb.connect_slots(self, w)
@@ -347,7 +371,6 @@ class MainWindow(
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
     from uitk import Switchboard
 
     class MyProject:
@@ -363,6 +386,7 @@ if __name__ == "__main__":
     sb = Switchboard(slots_location=MySlots)
     mainwindow = MainWindow(sb, sb.ui_files["example"])
     print("sb.example:", mainwindow.sb.example)
+    print("sb.example.widgets:", mainwindow.sb.example.widgets)
     mainwindow.show(app_exec=True)
 
 # -----------------------------------------------------------------------------

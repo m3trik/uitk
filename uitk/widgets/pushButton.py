@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.menu import MenuInstance
+from uitk.widgets.mixins.menu_instance import MenuInstance
 from uitk.widgets.optionBox import OptionBox
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
@@ -12,11 +12,10 @@ class PushButton(
 ):
     """ """
 
-    def __init__(self, parent=None, showMenuOnMouseOver=False, **kwargs):
+    def __init__(self, parent=None, **kwargs):
         QtWidgets.QPushButton.__init__(self, parent)
 
         self.option_menu.position = "topRight"
-        self.showMenuOnMouseOver = showMenuOnMouseOver
 
         # override built-ins
         self.text = self.richText
@@ -27,16 +26,6 @@ class PushButton(
 
         self.set_attributes(**kwargs)
 
-    def enterEvent(self, event):
-        """
-        Parameters:
-                event = <QEvent>
-        """
-        if self.showMenuOnMouseOver:
-            self.option_menu.show()
-
-        super().enterEvent(event)
-
     def mousePressEvent(self, event):
         """
         Parameters:
@@ -46,16 +35,6 @@ class PushButton(
             self.ctx_menu.show()
 
         super().mousePressEvent(event)
-
-    def leaveEvent(self, event):
-        """
-        Parameters:
-                event = <QEvent>
-        """
-        if self.showMenuOnMouseOver:
-            self.option_menu.hide()
-
-        super().leaveEvent(event)
 
     def createOptionBox(self):
         """Create an option menu box"""

@@ -1,12 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.menu import MenuInstance
+from uitk.widgets.mixins.menu_instance import MenuInstance
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class CheckBox(QtWidgets.QCheckBox, MenuInstance, AttributesMixin, RichText, TextOverlay):
+class CheckBox(
+    QtWidgets.QCheckBox, MenuInstance, AttributesMixin, RichText, TextOverlay
+):
     """ """
 
     def __init__(self, parent=None, **kwargs):

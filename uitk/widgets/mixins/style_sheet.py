@@ -6,10 +6,10 @@ from PySide2 import QtCore, QtWidgets
 from pythontk import get_derived_type, listify
 
 
-class StyleSheetMixin(QtCore.QObject):
-    """StyleSheetMixin class is responsible for generating, modifying, and applying CSS style sheets for various Qt widgets.
+class StyleSheet(QtCore.QObject):
+    """StyleSheet class is responsible for generating, modifying, and applying CSS style sheets for various Qt widgets.
     The class also provides utility functions to adjust the appearance of widgets based on their properties or conditions.
-    The StyleSheetMixin class offers multiple theme presets (e.g., 'standard' and 'dark') and allows the user to create custom
+    The StyleSheet class offers multiple theme presets (e.g., 'standard' and 'dark') and allows the user to create custom
     theme presets by providing a color value dictionary.
 
     Methods:
@@ -75,6 +75,11 @@ class StyleSheetMixin(QtCore.QObject):
             }
             QWidget::item:selected {
                 background-color: {BUTTON_HOVER};
+            }
+            QWidget.centralWidget {
+                background-color: {MAIN_BACKGROUND_ALPHA};
+                border: 1px solid {BORDER_COLOR};
+                color: {TEXT_COLOR};
             }
         """,
         "QStackedWidget": """
@@ -659,8 +664,9 @@ class StyleSheetMixin(QtCore.QObject):
             else self.style_sheets.get(widget_type, "")
         )
 
-        if not css:
-            print(
+        is_valid_widget_type = bool(getattr(QtWidgets, str(widget_type), None))
+        if not css and is_valid_widget_type:
+            raise ValueError(
                 f"# Error: {__file__} in get_style_sheet\n#\tKeyError: '{widget_type}'"
             )
             return ""
@@ -736,6 +742,12 @@ class StyleSheetMixin(QtCore.QObject):
             super_style, style = self.get_style_hierarchy(
                 widget_type, theme=theme, **kwargs
             )
+
+            # Check for custom class style
+            custom_style_class = widget.property("class")
+            if custom_style_class and custom_style_class in self.style_sheets:
+                style = self.get_style_sheet(custom_style_class, theme=theme, **kwargs)
+
             final_style = super_style + "\n" + style
 
         widget.setStyleSheet(final_style)
@@ -830,7 +842,7 @@ if __name__ == "__main__":
     pass
 
 # else:
-#   styleSheet = StyleSheetMixin()
+#   styleSheet = StyleSheet()
 
 # module name
 # print (__name__)
