@@ -311,7 +311,7 @@ class Switchboard(QUiLoader):
             # use get_filepath to get the full path to the module.
             self._widgets_location = File.get_filepath(x)
         elif isinstance(x, (list, tuple, set, QtWidgets.QWidget)):
-            self._widgets_location = Iter.make_list(x)
+            self._widgets_location = Iter.make_iterable(x)
         else:
             raise ValueError(
                 f"Invalid datatype for widgets_location: {type(x)}, expected str, module, or QWidget(s)."
@@ -906,7 +906,7 @@ class Switchboard(QUiLoader):
         Example: register_widgets('O:/Cloud/Code/_scripts/uitk/uitk/ui/widgets/menu.py') #register using path to widget module.
         """
         result = []
-        for w in Iter.make_list(widgets):  # assure widgets is a list.
+        for w in Iter.make_iterable(widgets):  # assure widgets is a list.
             if isinstance(w, str):
                 widgets_ = self._get_widgets_from_dir(w)
                 for w_ in widgets_.values():
@@ -1077,10 +1077,10 @@ class Switchboard(QUiLoader):
         self._slot_history = self._slot_history[-200:]
         # append new entries to the history
         if add:
-            self._slot_history.extend(Iter.make_list(add))
+            self._slot_history.extend(Iter.make_iterable(add))
         # remove entries from the history
         if remove:
-            remove_items = Iter.make_list(remove)
+            remove_items = Iter.make_iterable(remove)
             for item in remove_items:
                 try:
                     self._slot_history.remove(item)
@@ -1217,7 +1217,7 @@ class Switchboard(QUiLoader):
             ui = self.get_ui(ui)
 
         typ = "derived_type" if derived_type else "type"
-        return [w for w in ui.widgets if getattr(w, typ) in Iter.make_list(types)]
+        return [w for w in ui.widgets if getattr(w, typ) in Iter.make_iterable(types)]
 
     def get_widget_from_method(self, method):
         """Get the corresponding widget from a given method.
@@ -1310,7 +1310,9 @@ class Switchboard(QUiLoader):
         signals = set()
         try:  # if the widget type has a default signal assigned in the signals dict; get the signal.
             signal_types = self.default_signals[widget.derived_type]
-            for s in Iter.make_list(signal_types):  # assure 'signal_types' is a list.
+            for s in Iter.make_iterable(
+                signal_types
+            ):  # assure 'signal_types' is a list.
                 signal = getattr(widget, s, None)
                 signals.add(signal)
 
@@ -1344,7 +1346,7 @@ class Switchboard(QUiLoader):
                 return
             widgets = ui.widgets
 
-        for widget in Iter.make_list(widgets):
+        for widget in Iter.make_iterable(widgets):
             slot = widget.get_slot()
 
             if slot:
@@ -1383,17 +1385,18 @@ class Switchboard(QUiLoader):
         """
 
         def slot_wrapper(*args, **kwargs):
+            parameters = inspect.signature(slot).parameters
+            has_kwargs = any(p.kind == p.VAR_KEYWORD for p in parameters.values())
+            has_widget = "widget" in parameters
             try:
-                kwargs["widget"] = widget
+                if has_kwargs or has_widget:
+                    kwargs["widget"] = widget
                 slot(*args, **kwargs)
-            except TypeError:  # fallback in case slot doesn't accept a widget parameter
-                try:
-                    del kwargs["widget"]
-                    slot(*args, **kwargs)
-                except Exception as e:  # catch-all for other exceptions
-                    raise RuntimeError(f"Failed to call slot function: {e}")
-
-            self.slot_history(add=slot)
+            except TypeError:  # slot didn't accept widget in kwargs
+                if len(args) > 0:  # if there is a value, try to call the slot with it
+                    slot(args[0])
+                else:  # no value, so call the slot with no arguments
+                    slot()
 
         return slot_wrapper
 
@@ -1411,7 +1414,7 @@ class Switchboard(QUiLoader):
         signals = getattr(
             slot,
             "signals",
-            Iter.make_list(self.default_signals.get(widget.derived_type)),
+            Iter.make_iterable(self.default_signals.get(widget.derived_type)),
         )
 
         for signal_name in signals:
@@ -1455,7 +1458,7 @@ class Switchboard(QUiLoader):
             if not ui.is_connected:
                 return
             widgets = ui.widgets
-        for widget in Iter.make_list(widgets):
+        for widget in Iter.make_iterable(widgets):
             slot = widget.get_slot()
             if not slot:
                 continue
@@ -1492,9 +1495,9 @@ class Switchboard(QUiLoader):
                 widgets = self.get_widgets_from_str(self.get_current_ui(), widgets)
 
         # if the variables are not of a list type; convert them.
-        widgets = Iter.make_list(widgets)
-        signals = Iter.make_list(signals)
-        slots = Iter.make_list(slots)
+        widgets = Iter.make_iterable(widgets)
+        signals = Iter.make_iterable(signals)
+        slots = Iter.make_iterable(slots)
 
         for widget in widgets:
             for signal in signals:
@@ -1571,7 +1574,7 @@ class Switchboard(QUiLoader):
                 next(
                     (k for k, v in self.attributesGetSet.items() if v == i), None
                 ): i  # construct a gettr setter pair dict using only the given setter values.
-                for i in Iter.make_list(attributes)
+                for i in Iter.make_iterable(attributes)
             }
 
         _attributes = {}
@@ -1861,7 +1864,7 @@ class Switchboard(QUiLoader):
         if clear:
             self._gc_protect.clear()
 
-        for o in Iter.make_list(obj):
+        for o in Iter.make_iterable(obj):
             self._gc_protect.add(o)
 
         return self._gc_protect
@@ -2126,7 +2129,7 @@ logging.info(__name__)  # module name
 #     signals = getattr(
 #         slot,
 #         "signals",
-#         Iter.make_list(self.default_signals.get(widget.derived_type)),
+#         Iter.make_iterable(self.default_signals.get(widget.derived_type)),
 #     )
 
 #     def slot_wrapper(*args, **kwargs):
@@ -2175,7 +2178,7 @@ logging.info(__name__)  # module name
 #             return
 #         widgets = ui.widgets
 
-#     for widget in Iter.make_list(widgets):
+#     for widget in Iter.make_iterable(widgets):
 #         slot = widget.get_slot()
 #         self.logger.info(f"Widget: {widget}, Slot: {slot}")
 #         if slot:

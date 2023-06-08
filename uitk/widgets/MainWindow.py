@@ -141,7 +141,6 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    @listify
     def init_widget(self, widget, **kwargs):
         """Assign additional attributes to the widget for easier access and better management.
 

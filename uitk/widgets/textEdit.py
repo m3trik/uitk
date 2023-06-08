@@ -95,7 +95,7 @@ Promoting a widget in designer to use a custom class:
 
 # deprecated: -----------------------------------
 
-# if pm.progressBar ("progressBar_", query=1, isCancelled=1):
+# if pm.progressBar ("progressBar_", q=True, isCancelled=1):
 # break
 
 

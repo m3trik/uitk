@@ -62,12 +62,6 @@ class StyleSheet(QtCore.QObject):
     }
 
     style_sheets = {
-        "QMainWindow": """
-            QMainWindow {
-                background-color: {MAIN_BACKGROUND_ALPHA};
-                border: 1px solid {BORDER_COLOR};
-            }
-        """,
         "QWidget": """
             QWidget {
                 background-color: transparent;
@@ -88,6 +82,12 @@ class StyleSheet(QtCore.QObject):
             }
             QStackedWidget QFrame {
                 background-color: {MAIN_BACKGROUND};
+            }
+        """,
+        "QMainWindow": """
+            QMainWindow {
+                background-color: {MAIN_BACKGROUND_ALPHA};
+                border: 1px solid {BORDER_COLOR};
             }
         """,
         "QGroupBox": """
@@ -390,48 +390,42 @@ class StyleSheet(QtCore.QObject):
         """,
         "QFrame": """
             QFrame {
-                border: 1px solid {BORDER_COLOR};
                 border-radius: 1px;
-                padding: 0px;
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
-                font-size: 8;
-                margin: 0px;
             }
-            QFrame:hover {
-                background-color: {BUTTON_HOVER};
+        """,
+        "QAbstractScrollArea": """
+            QAbstractScrollArea {
+                /* Inherits styles from QWidget */
+                background-color: {WIDGET_BACKGROUND};
+                border: 1px solid {BORDER_COLOR};
+                selection-background-color: {BUTTON_HOVER};
+                selection-color: {TEXT_COLOR};
+            }
+        """,
+        "QScrollArea": """
+            QScrollArea {
+                /* Inherits styles from QAbstractScrollArea */
+            }
+        """,
+        "QGraphicsView": """
+            QGraphicsView {
+                /* Inherits styles from QAbstractScrollArea */
+            }
+        """,
+        "QMdiArea": """
+            QMdiArea {
+                /* Inherits styles from QAbstractScrollArea */
             }
         """,
         "QPlainTextEdit": """
             QPlainTextEdit {
-                /* No specific styling applied */
-            }
-        """,
-        "QLineEdit": """
-            QLineEdit {
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 1px;
-                padding: 0 8px;
-                background-color: {MAIN_FOREGROUND};
-                color: {TEXT_COLOR};
-                selection-background-color: {BUTTON_HOVER};
-                selection-color: {TEXT_COLOR};
-            }
-            QLineEdit::disabled {
-                color: {MAIN_BACKGROUND};
-            }
-            QLineEdit::enabled {
-                color: {TEXT_COLOR};
-            }
-            QLineEdit:read-only {
-                background-color: {MAIN_BACKGROUND};
+                /* Inherits styles from QAbstractScrollArea */
             }
         """,
         "QTextEdit": """
             QTextEdit {
+                background-color: {WIDGET_BACKGROUND};
                 border: 1px solid {BORDER_COLOR};
-                background-color: {MAIN_FOREGROUND};
-                color: {TEXT_COLOR};
                 selection-background-color: {BUTTON_HOVER};
                 selection-color: {TEXT_COLOR};
                 background-attachment: fixed; /* fixed, scroll */
@@ -444,13 +438,29 @@ class StyleSheet(QtCore.QObject):
                 selection-color: white;
             }
         """,
+        "QLineEdit": """
+            QLineEdit {
+                background-color: {WIDGET_BACKGROUND};
+                border: 1px solid {BORDER_COLOR};
+                selection-background-color: {BUTTON_HOVER};
+                selection-color: {TEXT_COLOR};
+                border-radius: 1px;
+                padding: 0 8px;
+            }
+            QLineEdit::disabled {
+                color: {MAIN_BACKGROUND};
+            }
+            QLineEdit::enabled {
+                color: {TEXT_COLOR};
+            }
+            QLineEdit:read-only {
+                background-color: {MAIN_BACKGROUND};
+            }
+        """,
         "QAbstractItemView": """
             QAbstractItemView {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_COLOR};
                 alternate-background-color: {MAIN_BACKGROUND};
                 background-attachment: fixed; /* fixed, scroll */
-                border: 1px solid {BORDER_COLOR};
             }
             QAbstractItemView::item:alternate {
                 background-color: {MAIN_BACKGROUND};
@@ -475,12 +485,12 @@ class StyleSheet(QtCore.QObject):
         """,
         "QListWidget": """
             QListWidget {
-                /* style inherited from QAbstractItemView */
+                /* Inherits styles from QAbstractItemView */
             }
         """,
         "QListView": """
             QListView {
-                /* style inherited from QAbstractItemView */
+                /* Inherits styles from QAbstractItemView */
             }
         """,
         "QHeaderView": """
@@ -498,20 +508,16 @@ class StyleSheet(QtCore.QObject):
         """,
         "QTableView": """
             QTableView {
-                /* style inherited from QAbstractItemView */
+                /* Inherits styles from QAbstractItemView */
             }
         """,
         "QTreeView": """
             QTreeView {
-                /* style inherited from QAbstractItemView */
+                /* Inherits styles from QAbstractItemView */
             }
-        """,
-        "QTreeView QHeaderView": """
             QTreeView QHeaderView {
-                /* style inherited from QHeaderView */
+                /* Inherits styles from QHeaderView */
             }
-        """,
-        "QTreeView::branch": """
             QTreeView::branch {
                 background: palette(base);
                 border-image: none;
@@ -520,16 +526,16 @@ class StyleSheet(QtCore.QObject):
                 border-color: {MAIN_BACKGROUND};
             }
         """,
-        "QSlider": """
-            QSlider {
+        "QAbstractSlider": """
+            QAbstractSlider {
                 border: none;
             }
-            QSlider::groove:horizontal {
+            QAbstractSlider::groove:horizontal {
                 border: 1px solid {BORDER_COLOR};
                 height: 2px;
                 background: {WIDGET_BACKGROUND};
             }
-            QSlider::handle:horizontal {
+            QAbstractSlider::handle:horizontal {
                 width: 13px;
                 margin-top: -6px;
                 margin-bottom: -6px;
@@ -537,11 +543,16 @@ class StyleSheet(QtCore.QObject):
                 border-radius: 2px;
                 background: {BUTTON_HOVER};
             }
-            QSlider::add-page:horizontal {
+            QAbstractSlider::add-page:horizontal {
                 background: {BUTTON_PRESSED};
             }
-            QSlider::sub-page:horizontal {
+            QAbstractSlider::sub-page:horizontal {
                 background: {BUTTON_HOVER};
+            }
+        """,
+        "QSlider": """
+            QSlider {
+                /* Inherits styles from QAbstractSlider */
             }
         """,
         "QScrollBar": """
@@ -707,11 +718,10 @@ class StyleSheet(QtCore.QObject):
 
         return super_style, style
 
-    @listify(arg_name="widget")
     def set_style(
         self,
-        theme="standard",
         widget: Union[QtWidgets.QWidget, None] = None,
+        theme="standard",
         style_class="",
         **kwargs,
     ):
@@ -728,7 +738,7 @@ class StyleSheet(QtCore.QObject):
 
         if not isinstance(widget, QtWidgets.QWidget):
             raise ValueError(
-                f"Invalid datatype for widget: {type(widget)}, expected QWidget."
+                f"Invalid datatype for widget: expected QWidget, got {type(widget)}."
             )
 
         if style_class:
