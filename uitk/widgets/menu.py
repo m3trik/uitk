@@ -28,9 +28,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
-        self.prevent_hide = False
         self.kwargs = kwargs
         self.widget_data = {}
+        self.prevent_hide = False
 
         self.setProperty("class", "translucentBgWithBorder")
         self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)

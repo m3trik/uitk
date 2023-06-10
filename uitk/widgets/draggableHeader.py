@@ -11,13 +11,16 @@ class DraggableHeader(
 ):
     """Draggable/Checkable QLabel."""
 
-    __mousePressPos = QtCore.QPoint()
+    headerPinned = QtCore.Signal()
+    headerUnpinned = QtCore.Signal()
 
-    def __init__(self, parent=None, **kwargs):
-        QtWidgets.QLabel.__init__(self, parent)
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
         self.checkable = True
         self.checked = False
+        self.dragged = False
+        self.__mousePressPos = None
 
         self.setStyleSheet(
             """
@@ -35,14 +38,20 @@ class DraggableHeader(
 
         self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
 
-        # override built-ins
-        self.text = self.richText
-        self.setText = self.setRichText
-        self.sizeHint = self.richTextSizeHint
+        # Connect the signals to the local slots
+        self.headerPinned.connect(self.pin_header)
+        self.headerUnpinned.connect(self.unpin_header)
 
-        self.option_box = None
+    def pin_header(self):
+        """Slot to handle the header being pinned."""
+        self.window().prevent_hide = True
 
-        self.set_attributes(**kwargs)
+    def unpin_header(self):
+        """Slot to handle the header being unpinned."""
+        self.window().prevent_hide = False
+        if not self.isChecked():
+            print("window:", self.window())
+            self.window().hide()
 
     def setCheckable(self, state):
         self.checkable = state
@@ -55,72 +64,34 @@ class DraggableHeader(
             self.checked = state
 
     def mousePressEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
         if event.button() == QtCore.Qt.LeftButton:
-            self.__mousePressPos = event.globalPos()  # mouse positon at press.
-            self.__mouseMovePos = (
-                event.globalPos()
-            )  # mouse move position from last press. (updated on move event)
-
-            self.setChecked(True)  # setChecked to prevent window from closing.
-            self.window().prevent_hide = True
-
-        if event.button() == QtCore.Qt.RightButton:
-            self.ctx_menu.show()
-
+            self.__mousePressPos = event.globalPos()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
-        self.setCursor(QtGui.QCursor(QtCore.Qt.ClosedHandCursor))
-
-        # move window:
-        curPos = self.window().mapToGlobal(self.window().pos())
-        globalPos = event.globalPos()
-
-        try:  # if hasattr(self, '__mouseMovePos'):
-            diff = globalPos - self.__mouseMovePos
-
-            self.window().move(self.window().mapFromGlobal(curPos + diff))
-            self.__mouseMovePos = globalPos
-        except AttributeError:
-            pass
-
+        if self.__mousePressPos is not None:
+            moveAmount = event.globalPos() - self.__mousePressPos
+            if moveAmount.manhattanLength() > 5:
+                self.headerPinned.emit()
+                # Move the top-level widget
+                self.window().move(self.window().pos() + moveAmount)
+                self.__mousePressPos = event.globalPos()
+                self.dragged = True
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
-        self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
-
-        moveAmount = event.globalPos() - self.__mousePressPos
-
-        if moveAmount.manhattanLength() > 5:  # if widget moved:
-            self.setChecked(True)  # setChecked to prevent window from closing.
-            self.window().prevent_hide = True
-        else:
-            self.setChecked(not self.isChecked())  # toggle check state
-
-        self.window().prevent_hide = self.isChecked()
-        if (
-            not self.window().prevent_hide
-        ):  # prevent the parent window from hiding if checked.
-            self.window().hide()
-
+        if self.__mousePressPos is not None:
+            moveAmount = event.globalPos() - self.__mousePressPos
+            if moveAmount.manhattanLength() <= 5 and not self.dragged:
+                self.setChecked(not self.isChecked())
+                self.headerUnpinned.emit()
+                if not self.isChecked():
+                    self.window().hide()
+            if self.dragged:
+                self.setChecked(True)
+                self.dragged = False
+        self.__mousePressPos = None
         super().mouseReleaseEvent(event)
-
-    def createOptionBox(self):
-        """Create an option menu box"""
-        self.option_box = OptionBox()
-        self.option_box.wrap(self)
 
 
 # -----------------------------------------------------------------------------
@@ -128,14 +99,20 @@ class DraggableHeader(
 if __name__ == "__main__":
     import sys
 
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
-        sys.argv
-    )  # return the existing QApplication object, or create a new one if none exists.
+    # return the existing QApplication object, or create a new one if none exists.
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
-    w = DraggableHeader()
+    w = QtWidgets.QWidget()
+    layout = QtWidgets.QVBoxLayout(w)
+    header = DraggableHeader(w)
+    header.setText("Drag me!")
+    header.headerPinned.connect(lambda: print("Header pinned!"))
+    header.headerUnpinned.connect(lambda: print("Header unpinned!"))
+    layout.addWidget(header)
     w.show()
 
     sys.exit(app.exec_())
+
 
 # -----------------------------------------------------------------------------
 # Notes

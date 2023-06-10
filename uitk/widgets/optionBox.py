@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtWidgets, QtCore
+from PySide2 import QtWidgets
 from uitk.widgets.mixins.menu_instance import MenuInstance
 from uitk.widgets.mixins.text import RichText
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -37,6 +37,9 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
             self.setText("⧉")
 
         self.set_attributes(**kwargs)
+
+        # Connect the clicked signal to the show_menu slot
+        self.clicked.connect(self.show_menu)
 
     def remove_border_for_widget(self, wrapped_widget):
         """Removes the border from the wrapped widget and the instance of this class.
@@ -89,18 +92,34 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
         self.remove_border_for_widget(wrapped_widget)
         container.setVisible(True)
 
-    def mousePressEvent(self, event):
-        """Overrides the QPushButton's mousePressEvent method to show the wrapped widget's
-        context menu when the left mouse button is clicked.
+        # Install wrapped widget's event filter onto the option box
+        self.installEventFilter(self.wrapped_widget)
 
-        Parameters:
-            event (QMouseEvent): The mouse press event.
-        """
-        if event.button() == QtCore.Qt.LeftButton:
-            if self.option_menu.contains_items:
-                self.option_menu.show()
-
-        super().mousePressEvent(event)
+    def show_menu(self):
+        """Shows the option menu if it contains items."""
+        print(
+            "show_menu:",
+            0,
+            self,
+            self.option_menu.isVisible(),
+            self.option_menu.contains_items,
+            self.option_menu.prevent_hide,
+        )
+        if self.option_menu.contains_items:
+            if not self.wrapped_widget.isVisible():
+                orig_pos = self.option_menu.position
+                self.option_menu.position = "cursorPos"
+            self.option_menu.prevent_hide = False  # reset prevent_hide to False
+            self.option_menu.show()
+            self.option_menu.position = orig_pos
+            print(
+                "show_menu:",
+                1,
+                self,
+                self.option_menu.isVisible(),
+                self.option_menu.contains_items,
+                self.option_menu.prevent_hide,
+            )
 
 
 # -----------------------------------------------------------------------------

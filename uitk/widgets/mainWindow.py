@@ -7,7 +7,6 @@ from PySide2 import QtCore, QtWidgets
 from pythontk import File, listify, get_derived_type, set_attributes
 from uitk.widgets.mixins.state_manager import StateManagerMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.docking import DockingMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
 
 
@@ -15,10 +14,11 @@ class MainWindow(
     QtWidgets.QMainWindow,
     StateManagerMixin,
     AttributesMixin,
-    DockingMixin,
     StyleSheet,
 ):
     on_show = QtCore.Signal()
+    on_widget_added = QtCore.Signal(object)
+    on_widget_changed = QtCore.Signal(object, object)
 
     def __init__(
         self,
@@ -80,8 +80,10 @@ class MainWindow(
         self.widgets = set()
         self._deferred = {}
 
-        ui = self.sb.load(ui_filepath)
+        # Install event filter before setting central widget to init children
+        self.installEventFilter(self)
 
+        ui = self.sb.load(ui_filepath)
         self.setCentralWidget(ui.centralWidget())
         self.transfer_properties(ui, self)
 
@@ -96,16 +98,11 @@ class MainWindow(
         self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
         self.set_attributes(**kwargs)
 
-        # self.docking = DockingMixin(self)
-        # self.docking.docking_enabled = True
-
         # self.load_widget_states()  # Load widget states
 
-        # Initialize all child widgets
-        for child in self.findChildren(QtWidgets.QWidget):
-            self.init_widget(child)
-
-        self.on_show.connect(self._connect_on_show)
+        self.on_show.connect(
+            lambda: self.connect_slots() if self.connect_on_show else None
+        )
 
     def _init_logger(self, log_level):
         """Initializes logger."""
@@ -133,15 +130,15 @@ class MainWindow(
             or the parent class.
         """
         found_widget = self.sb._get_widget_from_ui(self, attr_name)
-        if found_widget:
-            self.init_widget(found_widget)
+        if found_widget:  # This is likely never used
+            self.init_child(found_widget)
             return found_widget
 
         raise AttributeError(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    def init_widget(self, widget, **kwargs):
+    def init_child(self, widget, **kwargs):
         """Assign additional attributes to the widget for easier access and better management.
 
         Parameters:
@@ -149,7 +146,11 @@ class MainWindow(
             kwargs (dict): Additional widget attributes as keyword arguments.
 
         """
-        if widget in self.widgets or not isinstance(widget, QtWidgets.QWidget):
+        if widget in self.widgets:
+            self.logger.info(f"Widget {widget} is already in self.widgets")
+            return
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.info(f"Widget {widget} is not an instance of QtWidgets.QWidget")
             return
 
         widget.ui = self
@@ -158,19 +159,57 @@ class MainWindow(
         widget.derived_type = get_derived_type(
             widget, module="QtWidgets", return_name=True
         )
-        widget.base_name = self.sb.get_base_name(
-            widget.name
-        )  # strip trailing non-letter chars.
+        widget.base_name = self.sb.get_base_name(widget.name)
         widget.get_slot = lambda w=widget: self.sb.get_method_by_name(self, widget.name)
         widget.get_slot_init = lambda w=widget: self.sb.get_method_by_name(
             self, widget.name + "_init"
         )
-        widget.is_initialized = False
+        widget.refresh = True
+        widget.installEventFilter(self)
 
-        widget.installEventFilter(self.sb)
         set_attributes(widget, **kwargs)
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
+
+        self.init_widget_changed_signal(widget)
+        self.on_widget_added.emit(widget)
+
+        if self.is_connected:
+            self.sb.connect_slot(widget)
+
+        # Initialize the widgets children
+        for child in widget.findChildren(QtWidgets.QWidget):
+            self.init_child(child)
+
+    def init_widget_changed_signal(self, widget):
+        # Connect the appropriate signal for each type of widget
+        if isinstance(widget, QtWidgets.QCheckBox):
+            widget.stateChanged.connect(
+                lambda state: self.on_widget_changed.emit(widget, state)
+            )
+            print("emit_widget_changed:", widget)
+        elif isinstance(widget, QtWidgets.QRadioButton):
+            widget.toggled.connect(
+                lambda state: self.on_widget_changed.emit(widget, state)
+            )
+            print("emit_widget_changed:", widget)
+        elif (
+            isinstance(widget, QtWidgets.QAbstractSlider)
+            or isinstance(widget, QtWidgets.QSpinBox)
+            or isinstance(widget, QtWidgets.QDoubleSpinBox)
+        ):
+            widget.valueChanged.connect(
+                lambda value: self.on_widget_changed.emit(widget, value)
+            )
+        elif isinstance(widget, QtWidgets.QLineEdit):
+            widget.textChanged.connect(
+                lambda text: self.on_widget_changed.emit(widget, text)
+            )
+        elif isinstance(widget, QtWidgets.QComboBox):
+            widget.currentIndexChanged.connect(
+                lambda index: self.on_widget_changed.emit(widget, index)
+            )
+            print("emit_widget_changed:", widget)
 
     @property
     def slots(self):
@@ -270,24 +309,6 @@ class MainWindow(
         """Connects the widget's signals to their respective slots."""
         self.sb.connect_slots(self)
 
-    def _connect_on_show(self):
-        """Connects the widget's signals to their respective slots when the widget becomes visible."""
-        if self.connect_on_show:
-            self.connect_slots()
-
-    def on_child_polished(self, w):
-        """Called after a child widget is polished.
-        Initializes the widget dictionary with the child widget and connects its signals to their respective slots if the widget is connected.
-
-        Parameters:
-            w (QWidget): The polished child widget.
-        """
-        if w not in self.widgets:
-            self.init_widget(w)
-            self.trigger_deferred()
-            if self.is_connected:
-                self.sb.connect_slots(self, w)
-
     def trigger_deferred(self):
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
         will be applied at this point. Once all deferred methods have executed, the dictionary is cleared.
@@ -313,25 +334,21 @@ class MainWindow(
         else:
             self._deferred[priority] = (method,)
 
-    def event(self, event):
-        """Handles events that are sent to the widget.
-
-        Parameters:
-            event (QtCore.QEvent): The event that was sent to the widget.
-
-        Returns:
-            bool: True if the event was handled, otherwise False.
-
-        Notes:
-            This method is called automatically by Qt when an event is sent to the widget.
-            If the event is a `QEvent.ChildPolished` event, it calls the `on_child_polished`
-            method with the child widget as an argument. Otherwise, it calls the superclass
-            implementation of `event`.
-        """
+    def eventFilter(self, widget, event):
+        """Filter out specific events related to the widget."""
         if event.type() == QtCore.QEvent.ChildPolished:
             child = event.child()
-            self.on_child_polished(child)
-        return super().event(event)
+            if isinstance(child, QtWidgets.QWidget):
+                self.init_child(child)
+
+        elif event.type() == QtCore.QEvent.Show:
+            if widget is not self:
+                slot_init = widget.get_slot_init()
+                if slot_init and widget.refresh:
+                    widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
+                    slot_init(widget)
+
+        return super().eventFilter(widget, event)
 
     def setVisible(self, state):
         """Called every time the widget is shown or hidden on screen.

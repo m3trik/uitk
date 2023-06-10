@@ -708,31 +708,6 @@ class Switchboard(QUiLoader):
                     widgets.update(self._get_widgets_from_dir(mod_path))
             return widgets
 
-    def eventFilter(self, widget, event):
-        """Filter out specific events related to the widget.
-
-        The function checks if the widget is shown. If so, it attempts to call the widget's initialization slot if it hasn't been initialized yet.
-        Note: the function always continues to process other events.
-
-        Parameters:
-            widget (QWidget): The widget that the event applies to.
-            event (QEvent): The event that is being filtered.
-
-        Returns:
-            bool: The returned value of the parent class's eventFilter method.
-                  This method must return False to continue event processing,
-                  and True to stop the event from propagating further.
-        """
-        if event.type() == QtCore.QEvent.Show:
-            slot_init = widget.get_slot_init()
-
-            if slot_init and not widget.is_initialized:
-                widget.is_initialized = True  # set as initialized before calling init where you can choose to un-initialize it.
-                slot_init(widget)
-
-        # Continue processing other events as usual
-        return super().eventFilter(widget, event)
-
     def set_slots(self, ui, clss):
         """This method sets the slot class instance for a loaded dynamic UI object. It takes a UI and
         a class and sets the instance as the slots for the given UI. Finally, it
@@ -1321,7 +1296,7 @@ class Switchboard(QUiLoader):
         return signals
 
     def connect_slots(self, ui, widgets=None):
-        """Connects the signals to their respective slots for the widgets of the given ui.
+        """Extends `connect_slot` to connect signals to their default slots for the widgets of the given ui.
 
         This function ensures that existing signal-slot connections are not repeated.
         If a connection already exists, it is not made again.
@@ -1347,10 +1322,7 @@ class Switchboard(QUiLoader):
             widgets = ui.widgets
 
         for widget in Iter.make_iterable(widgets):
-            slot = widget.get_slot()
-
-            if slot:
-                self._connect_slot(widget, slot)
+            self.connect_slot(widget)
 
         ui.is_connected = True
 
@@ -1400,17 +1372,30 @@ class Switchboard(QUiLoader):
 
         return slot_wrapper
 
-    def _connect_slot(self, widget, slot):
+    def connect_slot(self, widget, slot=None):
         """Connects a slot to its associated signals for a widget.
 
         The signals to be connected are defined in the slot's 'signals' attribute.
         If the slot doesn't have a 'signals' attribute, the widget's default signals are used instead.
         If a signal name isn't a string or no valid signal is found for the widget, a warning is logged.
+        If the slot is not provided, it will attempt to use the default slot associated with the widget.
+        If no slot is found, a ValueError is raised.
 
         Parameters:
             widget (QWidget): The widget to connect the slot to.
-            slot (object): The slot to be connected.
+            slot (object, optional): The slot to be connected. If not provided, the default slot associated with the widget will be used.
+
+        Raises:
+            ValueError: If no slot is found for the widget.
         """
+        if not slot:
+            slot = widget.get_slot()
+            if not slot:
+                self.logger.info(
+                    f"No slot found for widget {widget.ui.name}.{widget.name}"
+                )
+                return
+
         signals = getattr(
             slot,
             "signals",
@@ -2110,7 +2095,7 @@ logging.info(__name__)  # module name
 # deprecated:
 # --------------------------------------------------------------------------------------------
 
-# def _connect_slot(self, widget, slot):
+# def connect_slot(self, widget, slot):
 #     """
 #     Connects a slot to its corresponding signals for a given widget.
 
