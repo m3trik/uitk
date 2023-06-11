@@ -9,12 +9,31 @@ from uitk.widgets.mixins.text import RichText, TextOverlay
 class DraggableHeader(
     QtWidgets.QLabel, MenuInstance, AttributesMixin, RichText, TextOverlay
 ):
-    """Draggable/Checkable QLabel."""
+    """DraggableHeader is a QLabel that can be dragged around the screen and can be pinned/unpinned.
+
+    The class emits two signals: `headerPinned` and `headerUnpinned`, which are emitted when the header is pinned or unpinned, respectively.
+
+    The parent widget of an instance of DraggableHeader must have a `prevent_hide` attribute that determines whether the widget can be hidden or not.
+
+    Usage:
+        header = DraggableHeader(parent_widget)
+        header.headerPinned.connect(custom_slot)
+        header.headerUnpinned.connect(custom_slot)
+
+    Parent Class Requirements:
+        The parent widget must have a `prevent_hide` attribute. This attribute is used to determine whether the widget can be hidden or not.
+
+    """
 
     headerPinned = QtCore.Signal()
     headerUnpinned = QtCore.Signal()
 
     def __init__(self, parent=None):
+        """Initialize the DraggableHeader.
+
+        Parameters:
+            parent (QWidget, optional): The parent widget. Defaults to None.
+        """
         super().__init__(parent)
 
         self.checkable = True
@@ -43,32 +62,56 @@ class DraggableHeader(
         self.headerUnpinned.connect(self.unpin_header)
 
     def pin_header(self):
-        """Slot to handle the header being pinned."""
+        """Slot to handle the header being pinned. Sets the `prevent_hide` attribute of the parent widget to True."""
         self.window().prevent_hide = True
 
     def unpin_header(self):
-        """Slot to handle the header being unpinned."""
+        """Slot to handle the header being unpinned. Sets the `prevent_hide` attribute of the parent widget to False and hides the parent widget if the header is not checked."""
         self.window().prevent_hide = False
         if not self.isChecked():
-            print("window:", self.window())
             self.window().hide()
 
     def setCheckable(self, state):
+        """Set the checkable state of the header.
+
+        Parameters:
+            state (bool): The checkable state.
+        """
         self.checkable = state
 
     def isChecked(self):
+        """Check whether the header is checked or not.
+
+        Returns:
+            bool: True if the header is checked, False otherwise.
+        """
         return self.checked
 
     def setChecked(self, state):
+        """Set the checked state of the header.
+
+        Parameters:
+            state (bool): The checked state.
+        """
         if self.checkable:
             self.checked = state
 
     def mousePressEvent(self, event):
+        """Handle the mouse press event. If the left button is pressed, store the global position of the mouse cursor.
+
+        Parameters:
+            event (QMouseEvent): The mouse event.
+        """
         if event.button() == QtCore.Qt.LeftButton:
             self.__mousePressPos = event.globalPos()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        """Handle the mouse move event. If the mouse is moved more than 5 pixels from the position where the left button was pressed, emit the `headerPinned` signal and move the parent widget.
+
+        Parameters:
+            event (QMouseEvent): The mouse event.
+        """
         if self.__mousePressPos is not None:
             moveAmount = event.globalPos() - self.__mousePressPos
             if moveAmount.manhattanLength() > 5:
@@ -80,6 +123,11 @@ class DraggableHeader(
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        """Handle the mouse release event. If the mouse is released less than or equal to 5 pixels from the position wherethe left button was pressed and the header was not dragged, toggle the checked state of the header, emit the `headerUnpinned` signal, and hide the parent widget if the header is not checked. If the header was dragged, set the checked state to True and reset the dragged state.
+
+        Parameters:
+            event (QMouseEvent): The mouse event.
+        """
         if self.__mousePressPos is not None:
             moveAmount = event.globalPos() - self.__mousePressPos
             if moveAmount.manhattanLength() <= 5 and not self.dragged:

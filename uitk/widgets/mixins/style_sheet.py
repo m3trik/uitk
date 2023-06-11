@@ -345,19 +345,12 @@ class StyleSheet(QtCore.QObject):
                 border-radius: 1px;
                 min-width: 0em;
             }
-            QComboBox:hover {
-                background-color: {BUTTON_HOVER};
-            }
             QComboBox::hover {
                 background-color: {BUTTON_HOVER};
                 color: {TEXT_HOVER};
-                border: 1px solid {BORDER_COLOR};
             }
             QComboBox::open {
-                background-color: {WIDGET_BACKGROUND};
-                color: {TEXT_DISABLED};
-                border: 1px solid {BORDER_COLOR};
-                selection-background-color: {BUTTON_HOVER};
+                selection-background-color: {WIDGET_BACKGROUND};
                 selection-color: {TEXT_CHECKED};
             }
             QComboBox:on { /* shift the text when the popup opens */

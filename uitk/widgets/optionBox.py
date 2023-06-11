@@ -97,29 +97,15 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
 
     def show_menu(self):
         """Shows the option menu if it contains items."""
-        print(
-            "show_menu:",
-            0,
-            self,
-            self.option_menu.isVisible(),
-            self.option_menu.contains_items,
-            self.option_menu.prevent_hide,
-        )
         if self.option_menu.contains_items:
             if not self.wrapped_widget.isVisible():
+                # If the wrapped widget is not visible, show at cursor pos.
                 orig_pos = self.option_menu.position
                 self.option_menu.position = "cursorPos"
-            self.option_menu.prevent_hide = False  # reset prevent_hide to False
-            self.option_menu.show()
-            self.option_menu.position = orig_pos
-            print(
-                "show_menu:",
-                1,
-                self,
-                self.option_menu.isVisible(),
-                self.option_menu.contains_items,
-                self.option_menu.prevent_hide,
-            )
+                self.option_menu.show()
+                self.option_menu.position = orig_pos
+            else:
+                self.option_menu.show()
 
 
 # -----------------------------------------------------------------------------

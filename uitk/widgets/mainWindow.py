@@ -17,8 +17,8 @@ class MainWindow(
     StyleSheet,
 ):
     on_show = QtCore.Signal()
-    on_widget_added = QtCore.Signal(object)
-    on_widget_changed = QtCore.Signal(object, object)
+    on_child_added = QtCore.Signal(object)
+    on_child_changed = QtCore.Signal(object, object)
 
     def __init__(
         self,
@@ -164,6 +164,7 @@ class MainWindow(
         widget.get_slot_init = lambda w=widget: self.sb.get_method_by_name(
             self, widget.name + "_init"
         )
+        widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
         widget.refresh = True
         widget.installEventFilter(self)
 
@@ -171,8 +172,8 @@ class MainWindow(
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
 
-        self.init_widget_changed_signal(widget)
-        self.on_widget_added.emit(widget)
+        self.connect_child_changed_signal(widget)
+        self.on_child_added.emit(widget)
 
         if self.is_connected:
             self.sb.connect_slot(widget)
@@ -181,35 +182,25 @@ class MainWindow(
         for child in widget.findChildren(QtWidgets.QWidget):
             self.init_child(child)
 
-    def init_widget_changed_signal(self, widget):
-        # Connect the appropriate signal for each type of widget
-        if isinstance(widget, QtWidgets.QCheckBox):
-            widget.stateChanged.connect(
-                lambda state: self.on_widget_changed.emit(widget, state)
-            )
-            print("emit_widget_changed:", widget)
-        elif isinstance(widget, QtWidgets.QRadioButton):
-            widget.toggled.connect(
-                lambda state: self.on_widget_changed.emit(widget, state)
-            )
-            print("emit_widget_changed:", widget)
-        elif (
-            isinstance(widget, QtWidgets.QAbstractSlider)
-            or isinstance(widget, QtWidgets.QSpinBox)
-            or isinstance(widget, QtWidgets.QDoubleSpinBox)
-        ):
-            widget.valueChanged.connect(
-                lambda value: self.on_widget_changed.emit(widget, value)
-            )
-        elif isinstance(widget, QtWidgets.QLineEdit):
-            widget.textChanged.connect(
-                lambda text: self.on_widget_changed.emit(widget, text)
-            )
-        elif isinstance(widget, QtWidgets.QComboBox):
-            widget.currentIndexChanged.connect(
-                lambda index: self.on_widget_changed.emit(widget, index)
-            )
-            print("emit_widget_changed:", widget)
+    def connect_child_changed_signal(self, widget):
+        # Create a dictionary to map types to signal names
+        widget_map = {
+            QtWidgets.QCheckBox: "stateChanged",
+            QtWidgets.QRadioButton: "toggled",
+            QtWidgets.QAbstractSlider: "valueChanged",
+            QtWidgets.QSpinBox: "valueChanged",
+            QtWidgets.QDoubleSpinBox: "valueChanged",
+            QtWidgets.QLineEdit: "textChanged",
+            QtWidgets.QComboBox: "currentIndexChanged",
+        }
+
+        for widget_type, signal_name in widget_map.items():
+            if isinstance(widget, widget_type):
+                # Get the signal by its name
+                signal = getattr(widget, signal_name)
+                # Connect the signal to the slot
+                signal.connect(partial(self.on_child_changed.emit, widget))
+                break  # Stop the loop when the type is found
 
     @property
     def slots(self):
@@ -235,10 +226,10 @@ class MainWindow(
         self.sb.set_current_ui(self)
 
     def _set_name(self, file, set_attr=False) -> str:
-        """Sets name attribute for the object.
+        """Sets the name attribute for the object based on the filename of the UI file.
 
         Parameters:
-            file (str): The file path.
+            file (str): The file path of the UI file.
             set_attr (bool): If True, sets a switchboard attribute using the name. Defaults to False.
 
         Returns:
@@ -250,7 +241,7 @@ class MainWindow(
         return name
 
     def _set_legal_name(self, name, set_attr=False) -> str:
-        """Sets legal name attribute for the object.
+        """Sets the legal name attribute for the object based on the name of the UI file.
 
         Parameters:
             name (str): The name to generate the legal name from.
@@ -272,7 +263,7 @@ class MainWindow(
         return legal_name
 
     def _set_legal_name_no_tags(self, name, set_attr=False) -> str:
-        """Sets legal name without tags attribute for the object.
+        """Sets the legal name without tags attribute for the object based on the name of the UI file.
 
         Parameters:
             name (str): The name to generate the legal name without tags from.
@@ -296,12 +287,26 @@ class MainWindow(
 
     @staticmethod
     def _parse_tags(name):
-        """Parse tags from the file name and return a set of tags."""
+        """Parse tags from the file name and return a set of tags.
+
+        Parameters:
+            name (str): The name to parse tags from.
+
+        Returns:
+            set: A set of tags parsed from the name.
+        """
         parts = name.split("#")
         return set(parts[1:]) if len(parts) > 1 else set()
 
     def has_tag(self, tag_str):
-        """Check if any of the given tags, separated by '|', are present in the tags set."""
+        """Check if any of the given tags, separated by '|', are present in the tags set.
+
+        Parameters:
+            tag_str (str): The tags to check, separated by '|'.
+
+        Returns:
+            bool: True if any of the given tags are present in the tags set, False otherwise.
+        """
         tags_to_check = tag_str.split("|")
         return any(tag in self.tags for tag in tags_to_check)
 
