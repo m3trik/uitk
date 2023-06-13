@@ -155,14 +155,12 @@ class MainWindow(
 
         widget.ui = self
         widget.name = widget.objectName()
-        widget.type = widget.__class__.__name__
-        widget.derived_type = get_derived_type(
-            widget, module="QtWidgets", return_name=True
-        )
         widget.base_name = self.sb.get_base_name(widget.name)
-        widget.get_slot = lambda w=widget: self.sb.get_method_by_name(self, widget.name)
-        widget.get_slot_init = lambda w=widget: self.sb.get_method_by_name(
-            self, widget.name + "_init"
+        widget.type = widget.__class__
+        widget.derived_type = get_derived_type(widget, module="QtWidgets")
+        widget.get_slot = lambda w=widget: getattr(self.slots, w.name, None)
+        widget.get_slot_init = lambda w=widget: getattr(
+            self.slots, f"{w.name}_init", None
         )
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
         widget.refresh = True
@@ -172,8 +170,10 @@ class MainWindow(
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
 
-        self.connect_child_changed_signal(widget)
         self.on_child_added.emit(widget)
+        # Connect the on_child_changed signal to the sync_widget_values method
+        self.init_child_changed_signal(widget)
+        self.on_child_changed.connect(self.sb.sync_widget_values)
 
         if self.is_connected:
             self.sb.connect_slot(widget)
@@ -182,24 +182,36 @@ class MainWindow(
         for child in widget.findChildren(QtWidgets.QWidget):
             self.init_child(child)
 
-    def connect_child_changed_signal(self, widget):
-        # Create a dictionary to map types to signal names
-        widget_map = {
-            QtWidgets.QCheckBox: "stateChanged",
-            QtWidgets.QRadioButton: "toggled",
-            QtWidgets.QAbstractSlider: "valueChanged",
-            QtWidgets.QSpinBox: "valueChanged",
-            QtWidgets.QDoubleSpinBox: "valueChanged",
-            QtWidgets.QLineEdit: "textChanged",
-            QtWidgets.QComboBox: "currentIndexChanged",
-        }
+    def init_child_changed_signal(self, widget):
+        """Initializes the signal for a given widget that will be emitted when the widget's state changes.
 
-        for widget_type, signal_name in widget_map.items():
+        This method iterates over a dictionary of default signals, which maps widget types to signal names.
+        If the widget is an instance of a type in the dictionary, the method checks if the widget has a signal
+        with the corresponding name. If it does, the method connects the signal to a slot.
+
+        The slot is a lambda function that emits the `on_child_changed` signal of the parent object with the widget
+        and the value emitted by the widget's signal as arguments. If the widget's signal does not emit a value,
+        the lambda function does nothing.
+
+        The `on_child_changed` signal can then be connected to a method that will be called whenever the widget's state changes.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to initialize the signal for.
+        """
+        default_signals = self.sb.default_signals
+
+        for widget_type, signal_name in default_signals.items():
             if isinstance(widget, widget_type):
-                # Get the signal by its name
-                signal = getattr(widget, signal_name)
-                # Connect the signal to the slot
-                signal.connect(partial(self.on_child_changed.emit, widget))
+                # Check if the widget has the signal
+                if hasattr(widget, signal_name):
+                    # Get the signal by its name
+                    signal = getattr(widget, signal_name)
+                    # Connect the signal to the slot
+                    signal.connect(
+                        lambda v=None, w=widget: self.on_child_changed.emit(v, w)
+                        if v is not None
+                        else None
+                    )
                 break  # Stop the loop when the type is found
 
     @property

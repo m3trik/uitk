@@ -120,31 +120,31 @@ class Switchboard(QUiLoader):
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
     default_signals = {  # the signals to be connected per widget type should no signals be specified using the slot decorator.
-        "QAction": "triggered",
-        "QLabel": "released",
-        "QPushButton": "clicked",
-        "QListWidget": "itemClicked",
-        "QTreeWidget": "itemClicked",
-        "QComboBox": "currentIndexChanged",
-        "QSpinBox": "valueChanged",
-        "QDoubleSpinBox": "valueChanged",
-        "QCheckBox": "stateChanged",
-        "QRadioButton": "toggled",
-        "QLineEdit": "textChanged",
-        "QTextEdit": "textChanged",
-        "QSlider": "valueChanged",
-        "QProgressBar": "valueChanged",
-        "QDial": "valueChanged",
-        "QScrollBar": "valueChanged",
-        "QDateEdit": "dateChanged",
-        "QDateTimeEdit": "dateTimeChanged",
-        "QTimeEdit": "timeChanged",
-        "QMenu": "triggered",
-        "QMenuBar": "triggered",
-        "QTabBar": "currentChanged",
-        "QTabWidget": "currentChanged",
-        "QToolBox": "currentChanged",
-        "QStackedWidget": "currentChanged",
+        QtWidgets.QAction: "triggered",
+        QtWidgets.QLabel: "released",
+        QtWidgets.QPushButton: "clicked",
+        QtWidgets.QListWidget: "itemClicked",
+        QtWidgets.QTreeWidget: "itemClicked",
+        QtWidgets.QComboBox: "currentIndexChanged",
+        QtWidgets.QSpinBox: "valueChanged",
+        QtWidgets.QDoubleSpinBox: "valueChanged",
+        QtWidgets.QCheckBox: "stateChanged",
+        QtWidgets.QRadioButton: "toggled",
+        QtWidgets.QLineEdit: "textChanged",
+        QtWidgets.QTextEdit: "textChanged",
+        QtWidgets.QSlider: "valueChanged",
+        QtWidgets.QProgressBar: "valueChanged",
+        QtWidgets.QDial: "valueChanged",
+        QtWidgets.QScrollBar: "valueChanged",
+        QtWidgets.QDateEdit: "dateChanged",
+        QtWidgets.QDateTimeEdit: "dateTimeChanged",
+        QtWidgets.QTimeEdit: "timeChanged",
+        QtWidgets.QMenu: "triggered",
+        QtWidgets.QMenuBar: "triggered",
+        QtWidgets.QTabBar: "currentChanged",
+        QtWidgets.QTabWidget: "currentChanged",
+        QtWidgets.QToolBox: "currentChanged",
+        QtWidgets.QStackedWidget: "currentChanged",
     }
 
     def __init__(
@@ -938,8 +938,6 @@ class Switchboard(QUiLoader):
                 try:
                     className = sublist[0][1]
                     # ie. 'MyCustomWidget' from ('class', 'MyCustomWidget')
-                    # derived_type = sublist[1][1]
-                    # ie. 'QPushButton' from ('extends', 'QPushButton')
                 except IndexError:
                     continue
 
@@ -1176,24 +1174,6 @@ class Switchboard(QUiLoader):
 
         return next((w for w in ui.widgets if w.name == name), None)
 
-    def get_widgets_by_type(self, types, ui=None, derived_type=False):
-        """Get widgets of the given types.
-
-        Parameters:
-            types (str/list): A widget class name, or list of widget class names. ie. 'QPushbutton' or ['QPushbutton', 'QComboBox']
-            ui (str/obj): Parent ui name, or ui object. ie. 'polygons' or <polygons>
-                                            If no name is given, the current ui will be used.
-            derived_type (bool): Get by using the parent class of custom widgets.
-
-        Returns:
-            (list)
-        """
-        if ui is None or isinstance(ui, str):
-            ui = self.get_ui(ui)
-
-        typ = "derived_type" if derived_type else "type"
-        return [w for w in ui.widgets if getattr(w, typ) in Iter.make_iterable(types)]
-
     def get_widget_from_method(self, method):
         """Get the corresponding widget from a given method.
 
@@ -1215,23 +1195,6 @@ class Switchboard(QUiLoader):
             ),
             None,
         )
-
-    def get_method_by_name(self, ui, method_name):
-        """
-        Get a method associated with a UI by its name.
-
-        This method searches for a method that is associated with a given UI and
-        has a specific name. If no such method is found, None is returned.
-
-        Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
-            method_name (str): The name of the method to search for.
-
-        Returns:
-            obj/None: The method object with the given name, or None if no such method is found.
-        """
-        slots = self.get_slots(ui)
-        return getattr(slots, method_name, None)
 
     def get_available_signals(self, widget, derived=True, exc=[]):
         """Get all available signals for a type of widget.
@@ -1273,45 +1236,48 @@ class Switchboard(QUiLoader):
         return signals
 
     def get_default_signals(self, widget):
-        """Get the default signals for a given widget type.
-        The default signals are those specified in the default signals dictionary.
+        """Retrieves the default signals for a given widget type.
+
+        This method iterates over a dictionary of default signals, which maps widget types to signal names.
+        If the widget is an instance of a type in the dictionary, the method checks if the widget has a signal
+        with the corresponding name. If it does, the signal is added to a set of signals.
+
+        The method returns this set of signals, which represents all the default signals that the widget has.
 
         Parameters:
-            widget (str): A previously initialized widget.
+            widget (QtWidgets.QWidget): The widget to get the default signals for.
 
         Returns:
-            (set): signals ie. ('released')
+            set: A set of signals that the widget has, according to the default signals dictionary.
         """
         signals = set()
-        try:  # if the widget type has a default signal assigned in the signals dict; get the signal.
-            signal_types = self.default_signals[widget.derived_type]
-            for s in Iter.make_iterable(
-                signal_types
-            ):  # assure 'signal_types' is a list.
-                signal = getattr(widget, s, None)
-                signals.add(signal)
-
-        except KeyError:
-            pass
+        for widget_type, signal_name in self.default_signals.items():
+            if isinstance(widget, widget_type):
+                signal = getattr(widget, signal_name, None)
+                if signal is not None:
+                    signals.add(signal)
         return signals
 
     def connect_slots(self, ui, widgets=None):
-        """Extends `connect_slot` to connect signals to their default slots for the widgets of the given ui.
+        """Connects the default slots to their corresponding signals for all widgets of a given UI.
 
-        This function ensures that existing signal-slot connections are not repeated.
-        If a connection already exists, it is not made again.
+        This method iterates over all widgets of the UI, and for each widget, it calls the `connect_slot` method
+        to connect the widget's default slot to its corresponding signal.
+
+        If a specific set of widgets is provided, the method only connects the slots for these widgets.
+
+        After all slots are connected, the method sets the `is_connected` attribute of the UI to True.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
-            widgets (Iterable[QtWidgets.QWidget], optional): A specific set of widgets for which
-                to connect slots. If not provided, all widgets from the ui are used.
+            ui (QtWidgets.QWidget): The UI to connect the slots for.
+            widgets (Iterable[QtWidgets.QWidget], optional): A specific set of widgets to connect the slots for.
+                If not provided, all widgets of the UI are used.
 
         Raises:
-            ValueError: If ui is not an instance of QWidget.
+            ValueError: If the UI is not an instance of QtWidgets.QWidget.
 
         Side effect:
-            If successful, sets `ui.is_connected` to True indicating that
-            the slots for the UI's widgets are connected.
+            If successful, sets `ui.is_connected` to True, indicating that the slots for the UI's widgets are connected.
         """
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: {type(ui)}")
@@ -1327,33 +1293,21 @@ class Switchboard(QUiLoader):
         ui.is_connected = True
 
     def _create_slot_wrapper(self, slot, widget):
-        """Returns a slot wrapper function that includes the widget as a parameter if possible.
-        The slot wrapper function is designed to handle different widget-specific signal values
-        as keyword arguments.
+        """Creates a wrapper function for a slot that includes the widget as a parameter if possible.
 
-        The signal values are passed to the slot function as keyword arguments based on the type
-        of the widget. For instance, a slot connected to a QCheckBox will receive the checkbox's
-        state as a keyword argument. The signal-specific keyword arguments include:
+        The wrapper function is designed to handle different widget-specific signal values as keyword arguments.
+        The signal values are passed to the slot function as keyword arguments based on the type of the widget.
 
-        - QCheckBox: 'state'
-        - QRadioButton: 'toggled'
-        - QComboBox: 'index'
-        - QLineEdit: 'text'
-        - QSlider, QSpinBox: 'value'
-
-        If the slot function does not accept the widget or signal-specific keyword argument, it
-        is called with positional arguments as a fallback. If any other exception occurs during
-        the execution of the slot, a RuntimeError is raised with a description of the exception.
+        If the slot function does not accept the widget or signal-specific keyword argument, it is called with positional arguments as a fallback.
 
         Parameters:
             slot (callable): The slot function to be wrapped. This is typically a method of a class.
-            widget (QWidget): The widget that the slot is connected to. This widget is passed to
-            the slot function as a keyword argument, and its signal value is also passed as a
-            keyword argument.
+            widget (QtWidgets.QWidget): The widget that the slot is connected to. This widget is passed to the slot function as a keyword argument,
+                and its signal value is also passed as a keyword argument.
 
         Returns:
-            callable: The slot wrapper function. This function can be connected to a widget signal
-            and is responsible for calling the original slot function with the appropriate arguments.
+            callable: The slot wrapper function. This function can be connected to a widget signal and is responsible for calling the original slot function
+                with the appropriate arguments.
         """
 
         def slot_wrapper(*args, **kwargs):
@@ -1490,96 +1444,43 @@ class Switchboard(QUiLoader):
                 for slot in slots:
                     signal.connect(slot)
 
-    def sync_all_widgets(self, *uis, **kwargs):
-        """Set sync connections for all widgets of the given UI objects.
+    def sync_widget_values(self, value, widget):
+        """Synchronizes the value of a given widget with all its relative widgets.
+
+        This method first retrieves all the relative UIs of the given widget, including both upstream and downstream relatives.
+        It then iterates over these relatives, and for each relative, it tries to get a widget with the same name as the given widget.
+
+        If such a widget exists in the relative UI, the method checks the type of the widget and uses the appropriate method to set the widget's value.
+        The appropriate method is determined based on the signal that the widget emits when its state changes.
+
+        The signal names and corresponding methods are stored in the `default_signals` dictionary, which maps widget types to signal names.
 
         Parameters:
-            *uis: A tuple of previously loaded dynamic UI objects to sync widgets among.
+            value (any): The value to set the widget and its relatives to.
+            widget (QtWidgets.QWidget): The widget to synchronize the value for.
         """
-        for i, ui1 in enumerate(uis):
-            for ui2 in uis[i + 1 :]:
-                for w1 in ui1.widgets:
-                    try:
-                        w2 = self.get_widget(w1.name, ui2)
-                    except AttributeError:
-                        continue
-
-                    pair_id = hash((w1, w2))
-                    if pair_id in self._synced_pairs:
-                        continue
-
-                    self.sync_widgets(w1, w2, **kwargs)
-
-    def sync_widgets(self, w1, w2, **kwargs):
-        """Set the initial signal connections that will call the _sync_attributes function on state changes.
-
-        Parameters:
-            w1 (obj): The first widget to sync.
-            w2 (obj): The second widget to sync.
-            kwargs: The attribute(s) to sync as keyword arguments.
-        """
-        try:  # get the default signal for the given widget.
-            signals1 = self.get_default_signals(w1)
-            signals2 = self.get_default_signals(w2)
-
-            # set sync connections for each of the widgets signals.
-            for s1, s2 in zip(signals1, signals2):
-                s1.connect(lambda: self._sync_attributes(w1, w2, **kwargs))
-                s2.connect(lambda: self._sync_attributes(w2, w1, **kwargs))
-
-            pair_id = hash((w1, w2))
-            self._synced_pairs.add(pair_id)
-
-        except (AttributeError, KeyError):
-            return
-
-    attributesGetSet = {
-        "value": "setValue",
-        "text": "setText",
-        "icon": "setIcon",
-        "checkState": "setCheckState",
-        "isChecked": "setChecked",
-        "isDisabled": "setDisabled",
-    }
-
-    def _sync_attributes(self, frm, to, attributes=[]):
-        """Sync the given attributes between the two given widgets.
-        If a widget does not have an attribute it will be silently skipped.
-
-        Parameters:
-            frm (obj): The widget to transfer attribute values from.
-            to (obj): The widget to transfer attribute values to.
-            attributes (str/list)(dict): The attribute(s) to sync. ie. a setter attribute 'setChecked' or a dict containing getter:setter pairs. ie. {'isChecked':'setChecked'}
-        """
-        if not attributes:
-            attributes = self.attributesGetSet
-
-        elif not isinstance(attributes, dict):
-            attributes = {
-                next(
-                    (k for k, v in self.attributesGetSet.items() if v == i), None
-                ): i  # construct a gettr setter pair dict using only the given setter values.
-                for i in Iter.make_iterable(attributes)
-            }
-
-        _attributes = {}
-        for gettr, settr in attributes.items():
-            try:
-                _attributes[settr] = getattr(frm, gettr)()
-            except AttributeError:
-                pass
-
-        for (
-            attr,
-            value,
-        ) in _attributes.items():  # set the second widget's attributes from the first.
-            try:
-                getattr(to, attr)(value)
-            except AttributeError:
-                pass
+        # Get the relatives of the widget's UI
+        relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
+        # For each relative UI...
+        for relative in relatives:
+            # Get the widget of the same name
+            relative_widget = getattr(relative, widget.name, None)
+            # If the relative widget exists...
+            if relative_widget is not None:
+                # Check the type of the widget and use the appropriate method to set the value
+                for widget_type, signal_name in self.default_signals.items():
+                    if isinstance(relative_widget, widget_type):
+                        # Check if the widget has the signal
+                        if signal_name == "textChanged":
+                            relative_widget.setText(value)
+                        elif signal_name in {"valueChanged", "currentIndexChanged"}:
+                            relative_widget.setValue(value)
+                        elif signal_name in {"toggled", "stateChanged"}:
+                            relative_widget.setChecked(value)
+                        break  # Stop the loop when the type is found
 
     def set_widget_attrs(self, *args, **kwargs):
-        """Set multiple properties, for multiple widgets, on multiple ui's at once.
+        """Set multiple properties, for multiple widgets, on multiple ui's at once.https://www.tcm.com/watchtcm/titles/69005
 
         Parameters:
             *args = arg [0] (str) String of object_names. - object_names separated by ',' ie. 'b000-12,b022'
@@ -1590,7 +1491,9 @@ class Switchboard(QUiLoader):
             set_widget_attrs('chk003', <ui1>, <ui2>, setText='Un-Crease')
         """
         if not args[1:]:
-            relatives = self.get_ui_relatives(self.get_current_ui())
+            relatives = self.get_ui_relatives(
+                self.get_current_ui(), upstream=False, exact=False, downstream=False
+            )
             args = args + relatives
 
         for ui in args[1:]:
@@ -1695,63 +1598,6 @@ class Switchboard(QUiLoader):
 
         return slots
 
-    @staticmethod
-    def get_center(widget):
-        """Get the center point of a given widget.
-
-        Parameters:
-            widget (obj): The widget to query.
-
-        Returns:
-            (obj) QPoint
-        """
-        return QtGui.QCursor.pos() - widget.rect().center()
-
-    @staticmethod
-    def resize_and_center_widget(widget, padding_x=25, padding_y=0):
-        """Adjust the given widget's size to fit contents and re-center.
-
-        Parameters:
-            widget (obj): The widget to resize.
-            padding_x (int): Any additional width to be applied.
-            padding_y (int): Any additional height to be applied.
-        """
-        p1 = widget.rect().center()
-
-        x = widget.minimumSizeHint().width() if padding_x else widget.width()
-        y = widget.minimumSizeHint().height() if padding_y else widget.height()
-
-        widget.resize(x + padding_x, y + padding_y)
-
-        p2 = widget.rect().center()
-        diff = p1 - p2
-        widget.move(widget.pos() + diff)
-
-    @staticmethod
-    def move_and_center_widget(widget, pos, offset_x=2, offset_y=2):
-        """Move and center the given widget on the given point.
-
-        Parameters:
-            widget (obj): The widget to resize.
-            pos (obj): A point to move to.
-            offset_x (int): The desired offset on the x axis. 2 is center.
-            offset_y (int): The desired offset on the y axis.
-        """
-        width = pos.x() - (widget.width() / offset_x)
-        height = pos.y() - (widget.height() / offset_y)
-
-        widget.move(
-            QtCore.QPoint(width, height)
-        )  # center a given widget at a given position.
-
-    @staticmethod
-    def center_widget_on_screen(widget):
-        """ """
-        centerPoint = QtGui.QScreen.availableGeometry(
-            QtWidgets.QApplication.primaryScreen()
-        ).center()
-        widget.move(centerPoint - widget.frameGeometry().center())
-
     def toggle_widgets(self, *args, **kwargs):
         """Set multiple boolean properties, for multiple widgets, on multiple ui's at once.
 
@@ -1763,7 +1609,9 @@ class Switchboard(QUiLoader):
             toggle_widgets(<ui1>, <ui2>, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
         """
         if not args:
-            relatives = self.get_ui_relatives(self.get_current_ui())
+            relatives = self.get_ui_relatives(
+                self.get_current_ui(), upstream=False, exact=False, downstream=False
+            )
             args = relatives
 
         for ui in args:
@@ -1836,72 +1684,29 @@ class Switchboard(QUiLoader):
         # self.logger.info(f"prefix: {prefix} axis: {axis}") #debug
         return prefix + axis  # ie. '-X'
 
-    def gc_protect(self, obj=None, clear=False):
-        """Protect the given object from garbage collection.
-
-        Parameters:
-            obj (obj/list): The obj(s) to add to the protected list.
-            clear (bool): Clear the set before adding any given object(s).
-
-        Returns:
-            (list) protected objects.
-        """
-        if clear:
-            self._gc_protect.clear()
-
-        for o in Iter.make_iterable(obj):
-            self._gc_protect.add(o)
-
-        return self._gc_protect
-
-    def is_widget(self, obj):
-        """Returns True if the given obj is a valid widget.
-
-        Parameters:
-            obj (obj): An object to query.
-
-        Returns:
-            (bool)
-        """
-        try:
-            return issubclass(obj, QtWidgets.QWidget)
-        except TypeError:
-            return issubclass(obj.__class__, QtWidgets.QWidget)
-
     @staticmethod
-    def get_widget_at(pos, top_widget_only=True):
-        """Get visible and enabled widget(s) located at the given position.
-        As written, this will disable `TransparentForMouseEvents` on each widget queried.
+    def invert_on_modifier(value):
+        """Invert a numerical or boolean value if the alt key is pressed.
 
         Parameters:
-            pos (QPoint) = The global position at which to query.
-            top_widget_only (bool): Return only the top-most widget,
-                    otherwise widgets are returned in the order in which they overlap.
-                    Disabling this option will cause overlapping windows to flash as
-                    their attribute is changed and restored.
+            value (int, float, bool) = The value to invert.
+
         Returns:
-            (obj/list) list if not top_widget_only.
-
-        Example:
-            get_widget_at(QtGui.QCursor.pos())
+            (int, float, bool)
         """
-        w = QtWidgets.QApplication.widgetAt(pos)
-        if top_widget_only:
-            return w
+        modifiers = QtWidgets.QApplication.instance().keyboardModifiers()
+        if modifiers not in (
+            QtCore.Qt.AltModifier,
+            QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier,
+        ):
+            return value
 
-        widgets = []
-        while w:
-            widgets.append(w)
+        if type(value) in (int, float):
+            result = abs(value) if value < 0 else -value
+        elif type(value) == bool:
+            result = True if value else False
 
-            w.setAttribute(
-                QtCore.Qt.WA_TransparentForMouseEvents
-            )  # make widget invisible to further enquiries.
-            w = QtWidgets.QApplication.widgetAt(pos)
-
-        for w in widgets:  # restore attribute.
-            w.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
-
-        return widgets
+        return result
 
     @staticmethod
     def get_parent_widgets(widget, object_names=False):
@@ -1968,6 +1773,41 @@ class Switchboard(QUiLoader):
             if (name is None) or (w.objectName() == name)
         ]
 
+    @staticmethod
+    def get_widget_at(pos, top_widget_only=True):
+        """Get visible and enabled widget(s) located at the given position.
+        As written, this will disable `TransparentForMouseEvents` on each widget queried.
+
+        Parameters:
+            pos (QPoint) = The global position at which to query.
+            top_widget_only (bool): Return only the top-most widget,
+                    otherwise widgets are returned in the order in which they overlap.
+                    Disabling this option will cause overlapping windows to flash as
+                    their attribute is changed and restored.
+        Returns:
+            (obj/list) list if not top_widget_only.
+
+        Example:
+            get_widget_at(QtGui.QCursor.pos())
+        """
+        w = QtWidgets.QApplication.widgetAt(pos)
+        if top_widget_only:
+            return w
+
+        widgets = []
+        while w:
+            widgets.append(w)
+
+            w.setAttribute(
+                QtCore.Qt.WA_TransparentForMouseEvents
+            )  # make widget invisible to further enquiries.
+            w = QtWidgets.QApplication.widgetAt(pos)
+
+        for w in widgets:  # restore attribute.
+            w.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
+
+        return widgets
+
     def message_box(self, string, message_type="", location="topMiddle", timeout=1):
         """Spawns a message box with the given text.
         Supports HTML formatting.
@@ -1994,53 +1834,94 @@ class Switchboard(QUiLoader):
         self._messageBox.setText(string)
         self._messageBox.exec_()
 
-    # @classmethod
-    # def progress(cls, fn):
-    #   '''A decorator for progress_bar.
-    #   Does not work with staticmethods.
-    #   '''
-    #   def wrapper(self, *args, **kwargs):
-    #       self.progress_bar(fn(self, *args, **kwargs))
-    #   return wrapper
-
-    def progress_bar(self):
-        """ """
-        try:
-            return self._progress_bar
-
-        except AttributeError:
-            self._progress_bar = self.Progress_bar(self.parent())
-
-            try:
-                self.ui.progress_bar.step1
-            except AttributeError:
-                pass
-
-            return self._progress_bar
-
     @staticmethod
-    def invert_on_modifier(value):
-        """Invert a numerical or boolean value if the alt key is pressed.
+    def get_center(widget):
+        """Get the center point of a given widget.
 
         Parameters:
-            value (int, float, bool) = The value to invert.
+            widget (obj): The widget to query.
 
         Returns:
-            (int, float, bool)
+            (obj) QPoint
         """
-        modifiers = QtWidgets.QApplication.instance().keyboardModifiers()
-        if modifiers not in (
-            QtCore.Qt.AltModifier,
-            QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier,
-        ):
-            return value
+        return QtGui.QCursor.pos() - widget.rect().center()
 
-        if type(value) in (int, float):
-            result = abs(value) if value < 0 else -value
-        elif type(value) == bool:
-            result = True if value else False
+    @staticmethod
+    def resize_and_center_widget(widget, padding_x=25, padding_y=0):
+        """Adjust the given widget's size to fit contents and re-center.
 
-        return result
+        Parameters:
+            widget (obj): The widget to resize.
+            padding_x (int): Any additional width to be applied.
+            padding_y (int): Any additional height to be applied.
+        """
+        p1 = widget.rect().center()
+
+        x = widget.minimumSizeHint().width() if padding_x else widget.width()
+        y = widget.minimumSizeHint().height() if padding_y else widget.height()
+
+        widget.resize(x + padding_x, y + padding_y)
+
+        p2 = widget.rect().center()
+        diff = p1 - p2
+        widget.move(widget.pos() + diff)
+
+    @staticmethod
+    def move_and_center_widget(widget, pos, offset_x=2, offset_y=2):
+        """Move and center the given widget on the given point.
+
+        Parameters:
+            widget (obj): The widget to resize.
+            pos (obj): A point to move to.
+            offset_x (int): The desired offset on the x axis. 2 is center.
+            offset_y (int): The desired offset on the y axis.
+        """
+        width = pos.x() - (widget.width() / offset_x)
+        height = pos.y() - (widget.height() / offset_y)
+
+        widget.move(
+            QtCore.QPoint(width, height)
+        )  # center a given widget at a given position.
+
+    @staticmethod
+    def center_widget_on_screen(widget):
+        """ """
+        centerPoint = QtGui.QScreen.availableGeometry(
+            QtWidgets.QApplication.primaryScreen()
+        ).center()
+        widget.move(centerPoint - widget.frameGeometry().center())
+
+    def is_widget(self, obj):
+        """Returns True if the given obj is a valid widget.
+
+        Parameters:
+            obj (obj): An object to query.
+
+        Returns:
+            (bool)
+        """
+        try:
+            return issubclass(obj, QtWidgets.QWidget)
+        except TypeError:
+            return issubclass(obj.__class__, QtWidgets.QWidget)
+
+    def gc_protect(self, obj=None, clear=False):
+        """Protect the given object from garbage collection.
+
+        Parameters:
+            obj (obj/list): The obj(s) to add to the protected list.
+            clear (bool): Clear the set before adding any given object(s).
+
+        Returns:
+            (list) protected objects.
+        """
+        if clear:
+            self._gc_protect.clear()
+
+        for o in Iter.make_iterable(obj):
+            self._gc_protect.add(o)
+
+        return self._gc_protect
 
 
 # --------------------------------------------------------------------------------------------
@@ -2079,8 +1960,6 @@ if __name__ == "__main__":
             "child widget:".ljust(20),
             (w.name or type(w).__name__).ljust(20),
             w.base_name.ljust(20),
-            w.type.ljust(15),
-            w.derived_type.ljust(15),
             id(w),
         )
 
@@ -2094,6 +1973,113 @@ logging.info(__name__)  # module name
 # --------------------------------------------------------------------------------------------
 # deprecated:
 # --------------------------------------------------------------------------------------------
+
+
+# def sync_all_widgets(self, *uis, **kwargs):
+#     """Set sync connections for all widgets of the given UI objects.
+
+#     Parameters:
+#         *uis: A tuple of previously loaded dynamic UI objects to sync widgets among.
+#     """
+#     for i, ui1 in enumerate(uis):
+#         for ui2 in uis[i + 1 :]:
+#             for w1 in ui1.widgets:
+#                 try:
+#                     w2 = self.get_widget(w1.name, ui2)
+#                 except AttributeError:
+#                     continue
+
+#                 pair_id = hash((w1, w2))
+#                 if pair_id in self._synced_pairs:
+#                     continue
+
+#                 self.sync_widgets(w1, w2, **kwargs)
+
+# def sync_widgets(self, w1, w2, **kwargs):
+#     """Set the initial signal connections that will call the _sync_attributes function on state changes.
+
+#     Parameters:
+#         w1 (obj): The first widget to sync.
+#         w2 (obj): The second widget to sync.
+#         kwargs: The attribute(s) to sync as keyword arguments.
+#     """
+#     try:  # get the default signal for the given widget.
+#         signals1 = self.get_default_signals(w1)
+#         signals2 = self.get_default_signals(w2)
+
+#         # set sync connections for each of the widgets signals.
+#         for s1, s2 in zip(signals1, signals2):
+#             s1.connect(lambda: self._sync_attributes(w1, w2, **kwargs))
+#             s2.connect(lambda: self._sync_attributes(w2, w1, **kwargs))
+
+#         pair_id = hash((w1, w2))
+#         self._synced_pairs.add(pair_id)
+
+#     except (AttributeError, KeyError):
+#         return
+
+# attributesGetSet = {
+#     "value": "setValue",
+#     "text": "setText",
+#     "icon": "setIcon",
+#     "checkState": "setCheckState",
+#     "isChecked": "setChecked",
+#     "isDisabled": "setDisabled",
+# }
+
+# def _sync_attributes(self, frm, to, attributes=[]):
+#     """Sync the given attributes between the two given widgets.
+#     If a widget does not have an attribute it will be silently skipped.
+
+#     Parameters:
+#         frm (obj): The widget to transfer attribute values from.
+#         to (obj): The widget to transfer attribute values to.
+#         attributes (str/list)(dict): The attribute(s) to sync. ie. a setter attribute 'setChecked' or a dict containing getter:setter pairs. ie. {'isChecked':'setChecked'}
+#     """
+#     if not attributes:
+#         attributes = self.attributesGetSet
+
+#     elif not isinstance(attributes, dict):
+#         attributes = {
+#             next(
+#                 (k for k, v in self.attributesGetSet.items() if v == i), None
+#             ): i  # construct a gettr setter pair dict using only the given setter values.
+#             for i in Iter.make_iterable(attributes)
+#         }
+
+#     _attributes = {}
+#     for gettr, settr in attributes.items():
+#         try:
+#             _attributes[settr] = getattr(frm, gettr)()
+#         except AttributeError:
+#             pass
+
+#     for (
+#         attr,
+#         value,
+#     ) in _attributes.items():  # set the second widget's attributes from the first.
+#         try:
+#             getattr(to, attr)(value)
+#         except AttributeError:
+#             pass
+
+# def sync_widget_values(self, widget, value):
+#     # Get the relatives of the widget's UI
+#     relatives = self.get_ui_relatives(widget.ui)
+
+#     # For each relative UI...
+#     for relative in relatives:
+#         # Get the widget of the same name
+#         relative_widget = getattr(relative, widget.name, None)
+
+#         # If the relative widget exists...
+#         if relative_widget is not None:
+#             # Check the type of the widget and use the appropriate method to set the value
+#             if isinstance(relative_widget, QtWidgets.QLabel):
+#                 relative_widget.setText(value)
+#             elif isinstance(relative_widget, QtWidgets.QSpinBox):
+#                 relative_widget.setValue(value)
+#             # Add more elif statements for other widget types as needed
 
 # def connect_slot(self, widget, slot):
 #     """

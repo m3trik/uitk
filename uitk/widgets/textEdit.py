@@ -14,48 +14,42 @@ class TextEdit(QtWidgets.QTextEdit, AttributesMixin, MenuInstance):
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QTextEdit.__init__(self, parent)
 
-        self.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
-
         self.viewport().setAutoFillBackground(False)
         # self.setTextBackgroundColor(QtGui.QColor(50, 50, 50))
 
         self.set_attributes(**kwargs)
 
-    def insertText(self, text):
+    def insertText(self, text, color="LightGray", backround_color="rgb(50, 50, 50)"):
         """Append a new paragraph to the textEdit.
 
         Parameters:
                 text (str): A value to append to the lineEdit as a new paragraph. The value is converted to a string if it isn't already.
         """
-        baseStyle = (
-            '<font style="color: LightGray; background-color: rgb(50, 50, 50);">'
-        )
+        # Appends a new paragraph with the given text to the end of the textEdit.
         self.append(
-            baseStyle + str(text)
-        )  # Appends a new paragraph with the given text to the end of the textEdit.
+            f'<font style="color: {color}; background-color: {backround_color};">{text}'
+        )
 
     def showEvent(self, event):
         """
         Parameters:
                 event=<QEvent>
         """
-        self.shown.emit()
-
-        # self.resize(self.sizeHint())
-
         QtWidgets.QTextEdit.showEvent(self, event)
+        self.shown.emit()
 
     def hideEvent(self, event):
         """
         Parameters:
                 event=<QEvent>
         """
-        self.hidden.emit()
-
         self.clear()
 
         QtWidgets.QTextEdit.hideEvent(self, event)
+        self.hidden.emit()
 
+
+# --------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
