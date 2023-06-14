@@ -336,7 +336,7 @@ class MainWindow(
         self._deferred.clear()
 
     def defer(self, func, *args, priority=0):
-        """Defer execution of a function until later. The function is added to a dictionary of deferred
+        """Defer execution of a function until after window is shown. The function is added to a dictionary of deferred
         methods, with a specified priority. Lower priority values will be executed before higher ones.
 
         Parameters:
@@ -395,6 +395,7 @@ class MainWindow(
             SystemExit: Raised if the exit code returned from the PySide2 application is not -1.
         """
         super().show()
+        self.trigger_deferred()
         if app_exec:
             exit_code = self.sb.app.exec_()
             if exit_code != -1:

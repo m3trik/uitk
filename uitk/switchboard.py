@@ -1411,39 +1411,6 @@ class Switchboard(QUiLoader):
                         getattr(widget, signal_name).disconnect(slot)
         ui.is_connected = False
 
-    def connect_multi(self, widgets, signals, slots, clss=None):
-        """Connect multiple signals to multiple slots at once.
-
-        Parameters:
-            widgets (str/obj/list): ie. 'chk000-2' or [tb.ctx_menu.chk000, tb.ctx_menu.chk001]
-            signals (str/list): ie. 'toggled' or ['toggled']
-            slots (obj/list): ie. self.cmb002 or [self.cmb002]
-            clss (obj/list): if the widgets arg is given as a string, then the class it belongs to can be explicitly given.
-                    else, the current ui will be used.
-        Example:
-            connect_('chk000-2', 'toggled', self.cmb002, tb.ctx_menu)
-            connect_([tb.ctx_menu.chk000, tb.ctx_menu.chk001], 'toggled', self.cmb002)
-            connect_(tb.ctx_menu.chk015, 'toggled',
-            [lambda state: self.rigging.tb004.setText('Unlock Transforms' if state else 'Lock Transforms'),
-            lambda state: self.rigging_submenu.tb004.setText('Unlock Transforms' if state else 'Lock Transforms')])
-        """
-        if isinstance(widgets, (str)):
-            try:  # get_widgets_from_str returns a widget list from a string of object_names.
-                widgets = self.get_widgets_from_str(clss, widgets)
-            except Exception:
-                widgets = self.get_widgets_from_str(self.get_current_ui(), widgets)
-
-        # if the variables are not of a list type; convert them.
-        widgets = Iter.make_iterable(widgets)
-        signals = Iter.make_iterable(signals)
-        slots = Iter.make_iterable(slots)
-
-        for widget in widgets:
-            for signal in signals:
-                signal = getattr(widget, signal)
-                for slot in slots:
-                    signal.connect(slot)
-
     def sync_widget_values(self, value, widget):
         """Synchronizes the value of a given widget with all its relative widgets.
 
@@ -1504,209 +1471,19 @@ class Switchboard(QUiLoader):
                     getattr(w, property_)(value) for w in widgets
                 ]
 
-    def unpack_names(name_string):
-        """Unpacks a comma-separated string of names and returns a list of individual names.
+    def is_widget(self, obj):
+        """Returns True if the given obj is a valid widget.
 
         Parameters:
-            name_string (str): A string consisting of widget names separated by commas.
-                    Names may include ranges with hyphens, e.g., 'chk021-23, 25, tb001'.
-        Returns:
-            list: A list of unpacked names, e.g., ['chk021', 'chk022', 'chk023', 'chk025', 'tb001'].
-        """
-
-        def expand_name_range(prefix, start, stop):
-            """Generate a list of names with a given prefix and a range of numbers."""
-            return [prefix + str(num).zfill(3) for num in range(start, stop + 1)]
-
-        def extract_parts(name):
-            """Extract alphabetic and numeric parts from a given name using regular expressions."""
-            return re.findall(r"([a-zA-Z]+)|(\d+)", name)
-
-        names = re.split(r",\s*", name_string)
-        unpacked_names = []
-        last_prefix = None
-
-        for name in names:
-            parts = extract_parts(name)
-            digits = [int(p[1]) for p in parts if p[1]]
-
-            if len(digits) == 1:
-                if not parts[0][0]:
-                    unpacked_names.append(last_prefix + str(digits[0]).zfill(3))
-                else:
-                    last_prefix = parts[0][0]
-                    unpacked_names.append(name)
-            elif len(digits) == 2:
-                prefix = parts[0][0]
-                start, stop = digits
-                unpacked_names.extend(expand_name_range(prefix, start, stop))
-                last_prefix = prefix
-
-        return unpacked_names
-
-    def get_widgets_from_str(self, ui, name_string):
-        """Get a list of corresponding widgets from a single shorthand formatted string.
-        ie. 's000,b002,cmb011-15' would return object list: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
-
-        Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
-            name_string (str): Widget object names separated by ','. ie. 's000,b004-7'. b004-7 specifies buttons b004 though b007.
+            obj (obj): An object to query.
 
         Returns:
-            (list) QWidget(s)
-
-        Example:
-            get_widgets_from_str(<ui>, 's000,b002,cmb011-15')
+            (bool)
         """
-        if not isinstance(ui, QtWidgets.QWidget):
-            raise ValueError(f"Invalid datatype: {type(ui)}")
-
-        widgets = []
-        for n in Switchboard.unpack_names(name_string):
-            try:
-                w = getattr(ui, n)
-                widgets.append(w)
-            except AttributeError:
-                self.logger.info(traceback.format_exc())
-
-        return widgets
-
-    def get_slots_from_string(self, slots, name_string):
-        """Get a list of corresponding slots from a single shorthand formatted string.
-        ie. 's000,b002,cmb011-15' would return methods: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
-
-        Parameters:
-            slots (QWidget): The class containing the slots.
-            name_string (str): Slot names separated by ','. ie. 's000,b004-7'. b004-7 specifies methods b004 through b007.
-
-        Returns:
-            (list) class methods.
-
-        Example:
-            get_slots_from_string(<ui>, 'slot1,slot2,slot3')
-        """
-        if not isinstance(slots, object):
-            raise ValueError(f"Invalid datatype: {type(slots)}")
-
-        slots = []
-        for n in Switchboard.unpack_names(name_string):
-            try:
-                s = getattr(slots, n)
-                slots.append(s)
-            except AttributeError:
-                self.logger.info(traceback.format_exc())
-
-        return slots
-
-    def toggle_widgets(self, *args, **kwargs):
-        """Set multiple boolean properties, for multiple widgets, on multiple ui's at once.
-
-        Parameters:
-            *args = dynamic ui object/s. If no ui's are given, then the current UI will be used.
-            *kwargs = keyword: - the property to modify. ex. setChecked, setUnChecked, setEnabled, setDisabled, setVisible, setHidden
-                                    value: string of object_names - object_names separated by ',' ie. 'b000-12,b022'
-        Example:
-            toggle_widgets(<ui1>, <ui2>, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
-        """
-        if not args:
-            relatives = self.get_ui_relatives(
-                self.get_current_ui(), upstream=False, exact=False, downstream=False
-            )
-            args = relatives
-
-        for ui in args:
-            for k in kwargs:  # property_ ie. setUnChecked
-                # get_widgets_from_str returns a widget list from a string of object_names.
-                widgets = self.get_widgets_from_str(ui, kwargs[k])
-
-                state = True
-                # strips 'Un' and sets the state from True to False. ie. 'setUnChecked' becomes 'setChecked' (False)
-                if "Un" in k:
-                    k = k.replace("Un", "")
-                    state = False
-
-                # set the property state for each widget in the list.
-                for w in widgets:
-                    getattr(w, k)(state)
-
-    def set_axis_for_checkboxes(self, checkboxes, axis, ui=None):
-        """Set the given checkbox's check states to reflect the specified axis.
-
-        Parameters:
-            checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes.
-            axis (str): Axis to set. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
-
-        Example:
-            set_axis_for_checkboxes('chk000-3', '-X') #optional ui arg for the checkboxes
-        """
-        if isinstance(checkboxes, (str)):
-            if ui is None:
-                ui = self.get_current_ui()
-            checkboxes = self.get_widgets_from_str(ui, checkboxes)
-
-        prefix = "-" if "-" in axis else ""  # separate the prefix and axis
-        coord = axis.strip("-")
-
-        for chk in checkboxes:
-            if any(
-                [
-                    chk.text() == prefix,
-                    chk.text() == coord,
-                    chk.text() == prefix + coord,
-                ]
-            ):
-                chk.setChecked(True)
-
-    def get_axis_from_checkboxes(self, checkboxes, ui=None):
-        """Get the intended axis value as a string by reading the multiple checkbox's check states.
-
-        Parameters:
-            checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
-
-        Returns:
-            (str) axis value. ie. '-X'
-
-        Example:
-            get_axis_from_checkboxes('chk000-3')
-        """
-        if isinstance(checkboxes, (str)):
-            if ui is None:
-                ui = self.get_current_ui()
-            checkboxes = self.get_widgets_from_str(ui, checkboxes)
-
-        prefix = axis = ""
-        for chk in checkboxes:
-            if chk.isChecked():
-                if chk.text() == "-":
-                    prefix = "-"
-                else:
-                    axis = chk.text()
-        # self.logger.info(f"prefix: {prefix} axis: {axis}") #debug
-        return prefix + axis  # ie. '-X'
-
-    @staticmethod
-    def invert_on_modifier(value):
-        """Invert a numerical or boolean value if the alt key is pressed.
-
-        Parameters:
-            value (int, float, bool) = The value to invert.
-
-        Returns:
-            (int, float, bool)
-        """
-        modifiers = QtWidgets.QApplication.instance().keyboardModifiers()
-        if modifiers not in (
-            QtCore.Qt.AltModifier,
-            QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier,
-        ):
-            return value
-
-        if type(value) in (int, float):
-            result = abs(value) if value < 0 else -value
-        elif type(value) == bool:
-            result = True if value else False
-
-        return result
+        try:
+            return issubclass(obj, QtWidgets.QWidget)
+        except TypeError:
+            return issubclass(obj.__class__, QtWidgets.QWidget)
 
     @staticmethod
     def get_parent_widgets(widget, object_names=False):
@@ -1808,32 +1585,6 @@ class Switchboard(QUiLoader):
 
         return widgets
 
-    def message_box(self, string, message_type="", location="topMiddle", timeout=1):
-        """Spawns a message box with the given text.
-        Supports HTML formatting.
-        Prints a formatted version of the given string to console, stripped of html tags, to the console.
-
-        Parameters:
-            message_type (str): The message context type. ex. 'Error', 'Warning', 'Note', 'Result'
-            location (str)(point) = move the messagebox to the specified location. Can be given as a qpoint or string value. default is: 'topMiddle'
-            timeout (int): time in seconds before the messagebox auto closes.
-        """
-        if message_type:
-            string = f"{message_type.capitalize()}: {string}"
-
-        try:
-            self._messageBox.location = location
-        except AttributeError:
-            self._messageBox = self.MessageBox(self.parent())
-            self._messageBox.location = location
-        self._messageBox.timeout = timeout
-
-        # strip everything between '<' and '>' (html tags)
-        self.logger.info(f"# {re.sub('<.*?>', '', string)}")
-
-        self._messageBox.setText(string)
-        self._messageBox.exec_()
-
     @staticmethod
     def get_center(widget):
         """Get the center point of a given widget.
@@ -1891,19 +1642,292 @@ class Switchboard(QUiLoader):
         ).center()
         widget.move(centerPoint - widget.frameGeometry().center())
 
-    def is_widget(self, obj):
-        """Returns True if the given obj is a valid widget.
+    def unpack_names(name_string):
+        """Unpacks a comma-separated string of names and returns a list of individual names.
 
         Parameters:
-            obj (obj): An object to query.
+            name_string (str): A string consisting of widget names separated by commas.
+                    Names may include ranges with hyphens, e.g., 'chk021-23, 25, tb001'.
+        Returns:
+            list: A list of unpacked names, e.g., ['chk021', 'chk022', 'chk023', 'chk025', 'tb001'].
+        """
+
+        def expand_name_range(prefix, start, stop):
+            """Generate a list of names with a given prefix and a range of numbers."""
+            return [prefix + str(num).zfill(3) for num in range(start, stop + 1)]
+
+        def extract_parts(name):
+            """Extract alphabetic and numeric parts from a given name using regular expressions."""
+            return re.findall(r"([a-zA-Z]+)|(\d+)", name)
+
+        names = re.split(r",\s*", name_string)
+        unpacked_names = []
+        last_prefix = None
+
+        for name in names:
+            parts = extract_parts(name)
+            digits = [int(p[1]) for p in parts if p[1]]
+
+            if len(digits) == 1:
+                if not parts[0][0]:
+                    unpacked_names.append(last_prefix + str(digits[0]).zfill(3))
+                else:
+                    last_prefix = parts[0][0]
+                    unpacked_names.append(name)
+            elif len(digits) == 2:
+                prefix = parts[0][0]
+                start, stop = digits
+                unpacked_names.extend(expand_name_range(prefix, start, stop))
+                last_prefix = prefix
+
+        return unpacked_names
+
+    def get_widgets_from_str(self, ui, name_string):
+        """Get a list of corresponding widgets from a single shorthand formatted string.
+        ie. 's000,b002,cmb011-15' would return object list: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
+
+        Parameters:
+            ui (QWidget): A previously loaded dynamic ui object.
+            name_string (str): Widget object names separated by ','. ie. 's000,b004-7'. b004-7 specifies buttons b004 though b007.
 
         Returns:
-            (bool)
+            (list) QWidget(s)
+
+        Example:
+            get_widgets_from_str(<ui>, 's000,b002,cmb011-15')
         """
+        if not isinstance(ui, QtWidgets.QWidget):
+            raise ValueError(f"Invalid datatype: {type(ui)}")
+
+        widgets = []
+        for n in Switchboard.unpack_names(name_string):
+            try:
+                w = getattr(ui, n)
+                widgets.append(w)
+            except AttributeError:
+                self.logger.info(traceback.format_exc())
+
+        return widgets
+
+    def get_slots_from_string(self, slots, name_string):
+        """Get a list of corresponding slots from a single shorthand formatted string.
+        ie. 's000,b002,cmb011-15' would return methods: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
+
+        Parameters:
+            slots (QWidget): The class containing the slots.
+            name_string (str): Slot names separated by ','. ie. 's000,b004-7'. b004-7 specifies methods b004 through b007.
+
+        Returns:
+            (list) class methods.
+
+        Example:
+            get_slots_from_string(<ui>, 'slot1,slot2,slot3')
+        """
+        if not isinstance(slots, object):
+            raise ValueError(f"Invalid datatype: {type(slots)}")
+
+        slots = []
+        for n in Switchboard.unpack_names(name_string):
+            try:
+                s = getattr(slots, n)
+                slots.append(s)
+            except AttributeError:
+                self.logger.info(traceback.format_exc())
+
+        return slots
+
+    def create_button_groups(self, ui, *args):
+        """Create button groups for a set of widgets.
+        The created groups later be accessed through the grouped buttons using the 'button_group' attribute.
+
+        Parameters:
+            ui (QWidget): A previously loaded dynamic ui object.
+            args: The widgets to group. Object_names separated by ',' ie. 'b000-12,b022'
+        Example:
+            grp_a, grp_b = create_button_groups(ui, 'b000-2', 'b003-4')
+            grp_a = b000.button_group # access group using the 'button_group' attribute.
+            grp_b = b003.button_group
+        """
+        button_groups = []
+
+        for buttons in args:
+            # Create button group
+            grp = QtWidgets.QButtonGroup()
+            # get_widgets_from_str returns a widget list from a string of object_names.
+            widgets = self.get_widgets_from_str(ui, buttons)
+
+            # add each widget to the button group
+            for w in widgets:
+                w.button_group = grp
+                grp.addButton(w)
+
+            # Add the group to the list
+            button_groups.append(grp)
+
+        # Return a single group if only one was created, otherwise return the tuple of groups
+        return format_return(button_groups)
+
+    def toggle_widgets(self, ui, **kwargs):
+        """Set multiple boolean properties, for multiple widgets, on multiple ui's at once.
+
+        Parameters:
+            ui (QWidget): A previously loaded dynamic ui object.
+            *kwargs: The property to modify. ex. setChecked, setUnChecked, setEnabled, setDisabled, setVisible, setHidden
+                        value: string of object_names - object_names separated by ',' ie. 'b000-12,b022'
+        Example:
+            toggle_widgets(ui, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
+        """
+        for k in kwargs:  # property_ ie. setUnChecked
+            # get_widgets_from_str returns a widget list from a string of object_names.
+            widgets = self.get_widgets_from_str(ui, kwargs[k])
+
+            state = True
+            # strips 'Un' and sets the state from True to False. ie. 'setUnChecked' becomes 'setChecked' (False)
+            if "Un" in k:
+                k = k.replace("Un", "")
+                state = False
+
+            # set the property state for each widget in the list.
+            for w in widgets:
+                getattr(w, k)(state)
+
+    def connect_multi(self, widgets, signals, slots, clss=None):
+        """Connect multiple signals to multiple slots at once.
+
+        Parameters:
+            widgets (str/obj/list): ie. 'chk000-2' or [tb.ctx_menu.chk000, tb.ctx_menu.chk001]
+            signals (str/list): ie. 'toggled' or ['toggled']
+            slots (obj/list): ie. self.cmb002 or [self.cmb002]
+            clss (obj/list): if the widgets arg is given as a string, then the class it belongs to can be explicitly given.
+                    else, the current ui will be used.
+        Example:
+            connect_('chk000-2', 'toggled', self.cmb002, tb.ctx_menu)
+            connect_([tb.ctx_menu.chk000, tb.ctx_menu.chk001], 'toggled', self.cmb002)
+            connect_(tb.ctx_menu.chk015, 'toggled',
+            [lambda state: self.rigging.tb004.setText('Unlock Transforms' if state else 'Lock Transforms'),
+            lambda state: self.rigging_submenu.tb004.setText('Unlock Transforms' if state else 'Lock Transforms')])
+        """
+        if isinstance(widgets, (str)):
+            try:  # get_widgets_from_str returns a widget list from a string of object_names.
+                widgets = self.get_widgets_from_str(clss, widgets)
+            except Exception:
+                widgets = self.get_widgets_from_str(self.get_current_ui(), widgets)
+
+        # if the variables are not of a list type; convert them.
+        widgets = Iter.make_iterable(widgets)
+        signals = Iter.make_iterable(signals)
+        slots = Iter.make_iterable(slots)
+
+        for widget in widgets:
+            for signal in signals:
+                signal = getattr(widget, signal)
+                for slot in slots:
+                    signal.connect(slot)
+
+    def set_axis_for_checkboxes(self, checkboxes, axis, ui=None):
+        """Set the given checkbox's check states to reflect the specified axis.
+
+        Parameters:
+            checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes.
+            axis (str): Axis to set. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
+
+        Example:
+            set_axis_for_checkboxes('chk000-3', '-X') #optional ui arg for the checkboxes
+        """
+        if isinstance(checkboxes, (str)):
+            if ui is None:
+                ui = self.get_current_ui()
+            checkboxes = self.get_widgets_from_str(ui, checkboxes)
+
+        prefix = "-" if "-" in axis else ""  # separate the prefix and axis
+        coord = axis.strip("-")
+
+        for chk in checkboxes:
+            if any(
+                [
+                    chk.text() == prefix,
+                    chk.text() == coord,
+                    chk.text() == prefix + coord,
+                ]
+            ):
+                chk.setChecked(True)
+
+    def get_axis_from_checkboxes(self, checkboxes, ui=None):
+        """Get the intended axis value as a string by reading the multiple checkbox's check states.
+
+        Parameters:
+            checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
+
+        Returns:
+            (str) axis value. ie. '-X'
+
+        Example:
+            get_axis_from_checkboxes('chk000-3')
+        """
+        if isinstance(checkboxes, (str)):
+            if ui is None:
+                ui = self.get_current_ui()
+            checkboxes = self.get_widgets_from_str(ui, checkboxes)
+
+        prefix = axis = ""
+        for chk in checkboxes:
+            if chk.isChecked():
+                if chk.text() == "-":
+                    prefix = "-"
+                else:
+                    axis = chk.text()
+        # self.logger.info(f"prefix: {prefix} axis: {axis}") #debug
+        return prefix + axis  # ie. '-X'
+
+    @staticmethod
+    def invert_on_modifier(value):
+        """Invert a numerical or boolean value if the alt key is pressed.
+
+        Parameters:
+            value (int, float, bool) = The value to invert.
+
+        Returns:
+            (int, float, bool)
+        """
+        modifiers = QtWidgets.QApplication.instance().keyboardModifiers()
+        if modifiers not in (
+            QtCore.Qt.AltModifier,
+            QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier,
+        ):
+            return value
+
+        if type(value) in (int, float):
+            result = abs(value) if value < 0 else -value
+        elif type(value) == bool:
+            result = True if value else False
+
+        return result
+
+    def message_box(self, string, message_type="", location="topMiddle", timeout=1):
+        """Spawns a message box with the given text.
+        Supports HTML formatting.
+        Prints a formatted version of the given string to console, stripped of html tags, to the console.
+
+        Parameters:
+            message_type (str): The message context type. ex. 'Error', 'Warning', 'Info', 'Result'
+            location (str)(point) = move the messagebox to the specified location. Can be given as a qpoint or string value. default is: 'topMiddle'
+            timeout (int): time in seconds before the messagebox auto closes.
+        """
+        if message_type:
+            string = f"{message_type.capitalize()}: {string}"
+
         try:
-            return issubclass(obj, QtWidgets.QWidget)
-        except TypeError:
-            return issubclass(obj.__class__, QtWidgets.QWidget)
+            self._messageBox.location = location
+        except AttributeError:
+            self._messageBox = self.MessageBox(self.parent())
+            self._messageBox.location = location
+        self._messageBox.timeout = timeout
+
+        # strip everything between '<' and '>' (html tags)
+        self.logger.info(f"# {re.sub('<.*?>', '', string)}")
+
+        self._messageBox.setText(string)
+        self._messageBox.exec_()
 
     def gc_protect(self, obj=None, clear=False):
         """Protect the given object from garbage collection.

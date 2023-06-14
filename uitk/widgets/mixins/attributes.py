@@ -72,7 +72,7 @@ class AttributesMixin:
                 set_layout_direction (str): Set the layout direction using a string value. ie. 'LeftToRight'
                 set_alignment (str): Set the alignment using a string value. ie. 'AlignVCenter'
                 set_button_symbols (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
-                set_limits (str): Set the min, max, and step value using a string value. ex. '.01-10 step.1'
+                set_limits (tuple): Set the min, max, step, and decimal value using a string value. ex. (0.01, 10, 1, 2)
                 set_check_state (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
         """
         if attr == "transfer_properties":
@@ -133,19 +133,38 @@ class AttributesMixin:
             print("Error: {} has no attribute {}".format(w, attr))
 
     def set_limits(self, spinbox, value):
-        """Set the minimum, maximum, and step values for a spinbox using a shorthand string value.
+        """Configure the minimum, maximum, step values, and decimal precision for a given spinbox widget.
+
+        The function allows you to set these parameters using a tuple of up to four values. The decimal precision,
+        when not explicitly provided, is inferred from the number of decimal places in the minimum or maximum values,
+        depending on whichever is higher. If neither of these values has decimal parts, the default precision is set to zero.
 
         Parameters:
-                spinbox (obj): spinbox widget.
-                value (str): value as shorthand string. ie. '0.00-100 step1'
+            spinbox (object): An instance of a spinbox widget. It is assumed that this object supports the setting of minimum, maximum, step,
+                    and decimal precision.
+            value (tuple): A tuple that can contain up to four values, interpreted in the following order:
+                    1. Lower bound (minimum) - This is cast to a float value. If not provided, a default of 0.0 is used.
+                    2. Upper bound (maximum) - This is cast to a float value. If not provided, a default of 9999999.0 is used.
+                    3. Step - The increment/decrement step of the spinbox. If not provided, a default of 1 is used.
+                    4. Decimals - The decimal precision (number of digits after the decimal point). If not provided, the function
+                       calculates this value based on the number of decimal places in the minimum or maximum values.
         """
-        stepStr = value.split()[1].strip("step")
-        step = float(stepStr)
-        decimals = len(stepStr.split(".")[-1])
+        value_len = len(value)
+        minimum = float(value[0]) if value_len > 0 else 0
+        maximum = float(value[1]) if value_len > 1 else 9999999
+        step = value[2] if value_len > 2 else 1
 
-        spanStr = value.split("-")
-        minimum = float(spanStr[0])
-        maximum = float(spanStr[1].split()[0])
+        if value_len > 3:
+            decimals = value[3]
+        else:  # If decimal value not given, determine from minimum or maximum
+            decimals = (
+                max(
+                    len(str(minimum).split(".")[-1]),  # Count decimals in minimum
+                    len(str(maximum).split(".")[-1]),  # Count decimals in maximum
+                )
+                if any(map(lambda x: len(str(x).split(".")[1]) > 1, [minimum, maximum]))
+                else 0
+            )  # Ensure the values have decimal part
 
         if hasattr(spinbox, "setDecimals"):
             self.set_attributes(spinbox, setDecimals=decimals)
