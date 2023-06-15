@@ -142,32 +142,36 @@ class AttributesMixin:
         Parameters:
             spinbox (object): An instance of a spinbox widget. It is assumed that this object supports the setting of minimum, maximum, step,
                     and decimal precision.
-            value (tuple): A tuple that can contain up to four values, interpreted in the following order:
+            value (list): A list that can contain up to four values, interpreted in the following order:
                     1. Lower bound (minimum) - This is cast to a float value. If not provided, a default of 0.0 is used.
                     2. Upper bound (maximum) - This is cast to a float value. If not provided, a default of 9999999.0 is used.
                     3. Step - The increment/decrement step of the spinbox. If not provided, a default of 1 is used.
                     4. Decimals - The decimal precision (number of digits after the decimal point). If not provided, the function
                        calculates this value based on the number of decimal places in the minimum or maximum values.
         """
+        if not isinstance(value, list):
+            raise TypeError(
+                f"Invalid datatype for value. Expected list, got {type(value)}"
+            )
+
         value_len = len(value)
-        minimum = float(value[0]) if value_len > 0 else 0
-        maximum = float(value[1]) if value_len > 1 else 9999999
-        step = value[2] if value_len > 2 else 1
+        minimum = float(value[0]) if value_len > 0 else 0.0
+        maximum = float(value[1]) if value_len > 1 else 9999999.0
+        step = value[2] if value_len > 2 else 1.0
 
         if value_len > 3:
             decimals = value[3]
-        else:  # If decimal value not given, determine from minimum or maximum
-            decimals = (
-                max(
-                    len(str(minimum).split(".")[-1]),  # Count decimals in minimum
-                    len(str(maximum).split(".")[-1]),  # Count decimals in maximum
-                )
-                if any(map(lambda x: len(str(x).split(".")[1]) > 1, [minimum, maximum]))
-                else 0
-            )  # Ensure the values have decimal part
+        else:
+            min_decimals = (
+                len(str(minimum).split(".")[-1]) if "." in str(minimum) else 0
+            )
+            max_decimals = (
+                len(str(maximum).split(".")[-1]) if "." in str(maximum) else 0
+            )
+            decimals = max(min_decimals, max_decimals)
 
-        if hasattr(spinbox, "setDecimals"):
-            self.set_attributes(spinbox, setDecimals=decimals)
+            if hasattr(spinbox, "setDecimals"):
+                self.set_attributes(spinbox, setDecimals=decimals)
 
         self.set_attributes(
             spinbox,

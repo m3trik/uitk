@@ -22,14 +22,14 @@ from pythontk import (
 def signals(*signals):
     """Decorator to specify the signals that a slot should be connected to.
 
-    Args:
+    Parameters:
         *signals (str): One or more signal names as strings.
 
     Returns:
         decorator: A decorator that can be applied to a slot method.
 
     Usage:
-        @signals('clicked', 'released')
+        @signals('clicked')
         def on_button_click():
             print("Button clicked")
     """
@@ -153,8 +153,8 @@ class Switchboard(QUiLoader):
         ui_location="",
         widgets_location="",
         slots_location="",
-        ui_name_delimiters=(".", "#"),
         preload_ui=False,
+        ui_name_delimiters=[".", "#"],
         set_legal_name_no_tags_attr=False,
         log_level=logging.WARNING,
     ):
@@ -164,9 +164,8 @@ class Switchboard(QUiLoader):
         self._init_logger(log_level)
 
         calling_frame = inspect.currentframe().f_back
-        self.default_dir = self.get_module_dir_from_frame(
-            calling_frame
-        )  # calling mod dir.
+        # Get calling module directory.
+        self.default_dir = self.get_module_dir_from_frame(calling_frame)
         self.module_dir = File.get_filepath(__file__)  # the directory of this module.
 
         # initialize the files dicts before the location dicts (dependancies).
@@ -1143,7 +1142,7 @@ class Switchboard(QUiLoader):
         Returns:
             list: A list of UI relative names (if ui is given as a string) or UI relative objects (if ui is given as an object) found based on the hierarchy matching.
         """
-        ui_name = ui if isinstance(ui, str) else ui.name
+        ui_name = str(ui)
 
         relatives = Str.get_matching_hierarchy_items(
             self.ui_files.keys(),
@@ -1428,11 +1427,10 @@ class Switchboard(QUiLoader):
         """
         # Get the relatives of the widget's UI
         relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
-        # For each relative UI...
+
         for relative in relatives:
             # Get the widget of the same name
             relative_widget = getattr(relative, widget.name, None)
-            # If the relative widget exists...
             if relative_widget is not None:
                 # Check the type of the widget and use the appropriate method to set the value
                 for widget_type, signal_name in self.default_signals.items():
@@ -1927,7 +1925,7 @@ class Switchboard(QUiLoader):
         self.logger.info(f"# {re.sub('<.*?>', '', string)}")
 
         self._messageBox.setText(string)
-        self._messageBox.exec_()
+        self._messageBox.show()  # Use show() instead of exec_()
 
     def gc_protect(self, obj=None, clear=False):
         """Protect the given object from garbage collection.

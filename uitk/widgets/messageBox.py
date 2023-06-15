@@ -15,15 +15,15 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
     def __init__(self, parent=None, location="topMiddle", timeout=2, **kwargs):
         QtWidgets.QMessageBox.__init__(self, parent)
 
+        self.setWindowModality(QtCore.Qt.NonModal)
+        self.setStandardButtons(QtWidgets.QMessageBox.NoButton)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowFlags(
             QtCore.Qt.WindowType.WindowDoesNotAcceptFocus
             | QtCore.Qt.WindowStaysOnTopHint
             | QtCore.Qt.Tool
             | QtCore.Qt.FramelessWindowHint
-        )  # QtCore.Qt.CustomizeWindowHint|QtCore.Qt.WindowTitleHint
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-
-        self.setStandardButtons(QtWidgets.QMessageBox.NoButton)
+        )
 
         self.menu_timer = QtCore.QTimer()
         self.menu_timer.setSingleShot(True)

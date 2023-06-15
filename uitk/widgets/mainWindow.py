@@ -138,6 +138,10 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
+    def __str__(self):
+        """Return the UI filename"""
+        return self.name
+
     def init_child(self, widget, **kwargs):
         """Assign additional attributes to the widget for easier access and better management.
 
