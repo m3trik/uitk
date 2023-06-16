@@ -32,7 +32,8 @@ class PushButton(
                 event = <QEvent>
         """
         if event.button() == QtCore.Qt.RightButton:
-            self.ctx_menu.show()
+            if self.ctx_menu.contains_items:
+                self.ctx_menu.show()
 
         super().mousePressEvent(event)
 

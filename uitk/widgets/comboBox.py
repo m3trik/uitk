@@ -162,7 +162,7 @@ class ComboBox(
         """
         try:  # set by item index:
             self.setCurrentIndex(self.items.index(i))
-        except Exception as error:  # set by item text:
+        except Exception:  # set by item text:
             try:
                 self.setCurrentText(i)
             except Exception as error:
@@ -186,19 +186,15 @@ class ComboBox(
     def hidePopup(self):
         """"""
         self.beforePopupHidden.emit()
+        self.option_menu.hide()
 
-        if not self.popupStyle == "modelView":
-            self.option_menu.hide()
-            # self.option_menu.visible=False
-        else:
-            super().hidePopup()
+        super().hidePopup()
 
     def clear(self):
         """"""
-        if not self.popupStyle == "modelView":
-            self.option_menu.clear()
-        else:
-            super().clear()
+        self.option_menu.clear()
+
+        super().clear()
 
     def enterEvent(self, event):
         """
@@ -216,16 +212,6 @@ class ComboBox(
         # self.hidePopup()
 
         super().leaveEvent(event)
-
-    def mousePressEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
-        if event.button() == QtCore.Qt.RightButton:
-            self.ctx_menu.show()
-
-        super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
         """

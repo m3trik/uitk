@@ -17,16 +17,16 @@ class LineEdit(QtWidgets.QLineEdit, MenuInstance, AttributesMixin):
         # self.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
         self.set_attributes(**kwargs)
 
-    def ctxMenuEvent(self, event):
+    def contextMenuEvent(self, event):
         """Override the standard context menu if there is a custom one.
 
         Parameters:
                 event=<QEvent>
         """
-        if self.ctx_menu:
+        if self.ctx_menu.contains_items:
             self.ctx_menu.show()
         else:
-            QtWidgets.QLineEdit.ctxMenuEvent(self, event)
+            super().contextMenuEvent(event)
 
     def showEvent(self, event):
         """

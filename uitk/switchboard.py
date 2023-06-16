@@ -1313,14 +1313,19 @@ class Switchboard(QUiLoader):
             parameters = inspect.signature(slot).parameters
             has_kwargs = any(p.kind == p.VAR_KEYWORD for p in parameters.values())
             has_widget = "widget" in parameters
-            try:
-                if has_kwargs or has_widget:
-                    kwargs["widget"] = widget
-                slot(*args, **kwargs)
-            except TypeError:  # slot didn't accept widget in kwargs
-                if len(args) > 0:  # if there is a value, try to call the slot with it
+
+            if has_kwargs or has_widget:
+                kwargs["widget"] = widget
+
+            if len(args) > 0:  # if there is a value, try to call the slot with it
+                if "widget" in parameters or has_kwargs:
+                    slot(*args, **kwargs)
+                else:
                     slot(args[0])
-                else:  # no value, so call the slot with no arguments
+            else:  # no value, so call the slot with no arguments
+                if "widget" in parameters or has_kwargs:
+                    slot(**kwargs)
+                else:
                     slot()
 
         return slot_wrapper
@@ -1995,6 +2000,41 @@ logging.info(__name__)  # module name
 # --------------------------------------------------------------------------------------------
 # deprecated:
 # --------------------------------------------------------------------------------------------
+
+
+# def _create_slot_wrapper(self, slot, widget):
+#     """Creates a wrapper function for a slot that includes the widget as a parameter if possible.
+
+#     The wrapper function is designed to handle different widget-specific signal values as keyword arguments.
+#     The signal values are passed to the slot function as keyword arguments based on the type of the widget.
+
+#     If the slot function does not accept the widget or signal-specific keyword argument, it is called with positional arguments as a fallback.
+
+#     Parameters:
+#         slot (callable): The slot function to be wrapped. This is typically a method of a class.
+#         widget (QtWidgets.QWidget): The widget that the slot is connected to. This widget is passed to the slot function as a keyword argument,
+#             and its signal value is also passed as a keyword argument.
+
+#     Returns:
+#         callable: The slot wrapper function. This function can be connected to a widget signal and is responsible for calling the original slot function
+#             with the appropriate arguments.
+#     """
+
+#     def slot_wrapper(*args, **kwargs):
+#         parameters = inspect.signature(slot).parameters
+#         has_kwargs = any(p.kind == p.VAR_KEYWORD for p in parameters.values())
+#         has_widget = "widget" in parameters
+#         try:
+#             if has_kwargs or has_widget:
+#                 kwargs["widget"] = widget
+#             slot(*args, **kwargs)
+#         except TypeError:  # slot didn't accept widget in kwargs
+#             if len(args) > 0:  # if there is a value, try to call the slot with it
+#                 slot(args[0])
+#             else:  # no value, so call the slot with no arguments
+#                 slot()
+
+#     return slot_wrapper
 
 
 # def sync_all_widgets(self, *uis, **kwargs):

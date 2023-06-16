@@ -427,11 +427,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         self.move(self.positionRelativeTo.mapToGlobal(pos()))
 
     def move_relative_to_parent(self):
-        pos = getattr(
-            self.parent().rect(),
-            self.position if not self.position == "cursorPos" else "bottomLeft",
-        )
-        pos = self.parent().mapToGlobal(pos())
+        if self.position == "cursorPos":
+            pos = QtCore.QCursor.pos()
+        else:
+            rect = self.parent().rect()
+            if self.position == "left":
+                pos = rect.topLeft() + QtCore.QPoint(0, rect.height() // 2)
+            elif self.position == "right":
+                pos = rect.topRight() + QtCore.QPoint(0, rect.height() // 2)
+            elif self.position == "top":
+                pos = rect.topLeft() + QtCore.QPoint(rect.width() // 2, 0)
+            elif self.position == "bottom":
+                pos = rect.bottomLeft() + QtCore.QPoint(rect.width() // 2, 0)
+            else:
+                pos_method = getattr(rect, self.position, None)
+                if pos_method is not None and callable(pos_method):
+                    pos = pos_method()  # Call the method to get the QPoint
+                else:
+                    raise ValueError(f"Invalid position: {self.position}")
+        pos = self.parent().mapToGlobal(pos)
         self.move(pos)
 
     def hide_on_leave(self) -> None:
