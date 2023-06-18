@@ -341,7 +341,7 @@ class StyleSheet(QtCore.QObject):
                 background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
                 border: 1px solid {BORDER_COLOR};
-                padding: 1px;
+                padding-left: 5px;
                 border-radius: 1px;
                 min-width: 0em;
             }
@@ -355,7 +355,6 @@ class StyleSheet(QtCore.QObject):
             }
             QComboBox:on { /* shift the text when the popup opens */
                 padding-top: 3px;
-                padding-left: 1px;
             }
             QComboBox::down-arrow {
                 width: 0px;

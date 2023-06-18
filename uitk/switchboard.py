@@ -1443,8 +1443,10 @@ class Switchboard(QUiLoader):
                         # Check if the widget has the signal
                         if signal_name == "textChanged":
                             relative_widget.setText(value)
-                        elif signal_name in {"valueChanged", "currentIndexChanged"}:
+                        elif signal_name == "valueChanged":
                             relative_widget.setValue(value)
+                        elif signal_name == "currentIndexChanged":
+                            relative_widget.setCurrentIndex(value)
                         elif signal_name in {"toggled", "stateChanged"}:
                             relative_widget.setChecked(value)
                         break  # Stop the loop when the type is found
@@ -1906,15 +1908,15 @@ class Switchboard(QUiLoader):
 
         return result
 
-    def message_box(self, string, message_type="", location="topMiddle", timeout=1):
+    def message_box(self, string, message_type="", location="topMiddle", timeout=3):
         """Spawns a message box with the given text.
         Supports HTML formatting.
         Prints a formatted version of the given string to console, stripped of html tags, to the console.
 
         Parameters:
-            message_type (str): The message context type. ex. 'Error', 'Warning', 'Info', 'Result'
-            location (str)(point) = move the messagebox to the specified location. Can be given as a qpoint or string value. default is: 'topMiddle'
-            timeout (int): time in seconds before the messagebox auto closes.
+            message_type (str/optional): The message context type. ex. 'Error', 'Warning', 'Info', 'Result'
+            location (str/QPoint/optional) = move the messagebox to the specified location. default is: 'topMiddle'
+            timeout (int/optional): time in seconds before the messagebox auto closes. default is: 3
         """
         if message_type:
             string = f"{message_type.capitalize()}: {string}"
@@ -1931,6 +1933,50 @@ class Switchboard(QUiLoader):
 
         self._messageBox.setText(string)
         self._messageBox.show()  # Use show() instead of exec_()
+
+    def attribute_window(
+        self,
+        obj,
+        window_title="",
+        set_attribute_func=None,
+        label_toggle_func=None,
+        **attrs,
+    ):
+        """Create an AttributeWindow for the given object and attributes.
+
+        Parameters:
+            obj: The object to create the AttributeWindow for.
+            window_title: The title of the AttributeWindow.
+            set_attribute_func: A function to set the attribute on the object. ex. <your fuction>(obj, name, value)
+                        If None, the attribute is set using: setattr(obj, name, value)
+            label_toggle_func: A function to handle the label toggled event. ex. <your function>(obj, name, checked)
+                        If None, no action is performed when a label is toggled.
+            attrs: The attributes to add to the AttributeWindow.
+        """
+        # Create an AttributeWindow
+        window = self.AttributeWindow(self.parent(), checkable=bool(label_toggle_func))
+        window.set_style(theme="dark")
+        window.setTitle(window_title)
+        window.position = "cursorPos"
+
+        for attribute_name, attribute_value in attrs.items():
+            window.add_attribute(attribute_name, attribute_value)
+
+        # Connect the valueChanged signal to a slot that sets the attribute on the object
+        if set_attribute_func is None:
+            window.valueChanged.connect(lambda name, value: setattr(obj, name, value))
+        else:
+            window.valueChanged.connect(
+                lambda name, value: set_attribute_func(obj, name, value)
+            )
+
+        # Connect the labelToggled signal to a slot that handles the label toggled event
+        if label_toggle_func is not None:
+            window.labelToggled.connect(
+                lambda name, checked: label_toggle_func(obj, name, checked)
+            )
+
+        window.show()
 
     def gc_protect(self, obj=None, clear=False):
         """Protect the given object from garbage collection.
@@ -1964,7 +2010,7 @@ if __name__ == "__main__":
 
         @signals("released")
         def MyButtonsObjectName(self):
-            print("Button released!")
+            self.sb.message_box("Button Pressed")
 
     sb = Switchboard(slots_location=MyProjectSlots)
     ui = sb.example

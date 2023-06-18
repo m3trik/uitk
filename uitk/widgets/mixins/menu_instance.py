@@ -84,7 +84,7 @@ Promoting a widget in designer to use a custom class:
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
 
-# depricated:
+# Deprecated: -------------------------------------
 
 # def hide(self, force=False):
 #   '''Sets the widget as invisible.

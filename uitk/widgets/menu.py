@@ -4,10 +4,11 @@ import inspect
 from PySide2 import QtCore, QtGui, QtWidgets
 from pythontk import cached_property
 from uitk.widgets.draggableHeader import DraggableHeader
+from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class Menu(QtWidgets.QWidget, AttributesMixin):
+class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
     """ """
 
     on_item_added = QtCore.Signal(object)
@@ -20,6 +21,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         min_item_height=None,
         max_item_height=None,
         fixed_item_height=None,
+        add_draggable_header=True,
+        add_apply_button=True,
         **kwargs,
     ):
         super().__init__(parent)
@@ -28,6 +31,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
+        self.add_draggable_header = add_draggable_header
+        self.add_apply_button = add_apply_button
         self.kwargs = kwargs
         self.widget_data = {}
         self.prevent_hide = False
@@ -39,17 +44,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
 
-        # Create a new layout with no margins
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(1)
-
-        self.init_default_layout()
-        self.setLayout(self.layout)
-
-        self.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-        )
+        self.init_layout()
 
         self.installEventFilter(self)
         self.set_attributes(**kwargs)
@@ -67,8 +62,14 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         """Return the central widget."""
         return self._central_widget
 
-    def init_default_layout(self):
+    def init_layout(self):
         """ """
+        # Create a new layout with no margins
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(1)
+        self.setLayout(self.layout)
+
         # Create a central widget and set it to the layout
         self.setCentralWidget(QtWidgets.QWidget(self))
 
@@ -82,15 +83,17 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         self.gridLayout.setContentsMargins(0, 0, 0, 0)
         self.gridLayout.setSpacing(1)
 
-        # Create DraggableHeader instance and add it to the central widget layout
-        self.draggable_header = DraggableHeader(self)
-        self.centralWidgetLayout.addWidget(self.draggable_header)
+        if self.add_draggable_header:
+            # Create DraggableHeader instance and add it to the central widget layout
+            self.draggable_header = DraggableHeader(self)
+            self.centralWidgetLayout.addWidget(self.draggable_header)
 
         # Add grid layout to the central widget layout
         self.centralWidgetLayout.addLayout(self.gridLayout)
 
-        # Add apply button to the central widget layout
-        self.centralWidgetLayout.addWidget(self.apply_button)
+        if self.add_apply_button and self.parent():
+            # Add apply button to the central widget layout
+            self.centralWidgetLayout.addWidget(self.apply_button)
 
     def get_all_children(self):
         children = self.findChildren(QtWidgets.QWidget)
@@ -484,12 +487,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
 if __name__ == "__main__":
     import sys
 
-    # return the existing QApplication object, or create a new one if none exists.
+    # Return the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
-    # # grid layout example
     menu = Menu(position="cursorPos", setTitle="Drag Me")
-    print(menu)
+
+    # Grid layout example
     # a = menu.add(["Label A", "Label B"])
     a = menu.add("Label A")
     b = menu.add("Label B")
@@ -498,9 +501,7 @@ if __name__ == "__main__":
 
     menu.on_item_interacted.connect(lambda x: print(x))
 
-    from uitk.widgets.mixins.style_sheet import StyleSheet
-
-    StyleSheet().set_style(widget=menu, theme="dark")
+    menu.set_style(theme="dark")
 
     menu.show()
     print(menu.get_items())
@@ -524,7 +525,7 @@ Promoting a widget in designer to use a custom class:
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
 
-# depricated:
+# Deprecated: -------------------------------------
 
 # def hide(self, force=False):
 #   '''Sets the widget as invisible.
