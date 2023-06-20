@@ -9,7 +9,16 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 
 
 class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
-    """ """
+    """A custom Qt Widget that serves as a menu with additional features.
+
+    The Menu class inherits from QtWidgets.QWidget and mixes in AttributesMixin and StyleSheet.
+    It provides a customizable menu with features such as draggable headers and apply buttons.
+    The menu can be positioned relative to the cursor, a specific coordinate, a widget, or its parent.
+
+    Attributes:
+        on_item_added (QtCore.Signal): Signal emitted when an item is added to the menu.
+        on_item_interacted (QtCore.Signal): Signal emitted when an item in the menu is interacted with.
+    """
 
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
@@ -25,6 +34,18 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         add_apply_button=True,
         **kwargs,
     ):
+        """Initializes a Menu instance.
+
+        Parameters:
+            parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
+            position (str, optional): The position of the menu. Can be "right", "cursorPos", a coordinate pair, or a widget. Defaults to "right".
+            min_item_height (int, optional): The minimum height of items in the menu. Defaults to None.
+            max_item_height (int, optional): The maximum height of items in the menu. Defaults to None.
+            fixed_item_height (int, optional): The fixed height of items in the menu. Defaults to None.
+            add_draggable_header (bool, optional): Whether to add a draggable header to the menu. Defaults to True.
+            add_apply_button (bool, optional): Whether to add an apply button to the menu. Defaults to True.
+            **kwargs: Additional keyword arguments to set attributes on the menu.
+        """
         super().__init__(parent)
 
         self.position = position
