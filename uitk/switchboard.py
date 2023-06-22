@@ -1934,50 +1934,6 @@ class Switchboard(QUiLoader):
         self._messageBox.setText(string)
         self._messageBox.show()  # Use show() instead of exec_()
 
-    def attribute_window(
-        self,
-        obj,
-        window_title="",
-        set_attribute_func=None,
-        label_toggle_func=None,
-        **attrs,
-    ):
-        """Create an AttributeWindow for the given object and attributes.
-
-        Parameters:
-            obj: The object to create the AttributeWindow for.
-            window_title: The title of the AttributeWindow.
-            set_attribute_func: A function to set the attribute on the object. ex. <your fuction>(obj, name, value)
-                        If None, the attribute is set using: setattr(obj, name, value)
-            label_toggle_func: A function to handle the label toggled event. ex. <your function>(obj, name, checked)
-                        If None, no action is performed when a label is toggled.
-            attrs: The attributes to add to the AttributeWindow.
-        """
-        # Create an AttributeWindow
-        window = self.AttributeWindow(self.parent(), checkable=bool(label_toggle_func))
-        window.set_style(theme="dark")
-        window.setTitle(window_title)
-        window.position = "cursorPos"
-
-        for attribute_name, attribute_value in attrs.items():
-            window.add_attribute(attribute_name, attribute_value)
-
-        # Connect the valueChanged signal to a slot that sets the attribute on the object
-        if set_attribute_func is None:
-            window.valueChanged.connect(lambda name, value: setattr(obj, name, value))
-        else:
-            window.valueChanged.connect(
-                lambda name, value: set_attribute_func(obj, name, value)
-            )
-
-        # Connect the labelToggled signal to a slot that handles the label toggled event
-        if label_toggle_func is not None:
-            window.labelToggled.connect(
-                lambda name, checked: label_toggle_func(obj, name, checked)
-            )
-
-        window.show()
-
     def gc_protect(self, obj=None, clear=False):
         """Protect the given object from garbage collection.
 
@@ -2012,7 +1968,7 @@ if __name__ == "__main__":
         def MyButtonsObjectName(self):
             self.sb.message_box("Button Pressed")
 
-    sb = Switchboard(slots_location=MyProjectSlots)
+    sb = Switchboard(ui_location="example", slots_location=MyProjectSlots)
     ui = sb.example
     ui.set_style(theme="dark")
 

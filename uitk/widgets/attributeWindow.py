@@ -24,18 +24,31 @@ class AttributeWindow(Menu):
     labelToggled = QtCore.Signal(str, bool)
     valueChanged = QtCore.Signal(str, object)
 
-    def __init__(self, *args, checkable=False, single_check=False, **kwargs):
+    def __init__(
+        self,
+        obj,
+        attributes_dict={},
+        window_title="",
+        checkable=False,
+        single_check=False,
+        set_attribute_func=None,
+        label_toggle_func=None,
+        allow_unsupported_types=False,
+        **kwargs,
+    ):
         """Initialize an instance of AttributeWindow.
 
         Parameters:
             checkable (bool): Whether the labels should be checkable. Defaults to False.
             single_check (bool): Whether only one label should be checkable at a time. Defaults to False.
+            unknown_datatype_handling (bool): Whether to allow unknown data types. "allow", "fail_silently", "fail_with_error"
             **kwargs: Additional keyword arguments to set attributes on the menu.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
         self.checkable = checkable
         self.single_check = single_check
+        self.allow_unsupported_types = allow_unsupported_types
         self.labels = []
         self.widgets = []
         self.attribute_to_widgets = {}
@@ -45,9 +58,8 @@ class AttributeWindow(Menu):
         if self.single_check:
             self.label_group = QtWidgets.QButtonGroup(self)
             self.label_group.setExclusive(False)  # Allow all checkboxes to be unchecked
-            self.label_group.buttonToggled.connect(
-                self.on_button_clicked
-            )  # Connect buttonToggled signal to your slot
+            # Connect buttonToggled signal to your slot
+            self.label_group.buttonToggled.connect(self.on_button_clicked)
 
         self.type_to_widget = {
             bool: (QtWidgets.QCheckBox, "setChecked", "isChecked", "stateChanged"),
@@ -56,94 +68,106 @@ class AttributeWindow(Menu):
             str: (QtWidgets.QLineEdit, "setText", "text", "textChanged"),
         }
 
-    def add_attribute(self, attribute_name, attribute_value):
-        """Add an attribute to the window."""
+        self.setTitle(window_title)
+        self.position = "cursorPos"
 
-        label = self.setup_label(attribute_name)
+        for attribute_name, attribute_value in attributes_dict.items():
+            self.add_attribute(attribute_name, attribute_value)
 
-        # If attribute is a composite one
-        if isinstance(attribute_value, (list, set, tuple)):
-            widget_layout = QtWidgets.QVBoxLayout()
-            widget_layout.setSpacing(1)
-            widget_layout.setMargin(0)
-            widgets = []
-            for value in attribute_value:
-                (
-                    widget_class,
-                    set_value_method,
-                    get_value_method,
-                    signal_name,
-                ) = self.get_widget_info(value)
-                widget = self.setup_widget(
-                    widget_class,
-                    set_value_method,
-                    value,
-                    get_value_method,
-                    signal_name,
-                    attribute_name,
-                )
-                widgets.append(widget)
-                widget_layout.addWidget(widget)
-            self.attribute_to_widgets[attribute_name] = widgets
-            self.add_to_layout(label, widget_layout)
-
-        else:  # Single value attribute
-            (
-                widget_class,
-                set_value_method,
-                get_value_method,
-                signal_name,
-            ) = self.get_widget_info(attribute_value)
-            widget = self.setup_widget(
-                widget_class,
-                set_value_method,
-                attribute_value,
-                get_value_method,
-                signal_name,
-                attribute_name,
+        # Connect the valueChanged signal to a slot that sets the attribute on the object
+        if set_attribute_func is None:
+            self.valueChanged.connect(lambda name, value: setattr(obj, name, value))
+        else:
+            self.valueChanged.connect(
+                lambda name, value: set_attribute_func(obj, name, value)
             )
-            self.attribute_to_widgets[attribute_name] = [widget]
-            self.add_to_layout(label, widget)
+
+        # Connect the labelToggled signal to a slot that handles the label toggled event
+        if label_toggle_func is not None:
+            self.labelToggled.connect(
+                lambda name, checked: label_toggle_func(obj, name, checked)
+            )
+
+    @staticmethod
+    def is_type_supported(attribute_type):
+        supported_types = {
+            bool,
+            int,
+            float,
+            str,  # Update with any additional types you support
+        }
+        return attribute_type in supported_types
 
     def get_widget_info(self, attribute_value):
         """Get the widget class and methods based on the attribute value type."""
-        return self.type_to_widget.get(
-            type(attribute_value),
-            (QtWidgets.QLineEdit, "setText", "text", "textChanged"),
-        )
+        if (
+            not self.allow_unsupported_types
+            and type(attribute_value) not in self.type_to_widget
+        ):
+            raise ValueError(f"Unknown data type: {type(attribute_value)}")
+        elif (
+            self.allow_unsupported_types
+            and type(attribute_value) not in self.type_to_widget
+        ):
+            return None
+        else:
+            return self.type_to_widget.get(
+                type(attribute_value),
+                (QtWidgets.QLineEdit, "setText", "text", "textChanged"),
+            )
 
-    def setup_widget(
-        self,
-        widget_class,
-        set_value_method,
-        attribute_value,
-        get_value_method,
-        signal_name,
-        attribute_name,
-    ):
-        """Set up the widget for the attribute."""
+    def create_widget(self, widget_class, attribute_value):
+        """Create an instance of a widget.
+
+        Parameters:
+            widget_class (type): The class of the widget to create.
+            attribute_value (type): The initial value of the attribute.
+
+        Returns:
+            QtWidgets.QWidget: The created widget.
+        """
         widget = widget_class(self)
         widget.original_value = attribute_value  # Store the original value
-        widget.get_value_method = get_value_method  # Store the get_value_method
-        widget.setProperty("attribute_name", attribute_name)  # Store the attribute_name
-
         # Convert the attribute value to a string if it's not a boolean
         if widget_class is QtWidgets.QLineEdit and not isinstance(
             attribute_value, bool
         ):
             attribute_value = str(attribute_value)
-        getattr(widget, set_value_method)(attribute_value)
 
-        if widget_class is QtWidgets.QCheckBox:
-            widget.setText(str(attribute_value))  # Set the text for QCheckBox
+        return widget
+
+    def configure_widget(
+        self,
+        widget,
+        set_value_method,
+        get_value_method,
+        signal_name,
+        attribute_name,
+    ):
+        """Configure a widget for the attribute.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to configure.
+            set_value_method (str): The name of the method to set the value on the widget.
+            get_value_method (str): The name of the method to get the value from the widget.
+            signal_name (str): The name of the signal to connect to the valueChanged slot.
+            attribute_name (str): The name of the attribute the widget is associated with.
+        """
+        widget.get_value_method = get_value_method  # Store the get_value_method
+        widget.setProperty("attribute_name", attribute_name)  # Store the attribute_name
+
+        getattr(widget, set_value_method)(widget.original_value)
+
+        if isinstance(widget, QtWidgets.QCheckBox):
+            widget.setText(str(widget.original_value))  # Set the text for QCheckBox
             # Update text on state change
             widget.stateChanged.connect(lambda: widget.setText(str(widget.isChecked())))
 
-        if widget_class is QtWidgets.QDoubleSpinBox:
+        if isinstance(widget, QtWidgets.QDoubleSpinBox):
             widget.setRange(self.FLOAT_MIN, self.FLOAT_MAX)
             widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
-            if isinstance(attribute_value, float):
-                decimals = len(str(attribute_value).split(".")[-1])
+            if isinstance(widget.original_value, float):
+                decimals = len(str(widget.original_value).split(".")[-1])
                 widget.setDecimals(decimals)
 
         if isinstance(widget.original_value, (list, set, tuple)):
@@ -155,7 +179,94 @@ class AttributeWindow(Menu):
                 lambda: self.emit_value_changed(widget)
             )
 
+    def setup_widget(
+        self,
+        widget_class,
+        set_value_method,
+        attribute_value,
+        get_value_method,
+        signal_name,
+        attribute_name,
+    ):
+        """Set up the widget for the attribute."""
+        widget = self.create_widget(widget_class, attribute_value)
+        self.configure_widget(
+            widget,
+            set_value_method,
+            get_value_method,
+            signal_name,
+            attribute_name,
+        )
+
         return widget
+
+    def add_attribute(self, attribute_name, attribute_value):
+        """Add an attribute to the window."""
+
+        # Check the type of the attribute_value here
+        if not self.allow_unsupported_types and not self.is_type_supported(
+            type(attribute_value)
+        ):
+            return
+
+        # If attribute is a composite one
+        if isinstance(attribute_value, (list, set, tuple)):
+            widget_layout = QtWidgets.QVBoxLayout()
+            widget_layout.setSpacing(1)
+            widget_layout.setMargin(0)
+            widgets = []
+            for value in attribute_value:
+                widget_info = self.get_widget_info(value)
+                if widget_info is not None:
+                    (
+                        widget_class,
+                        set_value_method,
+                        get_value_method,
+                        signal_name,
+                    ) = widget_info
+                    if (
+                        None in widget_info
+                    ):  # Skip this iteration if any value in widget_info is None
+                        continue
+                    widget = self.setup_widget(
+                        widget_class,
+                        set_value_method,
+                        value,
+                        get_value_method,
+                        signal_name,
+                        attribute_name,
+                    )
+                    widgets.append(widget)
+                    widget_layout.addWidget(widget)
+            if widgets:
+                self.attribute_to_widgets[attribute_name] = widgets
+                label = self.setup_label(attribute_name)
+                self.add_to_layout(label, widget_layout)
+
+        else:  # Single value attribute
+            widget_info = self.get_widget_info(attribute_value)
+            if widget_info is not None:
+                (
+                    widget_class,
+                    set_value_method,
+                    get_value_method,
+                    signal_name,
+                ) = widget_info
+                if (
+                    None in widget_info
+                ):  # Return from the method if any value in widget_info is None
+                    return
+                widget = self.setup_widget(
+                    widget_class,
+                    set_value_method,
+                    attribute_value,
+                    get_value_method,
+                    signal_name,
+                    attribute_name,
+                )
+                self.attribute_to_widgets[attribute_name] = [widget]
+                label = self.setup_label(attribute_name)
+                self.add_to_layout(label, widget)
 
     def emit_value_changed(self, widget):
         """Emit the valueChanged signal for a widget."""
@@ -242,61 +353,47 @@ class AttributeWindow(Menu):
         self.gridLayout.setColumnStretch(0, 1)
         self.gridLayout.setColumnStretch(1, 2)
 
-    def showEvent(self, event):
-        """Handle the show event for the window.
-
-        This method is called when the window is shown. It adjusts the size of the labels
-        and widgets based on their content.
-
-        Parameters:
-            event (QShowEvent): The show event.
-        """
-        super().showEvent(event)
-        max_label_width = max(label.sizeHint().width() for label in self.labels)
-        max_widget_width = max(widget.sizeHint().width() for widget in self.widgets)
-        for label in self.labels:
-            label.setFixedSize(max_label_width, label.size().height())
-        for widget in self.widgets:
-            widget.setFixedSize(max_widget_width, widget.size().height())
-
-        # print size and location of the window
-        print(f"Window size: {self.size()}")
-        print(f"Window position: {self.pos()}")
-
-        # print size and location of each widget
-        for i, widget in enumerate(self.widgets):
-            print(f"Widget {i} size: {widget.size()}")
-            print(f"Widget {i} position: {widget.pos()}")
-
 
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
 
-    # Return the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    obj = QtWidgets.QWidget()
 
-    # Create an AttributeWindow
-    window = AttributeWindow(checkable=1, single_check=1)
+    attrs = {
+        "Name": "Cube",
+        "Visible": True,
+        "Opacity": 0.5,
+        "Position": [0, 0, 0],
+    }
 
-    # Add some attributes
-    window.add_attribute("Name", "Cube")
-    window.add_attribute("Visible", True)
-    window.add_attribute("Opacity", 0.5)
-    window.add_attribute("Position", [0, 0, 0])
+    window = AttributeWindow(
+        obj,
+        attrs,
+        checkable=1,
+        single_check=1,
+        allow_unsupported_types=1,
+        setVisible=1,
+    )
+
     window.add_attribute("Texture", "path/to/texture.png")
+
+    # Unknown datatype attribute
+    class UnknownType:
+        pass
+
+    unknown_attr = UnknownType()
+    window.add_attribute("Unknown Attribute", unknown_attr)
 
     window.set_style(theme="dark")
 
     window.labelToggled.connect(lambda *args: print(args))
     window.valueChanged.connect(lambda *args: print(args))
 
-    # Show the window
-    window.show()
-
-    # Start the QApplication
     sys.exit(app.exec_())
+
 
 # -----------------------------------------------------------------------------
 # Notes
@@ -304,3 +401,21 @@ if __name__ == "__main__":
 
 
 # Deprecated: -------------------------------------
+
+
+# def showEvent(self, event):
+#     """Handle the show event for the window.
+
+#     This method is called when the window is shown. It adjusts the size of the labels
+#     and widgets based on their content.
+
+#     Parameters:
+#         event (QShowEvent): The show event.
+#     """
+#     super().showEvent(event)
+#     max_label_width = max(label.sizeHint().width() for label in self.labels)
+#     max_widget_width = max(widget.sizeHint().width() for widget in self.widgets)
+#     for label in self.labels:
+#         label.setFixedSize(max_label_width, label.size().height())
+#     for widget in self.widgets:
+#         widget.setFixedSize(max_widget_width, widget.size().height())

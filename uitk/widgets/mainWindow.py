@@ -421,7 +421,11 @@ if __name__ == "__main__":
         def MyButtonsObjectName(self):
             print("Button clicked!")
 
-    sb = Switchboard(slots_location=MySlots)
+    sb = Switchboard(
+        ui_location=r"O:\Cloud\Code\_scripts\uitk\uitk\example", slots_location=MySlots
+    )
+    print(sb.ui_location)
+    print(sb.ui_files)
     mainwindow = MainWindow(sb, sb.ui_files["example"])
     print("sb.example:", mainwindow.sb.example)
     print("sb.example.widgets:", mainwindow.sb.example.widgets)

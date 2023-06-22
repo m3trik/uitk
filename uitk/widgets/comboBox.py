@@ -33,18 +33,18 @@ class ComboBox(
         """Get a list of each items's text or it's data if it exists from the standard model/view.
 
         Returns:
-                (list)
+            (list)
         """
         return [
             self.itemData(i) if self.itemData(i) else self.itemText(i)
             for i in range(self.count())
         ]
 
-    def blockSignals_(fn):
+    def block_signals(fn):
         """A decorator that blocks signals before executing a function, and unblocks them after.
 
         Parameters:
-                fn (obj): The function to be decorated.
+            fn (obj): The function to be decorated.
         """
 
         def wrapper(self, *args, **kwargs):
@@ -55,27 +55,26 @@ class ComboBox(
 
         return wrapper
 
-    @blockSignals_
-    def addItems_(self, items, header=None, clear=True, ascending=False):
+    @block_signals
+    def add(self, items, header=None, clear=True, ascending=False):
         """Add items to the combobox's standard modelView without triggering any signals.
 
         Parameters:
-                items (str/list)(dict): A string, list of strings, or dict with 'string':data pairs to fill the comboBox with.
-                header (str): An optional value for the first index of the comboBox's list.
-                clear (bool): Clear any previous items before adding new.
-                ascending (bool): Insert in ascending order. New item(s) will be added to the top of the list.
+            items (str/list)(dict): A string, list of strings, or dict with 'string':data pairs to fill the comboBox with.
+            header (str): An optional value for the first index of the comboBox's list.
+            clear (bool): Clear any previous items before adding new.
+            ascending (bool): Insert in ascending order. New item(s) will be added to the top of the list.
 
         Returns:
-                (list) comboBox's current item list minus any header.
+            (list) comboBox's current item list minus any header.
 
-        ex call: comboBox.addItems_(["Import file", "Import Options"], "Import")
-        ex call: comboBox.addItems_({'Import file':<obj>, "Import Options":<obj>}, "Import") #example of adding items with data.
+        Example:
+            comboBox.add(["Import file", "Import Options"], "Import")
+            comboBox.add({'Import file':<obj>, "Import Options":<obj>}, "Import") #example of adding items with data.
         """
         assert isinstance(
             items, (str, list, set, tuple, dict)
-        ), "{}: addItems_: Incorrect datatype: {}".format(
-            __file__, type(items).__name__
-        )
+        ), "{}: add: Incorrect datatype: {}".format(__file__, type(items).__name__)
 
         index = (
             self.currentIndex() if self.currentIndex() > 0 else 0
@@ -102,27 +101,27 @@ class ComboBox(
 
         return items
 
-    @blockSignals_
+    @block_signals
     def currentData(self):
         """Get the data at the current index.
 
         Returns:
-                () data
+            () data
         """
         index = self.currentIndex()
         return self.itemData(index)
 
-    @blockSignals_
+    @block_signals
     def setCurrentData(self, value):
         """Sets the data for the current index.
 
         Parameters:
-                value () = The current item's data value.
+            value () = The current item's data value.
         """
         index = self.currentIndex()
         self.setItemData(index, value)
 
-    @blockSignals_
+    @block_signals
     def currentText(self):
         """Get the text at the current index.
 
@@ -132,33 +131,33 @@ class ComboBox(
         index = self.currentIndex()
         return self.richText(index)
 
-    @blockSignals_
+    @block_signals
     def setCurrentText(self, text):
         """Sets the text for the current index.
 
         Parameters:
-                item (str): The current item's text value.
+            item (str): The current item's text value.
         """
         index = self.currentIndex()
         self.setRichText(text, index)
 
-    @blockSignals_
+    @block_signals
     def setItemText(self, index, text):
         """Set the text at the given index.
         Override for setItemText built-in method.
 
         Parameters:
-                item (str): Item text.
-                index (int): Item index
+            item (str): Item text.
+            index (int): Item index
         """
         self.setRichText(text, index)
 
-    @blockSignals_
+    @block_signals
     def setCurrentItem(self, i):
         """Sets the current item from the given item text or index without triggering any signals.
 
         Parameters:
-                i (str)(int): item text or item index
+            i (str)(int): item text or item index
         """
         try:  # set by item index:
             self.setCurrentIndex(self.items.index(i))
@@ -184,40 +183,20 @@ class ComboBox(
         super().showPopup()
 
     def hidePopup(self):
-        """"""
+        """ """
         self.beforePopupHidden.emit()
         self.option_menu.hide()
 
         super().hidePopup()
 
     def clear(self):
-        """"""
+        """ """
         self.option_menu.clear()
 
         super().clear()
 
-    def enterEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
-
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
-        # self.hidePopup()
-
-        super().leaveEvent(event)
-
     def keyPressEvent(self, event):
-        """
-        Parameters:
-                event = <QEvent>
-        """
+        """ """
         if event.key() == QtCore.Qt.Key_Return and not event.isAutoRepeat():
             self.returnPressed.emit()
             self.setEditable(False)
@@ -225,10 +204,7 @@ class ComboBox(
         super().keyPressEvent(event)
 
     def showEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
+        """ """
         if self.ctx_menu.contains_items:
             # self.ctx_menu.setTitle(self.itemText(0))
             self.setTextOverlay("⧉", alignment="AlignRight")

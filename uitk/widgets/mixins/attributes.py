@@ -48,7 +48,7 @@ class AttributesMixin:
             try:
                 getattr(obj, attr)(value)
 
-            except Exception:
+            except AttributeError:
                 # print ('set_attributes:', attr, value)
                 self.set_custom_attribute(obj, attr, value)
 

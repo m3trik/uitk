@@ -36,17 +36,25 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         self.set_attributes(**kwargs)
 
     def move_(self, location) -> None:
-        """ """
-        p = self.parent()
+        # Get the screen's geometry
+        screen = QtWidgets.QApplication.screens()[0]
+        rect = screen.geometry()
 
-        if p is None:
-            p = self.window()
-
-        rect = p.rect()
+        offset_x = self.sizeHint().width() / 2
+        offset_y = self.sizeHint().height() / 2
 
         if location == "topMiddle":
-            offset = self.sizeHint().width() / 2
-            point = QtCore.QPoint(rect.right() / 2.5 - offset, rect.top() + 150)
+            point = QtCore.QPoint(rect.width() / 2 - offset_x, rect.top() + 150)
+        elif location == "bottomRight":
+            point = QtCore.QPoint(rect.width() - offset_x, rect.height() - offset_y)
+        elif location == "topLeft":
+            point = QtCore.QPoint(rect.left() + offset_x, rect.top() + offset_y)
+        elif location == "bottomLeft":
+            point = QtCore.QPoint(rect.left() + offset_x, rect.height() - offset_y)
+        else:  # default to the middle of the screen if location is not recognized
+            point = QtCore.QPoint(
+                rect.width() / 2 - offset_x, rect.height() / 2 - offset_y
+            )
 
         self.move(point)
 
