@@ -1,14 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
-import os
 import importlib
 import pkgutil
 import inspect
 
 
-__package__ = "uitk"
-__version__ = '0.6.8'
-__path__ = [os.path.abspath(os.path.dirname(__file__))]
+__package__ = "uitk.widgets.mixins"
 
 
 # Define a dictionary to map class names to their respective modules
@@ -46,21 +43,41 @@ def __getattr__(name):
 
 
 # --------------------------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------------------------
 # Notes
 # --------------------------------------------------------------------------------------------
 
-# The CLASS_TO_MODULE dictionary is built by iterating over all submodules of the package and checking if each submodule defines any classes.
-# The resulting dictionary maps class names to their respective module names.
+"""
+EXAMPLE USE CASE:
+import uitk.widgets as wgts
 
-# When __getattr__ is called with a class name, it checks if the class name is in the CLASS_TO_MODULE dictionary.
-# If it is, __getattr__ imports the corresponding module if it hasn't already been imported, and returns the requested class object from the module using getattr.
-
-# Therefore, the classes are imported on-demand as they are requested, rather than all at once when the package is first imported.
-# This can help reduce startup time and memory usage, especially for large packages with many modules and classes.
+wgts.PushButton #get a specific widget.
+"""
 
 # --------------------------------------------------------------------------------------------
 # deprecated:
 # --------------------------------------------------------------------------------------------
+
+
+# def __getattr__(attr_name):
+# 	"""This function dynamically imports a module and returns an attribute from the module.
+
+# 	Parameters:
+# 		attr_name (str): The name of the attribute to be imported. The name should be in the format
+# 					'module_name.attribute_name' or just 'attribute_name'.
+# 	Returns:
+# 		(obj) The attribute specified by the `attr_name` argument.
+
+# 	:Raises:
+# 		AttributeError: If the specified attribute is not found in the original module.
+
+# 	Example:
+# 		<package>.__getattr__('module1.attribute1') #returns: <attribute1 value>
+# 		<package>.__getattr__('attribute1') #returns: <attribute1 value>
+# 	"""
+# 	try:
+# 		module = __import__(f"{__package__}.{attr_name}", fromlist=[f"{attr_name}"])
+# 		setattr(sys.modules[__name__], attr_name, getattr(module, attr_name))
+# 		return getattr(module, attr_name)
+
+# 	except ModuleNotFoundError as error:
+# 		raise AttributeError(f"Module '{__package__}' has no attribute '{attr_name}'") from error

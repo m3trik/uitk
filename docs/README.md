@@ -65,7 +65,7 @@ class MySlots(MyProject):
 
 
 sb = Switchboard(slots_location=MySlots)
-ui = sb.example #Get the UI using it's name (or sb.getUi(<name>))
+ui = sb.example #Get the UI using it's name (or sb.get_ui(<name>))
 
 # Some of the UI properties:
 print ('ui:'.ljust(20), sb.ui) #The current UI
@@ -73,17 +73,17 @@ print ('ui name:'.ljust(20), ui.name) #The UI's filename.
 print ('ui path:'.ljust(20), ui.path) #The directory path containing the UI file
 print ('ui tags:'.ljust(20), ui.tags) #Any UI tags as a list
 print ('ui level:'.ljust(20), ui.level) #The UI level
-print ('is current ui:'.ljust(20), ui.isCurrentUi) #True if the UI is set as current
+print ('is current ui:'.ljust(20), ui.is_current) #True if the UI is set as current
 print ('is submenu:'.ljust(20), ui.isSubmenu) #True if the UI is a submenu
-print ('is connected:'.ljust(20), ui.isConnected) #True if the UI is connected to its slots
-print ('is initialized:'.ljust(20), ui.isInitialized) #True after the UI is first shown
-print ('slot:'.ljust(20), ui.MyButtonsObjectName.getSlot()) #The associated slot
+print ('is connected:'.ljust(20), ui.is_connected) #True if the UI is connected to its slots
+print ('is initialized:'.ljust(20), ui.is_initialized) #True after the UI is first shown
+print ('slot:'.ljust(20), ui.MyButtonsObjectName.get_slot()) #The associated slot
 print ('slots:'.ljust(20), ui.slots) #The associated slots class instance
 print ('widget:'.ljust(20), ui.MyButtonsObjectName) #Get a widget from the UI by it's name
 print ('widgets:'.ljust(20), [(w.name or w.type) for w in ui.widgets]) #All widgets of the UI
 
 # There are also many helper methods that you can access through your switchboard instance:
-print ('widget from slot:'.ljust(20), sb.getWidgetFromMethod(ui.MyButtonsObjectName.getSlot()))
+print ('widget from slot:'.ljust(20), sb.get_widget_from_method(ui.MyButtonsObjectName.get_slot()))
 
 ui.show(app_exec=True)
 ```

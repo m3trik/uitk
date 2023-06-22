@@ -1,704 +1,612 @@
 # !/usr/bin/python
 # coding=utf-8
+import inspect
 from PySide2 import QtCore, QtGui, QtWidgets
-
-from uitk.widgets.attributes import Attributes
-
-
-class Menu(QtWidgets.QMenu, Attributes):
-	'''
-	Parameters:
-		menu_type (str): Menu style. valid parameters are: 'standard', 'context', 'form'
-		title (str): Text displayed at the menu's header.
-		padding (int): Area surrounding the menu.
-		childHeight (int): The minimum height of any child widgets (excluding the 'Apply' button).
-		preventHide (bool): Prevent the menu from hiding.
-		position (str): Desired menu position. Valid values are: 
-			QPoint, tuple as (int, int), 'cursorPos', 'center', 'top', 'bottom', 'right', 'left', 
-			'topLeft', 'topRight', 'bottomRight', 'bottomLeft' (Positions relative to parent (requires parent))
-	'''
-	openMenus = []
-
-	def __init__(self, parent=None, title='', menu_type='standard', position='cursorPos', childHeight=16, preventHide=False, alpha=175, padding=2, **kwargs):
-		QtWidgets.QMenu.__init__(self, parent)
-
-		self.menu_type = menu_type
-		self.position = position
-		self.preventHide = preventHide
-		self.childHeight = childHeight
-		self.padding = padding
-		self.alpha = alpha
-
-		self.setTitle(title)
-		self.setWindowFlags(QtCore.Qt.Tool|QtCore.Qt.FramelessWindowHint)
-		self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-		self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-
-		self.childWidgets = set()
-		self.layouts = {} #a container for any created layouts.
-		self.toggleAllButton = self._addToggleAllButton()
-		self.applyButton = self._addApplyButton()
-
-		self.menu_timer = QtCore.QTimer()
-		self.menu_timer.timeout.connect(lambda: None if self.rect().contains(QtGui.QCursor.pos()) else self.hide()) #hide the menu if the mouse is not currently over it.
-
-		self.setStyleSheet(f'''
-			QMenu {{
-				background-color: rgba(50,50,50,{self.alpha});
-				padding: {self.padding}px {self.padding}px {self.padding}px {self.padding}px;
-			}}
-
-			QMenu::item {{
-				background-color: transparent;
-				spacing: 0px;
-				border: 1px solid transparent;
-				margin: 0px;
-			}}
-			''')
-
-		self.setAttributes(**kwargs)
-
-
-	@property
-	def draggable_header(self):
-		'''Get the draggable header.
-		'''
-		try:
-			return self._draggable_header
-
-		except AttributeError as error:
-			from uitk.widgets.pushButtonDraggable import PushButtonDraggable
-			dh = PushButtonDraggable()
-
-			wAction = QtWidgets.QWidgetAction(self)
-			wAction.setDefaultWidget(dh)
-			self.insertAction_(wAction)
-
-			self._draggable_header = dh
-			return self._draggable_header
-
-
-	@property
-	def containsMenuItems(self):
-		'''Query whether any child objects have been added to the menu.
-		'''
-		return bool(self.childWidgets)
-
-
-	def addToOpenMenus(self):
-		"""Adds the current instance of the menu to the list of open menus.
-		"""
-		self.openMenus.append(self)
-
-
-	def removeFromOpenMenus(self):
-		"""Removes the current instance of the menu from the list of open menus.
-		If the instance is not in the list, no action is taken.
-		"""
-		try:
-			self.openMenus.remove(self)
-		except ValueError:
-			pass
-
-
-	@classmethod
-	def hideAll(cls):
-		"""Hides all currently open instances of the menu.
-		"""
-		for menu in cls.openMenus:
-			menu.hide()
-
-
-	@classmethod
-	def hideLastOpened(cls):
-		"""Hides the last opened instance of the menu, if one exists.
-		If there are no open menus, no action is taken.
-		"""
-		try:
-			cls.openMenus[-1].hide()
-		except IndexError:
-			pass
-
-
-	def getChildWidgets(self, inc=[], exc=[]):
-		'''Get a list of the menu's child widgets.
-
-		:Parameters:
-			inc (list): Include only widgets of the given type(s). ie. ['QCheckBox', 'QRadioButton']
-			exc (list): Exclude widgets by type.
-		:Return:
-			(list) child widgets.
-		'''
-		if any((inc, exc)):
-			return [w for w in self.childWidgets 
-					if not w.__class__.__base__.__name__ in exc 
-						and (w.__class__.__base__.__name__ in inc if inc 
-					else w.__class__.__base__.__name__ not in inc)]
-		else:
-			return list(self.childWidgets)
-
-
-	def setTitle(self, title=''):
-		'''Set the menu's title to the given string.
-		If no title is given, the fuction will attempt to use the menu parents text.
-
-		Parameters:
-			title (str): Text to apply to the menu's header.
-		'''
-		if not title:
-			try:
-				title = self.parent().text()
-			except AttributeError as error:
-				try:
-					title = self.parent().currentText()
-				except AttributeError as error:
-					pass
-
-		self.draggable_header.setText(title)
-		super().setTitle(title)
-
-
-	def getActionAtIndex(self, index):
-		'''
-		'''
-		try:
-			return self.actions()[1:][index] #slice the actions list to omit the header and any built-in hidden buttons (ie. 'apply', 'toggleAll').
-
-		except IndexError as error:
-			return None
-
-
-	def insertAction_(self, wAction, index=-1):
-		'''Extends insertAction to allow inserting by index.
-
-		Parameters:
-			wAction (obj): The widget action to insert.
-			index (int): The desired index. (It appends the action if index is invalid)
-		'''
-		_wAction = self.getActionAtIndex(index)
-		self.insertAction(_wAction, wAction) #insert before _wAction. It appends the action if before is nullptr or before is not a valid action for this widget
-
-
-	def _addFormLayout(self, key='form', index=0):
-		'''Create a two column form layout that can later be referenced using a key.
-
-		Parameters:
-			key (str)(int): The key identifier for the layout.
-			index(int): The index corresponding to the vertical positioning of the layout.
-
-		Return:
-			(obj) QLayout.
-		'''
-		form = QtWidgets.QWidget(self)
-		form.setStyleSheet(f'QWidget {{background-color:rgba(50,50,50,{self.alpha});}}')
-
-		layout = QtWidgets.QFormLayout(form)
-		layout.setVerticalSpacing(0)
-
-		wAction = QtWidgets.QWidgetAction(self)
-		wAction.setDefaultWidget(form)
-		self.insertAction_(wAction, index)
-
-		self.layouts[key] = layout
-		return self.layouts[key]
-
-
-	def getFormLayout(self, key='form'):
-		'''Get a two column form layout using a key.
-
-		Parameters:
-			key (str)(int): The key identifier for the layout.
-
-		Return:
-			(obj) QLayout.
-		'''
-		try:
-			return self.layouts[key]
-
-		except (KeyError, AttributeError) as error: #create a layout at the given key.
-			self.layouts[key] = self._addFormLayout(key)
-			return self.layouts[key]
-
-
-	def _addVBoxLayout(self, key='vBox', index=0):
-		'''Create a single column vertical layout that can later be referenced using a key.
-
-		Parameters:
-			key (str)(int): The key identifier for the layout.
-			index(int): The index corresponding to the vertical positioning of the layout.
-
-		Return:
-			(obj) QLayout.
-		'''
-		form = QtWidgets.QWidget(self)
-		form.setStyleSheet(f'QWidget {{background-color:rgba(50,50,50,{self.alpha});}}')
-
-		layout = QtWidgets.QVBoxLayout(form)
-		layout.setContentsMargins(0,0,0,0)
-		layout.setSpacing(0)
-
-		wAction = QtWidgets.QWidgetAction(self)
-		wAction.setDefaultWidget(form)
-		self.insertAction_(wAction, index)
-
-		self.layouts[key] = layout
-		return self.layouts[key]
-
-
-	def getVBoxLayout(self, key='vBox'):
-		'''Get a vertical box layout using a key.
-
-		Parameters:
-			key (str)(int): The key identifier for the layout.
-
-		Return:
-			(obj) QLayout.
-		'''
-		try:
-			return self.layouts[key]
-
-		except (KeyError, AttributeError) as error: #create a layout at the given key.			
-			self.layouts[key] = self._addVBoxLayout(key)
-			return self.layouts[key]
-
-
-	def _addApplyButton(self):
-		'''Add a pushbutton that executes the parent object when pressed.
-		The button is hidden by default.
-
-		Return:
-			(widget)
-		'''
-		if not self.parent():
-			# print (f'# Error: {__file__} in _addApplyButton\n#\tOperation requires a parent widget.')
-			return
-
-		w = QtWidgets.QPushButton('Apply') #self.add('QPushButton', setText='Apply', setObjectName=self.parent().objectName(), setToolTip='Execute the command.')
-		w.setObjectName('apply_button')
-		w.setToolTip('Execute the command.')
-		w.released.connect(lambda: self.parent().released.emit()) #trigger the released signal on the parent when the apply button is released.
-		w.setMinimumSize(119, 26)
-
-		layout = self.getVBoxLayout('menu_buttons') #get the 'menu_buttons' layout.
-		layout.addWidget(w)
-		w.hide()
-
-		return w
-
-
-	def _addToggleAllButton(self):
-		'''Add a pushbutton that will uncheck any checkBoxes when pressed.
-		The button is hidden by default.
-
-		Return:
-			(widget)
-		'''
-		w = QtWidgets.QPushButton('Uncheck All') #self.add('QPushButton', setText='Disable All', setObjectName='disableAll', setToolTip='Set all unchecked.')
-		w.setObjectName('toggleAll')
-		w.setToolTip('Toggle all checked|unchecked.')
-
-		w.released.connect(lambda: [c.setChecked(not next(self.getChildWidgets(inc=['QCheckBox'])).checked()) for c in self.getChildWidgets(inc=['QCheckBox'])]) #trigger the released signal on the parent when the apply button is released.
-		w.setMinimumSize(119, 26)
-
-		layout = self.getVBoxLayout('menu_buttons') #get the 'menu_buttons' layout.
-		layout.addWidget(w)
-		w.hide()
-
-		return w
-
-
-	def add(self, widget, label='', checkableLabel=False, **kwargs):
-		'''Add items to the QMenu.
-
-		Parameters:
-			widget (str/obj): The widget to add. ie. 'QLabel', QtWidgets.QLabel, QtWidgets.QLabel()
-			lable (str): Add a label. (which is actually a checkbox. by default it is not checkable)
-			checkableLabel (bool): The label is checkable.
-
-		additional kwargs:
-			insertSeparator_ (bool): insert a separator before the widget.
-			setLayoutDirection_ (str): ie. 'LeftToRight'
-			setAlignment_ (str): ie. 'AlignVCenter'
-			setButtonSymbols_ (str): ie. 'PlusMinus'
-			setMinMax_ (str): Set the min, max, and step values with a string. ie. '1-100 step.1'
-
-		Return:
-			(obj) the added widget instance.
-
-		ex.call:
-		menu.add('QCheckBox', setText='Component Ring', setObjectName='chk000', setToolTip='Select component ring.')
-		'''
-		try: #get the widget
-			w = getattr(QtWidgets, widget)() #ie. QtWidgets.QAction(self) object from string.
-		except TypeError:
-			w = widget() #if callable(widget) ie. QtWidgets.QAction(self) object.
-		except:
-			w = widget
-
-		self.setAttributes(w, **kwargs) #set any additional given keyword args for the widget.
-
-		type_ = w.__class__.__name__
-
-		if type_=='QAction': #add action item.
-			self.insertAction_(wAction)
-
-		else:
-			if self.menu_type=='form': #add widgets to the form layout.
-				l = QtWidgets.QCheckBox()
-				text = ''.join([(' '+i if i.isupper() else i) for i in label]).title() #format the attr name. ie. 'Subdivisions Height' from 'subdivisionsHeight'
-				l.setText(text)
-				l.setObjectName(label)
-				if not checkableLabel:
-					l.setCheckable(False)
-					l.setStyleSheet('QCheckBox::hover {background-color: rgb(100,100,100); color: white;}')
-				layout = self.getFormLayout() #get the default form layout.
-				layout.addRow(l, w)
-				self.childWidgets.add(l) #add the widget to the childWidgets list.
-
-			else: #convert to action item, then add.
-				layout = self.getVBoxLayout() #get the default vertical box layout.
-				layout.addWidget(w)
-
-			#set child height
-			if w.sizeHint().width() > self.sizeHint().width():
-				width = w.sizeHint().width() if w.sizeHint().width() >125 else 125
-				w.setMinimumSize(width, w.sizeHint().height())
-			try:
-				l.setMinimumSize(l.sizeHint().width(), self.childHeight)
-				# l.setMaximumSize(999, self.childHeight)
-			except UnboundLocalError as error: #'l' does not exist. (not a form menu)
-				pass
-
-			self.childWidgets.add(w) #add the widget to the childWidgets list.
-
-			setattr(self, w.objectName(), w) #add the widget's objectName as a QMenu attribute.
-
-			self._addToContextMenuToolTip(w)
-
-			if hasattr(w, 'released'): #Get the appropriate signal to connect to.
-				w.released.connect(lambda w=w: self._setLastActiveChild(w)) #Connect the signal if one was found.
-			elif hasattr(w, 'valueChanged'):
-				w.valueChanged.connect(lambda value, w=w: self._setLastActiveChild(value, w))
-
-		return w
-
-
-	def _setLastActiveChild(self, widget, *args, **kwargs):
-		'''Set the given widget as the last active.
-		Maintains a list of the last 10 active child widgets.
-
-		Parameters:
-			widget = Widget to set as last active. The widget can later be returned by calling the 'lastActiveChild' method.
-			*args **kwargs = Any additional arguments passed in by the wiget's signal during a connect call.
-
-		Return:
-			(obj) widget.
-		'''
-		# widget = args[-1]
-
-		if not hasattr(self, '_lastActiveChild'):
-			self._lastActiveChild = []
-
-		del self._lastActiveChild[11:] #keep the list length at 10 elements.
-
-		self._lastActiveChild.append(widget)
-		# print(args, kwargs, widget.objectName() if hasattr(widget, 'objectName') else None)
-		return self._lastActiveChild[-1]
-
-
-	def lastActiveChild(self, name=False, asList=False):
-		'''Get the given widget set as last active.
-		Contains a list of the last 10 active child widgets.
-
-		Parameters:
-			name (bool): Return the last active widgets name as a string.
-
-		Return:
-			(obj)(str/list) dependant on flags.
-
-		ex. slot connection to the last active child widget:
-			cmb.returnPressed.connect(lambda m=cmb.ctxMenu.lastActiveChild: getattr(self, m(name=1))()) #connect to the last pressed child widget's corresponding method after return pressed. ie. self.lbl000 if cmb.lbl000 was clicked last.
-		'''
-		if not hasattr(self, '_lastActiveChild'):
-			return None
-
-		if name:
-			lastActive = str(self._lastActiveChild[-1].objectName())
-
-		elif name and asList:
-			lastActive = [str(w.objectName()) for w in self._lastActiveChild]
-
-		elif asList:
-			lastActive = [w for w in self._lastActiveChild]
-
-		else:
-			lastActive = self._lastActiveChild[-1]
-
-		return lastActive
-
-
-	def _addToContextMenuToolTip(self, menuItem):
-		'''Add an item to the context menu toolTip.
-
-		Parameters:
-			menuItem (obj): The item to add.
-		'''
-		p = self.parent()
-		if not all([self.menu_type=='context', p]):
-			return
-
-		if not hasattr(self, '_contextMenuToolTip'):
-			self._contextMenuToolTip = '<u>Context menu items:</u>'
-			p.setToolTip('{}<br><br>{}'.format(p.toolTip(), self._contextMenuToolTip)) #initialize the toolTip.
-
-		try:
-			contextMenuToolTip = '<b>{}</b> - {}'.format(menuItem.text(), menuItem.toolTip())
-			p.setToolTip('{}<br>{}'.format(p.toolTip(), contextMenuToolTip))
-		except AttributeError:
-			pass
-
-
-	def showEvent(self, event):
-		'''
-		:Parameters:
-			event = <QEvent>
-		'''
-		self.resize(self.sizeHint().width(), self.sizeHint().height()+10) #self.setMinimumSize(width, self.sizeHint().height()+5)
-		getCenter = lambda w, p: QtCore.QPoint(p.x()-(w.width()/2), p.y()-(w.height()/4)) #get widget center position.
-
-		#set menu position
-		if self.position=='cursorPos':
-			pos = QtGui.QCursor.pos() #global position
-			self.move(getCenter(self, pos)) #move to cursor position.
-
-		elif isinstance(self.position, (tuple, list, set, QtCore.QPoint)): #position is given as a coordinate.
-			if not isinstance(self.position, QtCore.QPoint):
-				self.position = QtCore.QPoint(self.position[0], self.position[1])
-			self.move(self.position)
-
-		elif not isinstance(self.position, (type(None), str)): #if a widget is passed to 'position' (move to the widget's position).
-			pos = getattr(self.positionRelativeTo.rect(), self.position)
-			self.move(self.positionRelativeTo.mapToGlobal(pos()))
-
-		elif self.parent(): #if parent: map relative to parent.
-			pos = getattr(self.parent().rect(), self.position if not self.position=='cursorPos' else 'bottomLeft')
-			pos = self.parent().mapToGlobal(pos())
-			self.move(pos) # self.move(getCenter(self, pos))
-
-			if self.getChildWidgets(inc=['QCheckBox']): #if the menu contains checkboxes:
-				self.toggleAllButton.show()
-
-		super().showEvent(event)
-
-
-	def setVisible(self, state):
-		'''Called every time the widget is shown or hidden on screen.
-		'''
-		if state: #visible
-			if not self.containsMenuItems: #prevent show if the menu is empty.
-				return
-
-			self.hideAll()
-			self.addToOpenMenus()
-
-			self.menu_timer.start(8000)  #5000 milliseconds = 5 seconds
-
-			if not self.title():
-				self.setTitle()
-
-			if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggable_header':
-				# print (f'show menu | title: {self.title()} | {self.parent().objectName()} has attr released.') #debug
-				self.applyButton.show()
-
-			checkboxes = self.getChildWidgets(inc=['QCheckBox'])
-			if checkboxes: #returns None if the menu doesn't contain checkboxes.
-				self.toggleAllButton.show()
-
-		elif self.preventHide: #invisible
-			return
-
-		else:
-			self.menu_timer.stop()
-			self.removeFromOpenMenus()
-
-		super().setVisible(state)
-
-
-	def leaveEvent(self, event):
-		'''
-		Parameters:
-			event = <QEvent>
-		'''
-		self.hide()
-
-		super().leaveEvent(event)
-
-
-	def hide(self, force=False):
-		'''Sets the widget as invisible.
-		Prevents hide event under certain circumstances.
-
-		Parameters:
-			force (bool): override preventHide.
-		'''
-		if force or not self.preventHide:
-
-			for w in self.getChildWidgets():
-				try:
-					if w.view().isVisible(): #comboBox menu open.
-						return
-				except AttributeError as error:
-					pass
-
-			super().hide()
-
-
-
-class MenuInstance():
-	'''Get a Menu and ctxMenu instance.
-	'''
-	@property
-	def menu_(self):
-		'''Get the standard menu.
-		'''
-		try:
-			return self._menu
-
-		except AttributeError as error:
-			self._menu = Menu(self, position='bottomLeft', menu_type='standard')
-			return self._menu
-
-
-	@property
-	def ctxMenu(self):
-		'''Get the context menu.
-		'''
-		try:
-			return self._contextMenu
-
-		except AttributeError as error:
-			self._contextMenu = Menu(self, position='cursorPos', menu_type='context')
-			return self._contextMenu
-
-# -----------------------------------------------------------------------------
-
-
-
-
-
-
-
+from pythontk import cached_property
+from uitk.widgets.draggableHeader import DraggableHeader
+from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.widgets.mixins.attributes import AttributesMixin
+
+
+class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
+    """A custom Qt Widget that serves as a menu with additional features.
+
+    The Menu class inherits from QtWidgets.QWidget and mixes in AttributesMixin and StyleSheet.
+    It provides a customizable menu with features such as draggable headers and apply buttons.
+    The menu can be positioned relative to the cursor, a specific coordinate, a widget, or its parent.
+
+    Attributes:
+        on_item_added (QtCore.Signal): Signal emitted when an item is added to the menu.
+        on_item_interacted (QtCore.Signal): Signal emitted when an item in the menu is interacted with.
+    """
+
+    on_item_added = QtCore.Signal(object)
+    on_item_interacted = QtCore.Signal(object)
+
+    def __init__(
+        self,
+        parent=None,
+        position="right",
+        min_item_height=None,
+        max_item_height=None,
+        fixed_item_height=None,
+        add_draggable_header=True,
+        add_apply_button=True,
+        **kwargs,
+    ):
+        """Initializes a Menu instance.
+
+        Parameters:
+            parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
+            position (str, optional): The position of the menu. Can be "right", "cursorPos", a coordinate pair, or a widget. Defaults to "right".
+            min_item_height (int, optional): The minimum height of items in the menu. Defaults to None.
+            max_item_height (int, optional): The maximum height of items in the menu. Defaults to None.
+            fixed_item_height (int, optional): The fixed height of items in the menu. Defaults to None.
+            add_draggable_header (bool, optional): Whether to add a draggable header to the menu. Defaults to True.
+            add_apply_button (bool, optional): Whether to add an apply button to the menu. Defaults to True.
+            **kwargs: Additional keyword arguments to set attributes on the menu.
+        """
+        super().__init__(parent)
+
+        self.position = position
+        self.min_item_height = min_item_height
+        self.max_item_height = max_item_height
+        self.fixed_item_height = fixed_item_height
+        self.add_draggable_header = add_draggable_header
+        self.add_apply_button = add_apply_button
+        self.kwargs = kwargs
+        self.widget_data = {}
+        self.prevent_hide = False
+
+        self.setProperty("class", "translucentBgWithBorder")
+        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
+
+        self.init_layout()
+
+        self.installEventFilter(self)
+        self.set_attributes(**kwargs)
+
+    def setCentralWidget(self, widget):
+        """Set a widget as the central widget, replacing the current one."""
+        current_central_widget = getattr(self, "_central_widget", None)
+        if current_central_widget:
+            current_central_widget.deleteLater()  # delete the current central widget
+        self._central_widget = widget  # set the new central widget
+        self._central_widget.setProperty("class", "centralWidget")  # for stylesheet
+        self.layout.addWidget(self._central_widget)  # add it to the layout
+
+    def centralWidget(self):
+        """Return the central widget."""
+        return self._central_widget
+
+    def init_layout(self):
+        """ """
+        # Create a new layout with no margins
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(1)
+        self.setLayout(self.layout)
+
+        # Create a central widget and set it to the layout
+        self.setCentralWidget(QtWidgets.QWidget(self))
+
+        # Create a QVBoxLayout inside the central widget
+        self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
+        self.centralWidgetLayout.setContentsMargins(12, 12, 12, 12)
+        self.centralWidgetLayout.setSpacing(1)
+
+        # Create a form layout inside the QVBoxLayout
+        self.gridLayout = QtWidgets.QGridLayout()
+        self.gridLayout.setContentsMargins(0, 0, 0, 0)
+        self.gridLayout.setSpacing(1)
+
+        if self.add_draggable_header:
+            # Create DraggableHeader instance and add it to the central widget layout
+            self.draggable_header = DraggableHeader(self)
+            self.centralWidgetLayout.addWidget(self.draggable_header)
+
+        # Add grid layout to the central widget layout
+        self.centralWidgetLayout.addLayout(self.gridLayout)
+
+        if self.add_apply_button and self.parent():
+            # Add apply button to the central widget layout
+            self.centralWidgetLayout.addWidget(self.apply_button)
+
+    def get_all_children(self):
+        children = self.findChildren(QtWidgets.QWidget)
+        return children
+
+    @property
+    def contains_items(self):
+        """Check if the QMenu contains any items."""
+        return bool(self.gridLayout.count())
+
+    @cached_property
+    def apply_button(self):
+        """Property that returns an apply button."""
+        if not self.parent():
+            return None
+
+        button = QtWidgets.QPushButton("Apply")
+        button.setToolTip("Execute the command.")
+        button.released.connect(lambda: self.parent().clicked.emit())
+        button.setMinimumSize(119, 26)
+        button.hide()
+
+        return button
+
+    def title(self):
+        """ """
+        self.draggable_header.text()
+
+    def setTitle(self, title="") -> None:
+        """Set the menu's title to the given string.
+        If no title is given, the function will attempt to use the menu parents text.
+
+        Parameters:
+            title (str): Text to apply to the menu's header.
+        """
+        if not title:
+            try:
+                title = self.parent().text()
+            except AttributeError:
+                try:
+                    title = self.parent().currentText()
+                except AttributeError:
+                    pass
+            if title:
+                title = title.upper()
+
+        self.draggable_header.setText(title)
+
+    def get_items(self):
+        """Get all items in the list.
+
+        Returns:
+            list: A list of all QWidget items in the list.
+        """
+        items = [
+            self.gridLayout.itemAt(i).widget() for i in range(self.gridLayout.count())
+        ]
+
+        return items
+
+    def get_item(self, identifier):
+        """Return a QAction or QWidgetAction by index or text.
+
+        Parameters:
+            identifier (int or str): If an int, treats it as an index. If a str, treats it as the text of the item.
+
+        Raises:
+            ValueError: If the identifier is not an integer (index) or string (text).
+
+        Returns:
+            QAction or QWidgetAction: The item found by the identifier.
+        """
+        items = self.get_items()
+
+        if isinstance(identifier, int):  # get by index
+            if identifier < 0 or identifier >= len(items):
+                raise ValueError("Index out of range.")
+            item = items[identifier]
+        elif isinstance(identifier, str):  # get by text
+            for i in items:
+                if i.text() == identifier:
+                    item = i
+                    break
+            else:
+                raise ValueError("No item found with the given text.")
+        else:
+            raise ValueError(
+                f"Expected an integer (index) or string (text), got '{type(identifier)}'"
+            )
+
+        return item
+
+    def get_item_data(self, widget):
+        """Get data associated with a widget in the list or its sublists.
+
+        This method returns the data associated with the widget in the list or any sublist. If the widget is not found, it returns None.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to get the data for.
+
+        Returns:
+            Any: The data associated with the widget, or None if the widget is not found.
+        """
+        try:
+            return self.widget_data.get(widget)
+        except KeyError:
+            return None
+
+    def set_item_data(self, widget, data):
+        """Set data associated with a widget in the list or its sublists.
+
+        This method sets the data associated with a widget in the list. If the widget is not found, it does nothing.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to set the data for.
+            data: The data to associate with the widget.
+        """
+        if widget in self.get_items():
+            self.widget_data[widget] = data
+
+    def remove_widget(self, widget):
+        """Remove a widget from the layout."""
+        self.gridLayout.removeWidget(widget)
+        if widget in self.widget_data:
+            del self.widget_data[widget]
+
+    def clear(self):
+        """Clear all items in the list."""
+        # We're going backwards to avoid index errors.
+        for i in reversed(range(self.gridLayout.count())):
+            widget = self.gridLayout.itemAt(i).widget()
+            if widget:
+                self.gridLayout.removeWidget(widget)
+                widget.setParent(None)
+                widget.deleteLater()
+
+        # Reset the widget_data dictionary
+        self.widget_data = {}
+
+    def add(self, x, data=None, row=None, col=0, rowSpan=1, colSpan=None, **kwargs):
+        """Add an item or multiple items to the list.
+
+        The function accepts a string, an object, or a collection of items (a dictionary, list, tuple, set, or map).
+
+        Parameters:
+            x (str, object, dict, list, tuple, set, map): The item or items to add.
+            data: Data to associate with the added item or items. Default is None.
+            row (int): The row index at which to add the widget. Default is the last row.
+            col (int): The column index at which to add the widget. Default is 0.
+            rowSpan (int): The number of rows the widget should span. Default is 1.
+            colSpan (int): The number of columns the widget should span. Default is the total number of columns.
+            **kwargs: Additional arguments to set on the added item or items.
+
+        Returns:
+            widget: The added widget or list of added widgets.
+        """
+        if isinstance(x, dict):
+            return [self.add(key, data=val, **kwargs) for key, val in x.items()]
+
+        elif isinstance(x, (list, tuple, set)):
+            return [self.add(item, **kwargs) for item in x]
+
+        elif isinstance(x, map):
+            return [self.add(item, **kwargs) for item in list(x)]
+
+        # get the widget from the value passed to x
+        if isinstance(x, str):
+            try:
+                widget = getattr(QtWidgets, x)(self)
+            except (AttributeError, TypeError):
+                widget = QtWidgets.QLabel()
+                widget.setText(x)
+
+        elif isinstance(x, QtWidgets.QWidget) or (
+            inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
+        ):
+            widget = x(self) if callable(x) else x
+
+        else:
+            raise TypeError(
+                f"Unsupported item type: expected str, QWidget, a subclass of QWidget, or a collection (list, tuple, set, map, dict), but got '{type(x)}'"
+            )
+
+        widget.item_text = lambda i=widget: self.get_item_text(i)
+        widget.item_data = lambda i=widget: self.get_item_data(i)
+
+        # If no position is specified, place the widget at the last row and first column
+        if row is None:
+            row = 0
+            while self.gridLayout.itemAtPosition(row, col) is not None:
+                row += 1
+
+        # If no span is specified, make the widget span across all columns
+        if colSpan is None:
+            colSpan = self.gridLayout.columnCount()
+
+        self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
+        self.on_item_added.emit(widget)
+
+        self.set_item_data(widget, data)
+
+        if self.min_item_height is not None:
+            widget.setMinimumHeight(self.min_item_height)
+        if self.max_item_height is not None:
+            widget.setMaximumHeight(self.max_item_height)
+        if self.fixed_item_height is not None:
+            widget.setFixedHeight(self.fixed_item_height)
+
+        self.set_attributes(widget, **kwargs)
+        widget.installEventFilter(self)
+        # Add the widget as a menu attribute
+        setattr(self, widget.objectName(), widget)
+
+        self.resize(self.sizeHint())
+        self.layout.invalidate()
+
+        return widget
+
+    def get_padding(widget):
+        """Get the padding values around a widget.
+
+        This method calculates the padding values (distance from content to frame boundary) for a widget in all four directions.
+
+        Parameters:
+            widget (obj): A widget object to get the padding values for.
+
+        Returns:
+            tuple: A tuple containing padding values (horizontal padding, vertical padding).
+        """
+        frame_geo = widget.frameGeometry()
+        geo = widget.geometry()
+
+        left_padding = geo.left() - frame_geo.left()
+        right_padding = frame_geo.right() - geo.right()
+        top_padding = geo.top() - frame_geo.top()
+        bottom_padding = frame_geo.bottom() - geo.bottom()
+
+        return (left_padding + right_padding, top_padding + bottom_padding)
+
+    def sizeHint(self):
+        """Return the recommended size for the widget.
+
+        This method calculates the total size of the widgets contained in the layout of the ExpandableList, including margins and spacing.
+
+        Returns:
+            QtCore.QSize: The recommended size for the widget.
+        """
+        total_height = 0
+        total_width = 0
+
+        for i in range(self.layout.count()):
+            widget = self.layout.itemAt(i).widget()
+            if widget:
+                total_height += widget.sizeHint().height() + self.layout.spacing()
+                total_width = max(total_width, widget.sizeHint().width())
+
+        # Adjust for layout's top and bottom margins
+        total_height += (
+            self.layout.contentsMargins().top() + self.layout.contentsMargins().bottom()
+        )
+
+        # Adjust for layout's left and right margins for width
+        total_width += (
+            self.layout.contentsMargins().left() + self.layout.contentsMargins().right()
+        )
+
+        return QtCore.QSize(total_width, total_height)
+
+    def eventFilter(self, widget, event):
+        """Filter events for the ExpandableList.
+
+        This method filters the events of the ExpandableList and its widgets, such as mouse movement and button presses.
+
+        Parameters:
+            widget (obj): The object that the event was sent to.
+            event (obj): The event that occurred.
+
+        Returns:
+            bool: False if the event should be further processed, and True if the event should be ignored.
+        """
+        if event.type() == QtCore.QEvent.MouseButtonRelease:
+            # Check if widget is a child of this ExpandableList
+            if widget in self.get_items():
+                self.on_item_interacted.emit(widget)
+
+        return super().eventFilter(widget, event)
+
+    def setVisible(self, state) -> None:
+        """Called every time the widget is shown or hidden on screen."""
+        if self.prevent_hide:  # invisible
+            return
+
+        super().setVisible(state)
+
+    def showEvent(self, event) -> None:
+        # set menu position
+        if self.position == "cursorPos":
+            self.center_on_cursor_position()
+        elif self.is_position_a_coordinate():
+            self.move_to_coordinate()
+        elif self.is_position_a_widget():
+            self.move_to_widget_position()
+        elif self.parent():
+            self.move_relative_to_parent()
+
+        if not self.title():
+            self.setTitle()
+
+        if isinstance(self.parent(), QtWidgets.QPushButton):
+            self.apply_button.show()
+
+        super().showEvent(event)
+
+    def center_on_cursor_position(self):
+        pos = QtGui.QCursor.pos()  # global position
+        center = QtCore.QPoint(
+            pos.x() - (self.width() / 2), pos.y() - (self.height() / 4)
+        )
+        self.move(center)  # center on cursor position.
+
+    def is_position_a_coordinate(self):
+        return isinstance(self.position, (tuple, list, set, QtCore.QPoint))
+
+    def move_to_coordinate(self):
+        if not isinstance(self.position, QtCore.QPoint):
+            self.position = QtCore.QPoint(self.position[0], self.position[1])
+        self.move(self.position)
+
+    def is_position_a_widget(self):
+        return not isinstance(self.position, (type(None), str))
+
+    def move_to_widget_position(self):
+        pos = getattr(self.positionRelativeTo.rect(), self.position)
+        self.move(self.positionRelativeTo.mapToGlobal(pos()))
+
+    def move_relative_to_parent(self):
+        if self.position == "cursorPos":
+            pos = QtCore.QCursor.pos()
+        else:
+            rect = self.parent().rect()
+            if self.position == "left":
+                pos = rect.topLeft() + QtCore.QPoint(0, rect.height() // 2)
+            elif self.position == "right":
+                pos = rect.topRight() + QtCore.QPoint(0, rect.height() // 2)
+            elif self.position == "top":
+                pos = rect.topLeft() + QtCore.QPoint(rect.width() // 2, 0)
+            elif self.position == "bottom":
+                pos = rect.bottomLeft() + QtCore.QPoint(rect.width() // 2, 0)
+            else:
+                pos_method = getattr(rect, self.position, None)
+                if pos_method is not None and callable(pos_method):
+                    pos = pos_method()  # Call the method to get the QPoint
+                else:
+                    raise ValueError(f"Invalid position: {self.position}")
+        pos = self.parent().mapToGlobal(pos)
+        self.move(pos)
+
+    def hide_on_leave(self) -> None:
+        """Hides the menu if the cursor is not within the menu's boundaries when the timer times out.
+        This method is connected to the menu_timer's timeout signal.
+        """
+        if not self.rect().contains(QtGui.QCursor.pos()):
+            self.hide()
+
+    def leaveEvent(self, event) -> None:
+        """ """
+        self.hide()
+
+        super().leaveEvent(event)
+
+    def hide(self, force=False) -> None:
+        """Sets the widget as invisible.
+        Prevents hide event under certain circumstances.
+
+        Parameters:
+            force (bool): override prevent_hide.
+        """
+        if force or not self.prevent_hide:
+            for w in self.get_items():
+                try:
+                    if w.view().isVisible():  # comboBox menu open.
+                        return
+                except AttributeError:
+                    pass
+
+            super().hide()
 
 
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-	import sys
-	app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv) #return the existing QApplication object, or create a new one if none exists.
+    import sys
 
-	# # create parent menu containing two submenus:
-	# m = Menu(position='cursorPos')
-	# m1 = Menu('Create', addMenu_=m)
-	# m1.add('QAction', setText='Action', insertSeparator_=True)
-	# m1.add('QAction', setText='Action', insertSeparator_=True)
-	# m1.add('QPushButton', setText='Button')
+    # Return the existing QApplication object, or create a new one if none exists.
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
-	# m2 = Menu('Cameras', addMenu_=m)
-	# m2.add('QAction', setText='Action', insertSeparator_=True)
-	# m2.add('QAction', setText='Action', insertSeparator_=True)
-	# m2.add('QPushButton', setText='Button')
-	# m.show()
+    menu = Menu(position="cursorPos", setTitle="Drag Me")
 
-	# # form layout example
-	menu = Menu(menu_type='form', padding=6, title='Title', position='cursorPos')
-	s = menu.add('QDoubleSpinBox', label='attrOne', checkable=True, setSpinBoxByValue_=1.0)
-	s = menu.add('QDoubleSpinBox', label='attrTwo', checkable=False, setSpinBoxByValue_=2.0)
-	menu.show()
+    # Grid layout example
+    # a = menu.add(["Label A", "Label B"])
+    a = menu.add("Label A")
+    b = menu.add("Label B")
+    c = menu.add("QDoubleSpinBox", set_spinbox_by_value=1.0, row=0, col=1)
+    d = menu.add("QDoubleSpinBox", set_spinbox_by_value=2.0, row=1, col=1)
 
-	print (menu.childWidgets)
+    menu.on_item_interacted.connect(lambda x: print(x))
 
-	# m.exec_(parent=None)
-	sys.exit(app.exec_())
+    menu.set_style(theme="dark")
+
+    menu.show()
+    print(menu.get_items())
+    sys.exit(app.exec_())
 
 # -----------------------------------------------------------------------------
 # Notes
 # -----------------------------------------------------------------------------
 
-'''
+"""
 Promoting a widget in designer to use a custom class:
->	In Qt Designer, select all the widgets you want to replace, 
-		then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace, 
+        then right-click them and select 'Promote to...'. 
 
->	In the dialog:
-		Base Class:		Class from which you inherit. ie. QWidget
-		Promoted Class:	Name of the class. ie. "MyWidget"
-		Header File:	Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
+>   In the dialog:
+        Base Class:     Class from which you inherit. ie. QWidget
+        Promoted Class: Name of the class. ie. "MyWidget"
+        Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->	Then click "Add", "Promote", 
-		and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
-'''
+>   Then click "Add", "Promote", 
+        and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
+"""
 
-# depricated:
+# Deprecated: -------------------------------------
 
-	# def hide(self, force=False):
-	# 	'''Sets the widget as invisible.
-	# 	Prevents hide event under certain circumstances.
+# def hide(self, force=False):
+#   '''Sets the widget as invisible.
+#   Prevents hide event under certain circumstances.
 
-	# 	Parameters:
-	# 		force (bool): override preventHide.
-	# 	'''
-	# 	if force or not self.preventHide:
+#   Parameters:
+#       force (bool): override prevent_hide.
+#   '''
+#   if force or not self.prevent_hide:
 
-	# 		for w in self.getChildWidgets():
-	# 			try:
-	# 				if w.view().isVisible(): #comboBox menu open.
-	# 					return
-	# 			except AttributeError as error:
-	# 				pass
+#       for w in self.get_items():
+#           try:
+#               if w.view().isVisible(): #comboBox menu open.
+#                   return
+#           except AttributeError as error:
+#               pass
 
-	# 		super().hide()
-
-
-	# def show(self):
-	# 	'''Show the menu.
-	# 	'''
-	# 	if not self.containsMenuItems: #prevent show if the menu is empty.
-	# 		return
-
-	# 	if not self.title():
-	# 			self.setTitle()
-
-	# 	if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggable_header':
-	# 		# print (f'show menu | title: {self.title()} | {self.parent().objectName()} has attr released.') #debug
-	# 		self.applyButton.show()
-
-	# 	checkboxes = self.getChildWidgets(inc=['QCheckBox'])
-	# 	if checkboxes: #returns None if the menu doesn't contain checkboxes.
-	# 		self.toggleAllButton.show()
-
-	# 	super().show()
+#       super().hide()
 
 
-	# def showEvent(self, event):
-	# 	'''
-	# 	Parameters:
-	# 		event = <QEvent>
-	# 	'''
-	# 	self.resize(self.sizeHint().width(), self.sizeHint().height()+10) #self.setMinimumSize(width, self.sizeHint().height()+5)
-	# 	getCenter = lambda w, p: QtCore.QPoint(p.x()-(w.width()/2), p.y()-(w.height()/4)) #get widget center position.
+# def show(self):
+#   '''Show the menu.
+#   '''
+#   if not self.contains_items: #prevent show if the menu is empty.
+#       return
 
-	# 	#set menu position
-	# 	if self.position=='cursorPos':
-	# 		pos = QtGui.QCursor.pos() #global position
-	# 		self.move(getCenter(self, pos)) #move to cursor position.
+#   if not self.title():
+#           self.setTitle()
 
-	# 	elif not isinstance(self.position, (type(None), str)): #if a widget is passed to 'position' (move to the widget's position).
-	# 		pos = getattr(self.positionRelativeTo.rect(), self.position)
-	# 		self.move(self.positionRelativeTo.mapToGlobal(pos()))
+#   if hasattr(self.parent(), 'released') and not self.parent().objectName()=='draggable_header':
+#       # print (f'show menu | title: {self.title()} | {self.parent().objectName()} has attr released.') #debug
+#       self.applyButton.show()
 
-	# 	elif self.parent(): #if parent: map relative to parent.
-	# 		pos = getattr(self.parent().rect(), self.position if not self.position=='cursorPos' else 'bottomLeft')
-	# 		pos = self.parent().mapToGlobal(pos())
-	# 		self.move(pos) # self.move(getCenter(self, pos))
+#   checkboxes = self.get_items(inc=['QCheckBox'])
+#   if checkboxes: #returns None if the menu doesn't contain checkboxes.
+#       self.toggleAllButton.show()
 
-	# 	QtWidgets.QMenu.showEvent(self, event)
+#   super().show()
+
+
+# def showEvent(self, event):
+#   '''
+#   Parameters:
+#       event = <QEvent>
+#   '''
+#   self.resize(self.sizeHint().width(), self.sizeHint().height()+10) #self.setMinimumSize(width, self.sizeHint().height()+5)
+#   get_center = lambda w, p: QtCore.QPoint(p.x()-(w.width()/2), p.y()-(w.height()/4)) #get widget center position.
+
+#   #set menu position
+#   if self.position=='cursorPos':
+#       pos = QtGui.QCursor.pos() #global position
+#       self.move(get_center(self, pos)) #move to cursor position.
+
+#   elif not isinstance(self.position, (type(None), str)): #if a widget is passed to 'position' (move to the widget's position).
+#       pos = getattr(self.positionRelativeTo.rect(), self.position)
+#       self.move(self.positionRelativeTo.mapToGlobal(pos()))
+
+#   elif self.parent(): #if parent: map relative to parent.
+#       pos = getattr(self.parent().rect(), self.position if not self.position=='cursorPos' else 'bottomLeft')
+#       pos = self.parent().mapToGlobal(pos())
+#       self.move(pos) # self.move(get_center(self, pos))
+
+#   QtWidgets.QMenu.showEvent(self, event)
