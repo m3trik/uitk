@@ -1,89 +1,78 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
 
-## UITK
+# UITK: Dynamic UI Management for Python with PySide2
 
-```diff
-- PERSONAL PROJECT. WORK IN PROGRESS ..
-```
+UITK is a comprehensive Python package designed to streamline the creation, management, and interaction of user interfaces (UIs) using PySide2. With a focus on versatility, UITK leverages a naming convention-based switchboard module to dynamically load UI files, register custom widgets, manage slots and styles, and facilitate interaction with widgets. The primary goal of UITK is to simplify the development process of complex UIs and enhance the efficiency of event handling.
 
-<!-- short_description_start -->
-uitk is a versatile package for managing user interfaces, widgets, and event handling in Python using PySide2. Using naming convention, the switchboard module provides a convenient way to load UI files, register custom widgets, manage slots and styles, and interact with widgets. It aims to simplify the development and management of complex user interfaces.
-<!-- short_description_end -->
+## Key Features
 
-## Features
+- Dynamic UI file loading
+- Custom widget registration and usage
+- Utility properties for MainWindow and child widget subclassing
+- Efficient management of slot connections and event handling
+- Support for UI hierarchy navigation and submenus
+- Custom event behavior through UI tags
+- UI and slot history storage and retrieval
 
-- Dynamically load UI files
-- Register and use custom widgets
-- Subclass the MainWindows with utility properties
-- Initialize child widgets with utility properties
-- Manages slot connections and event handling
-- Supports UI heirarchy navigation and submenus
-- Supports UI tags for custom event behavior.
-- Store and retrieve UI and slot history
-- Garbage collection protection for widgets
-
-<!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/toolkit_demo.gif) \*Example re-opening the last scene, renaming a material, and selecting geometry by that material. -->
-
-## Design:
----
-<!-- ## Structure: -->
-<!-- ![alt text](https://raw.githubusercontent.com/m3trik/tentacle/master/docs/dependancy_graph.jpg) -->
+## Module Overview
 
 Module | Description
 ------- | -------
-[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | *Load dynamic UI, assign convenience properties, and handle slot connections.*
-[events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | *Event handling for dynamic UI widgets.*
-[stylesheet](https://github.com/m3trik/tentacle/blob/main/uitk/stylesheet.py) | *Define stylesheet presets and have them auto applied to your UI on initialization.*
-[widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | *A source directory for custom widgets.*
+[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | Handles dynamic UI loading, assigns convenience properties, and manages slot connections.
+[events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | Manages event handling for dynamic UI widgets.
+[stylesheet](https://github.com/m3trik/tentacle/blob/main/uitk/stylesheet.py) | Defines stylesheet presets and auto-applies them to your UI upon initialization.
+[widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | A source directory for custom widgets.
+
 ---
 
 ## Installation:
 
-#####
-
-To install:
 Add the `uitk` folder to a directory on your python path, or
 install via pip in a command line window using:
-```
+```shell
 python -m pip install uitk
 ```
 
 ## Basic Example:
+
 Create an instance of Switchboard to load and connect your dynamic ui.
 ```python
 from uitk import Switchboard
 
-class MyProject():
+class MyProject:
     ...
 
-class MySlots(MyProject):
+class MyProjectSlots(MyProject):
     def __init__(self):
-        self.sb = self.switchboard() #returns the switchboard instance.
+        self.sb = self.switchboard()
 
+    @signals("released")  # Specify signal(s) other than the default
     def MyButtonsObjectName(self):
-        print("Button clicked!")
+        self.sb.message_box("Button Pressed")
 
+sb = Switchboard(ui_location="example", slots_location=MyProjectSlots)
+ui = sb.example
+ui.set_style(theme="dark")
 
-sb = Switchboard(slots_location=MySlots)
-ui = sb.example #Get the UI using it's name (or sb.get_ui(<name>))
-
-# Some of the UI properties:
-print ('ui:'.ljust(20), sb.ui) #The current UI
-print ('ui name:'.ljust(20), ui.name) #The UI's filename.
-print ('ui path:'.ljust(20), ui.path) #The directory path containing the UI file
-print ('ui tags:'.ljust(20), ui.tags) #Any UI tags as a list
-print ('ui level:'.ljust(20), ui.level) #The UI level
-print ('is current ui:'.ljust(20), ui.is_current) #True if the UI is set as current
-print ('is submenu:'.ljust(20), ui.isSubmenu) #True if the UI is a submenu
-print ('is connected:'.ljust(20), ui.is_connected) #True if the UI is connected to its slots
-print ('is initialized:'.ljust(20), ui.is_initialized) #True after the UI is first shown
-print ('slot:'.ljust(20), ui.MyButtonsObjectName.get_slot()) #The associated slot
-print ('slots:'.ljust(20), ui.slots) #The associated slots class instance
-print ('widget:'.ljust(20), ui.MyButtonsObjectName) #Get a widget from the UI by it's name
-print ('widgets:'.ljust(20), [(w.name or w.type) for w in ui.widgets]) #All widgets of the UI
-
-# There are also many helper methods that you can access through your switchboard instance:
-print ('widget from slot:'.ljust(20), sb.get_widget_from_method(ui.MyButtonsObjectName.get_slot()))
+print("ui:".ljust(20), ui)
+print("ui name:".ljust(20), ui.name)
+print("ui path:".ljust(20), ui.path)  # The directory path containing the UI file
+print("is current ui:".ljust(20), ui.is_current)
+print("is connected:".ljust(20), ui.is_connected)
+print("is initialized:".ljust(20), ui.is_initialized)
+print("slots:".ljust(20), ui.slots)  # The associated slots class instance
+print("method:".ljust(20), ui.MyButtonsObjectName.get_slot())
+print(
+    "widget from method:".ljust(20),
+    sb.get_widget_from_method(ui.MyButtonsObjectName.get_slot()),
+)
+for w in ui.widgets:  # All the widgets of the UI
+    print(
+        "child widget:".ljust(20),
+        (w.name or type(w).__name__).ljust(20),
+        w.base_name.ljust(20),
+        id(w),
+    )
 
 ui.show(app_exec=True)
 ```
