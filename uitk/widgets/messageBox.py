@@ -8,8 +8,8 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
     """Displays a message box with HTML formatting for a set time before closing.
 
     Parameters:
-            location (str)(point) = move the messagebox to the specified location. Can be given as a qpoint or string value. default is: 'topMiddle'
-            timeout (int): time in seconds before the messagebox auto closes.
+        location (str)(point) = move the messagebox to the specified location. Can be given as a qpoint or string value. default is: 'topMiddle'
+        timeout (int): time in seconds before the messagebox auto closes.
     """
 
     def __init__(self, parent=None, location="topMiddle", timeout=2, **kwargs):
@@ -153,19 +153,15 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
 # --------------------------------------------------------------------------------------------
 
-
-# --------------------------------------------------------------------------------------------
-
 if __name__ == "__main__":
     import sys
 
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
-        sys.argv
-    )  # return the existing QApplication object, or create a new one if none exists.
+    # Return the existing QApplication object, or create a new one if none exists.
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
     w = MessageBox()
     w.setText("Warning: Backface Culling is now <hl>Off</hl>")
-    w.exec_()
+    w.show()
 
     sys.exit(app.exec_())
 
@@ -188,6 +184,49 @@ Promoting a widget in designer to use a custom class:
 """
 
 # deprecated: -----------------------------------
+
+
+# class ShowMessageBox(MessageBox):
+#     """Spawns a message box with the given text.
+#     Supports HTML formatting.
+#     Prints a formatted version of the given string to console, stripped of html tags, to the console.
+
+#     Parameters:
+#         message_type (str/optional): The message context type. ex. 'Error', 'Warning', 'Info', 'Result'
+#         location (str/QPoint/optional) = move the messagebox to the specified location. default is: 'topMiddle'
+#         timeout (int/optional): time in seconds before the messagebox auto closes. default is: 3
+#     """
+
+#     def __init__(
+#         self,
+#         string,
+#         message_type="",
+#         location="topMiddle",
+#         timeout=3,
+#         **kwargs,
+#     ):
+#         super().__init__(
+#             QtWidgets.QApplication.instance(), **kwargs
+#         )  # Set the QApplication instance as the parent
+
+#         if message_type:
+#             string = f"{message_type.capitalize()}: {string}"
+
+#         self.location = location
+#         self.timeout = timeout
+
+#         self.setText(string)
+#         self.setVisible(True)
+
+#         # strip everything between '<' and '>' (html tags)
+#         print(f"# {re.sub('<.*?>', '', string)}")
+
+#     def hideEvent(self, event) -> None:
+#         """ """
+#         self.menu_timer.stop()
+
+#         super().hideEvent(event)
+
 
 # def insertText(self, dict_):
 #   '''
