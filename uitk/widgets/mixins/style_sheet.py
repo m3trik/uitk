@@ -643,6 +643,11 @@ class StyleSheet(QtCore.QObject):
                 padding: 0px 0px 0px 0px; /* top, right, bottom, left */
             }
         """,
+        "noHover": """
+            .noHover:hover {
+                background-color: {WIDGET_BACKGROUND};
+            }
+        """,
         "textBold": """
             .textBold {
                 font-weight: bold;

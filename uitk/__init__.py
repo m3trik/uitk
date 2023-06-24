@@ -7,7 +7,7 @@ import inspect
 
 
 __package__ = "uitk"
-__version__ = '0.6.8'
+__version__ = '0.7.1'
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 

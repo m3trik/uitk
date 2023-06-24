@@ -85,7 +85,7 @@ class AttributeWindow(Menu):
         # Connect the labelToggled signal to a slot that handles the label toggled event
         if label_toggle_func is not None:
             self.labelToggled.connect(
-                lambda name, checked: label_toggle_func(obj, name, checked)
+                lambda name, state: label_toggle_func(obj, name, state)
             )
 
     @staticmethod
@@ -293,6 +293,9 @@ class AttributeWindow(Menu):
         label = QtWidgets.QCheckBox(attribute_name)
         label.setCheckable(self.checkable)
 
+        if not self.checkable:
+            label.setProperty("class", "noHover")
+
         if self.label_group is not None:
             self.label_group.addButton(label)
 
@@ -353,6 +356,26 @@ class AttributeWindow(Menu):
         self.gridLayout.setColumnStretch(0, 1)
         self.gridLayout.setColumnStretch(1, 2)
 
+    def showEvent(self, event):
+        """Handle the show event for the window.
+
+        This method is called when the window is shown. It adjusts the size of the labels
+        and widgets based on their content.
+
+        Parameters:
+            event (QShowEvent): The show event.
+        """
+        super().showEvent(event)
+        try:
+            max_label_width = max(label.sizeHint().width() for label in self.labels)
+            max_widget_width = max(widget.sizeHint().width() for widget in self.widgets)
+            for label in self.labels:
+                label.setFixedSize(max_label_width, label.size().height())
+            for widget in self.widgets:
+                widget.setFixedSize(max_widget_width, widget.size().height())
+        except AttributeError:
+            pass
+
 
 # -----------------------------------------------------------------------------
 
@@ -372,7 +395,7 @@ if __name__ == "__main__":
     window = AttributeWindow(
         obj,
         attrs,
-        checkable=1,
+        checkable=0,
         single_check=1,
         allow_unsupported_types=1,
         setVisible=1,
@@ -401,21 +424,3 @@ if __name__ == "__main__":
 
 
 # Deprecated: -------------------------------------
-
-
-# def showEvent(self, event):
-#     """Handle the show event for the window.
-
-#     This method is called when the window is shown. It adjusts the size of the labels
-#     and widgets based on their content.
-
-#     Parameters:
-#         event (QShowEvent): The show event.
-#     """
-#     super().showEvent(event)
-#     max_label_width = max(label.sizeHint().width() for label in self.labels)
-#     max_widget_width = max(widget.sizeHint().width() for widget in self.widgets)
-#     for label in self.labels:
-#         label.setFixedSize(max_label_width, label.size().height())
-#     for widget in self.widgets:
-#         widget.setFixedSize(max_widget_width, widget.size().height())
