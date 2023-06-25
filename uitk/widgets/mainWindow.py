@@ -4,7 +4,7 @@ import sys
 import logging
 from functools import partial
 from PySide2 import QtCore, QtWidgets
-from pythontk import File, listify, get_derived_type, set_attributes
+import pythontk as ptk
 from uitk.widgets.mixins.state_manager import StateManagerMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
@@ -71,7 +71,7 @@ class MainWindow(
         self.legal_name_no_tags = self._set_legal_name_no_tags(
             self.name, set_legal_name_no_tags_attr
         )
-        self.path = File.format_path(ui_filepath, "path")
+        self.path = ptk.format_path(ui_filepath, "path")
         self.tags = self._parse_tags(self.name)
         self.is_initialized = False
         self.is_connected = False
@@ -161,16 +161,21 @@ class MainWindow(
         widget.name = widget.objectName()
         widget.base_name = self.sb.get_base_name(widget.name)
         widget.type = widget.__class__
-        widget.derived_type = get_derived_type(widget, module="QtWidgets")
-        widget.get_slot = lambda w=widget: getattr(self.slots, w.name, None)
-        widget.get_slot_init = lambda w=widget: getattr(
-            self.slots, f"{w.name}_init", None
+        widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
+
+        widget.get_slot = lambda w=widget: getattr(
+            self.sb.get_slots(w.ui), w.name, None
         )
+
+        widget.get_slot_init = lambda w=widget: getattr(
+            self.sb.get_slots(w.ui), f"{w.name}_init", None
+        )
+
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
         widget.refresh = True
         widget.installEventFilter(self)
 
-        set_attributes(widget, **kwargs)
+        ptk.set_attributes(widget, **kwargs)
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
 
@@ -251,7 +256,7 @@ class MainWindow(
         Returns:
             str: The name attribute.
         """
-        name = File.format_path(file, "name")
+        name = ptk.format_path(file, "name")
         if set_attr:
             setattr(self.sb, name, self)
         return name

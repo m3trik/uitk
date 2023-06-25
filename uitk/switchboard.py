@@ -11,12 +11,7 @@ from functools import wraps
 from typing import List, Union
 from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtUiTools import QUiLoader
-from pythontk import (
-    File,
-    Str,
-    Iter,
-    format_return,
-)
+import pythontk as ptk
 
 
 def signals(*signals):
@@ -166,7 +161,7 @@ class Switchboard(QUiLoader):
         calling_frame = inspect.currentframe().f_back
         # Get calling module directory.
         self.default_dir = self.get_module_dir_from_frame(calling_frame)
-        self.module_dir = File.get_filepath(__file__)  # the directory of this module.
+        self.module_dir = ptk.get_filepath(__file__)  # the directory of this module.
 
         # initialize the files dicts before the location dicts (dependancies).
         self.ui_files = {}  # UI paths.
@@ -266,7 +261,7 @@ class Switchboard(QUiLoader):
             self._ui_location = x if isAbsPath else os.path.join(self.default_dir, x)
         elif inspect.ismodule(x):
             # use get_filepath to get the full path to the module.
-            self._ui_location = File.get_filepath(x)
+            self._ui_location = ptk.get_filepath(x)
         else:
             raise ValueError(
                 f"Invalid datatype for ui_location: {type(x)}, expected str or module."
@@ -308,9 +303,9 @@ class Switchboard(QUiLoader):
             self.addPluginPath(self._widgets_location)  # set QUiLoader working path.
         elif inspect.ismodule(x):
             # use get_filepath to get the full path to the module.
-            self._widgets_location = File.get_filepath(x)
+            self._widgets_location = ptk.get_filepath(x)
         elif isinstance(x, (list, tuple, set, QtWidgets.QWidget)):
-            self._widgets_location = Iter.make_iterable(x)
+            self._widgets_location = ptk.make_iterable(x)
         else:
             raise ValueError(
                 f"Invalid datatype for widgets_location: {type(x)}, expected str, module, or QWidget(s)."
@@ -347,7 +342,7 @@ class Switchboard(QUiLoader):
             )  # if the given dir is not a full path, treat it as relative to the default path.
         elif inspect.ismodule(x):
             # use get_filepath to get the full path to the module.
-            self._slots_location = File.get_filepath(x)
+            self._slots_location = ptk.get_filepath(x)
         elif inspect.isclass(x):
             self._slots_location = x
         else:
@@ -467,10 +462,10 @@ class Switchboard(QUiLoader):
                 f"Invalid datatype for _construct_ui_files_dict: {type(self.ui_location)}, expected str."
             )
 
-        ui_filepaths = File.get_dir_contents(
+        ui_filepaths = ptk.get_dir_contents(
             self.ui_location, "filepaths", inc_files="*.ui"
         )
-        ui_files = File.get_file_info(ui_filepaths, "filename|filepath")
+        ui_files = ptk.get_file_info(ui_filepaths, "filename|filepath")
         return dict(ui_files)
 
     @staticmethod
@@ -529,19 +524,15 @@ class Switchboard(QUiLoader):
             dict: A dictionary of slot class file paths with slot class file names as keys.
         """
         if isinstance(self.slots_location, str):
-            slots_filepaths = File.get_dir_contents(
+            slots_filepaths = ptk.get_dir_contents(
                 self.slots_location, "filepaths", inc_files="*.py"
             )
-            slots_files = File.get_file_info(slots_filepaths, "filename|filepath")
+            slots_files = ptk.get_file_info(slots_filepaths, "filename|filepath")
             return dict(slots_files)
         elif inspect.isclass(self.slots_location):
-            module_info = inspect.getmodule(self.slots_location)
-            if module_info is not None:
-                module_path = module_info.__file__
-                module_filename = os.path.basename(module_path)
-                return {module_filename: module_path}
-            else:
-                return {}
+            module_path = ptk.get_filepath(self.slots_location, inc_filename=True)
+            module_filename = os.path.basename(module_path)
+            return {module_filename: module_path}
         else:
             raise ValueError(
                 f"Invalid datatype for _construct_slots_files_dict: {type(self.slots_location)}, expected str or class."
@@ -597,7 +588,7 @@ class Switchboard(QUiLoader):
             if l.strip() == "<{}>".format(prop):
                 actual_prop_text = l
                 start = i + 1
-            elif l == Str.insert(actual_prop_text, "/", "<"):
+            elif l == ptk.insert(actual_prop_text, "/", "<"):
                 end = i
 
                 delimiters = ("</", "<", ">", "\n", " ")
@@ -636,7 +627,7 @@ class Switchboard(QUiLoader):
             if (not object_names_only or c.objectName())
         }
 
-        return Iter.filter_dict(dct, inc, exc, keys=True, values=True)
+        return ptk.filter_dict(dct, inc, exc, keys=True, values=True)
 
     @staticmethod
     def _get_widget_from_ui(
@@ -668,13 +659,13 @@ class Switchboard(QUiLoader):
             (dict) keys are widget names and the values are the widget class objects.
             Returns an empty dictionary if no widgets were found or an error occurred.
         """
-        mod_name = File.format_path(path, "name")
+        mod_name = ptk.format_path(path, "name")
         if mod_name:
-            wgt_name = Str.set_case(mod_name, "pascal")
+            wgt_name = ptk.set_case(mod_name, "pascal")
             if wgt_name in self._registered_widgets:
                 return {}
 
-            if not File.is_valid(path):
+            if not ptk.is_valid(path):
                 path = os.path.join(self.widgets_location, f"{mod_name}.py")
 
             try:
@@ -726,20 +717,19 @@ class Switchboard(QUiLoader):
             raise ValueError(f"Invalid datatype: {type(ui)}, expected QWidget.")
 
         if isinstance(clss, str):
-            clss_path = clss  # Save the path for future reference
+            module_path = clss  # Save the path for future reference
         else:  # Derive path from class object
-            module_path = inspect.getfile(clss)
-            clss_path = os.path.abspath(module_path)
+            module_path = ptk.get_filepath(clss, inc_filename=True)
 
-        if clss_path not in self._slot_instances:
+        if module_path not in self._slot_instances:
             if isinstance(clss, str):
                 clss = self._import_slots(clss)
 
             clss.switchboard = lambda *args: self
 
-            self._slot_instances[clss_path] = clss()
+            self._slot_instances[module_path] = clss()
 
-        ui._slots = self._slot_instances[clss_path]
+        ui._slots = self._slot_instances[module_path]
         setattr(self, ui._slots.__class__.__name__, ui._slots)
 
         # ui.init_widgets(ui.findChildren(QtWidgets.QWidget))
@@ -807,11 +797,11 @@ class Switchboard(QUiLoader):
         Raises:
             ValueError: If more than one matching slot class is found for the given UI.
         """
-        slots_dir = File.format_path(self.slots_location, "dir")
+        slots_dir = ptk.format_path(self.slots_location, "dir")
         suffix = slots_dir if isinstance(slots_dir, str) else ""
 
-        legal_name_camel = Str.set_case(ui.legal_name, case="camel")
-        legal_name_notags_camel = Str.set_case(ui.legal_name_no_tags, case="camel")
+        legal_name_camel = ptk.set_case(ui.legal_name, case="camel")
+        legal_name_notags_camel = ptk.set_case(ui.legal_name_no_tags, case="camel")
 
         try_names = [
             f"{legal_name_camel}_{suffix}",
@@ -851,7 +841,7 @@ class Switchboard(QUiLoader):
         sys.modules[spec.name] = mod
         spec.loader.exec_module(mod)
 
-        cls_name = Str.set_case(name, case="pascal")
+        cls_name = ptk.set_case(name, case="pascal")
         clss = getattr(mod, cls_name, None)
 
         if clss is None:
@@ -880,7 +870,7 @@ class Switchboard(QUiLoader):
         Example: register_widgets('O:/Cloud/Code/_scripts/uitk/uitk/ui/widgets/menu.py') #register using path to widget module.
         """
         result = []
-        for w in Iter.make_iterable(widgets):  # assure widgets is a list.
+        for w in ptk.make_iterable(widgets):  # assure widgets is a list.
             if isinstance(w, str):
                 widgets_ = self._get_widgets_from_dir(w)
                 for w_ in widgets_.values():
@@ -901,7 +891,7 @@ class Switchboard(QUiLoader):
                 self.logger.info(traceback.format_exc())
 
         # if 'widgets' is given as a list; return a list.
-        return format_return(result, widgets)
+        return ptk.format_return(result, widgets)
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all ui from a given path.
@@ -921,8 +911,8 @@ class Switchboard(QUiLoader):
         Returns:
             (obj) QWidget.
         """
-        # name = File.format_path(file, "name")
-        # path = File.format_path(file, "path")
+        # name = ptk.format_path(file, "name")
+        # path = ptk.format_path(file, "path")
 
         # register custom widgets
         if widgets is None and not isinstance(
@@ -940,7 +930,7 @@ class Switchboard(QUiLoader):
                 except IndexError:
                     continue
 
-                mod_name = Str.set_case(className, "camel")
+                mod_name = ptk.set_case(className, "camel")
                 fullpath = os.path.join(self.widgets_location, mod_name + ".py")
                 self.register_widgets(fullpath)
 
@@ -1049,10 +1039,10 @@ class Switchboard(QUiLoader):
         self._slot_history = self._slot_history[-200:]
         # append new entries to the history
         if add:
-            self._slot_history.extend(Iter.make_iterable(add))
+            self._slot_history.extend(ptk.make_iterable(add))
         # remove entries from the history
         if remove:
-            remove_items = Iter.make_iterable(remove)
+            remove_items = ptk.make_iterable(remove)
             for item in remove_items:
                 try:
                     self._slot_history.remove(item)
@@ -1062,10 +1052,10 @@ class Switchboard(QUiLoader):
         if not allow_duplicates:
             self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
 
-        filtered_objs = Iter.filter_list(self._slot_history, inc, exc)
+        filtered_objs = ptk.filter_list(self._slot_history, inc, exc)
 
-        filtered = Iter.filter_mapped_values(
-            filtered_objs, Iter.filter_list, lambda m: m.__name__, inc, exc
+        filtered = ptk.filter_mapped_values(
+            filtered_objs, ptk.filter_list, lambda m: m.__name__, inc, exc
         )
 
         if index is None:
@@ -1110,8 +1100,8 @@ class Switchboard(QUiLoader):
         if not allow_duplicates:
             self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
 
-        filtered = Iter.filter_mapped_values(
-            self._ui_history, Iter.filter_list, lambda u: u.name, inc, exc
+        filtered = ptk.filter_mapped_values(
+            self._ui_history, ptk.filter_list, lambda u: u.name, inc, exc
         )
 
         if index is None:
@@ -1144,7 +1134,7 @@ class Switchboard(QUiLoader):
         """
         ui_name = str(ui)
 
-        relatives = Str.get_matching_hierarchy_items(
+        relatives = ptk.get_matching_hierarchy_items(
             self.ui_files.keys(),
             ui_name,
             upstream,
@@ -1286,7 +1276,7 @@ class Switchboard(QUiLoader):
                 return
             widgets = ui.widgets
 
-        for widget in Iter.make_iterable(widgets):
+        for widget in ptk.make_iterable(widgets):
             self.connect_slot(widget)
 
         ui.is_connected = True
@@ -1357,7 +1347,7 @@ class Switchboard(QUiLoader):
         signals = getattr(
             slot,
             "signals",
-            Iter.make_iterable(self.default_signals.get(widget.derived_type)),
+            ptk.make_iterable(self.default_signals.get(widget.derived_type)),
         )
 
         for signal_name in signals:
@@ -1401,7 +1391,7 @@ class Switchboard(QUiLoader):
             if not ui.is_connected:
                 return
             widgets = ui.widgets
-        for widget in Iter.make_iterable(widgets):
+        for widget in ptk.make_iterable(widgets):
             slot = widget.get_slot()
             if not slot:
                 continue
@@ -1714,32 +1704,32 @@ class Switchboard(QUiLoader):
 
         return widgets
 
-    def get_slots_from_string(self, slots, name_string):
-        """Get a list of corresponding slots from a single shorthand formatted string.
+    def get_methods_by_name(self, clss, name_string):
+        """Get a list of corresponding methods from a single shorthand formatted string.
         ie. 's000,b002,cmb011-15' would return methods: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
 
         Parameters:
-            slots (QWidget): The class containing the slots.
+            clss (QWidget): The class containing the methods.
             name_string (str): Slot names separated by ','. ie. 's000,b004-7'. b004-7 specifies methods b004 through b007.
 
         Returns:
             (list) class methods.
 
         Example:
-            get_slots_from_string(<ui>, 'slot1,slot2,slot3')
+            get_methods_by_name(<ui>, 'slot1,slot2,slot3')
         """
-        if not isinstance(slots, object):
-            raise ValueError(f"Invalid datatype: {type(slots)}")
+        if not isinstance(clss, object):
+            raise ValueError(f"Invalid datatype: {type(clss)}")
 
-        slots = []
+        result = []
         for n in Switchboard.unpack_names(name_string):
-            try:
-                s = getattr(slots, n)
-                slots.append(s)
-            except AttributeError:
-                self.logger.info(traceback.format_exc())
+            # try:
+            s = getattr(clss, n)
+            result.append(s)
+            # except AttributeError:
+            # self.logger.info(traceback.format_exc())
 
-        return slots
+        return result
 
     def create_button_groups(self, ui, *args):
         """Create button groups for a set of widgets.
@@ -1770,7 +1760,7 @@ class Switchboard(QUiLoader):
             button_groups.append(grp)
 
         # Return a single group if only one was created, otherwise return the tuple of groups
-        return format_return(button_groups)
+        return ptk.format_return(button_groups)
 
     def toggle_widgets(self, ui, **kwargs):
         """Set multiple boolean properties, for multiple widgets, on multiple ui's at once.
@@ -1819,9 +1809,9 @@ class Switchboard(QUiLoader):
                 widgets = self.get_widgets_from_str(self.get_current_ui(), widgets)
 
         # if the variables are not of a list type; convert them.
-        widgets = Iter.make_iterable(widgets)
-        signals = Iter.make_iterable(signals)
-        slots = Iter.make_iterable(slots)
+        widgets = ptk.make_iterable(widgets)
+        signals = ptk.make_iterable(signals)
+        slots = ptk.make_iterable(slots)
 
         for widget in widgets:
             for signal in signals:
@@ -1947,7 +1937,7 @@ class Switchboard(QUiLoader):
         if clear:
             self._gc_protect.clear()
 
-        for o in Iter.make_iterable(obj):
+        for o in ptk.make_iterable(obj):
             self._gc_protect.add(o)
 
         return self._gc_protect
@@ -2108,7 +2098,7 @@ logging.info(__name__)  # module name
 #             next(
 #                 (k for k, v in self.attributesGetSet.items() if v == i), None
 #             ): i  # construct a gettr setter pair dict using only the given setter values.
-#             for i in Iter.make_iterable(attributes)
+#             for i in ptk.make_iterable(attributes)
 #         }
 
 #     _attributes = {}
@@ -2164,7 +2154,7 @@ logging.info(__name__)  # module name
 #     signals = getattr(
 #         slot,
 #         "signals",
-#         Iter.make_iterable(self.default_signals.get(widget.derived_type)),
+#         ptk.make_iterable(self.default_signals.get(widget.derived_type)),
 #     )
 
 #     def slot_wrapper(*args, **kwargs):
@@ -2213,7 +2203,7 @@ logging.info(__name__)  # module name
 #             return
 #         widgets = ui.widgets
 
-#     for widget in Iter.make_iterable(widgets):
+#     for widget in ptk.make_iterable(widgets):
 #         slot = widget.get_slot()
 #         self.logger.info(f"Widget: {widget}, Slot: {slot}")
 #         if slot:
@@ -2372,7 +2362,7 @@ logging.info(__name__)  # module name
 #     Returns:
 #         (int) If no level is found, a level of 3 (standard menu) will be returned.
 #     """
-#     ui_dir = File.format_path(filePath, "dir")
+#     ui_dir = ptk.format_path(filePath, "dir")
 #     default_level = 3
 #     try:
 #         return int(re.findall(r"\d+\s*$", ui_dir)[0])  # get trailing integers.
