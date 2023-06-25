@@ -4,7 +4,7 @@ import sys
 import logging
 from functools import partial
 from PySide2 import QtCore, QtWidgets
-from pythontk import File, listify, get_derived_type, set_attributes
+import pythontk as ptk
 from uitk.widgets.mixins.state_manager import StateManagerMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
@@ -71,7 +71,7 @@ class MainWindow(
         self.legal_name_no_tags = self._set_legal_name_no_tags(
             self.name, set_legal_name_no_tags_attr
         )
-        self.path = File.format_path(ui_filepath, "path")
+        self.path = ptk.format_path(ui_filepath, "path")
         self.tags = self._parse_tags(self.name)
         self.is_initialized = False
         self.is_connected = False
@@ -94,15 +94,16 @@ class MainWindow(
         flags |= ui.windowFlags()
         self.setWindowFlags(flags)
 
+        self.settings = QtCore.QSettings("uitk", self.name)
+
         self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
         self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
         self.set_attributes(**kwargs)
 
-        # self.load_widget_states()  # Load widget states
-
         self.on_show.connect(
             lambda: self.connect_slots() if self.connect_on_show else None
         )
+        self.on_child_changed.connect(self.sb.sync_widget_values)
 
     def _init_logger(self, log_level):
         """Initializes logger."""
@@ -161,23 +162,28 @@ class MainWindow(
         widget.name = widget.objectName()
         widget.base_name = self.sb.get_base_name(widget.name)
         widget.type = widget.__class__
-        widget.derived_type = get_derived_type(widget, module="QtWidgets")
-        widget.get_slot = lambda w=widget: getattr(self.slots, w.name, None)
-        widget.get_slot_init = lambda w=widget: getattr(
-            self.slots, f"{w.name}_init", None
+        widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
+
+        widget.get_slot = lambda w=widget: getattr(
+            self.sb.get_slots(w.ui), w.name, None
         )
+
+        widget.get_slot_init = lambda w=widget: getattr(
+            self.sb.get_slots(w.ui), f"{w.name}_init", None
+        )
+
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
         widget.refresh = True
+        widget.is_initialized = False
         widget.installEventFilter(self)
 
-        set_attributes(widget, **kwargs)
+        ptk.set_attributes(widget, **kwargs)
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
 
         self.on_child_added.emit(widget)
         # Connect the on_child_changed signal to the sync_widget_values method
         self.init_child_changed_signal(widget)
-        self.on_child_changed.connect(self.sb.sync_widget_values)
 
         if self.is_connected:
             self.sb.connect_slot(widget)
@@ -202,21 +208,18 @@ class MainWindow(
         Parameters:
             widget (QtWidgets.QWidget): The widget to initialize the signal for.
         """
-        default_signals = self.sb.default_signals
-
-        for widget_type, signal_name in default_signals.items():
-            if isinstance(widget, widget_type):
-                # Check if the widget has the signal
-                if hasattr(widget, signal_name):
-                    # Get the signal by its name
-                    signal = getattr(widget, signal_name)
-                    # Connect the signal to the slot
-                    signal.connect(
-                        lambda v=None, w=widget: self.on_child_changed.emit(v, w)
-                        if v is not None
-                        else None
-                    )
-                break  # Stop the loop when the type is found
+        signal_name = self.sb.default_signals.get(widget.derived_type)
+        if signal_name:
+            # Check if the widget has the signal
+            if hasattr(widget, signal_name):
+                # Get the signal by its name
+                signal = getattr(widget, signal_name)
+                # Connect the signal to the slot
+                signal.connect(
+                    lambda v=None, w=widget: self.on_child_changed.emit(v, w)
+                    if v is not None
+                    else None
+                )
 
     @property
     def slots(self):
@@ -251,7 +254,7 @@ class MainWindow(
         Returns:
             str: The name attribute.
         """
-        name = File.format_path(file, "name")
+        name = ptk.format_path(file, "name")
         if set_attr:
             setattr(self.sb, name, self)
         return name
@@ -369,6 +372,10 @@ class MainWindow(
                     widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
                     slot_init(widget)
 
+            if not widget.is_initialized:
+                self.sb.restore_widget_state(widget)
+                widget.is_initialized = True
+
         return super().eventFilter(widget, event)
 
     def setVisible(self, state):
@@ -404,6 +411,11 @@ class MainWindow(
             exit_code = self.sb.app.exec_()
             if exit_code != -1:
                 sys.exit(exit_code)
+
+    def closeEvent(self, event):
+        """ """
+        self.settings.sync()
+        super().closeEvent(event)
 
 
 # -----------------------------------------------------------------------------

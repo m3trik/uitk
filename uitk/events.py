@@ -1,9 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
-import os, sys
 import re
 import logging
-from functools import partial
 from PySide2 import QtCore, QtGui, QtWidgets
 
 

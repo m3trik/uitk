@@ -155,23 +155,23 @@ class AttributesMixin:
             )
 
         value_len = len(value)
-        minimum = float(value[0]) if value_len > 0 else 0.0
-        maximum = float(value[1]) if value_len > 1 else 9999999.0
+        minimum = float(value[0]) if value_len > 0 else -2147483647
+        maximum = float(value[1]) if value_len > 1 else 2147483647
         step = value[2] if value_len > 2 else 1.0
 
-        if value_len > 3:
-            decimals = value[3]
-        else:
-            min_decimals = (
-                len(str(minimum).split(".")[-1]) if "." in str(minimum) else 0
-            )
-            max_decimals = (
-                len(str(maximum).split(".")[-1]) if "." in str(maximum) else 0
-            )
-            decimals = max(min_decimals, max_decimals)
+        if isinstance(spinbox, QtWidgets.QDoubleSpinBox):
+            if value_len > 3:
+                decimals = value[3]
+            else:
+                min_decimals = (
+                    len(str(minimum).split(".")[-1]) if "." in str(minimum) else 0
+                )
+                max_decimals = (
+                    len(str(maximum).split(".")[-1]) if "." in str(maximum) else 0
+                )
+                decimals = max(min_decimals, max_decimals)
 
-            if hasattr(spinbox, "setDecimals"):
-                self.set_attributes(spinbox, setDecimals=decimals)
+            self.set_attributes(spinbox, setDecimals=decimals)
 
         self.set_attributes(
             spinbox,
