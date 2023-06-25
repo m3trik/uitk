@@ -94,15 +94,16 @@ class MainWindow(
         flags |= ui.windowFlags()
         self.setWindowFlags(flags)
 
+        self.settings = QtCore.QSettings("uitk", self.name)
+
         self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
         self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
         self.set_attributes(**kwargs)
 
-        # self.load_widget_states()  # Load widget states
-
         self.on_show.connect(
             lambda: self.connect_slots() if self.connect_on_show else None
         )
+        self.on_child_changed.connect(self.sb.sync_widget_values)
 
     def _init_logger(self, log_level):
         """Initializes logger."""
@@ -173,6 +174,7 @@ class MainWindow(
 
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
         widget.refresh = True
+        widget.is_initialized = False
         widget.installEventFilter(self)
 
         ptk.set_attributes(widget, **kwargs)
@@ -182,7 +184,6 @@ class MainWindow(
         self.on_child_added.emit(widget)
         # Connect the on_child_changed signal to the sync_widget_values method
         self.init_child_changed_signal(widget)
-        self.on_child_changed.connect(self.sb.sync_widget_values)
 
         if self.is_connected:
             self.sb.connect_slot(widget)
@@ -207,21 +208,18 @@ class MainWindow(
         Parameters:
             widget (QtWidgets.QWidget): The widget to initialize the signal for.
         """
-        default_signals = self.sb.default_signals
-
-        for widget_type, signal_name in default_signals.items():
-            if isinstance(widget, widget_type):
-                # Check if the widget has the signal
-                if hasattr(widget, signal_name):
-                    # Get the signal by its name
-                    signal = getattr(widget, signal_name)
-                    # Connect the signal to the slot
-                    signal.connect(
-                        lambda v=None, w=widget: self.on_child_changed.emit(v, w)
-                        if v is not None
-                        else None
-                    )
-                break  # Stop the loop when the type is found
+        signal_name = self.sb.default_signals.get(widget.derived_type)
+        if signal_name:
+            # Check if the widget has the signal
+            if hasattr(widget, signal_name):
+                # Get the signal by its name
+                signal = getattr(widget, signal_name)
+                # Connect the signal to the slot
+                signal.connect(
+                    lambda v=None, w=widget: self.on_child_changed.emit(v, w)
+                    if v is not None
+                    else None
+                )
 
     @property
     def slots(self):
@@ -374,6 +372,10 @@ class MainWindow(
                     widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
                     slot_init(widget)
 
+            if not widget.is_initialized:
+                self.sb.restore_widget_state(widget)
+                widget.is_initialized = True
+
         return super().eventFilter(widget, event)
 
     def setVisible(self, state):
@@ -409,6 +411,11 @@ class MainWindow(
             exit_code = self.sb.app.exec_()
             if exit_code != -1:
                 sys.exit(exit_code)
+
+    def closeEvent(self, event):
+        """ """
+        self.settings.sync()
+        super().closeEvent(event)
 
 
 # -----------------------------------------------------------------------------

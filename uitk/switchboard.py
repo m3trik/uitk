@@ -1234,7 +1234,7 @@ class Switchboard(QUiLoader):
         The method returns this set of signals, which represents all the default signals that the widget has.
 
         Parameters:
-            widget (QtWidgets.QWidget): The widget to get the default signals for.
+            widget (QWidget): The widget to get the default signals for.
 
         Returns:
             set: A set of signals that the widget has, according to the default signals dictionary.
@@ -1291,7 +1291,7 @@ class Switchboard(QUiLoader):
 
         Parameters:
             slot (callable): The slot function to be wrapped. This is typically a method of a class.
-            widget (QtWidgets.QWidget): The widget that the slot is connected to. This widget is passed to the slot function as a keyword argument,
+            widget (QWidget): The widget that the slot is connected to. This widget is passed to the slot function as a keyword argument,
                 and its signal value is also passed as a keyword argument.
 
         Returns:
@@ -1418,7 +1418,7 @@ class Switchboard(QUiLoader):
 
         Parameters:
             value (any): The value to set the widget and its relatives to.
-            widget (QtWidgets.QWidget): The widget to synchronize the value for.
+            widget (QWidget): The widget to synchronize the value for.
         """
         # Get the relatives of the widget's UI
         relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
@@ -1428,43 +1428,72 @@ class Switchboard(QUiLoader):
             relative_widget = getattr(relative, widget.name, None)
             if relative_widget is not None:
                 # Check the type of the widget and use the appropriate method to set the value
-                for widget_type, signal_name in self.default_signals.items():
-                    if isinstance(relative_widget, widget_type):
-                        # Check if the widget has the signal
-                        if signal_name == "textChanged":
-                            relative_widget.setText(value)
-                        elif signal_name == "valueChanged":
-                            relative_widget.setValue(value)
-                        elif signal_name == "currentIndexChanged":
-                            relative_widget.setCurrentIndex(value)
-                        elif signal_name in {"toggled", "stateChanged"}:
-                            relative_widget.setChecked(value)
-                        break  # Stop the loop when the type is found
+                signal_name = self.default_signals.get(widget.derived_type)
+                if signal_name:
+                    # Check if the widget has the signal
+                    if signal_name == "textChanged":
+                        relative_widget.setText(value)
+                    elif signal_name == "valueChanged":
+                        relative_widget.setValue(value)
+                    elif signal_name == "currentIndexChanged":
+                        relative_widget.setCurrentIndex(value)
+                    elif signal_name in {"toggled", "stateChanged"}:
+                        relative_widget.setChecked(value)
+                    # Save the widget state
+                    self.store_widget_state(relative_widget, signal_name, value)
 
-    def set_widget_attrs(self, *args, **kwargs):
-        """Set multiple properties, for multiple widgets, on multiple ui's at once.https://www.tcm.com/watchtcm/titles/69005
+    def store_widget_state(self, widget, signal_name, value):
+        """Stores the current state of a widget in the application settings.
+        This method uses the QSettings class to store the current state of a widget. The state is stored under a key that is a combination of the widget's object name and the signal name.
 
         Parameters:
-            *args = arg [0] (str) String of object_names. - object_names separated by ',' ie. 'b000-12,b022'
-                            arg [1:] dynamic ui object/s.  If no ui's are given, then the parent and child uis will be used.
-            *kwargs = keyword: - the property to modify. ex. setText, setValue, setEnabled, setDisabled, setVisible, setHidden
-                            value: - intended value.
-        Example:
-            set_widget_attrs('chk003', <ui1>, <ui2>, setText='Un-Crease')
+            widget (QWidget): The widget whose state is to be stored.
+            signal_name (str): The name of the signal that indicates a state change in the widget.
+            value (any): The current state of the widget.
         """
-        if not args[1:]:
-            relatives = self.get_ui_relatives(
-                self.get_current_ui(), upstream=False, exact=False, downstream=False
-            )
-            args = args + relatives
+        widget.ui.settings.setValue(f"{widget.name}/{signal_name}", value)
 
-        for ui in args[1:]:
-            # get_widgets_from_str returns a widget list from a string of object_names.
-            widgets = self.get_widgets_from_str(ui, args[0])
-            for property_, value in kwargs.items():
-                [  # set the property state for each widget in the list.
-                    getattr(w, property_)(value) for w in widgets
-                ]
+    def restore_widget_state(self, widget):
+        """Restores the state of a given widget.
+        This method uses the QSettings class to restore the state of a widget. The state is retrieved using a key that is a combination of the widget's object name and the signal name. The method then sets the widget's state based on the retrieved value.
+
+        Parameters:
+            widget (QWidget): The widget whose state is to be restored.
+        """
+        signal_name = self.default_signals.get(widget.derived_type)
+        if signal_name:
+            value = widget.ui.settings.value(f"{widget.name}/{signal_name}")
+            if value is not None:
+                if signal_name == "textChanged":
+                    widget.setText(value)
+                elif signal_name == "valueChanged":
+                    # QSettings stores everything as strings, so we need to convert to int
+                    widget.setValue(int(value))
+                elif signal_name == "currentIndexChanged":
+                    widget.setCurrentIndex(int(value))
+                elif signal_name in {"toggled", "stateChanged"}:
+                    widget.setChecked(int(value))
+
+    def set_widget_attrs(self, ui, widget_names, **kwargs):
+        """Set multiple properties, for multiple widgets, on multiple ui's at once.
+
+        Parameters:
+            ui (QWidget): A previously loaded dynamic ui object.
+            widget_names (str): String of object_names. - object_names separated by ',' ie. 'b000-12,b022'
+            *kwargs = keyword: - the property to modify. ex. setText, setValue, setEnabled, setDisabled, setVisible, setHidden
+                        value: - intended value.
+        Example:
+            set_widget_attrs(ui, 'chk003-6', setText='Un-Crease')
+        """
+        # Get_widgets_from_str returns a widget list from a string of object_names.
+        widgets = self.get_widgets_from_str(ui, widget_names)
+        # Set the property state for each widget in the list.
+        for attr, value in kwargs.items():
+            for w in widgets:
+                try:
+                    setattr(w, attr, value)
+                except AttributeError:
+                    pass
 
     def is_widget(self, obj):
         """Returns True if the given obj is a valid widget.
@@ -1485,7 +1514,7 @@ class Switchboard(QUiLoader):
         """Get the all parent widgets of the given widget.
 
         Parameters:
-            widget (obj): QWidget
+            widget (QWidget): The widget to get parents of.
             object_names (bool): Return as object_names.
 
         Returns:
@@ -1505,7 +1534,7 @@ class Switchboard(QUiLoader):
         """Get the parent widget at the top of the hierarchy for the given widget.
 
         Parameters:
-            widget (obj): QWidget
+            widget (QWidget): The widget to get top level parent of.
             index (int): Last index is top level.
 
         Returns:
@@ -1585,7 +1614,7 @@ class Switchboard(QUiLoader):
         """Get the center point of a given widget.
 
         Parameters:
-            widget (obj): The widget to query.
+            widget (QWidget): The widget to get the center point of.
 
         Returns:
             (obj) QPoint
@@ -1597,7 +1626,7 @@ class Switchboard(QUiLoader):
         """Adjust the given widget's size to fit contents and re-center.
 
         Parameters:
-            widget (obj): The widget to resize.
+            widget (QWidget): The widget to resize and center.
             padding_x (int): Any additional width to be applied.
             padding_y (int): Any additional height to be applied.
         """
@@ -1617,8 +1646,8 @@ class Switchboard(QUiLoader):
         """Move and center the given widget on the given point.
 
         Parameters:
-            widget (obj): The widget to resize.
-            pos (obj): A point to move to.
+            widget (QWidget): The widget to move and resize.
+            pos (QPoint): A point to move to.
             offset_x (int): The desired offset on the x axis. 2 is center.
             offset_y (int): The desired offset on the y axis.
         """
@@ -1962,7 +1991,7 @@ if __name__ == "__main__":
     ui = sb.example
     ui.set_style(theme="dark")
 
-    print("ui:".ljust(20), ui)
+    print("ui:".ljust(20), type(ui))
     print("ui name:".ljust(20), ui.name)
     print("ui path:".ljust(20), ui.path)  # The directory path containing the UI file
     print("is current ui:".ljust(20), ui.is_current)
@@ -2004,7 +2033,7 @@ logging.info(__name__)  # module name
 
 #     Parameters:
 #         slot (callable): The slot function to be wrapped. This is typically a method of a class.
-#         widget (QtWidgets.QWidget): The widget that the slot is connected to. This widget is passed to the slot function as a keyword argument,
+#         widget (QWidget): The widget that the slot is connected to. This widget is passed to the slot function as a keyword argument,
 #             and its signal value is also passed as a keyword argument.
 
 #     Returns:
@@ -2145,7 +2174,7 @@ logging.info(__name__)  # module name
 #     the slot to this signal and appends the slot to the connected slots list.
 
 #     Parameters:
-#         widget (QtWidgets.QWidget): A widget for which the slot is connected to the signals.
+#         widget (QWidget): A widget for which the slot is connected to the signals.
 #         slot (method): The slot method to connect to the signals.
 
 #     Raises:

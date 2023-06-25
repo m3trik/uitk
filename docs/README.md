@@ -37,10 +37,12 @@ python -m pip install uitk
 
 Create an instance of Switchboard to load and connect your dynamic ui.
 ```python
-from uitk import Switchboard
+from uitk import Switchboard, signals
+
 
 class MyProject:
     ...
+
 
 class MyProjectSlots(MyProject):
     def __init__(self):
@@ -50,11 +52,12 @@ class MyProjectSlots(MyProject):
     def MyButtonsObjectName(self):
         self.sb.message_box("Button Pressed")
 
+
 sb = Switchboard(ui_location="example", slots_location=MyProjectSlots)
 ui = sb.example
 ui.set_style(theme="dark")
 
-print("ui:".ljust(20), ui)
+print("ui:".ljust(20), type(ui))
 print("ui name:".ljust(20), ui.name)
 print("ui path:".ljust(20), ui.path)  # The directory path containing the UI file
 print("is current ui:".ljust(20), ui.is_current)
