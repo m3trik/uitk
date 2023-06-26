@@ -168,9 +168,7 @@ class MainWindow(
             self.sb.get_slots(w.ui), w.name, None
         )
 
-        widget.get_slot_init = lambda w=widget: getattr(
-            self.sb.get_slots(w.ui), f"{w.name}_init", None
-        )
+        widget.init_slot = lambda w=widget: self.init_slot(w)
 
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
         widget.refresh = True
@@ -358,6 +356,16 @@ class MainWindow(
         else:
             self._deferred[priority] = (method,)
 
+    def init_slot(self, widget):
+        """ """
+        # Obtain the slot init function based on widget and its name
+        slots = self.sb.get_slots(widget.ui)
+        slot_init = getattr(slots, f"{widget.name}_init", None)
+
+        if slot_init and widget.refresh:
+            widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
+            slot_init(widget)
+
     def eventFilter(self, widget, event):
         """Filter out specific events related to the widget."""
         if event.type() == QtCore.QEvent.ChildPolished:
@@ -367,14 +375,16 @@ class MainWindow(
 
         elif event.type() == QtCore.QEvent.Show:
             if widget is not self:
-                slot_init = widget.get_slot_init()
-                if slot_init and widget.refresh:
-                    widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
-                    slot_init(widget)
+                for relative in self.sb.get_ui_relatives(
+                    widget.ui, exact=True, upstream=True, downstream=True
+                ):
+                    rel_widget = getattr(relative, widget.name, None)
+                    if rel_widget is not None:
+                        rel_widget.init_slot()
 
-            if not widget.is_initialized:
-                self.sb.restore_widget_state(widget)
-                widget.is_initialized = True
+                if not widget.is_initialized:
+                    self.sb.restore_widget_state(widget)
+                    widget.is_initialized = True
 
         return super().eventFilter(widget, event)
 

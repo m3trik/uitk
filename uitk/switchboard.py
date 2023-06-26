@@ -164,9 +164,9 @@ class Switchboard(QUiLoader):
         self.module_dir = ptk.get_filepath(__file__)  # the directory of this module.
 
         # initialize the files dicts before the location dicts (dependancies).
-        self.ui_files = {}  # UI paths.
-        self.widget_files = {}  # widget paths.
-        self.slots_files = {}  # slot class paths.
+        self.ui_files = {}  # UI filepaths.
+        self.widget_files = {}  # widget filepaths.
+        self.slots_files = {}  # slot class filepaths.
 
         # use the relative filepath of this module if None is given.
         self.ui_location = ui_location or f"{self.module_dir}/ui"
@@ -653,8 +653,8 @@ class Switchboard(QUiLoader):
         Parameters:
             path (str): A directory, fullpath to a widget module, or the name of a module residing in the 'widgets' directory.
                         For example: - 'path_to/uitk/widgets'
-                                                 - 'path_to/uitk/widgets/comboBox.py'
-                                                 - 'comboBox'
+                                    - 'path_to/uitk/widgets/comboBox.py'
+                                    - 'comboBox'
         Returns:
             (dict) keys are widget names and the values are the widget class objects.
             Returns an empty dictionary if no widgets were found or an error occurred.
@@ -1066,13 +1066,7 @@ class Switchboard(QUiLoader):
             except IndexError:
                 return [] if isinstance(index, int) else None
 
-    def ui_history(
-        self,
-        index=None,
-        allow_duplicates=False,
-        inc=[],
-        exc=[],
-    ):
+    def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
         """Get the UI history.
 
         Parameters:
@@ -1113,12 +1107,7 @@ class Switchboard(QUiLoader):
                 return [] if isinstance(index, int) else None
 
     def get_ui_relatives(
-        self,
-        ui,
-        upstream=False,
-        exact=False,
-        downstream=False,
-        reverse=False,
+        self, ui, upstream=False, exact=False, downstream=False, reverse=False
     ):
         """Get the UI relatives based on the hierarchy matching.
 
@@ -1751,12 +1740,10 @@ class Switchboard(QUiLoader):
             raise ValueError(f"Invalid datatype: {type(clss)}")
 
         result = []
-        for n in Switchboard.unpack_names(name_string):
-            # try:
-            s = getattr(clss, n)
-            result.append(s)
-            # except AttributeError:
-            # self.logger.info(traceback.format_exc())
+        for method_name in Switchboard.unpack_names(name_string):
+            method = getattr(clss, method_name, None)
+            if method is not None:
+                result.append(method)
 
         return result
 
