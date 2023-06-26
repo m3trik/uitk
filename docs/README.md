@@ -7,12 +7,13 @@ UITK is a comprehensive Python package designed to streamline the creation, mana
 ## Key Features
 
 - Dynamic UI file loading
-- Custom widget registration and usage
+- Custom widget registration
 - Utility properties for MainWindow and child widget subclassing
-- Efficient management of slot connections and event handling
+- Management of slot connections and event handling
 - Support for UI hierarchy navigation and submenus
 - Custom event behavior through UI tags
 - UI and slot history storage and retrieval
+- Widget syncing and state management.
 
 ## Module Overview
 
