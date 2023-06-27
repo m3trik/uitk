@@ -259,9 +259,11 @@ class Switchboard(QUiLoader):
             # if the given dir is not a full path, treat it as relative to the default path.
             isAbsPath = os.path.isabs(x)
             self._ui_location = x if isAbsPath else os.path.join(self.default_dir, x)
+
         elif inspect.ismodule(x):
             # use get_filepath to get the full path to the module.
             self._ui_location = ptk.get_filepath(x)
+
         else:
             raise ValueError(
                 f"Invalid datatype for ui_location: {type(x)}, expected str or module."
@@ -462,9 +464,8 @@ class Switchboard(QUiLoader):
                 f"Invalid datatype for _construct_ui_files_dict: {type(self.ui_location)}, expected str."
             )
 
-        ui_filepaths = ptk.get_dir_contents(
-            self.ui_location, "filepaths", inc_files="*.ui"
-        )
+        path = ptk.format_path(self.ui_location, "path")
+        ui_filepaths = ptk.get_dir_contents(path, "filepaths", inc_files="*.ui")
         ui_files = ptk.get_file_info(ui_filepaths, "filename|filepath")
         return dict(ui_files)
 
@@ -1410,8 +1411,9 @@ class Switchboard(QUiLoader):
             widget (QWidget): The widget to synchronize the value for.
         """
         # Get the relatives of the widget's UI
-        relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
-
+        relatives = self.get_ui_relatives(
+            widget.ui, exact=True, upstream=True, downstream=True
+        )
         for relative in relatives:
             # Get the widget of the same name
             relative_widget = getattr(relative, widget.name, None)
@@ -1420,14 +1422,18 @@ class Switchboard(QUiLoader):
                 signal_name = self.default_signals.get(widget.derived_type)
                 if signal_name:
                     # Check if the widget has the signal
-                    if signal_name == "textChanged":
-                        relative_widget.setText(value)
-                    elif signal_name == "valueChanged":
-                        relative_widget.setValue(value)
-                    elif signal_name == "currentIndexChanged":
-                        relative_widget.setCurrentIndex(value)
-                    elif signal_name in {"toggled", "stateChanged"}:
-                        relative_widget.setChecked(value)
+                    if relative_widget is not widget:
+                        try:
+                            if signal_name == "textChanged":
+                                relative_widget.setText(value)
+                            elif signal_name == "valueChanged":
+                                relative_widget.setValue(value)
+                            elif signal_name == "currentIndexChanged":
+                                relative_widget.setCurrentIndex(value)
+                            elif signal_name in {"toggled", "stateChanged"}:
+                                relative_widget.setChecked(value)
+                        except AttributeError:
+                            pass
                     # Save the widget state
                     self.store_widget_state(relative_widget, signal_name, value)
 
