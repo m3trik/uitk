@@ -417,6 +417,7 @@ class StyleSheet(QtCore.QObject):
         "QTextEdit": """
             QTextEdit {
                 background-color: {WIDGET_BACKGROUND};
+                color: white;
                 border: 1px solid {BORDER_COLOR};
                 selection-background-color: {BUTTON_HOVER};
                 selection-color: {TEXT_COLOR};
@@ -520,32 +521,34 @@ class StyleSheet(QtCore.QObject):
         """,
         "QAbstractSlider": """
             QAbstractSlider {
-                border: none;
+                border: 1px solid black;
+                background-color: {WIDGET_BACKGROUND};
             }
-            QAbstractSlider::groove:horizontal {
-                border: 1px solid {BORDER_COLOR};
-                height: 2px;
-                background: {WIDGET_BACKGROUND};
-            }
-            QAbstractSlider::handle:horizontal {
-                width: 13px;
+            QAbstractSlider::handle {
+                width: 10px;
                 margin-top: -6px;
                 margin-bottom: -6px;
-                border: 1px solid {BUTTON_PRESSED};
-                border-radius: 2px;
-                background: {BUTTON_HOVER};
+                border: 1px solid black;
+                border-radius: 1px;
+                background-color: {MAIN_BACKGROUND};
             }
-            QAbstractSlider::add-page:horizontal {
-                background: {BUTTON_PRESSED};
+            QAbstractSlider::handle:hover {
+                background-color: {BUTTON_HOVER};
             }
-            QAbstractSlider::sub-page:horizontal {
-                background: {BUTTON_HOVER};
+            QAbstractSlider::groove {
+                border: 1px solid black;
+                height: 8px;
+                background-color: {WIDGET_BACKGROUND};
+            }
+            QAbstractSlider::sub-page {
+                background-color: {WIDGET_BACKGROUND};
+            }
+            QAbstractSlider::add-page {
+                background-color: {WIDGET_BACKGROUND};
             }
         """,
         "QSlider": """
-            QSlider {
-                /* Inherits styles from QAbstractSlider */
-            }
+            /* Inherits styles from QAbstractSlider */
         """,
         "QScrollBar": """
             QScrollBar:vertical {

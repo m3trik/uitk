@@ -14,14 +14,12 @@ class CheckBox(
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent)
 
-        self.setCheckBoxRichTextStyle(
-            self.isChecked()
-        )  # set the initial style for rich text depending on the current state.
-        self.stateChanged.connect(
-            lambda state: self.setCheckBoxRichTextStyle(state)
-        )  # set the style on future state changes.
+        # Set the initial style for rich text depending on the current state.
+        self.setCheckBoxRichTextStyle(self.isChecked())
+        # Set the style on future state changes.
+        self.stateChanged.connect(lambda state: self.setCheckBoxRichTextStyle(state))
 
-        # override built-ins
+        # Override built-ins
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
@@ -53,8 +51,8 @@ class CheckBox(
         Simplifies working with tri-state checkboxes.
 
         Parameters:
-                state (int)(bool): 0 or False: unchecked, 1 or True: checked.
-                        If tri-state: 0: unchecked, 1: paritally checked, 2: checked.
+            state (int)(bool): 0 or False: unchecked, 1 or True: checked.
+                    If tri-state: 0: unchecked, 1: paritally checked, 2: checked.
         """
         if self.isTristate():
             s = {
@@ -67,37 +65,53 @@ class CheckBox(
         else:
             self.setChecked(state)
 
-    def mousePressEvent(self, event):
-        """
+    def hitButton(self, pos: QtCore.QPoint) -> bool:
+        """Overridden method from QAbstractButton, used internally by Qt to decide whether a mouse press event
+        should change the checkbox's state.
+
+        This implementation extends the clickable area to the entire widget's bounds (including empty space),
+        not just the checkbox and its label.
+
         Parameters:
-                event (QEvent)
+            pos (QPoint): The position of the mouse event.
 
         Returns:
-                (QEvent)
+            bool: True if the position of the mouse event is within the widget's bounds, otherwise False.
+        """
+        return QtCore.QRect(QtCore.QPoint(0, 0), self.size()).contains(pos)
+
+    def mousePressEvent(self, event):
+        """Overridden method from QWidget to handle mouse press events.
+
+        This implementation checks if the event is a right click or a left click.
+        For a right click, it shows the context menu if one is defined.
+        For a left click, it toggles the state of the checkbox.
+
+        Parameters:
+            event (QMouseEvent): The mouse event.
+
+        Note:
+            Other mouse events are passed to the parent class.
         """
         if event.button() == QtCore.Qt.RightButton:
             if self.ctx_menu:
                 self.ctx_menu.show()
 
-        super().mousePressEvent(event)
+        elif event.button() == QtCore.Qt.LeftButton:
+            self.set_check_state(not self.checkState_())
 
-    def showEvent(self, event):
-        """
-        Parameters:
-                event=<QEvent>
-        """
-        # self.setTextOverlay('±', alignment='AlignRight')
+        else:
+            super().mousePressEvent(event)
 
-        super().showEvent(event)
 
+# -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
     from PySide2.QtCore import QSize
 
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
-        sys.argv
-    )  # return the existing QApplication object, or create a new one if none exists.
+    # Return the existing QApplication object, or create a new one if none exists.
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
     w = CheckBox(
         parent=None,
@@ -119,16 +133,16 @@ if __name__ == "__main__":
 
 """
 Promoting a widget in designer to use a custom class:
->   In Qt Designer, select all the widgets you want to replace, 
-        then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace,
+        then right-click them and select 'Promote to...'.
 
 >   In the dialog:
         Base Class:     Class from which you inherit. ie. QWidget
         Promoted Class: Name of the class. ie. "MyWidget"
         Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->   Then click "Add", "Promote", 
+>   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
 
-# Deprecated:
+# Deprecated ------------------------------------

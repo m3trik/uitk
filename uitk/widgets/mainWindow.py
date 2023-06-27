@@ -5,14 +5,12 @@ import logging
 from functools import partial
 from PySide2 import QtCore, QtWidgets
 import pythontk as ptk
-from uitk.widgets.mixins.state_manager import StateManagerMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
 
 
 class MainWindow(
     QtWidgets.QMainWindow,
-    StateManagerMixin,
     AttributesMixin,
     StyleSheet,
 ):
