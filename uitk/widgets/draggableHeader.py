@@ -1,14 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.mixins.menu_instance import MenuInstance
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class DraggableHeader(
-    QtWidgets.QLabel, MenuInstance, AttributesMixin, RichText, TextOverlay
-):
+class DraggableHeader(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
     """DraggableHeader is a QLabel that can be dragged around the screen and can be pinned/unpinned.
 
     The class emits two signals: `headerPinned` and `headerUnpinned`, which are emitted when the header is pinned or unpinned, respectively.

@@ -17,7 +17,7 @@ class RichText:
     escape: '>' replace with &gt;
     """
 
-    hasRichText = False
+    has_rich_text = False
 
     @property
     def richTextLabelDict(self):
@@ -55,7 +55,7 @@ class RichText:
         Returns:
                 (str) the widget's or the label's sizeHint.
         """
-        if self.hasRichText:
+        if self.has_rich_text:
             return self._richTextSizeHintDict[index]
 
         else:
@@ -78,13 +78,13 @@ class RichText:
         # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         layout.addWidget(label)
 
-        self.setRichTextStyle(index)
+        self.set_rich_text_style(index)
 
-        self.hasRichText = True
+        self.has_rich_text = True
 
         return label
 
-    def setRichTextStyle(self, index=0, textColor="white"):
+    def set_rich_text_style(self, index=0, textColor="white"):
         """Set the stylesheet for a QLabel.
 
         Parameters:

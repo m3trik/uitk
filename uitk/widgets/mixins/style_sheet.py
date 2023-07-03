@@ -3,29 +3,29 @@
 from typing import Union
 import re
 from PySide2 import QtCore, QtWidgets
-from pythontk import get_derived_type, listify
+import pythontk as ptk
 
 
 class StyleSheet(QtCore.QObject):
     """StyleSheet class is responsible for generating, modifying, and applying CSS style sheets for various Qt widgets.
     The class also provides utility functions to adjust the appearance of widgets based on their properties or conditions.
-    The StyleSheet class offers multiple theme presets (e.g., 'standard' and 'dark') and allows the user to create custom
+    The StyleSheet class offers multiple theme presets (e.g., 'light' and 'dark') and allows the user to create custom
     theme presets by providing a color value dictionary.
 
     Methods:
-    - get_color_values(cls, theme="standard", **kwargs): Return the colorValues dict with any of the bracketed
+    - get_color_values(cls, theme="light", **kwargs): Return the colorValues dict with any of the bracketed
                 placeholders replaced by the value of any given kwargs of the same name.
     - remove_leading_whitespace(s): Remove the same amount of leading whitespace from each line in the input string
                 as present in the first line.
-    - get_style_sheet(cls, widget_type=None, theme="standard", **kwargs): Get the styleSheet for the given widget type.
-    - set_style(cls, widget, ratio=6, theme="standard", hide_menu_button=False, append_to_existing=False, **kwargs): Set the
+    - get_style_sheet(cls, widget_type=None, theme="light", **kwargs): Get the styleSheet for the given widget type.
+    - set_style(cls, widget, ratio=6, theme="light", hide_menu_button=False, append_to_existing=False, **kwargs): Set the
                 styleSheet for the given widgets.
     - adjust_padding(widget_type): Remove padding when the text length / widget width ratio is below a given amount.
     - hide_menu_button(widget_type): Set the menu button as transparent.
     """
 
     themes = {
-        "standard": {
+        "light": {
             "MAIN_FOREGROUND": "rgb(255,255,255)",  # Bright white for better contrast
             "MAIN_BACKGROUND": "rgb(70,70,70)",  # Slightly darker than widget background
             "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,185)",
@@ -74,6 +74,15 @@ class StyleSheet(QtCore.QObject):
                 background-color: {MAIN_BACKGROUND_ALPHA};
                 border: 1px solid {BORDER_COLOR};
                 color: {TEXT_COLOR};
+            }
+            QWidget.QLabel {
+                background-color: {WIDGET_BACKGROUND};
+                color: {TEXT_COLOR};
+                border-style: outset;
+                border-radius: 1px;
+                border: 1px solid {BORDER_COLOR};
+                padding: 0px 1px 0px 1px; /* top, right, bottom, left */
+                spacing: 1px;
             }
         """,
         "QStackedWidget": """
@@ -613,6 +622,31 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         # ... custom classes ...
+        "default": """
+            .default {
+                background-color: {WIDGET_BACKGROUND};
+                color: {TEXT_COLOR};
+                border-style: outset;
+                border-radius: 1px;
+                border: 1px solid {BORDER_COLOR};
+                padding: 0px 1px 0px 1px; /* top, right, bottom, left */
+                spacing: 1px;
+            }
+            .default::hover {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_HOVER};
+            }
+            .default::hover:checked {
+                background-color: {BUTTON_HOVER};
+                color: {TEXT_HOVER};
+            }
+            .default::enabled {
+                color: {TEXT_COLOR};
+            }
+            .default::disabled {
+                color: {TEXT_DISABLED};
+            }
+        """,
         "translucentBgNoBorder": """
             .translucentBgNoBorder {
                 background-color: rgba(127,127,127,0.005);
@@ -658,13 +692,13 @@ class StyleSheet(QtCore.QObject):
         """,
     }
 
-    def get_style_sheet(self, widget_type=None, style="standard", **kwargs):
+    def get_style_sheet(self, widget_type=None, style="light", **kwargs):
         """Get the styleSheet for the given widget type.
         By default it will return all stylesheets as one multi-line css string.
 
         Parameters:
             widget_type (str): The class name of the widget. ie. 'QLabel'
-            style (str): The color value set to use. valid values are: 'standard', 'dark'
+            style (str): The color value set to use. valid values are: 'light', 'dark'
 
         Returns:
             (str) css styleSheet
@@ -696,7 +730,7 @@ class StyleSheet(QtCore.QObject):
             return super_class.__name__
         return None
 
-    def get_style_hierarchy(self, widget_type, theme="standard", **kwargs):
+    def get_style_hierarchy(self, widget_type, theme="light", **kwargs):
         """Recursively find and apply styles from the most abstract class to the specific class"""
         super_type = self.get_super_type(widget_type)
 
@@ -721,7 +755,7 @@ class StyleSheet(QtCore.QObject):
     def set_style(
         self,
         widget: Union[QtWidgets.QWidget, None] = None,
-        theme="standard",
+        theme="light",
         style_class="",
         **kwargs,
     ):
@@ -729,7 +763,7 @@ class StyleSheet(QtCore.QObject):
         Set the theme for a specific widget by using the '#' syntax and the widget's objectName. ie. QWidget#mainWindow
 
         Parameters:
-            theme (str): Color mode. ie. 'standard' or 'dark'
+            theme (str): Color mode. ie. 'light' or 'dark'
             widget (obj/list): The widget to set the theme of.
             style_class: Assign a custom style class to the widget.
         """
@@ -748,7 +782,9 @@ class StyleSheet(QtCore.QObject):
         if widget is self:
             final_style = self.get_style_sheet(theme=theme, **kwargs)
         else:  # Otherwise, apply the abstract style first, then the specific widget style
-            widget_type = get_derived_type(widget, module="QtWidgets", return_name=True)
+            widget_type = ptk.get_derived_type(
+                widget, module="QtWidgets", return_name=True
+            )
             super_style, style = self.get_style_hierarchy(
                 widget_type, theme=theme, **kwargs
             )
@@ -763,12 +799,12 @@ class StyleSheet(QtCore.QObject):
         widget.setStyleSheet(final_style)
 
     @classmethod
-    def get_color_values(cls, theme="standard", **kwargs):
+    def get_color_values(cls, theme="light", **kwargs):
         """Return the colorValues dict with any of the bracketed placeholders
         replaced by the value of any given kwargs of the same name.
 
         Parameters:
-            theme (str)(dict): The color value set to use. valid values are: 'standard', 'dark'
+            theme (str)(dict): The color value set to use. valid values are: 'light', 'dark'
                         or pass your own theme as a dict.
             **kwargs () = Keyword arguments matching the string of any bracketed placeholders.
                         case insensitive.  ex. alpha=255
@@ -848,14 +884,11 @@ class StyleSheet(QtCore.QObject):
         )
 
 
+# --------------------------------------------------------------------------------------------
+
 if __name__ == "__main__":
     pass
 
-# else:
-#   styleSheet = StyleSheet()
-
-# module name
-# print (__name__)
 # --------------------------------------------------------------------------------------------
 # Notes
 # --------------------------------------------------------------------------------------------

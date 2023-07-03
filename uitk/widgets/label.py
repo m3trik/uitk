@@ -1,11 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.mixins.menu_instance import MenuInstance
+from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class Label(QtWidgets.QLabel, MenuInstance, AttributesMixin):
+class Label(QtWidgets.QLabel, AttributesMixin):
     """ """
 
     clicked = QtCore.Signal()
@@ -13,6 +13,8 @@ class Label(QtWidgets.QLabel, MenuInstance, AttributesMixin):
 
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QLabel.__init__(self, parent)
+
+        self.menu = Menu(self, position="cursorPos")
 
         self.setTextFormat(QtCore.Qt.RichText)
         self.set_attributes(**kwargs)
@@ -24,10 +26,10 @@ class Label(QtWidgets.QLabel, MenuInstance, AttributesMixin):
         """
         if event.button() == QtCore.Qt.LeftButton:
             self.clicked.emit()
-            self.option_menu.show()
+            self.menu.show()
 
         if event.button() == QtCore.Qt.RightButton:
-            self.ctx_menu.show()
+            self.menu.show()
 
         QtWidgets.QLabel.mousePressEvent(self, event)
 
@@ -51,8 +53,8 @@ if __name__ == "__main__":
 
     w = Label(setText="QLabel", setVisible=True)
     w.resize(w.sizeHint().width(), 19)
-    menuItem = w.option_menu.add(Label, setText="menu item")
-    ctxMenuItem = w.ctx_menu.add(Label, setText="context menu item")
+    menuItem = w.menu.add(Label, setText="menu item")
+    ctxMenuItem = w.menu.add(Label, setText="context menu item")
     print(menuItem, ctxMenuItem)
     # w.show()
     sys.exit(app.exec_())

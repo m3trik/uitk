@@ -1,11 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.mixins.menu_instance import MenuInstance
+from PySide2 import QtCore, QtWidgets
+from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class TextEdit(QtWidgets.QTextEdit, AttributesMixin, MenuInstance):
+class TextEdit(QtWidgets.QTextEdit, AttributesMixin):
     """ """
 
     shown = QtCore.Signal()
@@ -15,7 +15,8 @@ class TextEdit(QtWidgets.QTextEdit, AttributesMixin, MenuInstance):
         QtWidgets.QTextEdit.__init__(self, parent)
 
         self.viewport().setAutoFillBackground(False)
-        # self.setTextBackgroundColor(QtGui.QColor(50, 50, 50))
+
+        self.menu = Menu(self, position="cursorPos")
 
         self.set_attributes(**kwargs)
 

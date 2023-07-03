@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
-from pythontk import move_decimal_point
+import pythontk as ptk
 
 
 class AttributesMixin:
@@ -73,7 +73,7 @@ class AttributesMixin:
                 set_alignment (str): Set the alignment using a string value. ie. 'AlignVCenter'
                 set_button_symbols (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
                 set_limits (tuple): Set the min, max, step, and decimal value using a string value. ex. (0.01, 10, 1, 2)
-                set_check_state (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
+                setCheckState (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
         """
         if attr == "transfer_properties":
             self.transfer_properties(value, w)
@@ -121,7 +121,7 @@ class AttributesMixin:
             if isinstance(w, QtWidgets.QAbstractSpinBox):
                 self.set_spinbox_by_value(w, value)
 
-        elif attr == "set_check_state":
+        elif attr == "setCheckState":
             state = {
                 0: QtCore.Qt.CheckState.Unchecked,
                 1: QtCore.Qt.CheckState.PartiallyChecked,
@@ -210,7 +210,7 @@ class AttributesMixin:
 
         elif isinstance(value, float):
             decimals = str(value)[::-1].find(".")  # get decimal places
-            step = move_decimal_point(1, -decimals)
+            step = ptk.move_decimal_point(1, -decimals)
 
             self.set_attributes(
                 spinbox,
@@ -278,24 +278,4 @@ Promoting a widget in designer to use a custom class:
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
 
-# depricated ------------------------------------------------------------------------
-
-# def move_decimal_point(num, decimal_places):
-#       '''Move the decimal place in a given number.
-
-#       Parameters:
-#           decimal_places (int): decimal places to move. (works only with values 0 and below.)
-
-#       Returns:
-#           (float) the given number with it's decimal place moved by the desired amount.
-
-#       ex. move_decimal_point(11.05, -2) Returns: 0.1105
-#       '''
-#       for _ in range(abs(decimal_places)):
-
-#           if decimal_places>0:
-#               num *= 10; #shifts decimal place right
-#           else:
-#               num /= 10.; #shifts decimal place left
-
-#       return float(num)
+# depricated ---------------------------

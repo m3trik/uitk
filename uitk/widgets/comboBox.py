@@ -1,31 +1,24 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtCore, QtWidgets
-from uitk.widgets.mixins.menu_instance import MenuInstance
+from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class ComboBox(
-    QtWidgets.QComboBox, MenuInstance, AttributesMixin, RichText, TextOverlay
-):
+class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
     """ """
 
     returnPressed = QtCore.Signal()
     beforePopupShown = QtCore.Signal()
     beforePopupHidden = QtCore.Signal()
 
-    def __init__(self, parent=None, popupStyle="modelView", **kwargs):
+    def __init__(self, parent=None, **kwargs):
         super().__init__(parent)
-        """
-        Parameters:
-            popupStyle (str): specify the type of popup menu. default is the standard 'modelView'.
-        """
-        self.popupStyle = popupStyle
+        """ """
+        self.menu = Menu(self, mode="option")
 
-        # self.option_menu.visible = False #built-in method isVisible() not working.
         self.view().installEventFilter(self)
-
         self.set_attributes(**kwargs)
 
     @property
@@ -72,13 +65,13 @@ class ComboBox(
             comboBox.add(["Import file", "Import Options"], "Import")
             comboBox.add({'Import file':<obj>, "Import Options":<obj>}, "Import") #example of adding items with data.
         """
-        assert isinstance(
-            items, (str, list, set, tuple, dict)
-        ), "{}: add: Incorrect datatype: {}".format(__file__, type(items).__name__)
+        if not isinstance(items, (str, list, set, tuple, dict)):
+            raise TypeError(
+                f"Incorrect datatype. Expected str, list, set, tuple, or dict, got {type(items)}"
+            )
 
-        index = (
-            self.currentIndex() if self.currentIndex() > 0 else 0
-        )  # get the current index before refreshing list. avoid negative values.
+        # Get the current index before refreshing list. avoid negative values.
+        index = self.currentIndex() if self.currentIndex() > 0 else 0
 
         if clear:
             self.clear()
@@ -126,7 +119,7 @@ class ComboBox(
         """Get the text at the current index.
 
         Returns:
-                (str)
+            (str)
         """
         index = self.currentIndex()
         return self.richText(index)
@@ -164,35 +157,25 @@ class ComboBox(
         except Exception:  # set by item text:
             try:
                 self.setCurrentText(i)
-            except Exception as error:
+            except Exception as e:
                 if i:
-                    print("{}: setCurrentItem: {}".format(__file__, error))
+                    print(f"{__file__}: setCurrentItem: {e}")
 
     def showPopup(self):
         """Show the popup menu."""
+        width = self.sizeHint().width()
+        self.view().setMinimumWidth(width)
+
         self.beforePopupShown.emit()
-
-        if not self.popupStyle == "modelView":
-            self.option_menu.show() if not self.option_menu.isVisible() else self.option_menu.hide()
-            return
-
-        else:
-            width = self.sizeHint().width()
-            self.view().setMinimumWidth(width)
-
         super().showPopup()
 
     def hidePopup(self):
         """ """
         self.beforePopupHidden.emit()
-        self.option_menu.hide()
-
         super().hidePopup()
 
     def clear(self):
         """ """
-        self.option_menu.clear()
-
         super().clear()
 
     def keyPressEvent(self, event):
@@ -203,27 +186,8 @@ class ComboBox(
 
         super().keyPressEvent(event)
 
-    def showEvent(self, event):
-        """ """
-        if self.ctx_menu.contains_items:
-            # self.ctx_menu.setTitle(self.itemText(0))
-            self.setTextOverlay("⧉", alignment="AlignRight")
-            self.setItemText(0, self.itemText(0))  # set text: comboBox
 
-        super().showEvent(event)
-
-    def eventFilter(self, widget, event):
-        """Event filter for the standard view.
-
-        QtCore.QEvent.Show, Hide, FocusIn, FocusOut, FocusAboutToChange
-        """
-        # if not (str(event.type()).split('.')[-1]) in ['QPaintEvent', 'UpdateLater', 'PolishRequest', 'Paint']: print(str(event.type())) #debugging
-        if event.type() == QtCore.QEvent.Hide:
-            if self.parent().__class__.__name__ == "Menu":
-                self.parent().hide()
-
-        return super().eventFilter(widget, event)
-
+# -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
@@ -243,16 +207,16 @@ if __name__ == "__main__":
 
 """
 Promoting a widget in designer to use a custom class:
->   In Qt Designer, select all the widgets you want to replace, 
-        then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace,
+        then right-click them and select 'Promote to...'.
 
 >   In the dialog:
         Base Class:     Class from which you inherit. ie. QWidget
         Promoted Class: Name of the class. ie. "MyWidget"
         Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->   Then click "Add", "Promote", 
+>   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
 
-# deprecated:
+# deprecated ---------------------
