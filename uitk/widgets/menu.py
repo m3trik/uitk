@@ -27,7 +27,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
     def __init__(
         self,
         parent=None,
-        menu_type="context",
+        mode="context",
         position="cursorPos",
         min_item_height=None,
         max_item_height=None,
@@ -48,7 +48,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         """
         super().__init__(parent)
 
-        self.menu_type = menu_type
+        self.mode = mode
         self.position = position
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
@@ -508,20 +508,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         """ """
         if event.type() == QtCore.QEvent.MouseButtonPress:
             if widget is self.parent():
-                if (
-                    self.menu_type == "context"
-                    and event.button() == QtCore.Qt.RightButton
-                ):
+                if self.mode == "context" and event.button() == QtCore.Qt.RightButton:
                     self.toggle_visibility()
-                elif (
-                    self.menu_type == "popup" and event.button() == QtCore.Qt.LeftButton
-                ):
+                elif self.mode == "popup" and event.button() == QtCore.Qt.LeftButton:
                     self.toggle_visibility()
 
         if event.type() == QtCore.QEvent.Show:
             if widget is self.parent():
                 if self.contains_items:
-                    if self.menu_type == "option":
+                    if self.mode == "option":
                         # Add apply button to the central widget layout
                         if hasattr(self.parent(), "clicked"):
                             self.centralWidgetLayout.addWidget(self.apply_button)
@@ -567,14 +562,14 @@ if __name__ == "__main__":
 
 """
 Promoting a widget in designer to use a custom class:
->   In Qt Designer, select all the widgets you want to replace, 
-        then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace,
+        then right-click them and select 'Promote to...'.
 
 >   In the dialog:
         Base Class:     Class from which you inherit. ie. QWidget
         Promoted Class: Name of the class. ie. "MyWidget"
         Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->   Then click "Add", "Promote", 
+>   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """

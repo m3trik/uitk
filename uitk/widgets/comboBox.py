@@ -16,7 +16,7 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent)
         """ """
-        self.menu = Menu(self, menu_type="option")
+        self.menu = Menu(self, mode="option")
 
         self.view().installEventFilter(self)
         self.set_attributes(**kwargs)

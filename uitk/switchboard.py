@@ -350,41 +350,6 @@ class Switchboard(QUiLoader):
         self.widget_files = self._construct_widget_files_dict(widgets_path)
         self._widgets_location = widgets_path
 
-    @staticmethod
-    def _get_classes_in_directory(dir_path) -> dict:
-        """Given a directory, return a dictionary with all classes found in .py files in that directory and their respective filepaths.
-
-        Parameters:
-            dir_path (str): A directory path containing Python (.py) files.
-
-        Returns:
-            dict: A dictionary where keys are class names and values are the paths of the Python files they were found in.
-        """
-        classes_dict = {}
-
-        if not os.path.isdir(dir_path):
-            raise ValueError(f"Provided path is not a directory: {dir_path}")
-
-        for filename in os.listdir(dir_path):
-            if filename.endswith(".py"):
-                file_path = os.path.join(dir_path, filename)
-                module_name = os.path.splitext(filename)[0]
-
-                try:
-                    spec = importlib.util.spec_from_file_location(
-                        module_name, file_path
-                    )
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-                except (ImportError, SyntaxError):
-                    continue
-
-                for name, obj in inspect.getmembers(module):
-                    if inspect.isclass(obj):
-                        classes_dict[name] = file_path
-
-        return classes_dict
-
     def _construct_widget_files_dict(self, widgets_path) -> dict:
         """Build and return a dictionary of widget paths, where the keys are the widget file names and the
         values are the corresponding file paths or widget objects.
@@ -397,20 +362,19 @@ class Switchboard(QUiLoader):
         # First, add widget files from the default path
         default_path = f"{self.module_dir}/widgets"
         if os.path.isdir(default_path):
-            widget_dict.update(self._get_classes_in_directory(default_path))
+            widget_dict.update(ptk.get_classes_from_dir(default_path))
         else:
             print(f"Warning: Default widgets directory does not exist: {default_path}")
 
         # Then, add widget files from the given path
         if isinstance(widgets_path, str):
-            widget_dict.update(self._get_classes_in_directory(widgets_path))
+            widget_dict.update(ptk.get_classes_from_dir(widgets_path))
 
         elif isinstance(widgets_path, (list, tuple, set)):
             for widget in widgets_path:
                 widget_name = widget.__name__
                 widget_file = inspect.getfile(widget)
                 widget_dict[widget_name] = widget_file
-
         else:
             raise ValueError(
                 f"Invalid datatype for _construct_widget_files_dict: Expected str, list, tuple, or set, got {type(widgets_path)}"

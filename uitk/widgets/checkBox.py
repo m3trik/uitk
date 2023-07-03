@@ -23,7 +23,7 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-        self.menu = Menu(self, menu_type="option")
+        self.menu = Menu(self, mode="option")
 
         self.set_attributes(**kwargs)
 
@@ -96,9 +96,15 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
             if self.menu:
                 self.menu.show()
 
-        elif event.button() == QtCore.Qt.LeftButton:
-            self.setCheckState(not self.checkState())
-
+        if self.isTristate():
+            # The next_state dictionary defines the order in which states should be cycled.
+            next_state = {
+                QtCore.Qt.CheckState.Unchecked: QtCore.Qt.CheckState.PartiallyChecked,
+                QtCore.Qt.CheckState.PartiallyChecked: QtCore.Qt.CheckState.Checked,
+                QtCore.Qt.CheckState.Checked: QtCore.Qt.CheckState.Unchecked,
+            }
+            # Change the checkbox's state.
+            self.setCheckState(next_state[self.checkState()])
         else:
             super().mousePressEvent(event)
 

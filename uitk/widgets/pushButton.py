@@ -16,7 +16,7 @@ class PushButton(QtWidgets.QPushButton, AttributesMixin, RichText, TextOverlay):
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-        self.menu = Menu(self, menu_type="option")
+        self.menu = Menu(self, mode="option")
 
         self.set_attributes(**kwargs)
 
