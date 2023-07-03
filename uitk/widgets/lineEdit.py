@@ -1,11 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
-from uitk.widgets.mixins.menu_instance import MenuInstance
+from PySide2 import QtCore, QtWidgets
+from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class LineEdit(QtWidgets.QLineEdit, MenuInstance, AttributesMixin):
+class LineEdit(QtWidgets.QLineEdit, AttributesMixin):
     """ """
 
     shown = QtCore.Signal()
@@ -14,7 +14,8 @@ class LineEdit(QtWidgets.QLineEdit, MenuInstance, AttributesMixin):
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QLineEdit.__init__(self, parent)
 
-        # self.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
+        self.menu = Menu(self, position="cursorPos")
+
         self.set_attributes(**kwargs)
 
     def contextMenuEvent(self, event):
@@ -23,8 +24,8 @@ class LineEdit(QtWidgets.QLineEdit, MenuInstance, AttributesMixin):
         Parameters:
                 event=<QEvent>
         """
-        if self.ctx_menu.contains_items:
-            self.ctx_menu.show()
+        if self.menu.contains_items:
+            self.menu.show()
         else:
             super().contextMenuEvent(event)
 

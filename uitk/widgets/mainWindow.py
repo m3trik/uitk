@@ -167,6 +167,9 @@ class MainWindow(
         )
 
         widget.init_slot = lambda w=widget: self.init_slot(w)
+        widget.call_slot = lambda *args, w=widget, **kwargs: self.call_slot(
+            w, *args, **kwargs
+        )
 
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
         widget.refresh = True
@@ -356,13 +359,23 @@ class MainWindow(
 
     def init_slot(self, widget):
         """ """
-        # Obtain the slot init function based on widget and its name
-        slots = self.sb.get_slots(widget.ui)
+        slots = self.sb.get_slots(self)
         slot_init = getattr(slots, f"{widget.name}_init", None)
 
         if slot_init and widget.refresh:
             widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
             slot_init(widget)
+
+    def call_slot(self, widget, *args, **kwargs):
+        """ """
+        slots = self.sb.get_slots(self)
+        slot = getattr(slots, widget.name, None)
+
+        if slot:
+            if widget.refresh:
+                self.init_slot(widget)
+            wrapper = self.sb._create_slot_wrapper(slot, widget)
+            wrapper(*args, **kwargs)
 
     def eventFilter(self, widget, event):
         """Filter out specific events related to the widget."""
@@ -376,9 +389,10 @@ class MainWindow(
                 for relative in self.sb.get_ui_relatives(
                     widget.ui, exact=True, upstream=True, downstream=True
                 ):
-                    rel_widget = getattr(relative, widget.name, None)
-                    if rel_widget is not None:
-                        rel_widget.init_slot()
+                    if widget.name:
+                        rel_widget = getattr(relative, widget.name, None)
+                        if rel_widget is not None:
+                            rel_widget.init_slot()
 
                 if not widget.is_initialized:
                     self.sb.restore_widget_state(widget)
@@ -429,7 +443,7 @@ class MainWindow(
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    from uitk import Switchboard
+    from uitk import Switchboard, example
 
     class MyProject:
         ...
@@ -441,11 +455,10 @@ if __name__ == "__main__":
         def MyButtonsObjectName(self):
             print("Button clicked!")
 
-    sb = Switchboard(
-        ui_location=r"O:\Cloud\Code\_scripts\uitk\uitk\example", slots_location=MySlots
-    )
-    print(sb.ui_location)
-    print(sb.ui_files)
+    # Use the package to define the ui_location, and explicity pass the slots class.
+    sb = Switchboard(ui_location=example, slots_location=MySlots)
+    print("sb.ui_location:", sb.ui_location)
+    print("sb.ui_files:", sb.ui_files)
     mainwindow = MainWindow(sb, sb.ui_files["example"])
     print("sb.example:", mainwindow.sb.example)
     print("sb.example.widgets:", mainwindow.sb.example.widgets)
@@ -457,16 +470,14 @@ if __name__ == "__main__":
 
 """
 Promoting a widget in designer to use a custom class:
->   In Qt Designer, select all the widgets you want to replace, 
-        then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace,
+        then right-click them and select 'Promote to...'.
 
 >   In the dialog:
         Base Class:     Class from which you inherit. ie. QWidget
         Promoted Class: Name of the class. ie. "MyWidget"
         Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->   Then click "Add", "Promote", 
+>   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
-
-# deprecated ---------------------

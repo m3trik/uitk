@@ -74,13 +74,17 @@ class AttributeWindow(Menu):
         for attribute_name, attribute_value in attributes_dict.items():
             self.add_attribute(attribute_name, attribute_value)
 
+        def safe_set_attribute(obj, name, value):
+            try:
+                # use setattr if set_attribute_func is None
+                (set_attribute_func or setattr)(obj, name, value)
+            except Exception as e:
+                print(e)
+
         # Connect the valueChanged signal to a slot that sets the attribute on the object
-        if set_attribute_func is None:
-            self.valueChanged.connect(lambda name, value: setattr(obj, name, value))
-        else:
-            self.valueChanged.connect(
-                lambda name, value: set_attribute_func(obj, name, value)
-            )
+        self.valueChanged.connect(
+            lambda name, value: safe_set_attribute(obj, name, value)
+        )
 
         # Connect the labelToggled signal to a slot that handles the label toggled event
         if label_toggle_func is not None:

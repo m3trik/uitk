@@ -1,37 +1,38 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets, QtCore
-from uitk.widgets.mixins.menu_instance import MenuInstance
+from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class CheckBox(
-    QtWidgets.QCheckBox, MenuInstance, AttributesMixin, RichText, TextOverlay
-):
+class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
     """ """
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent)
 
         # Set the initial style for rich text depending on the current state.
-        self.setCheckBoxRichTextStyle(self.isChecked())
+        self.set_checkbox_rich_text_style(self.isChecked())
         # Set the style on future state changes.
-        self.stateChanged.connect(lambda state: self.setCheckBoxRichTextStyle(state))
+        self.stateChanged.connect(
+            lambda state: self.set_checkbox_rich_text_style(state)
+        )
 
         # Override built-ins
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
+        self.menu = Menu(self, menu_type="option")
 
         self.set_attributes(**kwargs)
 
-    def setCheckBoxRichTextStyle(self, state):
+    def set_checkbox_rich_text_style(self, state):
         """ """
-        if self.hasRichText:
-            self.setRichTextStyle(textColor="black" if state > 0 else "white")
+        if self.has_rich_text:
+            self.set_rich_text_style(textColor="black" if state > 0 else "white")
 
-    def checkState_(self):
+    def checkState(self):
         """Get the state of a checkbox as an integer value.
         Simplifies working with tri-state checkboxes.
         """
@@ -41,12 +42,11 @@ class CheckBox(
                 QtCore.Qt.CheckState.PartiallyChecked: 1,
                 QtCore.Qt.CheckState.Checked: 2,
             }
-            return state[self.checkState()]
-
+            return state[super().checkState()]
         else:
             return 1 if self.isChecked() else 0
 
-    def set_check_state(self, state):
+    def setCheckState(self, state):
         """Set the state of a checkbox as an integer value.
         Simplifies working with tri-state checkboxes.
 
@@ -60,8 +60,7 @@ class CheckBox(
                 1: QtCore.Qt.CheckState.PartiallyChecked,
                 2: QtCore.Qt.CheckState.Checked,
             }
-            return self.setCheckState(s[state])
-
+            return super().setCheckState(s[state])
         else:
             self.setChecked(state)
 
@@ -94,11 +93,11 @@ class CheckBox(
             Other mouse events are passed to the parent class.
         """
         if event.button() == QtCore.Qt.RightButton:
-            if self.ctx_menu:
-                self.ctx_menu.show()
+            if self.menu:
+                self.menu.show()
 
         elif event.button() == QtCore.Qt.LeftButton:
-            self.set_check_state(not self.checkState_())
+            self.setCheckState(not self.checkState())
 
         else:
             super().mousePressEvent(event)
@@ -144,5 +143,3 @@ Promoting a widget in designer to use a custom class:
 >   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
-
-# Deprecated ------------------------------------

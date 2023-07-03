@@ -1,12 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 from PySide2 import QtWidgets
-from uitk.widgets.mixins.menu_instance import MenuInstance
 from uitk.widgets.mixins.text import RichText
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
+class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
     """A subclass of QPushButton designed to represent an option box that can wrap
     around another widget and display a context menu when clicked.
 
@@ -33,9 +32,7 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
 
         self.setStyleSheet("OptionBox {border: none;}")
 
-        if not self.text():
-            self.setText("⧉")
-
+        self.setText("⧉")
         self.set_attributes(**kwargs)
 
         # Connect the clicked signal to the show_menu slot
@@ -97,15 +94,15 @@ class OptionBox(QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText):
 
     def show_menu(self):
         """Shows the option menu if it contains items."""
-        if self.option_menu.contains_items:
+        if self.menu.contains_items:
             if not self.wrapped_widget.isVisible():
                 # If the wrapped widget is not visible, show at cursor pos.
-                orig_pos = self.option_menu.position
-                self.option_menu.position = "cursorPos"
-                self.option_menu.show()
-                self.option_menu.position = orig_pos
+                orig_pos = self.menu.position
+                self.menu.position = "cursorPos"
+                self.menu.show()
+                self.menu.position = orig_pos
             else:
-                self.option_menu.show()
+                self.menu.show()
 
 
 # -----------------------------------------------------------------------------
@@ -134,7 +131,7 @@ if __name__ == "__main__":
 
     option_box.addAction(option_a)
     option_box.addAction(option_b)
-    option_box.option_menu.add([option_a, option_b])
+    option_box.menu.add([option_a, option_b])
 
     window.show()
     sys.exit(app.exec_())

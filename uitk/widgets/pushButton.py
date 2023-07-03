@@ -1,58 +1,24 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtWidgets, QtCore
-from uitk.widgets.mixins.menu_instance import MenuInstance
-from uitk.widgets.optionBox import OptionBox
+from PySide2 import QtWidgets
+from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class PushButton(
-    QtWidgets.QPushButton, MenuInstance, AttributesMixin, RichText, TextOverlay
-):
+class PushButton(QtWidgets.QPushButton, AttributesMixin, RichText, TextOverlay):
     """ """
 
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QPushButton.__init__(self, parent)
 
-        self.option_menu.position = "topRight"
-
         # override built-ins
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-
-        self.option_box = None
+        self.menu = Menu(self, menu_type="option")
 
         self.set_attributes(**kwargs)
-
-    def mousePressEvent(self, event):
-        """
-        Parameters:
-                event = <QEvent>
-        """
-        if event.button() == QtCore.Qt.RightButton:
-            if self.ctx_menu.contains_items:
-                self.ctx_menu.show()
-
-        super().mousePressEvent(event)
-
-    def createOptionBox(self):
-        """Create an option menu box"""
-        self.option_box = OptionBox()
-        self.option_box.option_menu = self.option_menu
-        self.option_box.wrap(self)
-
-    def showEvent(self, event):
-        """
-        Parameters:
-                event = <QEvent>
-        """
-        if self.option_menu.contains_items:
-            if not self.option_box:
-                self.createOptionBox()
-
-        super().showEvent(event)
 
 
 # ----------------------------------------------------------------------------
@@ -95,5 +61,3 @@ Promoting a widget in designer to use a custom class:
 >   Then click "Add", "Promote", 
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
-
-# Deprecated: --------------------
