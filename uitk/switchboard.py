@@ -277,7 +277,6 @@ class Switchboard(QUiLoader):
         elif inspect.ismodule(x):
             # Use get_filepath to get the full path to the package.
             ui_path = ptk.get_filepath(x, inc_filename=True)
-
         else:
             raise ValueError(
                 f"Invalid datatype for ui_location: Expected str or module, got {type(x)}"
@@ -291,8 +290,14 @@ class Switchboard(QUiLoader):
         """Build and return a dictionary of UI paths, where the keys are the UI file names and the values
         are the corresponding file paths.
 
+        Parameters:
+            ui_path (str): Path to the directory containing UI files.
+
+        Raises:
+            ValueError: If the input `ui_path` is not of type `str`.
+
         Returns:
-            dict: A dictionary of UI file paths with UI file names as keys.
+            dict: A dictionary mapping from UI file names to their respective paths.
         """
         if not isinstance(ui_path, str):
             raise ValueError(
@@ -351,11 +356,17 @@ class Switchboard(QUiLoader):
         self._widgets_location = widgets_path
 
     def _construct_widget_files_dict(self, widgets_path) -> dict:
-        """Build and return a dictionary of widget paths, where the keys are the widget file names and the
-        values are the corresponding file paths or widget objects.
+        """Build and return a dictionary of widget paths or widget objects, where the keys are the widget
+        file names and the values are the corresponding file paths or widget objects.
+
+        Parameters:
+            widgets_path (str/list/tuple/set): Path to the directory containing widget files or a collection of widget classes.
+
+        Raises:
+            ValueError: If the input `widgets_path` is not of type `str`, `list`, `tuple`, or `set`.
 
         Returns:
-            dict: A dictionary of widget file paths or widget objects with widget file names as keys.
+            dict: A dictionary mapping from widget file names to their respective paths or widget objects.
         """
         widget_dict = {}
 
@@ -424,11 +435,16 @@ class Switchboard(QUiLoader):
 
     def _construct_slots_files_dict(self, slots_path) -> dict:
         """Build and return a dictionary of slot class paths, where the keys are the slot class file names
-        and the values are the corresponding file paths. The method supports two types of input for
-        slots_location: a directory path (str) or a class object.
+        and the values are the corresponding file paths or class objects.
+
+        Parameters:
+            slots_path (str/class): Path to the directory containing slot class files or a slot class object.
+
+        Raises:
+            ValueError: If the input `slots_path` is not of type `str` or `class`.
 
         Returns:
-            dict: A dictionary of slot class file paths with slot class file names as keys.
+            dict: A dictionary mapping from slot class file names to their respective paths or class objects.
         """
         if isinstance(slots_path, str):
             slots_filepaths = ptk.get_dir_contents(
@@ -1704,27 +1720,20 @@ class Switchboard(QUiLoader):
             for w in widgets:
                 getattr(w, k)(state)
 
-    def connect_multi(self, widgets, signals, slots, clss=None):
+    def connect_widgets(self, ui, widgets, signals, slots):
         """Connect multiple signals to multiple slots at once.
 
         Parameters:
-            widgets (str/obj/list): ie. 'chk000-2' or [tb.menu.chk000, tb.menu.chk001]
+            ui (QWidget): A previously loaded dynamic ui object.
+            widgets (str/list): ie. 'chk000-2' or [tb.menu.chk000, tb.menu.chk001]
             signals (str/list): ie. 'toggled' or ['toggled']
             slots (obj/list): ie. self.cmb002 or [self.cmb002]
-            clss (obj/list): if the widgets arg is given as a string, then the class it belongs to can be explicitly given.
-                    else, the current ui will be used.
+
         Example:
-            connect_('chk000-2', 'toggled', self.cmb002, tb.menu)
-            connect_([tb.menu.chk000, tb.menu.chk001], 'toggled', self.cmb002)
-            connect_(tb.menu.chk015, 'toggled',
-            [lambda state: self.rigging.tb004.setText('Unlock Transforms' if state else 'Lock Transforms'),
-            lambda state: self.rigging_submenu.tb004.setText('Unlock Transforms' if state else 'Lock Transforms')])
+            connect_widgets(tb.menu, 'chk000-2', 'toggled', self.cmb002)
         """
         if isinstance(widgets, (str)):
-            try:  # get_widgets_from_str returns a widget list from a string of object_names.
-                widgets = self.get_widgets_from_str(clss, widgets)
-            except Exception:
-                widgets = self.get_widgets_from_str(self.get_current_ui(), widgets)
+            widgets = self.get_widgets_from_str(ui, widgets)
 
         # if the variables are not of a list type; convert them.
         widgets = ptk.make_iterable(widgets)
