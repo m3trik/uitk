@@ -258,13 +258,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
             **kwargs: Additional arguments to set on the added item or items.
 
         Returns:
-            widget: The added widget or list of added widgets.
+            widget/list: The added widget or list of added widgets.
         """
         if isinstance(x, dict):
             return [self.add(key, data=val, **kwargs) for key, val in x.items()]
 
         elif isinstance(x, (list, tuple, set)):
             return [self.add(item, **kwargs) for item in x]
+
+        elif isinstance(x, zip):
+            return [self.add(item, data, **kwargs) for item, data in x]
 
         elif isinstance(x, map):
             return [self.add(item, **kwargs) for item in list(x)]
@@ -284,7 +287,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
         else:
             raise TypeError(
-                f"Unsupported item type: expected str, QWidget, a subclass of QWidget, or a collection (list, tuple, set, map, dict), but got '{type(x)}'"
+                f"Unsupported item type: expected str, QWidget, a subclass of QWidget, or a collection (list, tuple, set, map, zip, dict), but got '{type(x)}'"
             )
 
         widget.item_text = lambda i=widget: self.get_item_text(i)
