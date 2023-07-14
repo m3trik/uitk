@@ -8,7 +8,7 @@ from .switchboard import signals  # Make signals accessible at package root
 
 
 __package__ = "uitk"
-__version__ = '0.8.0'
+__version__ = "0.8.1"
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 
@@ -47,9 +47,6 @@ def __getattr__(name):
 
 
 # --------------------------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------------------------
 # Notes
 # --------------------------------------------------------------------------------------------
 
@@ -61,7 +58,3 @@ def __getattr__(name):
 
 # Therefore, the classes are imported on-demand as they are requested, rather than all at once when the package is first imported.
 # This can help reduce startup time and memory usage, especially for large packages with many modules and classes.
-
-# --------------------------------------------------------------------------------------------
-# deprecated:
-# --------------------------------------------------------------------------------------------
