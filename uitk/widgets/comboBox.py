@@ -13,16 +13,19 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
     before_popup_hidden = QtCore.Signal()
     on_editing_finished = QtCore.Signal(str)
 
-    def __init__(self, parent=None, double_click_interval=100, **kwargs):
+    def __init__(
+        self, parent=None, editable=False, double_click_interval=500, **kwargs
+    ):
         super().__init__(parent)
         self.menu = Menu(self, mode="option")  # Initialize context menu
 
         # Initialize other properties for handling double click and editing
-        self.lastClickTime = QtCore.QTime.currentTime()
-        self.double_click_interval = 500
-        self.doubleClicked = False
+        self.editable = editable
         self.editingInProgress = False
         self.latestEditedText = ""
+        self.double_click_interval = double_click_interval
+        self.lastClickTime = QtCore.QTime.currentTime()
+        self.doubleClicked = False
 
         self.set_attributes(**kwargs)
 
@@ -156,7 +159,7 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
     def mousePressEvent(self, event):
         clickTime = QtCore.QTime.currentTime()
         elapsed = clickTime.msecsTo(self.lastClickTime) * -1
-        if elapsed < self.double_click_interval:
+        if self.editable and elapsed < self.double_click_interval:
             self.double_click_behavior()
             self.doubleClicked = True
         else:

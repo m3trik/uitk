@@ -20,8 +20,8 @@ rmdir /s /q "%dir%/dist"
 ECHO/
 
 :: Get and update the version number
-for /f "delims=" %%i in ('python -c "import pythontk as ptk; ver = ptk.update_version(r'%dir%/%name%/__init__.py'); print(ver)"') do set ver=%%i
-echo %name% package version number incremented to %ver%.
+python -c "import pythontk as ptk; ptk.update_version(r'%dir%/%name%/__init__.py')"
+python -c "import pythontk as ptk; ptk.update_version(r'%dir%/docs/README.md', version_regex=r'\!\[Version\]\(https://img.shields.io/badge/Version-(\d+)\.(\d+)\.(\d+)-brightgreen.svg\)')"
 
 :: upload the package wheel to pipy
 cd /d %dir%
@@ -39,7 +39,8 @@ set /p TWINE_PASSWORD=Enter your password:
 twine upload --username %TWINE_USERNAME% --password %TWINE_PASSWORD% dist/* 2> upload_errors.txt
 if %errorlevel% neq 0 (
     echo Twine upload failed. Reverting the version number.
-    python -c "import pythontk as ptk; ver = ptk.update_version(r'%dir%/%name%/__init__.py', 'decrement')"
+    python -c "import pythontk as ptk; ptk.update_version(r'%dir%/%name%/__init__.py', 'decrement')"
+    python -c "import pythontk as ptk; ptk.update_version(r'%dir%/docs/README.md', change='decrement', version_regex=r'\!\[Version\]\(https://img.shields.io/badge/Version-(\d+)\.(\d+)\.(\d+)-brightgreen.svg\)')"
 ) else (
     echo Twine upload successful.
 )

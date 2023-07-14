@@ -57,6 +57,7 @@ class MainWindow(
             <UI>.prevent_hide (bool): While True, the hide method is disabled.
             <UI>.widgets (list): All the widgets of the UI.
             <UI>.slots (obj): The slots class instance.
+            <UI>.stays_on_top (bool): Keep the window on top of other windows.
             <UI>._deferred: A dictionary of deferred methods.
         """
         super().__init__()
@@ -219,6 +220,23 @@ class MainWindow(
                     if v is not None
                     else None
                 )
+
+    @property
+    def stays_on_top(self):
+        """Returns if the window stays on top of all others."""
+        return self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint
+
+    @stays_on_top.setter
+    def stays_on_top(self, value):
+        """Sets the window to stay on top of all others.
+
+        Args:
+            value (bool): If True, the window will stay on top of all others.
+        """
+        if value:
+            self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        else:
+            self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
 
     @property
     def slots(self):
