@@ -24,7 +24,6 @@ class MainWindow(
         switchboard_instance,
         ui_filepath,
         connect_on_show=True,
-        set_name_attr=True,
         set_legal_name_attr=True,
         set_legal_name_no_tags_attr=False,
         log_level=logging.WARNING,
@@ -38,15 +37,18 @@ class MainWindow(
             switchboard_instance (QUiLoader): An instance of the switchboard class.
             ui_filepath (str): The full path to a UI file.
             connect_on_show (bool): While True, the UI will be set as current and connections established when it becomes visible.
-            set_name_attr (bool): If True, sets a switchboard attribute using the UI name. Defaults to True.
             set_legal_name_attr (bool): If True, sets a switchboard attribute using the UI legal name (provinding there are no conflicts). Defaults to True.
             set_legal_name_no_tags_attr (bool): If True, sets a switchboard attribute using the UI legal name without tags (provinding there are no conflicts). Defaults to False.
             log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
             **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
 
+        Signals:
+            on_show: Signal that is emitted before the window is shown.
+            on_hide: Signal that is emitted before the window is hidden.
+            on_child_added: Signal that is emitted when a child widget is added. Provides the added widget as a parameter.
+            on_child_changed: Signal that is emitted when a child widget changes. Provides the original and new widget as parameters.
+
         AttributesMixin:
-            on_show: A signal that is emitted before the window is shown.
-            on_hide: A signal that is emitted bofore the window is hidden.
             sb: An instance of the switchboard class.
 
         Properties:
@@ -67,7 +69,7 @@ class MainWindow(
         self._init_logger(log_level)
 
         self.sb = switchboard_instance
-        self.name = self._set_name(ui_filepath, set_name_attr)
+        self.name = self._set_name(ui_filepath, True)
         self.legal_name = self._set_legal_name(self.name, set_legal_name_attr)
         self.legal_name_no_tags = self._set_legal_name_no_tags(
             self.name, set_legal_name_no_tags_attr
@@ -450,9 +452,9 @@ class MainWindow(
         """Reimplement showEvent to emit custom signal when window is shown."""
         self.activateWindow()
         self.setWindowFlags(self.windowFlags())
-        self.is_initialized = True
         self.on_show.emit()
         super().showEvent(event)
+        self.is_initialized = True
 
     def hideEvent(self, event):
         """Reimplement hideEvent to emit custom signal when window is hidden."""
