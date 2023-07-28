@@ -59,26 +59,7 @@ sb = Switchboard(ui_location="example", slots_location=MyProjectSlots)
 ui = sb.example
 ui.set_style(theme="dark")
 
-print("ui:".ljust(20), type(ui))
-print("ui name:".ljust(20), ui.name)
-print("ui path:".ljust(20), ui.path)  # The directory path containing the UI file
-print("is current ui:".ljust(20), ui.is_current)
-print("is connected:".ljust(20), ui.is_connected)
-print("is initialized:".ljust(20), ui.is_initialized)
-print("slots:".ljust(20), ui.slots)  # The associated slots class instance
-print("method:".ljust(20), ui.MyButtonsObjectName.get_slot())
-print(
-    "widget from method:".ljust(20),
-    sb.get_widget_from_method(ui.MyButtonsObjectName.get_slot()),
-)
-for w in ui.widgets:  # All the widgets of the UI
-    print(
-        "child widget:".ljust(20),
-        (w.name or type(w).__name__).ljust(20),
-        w.base_name.ljust(20),
-        id(w),
-    )
-
+print(repr(ui))
 ui.show(app_exec=True)
 ```
 ## Advanced Example:

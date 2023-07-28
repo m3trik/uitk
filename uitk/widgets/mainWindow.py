@@ -15,6 +15,7 @@ class MainWindow(
     StyleSheet,
 ):
     on_show = QtCore.Signal()
+    on_hide = QtCore.Signal()
     on_child_added = QtCore.Signal(object)
     on_child_changed = QtCore.Signal(object, object)
 
@@ -44,7 +45,8 @@ class MainWindow(
             **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
 
         AttributesMixin:
-            on_show: A signal that is emitted when the window is shown.
+            on_show: A signal that is emitted before the window is shown.
+            on_hide: A signal that is emitted bofore the window is hidden.
             sb: An instance of the switchboard class.
 
         Properties:
@@ -138,8 +140,12 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
+    def __repr__(self):
+        """Return the type, filename, and path"""
+        return f"<MainWindow " f"name={self.name}, " f"path={self.path}>"
+
     def __str__(self):
-        """Return the UI filename"""
+        """Return the filename"""
         return self.name
 
     def init_child(self, widget, **kwargs):
@@ -376,7 +382,7 @@ class MainWindow(
             self._deferred[priority] = (method,)
 
     def init_slot(self, widget):
-        """ """
+        """Only calls the slot init if widget.refresh is True. widget.refresh defaults to True on first call."""
         slots = self.sb.get_slots(self)
         slot_init = getattr(slots, f"{widget.name}_init", None)
 
@@ -418,30 +424,18 @@ class MainWindow(
 
         return super().eventFilter(widget, event)
 
-    def setVisible(self, state):
-        """Called every time the widget is shown or hidden on screen.
-        If the widget is set to be prevented from hiding, it will not be hidden when state is False.
-
-        Parameters:
-            state (bool): Whether the widget is being shown or hidden.
-        """
-        if state:  # visible
-            self.activateWindow()
-            self.setWindowFlags(self.windowFlags())
-            self.on_show.emit()
-            self.is_initialized = True
-            super().setVisible(True)
-
-        elif not self.prevent_hide:  # invisible
-            super().setVisible(False)
+    def setVisible(self, visible):
+        """Reimplement setVisible to prevent window from being hidden when prevent_hide is True."""
+        if self.prevent_hide and not visible:
+            return
+        super().setVisible(visible)
 
     def show(self, app_exec=False):
         """Show the MainWindow.
 
         Parameters:
             app_exec (bool, optional): Execute the given PySide2 application, display its window, wait for user input,
-                and then terminate the program with a status code returned from the application.
-                Defaults to False.
+                    and then terminate the program with a status code returned from the application. Defaults to False.
         Raises:
             SystemExit: Raised if the exit code returned from the PySide2 application is not -1.
         """
@@ -452,8 +446,21 @@ class MainWindow(
             if exit_code != -1:
                 sys.exit(exit_code)
 
+    def showEvent(self, event):
+        """Reimplement showEvent to emit custom signal when window is shown."""
+        self.activateWindow()
+        self.setWindowFlags(self.windowFlags())
+        self.is_initialized = True
+        self.on_show.emit()
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        """Reimplement hideEvent to emit custom signal when window is hidden."""
+        self.on_hide.emit()
+        super().hideEvent(event)
+
     def closeEvent(self, event):
-        """ """
+        """Reimplement closeEvent to prevent window from being hidden when prevent_hide is True."""
         self.settings.sync()
         super().closeEvent(event)
 

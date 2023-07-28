@@ -668,21 +668,20 @@ class Switchboard(QUiLoader):
 
         if isinstance(clss, str):
             module_path = clss  # Save the path for future reference
+            clss = self._import_slots(clss)
         else:  # Derive path from class object
             module_path = ptk.get_filepath(clss, inc_filename=True)
 
         if module_path not in self._slot_instances:
-            if isinstance(clss, str):
-                clss = self._import_slots(clss)
-
+            # Set slot class attributes
             clss.switchboard = lambda *args: self
-
+            # Create the class instance and save it
             self._slot_instances[module_path] = clss()
 
         ui._slots = self._slot_instances[module_path]
+        # Set switchboard attributes
         setattr(self, ui._slots.__class__.__name__, ui._slots)
 
-        # ui.init_widgets(ui.findChildren(QtWidgets.QWidget))
         return ui._slots
 
     def get_slots(self, ui):
@@ -942,12 +941,12 @@ class Switchboard(QUiLoader):
         Returns:
             (object/list): Slot method(s) based on index or slice.
         """
-        # keep original list length restricted to last 200 elements
+        # Keep original list length restricted to last 200 elements
         self._slot_history = self._slot_history[-200:]
-        # append new entries to the history
+        # Append new entries to the history
         if add:
             self._slot_history.extend(ptk.make_iterable(add))
-        # remove entries from the history
+        # Remove entries from the history
         if remove:
             remove_items = ptk.make_iterable(remove)
             for item in remove_items:
@@ -955,21 +954,21 @@ class Switchboard(QUiLoader):
                     self._slot_history.remove(item)
                 except ValueError:
                     print(f"Item {item} not found in history.")
-        # remove any previous duplicates if they exist; keeping the last added element.
+        # Remove any previous duplicates if they exist; keeping the last added element.
         if not allow_duplicates:
             self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
 
-        filtered_objs = ptk.filter_list(self._slot_history, inc, exc)
-
-        filtered = ptk.filter_mapped_values(
-            filtered_objs, ptk.filter_list, lambda m: m.__name__, inc, exc
-        )
+        history = self._slot_history
+        if inc or exc:
+            history = ptk.filter_list(
+                history, inc, exc, lambda m: m.__name__, check_unmapped=True
+            )
 
         if index is None:
-            return filtered  # return entire list if index is None
+            return history  # Return entire list if index is None
         else:
             try:
-                return filtered[index]  # return slot(s) based on the index
+                return history[index]  # Return slot(s) based on the index
             except IndexError:
                 return [] if isinstance(index, int) else None
 
@@ -979,14 +978,13 @@ class Switchboard(QUiLoader):
         Parameters:
             index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
             allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
-            inc (str/int/list): The objects(s) to include.
-                        supports using the '*' operator: startswith*, *endswith, *contains*
-                        Will include all items that satisfy ANY of the given search terms.
-                        meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
-                        strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str/int/list): The objects(s) to exclude. Similar to include.
-                        exclude take precedence over include.
-
+            inc (str/list): The objects(s) to include.
+                    supports using the '*' operator: startswith*, *endswith, *contains*
+                    Will include all items that satisfy ANY of the given search terms.
+                    meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
+                    strings containing 'Normal'. NOT strings satisfying both terms.
+            exc (str/list): The objects(s) to exclude. Similar to include.
+                    exclude take precedence over include.
         Returns:
             (str/list): String of a single UI name or list of UI names based on the index or slice.
 
@@ -995,21 +993,21 @@ class Switchboard(QUiLoader):
             ui_history(-2) -> 'previousName1'
             ui_history(slice(-3, None)) -> ['previousName2', 'previousName1', 'currentName']
         """
-        # keep original list length restricted to last 200 elements
+        # Keep original list length restricted to last 200 elements
         self._ui_history = self._ui_history[-200:]
-        # remove any previous duplicates if they exist; keeping the last added element.
+        # Remove any previous duplicates if they exist; keeping the last added element.
         if not allow_duplicates:
             self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
 
-        filtered = ptk.filter_mapped_values(
-            self._ui_history, ptk.filter_list, lambda u: u.name, inc, exc
-        )
+        history = self._ui_history
+        if inc or exc:
+            history = ptk.filter_list(history, inc, exc, lambda u: u.name)
 
         if index is None:
-            return filtered  # return entire list if index is None
+            return history  # Return entire list if index is None
         else:
             try:
-                return filtered[index]  # return UI(s) based on the index
+                return history[index]  # Return UI(s) based on the index
             except IndexError:
                 return [] if isinstance(index, int) else None
 
@@ -1215,6 +1213,8 @@ class Switchboard(QUiLoader):
                     slot(**kwargs)
                 else:
                     slot()
+
+            self.slot_history(add=slot)  # update slot history after calling the slot
 
         return slot_wrapper
 
@@ -1517,11 +1517,11 @@ class Switchboard(QUiLoader):
         return widgets
 
     @staticmethod
-    def get_center(widget):
-        """Get the center point of a given widget.
+    def get_cursor_offset_from_center(widget):
+        """Get the relative position of the cursor with respect to the center of a given widget.
 
         Parameters:
-            widget (QWidget): The widget to get the center point of.
+            widget (QWidget): The widget to query.
 
         Returns:
             (obj) QPoint
@@ -1529,49 +1529,61 @@ class Switchboard(QUiLoader):
         return QtGui.QCursor.pos() - widget.rect().center()
 
     @staticmethod
-    def resize_and_center_widget(widget, padding_x=25, padding_y=0):
-        """Adjust the given widget's size to fit contents and re-center.
-
-        Parameters:
-            widget (QWidget): The widget to resize and center.
-            padding_x (int): Any additional width to be applied.
-            padding_y (int): Any additional height to be applied.
-        """
-        p1 = widget.rect().center()
-
-        x = widget.minimumSizeHint().width() if padding_x else widget.width()
-        y = widget.minimumSizeHint().height() if padding_y else widget.height()
-
-        widget.resize(x + padding_x, y + padding_y)
-
-        p2 = widget.rect().center()
-        diff = p1 - p2
-        widget.move(widget.pos() + diff)
-
-    @staticmethod
-    def move_and_center_widget(widget, pos, offset_x=2, offset_y=2):
-        """Move and center the given widget on the given point.
+    def center_widget(
+        widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None
+    ):
+        """Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor, or at the widget's current position if no point is given.
 
         Parameters:
             widget (QWidget): The widget to move and resize.
-            pos (QPoint): A point to move to.
-            offset_x (int): The desired offset on the x axis. 2 is center.
-            offset_y (int): The desired offset on the y axis.
+            pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
+            offset_x (int, optional): The desired offset percentage on the x axis. Defaults to 0.
+            offset_y (int, optional): The desired offset percentage on the y axis. Defaults to 0.
+            padding_x (int, optional): Additional width from the widget's minimum size. If not specified, the widget's current width is used.
+            padding_y (int, optional): Additional height from the widget's minimum size. If not specified, the widget's current height is used.
         """
-        width = pos.x() - (widget.width() / offset_x)
-        height = pos.y() - (widget.height() / offset_y)
+        # Resize the widget if padding values are provided
+        if padding_x is not None or padding_y is not None:
+            p1 = widget.rect().center()
+            x = (
+                widget.minimumSizeHint().width()
+                if padding_x is not None
+                else widget.width()
+            )
+            y = (
+                widget.minimumSizeHint().height()
+                if padding_y is not None
+                else widget.height()
+            )
+            widget.resize(
+                x + (padding_x if padding_x is not None else 0),
+                y + (padding_y if padding_y is not None else 0),
+            )
+            p2 = widget.rect().center()
+            diff = p1 - p2
+            widget.move(widget.pos() + diff)
 
-        widget.move(
-            QtCore.QPoint(width, height)
-        )  # center a given widget at a given position.
+        # Determine the center point based on the provided pos value
+        if pos == "screen":
+            rect = QtWidgets.QApplication.desktop().availableGeometry(widget)
+            centerPoint = rect.center()
+        elif pos == "cursor":
+            centerPoint = QtGui.QCursor.pos()
+        elif pos is None:
+            centerPoint = widget.frameGeometry().center()
+        elif isinstance(pos, QtCore.QPoint):
+            centerPoint = pos
+        else:
+            raise ValueError(
+                "Invalid value for pos. It should be either 'screen', 'cursor', a QPoint instance or None."
+            )
 
-    @staticmethod
-    def center_widget_on_screen(widget):
-        """ """
-        centerPoint = QtGui.QScreen.availableGeometry(
-            QtWidgets.QApplication.primaryScreen()
-        ).center()
-        widget.move(centerPoint - widget.frameGeometry().center())
+        # Compute the offset
+        offset = QtCore.QPoint(
+            widget.width() * offset_x / 100, widget.height() * offset_y / 100
+        )
+        # Center the widget considering the offset
+        widget.move(centerPoint - widget.rect().center() + offset)
 
     def unpack_names(name_string):
         """Unpacks a comma-separated string of names and returns a list of individual names.
@@ -1696,15 +1708,15 @@ class Switchboard(QUiLoader):
         # Return a single group if only one was created, otherwise return the tuple of groups
         return ptk.format_return(button_groups)
 
-    def toggle_widgets(self, ui, **kwargs):
-        """Set multiple boolean properties, for multiple widgets, on multiple ui's at once.
+    def toggle_multi(self, ui, **kwargs):
+        """Set multiple boolean properties, for multiple widgets at once.
 
         Parameters:
             ui (QWidget): A previously loaded dynamic ui object.
             *kwargs: The property to modify. ex. setChecked, setUnChecked, setEnabled, setDisabled, setVisible, setHidden
                         value: string of object_names - object_names separated by ',' ie. 'b000-12,b022'
         Example:
-            toggle_widgets(ui, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
+            toggle_multi(ui, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
         """
         for k in kwargs:  # property_ ie. setUnChecked
             # get_widgets_from_str returns a widget list from a string of object_names.
@@ -1720,7 +1732,7 @@ class Switchboard(QUiLoader):
             for w in widgets:
                 getattr(w, k)(state)
 
-    def connect_widgets(self, ui, widgets, signals, slots):
+    def connect_multi(self, ui, widgets, signals, slots):
         """Connect multiple signals to multiple slots at once.
 
         Parameters:
@@ -1730,7 +1742,7 @@ class Switchboard(QUiLoader):
             slots (obj/list): ie. self.cmb002 or [self.cmb002]
 
         Example:
-            connect_widgets(tb.menu, 'chk000-2', 'toggled', self.cmb002)
+            connect_multi(tb.menu, 'chk000-2', 'toggled', self.cmb002)
         """
         if isinstance(widgets, (str)):
             widgets = self.get_widgets_from_str(ui, widgets)
@@ -1741,10 +1753,16 @@ class Switchboard(QUiLoader):
         slots = ptk.make_iterable(slots)
 
         for widget in widgets:
-            for signal in signals:
-                signal = getattr(widget, signal)
+            for signal_name in signals:
+                signal = getattr(widget, signal_name)
                 for slot in slots:
-                    signal.connect(slot)
+                    try:
+                        signal.connect(slot)
+                    except TypeError as e:
+                        self.logger.error(
+                            f"Failed to connect signal {signal_name} to slot {slot}: {e}"
+                        )
+                        raise
 
     def set_axis_for_checkboxes(self, checkboxes, axis, ui=None):
         """Set the given checkbox's check states to reflect the specified axis.
@@ -1891,26 +1909,7 @@ if __name__ == "__main__":
     ui = sb.example
     ui.set_style(theme="dark")
 
-    print("ui:".ljust(20), type(ui))
-    print("ui name:".ljust(20), ui.name)
-    print("ui path:".ljust(20), ui.path)  # The directory path containing the UI file
-    print("is current ui:".ljust(20), ui.is_current)
-    print("is connected:".ljust(20), ui.is_connected)
-    print("is initialized:".ljust(20), ui.is_initialized)
-    print("slots:".ljust(20), ui.slots)  # The associated slots class instance
-    print("method:".ljust(20), ui.MyButtonsObjectName.get_slot())
-    print(
-        "widget from method:".ljust(20),
-        sb.get_widget_from_method(ui.MyButtonsObjectName.get_slot()),
-    )
-    for w in ui.widgets:  # All the widgets of the UI
-        print(
-            "child widget:".ljust(20),
-            (w.name or type(w).__name__).ljust(20),
-            w.base_name.ljust(20),
-            id(w),
-        )
-
+    print(repr(ui))
     ui.show(app_exec=True)
 
 logging.info(__name__)  # module name

@@ -19,7 +19,6 @@ class DraggableHeader(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     Parent Class Requirements:
         The parent widget must have a `prevent_hide` attribute. This attribute is used to determine whether the widget can be hidden or not.
-
     """
 
     headerPinned = QtCore.Signal()
@@ -34,7 +33,7 @@ class DraggableHeader(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         super().__init__(parent)
 
         self.checkable = True
-        self.checked = False
+        self.checked = True
         self.dragged = False
         self.__mousePressPos = None
 
@@ -63,7 +62,9 @@ class DraggableHeader(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self.window().prevent_hide = True
 
     def unpin_header(self):
-        """Slot to handle the header being unpinned. Sets the `prevent_hide` attribute of the parent widget to False and hides the parent widget if the header is not checked."""
+        """Slot to handle the header being unpinned. Sets the `prevent_hide` attribute of
+        the parent widget to False and hides the parent widget if the header is not checked.
+        """
         self.window().prevent_hide = False
         if not self.isChecked():
             self.window().hide()
@@ -104,7 +105,8 @@ class DraggableHeader(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        """Handle the mouse move event. If the mouse is moved more than 5 pixels from the position where the left button was pressed, emit the `headerPinned` signal and move the parent widget.
+        """Handle the mouse move event. If the mouse is moved more than 5 pixels from the position
+        where the left button was pressed, emit the `headerPinned` signal and move the parent widget.
 
         Parameters:
             event (QMouseEvent): The mouse event.
@@ -120,7 +122,11 @@ class DraggableHeader(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        """Handle the mouse release event. If the mouse is released less than or equal to 5 pixels from the position wherethe left button was pressed and the header was not dragged, toggle the checked state of the header, emit the `headerUnpinned` signal, and hide the parent widget if the header is not checked. If the header was dragged, set the checked state to True and reset the dragged state.
+        """Handle the mouse release event. If the mouse is released less than or equal to 5 pixels
+        from the position wherethe left button was pressed and the header was not dragged, toggle
+        the checked state of the header, emit the `headerUnpinned` signal, and hide the parent
+        widget if the header is not checked. If the header was dragged, set the checked state to
+        True and reset the dragged state.
 
         Parameters:
             event (QMouseEvent): The mouse event.
@@ -176,6 +182,3 @@ Promoting a widget in designer to use a custom class:
 >   Then click "Add", "Promote", 
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
-
-
-# Deprecated: --------------------
