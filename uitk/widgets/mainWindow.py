@@ -61,7 +61,6 @@ class MainWindow(
             <UI>.prevent_hide (bool): While True, the hide method is disabled.
             <UI>.widgets (list): All the widgets of the UI.
             <UI>.slots (obj): The slots class instance.
-            <UI>.stays_on_top (bool): Keep the window on top of other windows.
             <UI>._deferred: A dictionary of deferred methods.
         """
         super().__init__()
@@ -230,23 +229,6 @@ class MainWindow(
                 )
 
     @property
-    def stays_on_top(self):
-        """Returns if the window stays on top of all others."""
-        return self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint
-
-    @stays_on_top.setter
-    def stays_on_top(self, value):
-        """Sets the window to stay on top of all others.
-
-        Args:
-            value (bool): If True, the window will stay on top of all others.
-        """
-        if value:
-            self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
-        else:
-            self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
-
-    @property
     def slots(self):
         """Returns a list of the slots connected to the widget's signals.
 
@@ -328,6 +310,20 @@ class MainWindow(
                 else:
                     setattr(self.sb, legal_name_no_tags, self)
         return legal_name_no_tags
+
+    def set_flags(self, **flags):
+        """Sets or unsets any given window flag(s).
+
+        Parameters:
+            **flags: Keyword arguments where the flag is the key and the value indicates whether to set or unset the flag.
+        """
+        for flag, add in flags.items():
+            if hasattr(QtCore.Qt, flag):
+                flag_value = getattr(QtCore.Qt, flag)
+                if add:
+                    self.setWindowFlags(self.windowFlags() | flag_value)
+                else:
+                    self.setWindowFlags(self.windowFlags() & ~flag_value)
 
     @staticmethod
     def _parse_tags(name):
@@ -432,16 +428,19 @@ class MainWindow(
             return
         super().setVisible(visible)
 
-    def show(self, app_exec=False):
+    def show(self, pos=None, app_exec=False):
         """Show the MainWindow.
 
         Parameters:
+            pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
             app_exec (bool, optional): Execute the given PySide2 application, display its window, wait for user input,
                     and then terminate the program with a status code returned from the application. Defaults to False.
         Raises:
             SystemExit: Raised if the exit code returned from the PySide2 application is not -1.
         """
         super().show()
+        self.sb.center_widget(self, pos)
+
         self.trigger_deferred()
         if app_exec:
             exit_code = self.sb.app.exec_()

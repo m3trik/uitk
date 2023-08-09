@@ -13,10 +13,10 @@ class AttributesMixin:
         attribute is also assigned if also_set_original is True.
 
         Parameters:
-                obj (object): The object to which the attribute will be assigned
-                name (str): The original name to be assigned
-                value (): The value to be assigned to the attribute
-                also_set_original (bool): Whether to keep the original attribute if an alternative legal name is created
+            obj (object): The object to which the attribute will be assigned
+            name (str): The original name to be assigned
+            value (): The value to be assigned to the attribute
+            also_set_original (bool): Whether to keep the original attribute if an alternative legal name is created
         """
         import re
 
@@ -30,50 +30,56 @@ class AttributesMixin:
         else:
             setattr(obj, name, value)
 
-    def set_attributes(self, obj=None, **kwargs):
-        """Works with attributes passed in as a dict or kwargs.
-        If attributes are passed in as a dict, kwargs are ignored.
+    def set_attributes(self, *objects, **attributes):
+        """Works with attributes passed in as kwargs.
+        If objects are passed in, attributes are set for each object in turn.
 
         Parameters:
-                obj (obj): the child obj or widgetAction to set attributes for. (default=self)
-                **kwargs = The keyword arguments to set.
+            *objects: the child objects or widgetActions to set attributes for. If none are provided, defaults to self.
+            **attributes: The keyword arguments to set as attributes.
         """
-        if not kwargs:  # if no attributes given.
+        if not attributes:  # if no attributes given.
             return
 
-        if not obj:
-            obj = self
+        if not objects:
+            objects = (self,)
 
-        for attr, value in kwargs.items():
-            try:
-                getattr(obj, attr)(value)
-
-            except AttributeError:
-                # print ('set_attributes:', attr, value)
-                self.set_custom_attribute(obj, attr, value)
+        for obj in objects:
+            for attr, value in attributes.items():
+                try:
+                    # Check if the attribute is a window attribute
+                    attr_value = getattr(QtCore.Qt, attr)
+                    obj.setAttribute(attr_value, value)
+                except AttributeError:
+                    try:
+                        # Attempt to call the attribute as a method
+                        getattr(obj, attr)(value)
+                    except AttributeError:
+                        # Pass attribute to set_custom_attribute if it does not exist
+                        self.set_custom_attribute(obj, attr, value)
 
     def set_custom_attribute(self, w, attr, value):
         """AttributesMixin that throw an AttributeError in 'set_attributes' are sent here, where they can be assigned a value.
         Custom attributes can be set using a trailing underscore convention to aid readability, and differentiate them from standard attributes.
 
         Parameters:
-                w (obj): The child widget or widgetAction to set attributes for.
-                attr (str): Custom keyword attribute.
-                value (str): The value corresponding to the given attr.
+            w (obj): The child widget or widgetAction to set attributes for.
+            attr (str): Custom keyword attribute.
+            value (str): The value corresponding to the given attr.
 
         attributes:
-                transfer_properties (obj): The widget to copy attributes from.
-                set_size (list): The size as an x and y value. ie. (40, 80)
-                set_width (int): The desired width.
-                set_height (int): The desired height.
-                set_position (QPoint)(str): Move to the given global position and center. valid: <QPoint>, 'cursor',
-                add_menu (QMenu) = Used for adding additional menus to a parent menu. ex. parentMenu = Menu(); childMenu = Menu('Create', add_menu=parentMenu)
-                insert_separator (bool): Insert a line separater before the new widget.
-                set_layout_direction (str): Set the layout direction using a string value. ie. 'LeftToRight'
-                set_alignment (str): Set the alignment using a string value. ie. 'AlignVCenter'
-                set_button_symbols (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
-                set_limits (tuple): Set the min, max, step, and decimal value using a string value. ex. (0.01, 10, 1, 2)
-                setCheckState (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
+            transfer_properties (obj): The widget to copy attributes from.
+            set_size (list): The size as an x and y value. ie. (40, 80)
+            set_width (int): The desired width.
+            set_height (int): The desired height.
+            set_position (QPoint)(str): Move to the given global position and center. valid: <QPoint>, 'cursor',
+            add_menu (QMenu) = Used for adding additional menus to a parent menu. ex. parentMenu = Menu(); childMenu = Menu('Create', add_menu=parentMenu)
+            insert_separator (bool): Insert a line separater before the new widget.
+            set_layout_direction (str): Set the layout direction using a string value. ie. 'LeftToRight'
+            set_alignment (str): Set the alignment using a string value. ie. 'AlignVCenter'
+            set_button_symbols (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
+            set_limits (tuple): Set the min, max, step, and decimal value using a string value. ex. (0.01, 10, 1, 2)
+            setCheckState (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
         """
         if attr == "transfer_properties":
             self.transfer_properties(value, w)
@@ -141,13 +147,13 @@ class AttributesMixin:
 
         Parameters:
             spinbox (object): An instance of a spinbox widget. It is assumed that this object supports the setting of minimum, maximum, step,
-                    and decimal precision.
+                and decimal precision.
             value (list): A list that can contain up to four values, interpreted in the following order:
-                    1. Lower bound (minimum) - This is cast to a float value. If not provided, a default of 0.0 is used.
-                    2. Upper bound (maximum) - This is cast to a float value. If not provided, a default of 9999999.0 is used.
-                    3. Step - The increment/decrement step of the spinbox. If not provided, a default of 1 is used.
-                    4. Decimals - The decimal precision (number of digits after the decimal point). If not provided, the function
-                       calculates this value based on the number of decimal places in the minimum or maximum values.
+                1. Lower bound (minimum) - This is cast to a float value. If not provided, a default of 0.0 is used.
+                2. Upper bound (maximum) - This is cast to a float value. If not provided, a default of 9999999.0 is used.
+                3. Step - The increment/decrement step of the spinbox. If not provided, a default of 1 is used.
+                4. Decimals - The decimal precision (number of digits after the decimal point). If not provided, the function
+                   calculates this value based on the number of decimal places in the minimum or maximum values.
         """
         if not isinstance(value, list):
             raise TypeError(
@@ -185,8 +191,8 @@ class AttributesMixin:
         """Set a spinbox's attributes according to a given value.
 
         Parameters:
-                spinbox (obj): spinbox widget.
-                value (multi) = attribute value.
+            spinbox (obj): spinbox widget.
+            value (multi) = attribute value.
         """
         maximum = spinbox.maximum()
         minimum = -maximum
@@ -230,8 +236,8 @@ class AttributesMixin:
         For each property, it gets the corresponding value from the source widget and sets it on the target widget.
 
         Parameters:
-                source (QWidget): The widget to copy properties from.
-                target (QWidget): The widget to copy properties to.
+            source (QWidget): The widget to copy properties from.
+            target (QWidget): The widget to copy properties to.
         """
         source_meta_obj = source.metaObject()
 
@@ -277,5 +283,3 @@ Promoting a widget in designer to use a custom class:
 >   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
-
-# depricated ---------------------------
