@@ -52,13 +52,96 @@ from collections import namedtuple
 from typing import List
 
 
+class NamedTupleContainer:
+    def __init__(self, named_tuples, fields):
+        self.named_tuples = named_tuples
+        self.fields = fields
+        self._tuple_class = namedtuple("TupleClass", fields)
+
+    def __iter__(self):
+        return iter(self.named_tuples)
+
+    def __repr__(self):
+        return repr(self.named_tuples)
+
+    def __getattr__(self, name):
+        if name in self.fields:
+            return [getattr(nt, name) for nt in self.named_tuples]
+        elif name in ["modify", "add", "remove"]:
+            return getattr(self, name)
+        else:
+            raise AttributeError(
+                f"'NamedTupleContainer' object has no attribute '{name}'"
+            )
+
+    def get(self, return_field=None, **conditions):
+        """Query the named tuples based on specified conditions.
+
+        Parameters:
+            return_field (str, optional): The name of the field to return. If None, returns the entire named tuple.
+            **conditions: Key-value pairs representing the query conditions, where keys are field names and values are the values to match.
+
+        Returns:
+            A list of matching named tuples or specified field values.
+            If conditions and return_field are specified, returns the first matching value or None if not found.
+        """
+        results = []
+        for named_tuple in self.named_tuples:
+            if all(
+                getattr(named_tuple, field) == value
+                for field, value in conditions.items()
+            ):
+                result = (
+                    getattr(named_tuple, return_field) if return_field else named_tuple
+                )
+                # If conditions and return_field are specified, return the first match
+                if conditions and return_field:
+                    return result
+                results.append(result)
+        return results
+
+    def modify(self, index, **kwargs):
+        """Modify a named tuple at a specific index within the container.
+
+        Parameters:
+            index (int): The index of the named tuple within the container to modify.
+            kwargs: Key-value pairs representing the fields to update and their new values.
+
+        Returns:
+            NamedTuple: The updated named tuple.
+        """
+        named_tuple = self.named_tuples[index]
+        new_tuple = named_tuple._replace(**kwargs)
+        self.named_tuples[index] = new_tuple
+        return new_tuple
+
+    def add(self, **kwargs):
+        """Add a new named tuple to the container.
+
+        Parameters:
+            kwargs: Key-value pairs representing the fields and their values for the new named tuple.
+
+        Returns:
+            NamedTuple: The newly added named tuple.
+        """
+        new_tuple = self._tuple_class(**kwargs)
+        self.named_tuples.append(new_tuple)
+        return new_tuple
+
+    def remove(self, index):
+        """Remove a named tuple at a specific index within the container.
+
+        Parameters:
+            index (int): The index of the named tuple within the container to remove.
+        """
+        self.named_tuples.pop(index)
+
+
 class FileManager:
     def __init__(self, caller_dir=None):
         self.stack = inspect.stack()
         self.caller_dir = caller_dir or self.get_dir_from_stack(2)
         self.module_dir = self.get_dir_from_stack(0)
-        print("caller_dir:", self.caller_dir)
-        print("module_dir:", self.module_dir)
 
         # Initialize the internal dictionaries
         self._files = {}
@@ -74,7 +157,26 @@ class FileManager:
         filename = frame.f_code.co_filename
         return os.path.abspath(os.path.dirname(filename))
 
-    def create_tuple(
+    def _get_path_from_obj(self, obj, base_dir=None):
+        """Converts obj to a string representing its file or directory path."""
+
+        if isinstance(base_dir, int):
+            base_dir = self.get_dir_from_stack(base_dir)
+        else:
+            base_dir = base_dir or self.caller_dir
+
+        if inspect.ismodule(obj) or inspect.isclass(obj):
+            return inspect.getfile(obj)
+        elif isinstance(obj, str):
+            if not os.path.isabs(obj):
+                return os.path.join(base_dir, obj)
+            return obj
+        else:
+            raise ValueError(
+                f"Invalid datatype for object: Expected str, module, or class, got {type(obj)}"
+            )
+
+    def create(
         self,
         descriptor,
         objects=None,
@@ -98,36 +200,15 @@ class FileManager:
             )
             all_files.extend(file_info)
 
-        # Define the named tuple class based on the structure
         TupleClass = namedtuple(descriptor.capitalize(), structure.split("|"))
+        named_tuples = [TupleClass(*info) for info in all_files]
 
-        # Convert the files into named tuples
-        self._files[descriptor] = [TupleClass(*info) for info in all_files]
+        # Wrap the named tuples in a custom container that allows access to all values of a specific field
+        container = NamedTupleContainer(named_tuples, structure.split("|"))
 
-        # Convert objs to their corresponding file or directory paths
-        paths = [self._get_path_from_obj(obj, base_dir) for obj in objs]
-        self._locations[descriptor] = [os.path.abspath(path) for path in paths]
-
-        return self._files[descriptor]
-
-    def _get_path_from_obj(self, obj, base_dir=None):
-        """Converts obj to a string representing its file or directory path."""
-
-        if isinstance(base_dir, int):
-            base_dir = self.get_dir_from_stack(base_dir)
-        else:
-            base_dir = base_dir or self.caller_dir
-
-        if inspect.ismodule(obj) or inspect.isclass(obj):
-            return inspect.getfile(obj)
-        elif isinstance(obj, str):
-            if not os.path.isabs(obj):
-                return os.path.join(base_dir, obj)
-            return obj
-        else:
-            raise ValueError(
-                f"Invalid datatype for object: Expected str, module, or class, got {type(obj)}"
-            )
+        # Store the container as an attribute on the FileManager instance using dot notation
+        setattr(self, descriptor, container)
+        return container
 
     def _handle_single_obj(
         self,
@@ -175,7 +256,7 @@ class FileManager:
             all_files = [dir_path]
 
         returned_type = structure
-        if any(item in structure for item in ["classname", "class", "module"]):
+        if any(item in structure for item in ["classname", "classobj", "module"]):
             file_info = ptk.get_classes_from_path(
                 dir_path,
                 returned_type,
@@ -186,15 +267,13 @@ class FileManager:
         else:
             file_info = ptk.get_file_info(all_files, returned_type, force_tuples=True)
 
+        # Check if the class object is None and replace it with the given class object
+        if class_name and "classobj" in structure:
+            for i, info in enumerate(file_info):
+                if info[0] == class_name and info[1] is None:
+                    file_info[i] = (class_name, obj) + info[2:]
+
         return file_info
-
-    def get_dict(self, descriptor):
-        """Returns the dictionary of the given descriptor."""
-        return self._files.get(descriptor, {})
-
-    def get_dicts(self):
-        """Returns all dictionaries."""
-        return self._files
 
 
 class Switchboard(QUiLoader):
@@ -215,7 +294,7 @@ class Switchboard(QUiLoader):
         parent (obj): A QtObject derived class.
         ui_location (str/obj): Set the directory of the dynamic UI, or give the dynamic UI objects.
         widgets_location (str/obj): Set the directory of any custom widgets, or give the widget objects.
-        slots_location (str/obj): Set the directory of where the slot classes will be imported, or give the slot class itself.
+        slot_location (str/obj): Set the directory of where the slot classes will be imported, or give the slot class itself.
         ui_name_delimiters (tuple, optional): A tuple of two delimiter strings, where the first delimiter is used to split the hierarchy and the second delimiter is used to split hierarchy levels. Defaults to (".", "#").
         preload_ui (bool): Load all UI immediately. Otherwise UI will be loaded as required.
         set_legal_name_no_tags_attr (bool): If True, sets the legal name without tags attribute for the object (provinding there are no conflicts). Defaults to False.
@@ -254,7 +333,7 @@ class Switchboard(QUiLoader):
                 def __init__(self, parent=None, **kwargs):
                     super().__init__(parent)
                     self.ui_location = 'path/to/your/dynamic ui file(s)' #specify the location of your ui.
-                    self.slots_location = MyProject_slots #give the slots directory or the class itself.
+                    self.slot_location = MyProject_slots #give the slots directory or the class itself.
 
         2. Instantiate the subclass and show the UI.
             sb = MyProject_sb()
@@ -297,7 +376,7 @@ class Switchboard(QUiLoader):
         parent=None,
         ui_location="ui",
         widgets_location="widgets",
-        slots_location="slots",
+        slot_location="slots",
         preload_ui=False,
         ui_name_delimiters=[".", "#"],
         set_legal_name_no_tags_attr=False,
@@ -310,31 +389,27 @@ class Switchboard(QUiLoader):
 
         self.ui_location = ui_location
         self.widgets_location = widgets_location
-        self.slots_location = slots_location
+        self.slot_location = slot_location
 
         self.file_manager = FileManager()
-        self.ui_files = self.file_manager.create_tuple(
+        self.file_manager.create(
             "ui_files",
             self.ui_location,
             inc_files="*.ui",
         )
-        self.widget_files = self.file_manager.create_tuple(
+        self.file_manager.create(
             "widget_files",
             self.widgets_location,
-            structure="classname",
+            structure="classname|classobj|module|filename|filepath",
             inc_files="*.py",
             base_dir=0,
         )
-        self.slots_files = self.file_manager.create_tuple(
-            "slots_files",
-            self.slots_location,
-            structure="classname|filepath",
+        self.file_manager.create(
+            "slot_files",
+            self.slot_location,
+            structure="classname|classobj|module|filename|filepath",
             inc_files="*.py",
         )
-
-        print("\nui_files:", self.ui_files)
-        print("\nwidget_files:", self.widget_files)
-        print("\nslots_files:", self.slots_files)
 
         self.ui_name_delimiters = ui_name_delimiters
         self.set_legal_name_no_tags_attr = set_legal_name_no_tags_attr
@@ -371,23 +446,22 @@ class Switchboard(QUiLoader):
             (obj) UI or widget.
         """
         # Check if the attribute matches a UI file
-        if ptk.has_attribute(self, "ui_files"):
-            actual_ui_name = self.convert_from_legal_name(attr_name, unique_match=True)
-            found_ui = self.ui_files.get(actual_ui_name, None)
-            if found_ui:
-                ui = self.load_ui(found_ui)
+        actual_ui_name = self.convert_from_legal_name(attr_name, unique_match=True)
+        if actual_ui_name:
+            ui_filepath = self.file_manager.ui_files.get(
+                filename=actual_ui_name, return_field="filepath"
+            )
+            if ui_filepath:
+                ui = self.load_ui(ui_filepath)
                 return ui
 
         # Check if the attribute matches a widget file
-        if ptk.has_attribute(self, "widget_files"):
-            widget_file_path = self.widget_files.get(attr_name, None)
-            if widget_file_path:
-                widget_class = self.import_class_from_module(
-                    widget_file_path, attr_name
-                )
-                if widget_class:
-                    widget = self.register_widget(widget_class)
-                    return widget
+        widget_class = self.file_manager.widget_files.get(
+            classname=attr_name, return_field="classobj"
+        )
+        if widget_class:
+            widget = self.register_widget(widget_class)
+            return widget
 
         raise AttributeError(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
@@ -409,25 +483,6 @@ class Switchboard(QUiLoader):
         calling_file = frame.f_code.co_filename
         default_dir = os.path.abspath(os.path.dirname(calling_file))
         return default_dir
-
-    @staticmethod
-    def import_class_from_module(module_path, class_name):
-        """Import a class from a given module.
-
-        Parameters:
-            module_path (str): The path to the module.
-            class_name (str): The name of the class to import.
-
-        Returns:
-            The requested class, or None if the class cannot be found.
-        """
-        spec = importlib.util.spec_from_file_location(
-            os.path.basename(module_path), module_path
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        return getattr(module, class_name, None)
 
     @property
     def ui(self) -> QtWidgets.QWidget:
@@ -509,7 +564,7 @@ class Switchboard(QUiLoader):
     def convert_from_legal_name(
         self, legal_name: str, unique_match: bool = False
     ) -> Union[str, List[str], None]:
-        """Convert the given legal name to its original name(s) by searching the `ui_files` dictionary.
+        """Convert the given legal name to its original name(s) by searching the UI files.
 
         Parameters:
             legal_name (str): The legal name to convert back to the original name.
@@ -520,7 +575,12 @@ class Switchboard(QUiLoader):
         """
         # Replace underscores with a regex pattern to match any non-alphanumeric character
         pattern = re.sub(r"_", r"[^0-9a-zA-Z]", legal_name)
-        matches = [name for name in self.ui_files.keys() if re.fullmatch(pattern, name)]
+
+        # Retrieve all filenames from the ui_files container
+        filenames = self.file_manager.ui_files.get("filename")
+
+        # Find matches using the regex pattern
+        matches = [name for name in filenames if re.fullmatch(pattern, name)]
 
         if unique_match:
             return None if len(matches) != 1 else matches[0]
@@ -599,7 +659,7 @@ class Switchboard(QUiLoader):
             setattr(self, widget.__name__, widget)
             return widget
 
-    def set_slots(self, ui, clss):
+    def set_slot_class(self, ui, clss):
         """This method sets the slot class instance for a loaded dynamic UI object. It takes a UI and
         a class and sets the instance as the slots for the given UI. Finally, it
         initializes the widgets and returns the slot class instance.
@@ -618,24 +678,30 @@ class Switchboard(QUiLoader):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
 
         if isinstance(clss, str):
-            module_path = clss  # Save the path for future reference
-            clss = self._import_slots(clss)
-        else:  # Derive path from class object
-            module_path = ptk.get_object_path(clss, inc_filename=True)
+            clss = self._import_slot_class(clss)
 
-        if module_path not in self._slot_instances:
+        class_name = clss.__name__
+        ui._slots = None
+
+        # Check if class_name already exists in self._slot_instances
+        if class_name not in self._slot_instances:
             # Set slot class attributes
             clss.switchboard = lambda *args: self
             # Create the class instance and save it
-            self._slot_instances[module_path] = clss()
+            instance = clss()
+            self._slot_instances[class_name] = instance
+        else:
+            instance = self._slot_instances[class_name]
 
-        ui._slots = self._slot_instances[module_path]
+        # Assign the instance to ui._slots
+        ui._slots = instance
+
         # Set switchboard attributes
         setattr(self, ui._slots.__class__.__name__, ui._slots)
 
         return ui._slots
 
-    def get_slots(self, ui):
+    def get_slot_class(self, ui):
         """This function tries to get a class instance of the slots module from a dynamic UI object.
         If it doesn't exist, it tries to import it from a specified location or from the parent menu.
         If it's found, it's set and returned, otherwise None is returned.
@@ -652,37 +718,36 @@ class Switchboard(QUiLoader):
         if hasattr(ui, "_slots"):
             return ui._slots
 
-        if inspect.isclass(self.slots_location):
-            clss = self.slots_location
-            return self.set_slots(ui, clss)
+        if inspect.isclass(self.slot_location):
+            clss = self.slot_location
+            return self.set_slot_class(ui, clss)
 
         try:
-            found_path = self._find_slots_class_module(ui)
+            found_class = self._find_slot_class(ui)
         except ValueError:
             self.logger.info(traceback.format_exc())
-            found_path = None
+            found_class = None
 
-        if not found_path:
+        if not found_class:
             for relative_name in self.get_ui_relatives(ui, upstream=True, reverse=True):
                 relative_ui = self.get_ui(relative_name)
                 if relative_ui:
                     try:
-                        found_path = self._find_slots_class_module(relative_ui)
+                        found_class = self._find_slot_class(relative_ui)
                         break
                     except ValueError:
                         self.logger.info(traceback.format_exc())
-        # print("get_slots:", ui.name, found_path)
-        if found_path:
-            slots_instance = self.set_slots(ui, found_path)
+        if found_class:
+            slots_instance = self.set_slot_class(ui, found_class)
             return slots_instance
         else:
             ui._slots = None
             return None
 
-    def _find_slots_class_module(self, ui):
-        """Find the path of the slot class associated with the given UI.
-        ie. get the path for <Polygons> class using UI name 'polygons'
-        searches possible vaid names in the slots_directory in the following order:
+    def _find_slot_class(self, ui):
+        """Find the slot class associated with the given UI.
+        ie. get the class for <Polygons> using UI name 'polygons'
+        searches possible valid names in the slots_directory in the following order:
             <legal_name>_<suffix>
             <legal_name_notags>_<suffix>
             <legal_name>
@@ -692,12 +757,12 @@ class Switchboard(QUiLoader):
             ui (QWidget): A previously loaded dynamic UI object.
 
         Returns:
-            str: The path to the slot class file.
+            object: The slot class.
 
         Raises:
             ValueError: If more than one matching slot class is found for the given UI.
         """
-        slots_dir = ptk.format_path(self.slots_location, "dir")
+        slots_dir = ptk.format_path(self.slot_location, "dir")
         suffix = slots_dir if isinstance(slots_dir, str) else ""
 
         legal_name_camel = ptk.set_case(ui.legal_name, case="camel")
@@ -710,22 +775,24 @@ class Switchboard(QUiLoader):
             legal_name_notags_camel,
         ]
 
-        found_paths = set()
+        found_classes = set()
         for name in try_names:
-            found_path = self.slots_files.get(name, None)
-            if found_path:
-                found_paths.add(found_path)
+            found_class = self.file_manager.slot_files.get(
+                filename=name, return_field="classobj"
+            )
+            if found_class:
+                found_classes.add(found_class)
 
-        if len(found_paths) == 1:
-            return found_paths.pop()
-        elif not found_paths:
+        if len(found_classes) == 1:
+            return found_classes.pop()
+        elif not found_classes:
             return None
         else:
             raise ValueError(
-                f"Multiple matching slot classes found for '{ui.name}'.\n\t{found_paths}"
+                f"Multiple matching slot classes found for '{ui.name}'.\n\t{found_classes}"
             )
 
-    def _import_slots(self, found_path):
+    def _import_slot_class(self, found_path):
         """Import the slot class from the given path.
 
         Parameters:
@@ -755,23 +822,24 @@ class Switchboard(QUiLoader):
         return clss
 
     def load_all_ui(self) -> list:
-        """Extends the 'load_ui' method to load all ui from a given path.
+        """Extends the 'load_ui' method to load all UI from a given path.
 
         Returns:
             (list) QWidget(s).
         """
-        return [self.load_ui(f) for f in self.ui_files.values()]
+        filepaths = self.file_manager.ui_files.get("filepath")
+        return [self.load_ui(f) for f in filepaths]
 
     def load_ui(self, file) -> QtWidgets.QWidget:
-        """Loads a ui from the given path to the ui file.
+        """Loads a UI from the given path to the UI file.
 
         Parameters:
-            file (str): The full file path to the ui file.
+            file (str): The full file path to the UI file.
 
         Returns:
             (obj) QWidget.
         """
-        # Get any custom widgets from the ui file.
+        # Get any custom widgets from the UI file.
         lst = self.get_property_from_ui_file(file, "customwidget")
         for sublist in lst:
             try:  # Get 'MyCustomWidget' from ('class', 'MyCustomWidget')
@@ -779,14 +847,11 @@ class Switchboard(QUiLoader):
             except IndexError:
                 continue
 
-            if (
-                class_name in self.widget_files
-                and class_name not in self._registered_widgets
-            ):
-                widget_file_path = self.widget_files[class_name]
-                widget_class = self.import_class_from_module(
-                    widget_file_path, class_name
-                )
+            widget_class_info = self.file_manager.widget_files.get(
+                classname=class_name, return_field="classobj"
+            )
+            if widget_class_info and class_name not in self._registered_widgets:
+                widget_class = widget_class_info
                 self.register_widget(widget_class)
 
         ui = self.MainWindow(
@@ -814,18 +879,18 @@ class Switchboard(QUiLoader):
         if isinstance(ui, (list, set, tuple)):
             return [self.get_ui(u) for u in ui]
 
+        elif isinstance(ui, QtWidgets.QWidget):
+            return ui
+
         elif isinstance(ui, str):
             return getattr(self, ui, None)
 
-        if isinstance(ui, QtWidgets.QWidget):
-            return ui
-
-        elif not ui:
+        elif ui is None:
             return self.ui
 
         else:
             raise ValueError(
-                f"Invalid datatype for ui: Expected QWidget, got {type(ui)}"
+                f"Invalid datatype for ui: Expected str or QWidget, got {type(ui)}"
             )
 
     def get_current_ui(self) -> QtWidgets.QWidget:
@@ -978,9 +1043,12 @@ class Switchboard(QUiLoader):
             list: A list of UI relative names (if ui is given as a string) or UI relative objects (if ui is given as an object) found based on the hierarchy matching.
         """
         ui_name = str(ui)
+        ui_filenames = self.file_manager.ui_files.get(
+            "filename"
+        )  # Get the filenames from the named tuple
 
         relatives = ptk.get_matching_hierarchy_items(
-            self.ui_files.keys(),
+            ui_filenames,
             ui_name,
             upstream,
             exact,
@@ -988,7 +1056,7 @@ class Switchboard(QUiLoader):
             reverse,
             self.ui_name_delimiters,
         )
-        # return strings if ui given as a string, else ui objects.
+        # Return strings if ui given as a string, else UI objects.
         return relatives if ui_name == ui else self.get_ui(relatives)
 
     def get_widget(self, name, ui=None):
@@ -1855,7 +1923,7 @@ if __name__ == "__main__":
             self.sb.message_box("Button Pressed")
 
     sb = Switchboard(
-        ui_location="example", widgets_location="widgets", slots_location=MyProjectSlots
+        ui_location="example", widgets_location="widgets", slot_location=MyProjectSlots
     )
     ui = sb.example
     ui.set_style(theme="dark")

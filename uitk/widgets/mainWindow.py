@@ -171,7 +171,7 @@ class MainWindow(
         widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
 
         widget.get_slot = lambda w=widget: getattr(
-            self.sb.get_slots(w.ui), w.name, None
+            self.sb.get_slot_class(w.ui), w.name, None
         )
 
         widget.init_slot = lambda w=widget: self.init_slot(w)
@@ -235,7 +235,7 @@ class MainWindow(
         Returns:
             list: A list of the slots connected to the widget's signals.
         """
-        return self.sb.get_slots(self)
+        return self.sb.get_slot_class(self)
 
     @property
     def is_stacked_widget(self):
@@ -280,7 +280,7 @@ class MainWindow(
 
         if set_attr:
             if legal_name and name != legal_name:
-                if legal_name in self.sb.ui_files:
+                if self.sb.file_manager.ui_files.get(filename=legal_name):
                     self.logger.warning(
                         f"Legal name '{legal_name}' already exists. Attribute not set."
                     )
@@ -303,7 +303,7 @@ class MainWindow(
 
         if set_attr:
             if legal_name_no_tags and name != legal_name_no_tags:
-                if legal_name_no_tags in self.sb.ui_files:
+                if self.sb.file_manager.ui_files.get(filename=legal_name_no_tags):
                     self.logger.warning(
                         f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
                     )
@@ -381,7 +381,7 @@ class MainWindow(
 
     def init_slot(self, widget):
         """Only calls the slot init if widget.refresh is True. widget.refresh defaults to True on first call."""
-        slots = self.sb.get_slots(self)
+        slots = self.sb.get_slot_class(self)
         slot_init = getattr(slots, f"{widget.name}_init", None)
 
         if slot_init and widget.refresh:
@@ -390,7 +390,7 @@ class MainWindow(
 
     def call_slot(self, widget, *args, **kwargs):
         """ """
-        slots = self.sb.get_slots(self)
+        slots = self.sb.get_slot_class(self)
         slot = getattr(slots, widget.name, None)
 
         if slot:
@@ -481,14 +481,25 @@ if __name__ == "__main__":
         def MyButtonsObjectName(self):
             print("Button clicked!")
 
-    # Use the package to define the ui_location, and explicity pass the slots class.
-    sb = Switchboard(ui_location=example, slots_location=MySlots)
+    # Use the package to define the ui_location, and explicitly pass the slots class.
+    sb = Switchboard(ui_location=example, slot_location=MySlots)
     print("sb.ui_location:", sb.ui_location)
-    print("sb.ui_files:", sb.ui_files)
-    mainwindow = MainWindow(sb, sb.ui_files["example"])
+
+    # Retrieve the 'filename' field from the 'ui_files' named tuple
+    ui_filenames = sb.file_manager.ui_files.get("filename")
+    print("sb.ui_files:", ui_filenames)
+
+    # Retrieve the 'filepath' field for the specific filename 'example'
+    example_filepath = sb.file_manager.ui_files.get(
+        filename="example", return_field="filepath"
+    )
+    mainwindow = MainWindow(sb, example_filepath)
+
+    # Access the loaded UI object using the 'example' attribute
     print("sb.example:", mainwindow.sb.example)
     print("sb.example.widgets:", mainwindow.sb.example.widgets)
     mainwindow.show(app_exec=True)
+
 
 # -----------------------------------------------------------------------------
 # Notes

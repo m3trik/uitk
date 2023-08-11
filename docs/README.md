@@ -55,7 +55,7 @@ class MyProjectSlots(MyProject):
         self.sb.message_box("Button Pressed")
 
 
-sb = Switchboard(ui_location="example", slots_location=MyProjectSlots)
+sb = Switchboard(ui_location="example", slot_location=MyProjectSlots)
 ui = sb.example
 ui.set_style(theme="dark")
 
