@@ -23,9 +23,6 @@ class MainWindow(
         self,
         switchboard_instance,
         ui_filepath,
-        connect_on_show=True,
-        set_legal_name_attr=True,
-        set_legal_name_no_tags_attr=False,
         log_level=logging.WARNING,
         **kwargs,
     ):
@@ -36,9 +33,6 @@ class MainWindow(
         Parameters:
             switchboard_instance (QUiLoader): An instance of the switchboard class.
             ui_filepath (str): The full path to a UI file.
-            connect_on_show (bool): While True, the UI will be set as current and connections established when it becomes visible.
-            set_legal_name_attr (bool): If True, sets a switchboard attribute using the UI legal name (provinding there are no conflicts). Defaults to True.
-            set_legal_name_no_tags_attr (bool): If True, sets a switchboard attribute using the UI legal name without tags (provinding there are no conflicts). Defaults to False.
             log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
             **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
 
@@ -57,7 +51,6 @@ class MainWindow(
             <UI>.is_current (bool): True if the UI is set as current.
             <UI>.is_initialized (bool): True after the UI is first shown.
             <UI>.is_connected (bool): True if the UI is connected to its slots.
-            <UI>.connect_on_show: Establish connections immediately before the UI becomes visible.
             <UI>.prevent_hide (bool): While True, the hide method is disabled.
             <UI>.widgets (list): All the widgets of the UI.
             <UI>.slots (obj): The slots class instance.
@@ -69,16 +62,13 @@ class MainWindow(
 
         self.sb = switchboard_instance
         self.name = self._set_name(ui_filepath, True)
-        self.legal_name = self._set_legal_name(self.name, set_legal_name_attr)
-        self.legal_name_no_tags = self._set_legal_name_no_tags(
-            self.name, set_legal_name_no_tags_attr
-        )
+        self.legal_name = self._set_legal_name(self.name, True)
+        self.legal_name_no_tags = self._set_legal_name_no_tags(self.name, True)
         self.path = ptk.format_path(ui_filepath, "path")
         self.tags = self._parse_tags(self.name)
         self.is_initialized = False
         self.is_connected = False
         self.prevent_hide = False
-        self.connect_on_show = connect_on_show
         self.widgets = set()
         self._deferred = {}
 
@@ -88,23 +78,14 @@ class MainWindow(
         ui = self.sb.load(ui_filepath)
         self.setCentralWidget(ui.centralWidget())
         self.transfer_properties(ui, self)
-
-        flags = QtCore.Qt.CustomizeWindowHint
-        flags &= ~QtCore.Qt.WindowTitleHint
-        flags &= ~QtCore.Qt.WindowSystemMenuHint
-        flags &= ~QtCore.Qt.WindowMinMaxButtonsHint
-        flags |= ui.windowFlags()
-        self.setWindowFlags(flags)
+        self.setWindowFlags(ui.windowFlags())
 
         self.settings = QtCore.QSettings("uitk", self.name)
 
         self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
-        self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
-        self.set_attributes(**kwargs)
+        self.set_attributes(WA_NoChildEventsForParent=True, **kwargs)
+        self.setFocusPolicy(QtCore.Qt.ClickFocus)
 
-        self.on_show.connect(
-            lambda: self.connect_slots() if self.connect_on_show else None
-        )
         self.on_child_changed.connect(self.sb.sync_widget_values)
 
     def _init_logger(self, log_level):
@@ -280,7 +261,7 @@ class MainWindow(
 
         if set_attr:
             if legal_name and name != legal_name:
-                if self.sb.file_manager.ui_files.get(filename=legal_name):
+                if self.sb.registry.ui_registry.get(filename=legal_name):
                     self.logger.warning(
                         f"Legal name '{legal_name}' already exists. Attribute not set."
                     )
@@ -303,7 +284,7 @@ class MainWindow(
 
         if set_attr:
             if legal_name_no_tags and name != legal_name_no_tags:
-                if self.sb.file_manager.ui_files.get(filename=legal_name_no_tags):
+                if self.sb.registry.ui_registry.get(filename=legal_name_no_tags):
                     self.logger.warning(
                         f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
                     )
@@ -317,13 +298,17 @@ class MainWindow(
         Parameters:
             **flags: Keyword arguments where the flag is the key and the value indicates whether to set or unset the flag.
         """
+        current_flags = self.windowFlags()
+
         for flag, add in flags.items():
             if hasattr(QtCore.Qt, flag):
                 flag_value = getattr(QtCore.Qt, flag)
                 if add:
-                    self.setWindowFlags(self.windowFlags() | flag_value)
+                    current_flags |= flag_value
                 else:
-                    self.setWindowFlags(self.windowFlags() & ~flag_value)
+                    current_flags &= ~flag_value
+
+        self.setWindowFlags(current_flags)
 
     @staticmethod
     def _parse_tags(name):
@@ -349,10 +334,6 @@ class MainWindow(
         """
         tags_to_check = tag_str.split("|")
         return any(tag in self.tags for tag in tags_to_check)
-
-    def connect_slots(self):
-        """Connects the widget's signals to their respective slots."""
-        self.sb.connect_slots(self)
 
     def trigger_deferred(self):
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
@@ -440,8 +421,8 @@ class MainWindow(
         """
         super().show()
         self.sb.center_widget(self, pos)
-
         self.trigger_deferred()
+
         if app_exec:
             exit_code = self.sb.app.exec_()
             if exit_code != -1:
@@ -449,27 +430,36 @@ class MainWindow(
 
     def showEvent(self, event):
         """Reimplement showEvent to emit custom signal when window is shown."""
+        self.sb.connect_slots(self)
         self.activateWindow()
-        self.setWindowFlags(self.windowFlags())
         self.on_show.emit()
+
         super().showEvent(event)
         self.is_initialized = True
+
+    def focusInEvent(self, event):
+        """Override the focus event to set the current UI when this window gains focus."""
+        self.sb.set_current_ui(self)
+
+        super().focusInEvent(event)
 
     def hideEvent(self, event):
         """Reimplement hideEvent to emit custom signal when window is hidden."""
         self.on_hide.emit()
+
         super().hideEvent(event)
 
     def closeEvent(self, event):
         """Reimplement closeEvent to prevent window from being hidden when prevent_hide is True."""
         self.settings.sync()
+
         super().closeEvent(event)
 
 
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    from uitk import Switchboard, example
+    from uitk import Switchboard
 
     class MyProject:
         ...
@@ -481,24 +471,12 @@ if __name__ == "__main__":
         def MyButtonsObjectName(self):
             print("Button clicked!")
 
-    # Use the package to define the ui_location, and explicitly pass the slots class.
-    sb = Switchboard(ui_location=example, slot_location=MySlots)
-    print("sb.ui_location:", sb.ui_location)
-
-    # Retrieve the 'filename' field from the 'ui_files' named tuple
-    ui_filenames = sb.file_manager.ui_files.get("filename")
-    print("sb.ui_files:", ui_filenames)
-
-    # Retrieve the 'filepath' field for the specific filename 'example'
-    example_filepath = sb.file_manager.ui_files.get(
-        filename="example", return_field="filepath"
+    # Use the package to define the ui_location and slot_location.
+    sb = Switchboard(
+        ui_location="../example",
+        slot_location=MySlots,
     )
-    mainwindow = MainWindow(sb, example_filepath)
-
-    # Access the loaded UI object using the 'example' attribute
-    print("sb.example:", mainwindow.sb.example)
-    print("sb.example.widgets:", mainwindow.sb.example.widgets)
-    mainwindow.show(app_exec=True)
+    sb.example.show(app_exec=True)
 
 
 # -----------------------------------------------------------------------------

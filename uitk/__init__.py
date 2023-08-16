@@ -4,7 +4,7 @@ import os
 import importlib
 import pkgutil
 import inspect
-from .switchboard import signals  # Make signals accessible at package root
+from uitk.switchboard import signals  # Make signals accessible at package root
 
 
 __package__ = "uitk"
