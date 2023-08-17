@@ -155,7 +155,7 @@ class MainWindow(
             self.sb.get_slot_class(w.ui), w.name, None
         )
 
-        widget.init_slot = lambda w=widget: self.init_slot(w)
+        widget.init_slot = lambda *args, w=widget: self.init_slot(w)
         widget.call_slot = lambda *args, w=widget, **kwargs: self.call_slot(
             w, *args, **kwargs
         )
@@ -362,6 +362,12 @@ class MainWindow(
 
     def init_slot(self, widget):
         """Only calls the slot init if widget.refresh is True. widget.refresh defaults to True on first call."""
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.warning(
+                f"Expected a widget object, but received {type(widget)}"
+            )
+            return
+
         slots = self.sb.get_slot_class(self)
         slot_init = getattr(slots, f"{widget.name}_init", None)
 
@@ -371,6 +377,12 @@ class MainWindow(
 
     def call_slot(self, widget, *args, **kwargs):
         """ """
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.warning(
+                f"Expected a widget object, but received {type(widget)}"
+            )
+            return
+
         slots = self.sb.get_slot_class(self)
         slot = getattr(slots, widget.name, None)
 
@@ -394,7 +406,7 @@ class MainWindow(
                 ):
                     if widget.name:
                         rel_widget = getattr(relative, widget.name, None)
-                        if rel_widget is not None:
+                        if isinstance(rel_widget, QtWidgets.QWidget):
                             rel_widget.init_slot()
 
                 if not widget.is_initialized:

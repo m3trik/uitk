@@ -6,7 +6,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 
 class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     """ex. for n, i in enumerate(lst):
-    if not self.sb.ui.progressBar.step(n, len(lst)): #register progress while checking for cancellation:
+    if not <ui>.progressBar.step(n, len(lst)): #register progress while checking for cancellation:
             break
     """
 

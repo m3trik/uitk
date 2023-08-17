@@ -12,32 +12,28 @@ class NamedTupleContainer:
         self,
         file_manager,
         named_tuples,
-        fields,
         location,
         metadata=None,
         log_level=logging.WARNING,
     ):
         """Creates a container for named tuples, providing dynamic attribute access and query capabilities.
 
-        This container wraps a list of named tuples, allowing access to all values of a specific field,
-        and providing methods to query, modify, add, or remove named tuples.
-
         Parameters:
             file_manager (FileManager): Reference to the FileManager object that created this container.
             named_tuples (list): A list of named tuples.
-            fields (list): A list of field names for the named tuples.
-            metadata (dict, optional): Metadata related to the container, such as structure, include/exclude files, etc.
+            location: The location information.
+            metadata (dict, optional): Metadata related to the container, including field names (as 'fields').
             log_level (int, optional): Logging level. Defaults to logging.WARNING.
         """
         self._init_logger(log_level)
 
         self.file_manager = file_manager
         self.named_tuples = named_tuples
-        self.fields = fields
         self.location = location
         self.metadata = metadata or {}
+        self.fields = ptk.make_iterable(self.metadata.get("fields", []))
 
-        self._tuple_class = namedtuple("TupleClass", fields)
+        self._tuple_class = namedtuple("TupleClass", self.fields)
 
     def __iter__(self):
         """Allows iteration over the named tuples in the container.
@@ -263,14 +259,12 @@ class FileManager:
     def create(self, descriptor, objects=None, **metadata):
         """Creates a named tuple container for the specified files.
 
-        This method gathers file information based on the provided objects and structure, and wraps
-        the data in a NamedTupleContainer instance.
-
         Parameters:
             descriptor (str): Descriptor for the named tuples.
             objects (str/module/class/list, optional): Objects representing files or directories.
             **metadata: Additional keyword arguments used to construct the container.
-             - structure (str, optional): Structure of the named tuple, e.g. "filename|filepath". Defaults to "filename|filepath".
+             - structure (str/list, optional): Structure of the named tuple. Defaults to ["filename", "filepath"]
+             - fields (str/list, optional): A list of field names or a single string representing a field name for the named tuples.
              - inc_files (list, optional): List of included files.
              - exc_files (list, optional): List of excluded files.
              - inc_dirs (list, optional): List of included directories.
@@ -280,34 +274,33 @@ class FileManager:
         Returns:
             NamedTupleContainer: Container holding the named tuples for the file information.
         """
-        # Retrieve the structure from metadata or use the default value
-        structure = metadata.get("structure", "filename|filepath")
+        structure = ptk.make_iterable(
+            metadata.get("structure", ["filename", "filepath"])
+        )
+        metadata["fields"] = structure  # Include the structure as fields in metadata
+        named_tuples = []
 
-        all_files = []
-        for obj in ptk.make_iterable(objects):
-            file_info = self._handle_single_obj(obj, **metadata)
-            all_files.extend(file_info)
+        if objects is not None:
+            all_files = []
+            for obj in ptk.make_iterable(objects):
+                file_info = self._handle_single_obj(obj, **metadata)
+                all_files.extend(file_info)
 
-        TupleClass = namedtuple(descriptor.capitalize(), structure.split("|"))
-        named_tuples = [TupleClass(*info) for info in all_files]
+            TupleClass = namedtuple(descriptor.capitalize(), structure)
+            named_tuples = [TupleClass(*info) for info in all_files]
 
-        # Wrap the named tuples in a custom container that allows access to all values of a specific field
         container = NamedTupleContainer(
             self,
             named_tuples,
-            structure.split("|"),
             self.caller_dir,
             metadata=metadata,
         )
 
-        # Append the container to the list
         self.containers.append(container)
-
-        # Store the container as an attribute on the FileManager instance using dot notation
         setattr(self, descriptor, container)
         return container
 
-    def _handle_single_obj(self, obj=None, **metadata):
+    def _handle_single_obj(self, obj, **metadata):
         """Handles a single object and returns its corresponding file information.
 
         This internal method is used by the create method to handle individual objects
@@ -321,7 +314,7 @@ class FileManager:
             list: List of tuples containing the file information based on the structure.
         """
         # Retrieve the structure from metadata or use the default value
-        structure = metadata.get("structure", "filename|filepath")
+        structure = metadata.get("structure", ["filename", "filepath"])
 
         def resolve_path(target_obj):
             if isinstance(target_obj, int):
@@ -337,7 +330,7 @@ class FileManager:
             return ptk.get_object_path(target_obj, inc_filename=True)
 
         base_dir = resolve_path(metadata.get("base_dir", self.caller_dir))
-        dir_path = resolve_path(obj or "")
+        dir_path = resolve_path(obj)
 
         if dir_path in self.processing_stack:
             raise RecursionError(

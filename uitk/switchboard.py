@@ -71,7 +71,7 @@ class Switchboard(QUiLoader):
 
     Properties:
         sb: The instance of this class holding all properties.
-        sb.ui: Returns the current UI.
+        sb.current_ui: Returns the current UI.
         sb.<uiFileName>: Accesses the UI loaded from uiFileName.
         sb.<customWidgetClassName>: Accesses the custom widget with the specified class name.
         sb.<slotsClassName>: Accesses the slots class of the specified class name.
@@ -88,29 +88,31 @@ class Switchboard(QUiLoader):
         default_dir: The default directory is the calling module's directory. If any of the given file paths are not
                                         a full path, they will be treated as relative to the currently set path.
     Example:
-        1. Create a subclass of Switchboard to load your project ui and connect slots for the UI events.
+        1. Create a subclass of Switchboard to load your project UI and connect slots for the UI events.
             class MyProject():
                 ...
 
             class MyProjectSlots(MyProject):
                 def __init__(self):
                     self.sb = self.switchboard() # Slot classes are given the `switchboard` function when they are initialized.
-                    print (self.sb.ui) # Access the current ui. if a single ui is loaded that will automatically be assigned as current, else you must set a ui as current using: self.sb.ui = self.sb.get_ui(<ui_name>)
+                    self.ui = self.sb.my_project # Access your UI using it filename.
+                    print (self.ui)
 
             class MyProjectUi:
                 def __new__(cls, *args, **kwargs):
                     sb = Switchboard(
                         *args,
-                        ui_location="my_project.ui",
+                        ui_location="my_project.ui", # Use a relative path from your project location.
                         slot_location=MyProjectSlots,
                         **kwargs
                     )
 
-                    sb.ui.set_attributes(WA_TranslucentBackground=True)
-                    sb.ui.set_flags(Tool=True, FramelessWindowHint=True, WindowStaysOnTopHint=True)
-                    sb.ui.set_style(theme="dark", style_class="translucentBgWithBorder")
+                    ui = sb.my_project # Access the UI using it's file name.
+                    ui.set_attributes(WA_TranslucentBackground=True)
+                    ui.set_flags(Tool=True, FramelessWindowHint=True, WindowStaysOnTopHint=True)
+                    ui.set_style(theme="dark", style_class="translucentBgWithBorder")
 
-                    return sb.ui
+                    return ui
 
         2. Instantiate the subclass and show the UI.
             ui = MyProjectUi(<parent>)
@@ -170,13 +172,13 @@ class Switchboard(QUiLoader):
         self.registry.create(
             "slot_registry",
             slot_location,
-            structure="classname|classobj|filename|filepath",
+            structure=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
         )
         self.registry.create(
             "widget_registry",
             widget_location,
-            structure="classname|classobj|filename|filepath",
+            structure=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
         )
         self.registry.widget_registry.extend("widgets", base_dir=0)
@@ -237,16 +239,16 @@ class Switchboard(QUiLoader):
         )
 
     @property
-    def ui(self) -> QtWidgets.QWidget:
-        """Get the current ui.
+    def current_ui(self) -> QtWidgets.QWidget:
+        """Get the current UI.
 
         Returns:
-            (obj) ui
+            (obj) UI
         """
         return self.get_current_ui()
 
-    @ui.setter
-    def ui(self, ui) -> None:
+    @current_ui.setter
+    def current_ui(self, ui) -> None:
         """Register the uiName in history as current and set slot connections.
 
         Parameters:
@@ -259,7 +261,7 @@ class Switchboard(QUiLoader):
 
     @property
     def prev_ui(self) -> QtWidgets.QWidget:
-        """Get the previous ui from history.
+        """Get the previous UI from history.
 
         Returns:
             (obj)
@@ -425,13 +427,13 @@ class Switchboard(QUiLoader):
         return ui
 
     def get_ui(self, ui=None) -> QtWidgets.QWidget:
-        """Get a dynamic ui using its string name, or if no argument is given, return the current ui.
+        """Get a dynamic UI using its string name, or if no argument is given, return the current UI.
 
         Parameters:
-            ui (str/list/QWidget): The ui or name(s) of the ui.
+            ui (str/list/QWidget): The UI or name(s) of the UI.
 
         Raises:
-            ValueError: If the given ui is of an incorrect datatype.
+            ValueError: If the given UI is of an incorrect datatype.
 
         Returns:
             (obj/list): If a list is given, a list is returned. Otherwise, a QWidget object is returned.
@@ -446,7 +448,7 @@ class Switchboard(QUiLoader):
             return [self.get_ui(u) for u in ui]
 
         elif ui is None:
-            return self.ui
+            return self.current_ui
 
         else:
             raise ValueError(
@@ -454,16 +456,16 @@ class Switchboard(QUiLoader):
             )
 
     def get_current_ui(self) -> QtWidgets.QWidget:
-        """Get the current ui.
+        """Get the current UI.
 
         Returns:
-            (obj): A previously loaded dynamic ui object.
+            (obj): A previously loaded dynamic UI object.
         """
         try:
             return self._current_ui
 
         except AttributeError:
-            # if only one ui is loaded set that ui as current.
+            # If only one UI is loaded, set that UI as current.
             if len(self._loaded_ui) == 1:
                 ui = next(iter(self._loaded_ui.values()))
                 self.set_current_ui(ui)
@@ -480,11 +482,11 @@ class Switchboard(QUiLoader):
 
     def set_current_ui(self, ui) -> None:
         """Register the specified dynamic UI as the current one in the application's history.
-        Once registered, the UI widget can be accessed through the `ui` property while it remains the current UI.
+        Once registered, the UI widget can be accessed through the `current_ui` property while it remains the current UI.
         If the given UI is already the current UI, the method simply returns without making any changes.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
         """
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
@@ -665,7 +667,7 @@ class Switchboard(QUiLoader):
         instance = clss()
         # Make the class accessible through this switchboard instance.
         setattr(self, clss.__name__, instance)
-        # Assign the instance to ui._slots save it.
+        # Assign the instance to <ui>._slots save it.
         ui._slots = instance
 
         return instance
@@ -713,7 +715,7 @@ class Switchboard(QUiLoader):
         """Find the slot class associated with the given UI by following a specific naming convention.
 
         This method takes a dynamic UI object and retrieves the associated slot class based on
-        the UI's legal name without tags (ui.legal_name_no_tags). The method constructs possible
+        the UI's legal name without tags (<ui>.legal_name_no_tags). The method constructs possible
         class names by capitalizing each word, removing underscores, and considering both the
         original name and a version with the 'Slots' suffix.
 
@@ -823,7 +825,7 @@ class Switchboard(QUiLoader):
             ValueError: If the UI is not an instance of QtWidgets.QWidget.
 
         Side effect:
-            If successful, sets `ui.is_connected` to True, indicating that the slots for the UI's widgets are connected.
+            If successful, sets `<ui>.is_connected` to True, indicating that the slots for the UI's widgets are connected.
         """
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: {type(ui)}")
@@ -929,21 +931,21 @@ class Switchboard(QUiLoader):
                 )
 
     def disconnect_slots(self, ui, widgets=None, disconnect_all=False):
-        """Disconnects the signals from their respective slots for the widgets of the given ui.
+        """Disconnects the signals from their respective slots for the widgets of the given UI.
 
         Only disconnects the slots that are connected via `connect_slots` unless disconnect_all is True.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             widgets (Iterable[QWidget], optional): A specific set of widgets for which
-                to disconnect slots. If not provided, all widgets from the ui are used.
+                to disconnect slots. If not provided, all widgets from the UI are used.
             disconnect_all (bool, optional): If True, disconnects all slots regardless of their connection source.
 
         Raises:
-            ValueError: If ui is not an instance of QWidget.
+            ValueError: If `ui` is not an instance of QWidget.
 
         Side effect:
-            If successful, sets `ui.is_connected` to False indicating that
+            If successful, sets `<ui>.is_connected` to False indicating that
             the slots for the UI's widgets are disconnected.
         """
         if not isinstance(ui, QtWidgets.QWidget):
@@ -973,7 +975,7 @@ class Switchboard(QUiLoader):
         """Find widgets in a PySide2 UI object.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             inc (str)(tuple): Widget names to include.
             exc (str)(tuple): Widget names to exclude.
             object_names_only (bool): Only include widgets with object names.
@@ -999,7 +1001,7 @@ class Switchboard(QUiLoader):
         """Find a widget in a PySide2 UI object by its object name.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             object_name (str): The object name of the widget to find.
 
         Returns:
@@ -1021,16 +1023,16 @@ class Switchboard(QUiLoader):
             return widget
 
     def get_widget(self, name, ui=None):
-        """Case insensitive. Get the widget object/s from the given ui and name.
+        """Case insensitive. Get the widget object/s from the given UI and name.
 
         Parameters:
             name (str): The object name of the widget. ie. 'b000'
-            ui (str/obj): ui, or name of ui. ie. 'polygons'. If no nothing is given, the current ui will be used.
-                                            A ui object can be passed into this parameter, which will be used to get it's corresponding name.
+            ui (str/obj): UI, or name of UI. ie. 'polygons'. If no nothing is given, the current UI will be used.
+                    A UI object can be passed into this parameter, which will be used to get it's corresponding name.
         Returns:
-            (obj) if name:  widget object with the given name from the current ui.
-                      if ui and name: widget object with the given name from the given ui name.
-            (list) if ui: all widgets for the given ui.
+            (obj) if name:  widget object with the given name from the current UI.
+                    if ui and name: widget object with the given name from the given UI name.
+            (list) if ui: all widgets for the given UI.
         """
         if ui is None or isinstance(ui, str):
             ui = self.get_ui(ui)
@@ -1138,15 +1140,15 @@ class Switchboard(QUiLoader):
                     widget.setChecked(int(value))
 
     def set_widget_attrs(self, ui, widget_names, **kwargs):
-        """Set multiple properties, for multiple widgets, on multiple ui's at once.
+        """Set multiple properties, for multiple widgets, on multiple UI's at once.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             widget_names (str): String of object_names. - object_names separated by ',' ie. 'b000-12,b022'
             *kwargs = keyword: - the property to modify. ex. setText, setValue, setEnabled, setDisabled, setVisible, setHidden
                         value: - intended value.
         Example:
-            set_widget_attrs(ui, 'chk003-6', setText='Un-Crease')
+            set_widget_attrs(<ui>, 'chk003-6', setText='Un-Crease')
         """
         # Get_widgets_from_str returns a widget list from a string of object_names.
         widgets = self.get_widgets_by_string_pattern(ui, widget_names)
@@ -1386,7 +1388,7 @@ class Switchboard(QUiLoader):
         ie. 's000,b002,cmb011-15' would return object list: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             name_string (str): Widget object names separated by ','. ie. 's000,b004-7'. b004-7 specifies buttons b004 though b007.
 
         Returns:
@@ -1438,10 +1440,10 @@ class Switchboard(QUiLoader):
         The created groups later be accessed through the grouped buttons using the 'button_group' attribute.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             args: The widgets to group. Object_names separated by ',' ie. 'b000-12,b022'
         Example:
-            grp_a, grp_b = create_button_groups(ui, 'b000-2', 'b003-4')
+            grp_a, grp_b = create_button_groups(<ui>, 'b000-2', 'b003-4')
             grp_a = b000.button_group # access group using the 'button_group' attribute.
             grp_b = b003.button_group
         """
@@ -1468,11 +1470,11 @@ class Switchboard(QUiLoader):
         """Set multiple boolean properties, for multiple widgets at once.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             *kwargs: The property to modify. ex. setChecked, setUnChecked, setEnabled, setDisabled, setVisible, setHidden
                         value: string of object_names - object_names separated by ',' ie. 'b000-12,b022'
         Example:
-            toggle_multi(ui, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
+            toggle_multi(<ui>, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
         """
         for k in kwargs:  # property_ ie. setUnChecked
             # get_widgets_by_string_pattern returns a widget list from a string of object_names.
@@ -1492,7 +1494,7 @@ class Switchboard(QUiLoader):
         """Connect multiple signals to multiple slots at once.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
+            ui (QWidget): A previously loaded dynamic UI object.
             widgets (str/list): ie. 'chk000-2' or [tb.menu.chk000, tb.menu.chk001]
             signals (str/list): ie. 'toggled' or ['toggled']
             slots (obj/list): ie. self.cmb002 or [self.cmb002]
@@ -1528,7 +1530,7 @@ class Switchboard(QUiLoader):
             axis (str): Axis to set. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
 
         Example:
-            set_axis_for_checkboxes('chk000-3', '-X') #optional ui arg for the checkboxes
+            set_axis_for_checkboxes('chk000-3', '-X') # Optional `ui` arg for the checkboxes.
         """
         if isinstance(checkboxes, (str)):
             if ui is None:

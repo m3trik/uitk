@@ -138,14 +138,18 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
 
     @block_signals
     def setCurrentItem(self, i):
-        try:
-            self.setCurrentIndex(self.items.index(i))
-        except Exception:
-            try:
-                self.setCurrentText(i)
-            except Exception as e:
-                if i:
-                    print(f"{__file__}: setCurrentItem: {e}")
+        index = (
+            self.items.index(i)
+            if isinstance(i, str)
+            else i
+            if isinstance(i, int)
+            else None
+        )
+        if index is None:
+            raise RuntimeError(
+                f"Failed to set current item in ComboBox: expected int or str, got {i, type(i)}"
+            )
+        self.setCurrentIndex(index)
 
     def showPopup(self):
         self.view().setMinimumWidth(self.sizeHint().width())
