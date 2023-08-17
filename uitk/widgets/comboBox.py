@@ -76,23 +76,24 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
         if not _recursion and clear:
             self.clear()
 
+        result = None
         if isinstance(x, dict):
-            return [
+            result = [
                 self.add(key, val, ascending=ascending, _recursion=True, **kwargs)
                 for key, val in x.items()
             ]
         elif isinstance(x, (list, tuple, set)):
-            return [
+            result = [
                 self.add(item, data, ascending=ascending, _recursion=True, **kwargs)
                 for item in x
             ]
         elif isinstance(x, zip):
-            return [
+            result = [
                 self.add(item, data, ascending=ascending, _recursion=True, **kwargs)
                 for item, d in x
             ]
         elif isinstance(x, map):
-            return [
+            result = [
                 self.add(item, data, ascending=ascending, _recursion=True, **kwargs)
                 for item in list(x)
             ]
@@ -102,19 +103,18 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
                     self.insertItem(0, x, data)
                 else:
                     self.addItem(x, data)
-            return x
+            result = x
         else:
             raise TypeError(
                 f"Unsupported item type: expected str or a collection (list, tuple, set, map, zip, dict), but got '{type(x)}'"
             )
 
-        if not _recursion and header:
-            self.insertItem(0, header)
-
         if not _recursion:
+            if header:
+                self.insertItem(0, header)
             self.setCurrentIndex(0)
 
-        return x
+        return result
 
     @block_signals
     def currentData(self):
@@ -138,14 +138,18 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
 
     @block_signals
     def setCurrentItem(self, i):
-        try:
-            self.setCurrentIndex(self.items.index(i))
-        except Exception:
-            try:
-                self.setCurrentText(i)
-            except Exception as e:
-                if i:
-                    print(f"{__file__}: setCurrentItem: {e}")
+        index = (
+            self.items.index(i)
+            if isinstance(i, str)
+            else i
+            if isinstance(i, int)
+            else None
+        )
+        if index is None:
+            raise RuntimeError(
+                f"Failed to set current item in ComboBox: expected int or str, got {i, type(i)}"
+            )
+        self.setCurrentIndex(index)
 
     def showPopup(self):
         self.view().setMinimumWidth(self.sizeHint().width())

@@ -647,9 +647,18 @@ class StyleSheet(QtCore.QObject):
                 color: {TEXT_DISABLED};
             }
         """,
+        "transparentBgNoBorder": """
+            .transparentBgNoBorder {
+                background-color: transparent;
+                border: none;
+                color: {TEXT_COLOR};
+                selection-background-color: {TEXT_BACKGROUND};
+                selection-color: {HIGHLIGHT_COLOR};
+            }
+        """,
         "translucentBgNoBorder": """
             .translucentBgNoBorder {
-                background-color: rgba(127,127,127,0.005);
+                background-color: rgba(127,127,127,0.004);
                 border: none;
                 color: {TEXT_COLOR};
                 selection-background-color: {TEXT_BACKGROUND};
@@ -777,6 +786,10 @@ class StyleSheet(QtCore.QObject):
 
         if style_class:
             widget.setProperty("class", style_class)
+
+        # Check if the widget is a QMainWindow, and set the central widget class
+        if isinstance(widget, QtWidgets.QMainWindow):
+            widget.centralWidget().setProperty("class", style_class)
 
         # If the widget is a QMainWindow, apply the combined stylesheet
         if widget is self:

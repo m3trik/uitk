@@ -15,6 +15,7 @@ class MainWindow(
     StyleSheet,
 ):
     on_show = QtCore.Signal()
+    on_hide = QtCore.Signal()
     on_child_added = QtCore.Signal(object)
     on_child_changed = QtCore.Signal(object, object)
 
@@ -22,10 +23,6 @@ class MainWindow(
         self,
         switchboard_instance,
         ui_filepath,
-        connect_on_show=True,
-        set_name_attr=True,
-        set_legal_name_attr=True,
-        set_legal_name_no_tags_attr=False,
         log_level=logging.WARNING,
         **kwargs,
     ):
@@ -36,15 +33,16 @@ class MainWindow(
         Parameters:
             switchboard_instance (QUiLoader): An instance of the switchboard class.
             ui_filepath (str): The full path to a UI file.
-            connect_on_show (bool): While True, the UI will be set as current and connections established when it becomes visible.
-            set_name_attr (bool): If True, sets a switchboard attribute using the UI name. Defaults to True.
-            set_legal_name_attr (bool): If True, sets a switchboard attribute using the UI legal name (provinding there are no conflicts). Defaults to True.
-            set_legal_name_no_tags_attr (bool): If True, sets a switchboard attribute using the UI legal name without tags (provinding there are no conflicts). Defaults to False.
             log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
             **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
 
+        Signals:
+            on_show: Signal that is emitted before the window is shown.
+            on_hide: Signal that is emitted before the window is hidden.
+            on_child_added: Signal that is emitted when a child widget is added. Provides the added widget as a parameter.
+            on_child_changed: Signal that is emitted when a child widget changes. Provides the original and new widget as parameters.
+
         AttributesMixin:
-            on_show: A signal that is emitted when the window is shown.
             sb: An instance of the switchboard class.
 
         Properties:
@@ -53,11 +51,9 @@ class MainWindow(
             <UI>.is_current (bool): True if the UI is set as current.
             <UI>.is_initialized (bool): True after the UI is first shown.
             <UI>.is_connected (bool): True if the UI is connected to its slots.
-            <UI>.connect_on_show: Establish connections immediately before the UI becomes visible.
             <UI>.prevent_hide (bool): While True, the hide method is disabled.
             <UI>.widgets (list): All the widgets of the UI.
             <UI>.slots (obj): The slots class instance.
-            <UI>.stays_on_top (bool): Keep the window on top of other windows.
             <UI>._deferred: A dictionary of deferred methods.
         """
         super().__init__()
@@ -65,17 +61,14 @@ class MainWindow(
         self._init_logger(log_level)
 
         self.sb = switchboard_instance
-        self.name = self._set_name(ui_filepath, set_name_attr)
-        self.legal_name = self._set_legal_name(self.name, set_legal_name_attr)
-        self.legal_name_no_tags = self._set_legal_name_no_tags(
-            self.name, set_legal_name_no_tags_attr
-        )
+        self.name = self._set_name(ui_filepath, True)
+        self.legal_name = self._set_legal_name(self.name, True)
+        self.legal_name_no_tags = self._set_legal_name_no_tags(self.name, True)
         self.path = ptk.format_path(ui_filepath, "path")
         self.tags = self._parse_tags(self.name)
         self.is_initialized = False
         self.is_connected = False
         self.prevent_hide = False
-        self.connect_on_show = connect_on_show
         self.widgets = set()
         self._deferred = {}
 
@@ -85,23 +78,14 @@ class MainWindow(
         ui = self.sb.load(ui_filepath)
         self.setCentralWidget(ui.centralWidget())
         self.transfer_properties(ui, self)
-
-        flags = QtCore.Qt.CustomizeWindowHint
-        flags &= ~QtCore.Qt.WindowTitleHint
-        flags &= ~QtCore.Qt.WindowSystemMenuHint
-        flags &= ~QtCore.Qt.WindowMinMaxButtonsHint
-        flags |= ui.windowFlags()
-        self.setWindowFlags(flags)
+        self.setWindowFlags(ui.windowFlags())
 
         self.settings = QtCore.QSettings("uitk", self.name)
 
         self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
-        self.setAttribute(QtCore.Qt.WA_NoChildEventsForParent, True)
-        self.set_attributes(**kwargs)
+        self.set_attributes(WA_NoChildEventsForParent=True, **kwargs)
+        self.setFocusPolicy(QtCore.Qt.ClickFocus)
 
-        self.on_show.connect(
-            lambda: self.connect_slots() if self.connect_on_show else None
-        )
         self.on_child_changed.connect(self.sb.sync_widget_values)
 
     def _init_logger(self, log_level):
@@ -138,8 +122,12 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
+    def __repr__(self):
+        """Return the type, filename, and path"""
+        return f"<MainWindow " f"name={self.name}, " f"path={self.path}>"
+
     def __str__(self):
-        """Return the UI filename"""
+        """Return the filename"""
         return self.name
 
     def init_child(self, widget, **kwargs):
@@ -164,10 +152,10 @@ class MainWindow(
         widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
 
         widget.get_slot = lambda w=widget: getattr(
-            self.sb.get_slots(w.ui), w.name, None
+            self.sb.get_slot_class(w.ui), w.name, None
         )
 
-        widget.init_slot = lambda w=widget: self.init_slot(w)
+        widget.init_slot = lambda *args, w=widget: self.init_slot(w)
         widget.call_slot = lambda *args, w=widget, **kwargs: self.call_slot(
             w, *args, **kwargs
         )
@@ -222,30 +210,13 @@ class MainWindow(
                 )
 
     @property
-    def stays_on_top(self):
-        """Returns if the window stays on top of all others."""
-        return self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint
-
-    @stays_on_top.setter
-    def stays_on_top(self, value):
-        """Sets the window to stay on top of all others.
-
-        Args:
-            value (bool): If True, the window will stay on top of all others.
-        """
-        if value:
-            self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
-        else:
-            self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowStaysOnTopHint)
-
-    @property
     def slots(self):
         """Returns a list of the slots connected to the widget's signals.
 
         Returns:
             list: A list of the slots connected to the widget's signals.
         """
-        return self.sb.get_slots(self)
+        return self.sb.get_slot_class(self)
 
     @property
     def is_stacked_widget(self):
@@ -290,7 +261,7 @@ class MainWindow(
 
         if set_attr:
             if legal_name and name != legal_name:
-                if legal_name in self.sb.ui_files:
+                if self.sb.registry.ui_registry.get(filename=legal_name):
                     self.logger.warning(
                         f"Legal name '{legal_name}' already exists. Attribute not set."
                     )
@@ -313,13 +284,31 @@ class MainWindow(
 
         if set_attr:
             if legal_name_no_tags and name != legal_name_no_tags:
-                if legal_name_no_tags in self.sb.ui_files:
+                if self.sb.registry.ui_registry.get(filename=legal_name_no_tags):
                     self.logger.warning(
                         f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
                     )
                 else:
                     setattr(self.sb, legal_name_no_tags, self)
         return legal_name_no_tags
+
+    def set_flags(self, **flags):
+        """Sets or unsets any given window flag(s).
+
+        Parameters:
+            **flags: Keyword arguments where the flag is the key and the value indicates whether to set or unset the flag.
+        """
+        current_flags = self.windowFlags()
+
+        for flag, add in flags.items():
+            if hasattr(QtCore.Qt, flag):
+                flag_value = getattr(QtCore.Qt, flag)
+                if add:
+                    current_flags |= flag_value
+                else:
+                    current_flags &= ~flag_value
+
+        self.setWindowFlags(current_flags)
 
     @staticmethod
     def _parse_tags(name):
@@ -345,10 +334,6 @@ class MainWindow(
         """
         tags_to_check = tag_str.split("|")
         return any(tag in self.tags for tag in tags_to_check)
-
-    def connect_slots(self):
-        """Connects the widget's signals to their respective slots."""
-        self.sb.connect_slots(self)
 
     def trigger_deferred(self):
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
@@ -376,8 +361,14 @@ class MainWindow(
             self._deferred[priority] = (method,)
 
     def init_slot(self, widget):
-        """ """
-        slots = self.sb.get_slots(self)
+        """Only calls the slot init if widget.refresh is True. widget.refresh defaults to True on first call."""
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.warning(
+                f"Expected a widget object, but received {type(widget)}"
+            )
+            return
+
+        slots = self.sb.get_slot_class(self)
         slot_init = getattr(slots, f"{widget.name}_init", None)
 
         if slot_init and widget.refresh:
@@ -386,7 +377,13 @@ class MainWindow(
 
     def call_slot(self, widget, *args, **kwargs):
         """ """
-        slots = self.sb.get_slots(self)
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.warning(
+                f"Expected a widget object, but received {type(widget)}"
+            )
+            return
+
+        slots = self.sb.get_slot_class(self)
         slot = getattr(slots, widget.name, None)
 
         if slot:
@@ -409,7 +406,7 @@ class MainWindow(
                 ):
                     if widget.name:
                         rel_widget = getattr(relative, widget.name, None)
-                        if rel_widget is not None:
+                        if isinstance(rel_widget, QtWidgets.QWidget):
                             rel_widget.init_slot()
 
                 if not widget.is_initialized:
@@ -418,50 +415,63 @@ class MainWindow(
 
         return super().eventFilter(widget, event)
 
-    def setVisible(self, state):
-        """Called every time the widget is shown or hidden on screen.
-        If the widget is set to be prevented from hiding, it will not be hidden when state is False.
+    def setVisible(self, visible):
+        """Reimplement setVisible to prevent window from being hidden when prevent_hide is True."""
+        if self.prevent_hide and not visible:
+            return
+        super().setVisible(visible)
 
-        Parameters:
-            state (bool): Whether the widget is being shown or hidden.
-        """
-        if state:  # visible
-            self.activateWindow()
-            self.setWindowFlags(self.windowFlags())
-            self.on_show.emit()
-            self.is_initialized = True
-            super().setVisible(True)
-
-        elif not self.prevent_hide:  # invisible
-            super().setVisible(False)
-
-    def show(self, app_exec=False):
+    def show(self, pos=None, app_exec=False):
         """Show the MainWindow.
 
         Parameters:
+            pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
             app_exec (bool, optional): Execute the given PySide2 application, display its window, wait for user input,
-                and then terminate the program with a status code returned from the application.
-                Defaults to False.
+                    and then terminate the program with a status code returned from the application. Defaults to False.
         Raises:
             SystemExit: Raised if the exit code returned from the PySide2 application is not -1.
         """
         super().show()
+        self.sb.center_widget(self, pos)
         self.trigger_deferred()
+
         if app_exec:
             exit_code = self.sb.app.exec_()
             if exit_code != -1:
                 sys.exit(exit_code)
 
+    def showEvent(self, event):
+        """Reimplement showEvent to emit custom signal when window is shown."""
+        self.sb.connect_slots(self)
+        self.activateWindow()
+        self.on_show.emit()
+
+        super().showEvent(event)
+        self.is_initialized = True
+
+    def focusInEvent(self, event):
+        """Override the focus event to set the current UI when this window gains focus."""
+        self.sb.set_current_ui(self)
+
+        super().focusInEvent(event)
+
+    def hideEvent(self, event):
+        """Reimplement hideEvent to emit custom signal when window is hidden."""
+        self.on_hide.emit()
+
+        super().hideEvent(event)
+
     def closeEvent(self, event):
-        """ """
+        """Reimplement closeEvent to prevent window from being hidden when prevent_hide is True."""
         self.settings.sync()
+
         super().closeEvent(event)
 
 
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    from uitk import Switchboard, example
+    from uitk import Switchboard
 
     class MyProject:
         ...
@@ -473,14 +483,13 @@ if __name__ == "__main__":
         def MyButtonsObjectName(self):
             print("Button clicked!")
 
-    # Use the package to define the ui_location, and explicity pass the slots class.
-    sb = Switchboard(ui_location=example, slots_location=MySlots)
-    print("sb.ui_location:", sb.ui_location)
-    print("sb.ui_files:", sb.ui_files)
-    mainwindow = MainWindow(sb, sb.ui_files["example"])
-    print("sb.example:", mainwindow.sb.example)
-    print("sb.example.widgets:", mainwindow.sb.example.widgets)
-    mainwindow.show(app_exec=True)
+    # Use the package to define the ui_location and slot_location.
+    sb = Switchboard(
+        ui_location="../example",
+        slot_location=MySlots,
+    )
+    sb.example.show(app_exec=True)
+
 
 # -----------------------------------------------------------------------------
 # Notes

@@ -4,11 +4,11 @@ import os
 import importlib
 import pkgutil
 import inspect
-from .switchboard import signals  # Make signals accessible at package root
+from uitk.switchboard import signals  # Make signals accessible at package root
 
 
 __package__ = "uitk"
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 
