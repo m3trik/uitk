@@ -164,23 +164,28 @@ class Switchboard(QUiLoader):
         self._init_logger(log_level)
 
         self.registry = FileManager()
+        base_dir = 1 if not __name__ == "__main__" else 0
         self.registry.create(
             "ui_registry",
             ui_location,
             inc_files="*.ui",
+            base_dir=base_dir,
         )
         self.registry.create(
             "slot_registry",
             slot_location,
-            structure=["classname", "classobj", "filename", "filepath"],
+            fields=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
+            base_dir=base_dir,
         )
         self.registry.create(
             "widget_registry",
             widget_location,
-            structure=["classname", "classobj", "filename", "filepath"],
+            fields=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
+            base_dir=base_dir,
         )
+        # Include this packages widgets.
         self.registry.widget_registry.extend("widgets", base_dir=0)
 
         self.ui_name_delimiters = ui_name_delimiters
@@ -500,7 +505,7 @@ class Switchboard(QUiLoader):
         # self.logger.info(f"_ui_history: {u.name for u in self._ui_history}")  # debug
 
     def register(
-        self, ui_location=None, slot_location=None, widget_location=None, base_dir=None
+        self, ui_location=None, slot_location=None, widget_location=None, base_dir=1
     ):
         """Add new locations to the Switchboard.
 
@@ -508,16 +513,25 @@ class Switchboard(QUiLoader):
             ui_location (optional): Path to the UI file.
             slot_location (optional): Slot class.
             widget_location (optional): Path to widget files.
-            base_dir (optional): Base directory.
+            base_dir (optional): Base directory for relative paths. Derived from the call stack.
+                0 for this modules dir, 1 for the caller module, etc. (duplicate entries removed)
         """
-        # Extend the UI files container with the new UI file
-        if ui_location is not None:
+        # Check for the existence of the ui_location before extending the UI files container
+        if ui_location is not None and not self.registry.contains_location(
+            ui_location, "ui_registry"
+        ):
             self.registry.ui_registry.extend(ui_location, base_dir=base_dir)
-        # Optionally, extend the slot files container if a slot_location is provided
-        if slot_location is not None:
+
+        # Check for the existence of the slot_location before extending the slot files container
+        if slot_location is not None and not self.registry.contains_location(
+            slot_location, "slot_registry"
+        ):
             self.registry.slot_registry.extend(slot_location, base_dir=base_dir)
-        # Optionally, extend the widget files container if a widget_location is provided
-        if widget_location is not None:
+
+        # Check for the existence of the widget_location before extending the widget files container
+        if widget_location is not None and not self.registry.contains_location(
+            widget_location, "widget_registry"
+        ):
             self.registry.widget_registry.extend(widget_location, base_dir=base_dir)
 
     def get_ui_relatives(

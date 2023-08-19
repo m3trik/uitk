@@ -12,7 +12,6 @@ class NamedTupleContainer:
         self,
         file_manager,
         named_tuples,
-        location,
         metadata=None,
         log_level=logging.WARNING,
     ):
@@ -21,7 +20,6 @@ class NamedTupleContainer:
         Parameters:
             file_manager (FileManager): Reference to the FileManager object that created this container.
             named_tuples (list): A list of named tuples.
-            location: The location information.
             metadata (dict, optional): Metadata related to the container, including field names (as 'fields').
             log_level (int, optional): Logging level. Defaults to logging.WARNING.
         """
@@ -29,7 +27,6 @@ class NamedTupleContainer:
 
         self.file_manager = file_manager
         self.named_tuples = named_tuples
-        self.location = location
         self.metadata = metadata or {}
         self.fields = ptk.make_iterable(self.metadata.get("fields", []))
 
@@ -59,14 +56,14 @@ class NamedTupleContainer:
 
         Returns:
             list: A list of values for the specified field name if found in fields.
-            method: The method corresponding to the name if found in ["modify", "add", "remove"].
+            method: The method corresponding to the name if found in ["modify", "extend", "remove"].
 
         Raises:
             AttributeError: If the attribute is not found in fields or the specific methods.
         """
         if name in self.fields:
             return [getattr(nt, name) for nt in self.named_tuples]
-        elif name in ["modify", "add", "remove"]:
+        elif name in ["modify", "extend", "remove"]:
             return getattr(self, name)
         else:
             raise AttributeError(
@@ -87,19 +84,30 @@ class NamedTupleContainer:
         )
         self.logger.addHandler(handler)
 
-    def extend(self, objects, **new_metadata):
-        """Extends the container with additional objects.
-
-        This method takes new objects and combines them with the existing named tuples in the container.
-        It then recreates the container using the combined objects and merged metadata.
+    @staticmethod
+    def _handle_duplicates(existing, new, allow_duplicates):
+        """Handles duplicates based on the allow_duplicates flag.
 
         Parameters:
-            objects (str/module/class/list): Objects representing new files or directories to add to the container.
-            **new_metadata: Additional metadata for the new container.
+            existing (list): List of existing named tuples.
+            new (list): List of new named tuples to add.
+            allow_duplicates (bool): Flag to allow or disallow duplicates.
+
+        Returns:
+            list: Combined list of named tuples with or without duplicates based on the flag.
         """
+        if allow_duplicates:
+            return existing + new
+        else:
+            return existing + [nt for nt in new if nt not in existing]
+
+    def extend(self, objects, **new_metadata):
         try:
             # Retrieve the metadata from the container
             metadata = {**self.metadata, **new_metadata}
+
+            # Retrieve the allow_duplicates flag from metadata, defaulting to False
+            allow_duplicates = metadata.get("allow_duplicates", False)
 
             # Back up the existing named tuples
             existing_named_tuples = self.named_tuples.copy()
@@ -117,11 +125,13 @@ class NamedTupleContainer:
             # Extract the named tuples from the new container
             new_named_tuples = new_container.named_tuples
 
-            # Extend the backed-up named tuples with the new ones
-            existing_named_tuples.extend(new_named_tuples)
+            # Extend the backed-up named tuples with the new ones, handling duplicates
+            combined_named_tuples = self._handle_duplicates(
+                existing_named_tuples, new_named_tuples, allow_duplicates
+            )
 
             # Update the named tuples in the new container with the combined list
-            new_container.named_tuples = existing_named_tuples
+            new_container.named_tuples = combined_named_tuples
 
         except FileNotFoundError as e:
             self.logger.error(f"File not found: {e.filename}")
@@ -129,24 +139,6 @@ class NamedTupleContainer:
             self.logger.error(
                 f"An error occurred while extending the container: {str(e)}"
             )
-
-    def add(self, **kwargs):
-        """Add a new named tuple to the container.
-
-        Parameters:
-            kwargs: Key-value pairs representing the fields and their values for the new named tuple.
-
-        Returns:
-            NamedTuple: The newly added named tuple.
-
-        Example:
-            container = NamedTupleContainer(named_tuples=[], fields=["filename", "extension"])
-            container.add(filename="document.txt", extension="txt")
-            print(container.named_tuples)  # Output: [TupleClass(filename='document.txt', extension='txt')]
-        """
-        new_tuple = self._tuple_class(**kwargs)
-        self.named_tuples.append(new_tuple)
-        return new_tuple
 
     def get(self, return_field=None, **conditions):
         """Query the named tuples based on specified conditions.
@@ -222,39 +214,65 @@ class NamedTupleContainer:
 
 
 class FileManager:
-    def __init__(self, caller_dir=None):
-        """Manages files and directories, supporting file queries and path manipulations.
-
-        The FileManager class provides methods to retrieve file information, including file paths,
-        class names, class objects, etc. It allows the creation of custom named tuple containers
-        for structured access to file data.
-
-        Parameters:
-            caller_dir (str, optional): The directory of the caller. If not provided, retrieved from the stack.
-        """
+    def __init__(self):
+        """Manages files and directories, supporting file queries and path manipulations."""
         self.containers = []
         self.processing_stack = []
 
-        self.stack = inspect.stack()
-        self.caller_dir = caller_dir or self._get_dir_from_stack(2)
-        self.module_dir = self._get_dir_from_stack(0)
+    @staticmethod
+    def _get_caller_dir():
+        """Identifies the correct caller directory by ignoring known library paths."""
+        stack = inspect.stack()
+        caller_frame = next(
+            (frame for frame in stack if "lib\\" not in frame.filename), None
+        )
+        if caller_frame:
+            caller_filename = caller_frame.filename
+            caller_dir = os.path.abspath(os.path.dirname(caller_filename))
+            return caller_dir
+        return None
 
-    def _get_dir_from_stack(self, index) -> str:
-        """Retrieves the directory path from the stack frame at the given index.
+    def _get_base_dir(self, caller_index=0):
+        """Identifies the base directory based on the caller's frame index.
 
         Parameters:
-            index (int): Index in the stack frame.
+            caller_index (int): Index to identify the caller's frame. 0 for the calling method, 1 for the caller of the caller, etc.
 
         Returns:
-            str: Absolute path of the directory.
+            str: Absolute path of the caller's directory.
         """
-        # If desired index is out of range, use the highest available one
-        if index >= len(self.stack):
-            index = len(self.stack) - 1
+        # Create a dictionary to filter out duplicates by filename
+        unique_frames = {frame.filename: frame for frame in inspect.stack()}
 
-        frame = self.stack[index][0]
-        filename = frame.f_code.co_filename
-        return os.path.abspath(os.path.dirname(filename))
+        # Convert the unique frames back to a list and exclude the first frame (file_manager itself)
+        filtered_stack = list(unique_frames.values())[1:]
+
+        frame_index = caller_index
+        if frame_index < len(filtered_stack):
+            frame = filtered_stack[frame_index]
+            return os.path.abspath(os.path.dirname(frame.filename))
+        return None
+
+    def _resolve_path(self, target_obj, **metadata):
+        """Resolves a path based on different types of target objects.
+
+        Parameters:
+            target_obj (int/str/module/class): The target object to resolve.
+            **metadata: Additional keyword arguments used to construct the container.
+
+        Returns:
+            str: Absolute path of the target.
+        """
+        base_dir_option = metadata.get("base_dir", 0)
+        base_dir = self._get_base_dir(base_dir_option)
+
+        if isinstance(target_obj, str):
+            return os.path.abspath(
+                target_obj
+                if os.path.isabs(target_obj)
+                else os.path.join(base_dir, target_obj)
+            )
+        return ptk.get_object_path(target_obj)
 
     def create(self, descriptor, objects=None, **metadata):
         """Creates a named tuple container for the specified files.
@@ -263,8 +281,7 @@ class FileManager:
             descriptor (str): Descriptor for the named tuples.
             objects (str/module/class/list, optional): Objects representing files or directories.
             **metadata: Additional keyword arguments used to construct the container.
-             - structure (str/list, optional): Structure of the named tuple. Defaults to ["filename", "filepath"]
-             - fields (str/list, optional): A list of field names or a single string representing a field name for the named tuples.
+             - fields (str/list, optional): A list of field names or a single string representing a field name for the named tuples. Defaults to ["filename", "filepath"]
              - inc_files (list, optional): List of included files.
              - exc_files (list, optional): List of excluded files.
              - inc_dirs (list, optional): List of included directories.
@@ -274,11 +291,10 @@ class FileManager:
         Returns:
             NamedTupleContainer: Container holding the named tuples for the file information.
         """
-        structure = ptk.make_iterable(
-            metadata.get("structure", ["filename", "filepath"])
-        )
-        metadata["fields"] = structure  # Include the structure as fields in metadata
+        fields = ptk.make_iterable(metadata.get("fields", ["filename", "filepath"]))
         named_tuples = []
+
+        allow_duplicates = metadata.get("allow_duplicates", False)
 
         if objects is not None:
             all_files = []
@@ -286,15 +302,18 @@ class FileManager:
                 file_info = self._handle_single_obj(obj, **metadata)
                 all_files.extend(file_info)
 
-            TupleClass = namedtuple(descriptor.capitalize(), structure)
+            TupleClass = namedtuple(descriptor.capitalize(), fields)
             named_tuples = [TupleClass(*info) for info in all_files]
 
-        container = NamedTupleContainer(
-            self,
-            named_tuples,
-            self.caller_dir,
-            metadata=metadata,
-        )
+            # Assume you have existing named tuples if needed
+            existing_named_tuples = []
+            combined_named_tuples = NamedTupleContainer._handle_duplicates(
+                existing_named_tuples, named_tuples, allow_duplicates
+            )
+
+            named_tuples = combined_named_tuples
+
+        container = NamedTupleContainer(self, named_tuples, metadata=metadata)
 
         self.containers.append(container)
         setattr(self, descriptor, container)
@@ -304,33 +323,17 @@ class FileManager:
         """Handles a single object and returns its corresponding file information.
 
         This internal method is used by the create method to handle individual objects
-        and gather file information based on the provided structure and filters.
+        and gather file information based on the provided fields and filters.
 
         Parameters:
             obj (str/module/class): The object representing a file or directory.
             **metadata: Additional keyword arguments used to construct the container.
                         See the `create` method documentation.
         Returns:
-            list: List of tuples containing the file information based on the structure.
+            list: List of tuples containing the file information based on the fields.
         """
-        # Retrieve the structure from metadata or use the default value
-        structure = metadata.get("structure", ["filename", "filepath"])
-
-        def resolve_path(target_obj):
-            if isinstance(target_obj, int):
-                return self._get_dir_from_stack(target_obj)
-            elif isinstance(target_obj, str):
-                return os.path.abspath(
-                    os.path.join(base_dir, target_obj)
-                    if not os.path.isabs(target_obj)
-                    else target_obj
-                )
-            elif hasattr(target_obj, "__path__"):
-                return ptk.get_object_path(target_obj, inc_filename=False)
-            return ptk.get_object_path(target_obj, inc_filename=True)
-
-        base_dir = resolve_path(metadata.get("base_dir", self.caller_dir))
-        dir_path = resolve_path(obj)
+        fields = metadata.get("fields", ["filename", "filepath"])
+        dir_path = self._resolve_path(obj, **metadata)
 
         if dir_path in self.processing_stack:
             raise RecursionError(
@@ -340,9 +343,9 @@ class FileManager:
 
         class_name = obj.__name__ if inspect.isclass(obj) else None
 
-        # Determine the way to gather file information based on the structure
+        # Determine the way to gather file information based on the fields
         needs_classes = any(
-            item in structure for item in ["classname", "classobj", "module"]
+            item in fields for item in ["classname", "classobj", "module"]
         )
 
         if os.path.isdir(dir_path) and not needs_classes:
@@ -354,21 +357,21 @@ class FileManager:
                 inc_dirs=metadata.get("inc_dirs"),
                 exc_dirs=metadata.get("exc_dirs"),
             )
-            file_info = ptk.get_file_info(files, structure, force_tuples=True)
+            file_info = ptk.get_file_info(files, fields, force_tuples=True)
         elif needs_classes:
             file_info = ptk.get_classes_from_path(
                 dir_path,
-                structure,
+                fields,
                 inc=class_name,
                 top_level_only=False,
                 force_tuples=True,
             )
-            if class_name and "classobj" in structure:
+            if class_name and "classobj" in fields:
                 for i, info in enumerate(file_info):
                     if info[0] == class_name and info[1] is None:
                         file_info[i] = (class_name, obj) + info[2:]
         else:
-            lst = ptk.get_file_info(dir_path, structure, force_tuples=True)
+            lst = ptk.get_file_info(dir_path, fields, force_tuples=True)
             file_info = ptk.filter_list(
                 lst,
                 metadata.get("inc_files"),
@@ -380,6 +383,25 @@ class FileManager:
         self.processing_stack.remove(dir_path)
 
         return file_info
+
+    def contains_location(self, location, container_descriptor):
+        """Checks if the container with the given descriptor contains a specific location.
+
+        Parameters:
+            location (str/module/class): The location to query.
+            container_descriptor (str): Descriptor for the named tuples.
+
+        Returns:
+            bool: True if the location is found in the container, False otherwise.
+
+        Example:
+            <file manager>.contains_location(<int/str/module/class>, "container name")
+        """
+        container = getattr(self, container_descriptor, None)
+        if container:
+            resolved_path = self._resolve_path(location)
+            return any(resolved_path in nt for nt in container.named_tuples)
+        return False
 
 
 # --------------------------------------------------------------------------------------------
