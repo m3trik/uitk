@@ -21,7 +21,7 @@ UITK is a comprehensive Python package designed to streamline the creation, mana
 Module | Description
 ------- | -------
 [file_manager](https://github.com/m3trik/uitk/blob/main/uitk/file_manager.py) | Allows for setting multiple locations for dynamic UI files, custom widgets, and slot modules.
-[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | Handles dynamic UI loading, assigns convenience properties, and manages slot connections.
+[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | Handles dynamic UI loading, assigns convenience properties, manages slot connections, syncs, saves, and restores widget states, etc.
 [events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | Manages event handling for dynamic UI widgets.
 [widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | A source directory for custom widgets.
 
