@@ -1,9 +1,9 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
-![Version](https://img.shields.io/badge/Version-0.8.1-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.8.3-blue.svg)
 
 # UITK: Dynamic UI Management for Python with PySide2
 
-UITK is a comprehensive Python package designed to streamline the creation, management, and interaction of user interfaces (UIs) using PySide2. With a focus on versatility, UITK leverages a naming convention-based switchboard module to dynamically load UI files, register custom widgets, manage slots and styles, and facilitate interaction with widgets. The primary goal of UITK is to simplify the development process of complex UIs and enhance the efficiency of event handling.
+UITK is a comprehensive Python package designed to streamline the creation, management, and interaction of user interfaces (UIs) using Python3|PySide2. With a focus on versatility, UITK leverages a naming convention-based switchboard module to dynamically load UI files, register custom widgets, manage slots, styles, states, and facilitate interaction with widgets. The primary goal of UITK is to simplify the development process of complex UIs and enhance the efficiency of event handling.
 
 ## Key Features
 
@@ -20,10 +20,10 @@ UITK is a comprehensive Python package designed to streamline the creation, mana
 
 Module | Description
 ------- | -------
-[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | Handles dynamic UI loading, assigns convenience properties, and manages slot connections.
+[file_manager](https://github.com/m3trik/uitk/blob/main/uitk/file_manager.py) | Allows for setting multiple locations for dynamic UI files, custom widgets, and slot modules.
+[switchboard](https://github.com/m3trik/uitk/blob/main/uitk/switchboard.py) | Handles dynamic UI loading, assigns convenience properties, manages slot connections, syncs, saves, and restores widget states, etc.
 [events](https://github.com/m3trik/uitk/blob/main/uitk/events.py) | Manages event handling for dynamic UI widgets.
-[stylesheet](https://github.com/m3trik/tentacle/blob/main/uitk/stylesheet.py) | Defines stylesheet presets and auto-applies them to your UI upon initialization.
-[widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | A source directory for custom widgets.
+[widgets](https://github.com/m3trik/tentacle/blob/main/uitk/widgets) | A source directory for the custom widgets included with this package.
 
 ---
 
@@ -56,6 +56,7 @@ class MyProjectSlots(MyProject):
 
 
 sb = Switchboard(ui_location="example", slot_location=MyProjectSlots)
+
 ui = sb.example  # Access the UI using its filename.
 ui.text_edit.setText("Text Edit")
 ui.header.configureButtons(menu_button=True, minimize_button=True, hide_button=True)
