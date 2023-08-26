@@ -23,7 +23,7 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-        self.menu = Menu(self, mode="option")
+        self.menu = Menu(self, mode="option", fixed_item_height=20)
 
         self.set_attributes(**kwargs)
 

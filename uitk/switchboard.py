@@ -1641,6 +1641,63 @@ class Switchboard(QUiLoader):
         self._messageBox.setText(string)
         self._messageBox.show()  # Use show() instead of exec_()
 
+    @staticmethod
+    def file_dialog(
+        file_types: Union[str, List[str]] = ["*.*"],
+        title: str = "Select files to open",
+        directory: str = "/home",
+        filter_description: str = "All Files",
+        allow_multiple: bool = True,
+    ) -> Union[str, List[str]]:
+        """Open a file dialog to select files of the given type(s) using PySide2.
+
+        Parameters:
+            file_types (Union[str, List[str]]): Extensions of file types to include. Can be a string or a list of strings.
+                Default is ["*.*"], which includes all files.
+            title (str): Title of the file dialog. Default is "Select files to open."
+            directory (str): Initial directory to display in the file dialog. Default is "/home."
+            filter_description (str): Description for the filter applied to the file types. Default is "All Files."
+            allow_multiple (bool): Whether to allow multiple file selection. Default is True.
+
+        Returns:
+            Union[str, List[str]]: A string if a single file is selected, or a list of strings if multiple files are selected.
+
+        Example:
+            files = file_dialog(file_types=["*.png", "*.jpg"], title="Select images", filter_description="Images")
+        """
+        options = QtWidgets.QFileDialog.Options()
+        if allow_multiple:
+            options |= QtWidgets.QFileDialog.ReadOnly
+
+        file_types_string = f"{filter_description} ({' '.join(file_types)})"
+
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            None, title, directory, file_types_string, options=options
+        )
+
+        return files if allow_multiple else files[0] if files else None
+
+    @staticmethod
+    def dir_dialog(title: str = "Select a directory", directory: str = "/home") -> str:
+        """Open a directory dialog to select a directory using PySide2.
+
+        Parameters:
+            title (str): Title of the directory dialog. Default is "Select a directory."
+            directory (str): Initial directory to display in the dialog. Default is "/home."
+
+        Returns:
+            str: Selected directory path.
+
+        Example:
+            directory_path = dir_dialog(title="Select a project folder")
+        """
+        options = QtWidgets.QFileDialog.Options()
+        directory_path = QtWidgets.QFileDialog.getExistingDirectory(
+            None, title, directory, options=options
+        )
+
+        return directory_path
+
     def gc_protect(self, obj=None, clear=False):
         """Protect the given object from garbage collection.
 
@@ -1677,7 +1734,14 @@ if __name__ == "__main__":
 
     sb = Switchboard(ui_location="example", slot_location=ExampleSlots)
     ui = sb.example
-    ui.set_style(theme="dark")
+    ui.text_edit.setText("Text Edit")
+    ui.header.configureButtons(menu_button=True, minimize_button=True, hide_button=True)
+    ui.header.menu.setTitle("EXAMPLE MENU")
+    ui.header.menu.add(["Item A", "Item B"])
+
+    ui.set_attributes(WA_TranslucentBackground=True)
+    ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
+    ui.set_style(theme="dark", style_class="translucentBgWithBorder")
 
     print(repr(ui))
     ui.show(pos="screen", app_exec=True)

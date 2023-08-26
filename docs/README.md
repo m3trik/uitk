@@ -50,18 +50,25 @@ class MyProjectSlots(MyProject):
     def __init__(self):
         self.sb = self.switchboard()
 
-    @signals("released")  # Specify signal(s) other than the default
+    @signals("released")  # Specify signal(s) other than the default.
     def MyButtonsObjectName(self):
         self.sb.message_box("Button Pressed")
 
 
 sb = Switchboard(ui_location="example", slot_location=MyProjectSlots)
-ui = sb.example
-ui.set_flags(Tool=True, WindowStaysOnTopHint=True)
-ui.set_style(theme="dark")
+
+ui = sb.example  # Access the UI using its filename.
+ui.text_edit.setText("Text Edit")
+ui.header.configureButtons(menu_button=True, minimize_button=True, hide_button=True)
+ui.header.menu.setTitle("EXAMPLE MENU")
+ui.header.menu.add(["Item A", "Item B"])  # Supports widgets and data using dict. Defaults to label.
+
+ui.set_attributes(WA_TranslucentBackground=True)  # Set properties using keyword arguments.
+ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
+ui.set_style(theme="dark", style_class="translucentBgWithBorder")
 
 print(repr(ui))
-ui.show(app_exec=True)
+ui.show(pos="screen", app_exec=True)
 ```
 ## Advanced Example:
 

@@ -17,7 +17,7 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
         self, parent=None, editable=False, double_click_interval=500, **kwargs
     ):
         super().__init__(parent)
-        self.menu = Menu(self, mode="option")  # Initialize context menu
+        self.menu = Menu(self, mode="option", fixed_item_height=20)
 
         # Initialize other properties for handling double click and editing
         self.editable = editable

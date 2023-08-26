@@ -14,7 +14,9 @@ class LineEdit(QtWidgets.QLineEdit, AttributesMixin):
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QLineEdit.__init__(self, parent)
 
-        self.menu = Menu(self, position="cursorPos")
+        self.menu = Menu(
+            self, mode="context", position="cursorPos", fixed_item_height=20
+        )
 
         self.set_attributes(**kwargs)
 

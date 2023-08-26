@@ -101,16 +101,14 @@ class StyleSheet(QtCore.QObject):
         """,
         "QGroupBox": """
             QGroupBox {
-                border: 2px transparent;
+                border: none;
                 border-radius: 1px;
                 padding: 1px 1px 1px 1px; /* top, right, bottom, left */
-                margin: 12px 0px 1px 0px; /* top, right, bottom, left */ /* leave space at the top for the title */
+                margin: 12px 0px 1px 0px; /* top, right, bottom, left */
                 background-color: {MAIN_BACKGROUND_ALPHA};
             }
             QGroupBox::title {
                 top: -13px;
-                left: 2px;
-                subcontrol-position: top left; /* position at the top center */
                 background-color: {MAIN_BACKGROUND_ALPHA};
                 color: {TEXT_COLOR};
             }
@@ -123,7 +121,7 @@ class StyleSheet(QtCore.QObject):
             }
             QMenu::item {
                 padding: 0px 1px 0px 1px; /* top, right, bottom, left */
-                border: 1px solid transparent; /* reserve space for selection border */
+                border: none; /* reserve space for selection border */
             }
             QMenu::item:selected {
                 border-color: {BUTTON_HOVER};
@@ -172,7 +170,7 @@ class StyleSheet(QtCore.QObject):
                 border: 1px solid {BORDER_COLOR};
                 border-radius: 1px;
                 margin: 0px 0px 0px 0px; /* top, right, bottom, left */
-                padding: 0px 2px 0px 2px; /* top, right, bottom, left */
+                padding: 0px 2px 0px 0px; /* top, right, bottom, left */
             }
             QLabel::hover {
                 border: 1px solid {BORDER_COLOR};
@@ -243,9 +241,7 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QPushButton": """
-            QPushButton {
-                /* styles inherited from QAbstractButton */
-            }
+            /* Inherits from QAbstractButton */
             QPushButton#toggle_expand {
                 border: none;
                 padding: 0px 0px 0px 0px; /* top, right, bottom, left */
@@ -259,9 +255,7 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QToolButton": """
-            QToolButton {
-                /* styles inherited from QAbstractButton */
-            }
+            /* Inherits from QAbstractButton */
             QToolButton[popupMode="1"] { /* only for MenuButtonPopup */
                 padding-right: 2px; /* make way for the popup button */
             }
@@ -289,21 +283,17 @@ class StyleSheet(QtCore.QObject):
             }
             QToolButton::menu-button:pressed {
                 background-color: transparent;
-                border: 1px solid transparent;
+                border: none;
             }
             QToolButton::menu-arrow {
                 image: none;
             }
         """,
         "QCheckBox": """
-            QCheckBox {
-                /* style inherited from QAbstractButton */
-            }
+            /* Inherits from QAbstractButton */
         """,
         "QRadioButton": """
-            QRadioButton {
-                /* style inherited from QAbstractButton */
-            }
+            /* Inherits from QAbstractButton */
         """,
         "QAbstractSpinBox": """
             QAbstractSpinBox {
@@ -336,14 +326,10 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QSpinBox": """
-            QSpinBox {
-                /* style inherited from QAbstractSpinBox */
-            }
+            /* Inherits from QAbstractSpinBox */
         """,
         "QDoubleSpinBox": """
-            QDoubleSpinBox {
-                /* style inherited from QAbstractSpinBox */
-            }
+            /* Inherits from QAbstractSpinBox */
         """,
         "QComboBox": """
             QComboBox {
@@ -396,7 +382,6 @@ class StyleSheet(QtCore.QObject):
         """,
         "QAbstractScrollArea": """
             QAbstractScrollArea {
-                /* Inherits styles from QWidget */
                 background-color: {WIDGET_BACKGROUND};
                 border: 1px solid {BORDER_COLOR};
                 selection-background-color: {BUTTON_HOVER};
@@ -404,32 +389,21 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QScrollArea": """
-            QScrollArea {
-                /* Inherits styles from QAbstractScrollArea */
-            }
+            /* Inherits from QAbstractScrollArea */
         """,
         "QGraphicsView": """
-            QGraphicsView {
-                /* Inherits styles from QAbstractScrollArea */
-            }
+            /* Inherits from QAbstractScrollArea */
         """,
         "QMdiArea": """
-            QMdiArea {
-                /* Inherits styles from QAbstractScrollArea */
-            }
+            /* Inherits from QAbstractScrollArea */
         """,
         "QPlainTextEdit": """
-            QPlainTextEdit {
-                /* Inherits styles from QAbstractScrollArea */
-            }
+            /* Inherits from QAbstractScrollArea */
         """,
         "QTextEdit": """
+            /* Inherits from QAbstractScrollArea */
             QTextEdit {
-                background-color: {WIDGET_BACKGROUND};
-                color: white;
-                border: 1px solid {BORDER_COLOR};
-                selection-background-color: {BUTTON_HOVER};
-                selection-color: {TEXT_COLOR};
+                color: {TEXT_COLOR};
                 background-attachment: fixed; /* fixed, scroll */
             }
             QTextEdit#hud_text {
@@ -441,6 +415,7 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QLineEdit": """
+            /* Inherits from QWidget */
             QLineEdit {
                 background-color: {WIDGET_BACKGROUND};
                 border: 1px solid {BORDER_COLOR};
@@ -463,6 +438,7 @@ class StyleSheet(QtCore.QObject):
             QAbstractItemView {
                 alternate-background-color: {MAIN_BACKGROUND};
                 background-attachment: fixed; /* fixed, scroll */
+                color: {TEXT_COLOR};
             }
             QAbstractItemView::item:alternate {
                 background-color: {MAIN_BACKGROUND};
@@ -486,14 +462,10 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QListWidget": """
-            QListWidget {
-                /* Inherits styles from QAbstractItemView */
-            }
+            /* Inherits from QAbstractItemView */
         """,
         "QListView": """
-            QListView {
-                /* Inherits styles from QAbstractItemView */
-            }
+            /* Inherits from QAbstractItemView */
         """,
         "QHeaderView": """
             QHeaderView {
@@ -509,17 +481,10 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QTableView": """
-            QTableView {
-                /* Inherits styles from QAbstractItemView */
-            }
+            /* Inherits from QAbstractItemView */
         """,
         "QTreeView": """
-            QTreeView {
-                /* Inherits styles from QAbstractItemView */
-            }
-            QTreeView QHeaderView {
-                /* Inherits styles from QHeaderView */
-            }
+            /* Inherits from QAbstractItemView */
             QTreeView::branch {
                 background: palette(base);
                 border-image: none;
@@ -530,14 +495,14 @@ class StyleSheet(QtCore.QObject):
         """,
         "QAbstractSlider": """
             QAbstractSlider {
-                border: 1px solid black;
+                border: 1px solid {BORDER_COLOR};
                 background-color: {WIDGET_BACKGROUND};
             }
             QAbstractSlider::handle {
                 width: 10px;
                 margin-top: -6px;
                 margin-bottom: -6px;
-                border: 1px solid black;
+                border: 1px solid {BORDER_COLOR};
                 border-radius: 1px;
                 background-color: {MAIN_BACKGROUND};
             }
@@ -545,7 +510,7 @@ class StyleSheet(QtCore.QObject):
                 background-color: {BUTTON_HOVER};
             }
             QAbstractSlider::groove {
-                border: 1px solid black;
+                border: 1px solid {BORDER_COLOR};
                 height: 8px;
                 background-color: {WIDGET_BACKGROUND};
             }
@@ -557,60 +522,49 @@ class StyleSheet(QtCore.QObject):
             }
         """,
         "QSlider": """
-            /* Inherits styles from QAbstractSlider */
+            /* Inherits from QAbstractSlider */
         """,
         "QScrollBar": """
-            QScrollBar:vertical {
-                background: {MAIN_BACKGROUND};
-                width: 15px;
-                margin: 15px 0 15px 0;
-                border: 1px solid {BORDER_COLOR};
-            }
-            QScrollBar::handle:vertical {
+            /* Inherits from QAbstractSlider */
+            QScrollBar:vertical, QScrollBar:horizontal {
                 background: {WIDGET_BACKGROUND};
+                border: none;
+                width: 10px;
+                margin: 0px 0 0px 0;
+            }
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+                background: {MAIN_BACKGROUND};
                 min-height: 20px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                border: 1px solid {BORDER_COLOR};
-                background: {BUTTON_PRESSED};
-                height: 15px;
-                subcontrol-position: top;
-                subcontrol-origin: margin;
-            }
-            QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {
-                background: {BUTTON_HOVER};
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-            QScrollBar:horizontal {
-                background: {MAIN_BACKGROUND};
-                height: 15px;
-                margin: 0 15px 0 15px;
-                border: 1px solid {BORDER_COLOR};
-            }
-            QScrollBar::handle:horizontal {
-                background: {WIDGET_BACKGROUND};
                 min-width: 20px;
             }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                border: 1px solid {BORDER_COLOR};
-                background: {BUTTON_PRESSED};
-                width: 15px;
-                subcontrol-position: left;
-                subcontrol-origin: margin;
-            }
-            QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
+            QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
                 background: {BUTTON_HOVER};
             }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                border: none;
+                background: none;
+                height: 0px;
+                width: 0px;
+                subcontrol-position: top left;
+                subcontrol-origin: margin;
+            }
+            QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover,
+            QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
+                height: 0px;
+                width: 0px;
+                background: none;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
             QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                height: 0px;
+                width: 0px;
                 background: none;
             }
         """,
         "QProgressBar": """
             QProgressBar {
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 1px;
+                border: none;
                 text-align: center;
                 padding: 1px;
                 background-color: {MAIN_BACKGROUND};
@@ -887,11 +841,11 @@ class StyleSheet(QtCore.QObject):
         """Set the menu button as transparent."""
         return """
             {0}::menu-button {{
-                border: 1px solid transparent;
+                border: none;
             }}
 
             {0}::menu-button::hover {{
-                border: 1px solid transparent;
+                border: none;
             }}""".format(
             widget_type
         )
