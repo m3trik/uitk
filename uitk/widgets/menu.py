@@ -4,7 +4,7 @@ import inspect
 from PySide2 import QtCore, QtGui, QtWidgets
 import pythontk as ptk
 from uitk.widgets.optionBox import OptionBox
-from uitk.widgets.draggableHeader import DraggableHeader
+from uitk.widgets.header import Header
 from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.attributes import AttributesMixin
 
@@ -27,23 +27,23 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
     def __init__(
         self,
         parent=None,
-        mode="context",
+        mode=None,
         position="cursorPos",
         min_item_height=None,
         max_item_height=None,
         fixed_item_height=None,
-        add_draggable_header=True,
+        add_header=True,
         **kwargs,
     ):
         """Initializes a Menu instance.
 
         Parameters:
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
-            position (str, optional): The position of the menu. Can be "right", "cursorPos", a coordinate pair, or a widget. Defaults to "right".
+            position (str, optional): The position of the menu. Can be "right", "cursorPos", a coordinate pair, or a widget.
             min_item_height (int, optional): The minimum height of items in the menu. Defaults to None.
             max_item_height (int, optional): The maximum height of items in the menu. Defaults to None.
             fixed_item_height (int, optional): The fixed height of items in the menu. Defaults to None.
-            add_draggable_header (bool, optional): Whether to add a draggable header to the menu. Defaults to True.
+            add_header (bool, optional): Whether to add a draggable  to the menu. Defaults to True.
             **kwargs: Additional keyword arguments to set attributes on the menu.
         """
         super().__init__(parent)
@@ -53,7 +53,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
-        self.add_draggable_header = add_draggable_header
+        self.add_header = add_header
         self.kwargs = kwargs
         self.widget_data = {}
         self.prevent_hide = False
@@ -108,10 +108,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         self.gridLayout.setContentsMargins(0, 0, 0, 0)
         self.gridLayout.setSpacing(1)
 
-        if self.add_draggable_header:
-            # Create DraggableHeader instance and add it to the central widget layout
-            self.draggable_header = DraggableHeader(self)
-            self.centralWidgetLayout.addWidget(self.draggable_header)
+        if self.add_header:
+            # Create Header instance and add it to the central widget layout
+            self.header = Header(self, hide_button=True)
+            self.centralWidgetLayout.addWidget(self.header)
 
         # Add grid layout to the central widget layout
         self.centralWidgetLayout.addLayout(self.gridLayout)
@@ -141,16 +141,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
     def title(self):
         """ """
-        self.draggable_header.text()
+        self.header.text()
 
     def setTitle(self, title="") -> None:
         """Set the menu's title to the given string.
         If no title is given, the function will attempt to use the menu parents text.
 
         Parameters:
-            title (str): Text to apply to the menu's header.
+            title (str): Text to apply to the menu's .
         """
-        self.draggable_header.setText(title)
+        self.header.setText(title)
 
     def get_items(self):
         """Get all items in the list.

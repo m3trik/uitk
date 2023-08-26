@@ -9,15 +9,9 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>147</width>
-    <height>92</height>
+    <width>200</width>
+    <height>187</height>
    </rect>
-  </property>
-  <property name="maximumSize">
-   <size>
-    <width>999</width>
-    <height>999</height>
-   </size>
   </property>
   <property name="tabShape">
    <enum>QTabWidget::Triangular</enum>
@@ -29,14 +23,29 @@
    <set>QMainWindow::AllowNestedDocks|QMainWindow::AllowTabbedDocks|QMainWindow::AnimatedDocks|QMainWindow::ForceTabbedDocks</set>
   </property>
   <widget class="QWidget" name="central_widget">
+   <property name="minimumSize">
+    <size>
+     <width>200</width>
+     <height>0</height>
+    </size>
+   </property>
    <layout class="QVBoxLayout" name="verticalLayout">
+    <property name="spacing">
+     <number>1</number>
+    </property>
     <item>
      <layout class="QVBoxLayout" name="verticalLayout_1">
       <property name="spacing">
-       <number>0</number>
+       <number>1</number>
       </property>
       <item>
-       <widget class="DraggableHeader" name="draggableHeader">
+       <widget class="Header" name="header">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <property name="minimumSize">
          <size>
           <width>0</width>
@@ -45,7 +54,7 @@
         </property>
         <property name="maximumSize">
          <size>
-          <width>125</width>
+          <width>16777215</width>
           <height>22</height>
          </size>
         </property>
@@ -62,24 +71,18 @@
       </item>
       <item>
        <widget class="QGroupBox" name="groupBox">
-        <property name="minimumSize">
-         <size>
-          <width>125</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>125</width>
-          <height>999</height>
-         </size>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
         </property>
         <property name="title">
          <string>GroupBox</string>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout_5">
          <property name="spacing">
-          <number>0</number>
+          <number>1</number>
          </property>
          <property name="leftMargin">
           <number>0</number>
@@ -94,7 +97,7 @@
           <number>0</number>
          </property>
          <item>
-          <widget class="QPushButton" name="MyButtonsObjectName">
+          <widget class="PushButton" name="MyButtonsObjectName">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -131,17 +134,48 @@
        </widget>
       </item>
       <item>
-       <spacer name="verticalSpacer_1">
-        <property name="orientation">
-         <enum>Qt::Vertical</enum>
+       <widget class="CollapsableGroup" name="groupBox_2">
+        <property name="title">
+         <string>• • •</string>
         </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>20</width>
-          <height>40</height>
-         </size>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
         </property>
-       </spacer>
+        <layout class="QVBoxLayout" name="verticalLayout_2">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QTextEdit" name="text_edit">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Ignored">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="html">
+            <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'MS Shell Dlg 2'; font-size:7.85455pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p align=&quot;center&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:7.85455pt; text-decoration: underline;&quot;&gt;TextEdit&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
       </item>
      </layout>
     </item>
@@ -150,9 +184,20 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>DraggableHeader</class>
+   <class>Header</class>
    <extends>QLabel</extends>
-   <header>uitk.widgets.draggableHeader.DraggableHeader.h</header>
+   <header>uitk.widgets.header.Header.h</header>
+  </customwidget>
+  <customwidget>
+   <class>CollapsableGroup</class>
+   <extends>QGroupBox</extends>
+   <header>uitk.widgets.collapsableGroup.CollapsableGroup.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>PushButton</class>
+   <extends>QPushButton</extends>
+   <header>widgets.pushbutton.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

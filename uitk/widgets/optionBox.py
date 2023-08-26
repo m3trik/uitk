@@ -62,6 +62,15 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
         container = QtWidgets.QWidget(g_parent)
         container.setProperty("class", "withBorder")
 
+        # Set the height of the container to match the original parent's height
+        container.setFixedHeight(wrapped_widget.height())
+
+        # Set the size policy to prevent automatic resizing
+        sizePolicy = QtWidgets.QSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+        )
+        container.setSizePolicy(sizePolicy)
+
         if g_parent.layout() is not None:
             g_parent.layout().replaceWidget(wrapped_widget, container)
             g_parent.layout().update()
