@@ -180,7 +180,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     def show_menu(self):
         """Show the menu."""
-        self.menu.toggle_visibility()
+        self.menu.setVisible(True)
 
     def toggle_pin(self):
         """Toggle pinning of the window."""
