@@ -380,13 +380,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         self.option_box.menu = self
         self.option_box.wrap(self.parent())
 
-    def toggle_visibility(self):
-        """ """
-        if self.isVisible():
-            self.hide()
-        elif self.contains_items:
-            self.show()
-
     def center_on_cursor_position(self):
         """ """
         pos = QtGui.QCursor.pos()  # global position
@@ -486,12 +479,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
             super().hide()
 
-    def setVisible(self, state) -> None:
+    def setVisible(self, visible) -> None:
         """Called every time the widget is shown or hidden on screen."""
-        if self.prevent_hide:  # invisible
+        if self.prevent_hide:
             return
 
-        super().setVisible(state)
+        if visible and self.contains_items:
+            super().setVisible(True)
+        else:
+            super().setVisible(False)
 
     def showEvent(self, event) -> None:
         """ """
@@ -508,24 +504,22 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         super().showEvent(event)
 
     def eventFilter(self, widget, event):
-        """ """
         if event.type() == QtCore.QEvent.MouseButtonPress:
             if widget is self.parent():
-                if self.mode == "context" and event.button() == QtCore.Qt.RightButton:
-                    self.toggle_visibility()
-                elif self.mode == "popup" and event.button() == QtCore.Qt.LeftButton:
-                    self.toggle_visibility()
+                if (
+                    self.mode == "context" and event.button() == QtCore.Qt.RightButton
+                ) or (self.mode == "popup" and event.button() == QtCore.Qt.LeftButton):
+                    self.setVisible(not self.isVisible())
 
-        if event.type() == QtCore.QEvent.Show:
-            if widget is self.parent():
-                if self.contains_items:
-                    if self.mode == "option":
-                        # Add apply button to the central widget layout
-                        if hasattr(self.parent(), "clicked"):
-                            self.centralWidgetLayout.addWidget(self.apply_button)
-                            self.apply_button.show()
-                        if self.option_box is None:
-                            self.create_option_box()
+        elif event.type() == QtCore.QEvent.Show:
+            if widget is self.parent() and self.contains_items:
+                if self.mode == "option":
+                    # Add apply button to the central widget layout
+                    if hasattr(self.parent(), "clicked"):
+                        self.centralWidgetLayout.addWidget(self.apply_button)
+                        self.apply_button.show()
+                    if self.option_box is None:
+                        self.create_option_box()
 
         elif event.type() == QtCore.QEvent.MouseButtonRelease:
             if widget in self.get_items():

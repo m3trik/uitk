@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+from functools import wraps
 from PySide2 import QtCore, QtWidgets
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -10,22 +11,14 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
     """Custom ComboBox widget with additional features and custom signal handling."""
 
     before_popup_shown = QtCore.Signal()
-    before_popup_hidden = QtCore.Signal()
     on_editing_finished = QtCore.Signal(str)
+    on_item_deleted = QtCore.Signal(str)
 
-    def __init__(
-        self, parent=None, editable=False, double_click_interval=500, **kwargs
-    ):
+    def __init__(self, parent=None, editable=False, **kwargs):
         super().__init__(parent)
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
 
-        # Initialize other properties for handling double click and editing
         self.editable = editable
-        self.editingInProgress = False
-        self.latestEditedText = ""
-        self.double_click_interval = double_click_interval
-        self.lastClickTime = QtCore.QTime.currentTime()
-        self.doubleClicked = False
+        self.menu = Menu(self, mode="option", fixed_item_height=20)
 
         self.set_attributes(**kwargs)
 
@@ -45,13 +38,13 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
 
         return wrapper
 
-    @block_signals
     def add(
         self,
         x,
         data=None,
         header=None,
         clear=True,
+        restore_index=False,
         ascending=False,
         _recursion=False,
         **kwargs,
@@ -63,9 +56,10 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
             data (optional): The data associated with the items.
             header (str, optional): An optional value for the first index of the comboBox's list.
             clear (bool, optional): Whether to clear any previous items before adding new. Defaults to True.
+            restore_index (bool, optional): Whether to restore the previous index after clearing. Defaults to False.
             ascending (bool, optional): Whether to insert in ascending order. If True, new item(s) will be added to the top of the list. Defaults to False.
             _recursion (bool, optional): Internal use only. Differentiates between the initial call and recursive calls.
-            kwargs: Arbitrary keyword arguments.
+            kwargs: Arbitrary keyword arguments to set attributes for the added items.
 
         Returns:
             widget/list: The added widget or list of added widgets.
@@ -73,48 +67,62 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
         Raises:
             TypeError: If the type of 'x' is unsupported.
         """
+        self.blockSignals(True)
+
+        last_added_data = None
+        last_added_text = None
+
+        def add_single(item, data):
+            nonlocal last_added_data, last_added_text
+            if ascending:
+                self.insertItem(0, item, data)
+            else:
+                self.addItem(item, data)
+            last_added_data = data
+            last_added_text = item
+
         if not _recursion and clear:
+            prev_index = self.currentIndex()
             self.clear()
 
-        result = None
         if isinstance(x, dict):
-            result = [
-                self.add(key, val, ascending=ascending, _recursion=True, **kwargs)
-                for key, val in x.items()
-            ]
+            [add_single(k, v) for k, v in x.items()]
         elif isinstance(x, (list, tuple, set)):
-            result = [
-                self.add(item, data, ascending=ascending, _recursion=True, **kwargs)
-                for item in x
-            ]
-        elif isinstance(x, zip):
-            result = [
-                self.add(item, data, ascending=ascending, _recursion=True, **kwargs)
-                for item, d in x
-            ]
-        elif isinstance(x, map):
-            result = [
-                self.add(item, data, ascending=ascending, _recursion=True, **kwargs)
-                for item in list(x)
-            ]
+            [add_single(item, data) for item in x]
+        elif isinstance(x, (zip, map)):
+            [add_single(i, d) for i, d in x]
         elif isinstance(x, str):
-            if x is not None:
-                if ascending:
-                    self.insertItem(0, x, data)
-                else:
-                    self.addItem(x, data)
-            result = x
+            add_single(x, data)
         else:
             raise TypeError(
-                f"Unsupported item type: expected str or a collection (list, tuple, set, map, zip, dict), but got '{type(x)}'"
+                f"Unsupported item type: '{type(x)}'. Expected str, list, tuple, set, map, zip, or dict."
             )
 
+        self.set_attributes(**kwargs)
+
         if not _recursion:
+            self.blockSignals(True)
+
+            final_index = 0  # Default index is 0
+            if restore_index:
+                final_index = prev_index
+
+            self.setCurrentIndex(final_index)
+
             if header:
                 self.insertItem(0, header)
-            self.setCurrentIndex(0)
+                self.setCurrentIndex(0)
 
-        return result
+            self.blockSignals(False)
+            self.currentIndexChanged.emit(final_index)
+
+    @block_signals
+    def removeItem(self, index=None):
+        if index is None:
+            index = self.currentIndex()
+        item_text = self.itemText(index)
+        super().removeItem(index)
+        self.item_deleted.emit(item_text)
 
     @block_signals
     def currentData(self):
@@ -136,111 +144,57 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
     def setItemText(self, index, text):
         self.setRichText(text, index)
 
-    @block_signals
-    def setCurrentItem(self, i):
-        index = (
-            self.items.index(i)
-            if isinstance(i, str)
-            else i
-            if isinstance(i, int)
-            else None
-        )
+    def setCurrentItem(self, i, block_signals=False):
+        if block_signals:
+            self.blockSignals(True)
+
+        try:
+            index = (
+                self.items.index(i)
+                if isinstance(i, str)
+                else i
+                if isinstance(i, int)
+                else None
+            )
+        except ValueError:
+            raise ValueError(
+                f"The item '{i}' was not found in ComboBox. Available items are {self.items}."
+            )
+
         if index is None:
             raise RuntimeError(
                 f"Failed to set current item in ComboBox: expected int or str, got {i, type(i)}"
             )
+
         self.setCurrentIndex(index)
+
+        if block_signals:
+            self.blockSignals(False)
+
+    def setEditable(self, editable):
+        if editable:
+            current_text = self.currentText()
+            super().setEditable(True)
+            lineEdit = self.lineEdit()
+            lineEdit.setText(current_text)
+            lineEdit.deselect()
+        else:
+            lineEdit = self.lineEdit()
+            new_text = lineEdit.text()
+            super().setEditable(False)
+            self.setCurrentText(new_text)
+            self.on_editing_finished.emit(new_text)
 
     def showPopup(self):
         self.view().setMinimumWidth(self.sizeHint().width())
         self.before_popup_shown.emit()
         super().showPopup()
 
-    def hidePopup(self):
-        self.before_popup_hidden.emit()
-        super().hidePopup()
-
-    def mousePressEvent(self, event):
-        clickTime = QtCore.QTime.currentTime()
-        elapsed = clickTime.msecsTo(self.lastClickTime) * -1
-        if self.editable and elapsed < self.double_click_interval:
-            self.double_click_behavior()
-            self.doubleClicked = True
-        else:
-            self.doubleClicked = False
-        self.lastClickTime = clickTime
-        event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if not self.doubleClicked and event.button() == QtCore.Qt.LeftButton:
-            if self.view().isVisible():
-                self.hidePopup()
-            else:
-                self.showPopup()
-        event.accept()
-
-    def double_click_behavior(self):
-        """Sets the ComboBox to editable mode on double click, selecting all text and disconnecting any existing slots from signals."""
-        self.setEditable(True)
-        QtCore.QTimer.singleShot(100, self.hidePopup)
-        self.editingIndex = self.currentIndex()
-        lineEdit = self.lineEdit()
-        currentText = self.currentText()
-        lineEdit.setText(currentText)
-        self.latestEditedText = currentText
-        lineEdit.setContextMenuPolicy(QtCore.Qt.NoContextMenu)
-        lineEdit.selectAll()
-        try:
-            lineEdit.textEdited.disconnect()
-        except Exception:
-            pass
-        try:
-            lineEdit.editingFinished.disconnect()
-        except Exception:
-            pass
-        QtCore.QTimer.singleShot(
-            100, lambda: lineEdit.textEdited.connect(self.save_edited_text)
-        )
-        QtCore.QTimer.singleShot(
-            100, lambda: lineEdit.editingFinished.connect(self.make_uneditable_delayed)
-        )
-
-    def save_edited_text(self, text):
-        """Save the latest edited text.
-
-        Parameters:
-            text (str): The text entered by the user.
-        """
-        self.latestEditedText = text
-
-    def replace_item_text(self):
-        """Replaces the current item's text with the text in the QLineEdit."""
-        currentIndex = self.currentIndex()
-        newText = self.latestEditedText.strip()
-        self.setItemText(currentIndex, newText)
-        self.setCurrentIndex(currentIndex)
-        self.update()
-
-    def make_uneditable_delayed(self):
-        """Delays the call to 'make_uneditable' by 100 ms."""
-        QtCore.QTimer.singleShot(100, self.make_uneditable)
-
-    def make_uneditable(self):
-        """Reverts the ComboBox back to uneditable mode, disconnects signals, and emits 'on_editing_finished' signal."""
-        if not self.editingInProgress:
-            self.replace_item_text()
-            self.lineEdit().editingFinished.disconnect(self.make_uneditable_delayed)
-            self.editingInProgress = False
-            self.on_editing_finished.emit(self.currentText())
-            self.lineEdit().textEdited.disconnect(self.save_edited_text)
+    def keyPressEvent(self, event):
+        if self.isEditable() and event.key() == QtCore.Qt.Key_Return:
             self.setEditable(False)
 
-    def keyPressEvent(self, event):
-        """Overrides key press event. If editable and 'Enter' is pressed, emits 'editingFinished' signal, otherwise proceeds with default keyPressEvent."""
-        if self.isEditable() and event.key() == QtCore.Qt.Key_Return:
-            self.lineEdit().editingFinished.emit()
-        else:
-            super().keyPressEvent(event)
+        super().keyPressEvent(event)
 
 
 # -----------------------------------------------------------------------------
@@ -252,6 +206,9 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
     cmb = ComboBox()
+    cmb.editable = True
+    cmb.add(["Item A", "Item B"], header="Items:")
+
     cmb.show()
     sys.exit(app.exec_())
 

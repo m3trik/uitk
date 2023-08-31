@@ -715,6 +715,7 @@ class StyleSheet(QtCore.QObject):
 
         return super_style, style
 
+    @ptk.listify
     def set_style(
         self,
         widget: Union[QtWidgets.QWidget, None] = None,
@@ -726,8 +727,8 @@ class StyleSheet(QtCore.QObject):
         Set the theme for a specific widget by using the '#' syntax and the widget's objectName. ie. QWidget#mainWindow
 
         Parameters:
-            theme (str): Color mode. ie. 'light' or 'dark'
             widget (obj/list): The widget to set the theme of.
+            theme (str): Color mode. ie. 'light' or 'dark'
             style_class: Assign a custom style class to the widget.
         """
         if widget is None:
