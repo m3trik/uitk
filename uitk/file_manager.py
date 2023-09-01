@@ -232,25 +232,33 @@ class FileManager:
             return caller_dir
         return None
 
-    def _get_base_dir(self, caller_index=0):
-        """Identifies the base directory based on the caller's frame index.
+    def _get_base_dir(self, caller_info=0):
+        """Identifies the base directory based on the caller's frame index or an object.
 
         Parameters:
-            caller_index (int): Index to identify the caller's frame. 0 for the calling method, 1 for the caller of the caller, etc.
-
+            caller_info (str/int/object): Either a full path, an index to identify the caller's
+                    frame, or a Python object (e.g., module, class) to derive the path from.
         Returns:
-            str: Absolute path of the caller's directory.
+            str: Absolute path of the caller's directory or the object's directory.
         """
-        # Create a dictionary to filter out duplicates by filename
-        unique_frames = {frame.filename: frame for frame in inspect.stack()}
+        # Handle the case where an integer frame index is provided
+        if isinstance(caller_info, int):
+            # Create a dictionary to filter out duplicates by filename
+            unique_frames = {frame.filename: frame for frame in inspect.stack()}
 
-        # Convert the unique frames back to a list and exclude the first frame (file_manager itself)
-        filtered_stack = list(unique_frames.values())[1:]
+            # Convert the unique frames back to a list and exclude the first frame
+            filtered_stack = list(unique_frames.values())[1:]
 
-        frame_index = caller_index
-        if frame_index < len(filtered_stack):
-            frame = filtered_stack[frame_index]
-            return os.path.abspath(os.path.dirname(frame.filename))
+            # Check if the frame index is within the filtered stack
+            frame_index = caller_info
+            if frame_index < len(filtered_stack):
+                frame = filtered_stack[frame_index]
+                return os.path.abspath(os.path.dirname(frame.filename))
+
+        else:  # Handle the case where an object is provided
+            # Use get_object_path to derive the path from the object
+            return ptk.get_object_path(caller_info)
+
         return None
 
     def _resolve_path(self, target_obj, **metadata):
@@ -286,8 +294,8 @@ class FileManager:
              - exc_files (list, optional): List of excluded files.
              - inc_dirs (list, optional): List of included directories.
              - exc_dirs (list, optional): List of excluded directories.
-             - base_dir (str, optional): Base directory for relative paths.
-
+             - base_dir (str/int/object, optional): Either a full path, an index to identify the caller's
+                        frame, or a Python object (e.g., module, class) to derive the path from.
         Returns:
             NamedTupleContainer: Container holding the named tuples for the file information.
         """
