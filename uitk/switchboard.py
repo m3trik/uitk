@@ -930,7 +930,7 @@ class Switchboard(QUiLoader):
         for signal_name in signals:
             if not isinstance(signal_name, str):
                 raise TypeError(
-                    f"Signal name must be a string, not '{type(signal_name)}'"
+                    f"Invalid signal for '{widget.ui.name}.{widget.name}' {widget.derived_type}. Expected str, got '{type(signal_name)}'"
                 )
             signal = getattr(widget, signal_name, None)
             if signal:
@@ -941,7 +941,7 @@ class Switchboard(QUiLoader):
                 self._connected_slots[widget][signal_name] = slot_wrapper
             else:
                 self.logger.warning(
-                    f"No valid signal '{signal_name}' found for {widget.ui.name}.{widget.name}"
+                    f"No valid signal found for '{widget.ui.name}.{widget.name}' {widget.derived_type}. Expected str, got '{type(signal_name)}'"
                 )
 
     def disconnect_slots(self, ui, widgets=None, disconnect_all=False):
