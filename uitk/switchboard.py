@@ -877,23 +877,23 @@ class Switchboard(QUiLoader):
             has_kwargs = any(p.kind == p.VAR_KEYWORD for p in parameters.values())
             has_widget = "widget" in parameters
 
-            if has_kwargs or has_widget:
-                kwargs["widget"] = widget
+            call_kwargs = kwargs.copy()
 
-            if len(args) > 0:  # if there are values, try to call the slot with them
-                if "widget" in parameters or has_kwargs:
-                    slot(*args, **kwargs)
-                else:
-                    slot(
-                        *args
-                    )  # this should fall back to positional arguments if keyword arguments are not accepted
-            else:  # no extra arguments, so call the slot with no arguments
-                if "widget" in parameters or has_kwargs:
-                    slot(**kwargs)
-                else:
-                    slot()
+            if has_widget or has_kwargs:
+                call_kwargs["widget"] = widget
 
-            self.slot_history(add=slot)  # update slot history after calling the slot
+            try:
+                if len(args) > 0:
+                    return slot(*args, **call_kwargs)
+                else:
+                    return slot(**call_kwargs)
+            except TypeError:
+                if "widget" in call_kwargs:
+                    del call_kwargs["widget"]
+                return slot(*args, **call_kwargs)  # Return the result of the slot call
+
+            finally:  # Update slot history after calling the slot
+                self.slot_history(add=slot)
 
         return slot_wrapper
 
