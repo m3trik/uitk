@@ -2,11 +2,11 @@
 # coding=utf-8
 import re
 import sys
-import inspect
 import logging
 import traceback
 from functools import wraps
 from typing import List, Union
+from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
 from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtUiTools import QUiLoader
@@ -871,31 +871,24 @@ class Switchboard(QUiLoader):
             callable: The slot wrapper function. This function can be connected to a widget signal and is responsible for calling the original slot function
                 with the appropriate arguments.
         """
+        sig = signature(slot)
+        param_names = [
+            name
+            for name, param in sig.parameters.items()
+            if param.kind in [Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY]
+        ]
 
-        def slot_wrapper(*args, **kwargs):
-            parameters = inspect.signature(slot).parameters
-            has_kwargs = any(p.kind == p.VAR_KEYWORD for p in parameters.values())
-            has_widget = "widget" in parameters
+        def wrapper(*args, **kwargs):
+            # Initialize with the supplied args and kwargs already filtered
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}
 
-            if has_kwargs or has_widget:
-                kwargs["widget"] = widget
+            # Insert the widget if it's expected by the function signature
+            if "widget" in param_names:
+                filtered_kwargs["widget"] = widget
 
-            if len(args) > 0:  # if there are values, try to call the slot with them
-                if "widget" in parameters or has_kwargs:
-                    slot(*args, **kwargs)
-                else:
-                    slot(
-                        *args
-                    )  # this should fall back to positional arguments if keyword arguments are not accepted
-            else:  # no extra arguments, so call the slot with no arguments
-                if "widget" in parameters or has_kwargs:
-                    slot(**kwargs)
-                else:
-                    slot()
+            return slot(*args, **filtered_kwargs)
 
-            self.slot_history(add=slot)  # update slot history after calling the slot
-
-        return slot_wrapper
+        return wrapper
 
     def connect_slot(self, widget, slot=None):
         """Connects a slot to its associated signals for a widget.
@@ -1724,10 +1717,6 @@ if __name__ == "__main__":
 
     sb = Switchboard(ui_location=example, slot_location=example.example_slots)
     ui = sb.example
-    ui.text_edit.setText("Text Edit")
-    ui.header.configureButtons(menu_button=True, minimize_button=True, hide_button=True)
-    ui.header.menu.setTitle("EXAMPLE MENU")
-    ui.header.menu.add(["Item A", "Item B"])
 
     ui.set_attributes(WA_TranslucentBackground=True)
     ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)

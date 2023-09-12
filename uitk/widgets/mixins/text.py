@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
+from PySide2 import QtCore, QtWidgets
 
 
 class RichText:
@@ -30,7 +30,7 @@ class RichText:
         try:
             return self._richTextLabelDict
 
-        except AttributeError as error:
+        except AttributeError:
             self._richTextLabelDict = {}
             return self._richTextLabelDict
 
@@ -45,7 +45,7 @@ class RichText:
         try:
             return self._richTextSizeHintDict
 
-        except AttributeError as error:
+        except AttributeError:
             self._richTextSizeHintDict = {}
             return self._richTextSizeHintDict
 
@@ -121,7 +121,7 @@ class RichText:
         try:
             return self.__class__.__base__.text(self)
 
-        except AttributeError as error:
+        except AttributeError:
             if index is not None:
                 return self.__class__.__base__.itemText(self, index)
             else:
@@ -136,7 +136,7 @@ class RichText:
             index = index if index else 0
             label = self.richTextLabelDict[index]
             return label.text()
-        except KeyError as error:  # no rich text at that index. return standard text.
+        except KeyError:  # no rich text at that index. return standard text.
             pass
 
         return self._text(index)  # return standard widget text
@@ -150,7 +150,7 @@ class RichText:
         try:
             self.__class__.__base__.setText(self, text)
 
-        except AttributeError as error:
+        except AttributeError:
             self.__class__.__base__.setItemText(self, index, text)
 
     def setRichText(self, text, index=0):
@@ -212,7 +212,7 @@ class TextOverlay:
         try:
             return self._textOverlayLabel
 
-        except AttributeError as error:
+        except AttributeError:
             layout = QtWidgets.QHBoxLayout(self)
             layout.setContentsMargins(0, 0, 0, 0)
 
@@ -273,7 +273,7 @@ class TextOverlay:
 
         Example: setTextOverlayColor('rgb(185,185,185)')
         """
-        label.setStyleSheet(
+        self.setStyleSheet(
             """
                 QLabel {{
                     color: {0};
@@ -283,6 +283,8 @@ class TextOverlay:
             )
         )
 
+
+# --------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
@@ -294,27 +296,21 @@ if __name__ == "__main__":
     sys.exit(app.exec_())
 
 
-# -----------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------
 # Notes
-# -----------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------
+
 
 """
 Promoting a widget in designer to use a custom class:
->   In Qt Designer, select all the widgets you want to replace, 
-        then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace,
+        then right-click them and select 'Promote to...'.
 
 >   In the dialog:
         Base Class:     Class from which you inherit. ie. QWidget
         Promoted Class: Name of the class. ie. "MyWidget"
         Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->   Then click "Add", "Promote", 
+>   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
-
-# depricated ------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------------------------
-# Notes
-# --------------------------------------------------------------------------------------------
