@@ -39,23 +39,10 @@ python -m pip install uitk
 
 Create an instance of Switchboard to load and connect your dynamic ui.
 ```python
-from uitk import Switchboard, signals
+from uitk import Switchboard
+from uitk import example
 
-
-class MyProject:
-    ...
-
-
-class MyProjectSlots(MyProject):
-    def __init__(self):
-        self.sb = self.switchboard()
-
-    @signals("released")  # Specify signal(s) other than the default.
-    def MyButtonsObjectName(self):
-        self.sb.message_box("Button Pressed")
-
-
-sb = Switchboard(ui_location="example", slot_location=MyProjectSlots)
+sb = Switchboard(ui_location=example, slot_location=example.example_slots)
 
 ui = sb.example  # Access the UI using its filename.
 ui.text_edit.setText("Text Edit")

@@ -1720,19 +1720,9 @@ class Switchboard(QUiLoader):
 # --------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from uitk import example
 
-    class Example:
-        """Your main project code"""
-
-    class ExampleSlots(Example):
-        def __init__(self):
-            self.sb = self.switchboard()
-
-        @signals("released")
-        def MyButtonsObjectName(self):
-            self.sb.message_box("Button Pressed")
-
-    sb = Switchboard(ui_location="example", slot_location=ExampleSlots)
+    sb = Switchboard(ui_location=example, slot_location=example.example_slots)
     ui = sb.example
     ui.text_edit.setText("Text Edit")
     ui.header.configureButtons(menu_button=True, minimize_button=True, hide_button=True)
