@@ -80,10 +80,7 @@
         <property name="title">
          <string>GroupBox</string>
         </property>
-        <layout class="QVBoxLayout" name="verticalLayout_5">
-         <property name="spacing">
-          <number>1</number>
-         </property>
+        <layout class="QGridLayout" name="gridLayout">
          <property name="leftMargin">
           <number>0</number>
          </property>
@@ -96,8 +93,8 @@
          <property name="bottomMargin">
           <number>0</number>
          </property>
-         <item>
-          <widget class="PushButton" name="MyButtonsObjectName">
+         <item row="0" column="0">
+          <widget class="PushButton" name="button_a">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -114,7 +111,7 @@
             <enum>Qt::RightToLeft</enum>
            </property>
            <property name="text">
-            <string>PushButton</string>
+            <string>Button A</string>
            </property>
            <property name="autoDefault">
             <bool>false</bool>
@@ -127,6 +124,54 @@
            </property>
            <property name="bnabled" stdset="0">
             <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="PushButton" name="button_b">
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>20</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>999</width>
+             <height>20</height>
+            </size>
+           </property>
+           <property name="layoutDirection">
+            <enum>Qt::RightToLeft</enum>
+           </property>
+           <property name="text">
+            <string>Button B</string>
+           </property>
+           <property name="autoDefault">
+            <bool>false</bool>
+           </property>
+           <property name="default">
+            <bool>false</bool>
+           </property>
+           <property name="flat">
+            <bool>false</bool>
+           </property>
+           <property name="bnabled" stdset="0">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QCheckBox" name="checkbox">
+           <property name="text">
+            <string>CheckBox</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QSpinBox" name="spinbox">
+           <property name="prefix">
+            <string>Spinbox:	</string>
            </property>
           </widget>
          </item>
