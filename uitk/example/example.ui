@@ -10,7 +10,7 @@
     <x>0</x>
     <y>0</y>
     <width>200</width>
-    <height>187</height>
+    <height>277</height>
    </rect>
   </property>
   <property name="tabShape">
@@ -49,13 +49,13 @@
         <property name="minimumSize">
          <size>
           <width>0</width>
-          <height>22</height>
+          <height>20</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
           <width>16777215</width>
-          <height>22</height>
+          <height>20</height>
          </size>
         </property>
         <property name="font">
@@ -93,74 +93,6 @@
          <property name="bottomMargin">
           <number>0</number>
          </property>
-         <item row="0" column="0">
-          <widget class="PushButton" name="button_a">
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>20</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>999</width>
-             <height>20</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="text">
-            <string>Button A</string>
-           </property>
-           <property name="autoDefault">
-            <bool>false</bool>
-           </property>
-           <property name="default">
-            <bool>false</bool>
-           </property>
-           <property name="flat">
-            <bool>false</bool>
-           </property>
-           <property name="bnabled" stdset="0">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item row="0" column="1">
-          <widget class="PushButton" name="button_b">
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>20</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>999</width>
-             <height>20</height>
-            </size>
-           </property>
-           <property name="layoutDirection">
-            <enum>Qt::RightToLeft</enum>
-           </property>
-           <property name="text">
-            <string>Button B</string>
-           </property>
-           <property name="autoDefault">
-            <bool>false</bool>
-           </property>
-           <property name="default">
-            <bool>false</bool>
-           </property>
-           <property name="flat">
-            <bool>false</bool>
-           </property>
-           <property name="bnabled" stdset="0">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
          <item row="1" column="0">
           <widget class="QCheckBox" name="checkbox">
            <property name="text">
@@ -172,6 +104,40 @@
           <widget class="QSpinBox" name="spinbox">
            <property name="prefix">
             <string>Spinbox:	</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="0" colspan="2">
+          <widget class="PushButton" name="button">
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>20</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>999</width>
+             <height>20</height>
+            </size>
+           </property>
+           <property name="layoutDirection">
+            <enum>Qt::RightToLeft</enum>
+           </property>
+           <property name="text">
+            <string>Button</string>
+           </property>
+           <property name="autoDefault">
+            <bool>false</bool>
+           </property>
+           <property name="default">
+            <bool>false</bool>
+           </property>
+           <property name="flat">
+            <bool>false</bool>
+           </property>
+           <property name="bnabled" stdset="0">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -200,7 +166,7 @@
           <number>0</number>
          </property>
          <item>
-          <widget class="QTextEdit" name="text_edit">
+          <widget class="QTextEdit" name="textedit">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Expanding" vsizetype="Ignored">
              <horstretch>0</horstretch>

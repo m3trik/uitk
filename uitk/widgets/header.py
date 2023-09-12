@@ -59,6 +59,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             if key in self.button_definitions
         }
 
+        self.setFixedHeight(20)
         self.configureButtons(**button_args)
         self.set_attributes(**kwargs)
 
@@ -112,6 +113,12 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         # Ensure layout is updated
         self.container_layout.invalidate()
+        self.triggerResizeEvent()
+
+    def triggerResizeEvent(self):
+        current_size = self.size()
+        resize_event = QtGui.QResizeEvent(current_size, current_size)
+        self.resizeEvent(resize_event)
 
     def resizeEvent(self, event):
         self.resizeButtons()
@@ -248,7 +255,7 @@ if __name__ == "__main__":
         minimize_button=True,
         pin_button=True,
         hide_button=True,
-        setTitle="Drag me!",
+        setTitle="DRAG ME!",
     )
     header.toggled.connect(lambda state: print(f"Header pinned: {state}!"))
     header.menu.add(["Menu Item A", "Menu Item B"])

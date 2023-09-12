@@ -1,5 +1,5 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
-[![Version](https://img.shields.io/badge/Version-0.8.8-blue.svg)](https://pypi.org/project/uitk/)
+[![Version](https://img.shields.io/badge/Version-0.8.9-blue.svg)](https://pypi.org/project/uitk/)
 
 # UITK: Dynamic UI Management for Python with PySide2
 
@@ -43,12 +43,7 @@ from uitk import Switchboard
 from uitk import example
 
 sb = Switchboard(ui_location=example, slot_location=example.example_slots)
-
 ui = sb.example  # Access the UI using its filename.
-ui.text_edit.setText("Text Edit")
-ui.header.configureButtons(menu_button=True, minimize_button=True, hide_button=True)
-ui.header.menu.setTitle("EXAMPLE MENU")
-ui.header.menu.add(["Item A", "Item B"])  # Supports widgets and data using dict. Defaults to label.
 
 ui.set_attributes(WA_TranslucentBackground=True)  # Set properties using keyword arguments.
 ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)

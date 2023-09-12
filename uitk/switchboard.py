@@ -2,11 +2,11 @@
 # coding=utf-8
 import re
 import sys
-import inspect
 import logging
 import traceback
 from functools import wraps
 from typing import List, Union
+from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
 from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtUiTools import QUiLoader
@@ -871,31 +871,24 @@ class Switchboard(QUiLoader):
             callable: The slot wrapper function. This function can be connected to a widget signal and is responsible for calling the original slot function
                 with the appropriate arguments.
         """
+        sig = signature(slot)
+        param_names = [
+            name
+            for name, param in sig.parameters.items()
+            if param.kind in [Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY]
+        ]
 
-        def slot_wrapper(*args, **kwargs):
-            parameters = inspect.signature(slot).parameters
-            has_kwargs = any(p.kind == p.VAR_KEYWORD for p in parameters.values())
-            has_widget = "widget" in parameters
+        def wrapper(*args, **kwargs):
+            # Initialize with the supplied args and kwargs already filtered
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}
 
-            call_kwargs = kwargs.copy()
+            # Insert the widget if it's expected by the function signature
+            if "widget" in param_names:
+                filtered_kwargs["widget"] = widget
 
-            if has_widget or has_kwargs:
-                call_kwargs["widget"] = widget
+            return slot(*args, **filtered_kwargs)
 
-            try:
-                if len(args) > 0:
-                    return slot(*args, **call_kwargs)
-                else:
-                    return slot(**call_kwargs)
-            except TypeError:
-                if "widget" in call_kwargs:
-                    del call_kwargs["widget"]
-                return slot(*args, **call_kwargs)  # Return the result of the slot call
-
-            finally:  # Update slot history after calling the slot
-                self.slot_history(add=slot)
-
-        return slot_wrapper
+        return wrapper
 
     def connect_slot(self, widget, slot=None):
         """Connects a slot to its associated signals for a widget.
@@ -1724,10 +1717,6 @@ if __name__ == "__main__":
 
     sb = Switchboard(ui_location=example, slot_location=example.example_slots)
     ui = sb.example
-    ui.text_edit.setText("Text Edit")
-    ui.header.configureButtons(menu_button=True, minimize_button=True, hide_button=True)
-    ui.header.menu.setTitle("EXAMPLE MENU")
-    ui.header.menu.add(["Item A", "Item B"])
 
     ui.set_attributes(WA_TranslucentBackground=True)
     ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
