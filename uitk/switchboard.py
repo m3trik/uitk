@@ -879,14 +879,16 @@ class Switchboard(QUiLoader):
         ]
 
         def wrapper(*args, **kwargs):
-            # Initialize with the supplied args and kwargs already filtered
             filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}
-
-            # Insert the widget if it's expected by the function signature
             if "widget" in param_names:
                 filtered_kwargs["widget"] = widget
 
-            return slot(*args, **filtered_kwargs)
+            result = slot(*args, **filtered_kwargs)
+
+            # Update slot history after calling the slot
+            self.slot_history(add=slot)
+
+            return result
 
         return wrapper
 
