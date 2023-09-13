@@ -1124,8 +1124,11 @@ class Switchboard(QUiLoader):
         widget.ui.settings.setValue(f"{widget.name}/{signal_name}", value)
 
     def restore_widget_state(self, widget):
-        """Restores the state of a given widget.
-        This method uses the QSettings class to restore the state of a widget. The state is retrieved using a key that is a combination of the widget's object name and the signal name. The method then sets the widget's state based on the retrieved value.
+        """Restores the state of a given widget using QSettings.
+
+        This method uses the QSettings class to restore the state of a widget. The state is retrieved
+        using a key that combines the widget's object name and the signal name. If the value is found,
+        the widget's state is updated accordingly.
 
         Parameters:
             widget (QWidget): The widget whose state is to be restored.
@@ -1134,19 +1137,31 @@ class Switchboard(QUiLoader):
         if signal_name:
             value = widget.ui.settings.value(f"{widget.name}/{signal_name}")
             if value is not None:
-                # QSettings stores everything as strings, so some conversion might be neccesary
-                if signal_name == "textChanged":
-                    widget.setText(value)
-                elif signal_name == "valueChanged":
-                    if isinstance(value, str):
-                        value = float(value)
-                    widget.setValue(value)
-                elif signal_name == "currentIndexChanged":
-                    widget.setCurrentIndex(int(value))
-                elif signal_name in {"toggled", "stateChanged"}:
-                    if isinstance(value, str):
-                        value = bool(value.capitalize())
-                    widget.setChecked(int(value))
+                self._apply_state_to_widget(widget, signal_name, value)
+
+    def _apply_state_to_widget(self, widget, signal_name, value):
+        """Applies the stored state to a widget based on the given signal name.
+
+        This method updates the widget's state based on the passed-in signal name and value.
+        It handles various types of widgets and their corresponding signals.
+
+        Parameters:
+            widget (QWidget): The widget whose state is to be updated.
+            signal_name (str): The name of the signal that triggered the state change.
+            value (Union[str, float, int]): The value to set the widget's state to.
+        """
+        if signal_name == "textChanged":
+            widget.setText(value)
+        elif signal_name == "valueChanged":
+            if isinstance(value, str):
+                value = float(value)
+            widget.setValue(value)
+        elif signal_name == "currentIndexChanged":
+            widget.setCurrentIndex(int(value))
+        elif signal_name in {"toggled", "stateChanged"}:
+            if isinstance(value, str):
+                value = bool(value.capitalize())
+            widget.setChecked(int(value))
 
     def set_widget_attrs(self, ui, widget_names, **kwargs):
         """Set multiple properties, for multiple widgets, on multiple UI's at once.
