@@ -170,6 +170,8 @@ class MainWindow(
         self.widgets.add(widget)
 
         self.on_child_added.emit(widget)
+        # Restore the widgets previous state
+        self.sb.restore_widget_state(widget)
         # Connect the on_child_changed signal to the sync_widget_values method
         self.init_child_changed_signal(widget)
 
@@ -376,7 +378,17 @@ class MainWindow(
             slot_init(widget)
 
     def call_slot(self, widget, *args, **kwargs):
-        """ """
+        """Executes the associated slot for a given widget.
+
+        This method retrieves the slot corresponding to the widget's name and executes it,
+        passing along any additional arguments and keyword arguments. It also re-initializes the slot
+        if the widget's `refresh` attribute is set to True.
+
+        Parameters:
+            widget (QWidget): The widget whose associated slot is to be called.
+            *args: Variable-length argument list to pass to the slot.
+            **kwargs: Arbitrary keyword arguments to pass to the slot.
+        """
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(
                 f"Expected a widget object, but received {type(widget)}"
@@ -410,7 +422,6 @@ class MainWindow(
                             rel_widget.init_slot()
 
                 if not widget.is_initialized:
-                    self.sb.restore_widget_state(widget)
                     widget.is_initialized = True
 
         return super().eventFilter(widget, event)

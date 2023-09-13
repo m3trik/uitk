@@ -18,9 +18,27 @@ class ExampleSlots:
         widget = self.sb.example.header.menu.label
         self.sb.message_box(f"{widget.text()}: Clicked")
 
+    def button_a(self, widget):
+        self.sb.message_box(f"{widget.text()}: Clicked")
+
+    def button_b_init(self, widget):
+        widget.menu.setTitle("OPTION MENU")
+        widget.menu.add(
+            "QRadioButton", setObjectName="radio_a", setText="Option A", setChecked=True
+        )
+        widget.menu.add("QRadioButton", setObjectName="radio_b", setText="Option B")
+        widget.menu.add("QRadioButton", setObjectName="radio_c", setText="Option C")
+
     @signals("released")
-    def button(self, widget):
-        self.sb.message_box(f"{widget.text()}: Released")
+    def button_b(self, widget):
+        option = (
+            "A"
+            if widget.menu.radio_a.isChecked()
+            else "B"
+            if widget.menu.radio_b.isChecked()
+            else "C"
+        )
+        self.sb.message_box(f"{widget.text()}: Option {option}")
 
     def checkbox(self, state):
         self.sb.message_box(
@@ -32,7 +50,9 @@ class ExampleSlots:
 
     @staticmethod
     def textedit_init(widget):
-        widget.setText("Initialized with this text.")
+        widget.setText(
+            "• Collapse this text edit by clicking on the three dots above it.\n\n• Widget states are restored the next time this UI is opened."
+        )
 
 
 # --------------------------------------------------------------------------------------------
