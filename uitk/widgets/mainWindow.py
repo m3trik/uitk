@@ -294,24 +294,6 @@ class MainWindow(
                     setattr(self.sb, legal_name_no_tags, self)
         return legal_name_no_tags
 
-    def set_flags(self, **flags):
-        """Sets or unsets any given window flag(s).
-
-        Parameters:
-            **flags: Keyword arguments where the flag is the key and the value indicates whether to set or unset the flag.
-        """
-        current_flags = self.windowFlags()
-
-        for flag, add in flags.items():
-            if hasattr(QtCore.Qt, flag):
-                flag_value = getattr(QtCore.Qt, flag)
-                if add:
-                    current_flags |= flag_value
-                else:
-                    current_flags &= ~flag_value
-
-        self.setWindowFlags(current_flags)
-
     @staticmethod
     def _parse_tags(name):
         """Parse tags from the file name and return a set of tags.

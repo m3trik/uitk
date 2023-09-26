@@ -884,10 +884,7 @@ class Switchboard(QUiLoader):
                 filtered_kwargs["widget"] = widget
 
             result = slot(*args, **filtered_kwargs)
-
-            # Update slot history after calling the slot
             self.slot_history(add=slot)
-
             return result
 
         return wrapper
