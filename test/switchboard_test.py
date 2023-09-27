@@ -12,16 +12,64 @@ class TestSwitchboard(unittest.TestCase):
         self.ui = self.sb.example
 
     def test_slot_wrapper_variants(self):
+        def test_wrapper(fn):
+            def wrapper(*args, **kwargs):
+                if args and hasattr(args[0], "__class__"):
+                    self = args[0]
+                    fn(self, *args[1:], **kwargs)
+                else:
+                    fn(*args, **kwargs)
+
+            return wrapper
+
+        actual_button_a_method = self.ui.button_a.get_slot()
+        wrapped_button_a = test_wrapper(actual_button_a_method)
+
         test_cases = [
-            {"widget_obj": self.ui.button_a, "args": [], "expected": None},
-            {"widget_obj": self.ui.button_b, "args": [], "expected": None},
-            {"widget_obj": self.ui.spinbox, "args": [5], "expected": None},
-            {"widget_obj": self.ui.checkbox, "args": [True], "expected": None},
+            {
+                "widget_obj": self.ui.button_a,
+                "method": "call_slot",
+                "args": [],
+                "self_obj": self.ui.button_a,
+                "expected": None,
+            },
+            {
+                "widget_obj": wrapped_button_a,
+                "method": None,
+                "args": [],
+                "self_obj": self.ui.button_a,
+                "expected": None,
+            },
+            {
+                "widget_obj": self.ui.button_b,
+                "method": "call_slot",
+                "args": [],
+                "self_obj": self.ui.button_b,
+                "expected": None,
+            },
+            {
+                "widget_obj": self.ui.spinbox,
+                "method": "call_slot",
+                "args": [5],
+                "self_obj": self.ui.spinbox,
+                "expected": None,
+            },
+            {
+                "widget_obj": self.ui.checkbox,
+                "method": "call_slot",
+                "args": [True],
+                "self_obj": self.ui.checkbox,
+                "expected": None,
+            },
         ]
 
         for case in test_cases:
             with self.subTest(case=case):
-                result = case["widget_obj"].call_slot(*case["args"])
+                if case["method"]:
+                    result = getattr(case["widget_obj"], case["method"])(*case["args"])
+                else:
+                    result = case["widget_obj"](case["self_obj"], *case["args"])
+
                 self.assertEqual(result, case["expected"])
 
     def test_store_and_restore_widget_state(self):

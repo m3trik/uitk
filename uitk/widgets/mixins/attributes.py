@@ -138,6 +138,33 @@ class AttributesMixin:
         else:
             print("Error: {} has no attribute {}".format(w, attr))
 
+    def set_flags(self, **flags):
+        """Sets or unsets any given window flag(s) for top-level windows.
+
+        Parameters:
+            **flags: Keyword arguments where the flag is the key and the value indicates whether to set or unset the flag.
+
+        Note:
+            This method only sets window flags if the object is a top-level window.
+        """
+
+        # Check if the object is a top-level window
+        if not self.parent() is None:
+            print("Not a top-level window, cannot set window flags.")
+            return
+
+        current_flags = self.windowFlags()
+
+        for flag, add in flags.items():
+            if hasattr(QtCore.Qt, flag):
+                flag_value = getattr(QtCore.Qt, flag)
+                if add:
+                    current_flags |= flag_value
+                else:
+                    current_flags &= ~flag_value
+
+        self.setWindowFlags(current_flags)
+
     def set_limits(self, spinbox, value):
         """Configure the minimum, maximum, step values, and decimal precision for a given spinbox widget.
 

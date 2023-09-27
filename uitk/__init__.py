@@ -8,7 +8,7 @@ from uitk.switchboard import signals  # Make signals accessible at package root
 
 
 __package__ = "uitk"
-__version__ = "0.9.1"
+__version__ = "0.9.3"
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 

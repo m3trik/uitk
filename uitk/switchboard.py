@@ -884,10 +884,7 @@ class Switchboard(QUiLoader):
                 filtered_kwargs["widget"] = widget
 
             result = slot(*args, **filtered_kwargs)
-
-            # Update slot history after calling the slot
             self.slot_history(add=slot)
-
             return result
 
         return wrapper
@@ -1086,9 +1083,7 @@ class Switchboard(QUiLoader):
             widget (QWidget): The widget to synchronize the value for.
         """
         # Get the relatives of the widget's UI
-        relatives = self.get_ui_relatives(
-            widget.ui, exact=True, upstream=True, downstream=True
-        )
+        relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
             # Get the widget of the same name
             relative_widget = getattr(relative, widget.name, None)
