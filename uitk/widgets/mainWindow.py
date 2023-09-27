@@ -264,9 +264,10 @@ class MainWindow(
         if set_attr:
             if legal_name and name != legal_name:
                 if self.sb.registry.ui_registry.get(filename=legal_name):
-                    self.logger.warning(
-                        f"Legal name '{legal_name}' already exists. Attribute not set."
-                    )
+                    pass
+                    # self.logger.warning(
+                    #     f"Legal name '{legal_name}' already exists. Attribute not set."
+                    # )
                 else:
                     setattr(self.sb, legal_name, self)
         return legal_name
@@ -287,9 +288,10 @@ class MainWindow(
         if set_attr:
             if legal_name_no_tags and name != legal_name_no_tags:
                 if self.sb.registry.ui_registry.get(filename=legal_name_no_tags):
-                    self.logger.warning(
-                        f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
-                    )
+                    pass
+                    # self.logger.warning(
+                    #     f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
+                    # )
                 else:
                     setattr(self.sb, legal_name_no_tags, self)
         return legal_name_no_tags
