@@ -4,7 +4,6 @@ import re
 import sys
 import logging
 import traceback
-from functools import wraps
 from typing import List, Union
 from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
@@ -12,39 +11,6 @@ from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtUiTools import QUiLoader
 import pythontk as ptk
 from uitk.file_manager import FileManager
-
-
-def signals(*signals):
-    """Decorator to specify the signals that a slot should be connected to.
-
-    Parameters:
-        *signals (str): One or more signal names as strings.
-
-    Returns:
-        decorator: A decorator that can be applied to a slot method.
-
-    Usage:
-        @signals('clicked')
-        def on_button_click():
-            print("Button clicked")
-    """
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        if len(signals) == 0:
-            raise ValueError("At least one signal must be specified")
-
-        for signal in signals:
-            if not isinstance(signal, str):
-                raise TypeError(f"Signal must be a string, not {type(signal)}")
-
-        wrapper.signals = signals
-        return wrapper
-
-    return decorator
 
 
 class Switchboard(QUiLoader):
@@ -119,8 +85,9 @@ class Switchboard(QUiLoader):
             ui.show(pos="screen", app_exec=True)
     """
 
-    # return the existing QApplication object, or create a new one if none exists.
+    # Use the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    QtCore, QtGui, QtWidgets = QtCore, QtGui, QtWidgets
 
     default_signals = {  # the signals to be connected per widget type should no signals be specified using the slot decorator.
         QtWidgets.QAction: "triggered",
@@ -1735,6 +1702,7 @@ if __name__ == "__main__":
     ui.set_style(theme="dark", style_class="translucentBgWithBorder")
 
     print(repr(ui))
+    print(sb.QtGui)
     ui.show(pos="screen", app_exec=True)
 
 logging.info(__name__)  # module name

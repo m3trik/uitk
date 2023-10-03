@@ -16,6 +16,8 @@ class MainWindow(
 ):
     on_show = QtCore.Signal()
     on_hide = QtCore.Signal()
+    on_focus_in = QtCore.Signal()
+    on_focus_out = QtCore.Signal()
     on_child_added = QtCore.Signal(object)
     on_child_changed = QtCore.Signal(object, object)
 
@@ -447,8 +449,12 @@ class MainWindow(
     def focusInEvent(self, event):
         """Override the focus event to set the current UI when this window gains focus."""
         self.sb.set_current_ui(self)
-
         super().focusInEvent(event)
+        self.on_focus_in.emit()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.on_focus_out.emit()
 
     def hideEvent(self, event):
         """Reimplement hideEvent to emit custom signal when window is hidden."""
