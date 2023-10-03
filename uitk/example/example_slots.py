@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from uitk import signals
+from uitk import Signals
 
 
 class ExampleSlots:
@@ -29,7 +29,7 @@ class ExampleSlots:
         widget.menu.add("QRadioButton", setObjectName="radio_b", setText="Option B")
         widget.menu.add("QRadioButton", setObjectName="radio_c", setText="Option C")
 
-    @signals("released")
+    @Signals("released")
     def button_b(self, widget):
         option = (
             "A"

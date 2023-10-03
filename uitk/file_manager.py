@@ -8,6 +8,57 @@ import pythontk as ptk
 
 
 class NamedTupleContainer:
+    """The NamedTupleContainer class is responsible for managing collections of named tuples.
+    The class provides methods to query, modify, extend, and remove elements within the container.
+    It is typically initialized and used by the FileManager class, which serves as the main container manager.
+    NamedTupleContainer allows for advanced manipulation of the named tuples, such as accessing specific fields across all tuples.
+
+    Attributes:
+        - `file_manager`: A reference to the FileManager object that owns this container.
+        - `named_tuples`: The list of named tuples stored in this container.
+        - `metadata`: A dictionary containing additional information like "fields" which are the named tuple fields, and an "allow_duplicates" flag.
+        - `fields`: List of named tuple fields derived from metadata.
+        - `_tuple_class`: The dynamically generated named tuple class based on `fields`.
+
+    Methods:
+        - `extend`: Add new named tuples to the container while handling duplicates.
+        - `get`: Query the named tuples based on certain conditions and optionally retrieve a specific field's value.
+        - `modify`: Modify a named tuple at a specific index.
+        - `remove`: Remove a named tuple at a specific index.
+
+    Examples:
+        - Create a new container with the FileManager class:
+        ```python
+        file_manager = FileManager()
+        container = file_manager.create("example_descriptor", objects, fields=["name", "age"])
+        ```
+
+        - Extend the container with new objects:
+        ```python
+        container.extend(new_objects, allow_duplicates=False)
+        ```
+
+        - Query the container:
+        ```python
+        adults = container.get(age=18)
+        ```
+
+        - Modify an item:
+        ```python
+        container.modify(0, name="NewName")
+        ```
+
+        - Remove an item:
+        ```python
+        container.remove(0)
+        ```
+
+    Notes:
+        - This class utilizes internal logging. The logging level can be set during instantiation.
+        - The class defines custom `__iter__` and `__repr__` methods to iterate over the named tuples and represent the object.
+        - Uses the `namedtuple` class from Python's standard library to dynamically create tuple classes.
+    """
+
     def __init__(
         self,
         file_manager,
