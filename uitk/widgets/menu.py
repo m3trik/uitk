@@ -39,6 +39,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
         Parameters:
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
+            mode (str, optional): Possible values include: 'context', 'option', and 'popup'.
             position (str, optional): The position of the menu. Can be "right", "cursorPos", a coordinate pair, or a widget.
             min_item_height (int, optional): The minimum height of items in the menu. Defaults to None.
             max_item_height (int, optional): The maximum height of items in the menu. Defaults to None.

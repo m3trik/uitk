@@ -7,13 +7,12 @@ import traceback
 from typing import List, Union
 from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
-from PySide2 import QtCore, QtGui, QtWidgets
-from PySide2.QtUiTools import QUiLoader
+from PySide2 import QtCore, QtGui, QtWidgets, QtUiTools
 import pythontk as ptk
 from uitk.file_manager import FileManager
 
 
-class Switchboard(QUiLoader):
+class Switchboard(QtUiTools.QUiLoader):
     """Load dynamic UI, assign convenience properties, and handle slot connections.
 
     The following attributes are added to each slots class instance:
@@ -87,7 +86,6 @@ class Switchboard(QUiLoader):
 
     # Use the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
-    QtCore, QtGui, QtWidgets = QtCore, QtGui, QtWidgets
 
     default_signals = {  # the signals to be connected per widget type should no signals be specified using the slot decorator.
         QtWidgets.QAction: "triggered",
@@ -180,13 +178,17 @@ class Switchboard(QUiLoader):
         self.logger.addHandler(handler)
 
     def __getattr__(self, attr_name):
-        """Lazy load UI and custom widgets.
-        If an unknown attribute matches the name of a UI in the current UI directory; load and return it.
-        Else, if an unknown attribute matches the name of a custom widget in the widgets directory; register and return it.
-        If no match is found raise an attribute error.
+        """Lazy load UI, custom widgets, and Qt module attributes.
+
+        The attribute resolution order is as follows:
+        1. If an unknown attribute matches the name of a UI in the current UI directory, load and return it.
+        2. Else, if an unknown attribute matches the name of a custom widget in the widgets directory, register and return it.
+        3. Lastly, if an unknown attribute matches an attribute in QtCore, QtGui, or QtWidgets, return that attribute.
+
+        If no match is found in any of these categories, an AttributeError is raised.
 
         Returns:
-            (obj) UI or widget.
+            (obj) The attribute could be a UI, a custom widget, or a Qt module attribute.
         """
         # Check if the attribute matches a UI file
         actual_ui_name = self.convert_from_legal_name(attr_name, unique_match=True)
@@ -205,6 +207,11 @@ class Switchboard(QUiLoader):
         if widget_class:
             widget = self.register_widget(widget_class)
             return widget
+
+        # Check if attribute exists in Qt modules
+        for qt_module in [QtCore, QtGui, QtWidgets, QtUiTools]:
+            if hasattr(qt_module, attr_name):
+                return getattr(qt_module, attr_name)
 
         raise AttributeError(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
