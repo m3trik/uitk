@@ -68,6 +68,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         return """
             QPushButton { background-color: transparent; border: none;}
             QPushButton:hover { background-color: rgba(127,127,127,200); border: none;}
+            QPushButton#hide_button:hover { background-color: rgba(255,0,0,200); border: none;}
         """
 
     def getStyleSheet(self):
@@ -84,9 +85,11 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             }
         """
 
-    def createButton(self, text, callback):
+    def createButton(self, text, callback, button_type=None):
         """Create a button with the given text and callback."""
         button = QtWidgets.QPushButton(text, self)
+        if button_type:
+            button.setObjectName(button_type)
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
         button.setStyleSheet(self.getButtonStyleSheet())
         button.clicked.connect(callback)
@@ -106,7 +109,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             if param in self.button_definitions and visible:
                 text, method_name = self.button_definitions[param]
                 callback = getattr(self, method_name)
-                button = self.createButton(text, callback)
+                button = self.createButton(text, callback, button_type=param)
                 self.container_layout.addWidget(button)
                 button.show()
                 self.buttons[param] = button
