@@ -37,7 +37,7 @@ class StyleSheet(QtCore.QObject):
             "TEXT_DISABLED": "rgba(150,150,150,175)",
             "TEXT_HOVER": "rgb(255,255,255)",  # Bright white for better contrast
             "TEXT_BACKGROUND": "rgb(70,70,70)",  # Same as main background
-            "BORDER_COLOR": "rgb(40,40,40)",  # Slightly darker than widget background
+            "BORDER_COLOR": "rgba(40,40,40)",  # Slightly darker than widget background
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
@@ -78,11 +78,9 @@ class StyleSheet(QtCore.QObject):
             QWidget.QLabel {
                 background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
-                border-style: outset;
-                border-radius: 1px;
                 border: 1px solid {BORDER_COLOR};
+                border-radius: 1px;
                 padding: 0px 1px 0px 1px; /* top, right, bottom, left */
-                spacing: 1px;
             }
         """,
         "QStackedWidget": """
@@ -169,8 +167,7 @@ class StyleSheet(QtCore.QObject):
                 color: {TEXT_COLOR};
                 border: 1px solid {BORDER_COLOR};
                 border-radius: 1px;
-                margin: 0px 0px 0px 0px; /* top, right, bottom, left */
-                padding: 0px 2px 0px 0px; /* top, right, bottom, left */
+                padding: 0px 1px 0px 1px; /* top, right, bottom, left */
             }
             QLabel::hover {
                 border: 1px solid {BORDER_COLOR};

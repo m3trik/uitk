@@ -153,15 +153,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         """
         self.header.setText(title)
 
-    def get_items(self):
-        """Get all items in the list.
+    def get_items(self, types=None):
+        """Get all items in the list, optionally filtered by type.
+
+        Parameters:
+            types (type or list of type, optional): The type(s) of widgets to retrieve. Defaults to None.
 
         Returns:
-            list: A list of all QWidget items in the list.
+            list: A list of all QWidget items in the list, filtered by type if specified.
         """
         items = [
             self.gridLayout.itemAt(i).widget() for i in range(self.gridLayout.count())
         ]
+
+        if types is not None:
+            # If a single type is provided, convert it to a list.
+            types = [types] if not isinstance(types, (list, tuple)) else types
+
+            # Filter items by type.
+            items = [item for item in items if isinstance(item, tuple(types))]
 
         return items
 

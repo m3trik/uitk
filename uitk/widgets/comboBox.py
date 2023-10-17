@@ -1,13 +1,80 @@
 # !/usr/bin/python
 # coding=utf-8
-from functools import wraps
-from PySide2 import QtCore, QtWidgets
+from PySide2 import QtCore, QtGui, QtWidgets
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
+class CustomListView(QtWidgets.QListView):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.combobox = parent  # Store a reference to the parent combobox
+
+    def paintEvent(self, event):
+        if self.combobox.header_text:  # Check if a header is present
+            # Get the index of the first item
+            index = self.model().index(0, 0)
+            # Get the item rectangle
+            rect = self.visualRect(index)
+            # Check if the event rect intersects with the first item rectangle
+            if event.rect().intersects(rect):
+                # Adjust the event rect to exclude the first item rectangle
+                event = QtGui.QPaintEvent(event.rect().translated(0, rect.height()))
+        super().paintEvent(event)
+
+
+class AlignedComboBox(QtWidgets.QComboBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.header_alignment = QtCore.Qt.AlignLeft
+        self.header_text = None  # New field to store the header text
+        self.setView(CustomListView(self))  # Set the custom view
+
+    def setHeader(self, header, alignment="left"):
+        self.header_text = header
+        self.setHeaderAlignment(alignment)
+        self.insertItem(0, header)
+        self.setCurrentIndex(0)
+
+    def setHeaderAlignment(self, alignment):
+        if isinstance(alignment, str):
+            alignment_map = {
+                "left": QtCore.Qt.AlignLeft,
+                "center": QtCore.Qt.AlignCenter,
+                "right": QtCore.Qt.AlignRight,
+            }
+            self.header_alignment = alignment_map.get(
+                alignment.lower(), QtCore.Qt.AlignLeft
+            )
+        elif isinstance(alignment, QtCore.Qt.AlignmentFlag):
+            self.header_alignment = alignment
+        else:
+            raise ValueError(f"Unsupported alignment type: {type(alignment)}")
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.fillRect(event.rect(), self.palette().base())
+
+        if self.currentIndex() == 0 and self.header_text:
+            painter.save()
+            rect = event.rect().adjusted(4, 0, 0, 0)  # Adjust margin if needed
+            painter.drawText(rect, self.header_alignment, self.currentText())
+            painter.restore()
+
+        painter.end()
+        super().paintEvent(event)
+
+    def showPopup(self):
+        self.model().showingPopup = True  # Set flag before showing popup
+        super().showPopup()
+
+    def hidePopup(self):
+        self.model().showingPopup = False  # Reset flag after hiding popup
+        super().hidePopup()
+
+
+class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
     """Custom ComboBox widget with additional features and custom signal handling."""
 
     before_popup_shown = QtCore.Signal()
@@ -43,6 +110,7 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
         x,
         data=None,
         header=None,
+        header_alignment="left",
         clear=True,
         restore_index=False,
         ascending=False,
@@ -104,14 +172,13 @@ class ComboBox(QtWidgets.QComboBox, AttributesMixin, RichText, TextOverlay):
             self.blockSignals(True)
 
             final_index = 0  # Default index is 0
-            if restore_index:
+            if restore_index and prev_index > 0:
                 final_index = prev_index
 
             self.setCurrentIndex(final_index)
 
             if header:
-                self.insertItem(0, header)
-                self.setCurrentIndex(0)
+                self.setHeader(header, header_alignment)
 
             self.blockSignals(False)
             self.currentIndexChanged.emit(final_index)
@@ -207,7 +274,7 @@ if __name__ == "__main__":
 
     cmb = ComboBox()
     cmb.editable = True
-    cmb.add(["Item A", "Item B"], header="Items:")
+    cmb.add(["Item A", "Item B"], header="Items:", header_alignment="center")
 
     cmb.show()
     sys.exit(app.exec_())

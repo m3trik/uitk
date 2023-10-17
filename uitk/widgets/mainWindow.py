@@ -42,7 +42,7 @@ class MainWindow(
             on_show: Signal that is emitted before the window is shown.
             on_hide: Signal that is emitted before the window is hidden.
             on_child_added: Signal that is emitted when a child widget is added. Provides the added widget as a parameter.
-            on_child_changed: Signal that is emitted when a child widget changes. Provides the original and new widget as parameters.
+            on_child_changed: Signal that is emitted when a child widget changes. Provides the value and widget as parameters.
 
         AttributesMixin:
             sb: An instance of the switchboard class.
@@ -311,16 +311,16 @@ class MainWindow(
         parts = name.split("#")
         return set(parts[1:]) if len(parts) > 1 else set()
 
-    def has_tag(self, tag_str):
-        """Check if any of the given tags, separated by '|', are present in the tags set.
+    def has_tags(self, tags):
+        """Check if any of the given tag(s) are present in the UI's tags set.
 
         Parameters:
-            tag_str (str): The tags to check, separated by '|'.
+            tags (str/list): The tag(s) to check.
 
         Returns:
             bool: True if any of the given tags are present in the tags set, False otherwise.
         """
-        tags_to_check = tag_str.split("|")
+        tags_to_check = ptk.make_iterable(tags)
         return any(tag in self.tags for tag in tags_to_check)
 
     def trigger_deferred(self):
