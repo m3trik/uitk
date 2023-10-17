@@ -1053,32 +1053,17 @@ class Switchboard(QtUiTools.QUiLoader):
         The signal names and corresponding methods are stored in the `default_signals` dictionary, which maps widget types to signal names.
 
         Parameters:
-            value (any): The value to set the widget and its relatives to.
+            value (any): The value to set the widget's relatives to.
             widget (QWidget): The widget to synchronize the value for.
         """
-        # Get the relatives of the widget's UI
         relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
-            # Get the widget of the same name
             relative_widget = getattr(relative, widget.name, None)
             if relative_widget is not None:
-                # Check the type of the widget and use the appropriate method to set the value
                 signal_name = self.default_signals.get(widget.derived_type)
                 if signal_name:
-                    # Check if the widget has the signal
                     if relative_widget is not widget:
-                        try:
-                            if signal_name == "textChanged":
-                                relative_widget.setText(value)
-                            elif signal_name == "valueChanged":
-                                relative_widget.setValue(value)
-                            elif signal_name == "currentIndexChanged":
-                                relative_widget.setCurrentIndex(value)
-                            elif signal_name in {"toggled", "stateChanged"}:
-                                relative_widget.setChecked(value)
-                        except AttributeError:
-                            pass
-                    # Save the widget state
+                        self._apply_state_to_widget(relative_widget, signal_name, value)
                     self.store_widget_state(relative_widget, signal_name, value)
 
     def store_widget_state(self, widget, signal_name, value):
@@ -1111,26 +1096,44 @@ class Switchboard(QtUiTools.QUiLoader):
     def _apply_state_to_widget(self, widget, signal_name, value):
         """Applies the stored state to a widget based on the given signal name.
 
-        This method updates the widget's state based on the passed-in signal name and value.
-        It handles various types of widgets and their corresponding signals.
-
         Parameters:
             widget (QWidget): The widget whose state is to be updated.
             signal_name (str): The name of the signal that triggered the state change.
             value (Union[str, float, int]): The value to set the widget's state to.
         """
-        if signal_name == "textChanged":
-            widget.setText(value)
-        elif signal_name == "valueChanged":
-            if isinstance(value, str):
-                value = float(value)
-            widget.setValue(value)
-        elif signal_name == "currentIndexChanged":
-            widget.setCurrentIndex(int(value))
-        elif signal_name in {"toggled", "stateChanged"}:
-            if isinstance(value, str):
-                value = bool(value.capitalize())
-            widget.setChecked(int(value))
+        # Define a dictionary that maps signal names to lambda functions
+        action_map = {
+            "textChanged": lambda w, v: w.setText(str(v))
+            if hasattr(w, "setText")
+            else None,
+            "valueChanged": lambda w, v: w.setValue(
+                float(v) if isinstance(v, str) else v
+            )
+            if hasattr(w, "setValue")
+            else None,
+            "currentIndexChanged": lambda w, v: w.setCurrentIndex(int(v))
+            if hasattr(w, "setCurrentIndex")
+            else None,
+            "toggled": lambda w, v: w.setChecked(
+                True if v == "true" else False if v == "false" else int(v)
+            )
+            if hasattr(w, "setChecked")
+            else None,
+            "stateChanged": lambda w, v: w.setCheckState(
+                QtCore.Qt.CheckState(int(v))
+                if v not in {"true", "false"}
+                else QtCore.Qt.Checked
+                if v == "true"
+                else QtCore.Qt.Unchecked
+            )
+            if hasattr(w, "setCheckState")
+            else None,
+        }
+
+        # Call the appropriate lambda function if the signal_name exists in action_map
+        action = action_map.get(signal_name)
+        if action:
+            action(widget, value)
 
     def set_widget_attrs(self, ui, widget_names, **kwargs):
         """Set multiple properties, for multiple widgets, on multiple UI's at once.
