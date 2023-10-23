@@ -4,6 +4,7 @@ import re
 import sys
 import logging
 import traceback
+from functools import partial
 from typing import List, Union
 from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
@@ -1431,16 +1432,20 @@ class Switchboard(QtUiTools.QUiLoader):
 
         return result
 
-    def create_button_groups(self, ui, *args):
+    def create_button_groups(
+        self, ui, *args, allow_deselect=False, allow_multiple=False
+    ):
         """Create button groups for a set of widgets.
-        The created groups later be accessed through the grouped buttons using the 'button_group' attribute.
 
         Parameters:
             ui (QWidget): A previously loaded dynamic UI object.
             args: The widgets to group. Object_names separated by ',' ie. 'b000-12,b022'
+            allow_deselect (bool): Whether to allow none of the checkboxes to be selected.
+            allow_multiple (bool): Whether to allow multiple checkboxes to be selected.
+
         Example:
-            grp_a, grp_b = create_button_groups(<ui>, 'b000-2', 'b003-4')
-            grp_a = b000.button_group # access group using the 'button_group' attribute.
+            grp_a, grp_b = create_button_groups(<ui>, 'b000-2', 'b003-4', allow_deselect=True, allow_multiple=True)
+            grp_a = b000.button_group  # access group using the 'button_group' attribute.
             grp_b = b003.button_group
         """
         button_groups = []
@@ -1448,18 +1453,38 @@ class Switchboard(QtUiTools.QUiLoader):
         for buttons in args:
             # Create button group
             grp = QtWidgets.QButtonGroup()
-            # get_widgets_by_string_pattern returns a widget list from a string of object_names.
-            widgets = self.get_widgets_by_string_pattern(ui, buttons)
+            grp.setExclusive(False)  # Set to False to manually handle exclusivity
 
-            # add each widget to the button group
+            # Get widgets by the string pattern
+            widgets = self.get_widgets_by_string_pattern(ui, buttons)
+            widget_type = type(widgets[0])
+
+            # Validation checks
+            if allow_multiple and issubclass(widget_type, QtWidgets.QRadioButton):
+                raise ValueError("Allow_multiple is not applicable to QRadioButton")
+
+            def manage_deselect_state(checked, w):
+                if not allow_multiple:
+                    if checked:
+                        for btn in grp.buttons():
+                            if btn != w:
+                                btn.setChecked(False)
+                if allow_deselect and not checked and w == grp.checkedButton():
+                    w.setChecked(True)
+
+            # Add each widget to the button group
             for w in widgets:
+                if type(w) != widget_type:
+                    raise TypeError("All widgets in a group must be of the same type")
+
                 w.button_group = grp
                 grp.addButton(w)
+                w.toggled.connect(partial(manage_deselect_state, w=w))
 
             # Add the group to the list
             button_groups.append(grp)
 
-        # Return a single group if only one was created, otherwise return the tuple of groups
+        # Assume ptk.format_return is a function that properly formats the return value
         return ptk.format_return(button_groups)
 
     def toggle_multi(self, ui, **kwargs):
