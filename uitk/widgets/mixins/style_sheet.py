@@ -333,7 +333,7 @@ class StyleSheet(QtCore.QObject):
                 background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
                 border: 1px solid {BORDER_COLOR};
-                padding-left: 5px;
+                padding: 0px 1px 0px 1px; /* top, right, bottom, left */
                 border-radius: 1px;
                 min-width: 0em;
             }

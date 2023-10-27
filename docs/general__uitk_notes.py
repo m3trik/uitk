@@ -2,10 +2,6 @@
 
 
 # ======================================================================
-"EXAMPLE:"
-
-
-# ======================================================================
 class MyProject:
     ...
 
@@ -56,33 +52,33 @@ class MyProjectSlots(MyProject):
         # Set multiple connections using the Slots.connect method.
         self.sb.connect_multi(widget.menu, "chk006-9", "toggled", self.chk006_9)
 
-    def tb002_init(self, widget):
-        """Toggle UV Display Options"""
-        widget.menu.mode = "popup"
-        widget.menu.position = "bottom"
-        widget.menu.setTitle("DISPLAY OPTIONS")
+    # def tb002_init(self, widget):
+    #     """Toggle UV Display Options"""
+    #     widget.menu.mode = "popup"
+    #     widget.menu.position = "bottom"
+    #     widget.menu.setTitle("DISPLAY OPTIONS")
 
-        panel = mtk.get_panel(scriptType="polyTexturePlacementPanel")
-        checkered_state = pm.textureWindow(panel, q=True, displayCheckered=True)
-        distortion_state = pm.textureWindow(panel, q=True, displayDistortion=True)
+    #     panel = mtk.get_panel(scriptType="polyTexturePlacementPanel")
+    #     checkered_state = pm.textureWindow(panel, q=True, displayCheckered=True)
+    #     distortion_state = pm.textureWindow(panel, q=True, displayDistortion=True)
 
-        values = [
-            ("chk014", "Checkered", checkered_state),
-            ("chk015", "Distortion", distortion_state),
-        ]
-        [
-            widget.menu.add(
-                self.sb.CheckBox, setObjectName=chk, setText=typ, setChecked=state
-            )
-            for chk, typ, state in values
-        ]
+    #     values = [
+    #         ("chk014", "Checkered", checkered_state),
+    #         ("chk015", "Distortion", distortion_state),
+    #     ]
+    #     [
+    #         widget.menu.add(
+    #             self.sb.CheckBox, setObjectName=chk, setText=typ, setChecked=state
+    #         )
+    #         for chk, typ, state in values
+    #     ]
 
-        widget.menu.chk014.toggled.connect(
-            lambda state: pm.textureWindow(panel, edit=True, displayCheckered=state)
-        )
-        widget.menu.chk015.toggled.connect(
-            lambda state: pm.textureWindow(panel, edit=True, displayDistortion=state)
-        )
+    #     widget.menu.chk014.toggled.connect(
+    #         lambda state: pm.textureWindow(panel, edit=True, displayCheckered=state)
+    #     )
+    #     widget.menu.chk015.toggled.connect(
+    #         lambda state: pm.textureWindow(panel, edit=True, displayDistortion=state)
+    #     )
 
     # ComboBox slot example:
     def cmb000_init(self, widget):
@@ -100,9 +96,7 @@ class MyProjectSlots(MyProject):
 
     def cmb000(self, index, widget):
         """Combo Box Slot"""
-        if index > 0:
-            print("Item Data:", widget.currentData())
-            widget.setCurrentIndex(0)
+        print("Item Data:", widget.itemData[index])
 
 
 # -------------------------------------------------------------------------------------------------------------------

@@ -3,6 +3,17 @@
 from functools import wraps
 
 
+def block_signals(fn):
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        self.blockSignals(True)
+        rtn = fn(self, *args, **kwargs)
+        self.blockSignals(False)
+        return rtn
+
+    return wrapper
+
+
 class Signals:
     """Class-based decorator to annotate slot methods with the signals to which they should connect.
 
@@ -39,3 +50,7 @@ class Signals:
 
         wrapper.signals = self.signals
         return wrapper
+
+    @classmethod
+    def blockSignals(cls, func):
+        return block_signals(func)
