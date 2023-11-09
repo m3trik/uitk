@@ -1578,7 +1578,7 @@ class Switchboard(QtUiTools.QUiLoader):
             checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
 
         Returns:
-            (str) axis value. ie. '-X'
+            (str) The axis value in lower case. ie. '-x'
 
         Example:
             get_axis_from_checkboxes('chk000-3')
@@ -1596,7 +1596,7 @@ class Switchboard(QtUiTools.QUiLoader):
                 else:
                     axis = chk.text()
         # self.logger.info(f"prefix: {prefix} axis: {axis}") #debug
-        return prefix + axis  # ie. '-X'
+        return prefix + axis.lower()  # ie. '-x'
 
     @staticmethod
     def invert_on_modifier(value):
