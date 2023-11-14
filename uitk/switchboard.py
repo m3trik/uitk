@@ -29,8 +29,8 @@ class Switchboard(QtUiTools.QUiLoader):
 
     Parameters:
         parent (obj): A QtObject derived class.
-        ui_location (str/obj/list): Set the directory of the dynamic UI, or give the dynamic UI objects.
-        widget_location (str/obj/list): Set the directory of any custom widgets, or give the widget objects.
+        ui_location (str/obj/list): Set the directory of the dynamic UI, or give the dynamic UI files(s).
+        widget_location (str/obj/list): Set the directory of any custom widgets, or give the widget object(s).
         slot_location (str/obj/list): Set the directory of where the slot classes will be imported, or give the slot class itself.
         ui_name_delimiters (tuple, optional): A tuple of two delimiter strings, where the first delimiter is used to split the hierarchy and the second delimiter is used to split hierarchy levels. Defaults to (".", "#").
         log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
@@ -1093,6 +1093,17 @@ class Switchboard(QtUiTools.QUiLoader):
             value = widget.ui.settings.value(f"{widget.name}/{signal_name}")
             if value is not None:
                 self._apply_state_to_widget(widget, signal_name, value)
+
+    def clear_widget_state(self, widget):
+        """Clears the stored state of a given widget from the application settings.
+
+        Parameters:
+            widget (QWidget): The widget whose state is to be cleared.
+        """
+        signal_name = self.default_signals.get(widget.derived_type)
+        if signal_name:
+            key = f"{widget.name}/{signal_name}"
+            widget.ui.settings.remove(key)
 
     def _apply_state_to_widget(self, widget, signal_name, value):
         """Applies the stored state to a widget based on the given signal name.
