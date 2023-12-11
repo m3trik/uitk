@@ -562,10 +562,19 @@ class StyleSheet(QtCore.QObject):
         "QProgressBar": """
             QProgressBar {
                 border: none;
-                text-align: center;
-                padding: 1px;
                 background-color: {MAIN_BACKGROUND};
             }
+
+            QProgressBar[orientation="Qt::Horizontal"] {
+                padding-right: 10000px;
+                text-align: right;
+            }
+
+            QProgressBar[orientation="Qt::Vertical"] {
+                padding-top: 10000px;
+                text-align: top;
+            }
+
             QProgressBar::chunk {
                 background-color: {BUTTON_HOVER};
                 width: 10px;
@@ -619,6 +628,15 @@ class StyleSheet(QtCore.QObject):
         "translucentBgWithBorder": """
             .translucentBgWithBorder {
                 background-color: {MAIN_BACKGROUND_ALPHA};
+                border: 1px solid {BORDER_COLOR};
+                color: {TEXT_COLOR};
+                selection-background-color: {TEXT_BACKGROUND};
+                selection-color: {HIGHLIGHT_COLOR};
+            }
+        """,
+        "bgWithBorder": """
+            .bgWithBorder {
+                background-color: {MAIN_BACKGROUND};
                 border: 1px solid {BORDER_COLOR};
                 color: {TEXT_COLOR};
                 selection-background-color: {TEXT_BACKGROUND};
