@@ -37,7 +37,7 @@ class StyleSheet(QtCore.QObject):
             "TEXT_DISABLED": "rgba(150,150,150,175)",
             "TEXT_HOVER": "rgb(255,255,255)",  # Bright white for better contrast
             "TEXT_BACKGROUND": "rgb(70,70,70)",  # Same as main background
-            "BORDER_COLOR": "rgba(40,40,40)",  # Slightly darker than widget background
+            "BORDER_COLOR": "rgb(40,40,40)",  # Slightly darker than widget background
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
