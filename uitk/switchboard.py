@@ -1634,23 +1634,22 @@ class Switchboard(QtUiTools.QUiLoader):
         return result
 
     def message_box(self, string, message_type="", location="topMiddle", timeout=4):
-        """Spawns a message box with the given text.
-        Supports HTML formatting.
+        """Spawns a message box with the given text. Supports HTML formatting.
         Prints a formatted version of the given string to console, stripped of html tags, to the console.
 
         Parameters:
             message_type (str/optional): The message context type. ex. 'Error', 'Warning', 'Info', 'Result'
             location (str/QPoint/optional) = move the messagebox to the specified location. default is: 'topMiddle'
+                                            valid: "topMiddle", "bottomRight", "topLeft", "bottomLeft", "center"
             timeout (int/optional): time in seconds before the messagebox auto closes. default is: 4
         """
         if message_type:
             string = f"{message_type.capitalize()}: {string}"
 
-        try:
-            self._messageBox.location = location
-        except AttributeError:
+        if not hasattr(self, "_messageBox"):
             self._messageBox = self.MessageBox(self.parent())
-            self._messageBox.location = location
+
+        self._messageBox.location = location
         self._messageBox.timeout = timeout
 
         # strip everything between '<' and '>' (html tags)
