@@ -13,7 +13,7 @@ import pythontk as ptk
 from uitk.file_manager import FileManager
 
 
-class Switchboard(QtUiTools.QUiLoader):
+class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
     """Load dynamic UI, assign convenience properties, and handle slot connections.
 
     The following attributes are added to each slots class instance:
@@ -832,19 +832,12 @@ class Switchboard(QtUiTools.QUiLoader):
     def _create_slot_wrapper(self, slot, widget):
         """Creates a wrapper function for a slot that includes the widget as a parameter if possible.
 
-        The wrapper function is designed to handle different widget-specific signal values as keyword arguments.
-        The signal values are passed to the slot function as keyword arguments based on the type of the widget.
-
-        If the slot function does not accept the widget or signal-specific keyword argument, it is called with positional arguments as a fallback.
-
         Parameters:
-            slot (callable): The slot function to be wrapped. This is typically a method of a class.
-            widget (QWidget): The widget that the slot is connected to. This widget is passed to the slot function as a keyword argument,
-                and its signal value is also passed as a keyword argument.
+            slot (callable): The slot function to be wrapped.
+            widget (QWidget): The widget that the slot is connected to.
 
         Returns:
-            callable: The slot wrapper function. This function can be connected to a widget signal and is responsible for calling the original slot function
-                with the appropriate arguments.
+            callable: The slot wrapper function.
         """
         sig = signature(slot)
         param_names = [
@@ -854,13 +847,17 @@ class Switchboard(QtUiTools.QUiLoader):
         ]
 
         def wrapper(*args, **kwargs):
+            # Check if the only parameter is 'widget'
+            if len(param_names) == 1 and "widget" in param_names:
+                # Call the slot with only the 'widget' argument
+                return slot(widget)
+
+            # Otherwise, prepare arguments normally
             filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}
-            if "widget" in param_names:
+            if "widget" in param_names and "widget" not in kwargs:
                 filtered_kwargs["widget"] = widget
 
-            result = slot(*args, **filtered_kwargs)
-            self.slot_history(add=slot)
-            return result
+            return slot(*args, **filtered_kwargs)
 
         return wrapper
 
@@ -1060,12 +1057,16 @@ class Switchboard(QtUiTools.QUiLoader):
         relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
             relative_widget = getattr(relative, widget.name, None)
-            if relative_widget is not None:
+            if relative_widget is not None and relative_widget is not widget:
                 signal_name = self.default_signals.get(widget.derived_type)
                 if signal_name:
-                    if relative_widget is not widget:
-                        self._apply_state_to_widget(relative_widget, signal_name, value)
+                    self._apply_state_to_widget(relative_widget, signal_name, value)
                     self.store_widget_state(relative_widget, signal_name, value)
+
+        # Store the state of the original widget regardless of whether it has relatives
+        original_signal_name = self.default_signals.get(widget.derived_type)
+        if original_signal_name:
+            self.store_widget_state(widget, original_signal_name, value)
 
     def store_widget_state(self, widget, signal_name, value):
         """Stores the current state of a widget in the application settings.
@@ -1076,6 +1077,7 @@ class Switchboard(QtUiTools.QUiLoader):
             signal_name (str): The name of the signal that indicates a state change in the widget.
             value (any): The current state of the widget.
         """
+        # print("store_widget_state:", widget.name, value)  # Debug
         widget.ui.settings.setValue(f"{widget.name}/{signal_name}", value)
 
     def restore_widget_state(self, widget):
@@ -1118,26 +1120,16 @@ class Switchboard(QtUiTools.QUiLoader):
             "textChanged": lambda w, v: w.setText(str(v))
             if hasattr(w, "setText")
             else None,
-            "valueChanged": lambda w, v: w.setValue(
-                float(v) if isinstance(v, str) else v
-            )
+            "valueChanged": lambda w, v: self._set_numeric_value(w, v)
             if hasattr(w, "setValue")
             else None,
-            "currentIndexChanged": lambda w, v: w.setCurrentIndex(int(v))
+            "currentIndexChanged": lambda w, v: self._set_index_value(w, v)
             if hasattr(w, "setCurrentIndex")
             else None,
-            "toggled": lambda w, v: w.setChecked(
-                True if v == "true" else False if v == "false" else int(v)
-            )
+            "toggled": lambda w, v: self._set_boolean_value(w, v)
             if hasattr(w, "setChecked")
             else None,
-            "stateChanged": lambda w, v: w.setCheckState(
-                QtCore.Qt.CheckState(int(v))
-                if v not in {"true", "false"}
-                else QtCore.Qt.Checked
-                if v == "true"
-                else QtCore.Qt.Unchecked
-            )
+            "stateChanged": lambda w, v: self._set_check_state(w, v)
             if hasattr(w, "setCheckState")
             else None,
         }
@@ -1146,6 +1138,27 @@ class Switchboard(QtUiTools.QUiLoader):
         action = action_map.get(signal_name)
         if action:
             action(widget, value)
+
+    def _set_numeric_value(self, widget, value):
+        try:
+            widget.setValue(float(value))
+        except (ValueError, TypeError):
+            pass  # Optionally log this error
+
+    def _set_index_value(self, widget, value):
+        try:
+            widget.setCurrentIndex(int(value))
+        except (ValueError, TypeError):
+            pass  # Optionally log this error
+
+    def _set_boolean_value(self, widget, value):
+        widget.setChecked(value in ["true", "True", 1, "1"])
+
+    def _set_check_state(self, widget, value):
+        try:
+            widget.setCheckState(QtCore.Qt.CheckState(int(value)))
+        except (ValueError, TypeError):
+            pass  # Optionally log this error
 
     def set_widget_attrs(self, ui, widget_names, **kwargs):
         """Set multiple properties, for multiple widgets, on multiple UI's at once.

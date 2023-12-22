@@ -234,15 +234,15 @@ p, li { white-space: pre-wrap; }
    <header>uitk.widgets.header.Header.h</header>
   </customwidget>
   <customwidget>
+   <class>PushButton</class>
+   <extends>QPushButton</extends>
+   <header>widgets.pushbutton.h</header>
+  </customwidget>
+  <customwidget>
    <class>CollapsableGroup</class>
    <extends>QGroupBox</extends>
    <header>uitk.widgets.collapsableGroup.CollapsableGroup.h</header>
    <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>PushButton</class>
-   <extends>QPushButton</extends>
-   <header>widgets.pushbutton.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

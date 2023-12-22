@@ -54,6 +54,16 @@ class ExampleSlots:
             "• Collapse this text edit by clicking on the three dots above it.\n\n• Widget states are restored the next time this UI is opened."
         )
 
+    @Signals("textChanged", "returnPressed")
+    def textedit(self, widget):
+        """Slot for handling actions in a QTextEdit widget.
+
+        Parameters:
+            widget (QTextEdit): The QTextEdit widget.
+        """
+        text = widget.toPlainText()
+        print(text)
+
 
 # --------------------------------------------------------------------------------------------
 
