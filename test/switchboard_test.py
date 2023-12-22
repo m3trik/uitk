@@ -61,6 +61,22 @@ class TestSwitchboard(unittest.TestCase):
                 "self_obj": self.ui.checkbox,
                 "expected": None,
             },
+            # Simulate textChanged signal with text
+            {
+                "widget_obj": self.ui.textedit,
+                "method": "call_slot",
+                "args": ["sample text"],
+                "self_obj": self.ui.textedit,
+                "expected": None,
+            },
+            # Simulate returnPressed signal with no additional text
+            {
+                "widget_obj": self.ui.textedit,
+                "method": "call_slot",
+                "args": [],
+                "self_obj": self.ui.textedit,
+                "expected": None,
+            },
         ]
 
         for case in test_cases:
