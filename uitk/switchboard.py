@@ -1646,30 +1646,36 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
 
         return result
 
-    def message_box(self, string, message_type="", location="topMiddle", timeout=4):
-        """Spawns a message box with the given text. Supports HTML formatting.
-        Prints a formatted version of the given string to console, stripped of html tags, to the console.
+    def message_box(self, string, *buttons, location="topMiddle", timeout=3):
+        """Spawns a message box with the given text and optionally sets buttons.
 
         Parameters:
-            message_type (str/optional): The message context type. ex. 'Error', 'Warning', 'Info', 'Result'
-            location (str/QPoint/optional) = move the messagebox to the specified location. default is: 'topMiddle'
-                                            valid: "topMiddle", "bottomRight", "topLeft", "bottomLeft", "center"
-            timeout (int/optional): time in seconds before the messagebox auto closes. default is: 4
-        """
-        if message_type:
-            string = f"{message_type.capitalize()}: {string}"
+            string (str): The message to display.
+            *buttons (str): Variable length argument list of buttons to display.
+            location (str/QPoint, optional): The location to move the messagebox to. Default is 'topMiddle'.
+            timeout (int, optional): Time in seconds before the messagebox auto closes. Default is 3.
 
+        Returns:
+            The result of the message box interaction if buttons are provided, None otherwise.
+        """
         if not hasattr(self, "_messageBox"):
             self._messageBox = self.MessageBox(self.parent())
 
         self._messageBox.location = location
         self._messageBox.timeout = timeout
 
-        # strip everything between '<' and '>' (html tags)
+        self._messageBox.setStandardButtons(*buttons)
+
+        # Log text without HTML tags
         self.logger.info(f"# {re.sub('<.*?>', '', string)}")
 
         self._messageBox.setText(string)
-        self._messageBox.show()  # Use show() instead of exec_()
+
+        if buttons:  # If buttons are provided, use exec_() and return the result
+            return self._messageBox.exec_()
+        else:  # If no buttons, use show() and do not wait for a result
+            self._messageBox.show()
+            return None
 
     @staticmethod
     def file_dialog(

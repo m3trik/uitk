@@ -5,7 +5,42 @@ import pythontk as ptk
 
 
 class AttributesMixin:
-    """Methods for setting widget AttributesMixin."""
+    """A mixin class providing a comprehensive interface for setting attributes on Qt widgets.
+    It allows setting of standard widget properties, calling methods, connecting signals to callbacks,
+    and handling custom-defined attributes.
+
+    The class defines several utility methods:
+
+    - set_legal_attribute: Handles setting of attributes even when the attribute names contain illegal characters,
+      by converting these names into legal formats. It can also retain the original attribute name if required.
+
+    - set_attributes: The primary method used for setting a range of attributes on one or more widgets.
+      This method intelligently distinguishes between regular attributes, method calls, and signal connections,
+      routing each type to its specific handling procedure.
+
+    - is_signal: Checks if a given attribute name corresponds to a Qt signal on the widget.
+
+    - connect_signal: Connects Qt signals to specified callback functions.
+
+    - set_attribute_or_call_method: Handles setting standard attributes and calling methods on widgets.
+
+    - set_custom_attribute: A flexible method designed to set custom attributes. This method can be
+      overridden or extended in subclasses to accommodate specific custom attributes beyond the standard Qt attributes.
+
+    Usage:
+    - Objects of this mixin class or its subclasses can set attributes on Qt widgets by calling `set_attributes`
+      with appropriate parameters.
+    - The class is designed to work as a mixin with Qt widgets or other classes in a Qt application,
+      enhancing them with versatile attribute setting capabilities.
+
+    Example:
+    ```
+    class MyWidget(QtWidgets.QWidget, AttributesMixin):
+        def __init__(self):
+            super().__init__()
+            self.set_attributes(self, setWindowTitle="My Application", set_size=(200, 100))
+    ```
+    """
 
     def set_legal_attribute(self, obj, name, value, also_set_original=False):
         """If the original name contains illegal characters, this method sets an attribute using
@@ -31,14 +66,7 @@ class AttributesMixin:
             setattr(obj, name, value)
 
     def set_attributes(self, *objects, **attributes):
-        """Works with attributes passed in as kwargs.
-        If objects are passed in, attributes are set for each object in turn.
-
-        Parameters:
-            *objects: the child objects or widgetActions to set attributes for. If none are provided, defaults to self.
-            **attributes: The keyword arguments to set as attributes.
-        """
-        if not attributes:  # if no attributes given.
+        if not attributes:
             return
 
         if not objects:
@@ -46,17 +74,36 @@ class AttributesMixin:
 
         for obj in objects:
             for attr, value in attributes.items():
-                try:
-                    # Check if the attribute is a window attribute
-                    attr_value = getattr(QtCore.Qt, attr)
-                    obj.setAttribute(attr_value, value)
-                except AttributeError:
-                    try:
-                        # Attempt to call the attribute as a method
-                        getattr(obj, attr)(value)
-                    except AttributeError:
-                        # Pass attribute to set_custom_attribute if it does not exist
-                        self.set_custom_attribute(obj, attr, value)
+                if self.is_signal(obj, attr):
+                    self.connect_signal(obj, attr, value)
+                else:
+                    self.set_attribute_or_call_method(obj, attr, value)
+
+    def is_signal(self, obj, attr_name):
+        """Check if an attribute is a signal."""
+        attr = getattr(obj, attr_name, None)
+        return isinstance(attr, QtCore.Signal)
+
+    def connect_signal(self, obj, signal_name, callback):
+        """Connect a signal to a callback function."""
+        signal = getattr(obj, signal_name, None)
+        if signal and isinstance(signal, QtCore.Signal):
+            signal.connect(callback)
+        else:
+            print(f"Error: {obj} has no signal named {signal_name}")
+
+    def set_attribute_or_call_method(self, obj, attr, value):
+        try:
+            # Check if the attribute is a window attribute
+            attr_value = getattr(QtCore.Qt, attr)
+            obj.setAttribute(attr_value, value)
+        except AttributeError:
+            try:
+                # Attempt to call the attribute as a method
+                getattr(obj, attr)(value)
+            except AttributeError:
+                # Pass attribute to set_custom_attribute if it does not exist
+                self.set_custom_attribute(obj, attr, value)
 
     def set_custom_attribute(self, w, attr, value):
         """AttributesMixin that throw an AttributeError in 'set_attributes' are sent here, where they can be assigned a value.

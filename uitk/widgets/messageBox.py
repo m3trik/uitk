@@ -12,7 +12,37 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         timeout (int): time in seconds before the messagebox auto closes.
     """
 
-    def __init__(self, parent=None, location="topMiddle", timeout=2, **kwargs):
+    buttonMapping = {
+        "Ok": QtWidgets.QMessageBox.Ok,
+        "Open": QtWidgets.QMessageBox.Open,
+        "Save": QtWidgets.QMessageBox.Save,
+        "Cancel": QtWidgets.QMessageBox.Cancel,
+        "Close": QtWidgets.QMessageBox.Close,
+        "Discard": QtWidgets.QMessageBox.Discard,
+        "Apply": QtWidgets.QMessageBox.Apply,
+        "Reset": QtWidgets.QMessageBox.Reset,
+        "RestoreDefaults": QtWidgets.QMessageBox.RestoreDefaults,
+        "Help": QtWidgets.QMessageBox.Help,
+        "SaveAll": QtWidgets.QMessageBox.SaveAll,
+        "Yes": QtWidgets.QMessageBox.Yes,
+        "YesToAll": QtWidgets.QMessageBox.YesToAll,
+        "No": QtWidgets.QMessageBox.No,
+        "NoToAll": QtWidgets.QMessageBox.NoToAll,
+        "Abort": QtWidgets.QMessageBox.Abort,
+        "Retry": QtWidgets.QMessageBox.Retry,
+        "Ignore": QtWidgets.QMessageBox.Ignore,
+        "NoButton": QtWidgets.QMessageBox.NoButton,
+        None: QtWidgets.QMessageBox.NoButton,
+    }
+
+    def __init__(
+        self,
+        parent=None,
+        location="topMiddle",
+        align="left",
+        timeout=None,
+        **kwargs,
+    ):
         QtWidgets.QMessageBox.__init__(self, parent)
 
         self.setWindowModality(QtCore.Qt.NonModal)
@@ -25,15 +55,42 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             | QtCore.Qt.FramelessWindowHint
         )
 
-        self.menu_timer = QtCore.QTimer()
-        self.menu_timer.setSingleShot(True)
-        self.menu_timer.timeout.connect(self.hide)
-
         self.setTextFormat(QtCore.Qt.RichText)
 
         self.location = location
+        self.align = align
+
+        # Always initialize the timer
+        self.menu_timer = QtCore.QTimer(self)
+        self.menu_timer.setSingleShot(True)
+        self.menu_timer.timeout.connect(self.autoClose)
+
+        # Start the timer only if timeout is set and valid
+        if timeout is not None and timeout > 0:
+            self.timeout = timeout
+        else:
+            self.timeout = None
 
         self.set_attributes(**kwargs)
+
+    def setStandardButtons(self, *buttons):
+        """Set the standard buttons for the message box. Defaults to no buttons if none are provided."""
+        if not buttons:
+            # Set to no buttons if none are provided
+            super().setStandardButtons(QtWidgets.QMessageBox.NoButton)
+            return
+
+        standardButtons = QtWidgets.QMessageBox.StandardButtons()
+        for button in buttons:
+            if isinstance(button, str):
+                button = button.capitalize()  # Normalize the string
+                standardButtons |= self.buttonMapping.get(
+                    button, QtWidgets.QMessageBox.NoButton
+                )
+            elif isinstance(button, QtWidgets.QMessageBox.StandardButton):
+                standardButtons |= button
+
+        super().setStandardButtons(standardButtons)
 
     def move_(self, location) -> None:
         # Get the screen's geometry
@@ -59,11 +116,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         self.move(point)
 
     def _setPrefixStyle(self, string) -> str:
-        """Set style for specific keywords in the given string.
-
-        Returns:
-                (str)
-        """
+        """Set style for specific keywords in the given string."""
         style = {
             "Error:": '<hl style="color:red;">Error:</hl>',
             "Warning:": '<hl style="color:yellow;">Warning:</hl>',
@@ -82,7 +135,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         <p style="font-family:courier;">This is a paragraph.</p>
 
         Returns:
-                (str)
+            (str)
         """
         style = {
             "<p>": '<p style="color:white;">',  # paragraph <p>' </p>'
@@ -99,36 +152,32 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         return string
 
     def _setFontColor(self, string, color) -> str:
-        """
-        Returns:
-                (str)
-        """
+        """ """
         return "<font color=" + color + ">" + string + "</font>"
 
     def _setBackgroundColor(self, string, color):
-        """
-        Returns:
-                (str)
-        """
+        """ """
         return '<mark style="background-color:' + color + '">' + string + "</mark>"
 
     def _setFontSize(self, string, size) -> str:
-        """
-        Returns:
-                (str)
-        """
+        """ """
         return "<font size=" + str(size) + ">" + string + "</font>"
 
     def setText(
         self, string, fontColor="white", backgroundColor="rgb(50,50,50)", fontSize=5
     ) -> None:
-        """Set the text to be displayed.
+        """Set the text to be displayed with the specified alignment unless overridden by HTML.
 
         Parameters:
-                fontColor (str): text color.
-                backgroundColor (str): text background color.
-                fontSize (int): text size.
+            string (str): The text or HTML content to display.
+            fontColor (str): The text color.
+            backgroundColor (str): The background color of the text.
+            fontSize (int): The font size of the text.
         """
+        # Apply default alignment if not overridden in the HTML
+        if "align=" not in string:
+            string = f"<div align='{self.align}'>{string}</div>"
+
         s = self._setPrefixStyle(string)
         s = self._setHTML(s)
         s = self._setFontColor(s, fontColor)
@@ -137,18 +186,37 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
         super().setText(s)
 
-    def showEvent(self, event) -> None:
-        """ """
-        self.menu_timer.start(1000)  # 5000 milliseconds = 5 seconds
-        self.move_(self.location)
+    def autoClose(self):
+        # Close the MessageBox if no standard buttons are set
+        if self.standardButtons() == QtWidgets.QMessageBox.NoButton:
+            self.accept()
 
+    def showEvent(self, event):
+        # Start the timer when the MessageBox is shown and a timeout is set
+        if self.timeout is not None:
+            self.menu_timer.start(
+                self.timeout * 1000
+            )  # Convert seconds to milliseconds
+        self.move_(self.location)
         super().showEvent(event)
 
-    def hideEvent(self, event) -> None:
-        """ """
+    def hideEvent(self, event):
+        # Stop the timer when the MessageBox is hidden
         self.menu_timer.stop()
-
         super().hideEvent(event)
+
+    def exec_(self):
+        # Call the original exec_ method and store the result
+        resultEnum = super().exec_()
+
+        # Convert the enum result to a string using the buttonMapping
+        resultString = next(
+            (k for k, v in MessageBox.buttonMapping.items() if v == resultEnum),
+            None,
+        )
+
+        # Return the string representation of the result
+        return resultString
 
 
 # --------------------------------------------------------------------------------------------
@@ -160,7 +228,7 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
     w = MessageBox()
-    w.setText("Warning: Backface Culling is now <hl>Off</hl>")
+    w.setText("Warning: Backface Culling is now <hl>OFF</hl>")
     w.show()
 
     sys.exit(app.exec_())
@@ -171,75 +239,14 @@ if __name__ == "__main__":
 
 """
 Promoting a widget in designer to use a custom class:
->   In Qt Designer, select all the widgets you want to replace, 
-        then right-click them and select 'Promote to...'. 
+>   In Qt Designer, select all the widgets you want to replace,
+        then right-click them and select 'Promote to...'.
 
 >   In the dialog:
         Base Class:     Class from which you inherit. ie. QWidget
         Promoted Class: Name of the class. ie. "MyWidget"
         Header File:    Path of the file (changing the extension .py to .h)  ie. myfolder.mymodule.mywidget.h
 
->   Then click "Add", "Promote", 
+>   Then click "Add", "Promote",
         and you will see the class change from "QWidget" to "MyWidget" in the Object Inspector pane.
 """
-
-# deprecated: -----------------------------------
-
-
-# class ShowMessageBox(MessageBox):
-#     """Spawns a message box with the given text.
-#     Supports HTML formatting.
-#     Prints a formatted version of the given string to console, stripped of html tags, to the console.
-
-#     Parameters:
-#         message_type (str/optional): The message context type. ex. 'Error', 'Warning', 'Info', 'Result'
-#         location (str/QPoint/optional) = move the messagebox to the specified location. default is: 'topMiddle'
-#         timeout (int/optional): time in seconds before the messagebox auto closes. default is: 3
-#     """
-
-#     def __init__(
-#         self,
-#         string,
-#         message_type="",
-#         location="topMiddle",
-#         timeout=3,
-#         **kwargs,
-#     ):
-#         super().__init__(
-#             QtWidgets.QApplication.instance(), **kwargs
-#         )  # Set the QApplication instance as the parent
-
-#         if message_type:
-#             string = f"{message_type.capitalize()}: {string}"
-
-#         self.location = location
-#         self.timeout = timeout
-
-#         self.setText(string)
-#         self.setVisible(True)
-
-#         # strip everything between '<' and '>' (html tags)
-#         print(f"# {re.sub('<.*?>', '', string)}")
-
-#     def hideEvent(self, event) -> None:
-#         """ """
-#         self.menu_timer.stop()
-
-#         super().hideEvent(event)
-
-
-# def insertText(self, dict_):
-#   '''
-#   Parameters:
-#       dict_ = {dict} - contents to add.  for each key if there is a value, the key and value pair will be added.
-#   '''
-#   highlight = QtGui.QColor(255, 255, 0)
-#   baseColor = QtGui.QColor(185, 185, 185)
-
-#   #populate the textedit with any values
-#   for key, value in dict_.items():
-#       if value:
-#           self.setTextColor(baseColor)
-#           self.append(key) #textEdit.append(key+str(value))
-#           self.setTextColor(highlight)
-#           self.insertPlainText(str(value))
