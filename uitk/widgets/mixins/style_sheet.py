@@ -7,21 +7,34 @@ import pythontk as ptk
 
 
 class StyleSheet(QtCore.QObject):
-    """StyleSheet class is responsible for generating, modifying, and applying CSS style sheets for various Qt widgets.
-    The class also provides utility functions to adjust the appearance of widgets based on their properties or conditions.
-    The StyleSheet class offers multiple theme presets (e.g., 'light' and 'dark') and allows the user to create custom
-    theme presets by providing a color value dictionary.
+    """
+    StyleSheet is a class designed for managing and applying CSS style sheets to Qt widgets,
+    leveraging the inheritance hierarchy of the widgets. It allows for dynamic and flexible styling
+    of user interfaces in PyQt applications.
+
+    The class offers theme support with presets (e.g., 'light', 'dark') and the capability to create
+    custom themes. It understands the hierarchy of Qt widgets, where styles applied to a base class
+    can influence all derived widgets unless explicitly overridden.
 
     Methods:
-    - get_color_values(cls, theme="light", **kwargs): Return the colorValues dict with any of the bracketed
-                placeholders replaced by the value of any given kwargs of the same name.
-    - remove_leading_whitespace(s): Remove the same amount of leading whitespace from each line in the input string
-                as present in the first line.
-    - get_style_sheet(cls, widget_type=None, theme="light", **kwargs): Get the styleSheet for the given widget type.
-    - set_style(cls, widget, ratio=6, theme="light", hide_menu_button=False, append_to_existing=False, **kwargs): Set the
-                styleSheet for the given widgets.
-    - adjust_padding(widget_type): Remove padding when the text length / widget width ratio is below a given amount.
-    - hide_menu_button(widget_type): Set the menu button as transparent.
+    - set_style(widget, theme="light", style_class="", **kwargs): Applies the style sheet to the
+      specified widget, allowing dynamic theme application, ratio-based styling adjustments, and
+      the use of custom style classes.
+
+    Widget Hierarchy and Style Sheet Inheritance:
+    The class recognizes the inheritance structure of Qt widgets, with a detailed mapping in the
+    `style_sheets` dictionary. This structure ensures that styles are modular, maintainable, and
+    adaptable, supporting a wide range of widgets and scenarios in PyQt applications.
+
+    Usage:
+    The StyleSheet class can be instantiated and used to apply styles to PyQt widgets. It is capable
+    of handling both individual widget styling and application-wide theme management.
+
+    Example:
+    ```
+    style_sheet = StyleSheet()
+    style_sheet.set_style(some_widget, theme='dark')
+    ```
     """
 
     themes = {
@@ -670,66 +683,6 @@ class StyleSheet(QtCore.QObject):
         """,
     }
 
-    def get_style_sheet(self, widget_type=None, style="light", **kwargs):
-        """Get the styleSheet for the given widget type.
-        By default it will return all stylesheets as one multi-line css string.
-
-        Parameters:
-            widget_type (str): The class name of the widget. ie. 'QLabel'
-            style (str): The color value set to use. valid values are: 'light', 'dark'
-
-        Returns:
-            (str) css styleSheet
-        """
-        css = (
-            "".join(self.style_sheets.values())
-            if widget_type is None
-            else self.style_sheets.get(widget_type, "")
-        )
-
-        is_valid_widget_type = bool(getattr(QtWidgets, str(widget_type), None))
-        if not css and is_valid_widget_type:
-            raise ValueError(
-                f"# Error: {__file__} in get_style_sheet\n#\tKeyError: '{widget_type}'"
-            )
-            return ""
-
-        for k, v in self.get_color_values(style=style, **kwargs).items():
-            css = css.replace(f"{{{k.upper()}}}", v)
-
-        return self.remove_leading_whitespace(css)
-
-    @staticmethod
-    def get_super_type(widget_type):
-        """Get the name of the immediate superclass of a widget type"""
-        widget_class = getattr(QtWidgets, widget_type, None)
-        if widget_class is not None:
-            super_class = widget_class.__base__
-            return super_class.__name__
-        return None
-
-    def get_style_hierarchy(self, widget_type, theme="light", **kwargs):
-        """Recursively find and apply styles from the most abstract class to the specific class"""
-        super_type = self.get_super_type(widget_type)
-
-        # Try to get the style for the current widget type
-        try:
-            style = self.get_style_sheet(widget_type, theme=theme, **kwargs)
-        except KeyError:
-            style = ""
-
-        # If this widget type has a superclass and it's not QWidget (since we already have a style for QWidget),
-        # get the style of its superclass
-        if super_type and super_type != "QWidget":
-            try:
-                super_style = self.get_style_sheet(super_type, theme=theme, **kwargs)
-            except KeyError:
-                super_style = ""
-        else:
-            super_style = ""
-
-        return super_style, style
-
     @ptk.listify
     def set_style(
         self,
@@ -763,26 +716,86 @@ class StyleSheet(QtCore.QObject):
 
         # If the widget is a QMainWindow, apply the combined stylesheet
         if widget is self:
-            final_style = self.get_style_sheet(theme=theme, **kwargs)
+            final_style = self._get_style_sheet(theme=theme, **kwargs)
         else:  # Otherwise, apply the abstract style first, then the specific widget style
             widget_type = ptk.get_derived_type(
                 widget, module="QtWidgets", return_name=True
             )
-            super_style, style = self.get_style_hierarchy(
+            super_style, style = self._get_style_hierarchy(
                 widget_type, theme=theme, **kwargs
             )
 
             # Check for custom class style
             custom_style_class = widget.property("class")
             if custom_style_class and custom_style_class in self.style_sheets:
-                style = self.get_style_sheet(custom_style_class, theme=theme, **kwargs)
+                style = self._get_style_sheet(custom_style_class, theme=theme, **kwargs)
 
             final_style = super_style + "\n" + style
 
         widget.setStyleSheet(final_style)
 
+    def _get_style_sheet(self, widget_type=None, style="light", **kwargs):
+        """Get the styleSheet for the given widget type.
+        By default it will return all stylesheets as one multi-line css string.
+
+        Parameters:
+            widget_type (str): The class name of the widget. ie. 'QLabel'
+            style (str): The color value set to use. valid values are: 'light', 'dark'
+
+        Returns:
+            (str) css styleSheet
+        """
+        css = (
+            "".join(self.style_sheets.values())
+            if widget_type is None
+            else self.style_sheets.get(widget_type, "")
+        )
+
+        is_valid_widget_type = bool(getattr(QtWidgets, str(widget_type), None))
+        if not css and is_valid_widget_type:
+            raise ValueError(
+                f"# Error: {__file__} in _get_style_sheet\n#\tKeyError: '{widget_type}'"
+            )
+            return ""
+
+        for k, v in self._get_color_values(style=style, **kwargs).items():
+            css = css.replace(f"{{{k.upper()}}}", v)
+
+        return self._remove_leading_whitespace(css)
+
+    @staticmethod
+    def _get_super_type(widget_type):
+        """Get the name of the immediate superclass of a widget type"""
+        widget_class = getattr(QtWidgets, widget_type, None)
+        if widget_class is not None:
+            super_class = widget_class.__base__
+            return super_class.__name__
+        return None
+
+    def _get_style_hierarchy(self, widget_type, theme="light", **kwargs):
+        """Recursively find and apply styles from the most abstract class to the specific class"""
+        super_type = self._get_super_type(widget_type)
+
+        # Try to get the style for the current widget type
+        try:
+            style = self._get_style_sheet(widget_type, theme=theme, **kwargs)
+        except KeyError:
+            style = ""
+
+        # If this widget type has a superclass and it's not QWidget (since we already have a style for QWidget),
+        # get the style of its superclass
+        if super_type and super_type != "QWidget":
+            try:
+                super_style = self._get_style_sheet(super_type, theme=theme, **kwargs)
+            except KeyError:
+                super_style = ""
+        else:
+            super_style = ""
+
+        return super_style, style
+
     @classmethod
-    def get_color_values(cls, theme="light", **kwargs):
+    def _get_color_values(cls, theme="light", **kwargs):
         """Return the colorValues dict with any of the bracketed placeholders
         replaced by the value of any given kwargs of the same name.
 
@@ -806,7 +819,7 @@ class StyleSheet(QtCore.QObject):
             }
 
     @staticmethod
-    def remove_leading_whitespace(style_sheet):
+    def _remove_leading_whitespace(style_sheet):
         """Remove the same amount of leading whitespace from each line in the input string as
         present in the first line.
 
@@ -828,7 +841,7 @@ class StyleSheet(QtCore.QObject):
         return style_sheet
 
     @staticmethod
-    def adjust_padding(widget_type):
+    def _adjust_padding(widget_type):
         """Remove padding when the text length / widget width ratio is below a given amount.
 
         Example:
@@ -843,7 +856,7 @@ class StyleSheet(QtCore.QObject):
 
             # ratio of widget size, text length (using integer division).
             if widget.size().width() // length > ratio:
-                final_style = final_style + self.adjust_padding(widget_type)
+                final_style = final_style + self._adjust_padding(widget_type)
         """
         return """
             {0} {{
@@ -853,7 +866,7 @@ class StyleSheet(QtCore.QObject):
         )
 
     @staticmethod
-    def hide_menu_button(widget_type):
+    def _hide_menu_button(widget_type):
         """Set the menu button as transparent."""
         return """
             {0}::menu-button {{
@@ -877,7 +890,44 @@ if __name__ == "__main__":
 # --------------------------------------------------------------------------------------------
 
 """
-# css commenting:
+# Widget heirarchy:
+    QWidget:
+        QLabel
+        QLineEdit
+        QFrame
+    QAbstractButton:
+        QPushButton
+        QToolButton
+        QCheckBox
+        QRadioButton
+    QAbstractSpinBox:
+        QSpinBox
+        QDoubleSpinBox
+    QAbstractItemView:
+        QListWidget
+        QListView
+        QTableView
+        QTreeView
+    QAbstractScrollArea:
+        QScrollArea
+        QGraphicsView
+        QMdiArea
+        QPlainTextEdit
+        QTextEdit
+    QMainWindow:
+    QStackedWidget:
+    QGroupBox:
+    QMenu:
+    QMenuBar:
+    QHeaderView:
+    QAbstractSlider:
+        QSlider
+        QScrollBar
+    QComboBox:
+    QProgressBar:
+
+
+# CSS commenting:
     /* multi-line */
 
 # setting a property:
