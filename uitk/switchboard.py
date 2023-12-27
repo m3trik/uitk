@@ -14,74 +14,33 @@ from uitk.file_manager import FileManager
 
 
 class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
-    """Load dynamic UI, assign convenience properties, and handle slot connections.
+    """Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
+    It facilitates the loading of UI files, dynamic assignment of properties, and
+    management of signal-slot connections in a modular and organized manner.
 
-    The following attributes are added to each slots class instance:
-        switchboard (method): This method returns the Switchboard instance that the instance belongs to.
-            This allows easy access to the Switchboard's methods and properties from within the slots class.
-        signals (method): The `@signals` decorator can be used to specify which signals a slot should be connected to.
-            If a slot method is not decorated with `@signals`, it will use the default signals specified in the `default_signals` dictionary.
-
-            For example, to specify that a slot should be connected to the 'clicked' and 'released' signals, you could write:
-                @signals('clicked', 'released')
-                def on_button_click():
-                    print("Button clicked")
-
-    Parameters:
-        parent (obj): A QtObject derived class.
-        ui_location (str/obj/list): Set the directory of the dynamic UI, or give the dynamic UI files(s).
-        widget_location (str/obj/list): Set the directory of any custom widgets, or give the widget object(s).
-        slot_location (str/obj/list): Set the directory of where the slot classes will be imported, or give the slot class itself.
-        ui_name_delimiters (tuple, optional): A tuple of two delimiter strings, where the first delimiter is used to split the hierarchy and the second delimiter is used to split hierarchy levels. Defaults to (".", "#").
-        log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
-
-    Properties:
-        sb: The instance of this class holding all properties.
-        sb.current_ui: Returns the current UI.
-        sb.<uiFileName>: Accesses the UI loaded from uiFileName.
-        sb.<customWidgetClassName>: Accesses the custom widget with the specified class name.
-        sb.<slotsClassName>: Accesses the slots class of the specified class name.
-
-    Methods:
-        load_ui(uiPath): Load the UI file located at uiPath.
-        load_all_ui(): Load all UI files in the UI directory.
-        registerWidget(widget): Register the specified widget.
-        connect_slots(slotClass, ui=None): Connect the slots in the specified slot class to the specified UI.
+    This class streamlines the process of integrating UI files created with Qt Designer,
+    custom widget classes, and Python slot classes into your application. It adds convenience
+    methods and properties to each slot class instance, enabling easy access to the Switchboard's
+    functionality within the slots class.
 
     Attributes:
-        default_signals: A dictionary of the default signals to be connected per widget type.
-        module_dir: The directory of this module.
-        default_dir: The default directory is the calling module's directory. If any of the given file paths are not
-                                        a full path, they will be treated as relative to the currently set path.
+        default_signals (dict): Default signals to be connected per widget type when no specific signals are defined.
+        module_dir (str): Directory of this module.
+        default_dir (str): Default directory used for relative path resolution.
+
     Example:
-        1. Create a subclass of Switchboard to load your project UI and connect slots for the UI events.
-            class MyProject():
-                ...
-
-            class MyProjectSlots(MyProject):
-                def __init__(self):
-                    self.sb = self.switchboard() # Slot classes are given the `switchboard` function when they are initialized.
-                    self.ui = self.sb.my_project # Access your UI using it filename.
-                    print (self.ui)
-
+        - Creating a subclass of Switchboard to load project UI and connect slots:
             class MyProjectUi:
                 def __new__(cls, *args, **kwargs):
-                    sb = Switchboard(
-                        *args,
-                        ui_location="my_project.ui", # Use a relative path from your project location.
-                        slot_location=MyProjectSlots,
-                        **kwargs
-                    )
-
-                    ui = sb.my_project # Access the UI using it's file name.
+                    sb = Switchboard(*args, ui_location="my_project.ui", **kwargs)
+                    ui = sb.my_project
                     ui.set_attributes(WA_TranslucentBackground=True)
                     ui.set_flags(Tool=True, FramelessWindowHint=True, WindowStaysOnTopHint=True)
                     ui.set_style(theme="dark", style_class="translucentBgWithBorder")
-
                     return ui
 
-        2. Instantiate the subclass and show the UI.
-            ui = MyProjectUi(<parent>)
+        - Instantiating and displaying the UI:
+            ui = MyProjectUi(parent)
             ui.show(pos="screen", app_exec=True)
     """
 
@@ -1457,58 +1416,68 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         return result
 
     def create_button_groups(
-        self, ui, *args, allow_deselect=False, allow_multiple=False
-    ):
+        self,
+        ui: QtWidgets.QWidget,
+        *args: str,
+        allow_deselect: bool = False,
+        allow_multiple: bool = False,
+    ) -> List[QtWidgets.QButtonGroup]:
         """Create button groups for a set of widgets.
 
         Parameters:
-            ui (QWidget): A previously loaded dynamic UI object.
-            args: The widgets to group. Object_names separated by ',' ie. 'b000-12,b022'
+            ui (QtWidgets.QWidget): A previously loaded dynamic UI object.
+            args (str): The widgets to group. Object_names separated by ',' ie. 'b000-12,b022'
             allow_deselect (bool): Whether to allow none of the checkboxes to be selected.
             allow_multiple (bool): Whether to allow multiple checkboxes to be selected.
-
-        Example:
-            grp_a, grp_b = create_button_groups(<ui>, 'b000-2', 'b003-4', allow_deselect=True, allow_multiple=True)
-            grp_a = b000.button_group  # access group using the 'button_group' attribute.
-            grp_b = b003.button_group
         """
         button_groups = []
 
+        def button_toggled(w: QtWidgets.QAbstractButton, grp: QtWidgets.QButtonGroup):
+            """Handle button toggle event."""
+            w.blockSignals(True)  # Block signals to prevent recursive calls
+
+            if not allow_multiple and w.isChecked():
+                # Uncheck all other buttons in the group
+                for btn in grp.buttons():
+                    if btn != w:
+                        btn.setChecked(False)
+            elif not allow_deselect and not any(
+                btn.isChecked() for btn in grp.buttons()
+            ):
+                # Re-check the button if deselect is not allowed
+                w.setChecked(True)
+
+            w.blockSignals(False)  # Unblock signals after state change
+
         for buttons in args:
+            # Get widgets by the string pattern
+            widgets = self.get_widgets_by_string_pattern(ui, buttons)
+            if not widgets:
+                continue
+
+            # Validation checks
+            widget_type = type(widgets[0])
+            if allow_multiple and issubclass(widget_type, QtWidgets.QRadioButton):
+                raise ValueError("Allow_multiple is not applicable to QRadioButton")
+            if any(type(w) != widget_type for w in widgets):
+                raise TypeError("All widgets in a group must be of the same type")
+
             # Create button group
             grp = QtWidgets.QButtonGroup()
             grp.setExclusive(False)  # Set to False to manually handle exclusivity
 
-            # Get widgets by the string pattern
-            widgets = self.get_widgets_by_string_pattern(ui, buttons)
-            widget_type = type(widgets[0])
-
-            # Validation checks
-            if allow_multiple and issubclass(widget_type, QtWidgets.QRadioButton):
-                raise ValueError("Allow_multiple is not applicable to QRadioButton")
-
-            def manage_deselect_state(checked, w):
-                if not allow_multiple:
-                    if checked:
-                        for btn in grp.buttons():
-                            if btn != w:
-                                btn.setChecked(False)
-                if allow_deselect and not checked and w == grp.checkedButton():
-                    w.setChecked(True)
-
             # Add each widget to the button group
             for w in widgets:
-                if type(w) != widget_type:
-                    raise TypeError("All widgets in a group must be of the same type")
-
                 w.button_group = grp
                 grp.addButton(w)
-                w.toggled.connect(partial(manage_deselect_state, w=w))
+                # Temporarily block signals to prevent the toggled slot from being triggered
+                w.blockSignals(True)
+                w.setChecked(False)
+                w.blockSignals(False)
+                w.toggled.connect(lambda checked, w=w, grp=grp: button_toggled(w, grp))
 
-            # Add the group to the list
             button_groups.append(grp)
 
-        # Assume ptk.format_return is a function that properly formats the return value
         return ptk.format_return(button_groups)
 
     def toggle_multi(self, ui, **kwargs):
@@ -1766,7 +1735,7 @@ if __name__ == "__main__":
     ui.set_style(theme="dark", style_class="translucentBgWithBorder")
 
     print(repr(ui))
-    print(sb.QtGui)
+    print(sb.QWidget)
     ui.show(pos="screen", app_exec=True)
 
 logging.info(__name__)  # module name

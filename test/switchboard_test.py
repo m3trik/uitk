@@ -136,5 +136,70 @@ class TestSwitchboard(unittest.TestCase):
                 self.ui.close()
 
 
+class TestCreateButtonGroups(unittest.TestCase):
+    def setUp(self):
+        from uitk import example
+
+        self.sb = Switchboard(ui_location=example, slot_location=example.example_slots)
+        self.ui = self.sb.example
+
+        self.chk000 = self.ui.button_b.menu.add(
+            "QCheckBox", setObjectName="chk000", setText="Option A", setChecked=True
+        )
+        self.chk001 = self.ui.button_b.menu.add(
+            "QCheckBox", setObjectName="chk001", setText="Option B"
+        )
+        self.chk002 = self.ui.button_b.menu.add(
+            "QCheckBox", setObjectName="chk002", setText="Option C"
+        )
+
+    def test_create_button_groups_allow_deselect(self):
+        # Test allow_deselect functionality
+        self.sb.create_button_groups(
+            self.ui.button_b.menu,
+            "chk000-2",
+            allow_deselect=True,
+            allow_multiple=False,
+        )
+
+        self.chk000.setChecked(True)
+        self.assertTrue(self.chk000.isChecked())
+
+        # Click the same button again to deselect
+        self.chk000.click()
+        self.assertFalse(self.chk000.isChecked(), "Button should be deselected")
+
+    def test_create_button_groups_allow_multiple(self):
+        # Test allow_multiple functionality
+        self.sb.create_button_groups(
+            self.ui.button_b.menu,
+            "chk000-2",
+            allow_deselect=False,
+            allow_multiple=True,
+        )
+
+        self.chk000.setChecked(True)
+        self.chk001.setChecked(True)
+
+        self.assertTrue(self.chk000.isChecked())
+        self.assertTrue(self.chk001.isChecked())
+        self.assertFalse(self.chk002.isChecked())
+
+    def test_create_button_groups_exclusive(self):
+        # Test exclusive group (neither allow_deselect nor allow_multiple)
+        self.sb.create_button_groups(
+            self.ui.button_b.menu,
+            "chk000-2",
+            allow_deselect=False,
+            allow_multiple=False,
+        )
+
+        self.chk000.setChecked(True)
+        self.chk001.setChecked(True)
+
+        self.assertFalse(self.chk000.isChecked(), "Button 1 should be unchecked")
+        self.assertTrue(self.chk001.isChecked())
+
+
 if __name__ == "__main__":
     unittest.main()
