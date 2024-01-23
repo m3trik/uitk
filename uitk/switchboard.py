@@ -816,6 +816,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
             if "widget" in param_names and "widget" not in kwargs:
                 filtered_kwargs["widget"] = widget
 
+            self.slot_history(add=slot)
             return slot(*args, **filtered_kwargs)
 
         return wrapper
