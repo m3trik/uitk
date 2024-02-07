@@ -2,6 +2,7 @@
 # coding=utf-8
 import sys
 import logging
+from typing import Any
 from functools import partial
 from PySide2 import QtCore, QtWidgets
 import pythontk as ptk
@@ -132,55 +133,59 @@ class MainWindow(
         """Return the filename"""
         return self.name
 
-    def init_child(self, widget, **kwargs):
+    def init_child(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None:
         """Assign additional attributes to the widget for easier access and better management.
 
         Parameters:
-            widget (obj): A widget that will be added as attributes.
-            kwargs (dict): Additional widget attributes as keyword arguments.
-
+            widget: A widget to be initialized and added as an attribute.
+            kwargs: Additional widget attributes as keyword arguments.
         """
         if widget in self.widgets:
-            self.logger.info(f"Widget {widget} is already in self.widgets")
-            return
-        if not isinstance(widget, QtWidgets.QWidget):
-            self.logger.info(f"Widget {widget} is not an instance of QtWidgets.QWidget")
+            self.logger.info(f"Widget {widget} is already initialized.")
             return
 
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.warning(f"Attempted to initialize a non-widget: {widget}.")
+            return
+
+        # Initialize widget attributes
         widget.ui = self
         widget.name = widget.objectName()
         widget.base_name = self.sb.get_base_name(widget.name)
-        widget.type = widget.__class__
+        widget.type = type(widget)
         widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
 
+        # Lambda functions for widget operations
         widget.get_slot = lambda w=widget: getattr(
             self.sb.get_slot_class(w.ui), w.name, None
         )
-
         widget.init_slot = lambda *args, w=widget: self.init_slot(w)
         widget.call_slot = lambda *args, w=widget, **kwargs: self.call_slot(
             w, *args, **kwargs
         )
-
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
+
+        # Additional widget setup
         widget.refresh = True
         widget.is_initialized = False
         widget.installEventFilter(self)
 
+        # Apply additional attributes from kwargs
         ptk.set_attributes(widget, **kwargs)
+
+        # Register the widget
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
 
+        # Post-initialization actions
         self.on_child_added.emit(widget)
-        # Restore the widgets previous state
         self.sb.restore_widget_state(widget)
-        # Connect the on_child_changed signal to the sync_widget_values method
         self.init_child_changed_signal(widget)
 
         if self.is_connected:
             self.sb.connect_slot(widget)
 
-        # Initialize the widgets children
+        # Recursively initialize child widgets
         for child in widget.findChildren(QtWidgets.QWidget):
             self.init_child(child)
 
@@ -459,6 +464,9 @@ class MainWindow(
     def hideEvent(self, event):
         """Reimplement hideEvent to emit custom signal when window is hidden."""
         self.on_hide.emit()
+
+        if self.mouseGrabber():
+            self.mouseGrabber().releaseMouse()
 
         super().hideEvent(event)
 

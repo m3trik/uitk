@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+from typing import Union, Optional, Type
 from PySide2 import QtCore, QtGui, QtWidgets
 
 
@@ -24,12 +25,44 @@ class ConvertMixin:
     }
 
     @staticmethod
-    def to_qobject(value, q_object_type):
-        """ConvertMixin a tuple or list to a QObject if not already one."""
+    def can_convert(value, q_object_type: Type) -> bool:
+        """Check if a given value can be converted to the specified QObject type.
+
+        Parameters:
+            value: The value to check for conversion compatibility.
+            q_object_type: The Qt class type to check against.
+
+        Returns:
+            True if `value` can be converted to `q_object_type`, False otherwise.
+        """
+        if q_object_type not in ConvertMixin.types or not isinstance(
+            value, (tuple, list)
+        ):
+            return False
+
+        num_params, _ = ConvertMixin.types[q_object_type]
+        return num_params is None or len(value) == num_params
+
+    @staticmethod
+    def to_qobject(value, q_object_type: Type) -> QtCore.QObject:
+        """Convert a tuple or list to a QObject of the specified type if not already one.
+
+        Parameters:
+            value: The value to convert, expected to be a tuple, list, or an instance of `q_object_type`.
+            q_object_type: The Qt class type to which the value should be converted.
+
+        Returns:
+            An instance of `q_object_type` constructed from `value`.
+
+        Raises:
+            ValueError: If `value` cannot be converted to `q_object_type`.
+        """
         if isinstance(value, q_object_type):
             return value
 
-        if q_object_type not in ConvertMixin.types or not isinstance(value, (tuple, list)):
+        if q_object_type not in ConvertMixin.types or not isinstance(
+            value, (tuple, list)
+        ):
             raise ValueError(
                 f"Value must be a {q_object_type.__name__} or a tuple/list. got {type(value)}"
             )
@@ -44,13 +77,22 @@ class ConvertMixin:
         return constructor(value)
 
     @staticmethod
-    def can_convert(value, q_object_type):
-        """Check if a value can be converted to a certain QObject type."""
-        if q_object_type not in ConvertMixin.types or not isinstance(value, (tuple, list)):
-            return False
+    def to_qkey(key: Union[str, QtCore.Qt.Key]) -> Optional[QtCore.Qt.Key]:
+        """Convert a given key identifier to a Qt key constant. Handles both string identifiers and Qt.Key enum values.
 
-        num_params, _ = ConvertMixin.types[q_object_type]
-        return num_params is None or len(value) == num_params
+        Parameters:
+            key: The key identifier to convert, which can be a string or a QtCore.Qt.Key enum.
+
+        Returns:
+            The corresponding Qt key constant if the conversion is successful, otherwise None.
+        """
+        if isinstance(key, QtCore.Qt.Key):
+            return key
+        elif isinstance(key, str):
+            key_string = f"Key_{key}" if not key.startswith("Key_") else key
+            return getattr(QtCore.Qt, key_string, None)
+        else:
+            return None
 
 
 if __name__ == "__main__":
@@ -66,7 +108,9 @@ if __name__ == "__main__":
     print(
         ConvertMixin.to_qobject((90, 100, 110, 120), QtGui.QColor)
     )  # QColor(90,100,110,120)
-    print(ConvertMixin.to_qobject((130.0, 140.0), QtCore.QPointF))  # QPointF(130.0,140.0)
+    print(
+        ConvertMixin.to_qobject((130.0, 140.0), QtCore.QPointF)
+    )  # QPointF(130.0,140.0)
     print(
         ConvertMixin.to_qobject((150.0, 160.0, 170.0), QtGui.QVector3D)
     )  # QVector3D(150.0,160.0,170.0)
@@ -77,7 +121,16 @@ if __name__ == "__main__":
     print(ConvertMixin.can_convert((60, 70, 80, 90), QtCore.QRect))  # True
     print(ConvertMixin.can_convert((100, 110, 120, 130, 140), QtGui.QColor))  # False
     print(ConvertMixin.can_convert((150.0, 160.0), QtCore.QPointF))  # True
-    print(ConvertMixin.can_convert((170.0, 180.0, 190.0, 200.0), QtGui.QVector4D))  # True
+    print(
+        ConvertMixin.can_convert((170.0, 180.0, 190.0, 200.0), QtGui.QVector4D)
+    )  # True
+
+    # Test the to_qkey method with various input types
+    print(ConvertMixin.to_qkey("A"))  # Should print the Qt key constant for 'A'
+    print(
+        ConvertMixin.to_qkey(QtCore.Qt.Key_A)
+    )  # Should directly return QtCore.Qt.Key_A
+    print(ConvertMixin.to_qkey("Key_A"))  # Should print the Qt key constant for 'A'
 
     sys.exit(app.exec_())
 

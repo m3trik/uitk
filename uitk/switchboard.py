@@ -4,13 +4,13 @@ import re
 import sys
 import logging
 import traceback
-from functools import partial
 from typing import List, Union
 from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
 from PySide2 import QtCore, QtGui, QtWidgets, QtUiTools
 import pythontk as ptk
 from uitk.file_manager import FileManager
+from uitk.widgets.mixins.convert import ConvertMixin
 
 
 class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
@@ -122,6 +122,8 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         self._connected_slots = {}  # Currently connected slots.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
         self._gc_protect = set()  # Objects protected from garbage collection.
+
+        self.convert = ConvertMixin()
 
     def _init_logger(self, log_level):
         """Initializes logger with the specified log level.
@@ -1050,9 +1052,16 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         Parameters:
             widget (QWidget): The widget whose state is to be restored.
         """
+        widget_name = widget.objectName()
+        if not widget_name:
+            return
+
         signal_name = self.default_signals.get(widget.derived_type)
         if signal_name:
-            value = widget.ui.settings.value(f"{widget.name}/{signal_name}")
+            try:
+                value = widget.ui.settings.value(f"{widget_name}/{signal_name}")
+            except EOFError:
+                return
             if value is not None:
                 self._apply_state_to_widget(widget, signal_name, value)
 
