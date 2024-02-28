@@ -1,70 +1,64 @@
 # !/usr/bin/python
 # coding=utf-8
-import sys, time
+import sys
+import time
 from PySide2 import QtCore, QtWidgets, QtGui
 
 
 class WorkIndicator(QtWidgets.QDialog):
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        parent=None,
+        gif_path="O:/Cloud/Code/_scripts/uitk/uitk/widgets/mixins/task_indicator.gif",
+    ):
         super().__init__(parent)
-
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setWindowFlags(
-            QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowTitleHint
-            | QtCore.Qt.WindowStaysOnTopHint
+            QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint
         )
-        self.setModal(True)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.movie = QtGui.QMovie(gif_path)
+        self.initUI()
 
-        gif_path = "O:/Cloud/Code/_scripts/uitk/uitk/widgets/task_indicator.gif"
-        self.movie = QtGui.QMovie(gif_path, parent=self)
-        self.movie.setCacheMode(QtGui.QMovie.CacheAll)
-        self.movie.setScaledSize(QtCore.QSize(75, 75))
-
+    def initUI(self):
         label = QtWidgets.QLabel(self)
         label.setMovie(self.movie)
-        label.setAlignment(QtCore.Qt.AlignCenter)
+        if not self.movie.isValid():
+            print("Failed to load GIF")
 
-        layout = QtWidgets.QVBoxLayout(self)
+        layout = QtWidgets.QVBoxLayout()
         layout.addWidget(label)
         self.setLayout(layout)
-
-        self.setFixedSize(self.movie.frameRect().size())
-
-    def start(self):
         self.movie.start()
-        self.show()
-        self.move(
-            QtGui.QCursor.pos() - QtCore.QPoint(self.width() / 2, self.height() / 2)
-        )
 
-    def stop(self):
+    def closeEvent(self, event):
         self.movie.stop()
-        self.accept()
+        super().closeEvent(event)
 
 
 class TasksMixin(QtCore.QThread):
-    complete = QtCore.Signal()
+    taskCompleted = QtCore.Signal()
 
-    def __init__(self):
-        super().__init__()
-        self.work_indicator = WorkIndicator()
-        self.complete.connect(self.work_indicator.stop)
-
-    def start_task(self, task_function):
-        self.task_function = task_function
-        self.finished.connect(self.on_finished)
-        self.start()
-        self.work_indicator.start()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.workIndicator = None
+        self.taskFunction = None
 
     def run(self):
-        self.task_function()
-        self.complete.emit()
+        if self.taskFunction:
+            self.taskFunction()
+        self.taskCompleted.emit()
 
-    def on_finished(self):
-        self.finished.disconnect(self.on_finished)
-        self.task_function = None
-        self.deleteLater()
+    def startTask(self, taskFunction):
+        self.taskFunction = taskFunction
+        self.workIndicator = WorkIndicator(self.parent())
+        self.workIndicator.show()
+        self.start()
+
+    def stopTask(self):
+        if self.workIndicator:
+            self.workIndicator.close()
+            self.workIndicator = None
+        self.wait()  # Ensure the thread has finished
 
 
 # --------------------------------------------------------------------------------------------
@@ -76,26 +70,33 @@ if __name__ == "__main__":
     class MainWindow(QtWidgets.QWidget):
         def __init__(self):
             super().__init__()
+            self.initUI()
 
-            layout = QtWidgets.QVBoxLayout()
-            self.setLayout(layout)
+        def initUI(self):
+            layout = QtWidgets.QVBoxLayout(self)
 
-            button = QtWidgets.QPushButton("Perform Long Running TasksMixin")
-            button.clicked.connect(self.perform_long_running_task)
+            button = QtWidgets.QPushButton("Perform Long Running Task", self)
+            button.clicked.connect(self.performLongRunningTask)
+
             layout.addWidget(button)
 
-            self.task = TasksMixin()
+            self.task = TasksMixin(self)
 
-        def perform_long_running_task(self):
-            # Create a separate thread to perform the long running task.
-            self.task.start_task(self.long_running_task)
+        def performLongRunningTask(self):
+            self.task.taskCompleted.connect(self.onTaskCompleted)
+            self.task.startTask(self.longRunningTask)
 
-        def long_running_task(self):
-            time.sleep(2)  # Move the time.sleep(5) to this method
+        def longRunningTask(self):
+            # Simulate a long-running task
+            time.sleep(2)
 
-    app = QtWidgets.QApplication([])
-    main = MainWindow()
-    main.show()
+        def onTaskCompleted(self):
+            # Handle task completion
+            print("Task completed")
+
+    app = QtWidgets.QApplication(sys.argv)
+    mainWindow = MainWindow()
+    mainWindow.show()
     sys.exit(app.exec_())
 
 # --------------------------------------------------------------------------------------------

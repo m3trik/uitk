@@ -465,9 +465,6 @@ class MainWindow(
         """Reimplement hideEvent to emit custom signal when window is hidden."""
         self.on_hide.emit()
 
-        if self.mouseGrabber():
-            self.mouseGrabber().releaseMouse()
-
         super().hideEvent(event)
 
     def closeEvent(self, event):
