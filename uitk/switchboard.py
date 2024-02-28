@@ -2,6 +2,7 @@
 # coding=utf-8
 import re
 import sys
+import json
 import logging
 import traceback
 from typing import List, Union
@@ -1030,40 +1031,52 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         if original_signal_name:
             self.store_widget_state(widget, original_signal_name, value)
 
-    def store_widget_state(self, widget, signal_name, value):
-        """Stores the current state of a widget in the application settings.
-        This method uses the QSettings class to store the current state of a widget. The state is stored under a key that is a combination of the widget's object name and the signal name.
+    def store_widget_state(
+        self, widget: QtWidgets.QWidget, signal_name: str, value: any
+    ) -> None:
+        """
+        Stores the current state of a widget in the application settings.
+        Serializes complex objects into JSON for storable formats.
 
         Parameters:
             widget (QWidget): The widget whose state is to be stored.
-            signal_name (str): The name of the signal that indicates a state change in the widget.
-            value (any): The current state of the widget.
+            signal_name (str): The name of the signal indicating a state change in the widget.
+            value (any): The current state of the widget, to be serialized if complex.
         """
-        # print("store_widget_state:", widget.name, value)  # Debug
-        widget.ui.settings.setValue(f"{widget.name}/{signal_name}", value)
+        # Serialize complex objects into a storable format (e.g., JSON string)
+        if isinstance(value, (dict, list, tuple)):
+            value = json.dumps(value)
+        elif not isinstance(value, (int, float, str, bool)):
+            # Log or handle non-serializable objects here
+            return
 
-    def restore_widget_state(self, widget):
-        """Restores the state of a given widget using QSettings.
+        widget.ui.settings.setValue(f"{widget.objectName()}/{signal_name}", value)
 
-        This method uses the QSettings class to restore the state of a widget. The state is retrieved
-        using a key that combines the widget's object name and the signal name. If the value is found,
-        the widget's state is updated accordingly.
+    def restore_widget_state(self, widget: QtWidgets.QWidget) -> None:
+        """
+        Restores the state of a given widget using QSettings.
+        Deserializes stored JSON strings back into Python objects.
 
         Parameters:
             widget (QWidget): The widget whose state is to be restored.
         """
         widget_name = widget.objectName()
         if not widget_name:
-            return
+            return  # Exit if widget does not have a name
 
         signal_name = self.default_signals.get(widget.derived_type)
         if signal_name:
             try:
                 value = widget.ui.settings.value(f"{widget_name}/{signal_name}")
+                if value is not None:
+                    # Attempt to parse the value assuming it might be JSON
+                    try:
+                        parsed_value = json.loads(value)
+                    except (TypeError, json.JSONDecodeError):
+                        parsed_value = value  # Use the original value if parsing fails
+                    self._apply_state_to_widget(widget, signal_name, parsed_value)
             except EOFError:
                 return
-            if value is not None:
-                self._apply_state_to_widget(widget, signal_name, value)
 
     def clear_widget_state(self, widget):
         """Clears the stored state of a given widget from the application settings.

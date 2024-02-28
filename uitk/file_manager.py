@@ -410,7 +410,7 @@ class FileManager:
         if os.path.isdir(dir_path) and not needs_classes:
             files = ptk.get_dir_contents(
                 dir_path,
-                returned_type="filepath",
+                "filepath",
                 inc_files=metadata.get("inc_files"),
                 exc_files=metadata.get("exc_files"),
                 inc_dirs=metadata.get("inc_dirs"),

@@ -94,11 +94,12 @@ class AttributeWindow(Menu):
 
     @staticmethod
     def is_type_supported(attribute_type):
+        """ """
         supported_types = {
             bool,
             int,
             float,
-            str,  # Update with any additional types you support
+            str,
         }
         return attribute_type in supported_types
 
