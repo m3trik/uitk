@@ -1,2 +1,2 @@
 PySide2
-pythontk==0.7.13
+pythontk==0.7.14

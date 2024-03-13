@@ -80,7 +80,7 @@ class MainWindow(
 
         ui = self.sb.load(ui_filepath)
         self.setCentralWidget(ui.centralWidget())
-        self.transfer_properties(ui, self)
+        self.transfer_widget_properties(ui, self)
         self.setWindowFlags(ui.windowFlags())
 
         self.settings = QtCore.QSettings("uitk", self.name)

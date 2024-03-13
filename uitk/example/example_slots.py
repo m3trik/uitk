@@ -46,7 +46,9 @@ class ExampleSlots:
         )
 
     def spinbox(self, value, widget):
-        self.sb.message_box(f'SpinBox Value: <b style="font-weight: bold;">{value}</b>')
+        self.sb.message_box(
+            f'DoubleSpinBox Value: <b style="font-weight: bold;">{value}</b>'
+        )
 
     @staticmethod
     def textedit_init(widget):

@@ -169,11 +169,7 @@
           </widget>
          </item>
          <item row="1" column="2">
-          <widget class="QSpinBox" name="spinbox">
-           <property name="prefix">
-            <string>Spinbox:	</string>
-           </property>
-          </widget>
+          <widget class="DoubleSpinBox" name="spinbox"/>
          </item>
         </layout>
        </widget>
@@ -243,6 +239,11 @@ p, li { white-space: pre-wrap; }
    <extends>QGroupBox</extends>
    <header>uitk.widgets.collapsableGroup.CollapsableGroup.h</header>
    <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>DoubleSpinBox</class>
+   <extends>QDoubleSpinBox</extends>
+   <header>widgets.doublespinbox.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -157,7 +157,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         """Get all items in the list, optionally filtered by type.
 
         Parameters:
-            types (type or list of type, optional): The type(s) of widgets to retrieve. Defaults to None.
+            types (str, type, list of str, list of type, optional): The type(s) or type name(s) of widgets to retrieve. Defaults to None.
 
         Returns:
             list: A list of all QWidget items in the list, filtered by type if specified.
@@ -167,11 +167,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         ]
 
         if types is not None:
-            # If a single type is provided, convert it to a list.
-            types = [types] if not isinstance(types, (list, tuple)) else types
+            # Ensure types is a list for easier processing
+            if not isinstance(types, (list, tuple)):
+                types = [types]
 
-            # Filter items by type.
-            items = [item for item in items if isinstance(item, tuple(types))]
+            # Convert string type names to actual types
+            processed_types = []
+            for type_item in types:
+                if isinstance(type_item, str):
+                    widget_type = getattr(QtWidgets, type_item, None)
+                    if widget_type is not None:
+                        processed_types.append(widget_type)
+                else:
+                    processed_types.append(type_item)
+
+            items = [  # Filter items by type
+                item
+                for item in items
+                if any(isinstance(item, t) for t in processed_types)
+            ]
 
         return items
 
@@ -553,8 +567,8 @@ if __name__ == "__main__":
     # a = menu.add(["Label A", "Label B"])
     a = menu.add("Label A")
     b = menu.add("Label B")
-    c = menu.add("QDoubleSpinBox", set_spinbox_by_value=1.0, row=0, col=1)
-    d = menu.add("QDoubleSpinBox", set_spinbox_by_value=2.0, row=1, col=1)
+    c = menu.add("QDoubleSpinBox", set_by_value=1.0, row=0, col=1)
+    d = menu.add("QDoubleSpinBox", set_by_value=2.0, row=1, col=1)
 
     menu.on_item_interacted.connect(lambda x: print(x))
 
