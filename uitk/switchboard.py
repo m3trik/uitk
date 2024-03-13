@@ -45,6 +45,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
             ui.show(pos="screen", app_exec=True)
     """
 
+    QtCore = QtCore
+    QtGui = QtGui
+    QtWidgets = QtWidgets
+    QtUiTools = QtUiTools
+
     # Use the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
@@ -146,7 +151,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         The attribute resolution order is as follows:
         1. If an unknown attribute matches the name of a UI in the current UI directory, load and return it.
         2. Else, if an unknown attribute matches the name of a custom widget in the widgets directory, register and return it.
-        3. Lastly, if an unknown attribute matches an attribute in QtCore, QtGui, or QtWidgets, return that attribute.
 
         If no match is found in any of these categories, an AttributeError is raised.
 
@@ -170,11 +174,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         if widget_class:
             widget = self.register_widget(widget_class)
             return widget
-
-        # Check if attribute exists in Qt modules
-        for qt_module in [QtCore, QtGui, QtWidgets, QtUiTools]:
-            if hasattr(qt_module, attr_name):
-                return getattr(qt_module, attr_name)
 
         raise AttributeError(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"

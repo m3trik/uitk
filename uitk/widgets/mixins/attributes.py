@@ -129,7 +129,7 @@ class AttributesMixin:
             setCheckState (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
         """
         if attr == "transfer_properties":
-            self.transfer_properties(value, w)
+            self.transfer_widget_properties(value, w)
 
         elif attr == "set_size":
             x, y = value
@@ -168,9 +168,9 @@ class AttributesMixin:
 
         # presets
         elif attr == "set_limits":
-            self.set_limits(w, value)
+            self.set_spinbox_limits(w, value)
 
-        elif attr == "set_spinbox_by_value":
+        elif attr == "set_by_value":
             if isinstance(w, QtWidgets.QAbstractSpinBox):
                 self.set_spinbox_by_value(w, value)
 
@@ -212,7 +212,7 @@ class AttributesMixin:
 
         self.setWindowFlags(current_flags)
 
-    def set_limits(self, spinbox, value):
+    def set_spinbox_limits(self, spinbox, limits):
         """Configure the minimum, maximum, step values, and decimal precision for a given spinbox widget.
 
         The function allows you to set these parameters using a tuple of up to four values. The decimal precision,
@@ -222,26 +222,26 @@ class AttributesMixin:
         Parameters:
             spinbox (object): An instance of a spinbox widget. It is assumed that this object supports the setting of minimum, maximum, step,
                 and decimal precision.
-            value (list): A list that can contain up to four values, interpreted in the following order:
+            limits (list): A list that can contain up to four values, interpreted in the following order:
                 1. Lower bound (minimum) - This is cast to a float value. If not provided, a default of 0.0 is used.
                 2. Upper bound (maximum) - This is cast to a float value. If not provided, a default of 9999999.0 is used.
                 3. Step - The increment/decrement step of the spinbox. If not provided, a default of 1 is used.
                 4. Decimals - The decimal precision (number of digits after the decimal point). If not provided, the function
                    calculates this value based on the number of decimal places in the minimum or maximum values.
         """
-        if not isinstance(value, list):
+        if not isinstance(limits, (list, tuple)):
             raise TypeError(
-                f"Invalid datatype for value. Expected list, got {type(value)}"
+                f"Invalid datatype for limits. Expected list or tuple, got {type(limits)}"
             )
 
-        value_len = len(value)
-        minimum = float(value[0]) if value_len > 0 else -2147483647
-        maximum = float(value[1]) if value_len > 1 else 2147483647
-        step = value[2] if value_len > 2 else 1.0
+        value_len = len(limits)
+        minimum = float(limits[0]) if value_len > 0 else -2147483647
+        maximum = float(limits[1]) if value_len > 1 else 2147483647
+        step = limits[2] if value_len > 2 else 1.0
 
         if isinstance(spinbox, QtWidgets.QDoubleSpinBox):
             if value_len > 3:
-                decimals = value[3]
+                decimals = limits[3]
             else:
                 min_decimals = (
                     len(str(minimum).split(".")[-1]) if "." in str(minimum) else 0
@@ -303,7 +303,7 @@ class AttributesMixin:
             )
 
     @staticmethod
-    def transfer_properties(source, target):
+    def transfer_widget_properties(source, target):
         """Transfers the properties of a source widget to a target widget.
 
         This function retrieves the meta-object of the source widget and iterates over its properties.
