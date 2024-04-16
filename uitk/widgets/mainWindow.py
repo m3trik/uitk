@@ -6,6 +6,7 @@ from typing import Any
 from functools import partial
 from PySide2 import QtCore, QtWidgets
 import pythontk as ptk
+from uitk import __package__
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
 
@@ -83,7 +84,7 @@ class MainWindow(
         self.transfer_widget_properties(ui, self)
         self.setWindowFlags(ui.windowFlags())
 
-        self.settings = QtCore.QSettings("uitk", self.name)
+        self.settings = QtCore.QSettings(__package__, self.name)
 
         self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
         self.set_attributes(WA_NoChildEventsForParent=True, **kwargs)

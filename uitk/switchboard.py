@@ -1345,6 +1345,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         # Center the widget considering the offset
         widget.move(centerPoint - widget.rect().center() + offset)
 
+    @staticmethod
     def unpack_names(name_string):
         """Unpacks a comma-separated string of names and returns a list of individual names.
 

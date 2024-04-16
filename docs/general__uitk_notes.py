@@ -39,7 +39,7 @@ class MyProjectSlots(MyProject):
             setObjectName="s000",
             set_limits=[0, 100, 0.05, 2],
             setValue=0.25,
-            set_height=20,
+            set_fixed_height=20,
             setToolTip="Spinbox example",
         )
         widget.menu.add(
