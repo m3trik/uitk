@@ -136,12 +136,20 @@ class AttributesMixin:
             w.resize(QtCore.QSize(x, y))
 
         elif attr == "set_width":
-            w.setFixedWidth(value)
-            # w.resize(value, w.size().height())
+            w.resize(value, w.size().height())
 
         elif attr == "set_height":
+            w.resize(w.size().width(), value)
+
+        elif attr == "set_fixed_size":
+            x, y = value
+            w.setFixedSize(QtCore.QSize(x, y))
+
+        elif attr == "set_fixed_width":
+            w.setFixedWidth(value)
+
+        elif attr == "set_fixed_height":
             w.setFixedHeight(value)
-            # w.resize(w.size().width(), value)
 
         elif attr == "set_position":
             if value == "cursor":
