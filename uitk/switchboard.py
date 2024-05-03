@@ -1587,32 +1587,48 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
             ):
                 chk.setChecked(True)
 
-    def get_axis_from_checkboxes(self, checkboxes, ui=None):
-        """Get the intended axis value as a string by reading the multiple checkbox's check states.
+    def get_axis_from_checkboxes(self, checkboxes, ui=None, return_type="str"):
+        """Get the intended axis value as a string or integer by reading the multiple checkbox's check states.
 
         Parameters:
-            checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes. Valid text: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
+            checkboxes (str/list): 3 or 4 (or six with explicit negative values) checkboxes.
+                Valid: '-','X','Y','Z','-X','-Y','-Z' ('-' indicates a negative axis in a four checkbox setup)
+            ui: The user interface context if required.
+            return_type (str): The type of the return value, 'str' for string or 'int' for integer representation.
 
         Returns:
-            (str) The axis value in lower case. ie. '-x'
+            (str or int) The axis value in lower case (e.g., '-x') or as an integer index (e.g., 0 for 'x', 1 for '-x').
 
         Example:
-            get_axis_from_checkboxes('chk000-3')
+            get_axis_from_checkboxes('chk000-3', return_type='int')  # Could output 0, 1, 2, 3, 4, or 5
         """
-        if isinstance(checkboxes, (str)):
+        if isinstance(checkboxes, str):
             if ui is None:
                 ui = self.get_current_ui()
             checkboxes = self.get_widgets_by_string_pattern(ui, checkboxes)
 
-        prefix = axis = ""
+        prefix = ""
+        axis = ""
         for chk in checkboxes:
             if chk.isChecked():
-                if chk.text() == "-":
-                    prefix = "-"
+                text = chk.text()
+                if re.search("[^a-zA-Z]", text):  # Check for any non-alphabet character
+                    prefix = "-"  # Assuming negative prefix if any non-alphabet character is present
                 else:
-                    axis = chk.text()
-        # self.logger.info(f"prefix: {prefix} axis: {axis}") #debug
-        return prefix + axis.lower()  # ie. '-x'
+                    axis = text.lower()
+
+        # Mapping for axis strings to integers
+        axis_map = {"x": 0, "-x": 1, "y": 2, "-y": 3, "z": 4, "-z": 5}
+
+        # Construct the axis string with potential prefix
+        axis_string = prefix + axis
+
+        # Convert to integer index if needed
+        if return_type == "int":
+            return axis_map.get(axis_string, None)  # Return the corresponding integer
+
+        # Return as string by default
+        return axis_string
 
     @staticmethod
     def invert_on_modifier(value):
