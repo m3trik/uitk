@@ -17,7 +17,7 @@ class TextEdit(QtWidgets.QTextEdit, AttributesMixin):
         self.viewport().setAutoFillBackground(False)
 
         self.menu = Menu(
-            self, mode="context", position="cursorPos", fixed_item_height=20
+            self, mode="option", position="cursorPos", fixed_item_height=20
         )
 
         self.set_attributes(**kwargs)

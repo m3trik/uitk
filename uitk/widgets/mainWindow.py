@@ -354,8 +354,8 @@ class MainWindow(
         else:
             self._deferred[priority] = (method,)
 
-    def init_slot(self, widget):
-        """Only calls the slot init if widget.refresh is True. widget.refresh defaults to True on first call."""
+    def init_slot(self, widget, force=False):
+        """Only calls the slot init if 'widget.refresh' or 'force' is True. widget.refresh defaults to True on first call."""
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(
                 f"Expected a widget object, but received {type(widget)}"
@@ -365,7 +365,7 @@ class MainWindow(
         slots = self.sb.get_slot_class(self)
         slot_init = getattr(slots, f"{widget.name}_init", None)
 
-        if slot_init and widget.refresh:
+        if slot_init and (widget.refresh or force):
             widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
             slot_init(widget)
 
