@@ -15,7 +15,7 @@ class Label(QtWidgets.QLabel, AttributesMixin):
         QtWidgets.QLabel.__init__(self, parent)
 
         self.menu = Menu(
-            self, mode="context", position="cursorPos", fixed_item_height=20
+            self, mode="option", position="cursorPos", fixed_item_height=20
         )
 
         self.setTextFormat(QtCore.Qt.RichText)
