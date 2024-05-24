@@ -8,7 +8,7 @@ from uitk.signals import Signals
 
 
 __package__ = "uitk"
-__version__ = "1.0.17"
+__version__ = "1.0.18"
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 
