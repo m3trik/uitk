@@ -1689,7 +1689,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
     def file_dialog(
         file_types: Union[str, List[str]] = ["*.*"],
         title: str = "Select files to open",
-        directory: str = "/home",
+        start_dir: str = "/home",
         filter_description: str = "All Files",
         allow_multiple: bool = True,
     ) -> Union[str, List[str]]:
@@ -1699,7 +1699,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
             file_types (Union[str, List[str]]): Extensions of file types to include. Can be a string or a list of strings.
                 Default is ["*.*"], which includes all files.
             title (str): Title of the file dialog. Default is "Select files to open."
-            directory (str): Initial directory to display in the file dialog. Default is "/home."
+            start_dir (str): Initial directory to display in the file dialog. Default is "/home."
             filter_description (str): Description for the filter applied to the file types. Default is "All Files."
             allow_multiple (bool): Whether to allow multiple file selection. Default is True.
 
@@ -1716,18 +1716,18 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            None, title, directory, file_types_string, options=options
+            None, title, start_dir, file_types_string, options=options
         )
 
         return files if allow_multiple else files[0] if files else None
 
     @staticmethod
-    def dir_dialog(title: str = "Select a directory", directory: str = "/home") -> str:
+    def dir_dialog(title: str = "Select a directory", start_dir: str = "/home") -> str:
         """Open a directory dialog to select a directory using PySide2.
 
         Parameters:
             title (str): Title of the directory dialog. Default is "Select a directory."
-            directory (str): Initial directory to display in the dialog. Default is "/home."
+            start_dir (str): Initial directory to display in the dialog. Default is "/home."
 
         Returns:
             str: Selected directory path.
@@ -1737,7 +1737,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         """
         options = QtWidgets.QFileDialog.Options()
         directory_path = QtWidgets.QFileDialog.getExistingDirectory(
-            None, title, directory, options=options
+            None, title, start_dir, options=options
         )
 
         return directory_path
