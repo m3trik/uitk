@@ -1,3 +1,5 @@
+# !/usr/bin/python
+# coding=utf-8
 import logging
 from PySide2 import QtCore, QtWidgets
 
