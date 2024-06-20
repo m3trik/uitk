@@ -979,7 +979,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
 
         return next((w for w in ui.widgets if w.name == name), None)
 
-    def get_widget_from_method(self, method):
+    def get_widget_from_slot(self, method):
         """Get the corresponding widget from a given method.
 
         Parameters:
@@ -1033,8 +1033,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
     def store_widget_state(
         self, widget: QtWidgets.QWidget, signal_name: str, value: any
     ) -> None:
-        """
-        Stores the current state of a widget in the application settings.
+        """Stores the current state of a widget in the application settings.
         Serializes complex objects into JSON for storable formats.
 
         Parameters:
@@ -1052,8 +1051,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         widget.ui.settings.setValue(f"{widget.objectName()}/{signal_name}", value)
 
     def restore_widget_state(self, widget: QtWidgets.QWidget) -> None:
-        """
-        Restores the state of a given widget using QSettings.
+        """Restores the state of a given widget using QSettings.
         Deserializes stored JSON strings back into Python objects.
 
         Parameters:

@@ -18,6 +18,7 @@ class MainWindow(
 ):
     on_show = QtCore.Signal()
     on_hide = QtCore.Signal()
+    on_close = QtCore.Signal()
     on_focus_in = QtCore.Signal()
     on_focus_out = QtCore.Signal()
     on_child_added = QtCore.Signal(object)
@@ -90,6 +91,7 @@ class MainWindow(
         self.set_attributes(WA_NoChildEventsForParent=True, **kwargs)
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
 
+        self.on_close.connect(self.settings.sync)
         self.on_child_changed.connect(self.sb.sync_widget_values)
 
     def _init_logger(self, log_level):
@@ -396,6 +398,44 @@ class MainWindow(
             wrapper = self.sb._create_slot_wrapper(slot, widget)
             wrapper(*args, **kwargs)
 
+    def set_persistent_value(
+        self,
+        attr_name: str,
+        owner: object = None,
+        default: Any = None,
+        *identifier: str,
+    ) -> None:
+        """Manages a persistent value for `attr_name` in `owner` using `QSettings`.
+
+        Retrieves the stored value associated with `ui` and `attr_name` from `QSettings`.
+        If a stored value exists, it sets it to the attribute object. Sets up a method to
+        store the current value when `ui` is closed. Wraps the existing `closeEvent` of `ui`
+        to ensure the value is stored before closing.
+
+        Parameters:
+            attr_name (str): The name of the attribute in `owner` whose value is to be managed persistently.
+            owner (Any, optional): The object that contains the attribute to be managed. Defaults to self.
+            default (Any, optional): The default value to set if no stored value is found. Defaults to None.
+            *identifier (str): Additional identifiers to differentiate multiple values.
+
+        Raises:
+            ValueError: If `owner` does not have the specified attribute `attr_name`.
+        """
+        owner = owner or self
+
+        if not hasattr(owner, attr_name):
+            raise ValueError(f"'{attr_name}' is not an attribute of {owner}.")
+
+        key = f"{self.name}_{attr_name}_{'_'.join(identifier)}"
+        stored_value = self.settings.value(key, default)
+        setattr(owner, attr_name, stored_value)
+
+        def store_value_on_close(attr_name: str, key: str) -> None:
+            current_value = getattr(owner, attr_name)
+            self.settings.setValue(key, current_value)
+
+        self.on_hide.connect(partial(store_value_on_close, attr_name, key))
+
     def eventFilter(self, widget, event):
         """Filter out specific events related to the widget."""
         if event.type() == QtCore.QEvent.ChildPolished:
@@ -448,7 +488,6 @@ class MainWindow(
         self.sb.connect_slots(self)
         self.activateWindow()
         self.on_show.emit()
-
         super().showEvent(event)
         self.is_initialized = True
 
@@ -464,15 +503,13 @@ class MainWindow(
 
     def hideEvent(self, event):
         """Reimplement hideEvent to emit custom signal when window is hidden."""
-        self.on_hide.emit()
-
         super().hideEvent(event)
+        self.on_hide.emit()
 
     def closeEvent(self, event):
         """Reimplement closeEvent to prevent window from being hidden when prevent_hide is True."""
-        self.settings.sync()
-
         super().closeEvent(event)
+        self.on_close.emit()
 
 
 # -----------------------------------------------------------------------------
