@@ -1018,7 +1018,9 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         """
         relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
-            relative_widget = getattr(relative, widget.name, None)
+            # print("name:      ", widget.name)
+            relative_widget = self.get_widget(widget.name, relative)
+            # print("get widget:", relative_widget)
             if relative_widget is not None and relative_widget is not widget:
                 signal_name = self.default_signals.get(widget.derived_type)
                 if signal_name:
@@ -1096,21 +1098,21 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         """
         # Define a dictionary that maps signal names to lambda functions
         action_map = {
-            "textChanged": lambda w, v: w.setText(str(v))
-            if hasattr(w, "setText")
-            else None,
-            "valueChanged": lambda w, v: self._set_numeric_value(w, v)
-            if hasattr(w, "setValue")
-            else None,
-            "currentIndexChanged": lambda w, v: self._set_index_value(w, v)
-            if hasattr(w, "setCurrentIndex")
-            else None,
-            "toggled": lambda w, v: self._set_boolean_value(w, v)
-            if hasattr(w, "setChecked")
-            else None,
-            "stateChanged": lambda w, v: self._set_check_state(w, v)
-            if hasattr(w, "setCheckState")
-            else None,
+            "textChanged": lambda w, v: (
+                w.setText(str(v)) if hasattr(w, "setText") else None
+            ),
+            "valueChanged": lambda w, v: (
+                self._set_numeric_value(w, v) if hasattr(w, "setValue") else None
+            ),
+            "currentIndexChanged": lambda w, v: (
+                self._set_index_value(w, v) if hasattr(w, "setCurrentIndex") else None
+            ),
+            "toggled": lambda w, v: (
+                self._set_boolean_value(w, v) if hasattr(w, "setChecked") else None
+            ),
+            "stateChanged": lambda w, v: (
+                self._set_check_state(w, v) if hasattr(w, "setCheckState") else None
+            ),
         }
 
         # Call the appropriate lambda function if the signal_name exists in action_map
