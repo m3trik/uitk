@@ -979,7 +979,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
 
         return next((w for w in ui.widgets if w.name == name), None)
 
-    def get_widget_from_method(self, method):
+    def get_widget_from_slot(self, method):
         """Get the corresponding widget from a given method.
 
         Parameters:
@@ -1018,7 +1018,9 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         """
         relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
-            relative_widget = getattr(relative, widget.name, None)
+            # print("name:      ", widget.name)
+            relative_widget = self.get_widget(widget.name, relative)
+            # print("get widget:", relative_widget)
             if relative_widget is not None and relative_widget is not widget:
                 signal_name = self.default_signals.get(widget.derived_type)
                 if signal_name:
@@ -1033,8 +1035,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
     def store_widget_state(
         self, widget: QtWidgets.QWidget, signal_name: str, value: any
     ) -> None:
-        """
-        Stores the current state of a widget in the application settings.
+        """Stores the current state of a widget in the application settings.
         Serializes complex objects into JSON for storable formats.
 
         Parameters:
@@ -1052,8 +1053,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         widget.ui.settings.setValue(f"{widget.objectName()}/{signal_name}", value)
 
     def restore_widget_state(self, widget: QtWidgets.QWidget) -> None:
-        """
-        Restores the state of a given widget using QSettings.
+        """Restores the state of a given widget using QSettings.
         Deserializes stored JSON strings back into Python objects.
 
         Parameters:
@@ -1098,21 +1098,21 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         """
         # Define a dictionary that maps signal names to lambda functions
         action_map = {
-            "textChanged": lambda w, v: w.setText(str(v))
-            if hasattr(w, "setText")
-            else None,
-            "valueChanged": lambda w, v: self._set_numeric_value(w, v)
-            if hasattr(w, "setValue")
-            else None,
-            "currentIndexChanged": lambda w, v: self._set_index_value(w, v)
-            if hasattr(w, "setCurrentIndex")
-            else None,
-            "toggled": lambda w, v: self._set_boolean_value(w, v)
-            if hasattr(w, "setChecked")
-            else None,
-            "stateChanged": lambda w, v: self._set_check_state(w, v)
-            if hasattr(w, "setCheckState")
-            else None,
+            "textChanged": lambda w, v: (
+                w.setText(str(v)) if hasattr(w, "setText") else None
+            ),
+            "valueChanged": lambda w, v: (
+                self._set_numeric_value(w, v) if hasattr(w, "setValue") else None
+            ),
+            "currentIndexChanged": lambda w, v: (
+                self._set_index_value(w, v) if hasattr(w, "setCurrentIndex") else None
+            ),
+            "toggled": lambda w, v: (
+                self._set_boolean_value(w, v) if hasattr(w, "setChecked") else None
+            ),
+            "stateChanged": lambda w, v: (
+                self._set_check_state(w, v) if hasattr(w, "setCheckState") else None
+            ),
         }
 
         # Call the appropriate lambda function if the signal_name exists in action_map
@@ -1689,7 +1689,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
     def file_dialog(
         file_types: Union[str, List[str]] = ["*.*"],
         title: str = "Select files to open",
-        directory: str = "/home",
+        start_dir: str = "/home",
         filter_description: str = "All Files",
         allow_multiple: bool = True,
     ) -> Union[str, List[str]]:
@@ -1699,7 +1699,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
             file_types (Union[str, List[str]]): Extensions of file types to include. Can be a string or a list of strings.
                 Default is ["*.*"], which includes all files.
             title (str): Title of the file dialog. Default is "Select files to open."
-            directory (str): Initial directory to display in the file dialog. Default is "/home."
+            start_dir (str): Initial directory to display in the file dialog. Default is "/home."
             filter_description (str): Description for the filter applied to the file types. Default is "All Files."
             allow_multiple (bool): Whether to allow multiple file selection. Default is True.
 
@@ -1716,18 +1716,18 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            None, title, directory, file_types_string, options=options
+            None, title, start_dir, file_types_string, options=options
         )
 
         return files if allow_multiple else files[0] if files else None
 
     @staticmethod
-    def dir_dialog(title: str = "Select a directory", directory: str = "/home") -> str:
+    def dir_dialog(title: str = "Select a directory", start_dir: str = "/home") -> str:
         """Open a directory dialog to select a directory using PySide2.
 
         Parameters:
             title (str): Title of the directory dialog. Default is "Select a directory."
-            directory (str): Initial directory to display in the dialog. Default is "/home."
+            start_dir (str): Initial directory to display in the dialog. Default is "/home."
 
         Returns:
             str: Selected directory path.
@@ -1737,7 +1737,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         """
         options = QtWidgets.QFileDialog.Options()
         directory_path = QtWidgets.QFileDialog.getExistingDirectory(
-            None, title, directory, options=options
+            None, title, start_dir, options=options
         )
 
         return directory_path
