@@ -11,7 +11,7 @@ from xml.etree.ElementTree import ElementTree
 from PySide2 import QtCore, QtGui, QtWidgets, QtUiTools
 import pythontk as ptk
 from uitk.file_manager import FileManager
-from uitk.widgets.mixins.convert import ConvertMixin
+from uitk.widgets.mixins import ConvertMixin
 
 
 class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
@@ -116,7 +116,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
             inc_files="*.py",
             base_dir=base_dir,
         )
-        # Include this packages widgets.
+        # Include this package's widgets.
         self.registry.widget_registry.extend("widgets", base_dir=0)
 
         self.ui_name_delimiters = ui_name_delimiters

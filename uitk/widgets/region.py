@@ -2,7 +2,7 @@
 # coding=utf-8
 from PySide2 import QtCore, QtGui, QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.convert import ConvertMixin
+from uitk.widgets.mixins import ConvertMixin
 
 
 class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
