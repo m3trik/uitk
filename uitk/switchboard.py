@@ -3,7 +3,6 @@
 import re
 import sys
 import json
-import logging
 import traceback
 from typing import List, Union
 from inspect import signature, Parameter
@@ -14,7 +13,7 @@ from uitk.file_manager import FileManager
 from uitk.widgets.mixins import ConvertMixin
 
 
-class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
+class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
     """Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
     It facilitates the loading of UI files, dynamic assignment of properties, and
     management of signal-slot connections in a modular and organized manner.
@@ -88,11 +87,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         slot_location=None,
         widget_location=None,
         ui_name_delimiters=[".", "#"],
-        log_level=logging.WARNING,
+        log_level: str = "WARNING",
     ):
         super().__init__(parent)
         """ """
-        self._init_logger(log_level)
+        self.logger.setLevel(log_level)
 
         self.registry = FileManager()
         base_dir = 1 if not __name__ == "__main__" else 0
@@ -130,20 +129,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin):
         self._gc_protect = set()  # Objects protected from garbage collection.
 
         self.convert = ConvertMixin()
-
-    def _init_logger(self, log_level):
-        """Initializes logger with the specified log level.
-
-        Parameters:
-            log_level (int): Logging level.
-        """
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(log_level)
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        self.logger.addHandler(handler)
 
     def __getattr__(self, attr_name):
         """Lazy load UI, custom widgets, and Qt module attributes.
@@ -1777,7 +1762,6 @@ if __name__ == "__main__":
     print(sb.QWidget)
     ui.show(pos="screen", app_exec=True)
 
-logging.info(__name__)  # module name
 # --------------------------------------------------------------------------------------------
 # Notes
 # --------------------------------------------------------------------------------------------

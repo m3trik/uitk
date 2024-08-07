@@ -1,8 +1,8 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-import logging
 from PySide2 import QtCore, QtGui, QtWidgets
+import pythontk as ptk
 
 
 class EventFactoryFilter(QtCore.QObject):
@@ -69,7 +69,7 @@ class EventFactoryFilter(QtCore.QObject):
         return False
 
 
-class MouseTracking(QtCore.QObject):
+class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
     """MouseTracking is a QObject subclass that provides mouse enter and leave events for QWidget child widgets.
     It uses event filtering to track the mouse movement and send enter and leave events to the child widgets.
 
@@ -92,28 +92,18 @@ class MouseTracking(QtCore.QObject):
         TypeError: If parent is not a QWidget derived type.
     """
 
-    def __init__(self, parent, log_level=logging.WARNING):
+    def __init__(self, parent, log_level="WARNING"):
         super().__init__(parent)
 
         if not isinstance(parent, QtWidgets.QWidget):
             raise TypeError("Parent must be a QWidget derived type")
 
-        self._initialize_logger(log_level)
+        self.logger.setLevel(log_level)
         self._prev_mouse_over = []
         self._mouse_over = []
         self._filtered_widgets = set()
 
         parent.installEventFilter(self)
-
-    def _initialize_logger(self, log_level):
-        """Initializes logger."""
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(log_level)
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        self.logger.addHandler(handler)
 
     def should_capture_mouse(self, widget):
         """Checks if a widget should capture the mouse."""
@@ -259,7 +249,9 @@ class MouseTracking(QtCore.QObject):
 
 # --------------------------------------------------------------------------------------------
 
-logging.info(__name__)  # module name
+if __name__ == "__main__":
+    pass
+
 # --------------------------------------------------------------------------------------------
 # Notes
 # --------------------------------------------------------------------------------------------
