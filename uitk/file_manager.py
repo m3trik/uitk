@@ -2,12 +2,11 @@
 # coding=utf-8
 import os
 import inspect
-import logging
 from collections import namedtuple
 import pythontk as ptk
 
 
-class NamedTupleContainer:
+class NamedTupleContainer(ptk.HelpMixin, ptk.LoggingMixin):
     """The NamedTupleContainer class is responsible for managing collections of named tuples.
     The class provides methods to query, modify, extend, and remove elements within the container.
     It is typically initialized and used by the FileManager class, which serves as the main container manager.
@@ -64,7 +63,7 @@ class NamedTupleContainer:
         file_manager,
         named_tuples,
         metadata=None,
-        log_level=logging.WARNING,
+        log_level: str = "WARNING",
     ):
         """Creates a container for named tuples, providing dynamic attribute access and query capabilities.
 
@@ -74,7 +73,7 @@ class NamedTupleContainer:
             metadata (dict, optional): Metadata related to the container, including field names (as 'fields').
             log_level (int, optional): Logging level. Defaults to logging.WARNING.
         """
-        self._init_logger(log_level)
+        self.logger.setLevel(log_level)
 
         self.file_manager = file_manager
         self.named_tuples = named_tuples
@@ -120,20 +119,6 @@ class NamedTupleContainer:
             raise AttributeError(
                 f"'NamedTupleContainer' object has no attribute '{name}'"
             )
-
-    def _init_logger(self, log_level):
-        """Initializes logger with the specified log level.
-
-        Parameters:
-            log_level (int): Logging level.
-        """
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(log_level)
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        self.logger.addHandler(handler)
 
     @staticmethod
     def _handle_duplicates(existing, new, allow_duplicates):
@@ -264,9 +249,11 @@ class NamedTupleContainer:
         self.named_tuples.pop(index)
 
 
-class FileManager:
-    def __init__(self):
+class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
+    def __init__(self, log_level="WARNING"):
         """Manages files and directories, supporting file queries and path manipulations."""
+        self.logger.setLevel(log_level)
+
         self.containers = []
         self.processing_stack = []
 
@@ -468,7 +455,6 @@ class FileManager:
 if __name__ == "__main__":
     ...
 
-logging.info(__name__)  # module name
 # --------------------------------------------------------------------------------------------
 # Notes
 # --------------------------------------------------------------------------------------------

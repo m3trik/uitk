@@ -6,6 +6,7 @@ from uitk import Signals
 class ExampleSlots:
     def __init__(self, *args, **kwargs):
         self.sb = self.switchboard()
+        self.ui = self.sb.loaded_ui.example
 
     def header_init(self, widget):
         widget.configureButtons(
@@ -15,7 +16,7 @@ class ExampleSlots:
         widget.menu.add(self.sb.Label, setObjectName="label", setText="Clickable Label")
 
     def label(self):
-        widget = self.sb.example.header.menu.label
+        widget = self.ui.header.menu.label
         self.sb.message_box(f"{widget.text()}: Clicked")
 
     def button_a(self, widget):
@@ -34,9 +35,7 @@ class ExampleSlots:
         option = (
             "A"
             if widget.menu.radio_a.isChecked()
-            else "B"
-            if widget.menu.radio_b.isChecked()
-            else "C"
+            else "B" if widget.menu.radio_b.isChecked() else "C"
         )
         self.sb.message_box(f"{widget.text()}: Option {option}")
 
@@ -47,7 +46,7 @@ class ExampleSlots:
 
     def spinbox(self, value, widget):
         self.sb.message_box(
-            f'DoubleSpinBox Value: <b style="font-weight: bold;">{value}</b>'
+            f'{widget.type} Value: <b style="font-weight: bold;">{value}</b>'
         )
 
     @staticmethod
