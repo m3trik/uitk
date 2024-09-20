@@ -1,7 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-import logging
 from typing import Any
 from functools import partial
 from PySide2 import QtCore, QtWidgets
@@ -15,6 +14,7 @@ class MainWindow(
     QtWidgets.QMainWindow,
     AttributesMixin,
     StyleSheet,
+    ptk.LoggingMixin,
 ):
     on_show = QtCore.Signal()
     on_hide = QtCore.Signal()
@@ -26,51 +26,96 @@ class MainWindow(
 
     def __init__(
         self,
-        switchboard_instance,
-        ui_filepath,
-        log_level=logging.WARNING,
+        switchboard_instance: object,
+        central_widget: "QtWidgets.QWidget",
+        name: str = None,
+        tags: set = None,
+        path: str = None,
+        log_level: int = "WARNING",
         **kwargs,
     ):
-        """Represents a main window in a GUI application.
-        Inherits from QtWidgets.QMainWindow class, providing additional functionality for
-        managing user interface (UI) elements.
+        """MainWindow is a customized QMainWindow class that integrates additional functionality
+        for managing UI elements within the Switchboard environment. It serves as a wrapper
+        for central widgets or QMainWindow instances, providing an interface for managing
+        widget properties, signals, and configuration settings specific to the application's needs.
 
-        Parameters:
-            switchboard_instance (QUiLoader): An instance of the switchboard class.
-            ui_filepath (str): The full path to a UI file.
-            log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
-            **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
+        Inherits:
+            - QtWidgets.QMainWindow: Provides the basic functionality of a main window.
+            - AttributesMixin: Adds attribute management capabilities.
+            - StyleSheet: Adds styling capabilities for the main window.
 
         Signals:
-            on_show: Signal that is emitted before the window is shown.
-            on_hide: Signal that is emitted before the window is hidden.
-            on_child_added: Signal that is emitted when a child widget is added. Provides the added widget as a parameter.
-            on_child_changed: Signal that is emitted when a child widget changes. Provides the value and widget as parameters.
+            - on_show: Emitted when the window is shown.
+            - on_hide: Emitted when the window is hidden.
+            - on_close: Emitted when the window is closed.
+            - on_focus_in: Emitted when the window gains focus.
+            - on_focus_out: Emitted when the window loses focus.
+            - on_child_added: Emitted when a child widget is added to the main window.
+            - on_child_changed: Emitted when a child widget's state is changed.
 
-        AttributesMixin:
-            sb: An instance of the switchboard class.
+        Parameters:
+            switchboard_instance (object): The instance of the Switchboard managing this UI.
+            central_widget (QtWidgets.QWidget): The central widget or QMainWindow to be wrapped.
+            name (str, optional): A custom name for the UI. Defaults to the central widget's objectName if not provided.
+            tags (set, optional): Tags associated with the UI for identification or categorization.
+            path (str, optional): The file path associated with the UI, primarily for loaded UI files.
+            log_level (int, optional): The logging level for the main window, defaulting to logging.WARNING.
+            **kwargs: Additional keyword arguments for customizing the MainWindow.
+
+        Attributes:
+            - sb: Reference to the managing Switchboard instance.
+            - name (str): The name of the UI, derived from the provided name or central widget.
+            - legal_name (str): A legal version of the UI's name, suitable for use in various contexts.
+            - legal_name_no_tags (str): A tag-free version of the legal name.
+            - path (str): The file path associated with the UI, primarily for loaded UI files.
+            - tags (set): A set of tags associated with the UI, used for categorization and management.
+            - is_initialized (bool): Indicates whether the UI has been initialized.
+            - is_connected (bool): Indicates whether the UI is connected to its respective slots.
+            - prevent_hide (bool): Prevents the window from being hidden if set to True.
+            - widgets (set): A set of child widgets managed within the main window.
+            - _deferred (dict): A dictionary of deferred methods to be executed after the window is shown.
+            - settings (QtCore.QSettings): The settings object for storing UI-specific settings.
 
         Properties:
-            <UI>.name (str): The UI filename.
-            <UI>.path (str): The directory path containing the UI file.
-            <UI>.is_current (bool): True if the UI is set as current.
-            <UI>.is_initialized (bool): True after the UI is first shown.
-            <UI>.is_connected (bool): True if the UI is connected to its slots.
-            <UI>.prevent_hide (bool): While True, the hide method is disabled.
-            <UI>.widgets (list): All the widgets of the UI.
-            <UI>.slots (obj): The slots class instance.
-            <UI>._deferred: A dictionary of deferred methods.
+            - slots (object): The slots class instance associated with this main window.
+            - is_stacked_widget (bool): Returns True if the main window is part of a QStackedWidget.
+            - is_current (bool): Indicates whether the UI is the currently active UI in the Switchboard.
+
+        Methods:
+            - init_child(widget): Initializes and manages child widgets within the main window.
+            - init_child_changed_signal(widget): Sets up signals for child widgets when their state changes.
+            - set_as_current(): Sets this UI as the currently active UI within the Switchboard.
+            - defer(func, *args, priority=0): Defers the execution of a function until the window is shown.
+            - trigger_deferred(): Executes all deferred methods in priority order.
+
+        Example:
+            ```python
+            # Creating a MainWindow with a central widget
+            central_widget = QtWidgets.QWidget()
+            main_window = MainWindow(
+                switchboard_instance=switchboard,
+                central_widget=central_widget,
+                name="example_ui",
+                tags={"example", "ui"},
+                path="/path/to/ui/file.ui"
+            )
+            main_window.show()
+            ```
         """
         super().__init__()
 
-        self._init_logger(log_level)
-
+        self.logger.setLevel(log_level)
         self.sb = switchboard_instance
-        self.name = self._set_name(ui_filepath, True)
+
+        # Set the central widget early to ensure the objectName is accessible
+        self.setCentralWidget(central_widget)
+
+        # Use central widget's objectName as the default name if none is provided
+        self.name = name or central_widget.objectName()
         self.legal_name = self._set_legal_name(self.name, True)
         self.legal_name_no_tags = self._set_legal_name_no_tags(self.name, True)
-        self.path = ptk.format_path(ui_filepath, "path")
-        self.tags = self._parse_tags(self.name)
+        self.path = path
+        self.tags = tags or set()
         self.is_initialized = False
         self.is_connected = False
         self.prevent_hide = False
@@ -80,10 +125,8 @@ class MainWindow(
         # Install event filter before setting central widget to init children
         self.installEventFilter(self)
 
-        ui = self.sb.load(ui_filepath)
-        self.setCentralWidget(ui.centralWidget())
-        self.transfer_widget_properties(ui, self)
-        self.setWindowFlags(ui.windowFlags())
+        # Initialize window flags
+        self.initialize_window_flags(central_widget)
 
         self.settings = QtCore.QSettings(__package__, self.name)
 
@@ -94,15 +137,17 @@ class MainWindow(
         self.on_close.connect(self.settings.sync)
         self.on_child_changed.connect(self.sb.sync_widget_values)
 
-    def _init_logger(self, log_level):
-        """Initializes logger."""
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(log_level)
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        self.logger.addHandler(handler)
+    def initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None:
+        """Initializes the window flags for the main window.
+
+        Parameters:
+            central_widget (QtWidgets.QWidget): The central widget of the window.
+        """
+        window = central_widget.window()
+        if window is not None and window is not central_widget:
+            self.setWindowFlags(window.windowFlags())
+        else:
+            self.setWindowFlags(QtCore.Qt.Window)
 
     def __getattr__(self, attr_name):
         """Looks for the widget in the parent class.
@@ -216,9 +261,9 @@ class MainWindow(
                 signal = getattr(widget, signal_name)
                 # Connect the signal to the slot
                 signal.connect(
-                    lambda v=None, w=widget: self.on_child_changed.emit(v, w)
-                    if v is not None
-                    else None
+                    lambda v=None, w=widget: (
+                        self.on_child_changed.emit(v, w) if v is not None else None
+                    )
                 )
 
     @property
@@ -243,21 +288,6 @@ class MainWindow(
     def set_as_current(self):
         """Sets the widget as the currently active UI."""
         self.sb.set_current_ui(self)
-
-    def _set_name(self, file, set_attr=False) -> str:
-        """Sets the name attribute for the object based on the filename of the UI file.
-
-        Parameters:
-            file (str): The file path of the UI file.
-            set_attr (bool): If True, sets a switchboard attribute using the name. Defaults to False.
-
-        Returns:
-            str: The name attribute.
-        """
-        name = ptk.format_path(file, "name")
-        if set_attr:
-            setattr(self.sb, name, self)
-        return name
 
     def _set_legal_name(self, name, set_attr=False) -> str:
         """Sets the legal name attribute for the object based on the name of the UI file.
@@ -305,19 +335,6 @@ class MainWindow(
                 else:
                     setattr(self.sb, legal_name_no_tags, self)
         return legal_name_no_tags
-
-    @staticmethod
-    def _parse_tags(name):
-        """Parse tags from the file name and return a set of tags.
-
-        Parameters:
-            name (str): The name to parse tags from.
-
-        Returns:
-            set: A set of tags parsed from the name.
-        """
-        parts = name.split("#")
-        return set(parts[1:]) if len(parts) > 1 else set()
 
     def has_tags(self, tags):
         """Check if any of the given tag(s) are present in the UI's tags set.
@@ -517,8 +534,7 @@ class MainWindow(
 if __name__ == "__main__":
     from uitk import Switchboard
 
-    class MyProject:
-        ...
+    class MyProject: ...
 
     class MySlots(MyProject):
         def __init__(self):

@@ -319,20 +319,21 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         filepaths = self.registry.ui_registry.get("filepath")
         return [self.load_ui(f) for f in filepaths]
 
-    def load_ui(self, file) -> QtWidgets.QWidget:
-        """Loads a UI from the given path to the UI file.
+    def load_ui(self, file: str, **kwargs) -> QtWidgets.QMainWindow:
+        """Loads a UI from the given path to the UI file and adds it to the switchboard.
 
         Parameters:
             file (str): The full file path to the UI file.
+            **kwargs: Additional keyword arguments to pass to the MainWindow.
 
         Returns:
-            (obj) QWidget.
+            MainWindow: The UI wrapped in the MainWindow class.
         """
-        # Get any custom widgets from the UI file.
-        lst = self.get_property_from_ui_file(file, "customwidget")
-        for sublist in lst:
+        # Register any custom widgets found in the UI file.
+        custom_widgets = self.get_property_from_ui_file(file, "customwidget")
+        for widget in custom_widgets:
             try:
-                class_name = sublist[0][1]
+                class_name = widget[0][1]
             except IndexError:
                 continue
 
@@ -340,17 +341,92 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 classname=class_name, return_field="classobj"
             )
             if widget_class_info and class_name not in self._registered_widgets:
-                widget_class = widget_class_info
-                self.register_widget(widget_class)
+                self.register_widget(widget_class_info)
 
-        ui = self.MainWindow(
-            self,
-            file,
-            log_level=self.logger.getEffectiveLevel(),
+        # Load the UI file using QUiLoader or equivalent.
+        loaded_ui = self.load(file)
+        # Extract attributes based on the UI file path for naming consistency.
+        name = self._set_name(file, set_attr=True)
+        # Add the loaded UI’s central widget to the switchboard.
+        return self.add_ui(widget=loaded_ui, name=name, path=file, **kwargs)
+
+    def add_ui(
+        self,
+        widget: QtWidgets.QWidget,
+        name: str = None,
+        tags: set = None,
+        path: str = None,
+        log_level: int = "WARNING",
+        **kwargs,
+    ) -> QtWidgets.QMainWindow:
+        """Adds a given central widget or QMainWindow to the switchboard by wrapping it in MainWindow.
+
+        Parameters:
+            widget (QtWidgets.QWidget or QtWidgets.QMainWindow):
+                The central widget to set in MainWindow or a QMainWindow instance from which the central widget is derived.
+            name (str, optional): Custom name for the UI. Defaults to the widget's objectName if not provided.
+            tags (set, optional): Tags to associate with the UI. Defaults to None.
+            path (str, optional): Path associated with the UI. Defaults to None.
+            log_level (int, optional): Logging level. Defaults to logging.WARNING.
+            **kwargs: Additional keyword arguments to pass to the MainWindow.
+
+        Returns:
+            MainWindow: The UI wrapped in the MainWindow class.
+        """
+        # Attempt to retrieve the central widget; if the main window has no central widget, use the main window itself.
+        central_widget = (
+            widget.centralWidget()
+            if isinstance(widget, QtWidgets.QMainWindow) and widget.centralWidget()
+            else widget
         )
+        # Use central widget's objectName if no name is given.
+        name = name or central_widget.objectName()
+        tags = tags or self._parse_tags(name)
+        path = ptk.format_path(path, "path")
 
-        self._loaded_ui[ui.name] = ui
-        return ui
+        # Create the MainWindow with the provided settings.
+        main_window = self.MainWindow(
+            switchboard_instance=self,
+            central_widget=central_widget,
+            name=name,
+            tags=tags,
+            path=path,
+            log_level=log_level,
+            **kwargs,
+        )
+        self._loaded_ui[main_window.name] = main_window
+        # Debugging information about the created MainWindow attributes.
+        self.logger.debug(
+            f"MainWindow Added: Name={main_window.name}, Tags={main_window.tags}, Path={main_window.path}"
+        )
+        return main_window
+
+    def _set_name(self, file: str, set_attr: bool = False) -> str:
+        """Sets the name attribute based on the filename of the UI file.
+
+        Parameters:
+            file (str): The file path of the UI file.
+            set_attr (bool): If True, sets a switchboard attribute using the name.
+
+        Returns:
+            str: The derived name attribute.
+        """
+        name = ptk.format_path(file, "name")
+        if set_attr:
+            setattr(self, name, file)
+        return name
+
+    def _parse_tags(self, name: str) -> set:
+        """Parse tags from the given name.
+
+        Parameters:
+            name (str): The name to parse tags from.
+
+        Returns:
+            set: A set of tags parsed from the name.
+        """
+        parts = name.split("#")
+        return set(parts[1:]) if len(parts) > 1 else set()
 
     def get_ui(self, ui=None) -> QtWidgets.QWidget:
         """Get a dynamic UI using its string name, or if no argument is given, return the current UI.
