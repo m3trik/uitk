@@ -50,7 +50,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         self.setLayout(self.container_layout)
         self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
-        self.setStyleSheet(self.getStyleSheet())
+        self.setStyleSheet(self.get_style_sheet())
 
         # Extract button-related arguments
         button_args = {
@@ -60,10 +60,10 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         }
 
         self.setFixedHeight(20)
-        self.configureButtons(**button_args)
+        self.configure_buttons(**button_args)
         self.set_attributes(**kwargs)
 
-    def getButtonStyleSheet(self):
+    def get_button_style_sheet(self):
         """Return the stylesheet for buttons."""
         return """
             QPushButton { background-color: transparent; border: none;}
@@ -71,7 +71,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             QPushButton#hide_button:hover { background-color: rgba(255,0,0,200); border: none;}
         """
 
-    def getStyleSheet(self):
+    def get_style_sheet(self):
         """Return the stylesheet for the header label."""
         return """
             QLabel {
@@ -85,17 +85,17 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             }
         """
 
-    def createButton(self, text, callback, button_type=None):
+    def create_button(self, text, callback, button_type=None):
         """Create a button with the given text and callback."""
         button = QtWidgets.QPushButton(text, self)
         if button_type:
             button.setObjectName(button_type)
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
-        button.setStyleSheet(self.getButtonStyleSheet())
+        button.setStyleSheet(self.get_button_style_sheet())
         button.clicked.connect(callback)
         return button
 
-    def configureButtons(self, **kwargs):
+    def configure_buttons(self, **kwargs):
         """Configure buttons based on the given parameters."""
         # Clear existing buttons from the layout
         for i in reversed(range(self.container_layout.count())):
@@ -109,32 +109,32 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             if param in self.button_definitions and visible:
                 text, method_name = self.button_definitions[param]
                 callback = getattr(self, method_name)
-                button = self.createButton(text, callback, button_type=param)
+                button = self.create_button(text, callback, button_type=param)
                 self.container_layout.addWidget(button)
                 button.show()
                 self.buttons[param] = button
 
         # Ensure layout is updated
         self.container_layout.invalidate()
-        self.triggerResizeEvent()
+        self.trigger_resize_event()
 
-    def triggerResizeEvent(self):
+    def trigger_resize_event(self):
         current_size = self.size()
         resize_event = QtGui.QResizeEvent(current_size, current_size)
         self.resizeEvent(resize_event)
 
     def resizeEvent(self, event):
-        self.resizeButtons()
-        self.updateFontSize()
+        self.resize_buttons()
+        self.update_font_size()
         super().resizeEvent(event)
 
-    def resizeButtons(self):
+    def resize_buttons(self):
         button_size = self.height()
         margin = button_size * 0.05
         for button_name, button in self.buttons.items():
             button.setFixedSize(button_size - margin, button_size - margin)
 
-    def updateFontSize(self):
+    def update_font_size(self):
         # Calculate font size for the label and buttons relative to widget's height
         label_font_size = self.height() * 0.4
         button_font_size = self.height() * 0.6  # 60% of the widget's height
@@ -242,6 +242,59 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         super().showEvent(event)
 
+    def attach_to(self, widget: QtWidgets.QWidget):
+        """Attaches the header to the given widget by adding the header on top.
+        After which, the header can be accessed as an attribute of the widget.
+
+        Parameters:
+            widget (QWidget): The widget to which the header will be attached.
+        """
+        # Check if the widget is a QMainWindow
+        if isinstance(widget, QtWidgets.QMainWindow):
+            # Check if the QMainWindow uses setMenuWidget()
+            menu_widget = widget.menuWidget()
+            if menu_widget:
+                # Create a container to hold the header and the menu widget
+                container = QtWidgets.QWidget(widget)
+                container_layout = QtWidgets.QVBoxLayout(container)
+                container_layout.setContentsMargins(0, 0, 0, 0)
+                container_layout.setSpacing(0)
+
+                # Add the header and the existing menu widget to the container layout
+                container_layout.addWidget(self)
+                container_layout.addWidget(menu_widget)
+
+                # Set the container as the new menu widget
+                widget.setMenuWidget(container)
+
+            else:
+                # Handle case where QMainWindow uses a central widget
+                existing_central_widget = widget.centralWidget()
+                if not existing_central_widget:
+                    # Create a new central widget if none exists
+                    existing_central_widget = QtWidgets.QWidget()
+                    widget.setCentralWidget(existing_central_widget)
+
+                # Get or create the layout for the central widget
+                existing_layout = existing_central_widget.layout()
+                if not existing_layout:
+                    existing_layout = QtWidgets.QVBoxLayout(existing_central_widget)
+                    existing_central_widget.setLayout(existing_layout)
+
+                # Insert the header at the top of the central layout
+                existing_layout.insertWidget(0, self)
+
+        else:
+            # Handle generic QWidget or any other widget type
+            layout = widget.layout() or QtWidgets.QVBoxLayout(widget)
+            widget.setLayout(layout)
+
+            # Insert the header as the first widget in the layout
+            layout.insertWidget(0, self)
+
+        # Set the header as an attribute of the widget for reference
+        setattr(widget, "header", self)
+
 
 # -----------------------------------------------------------------------------
 
@@ -266,7 +319,7 @@ if __name__ == "__main__":
     layout.addWidget(header)
     w.show()
 
-    sys.exit(app.exec_())
+    # sys.exit(app.exec_())
 
 
 # -----------------------------------------------------------------------------

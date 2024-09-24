@@ -149,7 +149,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 filename=actual_ui_name, return_field="filepath"
             )
             if ui_filepath:
-                ui = self.load_ui(ui_filepath)
+                loaded_ui = self.load_ui(ui_filepath)
+                # Extract attributes based on the UI file path for naming consistency.
+                name = self._set_name(ui_filepath, set_attr=True)
+                # Extract attributes based on the UI file path for naming consistency.
+                ui = self.add_ui(widget=loaded_ui, name=name, path=ui_filepath)
                 return ui
 
         # Check if the attribute matches a widget file
@@ -319,12 +323,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         filepaths = self.registry.ui_registry.get("filepath")
         return [self.load_ui(f) for f in filepaths]
 
-    def load_ui(self, file: str, **kwargs) -> QtWidgets.QMainWindow:
+    def load_ui(self, file: str) -> QtWidgets.QMainWindow:
         """Loads a UI from the given path to the UI file and adds it to the switchboard.
 
         Parameters:
             file (str): The full file path to the UI file.
-            **kwargs: Additional keyword arguments to pass to the MainWindow.
 
         Returns:
             MainWindow: The UI wrapped in the MainWindow class.
@@ -345,10 +348,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         # Load the UI file using QUiLoader or equivalent.
         loaded_ui = self.load(file)
-        # Extract attributes based on the UI file path for naming consistency.
-        name = self._set_name(file, set_attr=True)
-        # Add the loaded UI’s central widget to the switchboard.
-        return self.add_ui(widget=loaded_ui, name=name, path=file, **kwargs)
+        return loaded_ui
 
     def add_ui(
         self,
@@ -476,7 +476,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             # if a single UI has been added, but not yet loaded; load and set it as current.
             filepaths = self.registry.ui_registry.get("filepath")
             if len(filepaths) == 1:
-                ui = self.load_ui(filepaths[0])
+                filepath = filepaths[0]
+                loaded_ui = self.load_ui(filepath)
+                # Extract attributes based on the UI file path for naming consistency.
+                name = self._set_name(filepath, set_attr=True)
+                # Extract attributes based on the UI file path for naming consistency.
+                ui = self.add_ui(widget=loaded_ui, name=name, path=filepath)
                 self.set_current_ui(ui)
                 return ui
 

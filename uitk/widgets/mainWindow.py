@@ -107,9 +107,6 @@ class MainWindow(
         self.logger.setLevel(log_level)
         self.sb = switchboard_instance
 
-        # Set the central widget early to ensure the objectName is accessible
-        self.setCentralWidget(central_widget)
-
         # Use central widget's objectName as the default name if none is provided
         self.name = name or central_widget.objectName()
         self.legal_name = self._set_legal_name(self.name, True)
@@ -137,6 +134,9 @@ class MainWindow(
         self.on_close.connect(self.settings.sync)
         self.on_child_changed.connect(self.sb.sync_widget_values)
 
+        # Set the central widget early to ensure the objectName is accessible
+        self.setCentralWidget(central_widget)
+
     def initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None:
         """Initializes the window flags for the main window.
 
@@ -145,9 +145,11 @@ class MainWindow(
         """
         window = central_widget.window()
         if window is not None and window is not central_widget:
+            print("setWindowFlags:", window.windowFlags())
             self.setWindowFlags(window.windowFlags())
         else:
-            self.setWindowFlags(QtCore.Qt.Window)
+            print("setWindowFlags:", central_widget.windowFlags())
+            self.setWindowFlags(central_widget.windowFlags())
 
     def __getattr__(self, attr_name):
         """Looks for the widget in the parent class.
