@@ -118,6 +118,8 @@ class MainWindow(
         self.prevent_hide = False
         self.widgets = set()
         self._deferred = {}
+        self.lock_style = False
+        self.original_style = central_widget.styleSheet()
 
         # Install event filter before setting central widget to init children
         self.installEventFilter(self)
@@ -145,10 +147,8 @@ class MainWindow(
         """
         window = central_widget.window()
         if window is not None and window is not central_widget:
-            print("setWindowFlags:", window.windowFlags())
             self.setWindowFlags(window.windowFlags())
         else:
-            print("setWindowFlags:", central_widget.windowFlags())
             self.setWindowFlags(central_widget.windowFlags())
 
     def __getattr__(self, attr_name):
@@ -529,6 +529,24 @@ class MainWindow(
         """Reimplement closeEvent to prevent window from being hidden when prevent_hide is True."""
         super().closeEvent(event)
         self.on_close.emit()
+
+    def setStyleSheet(self, style: str):
+        """Overrides the setStyleSheet method to respect locking."""
+        if self.lock_style:
+            self.logger.warning(
+                "Stylesheet is locked: Unlock first using: <window>.lock_style = False."
+            )
+        else:
+            super().setStyleSheet(style)
+
+    def reset_style(self):
+        """Resets the window's stylesheet to its original state."""
+        if not self.lock_style:
+            self.setStyleSheet(self.original_style)
+        else:
+            self.logger.warning(
+                "Cannot reset stylesheet while locked. Unlock first using: <window>.lock_style = False."
+            )
 
 
 # -----------------------------------------------------------------------------
