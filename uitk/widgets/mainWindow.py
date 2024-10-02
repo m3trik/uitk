@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-from typing import Any
+from typing import Any, Optional
 from functools import partial
 from PySide2 import QtCore, QtWidgets
 import pythontk as ptk
@@ -27,7 +27,7 @@ class MainWindow(
     def __init__(
         self,
         switchboard_instance: object,
-        central_widget: "QtWidgets.QWidget",
+        central_widget: Optional[QtWidgets.QWidget] = None,
         name: str = None,
         tags: set = None,
         path: str = None,
@@ -107,10 +107,9 @@ class MainWindow(
         self.logger.setLevel(log_level)
         self.sb = switchboard_instance
 
-        # Use central widget's objectName as the default name if none is provided
-        self.name = name or central_widget.objectName()
-        self.legal_name = self._set_legal_name(self.name, True)
-        self.legal_name_no_tags = self._set_legal_name_no_tags(self.name, True)
+        # Set name using the property
+        self.name = name  # Now handled by the property setter
+
         self.path = path
         self.tags = tags or set()
         self.is_initialized = False
@@ -119,14 +118,12 @@ class MainWindow(
         self.widgets = set()
         self._deferred = {}
         self.lock_style = False
-        self.original_style = central_widget.styleSheet()
+        self.original_style = ""
 
-        # Install event filter before setting central widget to init children
+        # Install event filter before setting central widget
         self.installEventFilter(self)
 
-        # Initialize window flags
-        self.initialize_window_flags(central_widget)
-
+        # Initialize settings
         self.settings = QtCore.QSettings(__package__, self.name)
 
         self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
@@ -136,20 +133,37 @@ class MainWindow(
         self.on_close.connect(self.settings.sync)
         self.on_child_changed.connect(self.sb.sync_widget_values)
 
-        # Set the central widget early to ensure the objectName is accessible
-        self.setCentralWidget(central_widget)
+        # If central widget is provided, set it
+        if central_widget:
+            self.setCentralWidget(central_widget)
+
+    def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
+        """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""
+        # Set the new central widget
+        super().setCentralWidget(widget)
+
+        # Initialize window flags based on the new central widget
+        self.initialize_window_flags(widget)
 
     def initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None:
-        """Initializes the window flags for the main window.
-
-        Parameters:
-            central_widget (QtWidgets.QWidget): The central widget of the window.
-        """
+        """Initializes the window flags based on the central widget."""
         window = central_widget.window()
         if window is not None and window is not central_widget:
             self.setWindowFlags(window.windowFlags())
         else:
             self.setWindowFlags(central_widget.windowFlags())
+
+    @property
+    def name(self) -> str:
+        """Getter for the window name."""
+        return self.objectName()
+
+    @name.setter
+    def name(self, value: str) -> None:
+        """Setter for the window name, which also sets the legal name and tag-free name."""
+        self.setObjectName(value or "")
+        self.legal_name = self._set_legal_name(self.objectName(), True)
+        self.legal_name_no_tags = self._set_legal_name_no_tags(self.objectName(), True)
 
     def __getattr__(self, attr_name):
         """Looks for the widget in the parent class.
