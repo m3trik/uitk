@@ -161,9 +161,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 return ui
 
         # If no exact match for UI, check for a slot class with exact name match
-        print("getattr:", attr_name)
         found_slots = self._find_slot_class(attr_name)
-        print("getattr found_slots:", found_slots)
         if found_slots:
             # Ensure UI does not exist before adding a new one
             if attr_name in self._loaded_ui:
@@ -172,7 +170,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 added_ui = self.add_ui(name=attr_name)
                 self._loaded_ui[attr_name] = added_ui
             self.set_slot_class(added_ui, found_slots)
-            print("getattr added_ui:", added_ui)
             return added_ui
 
         # Check if the attribute matches a widget file
@@ -424,7 +421,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             **kwargs,
         )
         self._loaded_ui[main_window.name] = main_window
-        print(f"Added UI: {repr(main_window)}")
+
         # Debugging info
         self.logger.debug(
             f"MainWindow Added: Name={main_window.name}, Tags={main_window.tags}, Path={main_window.path}"
@@ -670,7 +667,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 try:
                     self._slot_history.remove(item)
                 except ValueError:
-                    print(f"Item {item} not found in history.")
+                    self.logger.warning(f"Item '{item}' not found in slot history.")
         # Remove any previous duplicates if they exist; keeping the last added element.
         if not allow_duplicates:
             self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
@@ -1135,9 +1132,9 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         """
         relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
-            # print("name:      ", widget.name)
+            # self.logger.debug("name:      ", widget.name)
             relative_widget = self.get_widget(widget.name, relative)
-            # print("get widget:", relative_widget)
+            # self.logger.debug("get widget:", relative_widget)
             if relative_widget is not None and relative_widget is not widget:
                 signal_name = self.default_signals.get(widget.derived_type)
                 if signal_name:
