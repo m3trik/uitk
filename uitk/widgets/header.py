@@ -75,12 +75,12 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         """Return the stylesheet for the header label."""
         return """
             QLabel {
-                background-color: rgba(127,127,127,2);
+                background-color: rgba(127,127,127,200);
                 border: none;
                 font-weight: bold;
             }
             QLabel::hover {
-                background-color: rgba(127,127,127,2);
+                background-color: rgba(127,127,127,200);
                 border: none;
             }
         """

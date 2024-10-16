@@ -121,10 +121,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         self.ui_name_delimiters = ui_name_delimiters
 
         self._loaded_ui = {}  # All loaded ui.
-        self._ui_history = []  # Ordered ui history.
-        self._registered_widgets = {}  # All registered custom widgets.
-        self._slot_history = []  # Previously called slots.
+        self._loaded_slots = {}  # Previously loaded slot instances
         self._connected_slots = {}  # Currently connected slots.
+        self._registered_widgets = {}  # All registered custom widgets.
+        self._ui_history = []  # Ordered ui history.
+        self._slot_history = []  # Previously called slots.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
         self._gc_protect = set()  # Objects protected from garbage collection.
 
@@ -142,7 +143,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Returns:
             (obj) The attribute could be a UI, a custom widget, or a Qt module attribute.
         """
-        # Check if the attribute matches a UI file
+        # Check if the attribute matches an already loaded UI
+        if attr_name in self._loaded_ui:
+            return self._loaded_ui[attr_name]
+
+        # Check if the attribute matches a UI file exactly
         actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
         if actual_ui_name:
             ui_filepath = self.registry.ui_registry.get(
@@ -152,15 +157,23 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 loaded_ui = self.load_ui(ui_filepath)
                 # Extract attributes based on the UI file path for naming consistency.
                 name = self._set_name(ui_filepath, set_attr=True)
-                # Extract attributes based on the UI file path for naming consistency.
                 ui = self.add_ui(widget=loaded_ui, name=name, path=ui_filepath)
                 return ui
-        if not actual_ui_name:
-            found_slots = self._find_slot_class(attr_name)
-            if found_slots:
+
+        # If no exact match for UI, check for a slot class with exact name match
+        print("getattr:", attr_name)
+        found_slots = self._find_slot_class(attr_name)
+        print("getattr found_slots:", found_slots)
+        if found_slots:
+            # Ensure UI does not exist before adding a new one
+            if attr_name in self._loaded_ui:
+                added_ui = self._loaded_ui[attr_name]
+            else:
                 added_ui = self.add_ui(name=attr_name)
-                self.set_slot_class(added_ui, found_slots)
-                return added_ui
+                self._loaded_ui[attr_name] = added_ui
+            self.set_slot_class(added_ui, found_slots)
+            print("getattr added_ui:", added_ui)
+            return added_ui
 
         # Check if the attribute matches a widget file
         widget_class = self.registry.widget_registry.get(
@@ -379,12 +392,20 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Returns:
             MainWindow: The UI wrapped in the MainWindow class.
         """
+        # Check if the UI already exists to prevent duplicates
+        if name in self._loaded_ui:
+            self.logger.warning(
+                f"UI '{name}' already exists, returning existing instance."
+            )
+            return self._loaded_ui[name]
+
         # Determine the central widget (can be None)
         central_widget = (
             widget.centralWidget()
             if isinstance(widget, QtWidgets.QMainWindow) and widget.centralWidget()
             else widget
         )
+
         # Set name based on the central widget's objectName, or None if no widget is provided
         name = name or (central_widget.objectName() if central_widget else None)
         # Set tags based on name, or None if name is not available
@@ -403,6 +424,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             **kwargs,
         )
         self._loaded_ui[main_window.name] = main_window
+        print(f"Added UI: {repr(main_window)}")
         # Debugging info
         self.logger.debug(
             f"MainWindow Added: Name={main_window.name}, Tags={main_window.tags}, Path={main_window.path}"
@@ -687,12 +709,15 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         # Make this switchboard instance accessible through the class.
         clss.switchboard = lambda *_: self
+
         # Instance the class
         instance = clss()
-        # Make the class accessible through this switchboard instance.
-        setattr(self, clss.__name__, instance)
-        # Assign the instance to <ui>._slots save it.
+        self.logger.debug(f"Slot class instance created: {instance}")
+
+        # Store the slot instance within the UI
         ui._slots = instance
+        # Make the class accessible through this switchboard instance
+        setattr(self, clss.__name__, instance)
 
         return instance
 
@@ -710,15 +735,17 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
 
+        # If slots are already set, return the existing slot class
         if hasattr(ui, "_slots"):
             return ui._slots
 
-        try:
+        try:  # If no slots are set, attempt to find the slot class
             found_class = self._find_slot_class(ui)
         except ValueError:
             self.logger.info(traceback.format_exc())
             found_class = None
 
+        # If slot class is not found, search for relatives' slot classes
         if not found_class:
             for relative_name in self.get_ui_relatives(ui, upstream=True, reverse=True):
                 relative_ui = self.get_ui(relative_name)
@@ -728,12 +755,14 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                         break
                     except ValueError:
                         self.logger.info(traceback.format_exc())
+
+        # If a class is found, set it as the slot class for the UI
         if found_class:
             slots_instance = self.set_slot_class(ui, found_class)
             return slots_instance
-        else:
-            ui._slots = None
-            return None
+
+        # If no slot class is found, return None
+        return None
 
     def _find_slot_class(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]:
         """Find the slot class associated with the given UI by following a specific naming convention.

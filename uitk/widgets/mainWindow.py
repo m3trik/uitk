@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-from typing import Any, Optional
+from typing import Any, Optional, Union, List, Dict
 from functools import partial
 from PySide2 import QtCore, QtWidgets
 import pythontk as ptk
@@ -163,7 +163,7 @@ class MainWindow(
         """Setter for the window name, which also sets the legal name and tag-free name."""
         self.setObjectName(value or "")
         self.legal_name = self._set_legal_name(self.objectName(), True)
-        self.legal_name_no_tags = self._set_legal_name_no_tags(self.objectName(), True)
+        # self.legal_name_no_tags = self._set_legal_name_no_tags(self.objectName(), True)
 
     def __getattr__(self, attr_name):
         """Looks for the widget in the parent class.
@@ -189,9 +189,9 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    def __repr__(self):
-        """Return the type, filename, and path"""
-        return f"<MainWindow " f"name={self.name}, " f"path={self.path}>"
+    def __repr__(self) -> str:
+        """Return a string representation of the MainWindow instance."""
+        return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
 
     def __str__(self):
         """Return the filename"""
@@ -328,30 +328,6 @@ class MainWindow(
                     setattr(self.sb, legal_name, self)
         return legal_name
 
-    def _set_legal_name_no_tags(self, name, set_attr=False) -> str:
-        """Sets the legal name without tags attribute for the object based on the name of the UI file.
-
-        Parameters:
-            name (str): The name to generate the legal name without tags from.
-            set_attr (bool): If True, sets a switchboard attribute using the legal name without tags. Defaults to False.
-
-        Returns:
-            str: The legal name without tags attribute.
-        """
-        name_no_tags = "".join(name.split("#")[0])
-        legal_name_no_tags = self.sb.convert_to_legal_name(name_no_tags)
-
-        if set_attr:
-            if legal_name_no_tags and name != legal_name_no_tags:
-                if self.sb.registry.ui_registry.get(filename=legal_name_no_tags):
-                    pass
-                    # self.logger.warning(
-                    #     f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
-                    # )
-                else:
-                    setattr(self.sb, legal_name_no_tags, self)
-        return legal_name_no_tags
-
     def has_tags(self, tags):
         """Check if any of the given tag(s) are present in the UI's tags set.
 
@@ -431,43 +407,128 @@ class MainWindow(
             wrapper = self.sb._create_slot_wrapper(slot, widget)
             wrapper(*args, **kwargs)
 
-    def set_persistent_value(
+    def store_settings(
         self,
-        attr_name: str,
-        owner: object = None,
-        default: Any = None,
-        *identifier: str,
+        keys: Union[str, List[str]],
+        value: Any = None,
+        group: Any = None,
+        sync: bool = True,
+        set_attr: bool = True,
     ) -> None:
-        """Manages a persistent value for `attr_name` in `owner` using `QSettings`.
-
-        Retrieves the stored value associated with `ui` and `attr_name` from `QSettings`.
-        If a stored value exists, it sets it to the attribute object. Sets up a method to
-        store the current value when `ui` is closed. Wraps the existing `closeEvent` of `ui`
-        to ensure the value is stored before closing.
+        """Stores and restores one or more attributes persistently using QSettings.
 
         Parameters:
-            attr_name (str): The name of the attribute in `owner` whose value is to be managed persistently.
-            owner (Any, optional): The object that contains the attribute to be managed. Defaults to self.
-            default (Any, optional): The default value to set if no stored value is found. Defaults to None.
-            *identifier (str): Additional identifiers to differentiate multiple values.
-
-        Raises:
-            ValueError: If `owner` does not have the specified attribute `attr_name`.
+            keys (Union[str, List[str]]): A key or list of keys of the attributes to save and restore.
+            value (Any, optional): The default value to use if no stored value is found in QSettings. Defaults to `None`.
+            group (Any, optional): An optional group to distinguish between similar keys, which will be converted to a string.
+            sync (bool, optional): Whether to immediately sync the settings to persistent storage. Defaults to True.
+            set_attr (bool, optional): Whether to set the attribute on the instance. Defaults to True.
         """
-        owner = owner or self
+        keys_iterable = ptk.make_iterable(keys)
+        group_str = f"{group}" if group else ""
 
-        if not hasattr(owner, attr_name):
-            raise ValueError(f"'{attr_name}' is not an attribute of {owner}.")
+        for key in keys_iterable:
+            # Ensure the key format is consistent
+            full_key = (
+                f"{self.name}_{key}_{group_str}" if group_str else f"{self.name}_{key}"
+            )
+            self.logger.debug(
+                f"Storing setting with key: {full_key}, value: {value}"
+            )  # Log the key and value
 
-        key = f"{self.name}_{attr_name}_{'_'.join(identifier)}"
-        stored_value = self.settings.value(key, default)
-        setattr(owner, attr_name, stored_value)
+            # Store the value in QSettings
+            self.settings.setValue(full_key, value)
 
-        def store_value_on_close(attr_name: str, key: str) -> None:
-            current_value = getattr(owner, attr_name)
-            self.settings.setValue(key, current_value)
+            # Set the attribute on the instance if set_attr is True
+            if set_attr:
+                setattr(self, key, value)
 
-        self.on_hide.connect(partial(store_value_on_close, attr_name, key))
+        # Sync the settings if the sync parameter is True
+        if sync:
+            self.settings.sync()
+            self.logger.debug("Settings synced to persistent storage.")
+
+    def restore_settings(
+        self,
+        keys: Union[str, List[str]],
+        default: Any = None,
+        group: Any = None,
+        set_attr: bool = True,
+    ) -> Union[Any, Dict[str, Any]]:
+        """Retrieves one or more stored settings from QSettings.
+
+        If a single key is provided, returns the value directly. If multiple keys are provided,
+        returns a dictionary of key-value pairs.
+
+        Parameters:
+            keys (Union[str, List[str]]): A key or list of keys of the settings to be retrieved.
+            default (Any, optional): The default value to return if no value is found for the key(s). Defaults to `None`.
+            group (Any, optional): An optional group to distinguish between similar keys, which will be converted to a string.
+            set_attr (bool, optional): Whether to set the attribute on the instance. Defaults to True.
+
+        Returns:
+            Union[Any, Dict[str, Any]]: The value associated with the key, or a dictionary of key-value pairs.
+
+        Example:
+            ```python
+            value = self.get_settings('preset_dir')
+            values = self.get_settings(['preset_dir', 'output_dir'])
+            ```
+        """
+        keys_iterable = ptk.make_iterable(keys)
+        group_str = f"{group}" if group else ""
+
+        settings_dict = {}
+
+        for key in keys_iterable:
+            # Ensure the key format is consistent
+            full_key = (
+                f"{self.name}_{key}_{group_str}" if group_str else f"{self.name}_{key}"
+            )
+            self.logger.debug(f"Retrieving setting with key: {full_key}")  # Log the key
+
+            # Retrieve the stored value
+            stored_value = self.settings.value(full_key, default)
+            self.logger.debug(f"Retrieved value for {full_key}: {stored_value}")
+            settings_dict[key] = stored_value
+
+            if set_attr:
+                setattr(self, key, stored_value)
+
+        if len(settings_dict) == 1:
+            return next(iter(settings_dict.values()))
+        else:
+            return settings_dict
+
+    def clear_settings(
+        self, keys: Optional[Union[str, List[str]]] = None, group: Any = None
+    ) -> None:
+        """Clears specific settings or all settings for this window.
+
+        Parameters:
+            keys (Union[str, List[str]], optional): A key or list of keys of the settings to be cleared.
+            group (Any, optional): An optional group to distinguish between similar keys, which will be converted to a string.
+        """
+        if keys:
+            keys_iterable = ptk.make_iterable(keys)
+            group_str = f"{group}" if group else ""
+
+            for key in keys_iterable:
+                full_key = (
+                    f"{self.name}_{key}_{group_str}"
+                    if group_str
+                    else f"{self.name}_{key}"
+                )
+                if self.settings.contains(full_key):
+                    self.settings.remove(full_key)
+                    self.logger.info(f"Cleared setting: {full_key}")
+                else:
+                    self.logger.warning(f"Setting key '{full_key}' does not exist.")
+        else:
+            self.settings.clear()
+            self.logger.info("Cleared all settings for the window.")
+
+        self.settings.sync()
 
     def eventFilter(self, widget, event):
         """Filter out specific events related to the widget."""

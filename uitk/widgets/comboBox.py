@@ -142,9 +142,7 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
             index = (
                 self.items.index(i)
                 if isinstance(i, str)
-                else i
-                if isinstance(i, int)
-                else None
+                else i if isinstance(i, int) else None
             )
         except ValueError:
             raise ValueError(
