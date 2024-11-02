@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtWidgets
+from qtpy import QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 

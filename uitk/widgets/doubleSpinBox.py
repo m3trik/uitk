@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from uitk.widgets.menu import Menu
 from uitk.widgets.messageBox import MessageBox
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -88,7 +88,7 @@ class DoubleSpinBox(QtWidgets.QDoubleSpinBox, AttributesMixin):
 
 if __name__ == "__main__":
     import sys
-    from PySide2.QtCore import QSize
+    from qtpy.QtCore import QSize
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
         sys.argv

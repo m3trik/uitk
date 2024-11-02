@@ -1,10 +1,9 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-import logging
-from typing import Any
+from typing import Any, Optional, Union, List, Dict
 from functools import partial
-from PySide2 import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets
 import pythontk as ptk
 from uitk import __package__
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -15,6 +14,7 @@ class MainWindow(
     QtWidgets.QMainWindow,
     AttributesMixin,
     StyleSheet,
+    ptk.LoggingMixin,
 ):
     on_show = QtCore.Signal()
     on_hide = QtCore.Signal()
@@ -26,65 +26,104 @@ class MainWindow(
 
     def __init__(
         self,
-        switchboard_instance,
-        ui_filepath,
-        log_level=logging.WARNING,
+        switchboard_instance: object,
+        central_widget: Optional[QtWidgets.QWidget] = None,
+        name: str = None,
+        tags: set = None,
+        path: str = None,
+        log_level: int = "WARNING",
         **kwargs,
     ):
-        """Represents a main window in a GUI application.
-        Inherits from QtWidgets.QMainWindow class, providing additional functionality for
-        managing user interface (UI) elements.
+        """MainWindow is a customized QMainWindow class that integrates additional functionality
+        for managing UI elements within the Switchboard environment. It serves as a wrapper
+        for central widgets or QMainWindow instances, providing an interface for managing
+        widget properties, signals, and configuration settings specific to the application's needs.
 
-        Parameters:
-            switchboard_instance (QUiLoader): An instance of the switchboard class.
-            ui_filepath (str): The full path to a UI file.
-            log_level (int): Determines the level of logging messages to print. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
-            **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False
+        Inherits:
+            - QtWidgets.QMainWindow: Provides the basic functionality of a main window.
+            - AttributesMixin: Adds attribute management capabilities.
+            - StyleSheet: Adds styling capabilities for the main window.
 
         Signals:
-            on_show: Signal that is emitted before the window is shown.
-            on_hide: Signal that is emitted before the window is hidden.
-            on_child_added: Signal that is emitted when a child widget is added. Provides the added widget as a parameter.
-            on_child_changed: Signal that is emitted when a child widget changes. Provides the value and widget as parameters.
+            - on_show: Emitted when the window is shown.
+            - on_hide: Emitted when the window is hidden.
+            - on_close: Emitted when the window is closed.
+            - on_focus_in: Emitted when the window gains focus.
+            - on_focus_out: Emitted when the window loses focus.
+            - on_child_added: Emitted when a child widget is added to the main window.
+            - on_child_changed: Emitted when a child widget's state is changed.
 
-        AttributesMixin:
-            sb: An instance of the switchboard class.
+        Parameters:
+            switchboard_instance (object): The instance of the Switchboard managing this UI.
+            central_widget (QtWidgets.QWidget): The central widget or QMainWindow to be wrapped.
+            name (str, optional): A custom name for the UI. Defaults to the central widget's objectName if not provided.
+            tags (set, optional): Tags associated with the UI for identification or categorization.
+            path (str, optional): The file path associated with the UI, primarily for loaded UI files.
+            log_level (int, optional): The logging level for the main window, defaulting to logging.WARNING.
+            **kwargs: Additional keyword arguments for customizing the MainWindow.
+
+        Attributes:
+            - sb: Reference to the managing Switchboard instance.
+            - name (str): The name of the UI, derived from the provided name or central widget.
+            - legal_name (str): A legal version of the UI's name, suitable for use in various contexts.
+            - legal_name_no_tags (str): A tag-free version of the legal name.
+            - path (str): The file path associated with the UI, primarily for loaded UI files.
+            - tags (set): A set of tags associated with the UI, used for categorization and management.
+            - is_initialized (bool): Indicates whether the UI has been initialized.
+            - is_connected (bool): Indicates whether the UI is connected to its respective slots.
+            - prevent_hide (bool): Prevents the window from being hidden if set to True.
+            - widgets (set): A set of child widgets managed within the main window.
+            - _deferred (dict): A dictionary of deferred methods to be executed after the window is shown.
+            - settings (QtCore.QSettings): The settings object for storing UI-specific settings.
 
         Properties:
-            <UI>.name (str): The UI filename.
-            <UI>.path (str): The directory path containing the UI file.
-            <UI>.is_current (bool): True if the UI is set as current.
-            <UI>.is_initialized (bool): True after the UI is first shown.
-            <UI>.is_connected (bool): True if the UI is connected to its slots.
-            <UI>.prevent_hide (bool): While True, the hide method is disabled.
-            <UI>.widgets (list): All the widgets of the UI.
-            <UI>.slots (obj): The slots class instance.
-            <UI>._deferred: A dictionary of deferred methods.
+            - slots (object): The slots class instance associated with this main window.
+            - is_stacked_widget (bool): Returns True if the main window is part of a QStackedWidget.
+            - is_current (bool): Indicates whether the UI is the currently active UI in the Switchboard.
+
+        Methods:
+            - init_child(widget): Initializes and manages child widgets within the main window.
+            - init_child_changed_signal(widget): Sets up signals for child widgets when their state changes.
+            - set_as_current(): Sets this UI as the currently active UI within the Switchboard.
+            - defer(func, *args, priority=0): Defers the execution of a function until the window is shown.
+            - trigger_deferred(): Executes all deferred methods in priority order.
+
+        Example:
+            ```python
+            # Creating a MainWindow with a central widget
+            central_widget = QtWidgets.QWidget()
+            main_window = MainWindow(
+                switchboard_instance=switchboard,
+                central_widget=central_widget,
+                name="example_ui",
+                tags={"example", "ui"},
+                path="/path/to/ui/file.ui"
+            )
+            main_window.show()
+            ```
         """
         super().__init__()
 
-        self._init_logger(log_level)
-
+        self.logger.setLevel(log_level)
         self.sb = switchboard_instance
-        self.name = self._set_name(ui_filepath, True)
-        self.legal_name = self._set_legal_name(self.name, True)
-        self.legal_name_no_tags = self._set_legal_name_no_tags(self.name, True)
-        self.path = ptk.format_path(ui_filepath, "path")
-        self.tags = self._parse_tags(self.name)
+
+        # Set name using the property
+        self.name = name  # Now handled by the property setter
+
+        self.path = path
+        self.tags = tags or set()
         self.is_initialized = False
         self.is_connected = False
         self.prevent_hide = False
         self.widgets = set()
         self._deferred = {}
+        self.lock_style = False
+        self.original_style = ""
 
-        # Install event filter before setting central widget to init children
+        # Install event filter before setting central widget
         self.installEventFilter(self)
 
-        ui = self.sb.load(ui_filepath)
-        self.setCentralWidget(ui.centralWidget())
-        self.transfer_widget_properties(ui, self)
-        self.setWindowFlags(ui.windowFlags())
-
+        # Initialize settings
         self.settings = QtCore.QSettings(__package__, self.name)
 
         self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
@@ -94,15 +133,37 @@ class MainWindow(
         self.on_close.connect(self.settings.sync)
         self.on_child_changed.connect(self.sb.sync_widget_values)
 
-    def _init_logger(self, log_level):
-        """Initializes logger."""
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(log_level)
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        self.logger.addHandler(handler)
+        # If central widget is provided, set it
+        if central_widget:
+            self.setCentralWidget(central_widget)
+
+    def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
+        """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""
+        # Set the new central widget
+        super().setCentralWidget(widget)
+
+        # Initialize window flags based on the new central widget
+        self.initialize_window_flags(widget)
+
+    def initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None:
+        """Initializes the window flags based on the central widget."""
+        window = central_widget.window()
+        if window is not None and window is not central_widget:
+            self.setWindowFlags(window.windowFlags())
+        else:
+            self.setWindowFlags(central_widget.windowFlags())
+
+    @property
+    def name(self) -> str:
+        """Getter for the window name."""
+        return self.objectName()
+
+    @name.setter
+    def name(self, value: str) -> None:
+        """Setter for the window name, which also sets the legal name and tag-free name."""
+        self.setObjectName(value or "")
+        self.legal_name = self._set_legal_name(self.objectName(), True)
+        # self.legal_name_no_tags = self._set_legal_name_no_tags(self.objectName(), True)
 
     def __getattr__(self, attr_name):
         """Looks for the widget in the parent class.
@@ -128,9 +189,9 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    def __repr__(self):
-        """Return the type, filename, and path"""
-        return f"<MainWindow " f"name={self.name}, " f"path={self.path}>"
+    def __repr__(self) -> str:
+        """Return a string representation of the MainWindow instance."""
+        return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
 
     def __str__(self):
         """Return the filename"""
@@ -216,9 +277,9 @@ class MainWindow(
                 signal = getattr(widget, signal_name)
                 # Connect the signal to the slot
                 signal.connect(
-                    lambda v=None, w=widget: self.on_child_changed.emit(v, w)
-                    if v is not None
-                    else None
+                    lambda v=None, w=widget: (
+                        self.on_child_changed.emit(v, w) if v is not None else None
+                    )
                 )
 
     @property
@@ -244,21 +305,6 @@ class MainWindow(
         """Sets the widget as the currently active UI."""
         self.sb.set_current_ui(self)
 
-    def _set_name(self, file, set_attr=False) -> str:
-        """Sets the name attribute for the object based on the filename of the UI file.
-
-        Parameters:
-            file (str): The file path of the UI file.
-            set_attr (bool): If True, sets a switchboard attribute using the name. Defaults to False.
-
-        Returns:
-            str: The name attribute.
-        """
-        name = ptk.format_path(file, "name")
-        if set_attr:
-            setattr(self.sb, name, self)
-        return name
-
     def _set_legal_name(self, name, set_attr=False) -> str:
         """Sets the legal name attribute for the object based on the name of the UI file.
 
@@ -281,43 +327,6 @@ class MainWindow(
                 else:
                     setattr(self.sb, legal_name, self)
         return legal_name
-
-    def _set_legal_name_no_tags(self, name, set_attr=False) -> str:
-        """Sets the legal name without tags attribute for the object based on the name of the UI file.
-
-        Parameters:
-            name (str): The name to generate the legal name without tags from.
-            set_attr (bool): If True, sets a switchboard attribute using the legal name without tags. Defaults to False.
-
-        Returns:
-            str: The legal name without tags attribute.
-        """
-        name_no_tags = "".join(name.split("#")[0])
-        legal_name_no_tags = self.sb.convert_to_legal_name(name_no_tags)
-
-        if set_attr:
-            if legal_name_no_tags and name != legal_name_no_tags:
-                if self.sb.registry.ui_registry.get(filename=legal_name_no_tags):
-                    pass
-                    # self.logger.warning(
-                    #     f"Legal name without tags '{legal_name_no_tags}' already exists. Attribute not set."
-                    # )
-                else:
-                    setattr(self.sb, legal_name_no_tags, self)
-        return legal_name_no_tags
-
-    @staticmethod
-    def _parse_tags(name):
-        """Parse tags from the file name and return a set of tags.
-
-        Parameters:
-            name (str): The name to parse tags from.
-
-        Returns:
-            set: A set of tags parsed from the name.
-        """
-        parts = name.split("#")
-        return set(parts[1:]) if len(parts) > 1 else set()
 
     def has_tags(self, tags):
         """Check if any of the given tag(s) are present in the UI's tags set.
@@ -398,43 +407,128 @@ class MainWindow(
             wrapper = self.sb._create_slot_wrapper(slot, widget)
             wrapper(*args, **kwargs)
 
-    def set_persistent_value(
+    def store_settings(
         self,
-        attr_name: str,
-        owner: object = None,
-        default: Any = None,
-        *identifier: str,
+        keys: Union[str, List[str]],
+        value: Any = None,
+        group: Any = None,
+        sync: bool = True,
+        set_attr: bool = True,
     ) -> None:
-        """Manages a persistent value for `attr_name` in `owner` using `QSettings`.
-
-        Retrieves the stored value associated with `ui` and `attr_name` from `QSettings`.
-        If a stored value exists, it sets it to the attribute object. Sets up a method to
-        store the current value when `ui` is closed. Wraps the existing `closeEvent` of `ui`
-        to ensure the value is stored before closing.
+        """Stores and restores one or more attributes persistently using QSettings.
 
         Parameters:
-            attr_name (str): The name of the attribute in `owner` whose value is to be managed persistently.
-            owner (Any, optional): The object that contains the attribute to be managed. Defaults to self.
-            default (Any, optional): The default value to set if no stored value is found. Defaults to None.
-            *identifier (str): Additional identifiers to differentiate multiple values.
-
-        Raises:
-            ValueError: If `owner` does not have the specified attribute `attr_name`.
+            keys (Union[str, List[str]]): A key or list of keys of the attributes to save and restore.
+            value (Any, optional): The default value to use if no stored value is found in QSettings. Defaults to `None`.
+            group (Any, optional): An optional group to distinguish between similar keys, which will be converted to a string.
+            sync (bool, optional): Whether to immediately sync the settings to persistent storage. Defaults to True.
+            set_attr (bool, optional): Whether to set the attribute on the instance. Defaults to True.
         """
-        owner = owner or self
+        keys_iterable = ptk.make_iterable(keys)
+        group_str = f"{group}" if group else ""
 
-        if not hasattr(owner, attr_name):
-            raise ValueError(f"'{attr_name}' is not an attribute of {owner}.")
+        for key in keys_iterable:
+            # Ensure the key format is consistent
+            full_key = (
+                f"{self.name}_{key}_{group_str}" if group_str else f"{self.name}_{key}"
+            )
+            self.logger.debug(
+                f"Storing setting with key: {full_key}, value: {value}"
+            )  # Log the key and value
 
-        key = f"{self.name}_{attr_name}_{'_'.join(identifier)}"
-        stored_value = self.settings.value(key, default)
-        setattr(owner, attr_name, stored_value)
+            # Store the value in QSettings
+            self.settings.setValue(full_key, value)
 
-        def store_value_on_close(attr_name: str, key: str) -> None:
-            current_value = getattr(owner, attr_name)
-            self.settings.setValue(key, current_value)
+            # Set the attribute on the instance if set_attr is True
+            if set_attr:
+                setattr(self, key, value)
 
-        self.on_hide.connect(partial(store_value_on_close, attr_name, key))
+        # Sync the settings if the sync parameter is True
+        if sync:
+            self.settings.sync()
+            self.logger.debug("Settings synced to persistent storage.")
+
+    def restore_settings(
+        self,
+        keys: Union[str, List[str]],
+        default: Any = None,
+        group: Any = None,
+        set_attr: bool = True,
+    ) -> Union[Any, Dict[str, Any]]:
+        """Retrieves one or more stored settings from QSettings.
+
+        If a single key is provided, returns the value directly. If multiple keys are provided,
+        returns a dictionary of key-value pairs.
+
+        Parameters:
+            keys (Union[str, List[str]]): A key or list of keys of the settings to be retrieved.
+            default (Any, optional): The default value to return if no value is found for the key(s). Defaults to `None`.
+            group (Any, optional): An optional group to distinguish between similar keys, which will be converted to a string.
+            set_attr (bool, optional): Whether to set the attribute on the instance. Defaults to True.
+
+        Returns:
+            Union[Any, Dict[str, Any]]: The value associated with the key, or a dictionary of key-value pairs.
+
+        Example:
+            ```python
+            value = self.get_settings('preset_dir')
+            values = self.get_settings(['preset_dir', 'output_dir'])
+            ```
+        """
+        keys_iterable = ptk.make_iterable(keys)
+        group_str = f"{group}" if group else ""
+
+        settings_dict = {}
+
+        for key in keys_iterable:
+            # Ensure the key format is consistent
+            full_key = (
+                f"{self.name}_{key}_{group_str}" if group_str else f"{self.name}_{key}"
+            )
+            self.logger.debug(f"Retrieving setting with key: {full_key}")  # Log the key
+
+            # Retrieve the stored value
+            stored_value = self.settings.value(full_key, default)
+            self.logger.debug(f"Retrieved value for {full_key}: {stored_value}")
+            settings_dict[key] = stored_value
+
+            if set_attr:
+                setattr(self, key, stored_value)
+
+        if len(settings_dict) == 1:
+            return next(iter(settings_dict.values()))
+        else:
+            return settings_dict
+
+    def clear_settings(
+        self, keys: Optional[Union[str, List[str]]] = None, group: Any = None
+    ) -> None:
+        """Clears specific settings or all settings for this window.
+
+        Parameters:
+            keys (Union[str, List[str]], optional): A key or list of keys of the settings to be cleared.
+            group (Any, optional): An optional group to distinguish between similar keys, which will be converted to a string.
+        """
+        if keys:
+            keys_iterable = ptk.make_iterable(keys)
+            group_str = f"{group}" if group else ""
+
+            for key in keys_iterable:
+                full_key = (
+                    f"{self.name}_{key}_{group_str}"
+                    if group_str
+                    else f"{self.name}_{key}"
+                )
+                if self.settings.contains(full_key):
+                    self.settings.remove(full_key)
+                    self.logger.info(f"Cleared setting: {full_key}")
+                else:
+                    self.logger.warning(f"Setting key '{full_key}' does not exist.")
+        else:
+            self.settings.clear()
+            self.logger.info("Cleared all settings for the window.")
+
+        self.settings.sync()
 
     def eventFilter(self, widget, event):
         """Filter out specific events related to the widget."""
@@ -469,10 +563,10 @@ class MainWindow(
 
         Parameters:
             pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
-            app_exec (bool, optional): Execute the given PySide2 application, display its window, wait for user input,
+            app_exec (bool, optional): Execute the given qtpy application, display its window, wait for user input,
                     and then terminate the program with a status code returned from the application. Defaults to False.
         Raises:
-            SystemExit: Raised if the exit code returned from the PySide2 application is not -1.
+            SystemExit: Raised if the exit code returned from the qtpy application is not -1.
         """
         super().show()
         self.sb.center_widget(self, pos)
@@ -511,14 +605,31 @@ class MainWindow(
         super().closeEvent(event)
         self.on_close.emit()
 
+    def setStyleSheet(self, style: str):
+        """Overrides the setStyleSheet method to respect locking."""
+        if self.lock_style:
+            self.logger.warning(
+                "Stylesheet is locked: Unlock first using: <window>.lock_style = False."
+            )
+        else:
+            super().setStyleSheet(style)
+
+    def reset_style(self):
+        """Resets the window's stylesheet to its original state."""
+        if not self.lock_style:
+            self.setStyleSheet(self.original_style)
+        else:
+            self.logger.warning(
+                "Cannot reset stylesheet while locked. Unlock first using: <window>.lock_style = False."
+            )
+
 
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     from uitk import Switchboard
 
-    class MyProject:
-        ...
+    class MyProject: ...
 
     class MySlots(MyProject):
         def __init__(self):

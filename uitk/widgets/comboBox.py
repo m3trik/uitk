@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from uitk.signals import Signals
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -142,9 +142,7 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
             index = (
                 self.items.index(i)
                 if isinstance(i, str)
-                else i
-                if isinstance(i, int)
-                else None
+                else i if isinstance(i, int) else None
             )
         except ValueError:
             raise ValueError(

@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins import ConvertMixin
 
@@ -31,7 +31,7 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
                 size (QSize or tuple, optional): A tuple of (width, height) specifying the size of the region. Default is (45, 45).
                 shape (QRegion.Shape, optional): The shape of the region (default is QtGui.QRegion.Ellipse).
                 visible_on_mouse_over (bool): Top level children are hidden when the mouse is not over the region.
-                **kwargs: Additional keyword arguments to pass to the MainWindow. ie. setVisible=False or setMouseTracking=True
+                **kwargs: Additional keyword arguments to pass to the main window. ie. setVisible=False or setMouseTracking=True
         """
         super().__init__(parent)
 

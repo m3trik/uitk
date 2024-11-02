@@ -1,7 +1,7 @@
 import sys
-from PySide2.QtCore import QObject, Qt, QEvent, QTimer, Signal, QRect
-from PySide2.QtGui import QPainter, QColor, QBrush
-from PySide2.QtWidgets import (
+from qtpy.QtCore import QObject, Qt, QEvent, Signal
+from qtpy.QtGui import QPainter, QColor, QBrush
+from qtpy.QtWidgets import (
     QApplication,
     QMainWindow,
     QDockWidget,

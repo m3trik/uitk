@@ -2,7 +2,7 @@
 # coding=utf-8
 import sys
 import time
-from PySide2 import QtCore, QtWidgets, QtGui
+from qtpy import QtCore, QtWidgets, QtGui
 
 
 class WorkIndicator(QtWidgets.QDialog):
@@ -67,7 +67,7 @@ class TasksMixin(QtCore.QThread):
 # --------------------------------------------------------------------------------------------
 if __name__ == "__main__":
 
-    class MainWindow(QtWidgets.QWidget):
+    class Window(QtWidgets.QWidget):
         def __init__(self):
             super().__init__()
             self.initUI()
@@ -95,8 +95,8 @@ if __name__ == "__main__":
             print("Task completed")
 
     app = QtWidgets.QApplication(sys.argv)
-    mainWindow = MainWindow()
-    mainWindow.show()
+    window = Window()
+    window.show()
     sys.exit(app.exec_())
 
 # --------------------------------------------------------------------------------------------

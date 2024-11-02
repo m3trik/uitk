@@ -2,13 +2,12 @@
 # coding=utf-8
 from typing import Union
 import re
-from PySide2 import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets
 import pythontk as ptk
 
 
 class StyleSheet(QtCore.QObject):
-    """
-    StyleSheet is a class designed for managing and applying CSS style sheets to Qt widgets,
+    """StyleSheet is a class designed for managing and applying CSS style sheets to Qt widgets,
     leveraging the inheritance hierarchy of the widgets. It allows for dynamic and flexible styling
     of user interfaces in PyQt applications.
 

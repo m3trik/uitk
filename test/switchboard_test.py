@@ -1,6 +1,6 @@
 import unittest
 
-# from PySide2 import QtWidgets
+# from qtpy import QtWidgets
 from uitk.switchboard import Switchboard
 
 

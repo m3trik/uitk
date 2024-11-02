@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
 
 
