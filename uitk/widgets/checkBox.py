@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
@@ -113,7 +113,7 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
 
 if __name__ == "__main__":
     import sys
-    from PySide2.QtCore import QSize
+    from qtpy.QtCore import QSize
 
     # Return the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)

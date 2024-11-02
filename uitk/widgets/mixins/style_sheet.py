@@ -2,7 +2,7 @@
 # coding=utf-8
 from typing import Union
 import re
-from PySide2 import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets
 import pythontk as ptk
 
 

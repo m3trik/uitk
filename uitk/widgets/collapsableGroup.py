@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtWidgets, QtGui
+from qtpy import QtWidgets, QtGui
 
 
 class CollapsableGroup(QtWidgets.QGroupBox):

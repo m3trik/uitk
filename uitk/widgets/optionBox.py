@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtWidgets
+from qtpy import QtWidgets
 from uitk.widgets.mixins.text import RichText
 from uitk.widgets.mixins.attributes import AttributesMixin
 
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         setText='<hl style="color:red;">⛾</hl>',
     )
     option_box.wrap(parent)
-    from PySide2.QtGui import QFont
+    from qtpy.QtGui import QFont
 
     option_box.setFont(QFont("Arial", 12))  # Set the font size for the options
 

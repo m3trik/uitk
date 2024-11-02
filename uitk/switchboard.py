@@ -7,7 +7,7 @@ import traceback
 from typing import List, Union, Optional
 from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
-from PySide2 import QtCore, QtGui, QtWidgets, QtUiTools
+from qtpy import QtCore, QtGui, QtWidgets, QtUiTools
 import pythontk as ptk
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins import ConvertMixin
@@ -1026,7 +1026,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
     def _get_widgets_from_ui(
         ui: QtWidgets.QWidget, inc=[], exc="_*", object_names_only=False
     ) -> dict:
-        """Find widgets in a PySide2 UI object.
+        """Find widgets in a qtpy UI object.
 
         Parameters:
             ui (QWidget): A previously loaded dynamic UI object.
@@ -1052,7 +1052,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
     def _get_widget_from_ui(
         ui: QtWidgets.QWidget, object_name: str
     ) -> QtWidgets.QWidget:
-        """Find a widget in a PySide2 UI object by its object name.
+        """Find a widget in a qtpy UI object by its object name.
 
         Parameters:
             ui (QWidget): A previously loaded dynamic UI object.
@@ -1807,7 +1807,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         filter_description: str = "All Files",
         allow_multiple: bool = True,
     ) -> Union[str, List[str]]:
-        """Open a file dialog to select files of the given type(s) using PySide2.
+        """Open a file dialog to select files of the given type(s) using qtpy.
 
         Parameters:
             file_types (Union[str, List[str]]): Extensions of file types to include. Can be a string or a list of strings.
@@ -1837,7 +1837,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
     @staticmethod
     def dir_dialog(title: str = "Select a directory", start_dir: str = "/home") -> str:
-        """Open a directory dialog to select a directory using PySide2.
+        """Open a directory dialog to select a directory using qtpy.
 
         Parameters:
             title (str): Title of the directory dialog. Default is "Select a directory."

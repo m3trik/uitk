@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets
 from uitk.widgets.menu import Menu
 from uitk.widgets.doubleSpinBox import DoubleSpinBox
 

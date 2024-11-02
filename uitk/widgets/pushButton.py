@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtWidgets
+from qtpy import QtWidgets
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
@@ -25,7 +25,7 @@ class PushButton(QtWidgets.QPushButton, AttributesMixin, RichText, TextOverlay):
 
 if __name__ == "__main__":
     import sys
-    from PySide2.QtCore import QSize
+    from qtpy.QtCore import QSize
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(
         sys.argv

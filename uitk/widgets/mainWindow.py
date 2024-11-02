@@ -3,7 +3,7 @@
 import sys
 from typing import Any, Optional, Union, List, Dict
 from functools import partial
-from PySide2 import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets
 import pythontk as ptk
 from uitk import __package__
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -563,10 +563,10 @@ class MainWindow(
 
         Parameters:
             pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
-            app_exec (bool, optional): Execute the given PySide2 application, display its window, wait for user input,
+            app_exec (bool, optional): Execute the given qtpy application, display its window, wait for user input,
                     and then terminate the program with a status code returned from the application. Defaults to False.
         Raises:
-            SystemExit: Raised if the exit code returned from the PySide2 application is not -1.
+            SystemExit: Raised if the exit code returned from the qtpy application is not -1.
         """
         super().show()
         self.sb.center_widget(self, pos)

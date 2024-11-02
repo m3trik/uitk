@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import inspect
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
 from uitk.widgets.optionBox import OptionBox
 from uitk.widgets.header import Header

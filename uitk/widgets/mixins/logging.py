@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import logging
-from PySide2 import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets
 
 
 class TextEditRedirect(logging.Handler, QtCore.QObject):

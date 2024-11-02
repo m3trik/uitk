@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import warnings
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from uitk.widgets.mixins import AttributesMixin, ConvertMixin
 
 

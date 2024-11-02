@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from uitk.signals import Signals
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin

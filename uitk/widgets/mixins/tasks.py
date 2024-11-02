@@ -2,7 +2,7 @@
 # coding=utf-8
 import sys
 import time
-from PySide2 import QtCore, QtWidgets, QtGui
+from qtpy import QtCore, QtWidgets, QtGui
 
 
 class WorkIndicator(QtWidgets.QDialog):

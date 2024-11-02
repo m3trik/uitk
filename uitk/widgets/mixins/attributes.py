@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
 
 
@@ -128,70 +128,78 @@ class AttributesMixin:
             set_limits (tuple): Set the min, max, step, and decimal value using a string value. ex. (0.01, 10, 1, 2)
             setCheckState (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
         """
-        if attr == "transfer_properties":
-            self.transfer_widget_properties(value, w)
+        try:
+            if attr == "transfer_properties":
+                self.transfer_widget_properties(value, w)
 
-        elif attr == "set_size":
-            x, y = value
-            w.resize(QtCore.QSize(x, y))
+            elif attr == "set_size":
+                x, y = value
+                w.resize(QtCore.QSize(x, y))
 
-        elif attr == "set_width":
-            w.resize(value, w.size().height())
+            elif attr == "set_width":
+                w.resize(value, w.size().height())
 
-        elif attr == "set_height":
-            w.resize(w.size().width(), value)
+            elif attr == "set_height":
+                w.resize(w.size().width(), value)
 
-        elif attr == "set_fixed_size":
-            x, y = value
-            w.setFixedSize(QtCore.QSize(x, y))
+            elif attr == "set_fixed_size":
+                x, y = value
+                w.setFixedSize(QtCore.QSize(x, y))
 
-        elif attr == "set_fixed_width":
-            w.setFixedWidth(value)
+            elif attr == "set_fixed_width":
+                w.setFixedWidth(value)
 
-        elif attr == "set_fixed_height":
-            w.setFixedHeight(value)
+            elif attr == "set_fixed_height":
+                w.setFixedHeight(value)
 
-        elif attr == "set_position":
-            if value == "cursor":
-                value = QtGui.QCursor.pos()
-            w.move(w.mapFromGlobal(value - w.rect().center()))  # move and center
+            elif attr == "set_position":
+                if value == "cursor":
+                    value = QtGui.QCursor.pos()
+                w.move(w.mapFromGlobal(value - w.rect().center()))  # move and center
 
-        elif attr == "add_menu":
-            value.addMenu(w)
+            elif attr == "add_menu":
+                value.addMenu(w)
 
-        elif attr == "insert_separator":
-            if w.__class__.__name__ == "QAction":
-                self.insertSeparator(w)
+            elif attr == "insert_separator":
+                if w.__class__.__name__ == "QAction":
+                    self.insertSeparator(w)
 
-        elif attr == "set_layout_direction":
-            self.set_attributes(w, setLayoutDirection=getattr(QtCore.Qt, value))
+            elif attr == "set_layout_direction":
+                self.set_attributes(w, setLayoutDirection=getattr(QtCore.Qt, value))
 
-        elif attr == "set_alignment":
-            self.set_attributes(w, setAlignment=getattr(QtCore.Qt, value))
+            elif attr == "set_alignment":
+                self.set_attributes(w, setAlignment=getattr(QtCore.Qt, value))
 
-        elif attr == "set_button_symbols":
-            self.set_attributes(
-                w, setButtonSymbols=getattr(QtWidgets.QAbstractSpinBox, value)
-            )
+            elif attr == "set_button_symbols":
+                self.set_attributes(
+                    w, setButtonSymbols=getattr(QtWidgets.QAbstractSpinBox, value)
+                )
 
-        # presets
-        elif attr == "set_limits":
-            self.set_spinbox_limits(w, value)
+            # presets
+            elif attr == "set_limits":
+                self.set_spinbox_limits(w, value)
 
-        elif attr == "set_by_value":
-            if isinstance(w, QtWidgets.QAbstractSpinBox):
-                self.set_spinbox_by_value(w, value)
+            elif attr == "set_by_value":
+                if isinstance(w, QtWidgets.QAbstractSpinBox):
+                    self.set_spinbox_by_value(w, value)
 
-        elif attr == "setCheckState":
-            state = {
-                0: QtCore.Qt.CheckState.Unchecked,
-                1: QtCore.Qt.CheckState.PartiallyChecked,
-                2: QtCore.Qt.CheckState.Checked,
-            }
-            w.setCheckState(state[value])
+            elif attr == "setCheckState":
+                state = {
+                    0: QtCore.Qt.CheckState.Unchecked,
+                    1: QtCore.Qt.CheckState.PartiallyChecked,
+                    2: QtCore.Qt.CheckState.Checked,
+                }
+                w.setCheckState(state[value])
 
-        else:
-            print("Error: {} has no attribute {}".format(w, attr))
+            # Attempt to directly set attributes
+            elif hasattr(w, attr):
+                setattr(w, attr, value)
+
+            else:
+                raise AttributeError(f"{w} has no attribute {attr}")
+
+        except AttributeError as e:
+            print(f"Error: {e}")
 
     def set_flags(self, **flags):
         """Sets or unsets any given window flag(s) for top-level windows.

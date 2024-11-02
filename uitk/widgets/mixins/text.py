@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from PySide2 import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets
 
 
 class RichText:
@@ -173,9 +173,9 @@ class RichText:
             self._setText(
                 text, index
             )  # temporarily set the text to get the sizeHint value.
-            sizeHint = self.richTextSizeHintDict[
-                index
-            ] = self.__class__.__base__.sizeHint(self)
+            sizeHint = self.richTextSizeHintDict[index] = (
+                self.__class__.__base__.sizeHint(self)
+            )
 
             self._setText(
                 None, index
