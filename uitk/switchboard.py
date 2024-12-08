@@ -32,7 +32,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         - Creating a subclass of Switchboard to load project UI and connect slots:
             class MyProjectUi:
                 def __new__(cls, *args, **kwargs):
-                    sb = Switchboard(*args, ui_location="my_project.ui", **kwargs)
+                    sb = Switchboard(*args, ui_source="my_project.ui", **kwargs)
                     ui = sb.my_project
                     ui.set_attributes(WA_TranslucentBackground=True)
                     ui.set_flags(Tool=True, FramelessWindowHint=True, WindowStaysOnTopHint=True)
@@ -83,9 +83,9 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
     def __init__(
         self,
         parent=None,
-        ui_location=None,
-        slot_location=None,
-        widget_location=None,
+        ui_source=None,
+        slot_source=None,
+        widget_source=None,
         ui_name_delimiters=[".", "#"],
         log_level: str = "WARNING",
     ):
@@ -95,31 +95,36 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         self.registry = FileManager()
         base_dir = 1 if not __name__ == "__main__" else 0
+
+        # Initialize registries directly
         self.registry.create(
             "ui_registry",
-            ui_location,
+            ui_source,
             inc_files="*.ui",
             base_dir=base_dir,
         )
         self.registry.create(
             "slot_registry",
-            slot_location,
+            slot_source,
             fields=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
             base_dir=base_dir,
         )
         self.registry.create(
             "widget_registry",
-            widget_location,
+            widget_source,
             fields=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
             base_dir=base_dir,
         )
-        # Include this package's widgets.
+
+        # Include this package's widgets
         self.registry.widget_registry.extend("widgets", base_dir=0)
 
         self.ui_name_delimiters = ui_name_delimiters
-
+        # print("about to create ui_namespace")
+        # self._loaded_ui = ptk.NamespaceHandler(self, "xloaded_ui")
+        # print("ui_namespace created:", self.loaded_ui)
         self._loaded_ui = {}  # All loaded ui.
         self._loaded_slots = {}  # Previously loaded slot instances
         self._connected_slots = {}  # Currently connected slots.
@@ -143,6 +148,8 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Returns:
             (obj) The attribute could be a UI, a custom widget, or a Qt module attribute.
         """
+        self.logger.debug(f"__getattr__ called for {attr_name}")
+        # print(f"__getattr__ called for {attr_name}")
         # Check if the attribute matches an already loaded UI
         if attr_name in self._loaded_ui:
             return self._loaded_ui[attr_name]
@@ -1880,16 +1887,15 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 if __name__ == "__main__":
     from uitk import example
 
-    sb = Switchboard(ui_location=example, slot_location=example.example_slots)
+    sb = Switchboard(ui_source=example, slot_source=example.example_slots)
     ui = sb.example
+    # ui.set_attributes(WA_TranslucentBackground=True)
+    # ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
+    # ui.set_style(theme="dark", style_class="translucentBgWithBorder")
 
-    ui.set_attributes(WA_TranslucentBackground=True)
-    ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
-    ui.set_style(theme="dark", style_class="translucentBgWithBorder")
-
-    print(repr(ui))
-    print(sb.QWidget)
-    ui.show(pos="screen", app_exec=True)
+    # print(repr(ui))
+    # print(sb.QWidget)
+    # ui.show(pos="screen", app_exec=True)
 
 # --------------------------------------------------------------------------------------------
 # Notes

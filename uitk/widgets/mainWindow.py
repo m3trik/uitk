@@ -638,10 +638,10 @@ if __name__ == "__main__":
         def MyButtonsObjectName(self):
             print("Button clicked!")
 
-    # Use the package to define the ui_location and slot_location.
+    # Use the package to define the ui_source and slot_source.
     sb = Switchboard(
-        ui_location="../example",
-        slot_location=MySlots,
+        ui_source="../example",
+        slot_source=MySlots,
     )
     sb.example.show(app_exec=True)
 

@@ -8,7 +8,7 @@ class TestSwitchboard(unittest.TestCase):
     def setUp(self):
         from uitk import example
 
-        self.sb = Switchboard(ui_location=example, slot_location=example.example_slots)
+        self.sb = Switchboard(ui_source=example, slot_source=example.example_slots)
         self.ui = self.sb.example
 
     def test_slot_wrapper_variants(self):
@@ -140,7 +140,7 @@ class TestCreateButtonGroups(unittest.TestCase):
     def setUp(self):
         from uitk import example
 
-        self.sb = Switchboard(ui_location=example, slot_location=example.example_slots)
+        self.sb = Switchboard(ui_source=example, slot_source=example.example_slots)
         self.ui = self.sb.example
 
         self.chk000 = self.ui.button_b.menu.add(
