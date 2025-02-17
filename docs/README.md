@@ -42,7 +42,7 @@ Create an instance of Switchboard to load and connect your dynamic ui.
 from uitk import Switchboard
 from uitk import example
 
-sb = Switchboard(ui_source=example, slot_source=example.example_slots)
+sb = Switchboard(ui_source=example, slot_source=example.ExampleSlots)
 ui = sb.example  # Access the UI using its filename.
 
 ui.set_attributes(WA_TranslucentBackground=True)  # Set properties using keyword arguments.

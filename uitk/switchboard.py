@@ -87,11 +87,13 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         slot_source=None,
         widget_source=None,
         ui_name_delimiters=[".", "#"],
-        log_level: str = "WARNING",
+        log_level: str = "DEBUG",
     ):
         super().__init__(parent)
         """ """
         self.logger.setLevel(log_level)
+
+        self.ui_name_delimiters = ui_name_delimiters
 
         self.registry = FileManager()
         base_dir = 1 if not __name__ == "__main__" else 0
@@ -121,14 +123,22 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         # Include this package's widgets
         self.registry.widget_registry.extend("widgets", base_dir=0)
 
-        self.ui_name_delimiters = ui_name_delimiters
-        # print("about to create ui_namespace")
-        # self._loaded_ui = ptk.NamespaceHandler(self, "xloaded_ui")
-        # print("ui_namespace created:", self.loaded_ui)
-        self._loaded_ui = {}  # All loaded ui.
-        self._loaded_slots = {}  # Previously loaded slot instances
-        self._connected_slots = {}  # Currently connected slots.
-        self._registered_widgets = {}  # All registered custom widgets.
+        self.loaded_ui = ptk.NamespaceHandler(
+            self,
+            "loaded_ui",
+            resolver=self._resolve_ui,
+        )  # All loaded ui.
+        self.connected_slots = ptk.NamespaceHandler(
+            self,
+            "connected_slots",
+            resolver=self._resolve_slot,
+        )  # Currently connected slots.
+        self.registered_widgets = ptk.NamespaceHandler(
+            self,
+            "registered_widgets",
+            resolver=self._resolve_widget,
+        )  # All registered custom widgets.
+        self._current_ui = None
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
@@ -136,81 +146,42 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         self.convert = ConvertMixin()
 
-    def __getattr__(self, attr_name):
-        """Lazy load UI, custom widgets, and Qt module attributes.
-
-        The attribute resolution order is as follows:
-        1. If an unknown attribute matches the name of a UI in the current UI directory, load and return it.
-        2. Else, if an unknown attribute matches the name of a custom widget in the widgets directory, register and return it.
-
-        If no match is found in any of these categories, an AttributeError is raised.
-
-        Returns:
-            (obj) The attribute could be a UI, a custom widget, or a Qt module attribute.
-        """
-        self.logger.debug(f"__getattr__ called for {attr_name}")
-        # print(f"__getattr__ called for {attr_name}")
-        # Check if the attribute matches an already loaded UI
-        if attr_name in self._loaded_ui:
-            return self._loaded_ui[attr_name]
-
-        # Check if the attribute matches a UI file exactly
-        actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
-        if actual_ui_name:
-            ui_filepath = self.registry.ui_registry.get(
-                filename=actual_ui_name, return_field="filepath"
-            )
-            if ui_filepath:
-                loaded_ui = self.load_ui(ui_filepath)
-                # Extract attributes based on the UI file path for naming consistency.
-                name = self._set_name(ui_filepath, set_attr=True)
-                ui = self.add_ui(widget=loaded_ui, name=name, path=ui_filepath)
-                return ui
-
-        # If no exact match for UI, check for a slot class with exact name match
-        found_slots = self._find_slot_class(attr_name)
-        if found_slots:
-            # Ensure UI does not exist before adding a new one
-            if attr_name in self._loaded_ui:
-                added_ui = self._loaded_ui[attr_name]
-            else:
-                added_ui = self.add_ui(name=attr_name)
-                self._loaded_ui[attr_name] = added_ui
-            self.set_slot_class(added_ui, found_slots)
-            return added_ui
-
-        # Check if the attribute matches a widget file
-        widget_class = self.registry.widget_registry.get(
-            classname=attr_name, return_field="classobj"
-        )
-        if widget_class:
-            widget = self.register_widget(widget_class)
-            return widget
-
-        raise AttributeError(
-            f"{self.__class__.__name__} has no attribute `{attr_name}`"
-        )
-
     @property
     def current_ui(self) -> QtWidgets.QWidget:
-        """Get the current UI.
+        """Get or load the current UI if not already set."""
+        if self._current_ui is not None:
+            return self._current_ui
 
-        Returns:
-            (obj) UI
-        """
-        return self.get_current_ui()
+        # If only one UI is loaded, set that UI as current.
+        if len(self.loaded_ui.keys()) == 1:
+            ui = next(iter(self.loaded_ui.values()))
+            self.current_ui = ui
+            return ui
+
+        # If only one UI file exists but hasn't been loaded yet, load and set it.
+        filepaths = self.registry.ui_registry.get("filepath")
+        if filepaths and len(filepaths) == 1:
+            ui_filepath = filepaths[0]
+            newly_loaded_ui = self.load_ui(ui_filepath)
+            name = self.format_ui_name(ui_filepath)
+            ui = self.add_ui(widget=newly_loaded_ui, name=name, path=ui_filepath)
+            self.current_ui = ui
+            return ui
+
+        return None
 
     @current_ui.setter
-    def current_ui(self, ui) -> None:
-        """Register the uiName in history as current and set slot connections.
-
-        Parameters:
-            ui (QWidget): A previously loaded dynamic ui object.
-        """
+    def current_ui(self, ui: QtWidgets.QWidget) -> None:
+        """Set the current UI and record it in UI history."""
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
 
-        self.set_current_ui(ui)
+        # Avoid re-registering the same UI
+        if self._current_ui is ui:
+            return
+
+        self._current_ui = ui
+        self._ui_history.append(ui)
 
     @property
     def prev_ui(self) -> QtWidgets.QWidget:
@@ -336,6 +307,69 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         return result
 
+    def _resolve_ui(self, attr_name):
+        """Resolver for dynamically loading UIs when accessed via NamespaceHandler.
+
+        Parameters:
+            attr_name (str): The name of the UI to load.
+
+        Returns:
+            (obj) The loaded UI object.
+        """
+        self.logger.debug(f"Resolving UI: {attr_name}")
+
+        # Check if the attribute matches a UI file
+        actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
+        if not actual_ui_name:
+            raise AttributeError(f"UI '{attr_name}' not found.")
+
+        ui_filepath = self.registry.ui_registry.get(
+            filename=actual_ui_name, return_field="filepath"
+        )
+        if not ui_filepath:
+            raise AttributeError(f"Unable to resolve filepath for '{attr_name}'.")
+
+        loaded_ui = self.load_ui(ui_filepath)
+        name = ptk.format_path(ui_filepath, "name")
+        ui = self.add_ui(widget=loaded_ui, name=name, path=ui_filepath)
+        return ui
+
+    def _resolve_slot(self, attr_name) -> QtWidgets.QWidget:
+        """Resolver for dynamically loading slot classes when accessed via NamespaceHandler."""
+        # Check if it matches a slot class
+        found_slots = self._find_slot_class(attr_name)
+        if not found_slots:
+            raise AttributeError(f"Slot class '{attr_name}' not found.")
+
+        try:  # Ensure UI does not exist before adding a new one
+            added_ui = self.loaded_ui[attr_name]
+        except KeyError:
+            added_ui = self.add_ui(name=attr_name)
+            self.loaded_ui[attr_name] = added_ui
+
+        self.set_slot_class(added_ui, found_slots)
+        return added_ui
+
+    def _resolve_widget(self, attr_name):
+        """Resolver for dynamically loading registered widgets when accessed.
+
+        Parameters:
+            attr_name (str): The name of the widget to resolve.
+
+        Returns:
+            object: The widget object if it's found, or None if it's not found.
+        """
+        self.logger.debug(f"Resolving widget: {attr_name}")
+
+        # Check if the attribute matches a widget file
+        widget_class = self.registry.widget_registry.get(
+            classname=attr_name, return_field="classobj"
+        )
+        if not widget_class:
+            raise AttributeError(f"Unable to resolve widget class for '{attr_name}'.")
+
+        return self.register_widget(widget_class)
+
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.
 
@@ -362,11 +396,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             except IndexError:
                 continue
 
-            widget_class_info = self.registry.widget_registry.get(
-                classname=class_name, return_field="classobj"
-            )
-            if widget_class_info and class_name not in self._registered_widgets:
-                self.register_widget(widget_class_info)
+            if class_name not in self.registered_widgets.keys():
+                widget_class_info = self.registry.widget_registry.get(
+                    classname=class_name, return_field="classobj"
+                )
+                if widget_class_info:
+                    self.register_widget(widget_class_info)
 
         # Load the UI file using QUiLoader or equivalent.
         loaded_ui = self.load(file)
@@ -396,12 +431,9 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Returns:
             MainWindow: The UI wrapped in the MainWindow class.
         """
-        # Check if the UI already exists to prevent duplicates
-        if name in self._loaded_ui:
-            self.logger.warning(
-                f"UI '{name}' already exists, returning existing instance."
-            )
-            return self._loaded_ui[name]
+        if name in self.loaded_ui.keys():
+            self.logger.warning(f"UI '{name}' already exists.")
+            return self.loaded_ui[name]  # Early return
 
         # Determine the central widget (can be None)
         central_widget = (
@@ -418,7 +450,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         path = ptk.format_path(path, "path") if path else None
 
         # Create the MainWindow, with or without a central widget
-        main_window = self.MainWindow(
+        main_window = self.registered_widgets.MainWindow(
             switchboard_instance=self,
             central_widget=central_widget,
             name=name,
@@ -427,28 +459,15 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             log_level=log_level,
             **kwargs,
         )
-        self._loaded_ui[main_window.name] = main_window
+        print(0, name, main_window)
+        self.loaded_ui[name] = main_window
+        print(1, self.loaded_ui.items())
 
         # Debugging info
         self.logger.debug(
             f"MainWindow Added: Name={main_window.name}, Tags={main_window.tags}, Path={main_window.path}"
         )
         return main_window
-
-    def _set_name(self, file: str, set_attr: bool = False) -> str:
-        """Sets the name attribute based on the filename of the UI file.
-
-        Parameters:
-            file (str): The file path of the UI file.
-            set_attr (bool): If True, sets a switchboard attribute using the name.
-
-        Returns:
-            str: The derived name attribute.
-        """
-        name = ptk.format_path(file, "name")
-        if set_attr:
-            setattr(self, name, file)
-        return name
 
     def _parse_tags(self, name: str) -> set:
         """Parse tags from the given name.
@@ -478,7 +497,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             return ui
 
         elif isinstance(ui, str):
-            return getattr(self, ui)
+            return getattr(self.loaded_ui, ui)
 
         elif isinstance(ui, (list, set, tuple)):
             return [self.get_ui(u) for u in ui]
@@ -490,55 +509,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             raise ValueError(
                 f"Invalid datatype for ui: Expected str or QWidget, got {type(ui)}"
             )
-
-    def get_current_ui(self) -> QtWidgets.QWidget:
-        """Get the current UI.
-
-        Returns:
-            (obj): A previously loaded dynamic UI object.
-        """
-        try:
-            return self._current_ui
-
-        except AttributeError:
-            # If only one UI is loaded, set that UI as current.
-            if len(self._loaded_ui) == 1:
-                ui = next(iter(self._loaded_ui.values()))
-                self.set_current_ui(ui)
-                return ui
-
-            # if a single UI has been added, but not yet loaded; load and set it as current.
-            filepaths = self.registry.ui_registry.get("filepath")
-            if len(filepaths) == 1:
-                filepath = filepaths[0]
-                loaded_ui = self.load_ui(filepath)
-                # Extract attributes based on the UI file path for naming consistency.
-                name = self._set_name(filepath, set_attr=True)
-                # Extract attributes based on the UI file path for naming consistency.
-                ui = self.add_ui(widget=loaded_ui, name=name, path=filepath)
-                self.set_current_ui(ui)
-                return ui
-
-            return None
-
-    def set_current_ui(self, ui) -> None:
-        """Register the specified dynamic UI as the current one in the application's history.
-        Once registered, the UI widget can be accessed through the `current_ui` property while it remains the current UI.
-        If the given UI is already the current UI, the method simply returns without making any changes.
-
-        Parameters:
-            ui (QWidget): A previously loaded dynamic UI object.
-        """
-        if not isinstance(ui, QtWidgets.QWidget):
-            raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
-
-        current_ui = getattr(self, "_current_ui", None)
-        if current_ui == ui:
-            return
-
-        self._current_ui = ui
-        self._ui_history.append(ui)
-        # self.logger.info(f"_ui_history: {u.name for u in self._ui_history}")  # debug
 
     def register(
         self, ui_location=None, slot_location=None, widget_location=None, base_dir=1
@@ -708,20 +678,30 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Attributes:
             switchboard (method): A method in the slot class that returns the Switchboard instance.
         """
+        self.logger.debug(f"Setting slot class for UI: {ui}")
+
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
 
-        # Make this switchboard instance accessible through the class.
-        clss.switchboard = lambda *_: self
+        def accepts_switchboard(clss):
+            """Check if the class accepts the switchboard as an argument."""
+            init_params = signature(clss.__init__).parameters
+            return "switchboard" in init_params or any(
+                param.kind == Parameter.VAR_KEYWORD for param in init_params.values()
+            )
 
-        # Instance the class
-        instance = clss()
+        # Only pass `switchboard` if explicitly expected or if `**kwargs` is present
+        kwargs = {"switchboard": self} if accepts_switchboard(clss) else {}
+
+        # Instantiate the class with the appropriate arguments
+        self.logger.debug(f"Creating slot class instance: {clss} with kwargs: {kwargs}")
+        instance = clss(**kwargs)
         self.logger.debug(f"Slot class instance created: {instance}")
 
         # Store the slot instance within the UI
         ui._slots = instance
-        # Make the class accessible through this switchboard instance
-        setattr(self, clss.__name__, instance)
+        # Make the class accessible through the connected_slots container
+        self.connected_slots[clss.__name__] = instance
 
         return instance
 
@@ -736,11 +716,16 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Returns:
             object: A class instance.
         """
+        self.logger.debug(f"Getting slot class for UI: {ui}")
+
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
 
         # If slots are already set, return the existing slot class
         if hasattr(ui, "_slots"):
+            self.logger.debug(
+                f"Slot class already set for '{ui}'. Returning existing slot class {ui._slots}."
+            )
             return ui._slots
 
         try:  # If no slots are set, attempt to find the slot class
@@ -751,11 +736,20 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         # If slot class is not found, search for relatives' slot classes
         if not found_class:
+            self.logger.debug(
+                f"Slot class not found for '{ui}'. Searching for relatives."
+            )
             for relative_name in self.get_ui_relatives(ui, upstream=True, reverse=True):
                 relative_ui = self.get_ui(relative_name)
                 if relative_ui:
+                    self.logger.debug(
+                        f"Searching for slot class in relative '{relative_ui}'."
+                    )
                     try:
                         found_class = self._find_slot_class(relative_ui)
+                        self.logger.debug(
+                            f"Slot class found for '{relative_ui}': {found_class}"
+                        )
                         break
                     except ValueError:
                         self.logger.info(traceback.format_exc())
@@ -983,9 +977,8 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             if signal:
                 slot_wrapper = self._create_slot_wrapper(slot, widget)
                 signal.connect(slot_wrapper)
-                if widget not in self._connected_slots:
-                    self._connected_slots[widget] = {}
-                self._connected_slots[widget][signal_name] = slot_wrapper
+                # Using setdefault to ensure an empty dict is created for 'widget' if not already present
+                self.connected_slots.setdefault(widget, {})[signal_name] = slot_wrapper
             else:
                 self.logger.warning(
                     f"No valid signal found for '{widget.ui.name}.{widget.name}' {widget.derived_type}. Expected str, got '{type(signal_name)}'"
@@ -1020,12 +1013,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             if not slot:
                 continue
             if disconnect_all:
-                for signal_name, slot in self._connected_slots.get(widget, {}).items():
+                for signal_name, slot in self.connected_slots.get(widget, {}).items():
                     getattr(widget, signal_name).disconnect(slot)
             else:
                 signals = getattr(slot, "signals", self.get_default_signals(widget))
                 for signal_name in signals:
-                    if signal_name in self._connected_slots.get(widget, {}):
+                    if signal_name in self.connected_slots.get(widget, {}):
                         getattr(widget, signal_name).disconnect(slot)
         ui.is_connected = False
 
@@ -1075,12 +1068,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
     def register_widget(self, widget):
         """Register any custom widgets using the module names.
-        Registered widgets can be accessed as properties. ex. sb.PushButton()
+        Registered widgets can be accessed as properties. ex. sb.registered_widgets.PushButton()
         """
-        if widget.__name__ not in self._registered_widgets:
+        if widget.__name__ not in self.registered_widgets.keys():
             self.registerCustomWidget(widget)
-            self._registered_widgets[widget.__name__] = widget
-            setattr(self, widget.__name__, widget)
+            self.registered_widgets[widget.__name__] = widget
             return widget
 
     def get_widget(self, name, ui=None):
@@ -1107,7 +1099,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             method (obj): The method in which to get the widget of.
 
         Returns:
-            (obj) widget. ie. <b000 widget> from <b000 method>.
+            (obj) The widget of the same name. ie. <b000 widget> from <b000 method>.
         """
         if not method:
             return None
@@ -1115,7 +1107,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         return next(
             iter(
                 w
-                for u in self._loaded_ui.values()
+                for u in self.loaded_ui.values()
                 for w in u.widgets
                 if w.get_slot() == method
             ),
@@ -1692,7 +1684,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         """
         if isinstance(checkboxes, (str)):
             if ui is None:
-                ui = self.get_current_ui()
+                ui = self.current_ui
             checkboxes = self.get_widgets_by_string_pattern(ui, checkboxes)
 
         prefix = "-" if "-" in axis else ""  # separate the prefix and axis
@@ -1725,7 +1717,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         """
         if isinstance(checkboxes, str):
             if ui is None:
-                ui = self.get_current_ui()
+                ui = self.current_ui
             checkboxes = self.get_widgets_by_string_pattern(ui, checkboxes)
 
         prefix = ""

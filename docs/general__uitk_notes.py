@@ -2,16 +2,15 @@
 
 
 # ======================================================================
-class MyProject:
-    ...
+class MyProject: ...
 
 
 class MyProjectSlots(MyProject):
-    def __init__(self):
+    def __init__(self, **kwargs):
         # Slot classes are given the `switchboard` function when they are initialized.
-        self.sb = self.switchboard()
+        self.sb = kwargs.get("switchboard")
         # Access your UI using it filename.
-        self.ui = self.sb.my_project
+        self.ui = self.sb.loaded_ui.my_project
         print(self.ui)
 
         # Call a method from another class.
@@ -43,7 +42,7 @@ class MyProjectSlots(MyProject):
             setToolTip="Spinbox example",
         )
         widget.menu.add(
-            self.sb.Label,
+            self.sb.registered_widgets.Label,
             setText="Custom Label",
             setObjectName="lbl000",
             setToolTip="This is an example of a custom label",
@@ -68,7 +67,7 @@ class MyProjectSlots(MyProject):
     #     ]
     #     [
     #         widget.menu.add(
-    #             self.sb.CheckBox, setObjectName=chk, setText=typ, setChecked=state
+    #             self.sb.registered_widgets.CheckBox, setObjectName=chk, setText=typ, setChecked=state
     #         )
     #         for chk, typ, state in values
     #     ]

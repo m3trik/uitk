@@ -79,12 +79,11 @@ class MainWindow(
         Properties:
             - slots (object): The slots class instance associated with this main window.
             - is_stacked_widget (bool): Returns True if the main window is part of a QStackedWidget.
-            - is_current (bool): Indicates whether the UI is the currently active UI in the Switchboard.
+            - is_current_ui (bool): Indicates whether the UI is the currently active UI in the Switchboard.
 
         Methods:
             - init_child(widget): Initializes and manages child widgets within the main window.
             - init_child_changed_signal(widget): Sets up signals for child widgets when their state changes.
-            - set_as_current(): Sets this UI as the currently active UI within the Switchboard.
             - defer(func, *args, priority=0): Defers the execution of a function until the window is shown.
             - trigger_deferred(): Executes all deferred methods in priority order.
 
@@ -189,13 +188,13 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    def __repr__(self) -> str:
-        """Return a string representation of the MainWindow instance."""
-        return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
+    # def __repr__(self) -> str:
+    #     """Return a string representation of the MainWindow instance."""
+    #     return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
 
-    def __str__(self):
-        """Return the filename"""
-        return self.name
+    # def __str__(self):
+    #     """Return the filename"""
+    #     return self.name
 
     def init_child(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None:
         """Assign additional attributes to the widget for easier access and better management.
@@ -297,13 +296,23 @@ class MainWindow(
         return isinstance(self.parent(), QtWidgets.QStackedWidget)
 
     @property
-    def is_current(self):
+    def is_current_ui(self):
         """Returns True if the widget is the currently active UI, False otherwise."""
-        return self == self.sb.get_current_ui()
+        return self == self.sb.current_ui
 
-    def set_as_current(self):
-        """Sets the widget as the currently active UI."""
-        self.sb.set_current_ui(self)
+    @is_current_ui.setter
+    def is_current_ui(self, value: bool):
+        """Sets the widget as the currently active UI if value is True.
+
+        Raises:
+            ValueError if an incompatible value is given.
+        """
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"'is_current_ui' must be a boolean value. Got: {value} Type: {type(value)}"
+            )
+        if value:
+            self.sb.current_ui = self
 
     def _set_legal_name(self, name, set_attr=False) -> str:
         """Sets the legal name attribute for the object based on the name of the UI file.
@@ -587,7 +596,7 @@ class MainWindow(
 
     def focusInEvent(self, event):
         """Override the focus event to set the current UI when this window gains focus."""
-        self.sb.set_current_ui(self)
+        self.sb.current_ui = self
         super().focusInEvent(event)
         self.on_focus_in.emit()
 
@@ -632,8 +641,9 @@ if __name__ == "__main__":
     class MyProject: ...
 
     class MySlots(MyProject):
-        def __init__(self):
-            self.sb = self.switchboard()
+        def __init__(self, **kwargs):
+            self.sb = kwargs.get("switchboard")
+            self.ui = self.sb.loaded_ui.example
 
         def MyButtonsObjectName(self):
             print("Button clicked!")
