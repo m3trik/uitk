@@ -119,6 +119,11 @@ class MainWindow(
         self.lock_style = False
         self.original_style = ""
 
+        self.connected_slots = ptk.NamespaceHandler(
+            self,
+            "connected_slots",
+        )  # All connected slots.
+
         # Install event filter before setting central widget
         self.installEventFilter(self)
 
@@ -192,9 +197,9 @@ class MainWindow(
     #     """Return a string representation of the MainWindow instance."""
     #     return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
 
-    # def __str__(self):
-    #     """Return the filename"""
-    #     return self.name
+    def __str__(self):
+        """Return the filename"""
+        return self.name
 
     def init_child(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None:
         """Assign additional attributes to the widget for easier access and better management.
@@ -203,12 +208,16 @@ class MainWindow(
             widget: A widget to be initialized and added as an attribute.
             kwargs: Additional widget attributes as keyword arguments.
         """
+        self.logger.debug(f"Initializing child widget: {widget}")
+
         if widget in self.widgets:
             self.logger.info(f"Widget {widget} is already initialized.")
             return
 
         if not isinstance(widget, QtWidgets.QWidget):
-            self.logger.warning(f"Attempted to initialize a non-widget: {widget}.")
+            self.logger.warning(
+                f"Attempted to initialize a non-widget: {widget}. type: {type(widget)}"
+            )
             return
 
         # Initialize widget attributes
@@ -218,15 +227,26 @@ class MainWindow(
         widget.type = type(widget)
         widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
 
-        # Lambda functions for widget operations
-        widget.get_slot = lambda w=widget: getattr(
-            self.sb.get_slot_class(w.ui), w.name, None
-        )
-        widget.init_slot = lambda *args, w=widget: self.init_slot(w)
-        widget.call_slot = lambda *args, w=widget, **kwargs: self.call_slot(
-            w, *args, **kwargs
-        )
-        widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
+        def get_slot_func(w=widget):
+            return self.sb.get_slot(self, w.name)
+
+        def call_slot_func(*args, w=widget, **kwargs):
+            self.call_slot(w, *args, **kwargs)
+
+        def get_slot_init_func(w=widget):
+            return self.sb.get_slot(self, f"{w.name}_init")
+
+        def call_slot_init_func(*args, w=widget, **kwargs):
+            self.init_slot(w, *args, **kwargs)
+
+        def connect_slot_func(w=widget, s=None):
+            self.sb.connect_slot(w, s)
+
+        widget.get_slot = get_slot_func
+        widget.call_slot = call_slot_func
+        widget.get_slot_init = get_slot_init_func
+        widget.init_slot = call_slot_init_func
+        widget.connect_slot = connect_slot_func
 
         # Additional widget setup
         widget.refresh = True
@@ -246,6 +266,9 @@ class MainWindow(
         self.init_child_changed_signal(widget)
 
         if self.is_connected:
+            self.logger.debug(
+                f"The {self.name} slots are already connected. Connecting: {widget}."
+            )
             self.sb.connect_slot(widget)
 
         # Recursively initialize child widgets
@@ -375,7 +398,12 @@ class MainWindow(
             self._deferred[priority] = (method,)
 
     def init_slot(self, widget, force=False):
-        """Only calls the slot init if 'widget.refresh' or 'force' is True. widget.refresh defaults to True on first call."""
+        """Only calls the slot init if 'widget.refresh' or 'force' is True. widget.refresh defaults to True on first call.
+
+        Parameters:
+            widget (QWidget): The widget whose associated slot is to be initialized.
+            force (bool, optional): Whether to force the slot initialization. Defaults to False.
+        """
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(
                 f"Expected a widget object, but received {type(widget)}"
@@ -407,9 +435,7 @@ class MainWindow(
             )
             return
 
-        slots = self.sb.get_slot_class(self)
-        slot = getattr(slots, widget.name, None)
-
+        slot = widget.get_slot()
         if slot:
             if widget.refresh:
                 self.init_slot(widget)

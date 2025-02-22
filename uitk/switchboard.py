@@ -87,7 +87,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         slot_source=None,
         widget_source=None,
         ui_name_delimiters=[".", "#"],
-        log_level: str = "DEBUG",
+        log_level: str = "INFO",
     ):
         super().__init__(parent)
         """ """
@@ -128,11 +128,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             "loaded_ui",
             resolver=self._resolve_ui,
         )  # All loaded ui.
-        self.connected_slots = ptk.NamespaceHandler(
-            self,
-            "connected_slots",
-            resolver=self._resolve_slot,
-        )  # Currently connected slots.
         self.registered_widgets = ptk.NamespaceHandler(
             self,
             "registered_widgets",
@@ -168,6 +163,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             self.current_ui = ui
             return ui
 
+        self.logger.warning("No current UI set.")
         return None
 
     @current_ui.setter
@@ -205,108 +201,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         except IndexError:
             return None
 
-    @staticmethod
-    def get_base_name(widget) -> str:
-        """Return the base name of a widget's object name.
-        A base name is defined as a character sequence at the beginning of the widget's object name,
-        ending at the last letter character.
-
-        Parameters:
-            widget (str/obj): The widget or its object name as a string.
-
-        Returns:
-            (str) The base name of the widget's object name as a string.
-
-        Example:
-            get_base_name('some_name') #returns: 'some_name'
-            get_base_name('some_name_') #returns: 'some_name'
-            get_base_name('some_name_03') #returns: 'some_name'
-        """
-        if not isinstance(widget, str):
-            widget = widget.objectName()
-
-        match = re.search(r"^\w*[a-zA-Z]", widget)
-        return match.group() if match else widget
-
-    def convert_to_legal_name(self, name: str) -> str:
-        """Convert the given name to its legal representation, replacing any non-alphanumeric characters with underscores.
-
-        Parameters:
-            name (str): The name to convert.
-
-        Returns:
-            str: The legal name with non-alphanumeric characters replaced by underscores.
-        """
-        return re.sub(r"[^0-9a-zA-Z]", "_", name)
-
-    def find_ui_filename(
-        self, legal_name: str, unique_match: bool = False
-    ) -> Union[str, List[str], None]:
-        """Convert the given legal name to its original name(s) by searching the UI files.
-
-        Parameters:
-            legal_name (str): The legal name to convert back to the original name.
-            unique_match (bool, optional): If True, return None when there is more than one possible match, otherwise, return all possible matches. Defaults to False.
-
-        Returns:
-            Union[str, List[str], None]: The original name(s) or None if unique_match is True and multiple matches are found.
-        """
-        # Replace underscores with a regex pattern to match any non-alphanumeric character
-        pattern = re.sub(r"_", r"[^0-9a-zA-Z]", legal_name)
-
-        # Retrieve all filenames from the ui_registry container
-        filenames = self.registry.ui_registry.get("filename")
-        # Find matches using the regex pattern
-        matches = [name for name in filenames if re.fullmatch(pattern, name)]
-
-        if unique_match:
-            return None if len(matches) != 1 else matches[0]
-        else:
-            return matches
-
-    @staticmethod
-    def get_property_from_ui_file(file, prop):
-        """Retrieves a specified property from a given UI or XML file.
-
-        This method parses the given file, expecting it to be in either .ui or .xml format,
-        and searches for all elements with the specified property. It then returns a list
-        of these elements, where each element is represented as a list of tuples containing
-        the tag and text of its sub-elements.
-
-        Parameters:
-            file (str): The path to the UI or XML file to be parsed. The file must have a .ui or .xml extension.
-            prop (str): The property to search for within the file.
-
-        Returns:
-            list: A list of lists containing tuples with the tag and text of the sub-elements of each element found with the specified property.
-
-        Raises:
-            ValueError: If the file extension is not .ui or .xml, or if there is an error in parsing the file.
-
-        Example:
-            get_property_from_ui_file('example.ui', 'customwidget')
-            # Output: [[('class', 'CustomWidget'), ('extends', 'QWidget')], ...]
-        """
-        if not (file.endswith(".ui") or file.endswith(".xml")):
-            raise ValueError(
-                f"Invalid file extension. Expected a .ui or .xml file, got: {file}"
-            )
-
-        tree = ElementTree()
-        tree.parse(file)
-
-        # Find all elements with the given property
-        elements = tree.findall(".//{}".format(prop))
-
-        result = []
-        for elem in elements:
-            prop_list = []
-            for subelem in elem:
-                prop_list.append((subelem.tag, subelem.text))
-            result.append(prop_list)
-
-        return result
-
     def _resolve_ui(self, attr_name):
         """Resolver for dynamically loading UIs when accessed via NamespaceHandler.
 
@@ -320,8 +214,8 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         # Check if the attribute matches a UI file
         actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
-        if not actual_ui_name:
-            raise AttributeError(f"UI '{attr_name}' not found.")
+        if not actual_ui_name:  # Check if the attribute matches a slot class
+            return self._resolve_ui_using_slots(attr_name)
 
         ui_filepath = self.registry.ui_registry.get(
             filename=actual_ui_name, return_field="filepath"
@@ -332,10 +226,20 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         loaded_ui = self.load_ui(ui_filepath)
         name = ptk.format_path(ui_filepath, "name")
         ui = self.add_ui(widget=loaded_ui, name=name, path=ui_filepath)
+
+        self.logger.debug(f"UI '{name}' loaded successfully.")
         return ui
 
-    def _resolve_slot(self, attr_name) -> QtWidgets.QWidget:
-        """Resolver for dynamically loading slot classes when accessed via NamespaceHandler."""
+    def _resolve_ui_using_slots(self, attr_name) -> QtWidgets.QWidget:
+        """Resolve a UI using a slot class if no UI file is found.
+        Accounts for scenarios where the UI is registered during slot class instantiation.
+
+        Parameters:
+            attr_name (str): The name of the UI to load.
+
+        Returns:
+            (obj) The loaded UI object.
+        """
         # Check if it matches a slot class
         found_slots = self._find_slot_class(attr_name)
         if not found_slots:
@@ -368,7 +272,41 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         if not widget_class:
             raise AttributeError(f"Unable to resolve widget class for '{attr_name}'.")
 
-        return self.register_widget(widget_class)
+        widget = self.register_widget(widget_class)
+        self.logger.debug(
+            f"Widget class '{widget_class.__name__}' loaded successfully."
+        )
+        return widget
+
+    def register(
+        self, ui_location=None, slot_location=None, widget_location=None, base_dir=1
+    ):
+        """Add new locations to the Switchboard.
+
+        Parameters:
+            ui_location (optional): Path to the UI file.
+            slot_location (optional): Slot class.
+            widget_location (optional): Path to widget files.
+            base_dir (optional): Base directory for relative paths. Derived from the call stack.
+                0 for this modules dir, 1 for the caller module, etc. (duplicate entries removed)
+        """
+        # Check for the existence of the ui_location before extending the UI files container
+        if ui_location is not None and not self.registry.contains_location(
+            ui_location, "ui_registry"
+        ):
+            self.registry.ui_registry.extend(ui_location, base_dir=base_dir)
+
+        # Check for the existence of the slot_location before extending the slot files container
+        if slot_location is not None and not self.registry.contains_location(
+            slot_location, "slot_registry"
+        ):
+            self.registry.slot_registry.extend(slot_location, base_dir=base_dir)
+
+        # Check for the existence of the widget_location before extending the widget files container
+        if widget_location is not None and not self.registry.contains_location(
+            widget_location, "widget_registry"
+        ):
+            self.registry.widget_registry.extend(widget_location, base_dir=base_dir)
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.
@@ -403,7 +341,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 if widget_class_info:
                     self.register_widget(widget_class_info)
 
-        # Load the UI file using QUiLoader or equivalent.
+        # Load the UI file using QUiLoader.
         loaded_ui = self.load(file)
         return loaded_ui
 
@@ -413,7 +351,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         name: str = None,
         tags: set = None,
         path: str = None,
-        log_level: int = "WARNING",
         **kwargs,
     ) -> QtWidgets.QMainWindow:
         """Adds a given central widget or QMainWindow to the switchboard by wrapping it in MainWindow.
@@ -425,7 +362,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             name (str, optional): Custom name for the UI. Defaults to the central widget's objectName if provided.
             tags (set, optional): Tags to associate with the UI. Defaults to None.
             path (str, optional): Path associated with the UI. Defaults to None.
-            log_level (int, optional): Logging level. Defaults to logging.WARNING.
             **kwargs: Additional keyword arguments to pass to the MainWindow.
 
         Returns:
@@ -456,30 +392,15 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             name=name,
             tags=tags,
             path=path,
-            log_level=log_level,
             **kwargs,
         )
-        print(0, name, main_window)
         self.loaded_ui[name] = main_window
-        print(1, self.loaded_ui.items())
 
         # Debugging info
         self.logger.debug(
             f"MainWindow Added: Name={main_window.name}, Tags={main_window.tags}, Path={main_window.path}"
         )
         return main_window
-
-    def _parse_tags(self, name: str) -> set:
-        """Parse tags from the given name.
-
-        Parameters:
-            name (str): The name to parse tags from.
-
-        Returns:
-            set: A set of tags parsed from the name.
-        """
-        parts = name.split("#")
-        return set(parts[1:]) if len(parts) > 1 else set()
 
     def get_ui(self, ui=None) -> QtWidgets.QWidget:
         """Get a dynamic UI using its string name, or if no argument is given, return the current UI.
@@ -510,174 +431,8 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 f"Invalid datatype for ui: Expected str or QWidget, got {type(ui)}"
             )
 
-    def register(
-        self, ui_location=None, slot_location=None, widget_location=None, base_dir=1
-    ):
-        """Add new locations to the Switchboard.
-
-        Parameters:
-            ui_location (optional): Path to the UI file.
-            slot_location (optional): Slot class.
-            widget_location (optional): Path to widget files.
-            base_dir (optional): Base directory for relative paths. Derived from the call stack.
-                0 for this modules dir, 1 for the caller module, etc. (duplicate entries removed)
-        """
-        # Check for the existence of the ui_location before extending the UI files container
-        if ui_location is not None and not self.registry.contains_location(
-            ui_location, "ui_registry"
-        ):
-            self.registry.ui_registry.extend(ui_location, base_dir=base_dir)
-
-        # Check for the existence of the slot_location before extending the slot files container
-        if slot_location is not None and not self.registry.contains_location(
-            slot_location, "slot_registry"
-        ):
-            self.registry.slot_registry.extend(slot_location, base_dir=base_dir)
-
-        # Check for the existence of the widget_location before extending the widget files container
-        if widget_location is not None and not self.registry.contains_location(
-            widget_location, "widget_registry"
-        ):
-            self.registry.widget_registry.extend(widget_location, base_dir=base_dir)
-
-    def get_ui_relatives(
-        self, ui, upstream=False, exact=False, downstream=False, reverse=False
-    ):
-        """Get the UI relatives based on the hierarchy matching.
-
-        Parameters:
-            ui (str or obj): A dynamic UI object or its name for which relatives are to be found.
-            upstream (bool, optional): If True, return the relatives that are upstream of the target UI. Defaults to False.
-            exact (bool, optional): If True, return only the relatives that exactly match the target UI. Defaults to False.
-            downstream (bool, optional): If True, return the relatives that are downstream of the target UI. Defaults to False.
-            reverse (bool, optional): If True, search for relatives in the reverse direction. Defaults to False.
-
-        Returns:
-            list: A list of UI relative names (if ui is given as a string) or UI relative objects (if ui is given as an object) found based on the hierarchy matching.
-        """
-        ui_name = str(ui)
-        ui_filenames = self.registry.ui_registry.get(
-            "filename"
-        )  # Get the filenames from the named tuple
-
-        relatives = ptk.get_matching_hierarchy_items(
-            ui_filenames,
-            ui_name,
-            upstream,
-            exact,
-            downstream,
-            reverse,
-            self.ui_name_delimiters,
-        )
-        # Return strings if ui given as a string, else UI objects.
-        return relatives if ui_name == ui else self.get_ui(relatives)
-
-    def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
-        """Get the UI history.
-
-        Parameters:
-            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
-            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
-            inc (str/list): The objects(s) to include.
-                    supports using the '*' operator: startswith*, *endswith, *contains*
-                    Will include all items that satisfy ANY of the given search terms.
-                    meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
-                    strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str/list): The objects(s) to exclude. Similar to include.
-                    exclude take precedence over include.
-        Returns:
-            (str/list): String of a single UI name or list of UI names based on the index or slice.
-
-        Examples:
-            ui_history() -> ['previousName4', 'previousName3', 'previousName2', 'previousName1', 'currentName']
-            ui_history(-2) -> 'previousName1'
-            ui_history(slice(-3, None)) -> ['previousName2', 'previousName1', 'currentName']
-        """
-        # Keep original list length restricted to last 200 elements
-        self._ui_history = self._ui_history[-200:]
-        # Remove any previous duplicates if they exist; keeping the last added element.
-        if not allow_duplicates:
-            self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
-
-        history = self._ui_history
-        if inc or exc:
-            history = ptk.filter_list(history, inc, exc, lambda u: u.name)
-
-        if index is None:
-            return history  # Return entire list if index is None
-        else:
-            try:
-                return history[index]  # Return UI(s) based on the index
-            except IndexError:
-                return [] if isinstance(index, int) else None
-
-    def slot_history(
-        self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[]
-    ):
-        """Get the slot history.
-
-        Parameters:
-            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
-            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
-            inc (str/int/list): The objects(s) to include.
-                            supports using the '*' operator: startswith*, *endswith, *contains*
-                            Will include all items that satisfy ANY of the given search terms.
-                            meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
-                            strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str/int/list): The objects(s) to exclude. Similar to include.
-                            exclude take precedence over include.
-            add (object/list, optional): New entrie(s) to append to the slot history.
-            remove (object/list, optional): Entry/entries to remove from the slot history.
-
-        Returns:
-            (object/list): Slot method(s) based on index or slice.
-        """
-        # Keep original list length restricted to last 200 elements
-        self._slot_history = self._slot_history[-200:]
-        # Append new entries to the history
-        if add:
-            self._slot_history.extend(ptk.make_iterable(add))
-        # Remove entries from the history
-        if remove:
-            remove_items = ptk.make_iterable(remove)
-            for item in remove_items:
-                try:
-                    self._slot_history.remove(item)
-                except ValueError:
-                    self.logger.warning(f"Item '{item}' not found in slot history.")
-        # Remove any previous duplicates if they exist; keeping the last added element.
-        if not allow_duplicates:
-            self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
-
-        history = self._slot_history
-        if inc or exc:
-            history = ptk.filter_list(
-                history, inc, exc, lambda m: m.__name__, check_unmapped=True
-            )
-
-        if index is None:
-            return history  # Return entire list if index is None
-        else:
-            try:
-                return history[index]  # Return slot(s) based on the index
-            except IndexError:
-                return [] if isinstance(index, int) else None
-
     def set_slot_class(self, ui, clss):
-        """This method sets the slot class instance for a loaded dynamic UI object. It takes a UI and
-        a class and sets the instance as the slots for the given UI. Finally, it
-        initializes the widgets and returns the slot class instance.
-
-        Parameters:
-            ui (QWidget): A previously loaded dynamic UI object.
-            clss (class): A class that will be set as the slots for the given UI.
-
-        Returns:
-            object: An instance of the given class.
-
-        Attributes:
-            switchboard (method): A method in the slot class that returns the Switchboard instance.
-        """
+        """This method sets the slot class instance for a loaded dynamic UI object."""
         self.logger.debug(f"Setting slot class for UI: {ui}")
 
         if not isinstance(ui, QtWidgets.QWidget):
@@ -692,17 +447,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         # Only pass `switchboard` if explicitly expected or if `**kwargs` is present
         kwargs = {"switchboard": self} if accepts_switchboard(clss) else {}
-
-        # Instantiate the class with the appropriate arguments
-        self.logger.debug(f"Creating slot class instance: {clss} with kwargs: {kwargs}")
         instance = clss(**kwargs)
-        self.logger.debug(f"Slot class instance created: {instance}")
+        self.logger.debug(f"Slot class {instance} created with kwargs: {kwargs}")
 
         # Store the slot instance within the UI
         ui._slots = instance
-        # Make the class accessible through the connected_slots container
-        self.connected_slots[clss.__name__] = instance
-
+        self.logger.debug(f"Slot class {ui._slots} set for UI: {ui.name}")
         return instance
 
     def get_slot_class(self, ui):
@@ -721,11 +471,8 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
 
-        # If slots are already set, return the existing slot class
-        if hasattr(ui, "_slots"):
-            self.logger.debug(
-                f"Slot class already set for '{ui}'. Returning existing slot class {ui._slots}."
-            )
+        if hasattr(ui, "_slots"):  # Return the existing slot class
+            self.logger.debug(f"Returning existing slot class {ui._slots}.")
             return ui._slots
 
         try:  # If no slots are set, attempt to find the slot class
@@ -939,27 +686,13 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         return wrapper
 
     def connect_slot(self, widget, slot=None):
-        """Connects a slot to its associated signals for a widget.
-
-        The signals to be connected are defined in the slot's 'signals' attribute.
-        If the slot doesn't have a 'signals' attribute, the widget's default signals are used instead.
-        If a signal name isn't a string or no valid signal is found for the widget, a warning is logged.
-        If the slot is not provided, it will attempt to use the default slot associated with the widget.
-        If no slot is found, a ValueError is raised.
-
-        Parameters:
-            widget (QWidget): The widget to connect the slot to.
-            slot (object, optional): The slot to be connected. If not provided, the default slot associated with the widget will be used.
-
-        Raises:
-            ValueError: If no slot is found for the widget.
-        """
+        """Connects a slot to its associated signals for a widget."""
+        self.logger.debug(
+            f"Connecting slot for '{widget.ui.name}.{widget.name or widget}'"
+        )
         if not slot:
-            slot = widget.get_slot()
+            slot = self.get_slot_from_widget(widget)
             if not slot:
-                self.logger.info(
-                    f"No slot found for widget {widget.ui.name}.{widget.name}"
-                )
                 return
 
         signals = getattr(
@@ -971,18 +704,25 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         for signal_name in signals:
             if not isinstance(signal_name, str):
                 raise TypeError(
-                    f"Invalid signal for '{widget.ui.name}.{widget.name}' {widget.derived_type}. Expected str, got '{type(signal_name)}'"
+                    f"Invalid signal for '{widget.ui.name}.{widget.name or widget}' {widget.derived_type}. "
+                    f"Expected str, got '{type(signal_name)}'"
                 )
             signal = getattr(widget, signal_name, None)
-            if signal:
-                slot_wrapper = self._create_slot_wrapper(slot, widget)
-                signal.connect(slot_wrapper)
-                # Using setdefault to ensure an empty dict is created for 'widget' if not already present
-                self.connected_slots.setdefault(widget, {})[signal_name] = slot_wrapper
-            else:
+            if not signal:
                 self.logger.warning(
-                    f"No valid signal found for '{widget.ui.name}.{widget.name}' {widget.derived_type}. Expected str, got '{type(signal_name)}'"
+                    f"No valid signal found for '{widget.ui.name}.{widget.name}' {widget.derived_type}. "
+                    f"Expected str, got '{type(signal_name)}'"
                 )
+                continue
+            slot_wrapper = self._create_slot_wrapper(slot, widget)
+            signal.connect(slot_wrapper)
+
+            # Store the connection directly in the slot instance's connections attribute
+            widget.ui.connected_slots.setdefault(widget, {})[signal_name] = slot_wrapper
+
+            self.logger.debug(
+                f"Slot connected for '{widget.ui.name}.{widget.name or widget}' {widget.derived_type}"
+            )
 
     def disconnect_slots(self, ui, widgets=None, disconnect_all=False):
         """Disconnects the signals from their respective slots for the widgets of the given UI.
@@ -1002,14 +742,18 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             If successful, sets `<ui>.is_connected` to False indicating that
             the slots for the UI's widgets are disconnected.
         """
+        self.logger.debug(f"Disconnecting slots for '{ui}'")
+
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
+
         if widgets is None:
             if not ui.is_connected:
                 return
             widgets = ui.widgets
+
         for widget in ptk.make_iterable(widgets):
-            slot = widget.get_slot()
+            slot = self.get_slot_from_widget(widget)
             if not slot:
                 continue
             if disconnect_all:
@@ -1020,7 +764,246 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                 for signal_name in signals:
                     if signal_name in self.connected_slots.get(widget, {}):
                         getattr(widget, signal_name).disconnect(slot)
+
         ui.is_connected = False
+        self.logger.debug(f"Slots disconnected for '{ui}'")
+
+    def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
+        """Get the UI history.
+
+        Parameters:
+            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
+            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
+            inc (str/list): The objects(s) to include.
+                    supports using the '*' operator: startswith*, *endswith, *contains*
+                    Will include all items that satisfy ANY of the given search terms.
+                    meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
+                    strings containing 'Normal'. NOT strings satisfying both terms.
+            exc (str/list): The objects(s) to exclude. Similar to include.
+                    exclude take precedence over include.
+        Returns:
+            (str/list): String of a single UI name or list of UI names based on the index or slice.
+
+        Examples:
+            ui_history() -> ['previousName4', 'previousName3', 'previousName2', 'previousName1', 'currentName']
+            ui_history(-2) -> 'previousName1'
+            ui_history(slice(-3, None)) -> ['previousName2', 'previousName1', 'currentName']
+        """
+        # Keep original list length restricted to last 200 elements
+        self._ui_history = self._ui_history[-200:]
+        # Remove any previous duplicates if they exist; keeping the last added element.
+        if not allow_duplicates:
+            self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
+
+        history = self._ui_history
+        if inc or exc:
+            history = ptk.filter_list(history, inc, exc, lambda u: u.name)
+
+        if index is None:
+            return history  # Return entire list if index is None
+        else:
+            try:
+                return history[index]  # Return UI(s) based on the index
+            except IndexError:
+                return [] if isinstance(index, int) else None
+
+    def slot_history(
+        self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[]
+    ):
+        """Get the slot history.
+
+        Parameters:
+            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
+            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
+            inc (str/int/list): The objects(s) to include.
+                            supports using the '*' operator: startswith*, *endswith, *contains*
+                            Will include all items that satisfy ANY of the given search terms.
+                            meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
+                            strings containing 'Normal'. NOT strings satisfying both terms.
+            exc (str/int/list): The objects(s) to exclude. Similar to include.
+                            exclude take precedence over include.
+            add (object/list, optional): New entrie(s) to append to the slot history.
+            remove (object/list, optional): Entry/entries to remove from the slot history.
+
+        Returns:
+            (object/list): Slot method(s) based on index or slice.
+        """
+        # Keep original list length restricted to last 200 elements
+        self._slot_history = self._slot_history[-200:]
+        # Append new entries to the history
+        if add:
+            self._slot_history.extend(ptk.make_iterable(add))
+        # Remove entries from the history
+        if remove:
+            remove_items = ptk.make_iterable(remove)
+            for item in remove_items:
+                try:
+                    self._slot_history.remove(item)
+                except ValueError:
+                    self.logger.warning(f"Item '{item}' not found in slot history.")
+        # Remove any previous duplicates if they exist; keeping the last added element.
+        if not allow_duplicates:
+            self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
+
+        history = self._slot_history
+        if inc or exc:
+            history = ptk.filter_list(
+                history, inc, exc, lambda m: m.__name__, check_unmapped=True
+            )
+
+        if index is None:
+            return history  # Return entire list if index is None
+        else:
+            try:
+                return history[index]  # Return slot(s) based on the index
+            except IndexError:
+                return [] if isinstance(index, int) else None
+
+    def get_ui_relatives(
+        self, ui, upstream=False, exact=False, downstream=False, reverse=False
+    ):
+        """Get the UI relatives based on the hierarchy matching.
+
+        Parameters:
+            ui (str or obj): A dynamic UI object or its name for which relatives are to be found.
+            upstream (bool, optional): If True, return the relatives that are upstream of the target UI. Defaults to False.
+            exact (bool, optional): If True, return only the relatives that exactly match the target UI. Defaults to False.
+            downstream (bool, optional): If True, return the relatives that are downstream of the target UI. Defaults to False.
+            reverse (bool, optional): If True, search for relatives in the reverse direction. Defaults to False.
+
+        Returns:
+            list: A list of UI relative names (if ui is given as a string) or UI relative objects (if ui is given as an object) found based on the hierarchy matching.
+        """
+        ui_name = str(ui)
+        ui_filenames = self.registry.ui_registry.get(
+            "filename"
+        )  # Get the filenames from the named tuple
+
+        relatives = ptk.get_matching_hierarchy_items(
+            ui_filenames,
+            ui_name,
+            upstream,
+            exact,
+            downstream,
+            reverse,
+            self.ui_name_delimiters,
+        )
+        # Return strings if ui given as a string, else UI objects.
+        return relatives if ui_name == ui else self.get_ui(relatives)
+
+    @staticmethod
+    def get_base_name(widget) -> str:
+        """Return the base name of a widget's object name.
+        A base name is defined as a character sequence at the beginning of the widget's object name,
+        ending at the last letter character.
+
+        Parameters:
+            widget (str/obj): The widget or its object name as a string.
+
+        Returns:
+            (str) The base name of the widget's object name as a string.
+
+        Example:
+            get_base_name('some_name') #returns: 'some_name'
+            get_base_name('some_name_') #returns: 'some_name'
+            get_base_name('some_name_03') #returns: 'some_name'
+        """
+        if not isinstance(widget, str):
+            widget = widget.objectName()
+
+        match = re.search(r"^\w*[a-zA-Z]", widget)
+        return match.group() if match else widget
+
+    def convert_to_legal_name(self, name: str) -> str:
+        """Convert the given name to its legal representation, replacing any non-alphanumeric characters with underscores.
+
+        Parameters:
+            name (str): The name to convert.
+
+        Returns:
+            str: The legal name with non-alphanumeric characters replaced by underscores.
+        """
+        return re.sub(r"[^0-9a-zA-Z]", "_", name)
+
+    def find_ui_filename(
+        self, legal_name: str, unique_match: bool = False
+    ) -> Union[str, List[str], None]:
+        """Convert the given legal name to its original name(s) by searching the UI files.
+
+        Parameters:
+            legal_name (str): The legal name to convert back to the original name.
+            unique_match (bool, optional): If True, return None when there is more than one possible match, otherwise, return all possible matches. Defaults to False.
+
+        Returns:
+            Union[str, List[str], None]: The original name(s) or None if unique_match is True and multiple matches are found.
+        """
+        # Replace underscores with a regex pattern to match any non-alphanumeric character
+        pattern = re.sub(r"_", r"[^0-9a-zA-Z]", legal_name)
+
+        # Retrieve all filenames from the ui_registry container
+        filenames = self.registry.ui_registry.get("filename")
+        # Find matches using the regex pattern
+        matches = [name for name in filenames if re.fullmatch(pattern, name)]
+
+        if unique_match:
+            return None if len(matches) != 1 else matches[0]
+        else:
+            return matches
+
+    @staticmethod
+    def get_property_from_ui_file(file, prop):
+        """Retrieves a specified property from a given UI or XML file.
+
+        This method parses the given file, expecting it to be in either .ui or .xml format,
+        and searches for all elements with the specified property. It then returns a list
+        of these elements, where each element is represented as a list of tuples containing
+        the tag and text of its sub-elements.
+
+        Parameters:
+            file (str): The path to the UI or XML file to be parsed. The file must have a .ui or .xml extension.
+            prop (str): The property to search for within the file.
+
+        Returns:
+            list: A list of lists containing tuples with the tag and text of the sub-elements of each element found with the specified property.
+
+        Raises:
+            ValueError: If the file extension is not .ui or .xml, or if there is an error in parsing the file.
+
+        Example:
+            get_property_from_ui_file('example.ui', 'customwidget')
+            # Output: [[('class', 'CustomWidget'), ('extends', 'QWidget')], ...]
+        """
+        if not (file.endswith(".ui") or file.endswith(".xml")):
+            raise ValueError(
+                f"Invalid file extension. Expected a .ui or .xml file, got: {file}"
+            )
+
+        tree = ElementTree()
+        tree.parse(file)
+
+        # Find all elements with the given property
+        elements = tree.findall(".//{}".format(prop))
+
+        result = []
+        for elem in elements:
+            prop_list = []
+            for subelem in elem:
+                prop_list.append((subelem.tag, subelem.text))
+            result.append(prop_list)
+
+        return result
+
+    def _parse_tags(self, name: str) -> set:
+        """Parse tags from the given name.
+
+        Parameters:
+            name (str): The name to parse tags from.
+
+        Returns:
+            set: A set of tags parsed from the name.
+        """
+        parts = name.split("#")
+        return set(parts[1:]) if len(parts) > 1 else set()
 
     @staticmethod
     def _get_widgets_from_ui(
@@ -1069,6 +1052,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
     def register_widget(self, widget):
         """Register any custom widgets using the module names.
         Registered widgets can be accessed as properties. ex. sb.registered_widgets.PushButton()
+
+        Parameters:
+            widget (obj): The widget to register.
+
+        Returns:
+            (obj): The registered widget
         """
         if widget.__name__ not in self.registered_widgets.keys():
             self.registerCustomWidget(widget)
@@ -1091,6 +1080,34 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             ui = self.get_ui(ui)
 
         return next((w for w in ui.widgets if w.name == name), None)
+
+    def get_slot(self, slot_class, slot_name):
+        """Get the slot from the slot class.
+
+        Parameters:
+            slot_class (obj): The slot class to get the slot from.
+            slot_name (str): The name of the slot to get.
+
+        Returns:
+            (obj) The slot of the same name. ie. <b000 slot> from <b000 slot_class>.
+        """
+        slot = getattr(slot_class, slot_name, None)
+        self.logger.info(f"Slot {'' if slot else 'not'} found in {slot_class}")
+        return slot
+
+    def get_slot_from_widget(self, widget):
+        """Get the corresponding slot from a given widget.
+
+        Parameters:
+            widget (obj): The widget in which to get the slot of.
+
+        Returns:
+            (obj) The slot of the same name. ie. <b000 slot> from <b000 widget>.
+        """
+        self.logger.debug(f"Getting slot from widget: {widget}")
+
+        slot_clss = self.get_slot_class(widget.ui)
+        return self.get_slot(slot_clss, widget.name)
 
     def get_widget_from_slot(self, method):
         """Get the corresponding widget from a given method.
@@ -1780,7 +1797,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             The result of the message box interaction if buttons are provided, None otherwise.
         """
         if not hasattr(self, "_messageBox"):
-            self._messageBox = self.MessageBox(self.parent())
+            self._messageBox = self.registered_widgets.MessageBox(self.parent())
 
         self._messageBox.location = location
         self._messageBox.timeout = timeout
