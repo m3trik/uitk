@@ -31,7 +31,7 @@ class MainWindow(
         name: str = None,
         tags: set = None,
         path: str = None,
-        log_level: int = "WARNING",
+        log_level: int = "INFO",
         **kwargs,
     ):
         """MainWindow is a customized QMainWindow class that integrates additional functionality
@@ -73,8 +73,11 @@ class MainWindow(
             - is_connected (bool): Indicates whether the UI is connected to its respective slots.
             - prevent_hide (bool): Prevents the window from being hidden if set to True.
             - widgets (set): A set of child widgets managed within the main window.
-            - _deferred (dict): A dictionary of deferred methods to be executed after the window is shown.
             - settings (QtCore.QSettings): The settings object for storing UI-specific settings.
+            - connected_slots (NamespaceHandler): Namespace with Dict-like access to connected slots.
+            - lock_style (bool): Prevents the window's stylesheet from being changed if set to True.
+            - original_style (str): The original stylesheet of the window before any changes.
+            - _deferred (dict): A dictionary of deferred methods to be executed after the window is shown.
 
         Properties:
             - slots (object): The slots class instance associated with this main window.
@@ -211,7 +214,7 @@ class MainWindow(
         self.logger.debug(f"Initializing child widget: {widget}")
 
         if widget in self.widgets:
-            self.logger.info(f"Widget {widget} is already initialized.")
+            self.logger.debug(f"Widget {widget} is already initialized.")
             return
 
         if not isinstance(widget, QtWidgets.QWidget):
@@ -641,9 +644,13 @@ class MainWindow(
         self.on_close.emit()
 
     def setStyleSheet(self, style: str):
-        """Overrides the setStyleSheet method to respect locking."""
+        """Overrides the setStyleSheet method to respect locking.
+
+        Parameters:
+            style (str): The stylesheet to apply to the window
+        """
         if self.lock_style:
-            self.logger.warning(
+            self.logger.debug(
                 "Stylesheet is locked: Unlock first using: <window>.lock_style = False."
             )
         else:
@@ -654,7 +661,7 @@ class MainWindow(
         if not self.lock_style:
             self.setStyleSheet(self.original_style)
         else:
-            self.logger.warning(
+            self.logger.debug(
                 "Cannot reset stylesheet while locked. Unlock first using: <window>.lock_style = False."
             )
 

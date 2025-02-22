@@ -87,7 +87,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         slot_source=None,
         widget_source=None,
         ui_name_delimiters=[".", "#"],
-        log_level: str = "INFO",
+        log_level: str = "WARNING",
     ):
         super().__init__(parent)
         """ """
@@ -368,7 +368,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             MainWindow: The UI wrapped in the MainWindow class.
         """
         if name in self.loaded_ui.keys():
-            self.logger.warning(f"UI '{name}' already exists.")
+            self.logger.debug(f"UI '{name}' already exists.")
             return self.loaded_ui[name]  # Early return
 
         # Determine the central widget (can be None)
@@ -1092,7 +1092,10 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             (obj) The slot of the same name. ie. <b000 slot> from <b000 slot_class>.
         """
         slot = getattr(slot_class, slot_name, None)
-        self.logger.info(f"Slot {'' if slot else 'not'} found in {slot_class}")
+        if slot is None:
+            self.logger.debug(f"Slot {slot_name} not found in {slot_class}")
+        else:
+            self.logger.debug(f"Slot {slot_name} found in {slot_class}")
         return slot
 
     def get_slot_from_widget(self, widget):
