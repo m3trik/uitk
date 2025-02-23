@@ -230,26 +230,15 @@ class MainWindow(
         widget.type = type(widget)
         widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
 
-        def get_slot_func(w=widget):
-            return self.sb.get_slot(self, w.name)
-
-        def call_slot_func(*args, w=widget, **kwargs):
-            self.call_slot(w, *args, **kwargs)
-
-        def get_slot_init_func(w=widget):
-            return self.sb.get_slot(self, f"{w.name}_init")
-
-        def call_slot_init_func(*args, w=widget, **kwargs):
-            self.init_slot(w, *args, **kwargs)
-
-        def connect_slot_func(w=widget, s=None):
-            self.sb.connect_slot(w, s)
-
-        widget.get_slot = get_slot_func
-        widget.call_slot = call_slot_func
-        widget.get_slot_init = get_slot_init_func
-        widget.init_slot = call_slot_init_func
-        widget.connect_slot = connect_slot_func
+        # Lambda functions for widget operations
+        widget.get_slot = lambda w=widget: getattr(
+            self.sb.get_slot_class(w.ui), w.name, None
+        )
+        widget.init_slot = lambda *args, w=widget: self.init_slot(w)
+        widget.call_slot = lambda *args, w=widget, **kwargs: self.call_slot(
+            w, *args, **kwargs
+        )
+        widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
 
         # Additional widget setup
         widget.refresh = True
