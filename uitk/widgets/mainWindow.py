@@ -133,7 +133,6 @@ class MainWindow(
         # Initialize settings
         self.settings = QtCore.QSettings(__package__, self.name)
 
-        self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
         self.set_attributes(WA_NoChildEventsForParent=True, **kwargs)
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
 
@@ -169,7 +168,7 @@ class MainWindow(
     def name(self, value: str) -> None:
         """Setter for the window name, which also sets the legal name and tag-free name."""
         self.setObjectName(value or "")
-        self.legal_name = self._set_legal_name(self.objectName(), True)
+        self.legal_name = self.sb.convert_to_legal_name(self.objectName())
         # self.legal_name_no_tags = self._set_legal_name_no_tags(self.objectName(), True)
 
     def __getattr__(self, attr_name):
@@ -328,29 +327,6 @@ class MainWindow(
             )
         if value:
             self.sb.current_ui = self
-
-    def _set_legal_name(self, name, set_attr=False) -> str:
-        """Sets the legal name attribute for the object based on the name of the UI file.
-
-        Parameters:
-            name (str): The name to generate the legal name from.
-            set_attr (bool): If True, sets a switchboard attribute using the legal name. Defaults to False.
-
-        Returns:
-            str: The legal name attribute.
-        """
-        legal_name = self.sb.convert_to_legal_name(name)
-
-        if set_attr:
-            if legal_name and name != legal_name:
-                if self.sb.registry.ui_registry.get(filename=legal_name):
-                    pass
-                    # self.logger.warning(
-                    #     f"Legal name '{legal_name}' already exists. Attribute not set."
-                    # )
-                else:
-                    setattr(self.sb, legal_name, self)
-        return legal_name
 
     def has_tags(self, tags):
         """Check if any of the given tag(s) are present in the UI's tags set.
