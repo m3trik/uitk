@@ -1665,32 +1665,53 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         Parameters:
             ui (QWidget): A previously loaded dynamic UI object.
-            widgets (str/list): ie. 'chk000-2' or [tb.menu.chk000, tb.menu.chk001]
-            signals (str/list): ie. 'toggled' or ['toggled']
-            slots (obj/list): ie. self.cmb002 or [self.cmb002]
+            widgets (str/list): 'chk000-2' or [tb.menu.chk000, tb.menu.chk001]
+            signals (str/list): 'toggled' or ['toggled']
+            slots (obj/list): self.cmb002 or [self.cmb002]
 
         Example:
             connect_multi(tb.menu, 'chk000-2', 'toggled', self.cmb002)
         """
-        if isinstance(widgets, (str)):
+        if isinstance(widgets, str):
             widgets = self.get_widgets_by_string_pattern(ui, widgets)
+        else:
+            widgets = ptk.make_iterable(widgets)
 
-        # if the variables are not of a list type; convert them.
-        widgets = ptk.make_iterable(widgets)
+        # Ensure the other arguments are iterable
         signals = ptk.make_iterable(signals)
         slots = ptk.make_iterable(slots)
 
+        self.logger.debug(
+            f"[connect_multi] Connecting: {widgets} to {signals} -> {slots}"
+        )
+
         for widget in widgets:
+            if not widget:
+                self.logger.warning(f"Skipped: Invalid widget '{widget}'")
+                continue
+
             for signal_name in signals:
-                signal = getattr(widget, signal_name)
-                for slot in slots:
-                    try:
-                        signal.connect(slot)
-                    except TypeError as e:
-                        self.logger.error(
-                            f"Failed to connect signal {signal_name} to slot {slot}: {e}"
+                try:
+                    signal = getattr(widget, signal_name, None)
+                    if not signal:
+                        self.logger.warning(
+                            f"Skipped: Widget '{widget}' has no signal '{signal_name}'"
                         )
-                        raise
+                        continue
+
+                    for slot in slots:
+                        if not callable(slot):
+                            self.logger.warning(
+                                f"Skipped: Slot '{slot}' is not callable"
+                            )
+                            continue
+
+                        signal.connect(slot)
+
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to connect signal '{signal_name}' on '{widget}' to '{slot}': {e}"
+                    )
 
     def set_axis_for_checkboxes(self, checkboxes, axis, ui=None):
         """Set the given checkbox's check states to reflect the specified axis.
