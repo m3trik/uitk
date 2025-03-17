@@ -244,7 +244,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     def attach_to(self, widget: QtWidgets.QWidget):
         """Attaches the header to the given widget by adding the header on top.
-        After which, the header can be accessed as an attribute of the widget.
+        After which, the header can be accessed as an attribute of the widget. <widget>.header
 
         Parameters:
             widget (QWidget): The widget to which the header will be attached.

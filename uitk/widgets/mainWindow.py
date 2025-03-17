@@ -31,7 +31,7 @@ class MainWindow(
         name: str = None,
         tags: set = None,
         path: str = None,
-        log_level: int = "WARNING",
+        log_level: int = "INFO",
         **kwargs,
     ):
         """MainWindow is a customized QMainWindow class that integrates additional functionality
@@ -73,18 +73,20 @@ class MainWindow(
             - is_connected (bool): Indicates whether the UI is connected to its respective slots.
             - prevent_hide (bool): Prevents the window from being hidden if set to True.
             - widgets (set): A set of child widgets managed within the main window.
-            - _deferred (dict): A dictionary of deferred methods to be executed after the window is shown.
             - settings (QtCore.QSettings): The settings object for storing UI-specific settings.
+            - connected_slots (NamespaceHandler): Namespace with Dict-like access to connected slots.
+            - lock_style (bool): Prevents the window's stylesheet from being changed if set to True.
+            - original_style (str): The original stylesheet of the window before any changes.
+            - _deferred (dict): A dictionary of deferred methods to be executed after the window is shown.
 
         Properties:
             - slots (object): The slots class instance associated with this main window.
             - is_stacked_widget (bool): Returns True if the main window is part of a QStackedWidget.
-            - is_current (bool): Indicates whether the UI is the currently active UI in the Switchboard.
+            - is_current_ui (bool): Indicates whether the UI is the currently active UI in the Switchboard.
 
         Methods:
             - init_child(widget): Initializes and manages child widgets within the main window.
             - init_child_changed_signal(widget): Sets up signals for child widgets when their state changes.
-            - set_as_current(): Sets this UI as the currently active UI within the Switchboard.
             - defer(func, *args, priority=0): Defers the execution of a function until the window is shown.
             - trigger_deferred(): Executes all deferred methods in priority order.
 
@@ -120,13 +122,17 @@ class MainWindow(
         self.lock_style = False
         self.original_style = ""
 
+        self.connected_slots = ptk.NamespaceHandler(
+            self,
+            "connected_slots",
+        )  # All connected slots.
+
         # Install event filter before setting central widget
         self.installEventFilter(self)
 
         # Initialize settings
         self.settings = QtCore.QSettings(__package__, self.name)
 
-        self.set_legal_attribute(self.sb, self.name, self, also_set_original=True)
         self.set_attributes(WA_NoChildEventsForParent=True, **kwargs)
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
 
@@ -162,7 +168,7 @@ class MainWindow(
     def name(self, value: str) -> None:
         """Setter for the window name, which also sets the legal name and tag-free name."""
         self.setObjectName(value or "")
-        self.legal_name = self._set_legal_name(self.objectName(), True)
+        self.legal_name = self.sb.convert_to_legal_name(self.objectName())
         # self.legal_name_no_tags = self._set_legal_name_no_tags(self.objectName(), True)
 
     def __getattr__(self, attr_name):
@@ -189,9 +195,9 @@ class MainWindow(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    def __repr__(self) -> str:
-        """Return a string representation of the MainWindow instance."""
-        return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
+    # def __repr__(self) -> str:
+    #     """Return a string representation of the MainWindow instance."""
+    #     return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
 
     def __str__(self):
         """Return the filename"""
@@ -204,12 +210,16 @@ class MainWindow(
             widget: A widget to be initialized and added as an attribute.
             kwargs: Additional widget attributes as keyword arguments.
         """
+        self.logger.debug(f"Initializing child widget: {widget}")
+
         if widget in self.widgets:
-            self.logger.info(f"Widget {widget} is already initialized.")
+            self.logger.debug(f"Widget {widget} is already initialized.")
             return
 
         if not isinstance(widget, QtWidgets.QWidget):
-            self.logger.warning(f"Attempted to initialize a non-widget: {widget}.")
+            self.logger.warning(
+                f"Attempted to initialize a non-widget: {widget}. type: {type(widget)}"
+            )
             return
 
         # Initialize widget attributes
@@ -247,6 +257,9 @@ class MainWindow(
         self.init_child_changed_signal(widget)
 
         if self.is_connected:
+            self.logger.debug(
+                f"The {self.name} slots are already connected. Connecting: {widget}."
+            )
             self.sb.connect_slot(widget)
 
         # Recursively initialize child widgets
@@ -297,36 +310,23 @@ class MainWindow(
         return isinstance(self.parent(), QtWidgets.QStackedWidget)
 
     @property
-    def is_current(self):
+    def is_current_ui(self):
         """Returns True if the widget is the currently active UI, False otherwise."""
-        return self == self.sb.get_current_ui()
+        return self == self.sb.current_ui
 
-    def set_as_current(self):
-        """Sets the widget as the currently active UI."""
-        self.sb.set_current_ui(self)
+    @is_current_ui.setter
+    def is_current_ui(self, value: bool):
+        """Sets the widget as the currently active UI if value is True.
 
-    def _set_legal_name(self, name, set_attr=False) -> str:
-        """Sets the legal name attribute for the object based on the name of the UI file.
-
-        Parameters:
-            name (str): The name to generate the legal name from.
-            set_attr (bool): If True, sets a switchboard attribute using the legal name. Defaults to False.
-
-        Returns:
-            str: The legal name attribute.
+        Raises:
+            ValueError if an incompatible value is given.
         """
-        legal_name = self.sb.convert_to_legal_name(name)
-
-        if set_attr:
-            if legal_name and name != legal_name:
-                if self.sb.registry.ui_registry.get(filename=legal_name):
-                    pass
-                    # self.logger.warning(
-                    #     f"Legal name '{legal_name}' already exists. Attribute not set."
-                    # )
-                else:
-                    setattr(self.sb, legal_name, self)
-        return legal_name
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"'is_current_ui' must be a boolean value. Got: {value} Type: {type(value)}"
+            )
+        if value:
+            self.sb.current_ui = self
 
     def has_tags(self, tags):
         """Check if any of the given tag(s) are present in the UI's tags set.
@@ -366,7 +366,12 @@ class MainWindow(
             self._deferred[priority] = (method,)
 
     def init_slot(self, widget, force=False):
-        """Only calls the slot init if 'widget.refresh' or 'force' is True. widget.refresh defaults to True on first call."""
+        """Only calls the slot init if 'widget.refresh' or 'force' is True. widget.refresh defaults to True on first call.
+
+        Parameters:
+            widget (QWidget): The widget whose associated slot is to be initialized.
+            force (bool, optional): Whether to force the slot initialization. Defaults to False.
+        """
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(
                 f"Expected a widget object, but received {type(widget)}"
@@ -398,9 +403,7 @@ class MainWindow(
             )
             return
 
-        slots = self.sb.get_slot_class(self)
-        slot = getattr(slots, widget.name, None)
-
+        slot = widget.get_slot()
         if slot:
             if widget.refresh:
                 self.init_slot(widget)
@@ -587,7 +590,7 @@ class MainWindow(
 
     def focusInEvent(self, event):
         """Override the focus event to set the current UI when this window gains focus."""
-        self.sb.set_current_ui(self)
+        self.sb.current_ui = self
         super().focusInEvent(event)
         self.on_focus_in.emit()
 
@@ -606,9 +609,13 @@ class MainWindow(
         self.on_close.emit()
 
     def setStyleSheet(self, style: str):
-        """Overrides the setStyleSheet method to respect locking."""
+        """Overrides the setStyleSheet method to respect locking.
+
+        Parameters:
+            style (str): The stylesheet to apply to the window
+        """
         if self.lock_style:
-            self.logger.warning(
+            self.logger.debug(
                 "Stylesheet is locked: Unlock first using: <window>.lock_style = False."
             )
         else:
@@ -619,7 +626,7 @@ class MainWindow(
         if not self.lock_style:
             self.setStyleSheet(self.original_style)
         else:
-            self.logger.warning(
+            self.logger.debug(
                 "Cannot reset stylesheet while locked. Unlock first using: <window>.lock_style = False."
             )
 
@@ -632,16 +639,17 @@ if __name__ == "__main__":
     class MyProject: ...
 
     class MySlots(MyProject):
-        def __init__(self):
-            self.sb = self.switchboard()
+        def __init__(self, **kwargs):
+            self.sb = kwargs.get("switchboard")
+            self.ui = self.sb.loaded_ui.example
 
         def MyButtonsObjectName(self):
             print("Button clicked!")
 
-    # Use the package to define the ui_location and slot_location.
+    # Use the package to define the ui_source and slot_source.
     sb = Switchboard(
-        ui_location="../example",
-        slot_location=MySlots,
+        ui_source="../example",
+        slot_source=MySlots,
     )
     sb.example.show(app_exec=True)
 

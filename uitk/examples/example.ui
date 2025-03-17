@@ -93,6 +93,9 @@
          <property name="bottomMargin">
           <number>0</number>
          </property>
+         <property name="spacing">
+          <number>2</number>
+         </property>
          <item row="0" column="0">
           <widget class="PushButton" name="button_a">
            <property name="minimumSize">
@@ -175,47 +178,23 @@
        </widget>
       </item>
       <item>
-       <widget class="CollapsableGroup" name="groupBox_2">
-        <property name="title">
-         <string>• • •</string>
+       <widget class="QTextEdit" name="textedit">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Ignored">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
         </property>
-        <property name="alignment">
-         <set>Qt::AlignCenter</set>
+        <property name="verticalScrollBarPolicy">
+         <enum>Qt::ScrollBarAlwaysOff</enum>
         </property>
-        <layout class="QVBoxLayout" name="verticalLayout_2">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QTextEdit" name="textedit">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Ignored">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="verticalScrollBarPolicy">
-            <enum>Qt::ScrollBarAlwaysOff</enum>
-           </property>
-           <property name="html">
-            <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+        <property name="html">
+         <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
 &lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'MS Shell Dlg 2'; font-size:7.85455pt; font-weight:400; font-style:normal;&quot;&gt;
 &lt;p align=&quot;center&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:7.85455pt; text-decoration: underline;&quot;&gt;TextEdit&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
+        </property>
        </widget>
       </item>
      </layout>
@@ -233,12 +212,6 @@ p, li { white-space: pre-wrap; }
    <class>PushButton</class>
    <extends>QPushButton</extends>
    <header>widgets.pushbutton.h</header>
-  </customwidget>
-  <customwidget>
-   <class>CollapsableGroup</class>
-   <extends>QGroupBox</extends>
-   <header>uitk.widgets.collapsableGroup.CollapsableGroup.h</header>
-   <container>1</container>
   </customwidget>
   <customwidget>
    <class>DoubleSpinBox</class>

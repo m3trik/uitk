@@ -5,15 +5,15 @@ from uitk import Signals
 
 class ExampleSlots:
     def __init__(self, *args, **kwargs):
-        self.sb = self.switchboard()
+        self.sb = kwargs.get("switchboard")
         self.ui = self.sb.loaded_ui.example
 
     def header_init(self, widget):
         widget.configure_buttons(
             menu_button=True, minimize_button=True, hide_button=True
         )
-        widget.menu.setTitle("DRAG ME!")
-        widget.menu.add(self.sb.Label, setObjectName="label", setText="Clickable Label")
+        widget.menu.setTitle("DRAGGABLE MENU")
+        widget.menu.add(self.sb.registered_widgets.Label, setObjectName="label", setText="Clickable Label")
 
     def label(self):
         widget = self.ui.header.menu.label
@@ -51,9 +51,7 @@ class ExampleSlots:
 
     @staticmethod
     def textedit_init(widget):
-        widget.setText(
-            "• Collapse this text edit by clicking on the three dots above it.\n\n• Widget states are restored the next time this UI is opened."
-        )
+        widget.setText("• Widget states are restored the next time this UI is opened.")
 
     @Signals("textChanged", "returnPressed")
     def textedit(self, widget):
