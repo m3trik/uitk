@@ -52,6 +52,7 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
         self.cursor_inside = False  # Track whether the cursor is inside the region.
 
         self.setVisible(True)
+        self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
     @property

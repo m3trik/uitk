@@ -24,7 +24,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         "menu_button": ("≡", "show_menu"),
         "minimize_button": ("–", "minimize_window"),
         "hide_button": ("×", "hide_window"),
-        "pin_button": ("\u25CB", "toggle_pin"),
+        "pin_button": ("\u25cb", "toggle_pin"),
     }
 
     def __init__(
@@ -50,7 +50,6 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         self.setLayout(self.container_layout)
         self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
-        self.setStyleSheet(self.get_style_sheet())
 
         # Extract button-related arguments
         button_args = {
@@ -58,32 +57,16 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             for key in list(kwargs.keys())
             if key in self.button_definitions
         }
+        self.setProperty("class", self.__class__.__name__)
+        font = self.font()
+        font.setBold(True)
+        self.setFont(font)
 
+        self.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+        self.setIndent(8)  # adds left-side indentation to the text
         self.setFixedHeight(20)
-        self.configure_buttons(**button_args)
+        self.config_buttons(**button_args)
         self.set_attributes(**kwargs)
-
-    def get_button_style_sheet(self):
-        """Return the stylesheet for buttons."""
-        return """
-            QPushButton { background-color: transparent; border: none;}
-            QPushButton:hover { background-color: rgba(127,127,127,200); border: none;}
-            QPushButton#hide_button:hover { background-color: rgba(255,0,0,200); border: none;}
-        """
-
-    def get_style_sheet(self):
-        """Return the stylesheet for the header label."""
-        return """
-            QLabel {
-                background-color: rgba(127,127,127,200);
-                border: none;
-                font-weight: bold;
-            }
-            QLabel::hover {
-                background-color: rgba(127,127,127,200);
-                border: none;
-            }
-        """
 
     def create_button(self, text, callback, button_type=None):
         """Create a button with the given text and callback."""
@@ -91,11 +74,10 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         if button_type:
             button.setObjectName(button_type)
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
-        button.setStyleSheet(self.get_button_style_sheet())
         button.clicked.connect(callback)
         return button
 
-    def configure_buttons(self, **kwargs):
+    def config_buttons(self, **kwargs):
         """Configure buttons based on the given parameters."""
         # Clear existing buttons from the layout
         for i in reversed(range(self.container_layout.count())):
@@ -198,7 +180,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         self.pinned = state
         self.window().prevent_hide = state
-        pin_button_text = "\u25CF" if state else "\u25CB"
+        pin_button_text = "\u25cf" if state else "\u25cb"
 
         pin_button = self.buttons.get("pin_button")
         if pin_button:

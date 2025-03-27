@@ -20,6 +20,7 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
         )
 
         self.setMinimumSize(10, 10)
+        # self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)  # Assume this method is defined elsewhere
 
         # Set settings last to ensure it can trigger initialization if necessary

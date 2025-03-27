@@ -71,6 +71,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         else:
             self.timeout = None
 
+        self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
     def setStandardButtons(self, *buttons):

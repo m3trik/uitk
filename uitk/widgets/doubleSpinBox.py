@@ -17,6 +17,7 @@ class DoubleSpinBox(QtWidgets.QDoubleSpinBox, AttributesMixin):
         self.menu = Menu(self, mode="option", fixed_item_height=20)
         self.msgBox = MessageBox(self, timeout=1)
 
+        self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
     def textFromValue(self, value: float) -> str:

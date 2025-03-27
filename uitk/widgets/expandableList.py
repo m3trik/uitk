@@ -80,6 +80,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         )
 
         self.installEventFilter(self)
+        self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
     def get_items(self):

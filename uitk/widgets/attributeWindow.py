@@ -81,6 +81,7 @@ class AttributeWindow(Menu):
             )
         self.refreshRequested.connect(self.refresh_attributes)
 
+        # self.setProperty("class", self.__class__.__name__)
         self.initialize_ui()
 
     def initialize_ui(self):
