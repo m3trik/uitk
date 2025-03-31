@@ -1,6 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-import os
 import re
 import sys
 import json
@@ -1977,6 +1976,30 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         )
 
         return directory_path
+
+    @staticmethod
+    def simulate_key_press(
+        ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=True
+    ):
+        """Simulate a key press event for the given UI and optionally release the keyboard.
+
+        Parameters:
+            ui (QtWidgets.QWidget): The UI widget to simulate the key press for.
+            key (QtCore.Qt.Key): The key to simulate. Defaults to QtCore.Qt.Key_F12.
+            modifiers (QtCore.Qt.KeyboardModifiers): The keyboard modifiers to apply. Defaults to QtCore.Qt.NoModifier.
+            release (bool): Whether to simulate a key release event. Defaults to True.
+        """
+        if not isinstance(ui, QtWidgets.QWidget):
+            raise ValueError("The 'ui' parameter must be a QWidget or a subclass.")
+
+        # Create and post the key press event
+        press_event = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, modifiers)
+        QtWidgets.QApplication.postEvent(ui, press_event)
+
+        # Optionally create and post the key release event
+        if release:
+            release_event = QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, key, modifiers)
+            QtWidgets.QApplication.postEvent(ui, release_event)
 
     def defer(self, method: callable, *args, delay_ms: int = 300, **kwargs) -> None:
         """Defer execution of any callable with arguments after a delay.
