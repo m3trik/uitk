@@ -79,24 +79,37 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     def config_buttons(self, **kwargs):
         """Configure buttons based on the given parameters."""
-        # Clear existing buttons from the layout
-        for i in reversed(range(self.container_layout.count())):
-            widget = self.container_layout.itemAt(i).widget()
-            if isinstance(widget, QtWidgets.QPushButton):
-                self.container_layout.removeWidget(widget)
+        # Track buttons already in the layout
+        existing_buttons = {
+            btn.objectName(): btn for btn in self.findChildren(QtWidgets.QPushButton)
+        }
 
-        # Create and add buttons to the layout based on parameters
+        # Update visibility and reuse existing buttons
         self.buttons = {}
         for param, visible in kwargs.items():
-            if param in self.button_definitions and visible:
-                text, method_name = self.button_definitions[param]
-                callback = getattr(self, method_name)
+            if param not in self.button_definitions:
+                continue
+
+            text, method_name = self.button_definitions[param]
+            callback = getattr(self, method_name)
+            button = existing_buttons.get(param)
+
+            if not button:
                 button = self.create_button(text, callback, button_type=param)
                 self.container_layout.addWidget(button)
-                button.show()
-                self.buttons[param] = button
+            else:
+                button.clicked.disconnect()
+                button.clicked.connect(callback)
 
-        # Ensure layout is updated
+            button.setText(text)
+            button.setVisible(visible)
+            self.buttons[param] = button
+
+        # Hide buttons not included in this config
+        for param, button in existing_buttons.items():
+            if param not in self.buttons:
+                button.setVisible(False)
+
         self.container_layout.invalidate()
         self.trigger_resize_event()
 
