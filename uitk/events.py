@@ -227,13 +227,15 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
     def eventFilter(self, widget, event):
         """Calls `track` on each mouse move event and also tracks button press/release for QAbstractButton."""
-        if event.type() == QtCore.QEvent.MouseMove:
+        etype = event.type()
+
+        if etype == QtCore.QEvent.MouseMove:
             self.logger.info(
-                f"MouseMove event filter triggered by: {widget} with event: {event.type()}"
+                f"MouseMove event filter triggered by: {widget} with event: {etype}"
             )
             self.track()
 
-        elif event.type() == QtCore.QEvent.MouseButtonRelease:
+        elif etype == QtCore.QEvent.MouseButtonRelease:
             top_widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
             if (
                 isinstance(top_widget, QtWidgets.QAbstractButton)
