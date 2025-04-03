@@ -24,7 +24,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         "menu_button": ("≡", "show_menu"),
         "minimize_button": ("–", "minimize_window"),
         "hide_button": ("×", "hide_window"),
-        "pin_button": ("\u25CB", "toggle_pin"),
+        "pin_button": ("\u25cb", "toggle_pin"),
     }
 
     def __init__(
@@ -50,7 +50,6 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         self.setLayout(self.container_layout)
         self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
-        self.setStyleSheet(self.get_style_sheet())
 
         # Extract button-related arguments
         button_args = {
@@ -58,32 +57,16 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             for key in list(kwargs.keys())
             if key in self.button_definitions
         }
+        self.setProperty("class", self.__class__.__name__)
+        font = self.font()
+        font.setBold(True)
+        self.setFont(font)
 
+        self.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+        self.setIndent(8)  # adds left-side indentation to the text
         self.setFixedHeight(20)
-        self.configure_buttons(**button_args)
+        self.config_buttons(**button_args)
         self.set_attributes(**kwargs)
-
-    def get_button_style_sheet(self):
-        """Return the stylesheet for buttons."""
-        return """
-            QPushButton { background-color: transparent; border: none;}
-            QPushButton:hover { background-color: rgba(127,127,127,200); border: none;}
-            QPushButton#hide_button:hover { background-color: rgba(255,0,0,200); border: none;}
-        """
-
-    def get_style_sheet(self):
-        """Return the stylesheet for the header label."""
-        return """
-            QLabel {
-                background-color: rgba(127,127,127,200);
-                border: none;
-                font-weight: bold;
-            }
-            QLabel::hover {
-                background-color: rgba(127,127,127,200);
-                border: none;
-            }
-        """
 
     def create_button(self, text, callback, button_type=None):
         """Create a button with the given text and callback."""
@@ -91,30 +74,42 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         if button_type:
             button.setObjectName(button_type)
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
-        button.setStyleSheet(self.get_button_style_sheet())
         button.clicked.connect(callback)
         return button
 
-    def configure_buttons(self, **kwargs):
+    def config_buttons(self, **kwargs):
         """Configure buttons based on the given parameters."""
-        # Clear existing buttons from the layout
-        for i in reversed(range(self.container_layout.count())):
-            widget = self.container_layout.itemAt(i).widget()
-            if isinstance(widget, QtWidgets.QPushButton):
-                self.container_layout.removeWidget(widget)
+        # Track buttons already in the layout
+        existing_buttons = {
+            btn.objectName(): btn for btn in self.findChildren(QtWidgets.QPushButton)
+        }
 
-        # Create and add buttons to the layout based on parameters
+        # Update visibility and reuse existing buttons
         self.buttons = {}
         for param, visible in kwargs.items():
-            if param in self.button_definitions and visible:
-                text, method_name = self.button_definitions[param]
-                callback = getattr(self, method_name)
+            if param not in self.button_definitions:
+                continue
+
+            text, method_name = self.button_definitions[param]
+            callback = getattr(self, method_name)
+            button = existing_buttons.get(param)
+
+            if not button:
                 button = self.create_button(text, callback, button_type=param)
                 self.container_layout.addWidget(button)
-                button.show()
-                self.buttons[param] = button
+            else:
+                button.clicked.disconnect()
+                button.clicked.connect(callback)
 
-        # Ensure layout is updated
+            button.setText(text)
+            button.setVisible(visible)
+            self.buttons[param] = button
+
+        # Hide buttons not included in this config
+        for param, button in existing_buttons.items():
+            if param not in self.buttons:
+                button.setVisible(False)
+
         self.container_layout.invalidate()
         self.trigger_resize_event()
 
@@ -198,7 +193,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         self.pinned = state
         self.window().prevent_hide = state
-        pin_button_text = "\u25CF" if state else "\u25CB"
+        pin_button_text = "\u25cf" if state else "\u25cb"
 
         pin_button = self.buttons.get("pin_button")
         if pin_button:

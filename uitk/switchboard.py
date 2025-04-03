@@ -3,12 +3,14 @@
 import re
 import sys
 import json
+import inspect
 import traceback
 from typing import List, Union, Optional
-from inspect import signature, Parameter
 from xml.etree.ElementTree import ElementTree
 from qtpy import QtCore, QtGui, QtWidgets, QtUiTools
 import pythontk as ptk
+
+# From this package:
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins import ConvertMixin
 
@@ -279,7 +281,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         return widget
 
     def register(
-        self, ui_location=None, slot_location=None, widget_location=None, base_dir=1
+        self,
+        ui_location=None,
+        slot_location=None,
+        widget_location=None,
+        base_dir=1,
+        validate=0,
     ):
         """Add new locations to the Switchboard.
 
@@ -288,25 +295,46 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             slot_location (optional): Slot class.
             widget_location (optional): Path to widget files.
             base_dir (optional): Base directory for relative paths. Derived from the call stack.
-                0 for this modules dir, 1 for the caller module, etc. (duplicate entries removed)
+                0 for this modules dir, 1 for the caller module, etc.
+            validate (int): Validation level:
+                0: No validation
+                1: Warn on invalid path
+                2: Raise on invalid path
         """
-        # Check for the existence of the ui_location before extending the UI files container
-        if ui_location is not None and not self.registry.contains_location(
+        # UI path
+        if ui_location and not self.registry.contains_location(
             ui_location, "ui_registry"
         ):
-            self.registry.ui_registry.extend(ui_location, base_dir=base_dir)
+            if self.registry.resolve_path(
+                ui_location, base_dir=base_dir, validate=validate, path_type="UI"
+            ):
+                self.registry.ui_registry.extend(ui_location, base_dir=base_dir)
 
-        # Check for the existence of the slot_location before extending the slot files container
-        if slot_location is not None and not self.registry.contains_location(
+        # Slot path
+        if slot_location and not self.registry.contains_location(
             slot_location, "slot_registry"
         ):
-            self.registry.slot_registry.extend(slot_location, base_dir=base_dir)
+            slot_path = (
+                inspect.getfile(slot_location)
+                if inspect.isclass(slot_location)
+                else slot_location
+            )
+            if self.registry.resolve_path(
+                slot_path, base_dir=base_dir, validate=validate, path_type="Slot"
+            ):
+                self.registry.slot_registry.extend(slot_location, base_dir=base_dir)
 
-        # Check for the existence of the widget_location before extending the widget files container
-        if widget_location is not None and not self.registry.contains_location(
+        # Widget path
+        if widget_location and not self.registry.contains_location(
             widget_location, "widget_registry"
         ):
-            self.registry.widget_registry.extend(widget_location, base_dir=base_dir)
+            if self.registry.resolve_path(
+                widget_location,
+                base_dir=base_dir,
+                validate=validate,
+                path_type="Widget",
+            ):
+                self.registry.widget_registry.extend(widget_location, base_dir=base_dir)
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.
@@ -345,58 +373,98 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         loaded_ui = self.load(file)
         return loaded_ui
 
+    def _add_existing_wrapped_window(
+        self, window: QtWidgets.QMainWindow, name: Optional[str] = None
+    ) -> QtWidgets.QMainWindow:
+        """Add an existing MainWindow (already wrapped) to this Switchboard.
+
+        Parameters:
+            window (QMainWindow): The existing MainWindow to add.
+            name (str, optional): Override name for the UI. Updates window.name if provided.
+
+        Returns:
+            QMainWindow: The added window.
+        """
+        if name:
+            window.name = name
+
+        name = window.name
+        if name in self.loaded_ui:
+            self.logger.warning(f"UI '{name}' already exists in this Switchboard.")
+            return self.loaded_ui[name]
+
+        self.loaded_ui[name] = window
+
+        if not hasattr(window, "_slots"):
+            try:
+                slot_class = self._find_slot_class(window)
+                if slot_class:
+                    self.set_slot_class(window, slot_class)
+            except Exception as e:
+                self.logger.warning(f"Failed to set slot class for UI '{name}': {e}")
+
+        self.logger.debug(f"Added existing wrapped window '{name}'.")
+        return window
+
     def add_ui(
         self,
         widget: Optional[QtWidgets.QWidget] = None,
         name: str = None,
         tags: set = None,
         path: str = None,
+        overwrite: bool = False,
         **kwargs,
     ) -> QtWidgets.QMainWindow:
-        """Adds a given central widget or QMainWindow to the switchboard by wrapping it in MainWindow.
+        """Adds a given QWidget or QMainWindow to the Switchboard wrapped in MainWindow.
 
         Parameters:
-            widget (QtWidgets.QWidget or QtWidgets.QMainWindow, optional):
-                The central widget to set in MainWindow or a QMainWindow instance from which the central widget is derived.
-                If None, creates a MainWindow without a central widget.
-            name (str, optional): Custom name for the UI. Defaults to the central widget's objectName if provided.
-            tags (set, optional): Tags to associate with the UI. Defaults to None.
-            path (str, optional): Path associated with the UI. Defaults to None.
-            **kwargs: Additional keyword arguments to pass to the MainWindow.
+            widget (QWidget or QMainWindow, optional): Central widget or MainWindow instance.
+            name (str, optional): Custom UI name.
+            tags (set, optional): Tags for the UI.
+            path (str, optional): Associated path.
+            overwrite (bool, optional): If True, overwrite existing UI. Defaults to False.
+            **kwargs: Additional keyword arguments for MainWindow.
 
         Returns:
-            MainWindow: The UI wrapped in the MainWindow class.
+            QMainWindow: Wrapped UI instance.
         """
-        if name in self.loaded_ui.keys():
-            self.logger.debug(f"UI '{name}' already exists.")
-            return self.loaded_ui[name]  # Early return
+        derived_name = name or (
+            widget.objectName() if widget and widget.objectName() else None
+        )
 
-        # Determine the central widget (can be None)
+        if derived_name in self.loaded_ui:
+            if not overwrite:
+                self.logger.debug(
+                    f"UI '{derived_name}' already exists. Returning existing."
+                )
+                return self.loaded_ui[derived_name]
+
+            self.logger.debug(f"Overwriting existing UI '{derived_name}'.")
+            del self.loaded_ui[derived_name]
+
+        if isinstance(widget, self.registered_widgets.MainWindow):
+            return self._add_existing_wrapped_window(widget, name=derived_name)
+
+        # continue normal wrapping logic
         central_widget = (
             widget.centralWidget()
             if isinstance(widget, QtWidgets.QMainWindow) and widget.centralWidget()
             else widget
         )
 
-        # Set name based on the central widget's objectName, or None if no widget is provided
-        name = name or (central_widget.objectName() if central_widget else None)
-        # Set tags based on name, or None if name is not available
-        tags = tags or (self._parse_tags(name) if name else None)
-        # Format path, defaulting to None
+        tags = tags or (self._parse_tags(derived_name) if derived_name else None)
         path = ptk.format_path(path, "path") if path else None
 
-        # Create the MainWindow, with or without a central widget
         main_window = self.registered_widgets.MainWindow(
             switchboard_instance=self,
             central_widget=central_widget,
-            name=name,
+            name=derived_name,
             tags=tags,
             path=path,
             **kwargs,
         )
-        self.loaded_ui[name] = main_window
+        self.loaded_ui[derived_name] = main_window
 
-        # Debugging info
         self.logger.debug(
             f"MainWindow Added: Name={main_window.name}, Tags={main_window.tags}, Path={main_window.path}"
         )
@@ -440,17 +508,22 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         def accepts_switchboard(clss):
             """Check if the class accepts the switchboard as an argument."""
-            init_params = signature(clss.__init__).parameters
+            init_params = inspect.signature(clss.__init__).parameters
             return "switchboard" in init_params or any(
-                param.kind == Parameter.VAR_KEYWORD for param in init_params.values()
+                param.kind == inspect.Parameter.VAR_KEYWORD
+                for param in init_params.values()
             )
 
-        # Only pass `switchboard` if explicitly expected or if `**kwargs` is present
         kwargs = {"switchboard": self} if accepts_switchboard(clss) else {}
-        instance = clss(**kwargs)
-        self.logger.debug(f"Slot class {instance} created with kwargs: {kwargs}")
 
-        # Store the slot instance within the UI
+        try:
+            instance = clss(**kwargs)
+        except Exception:
+            self.logger.error(
+                f"Failed to instantiate slot class '{clss.__name__}' for UI '{ui.name}':\n{traceback.format_exc()}"
+            )
+            return None
+
         ui._slots = instance
         self.logger.debug(f"Slot class {ui._slots} set for UI: {ui.name}")
         return instance
@@ -662,11 +735,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Returns:
             callable: The slot wrapper function.
         """
-        sig = signature(slot)
+        sig = inspect.signature(slot)
         param_names = [
             name
             for name, param in sig.parameters.items()
-            if param.kind in [Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY]
+            if param.kind
+            in [inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY]
         ]
 
         def wrapper(*args, **kwargs):
@@ -1085,18 +1159,25 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         """Get the slot from the slot class.
 
         Parameters:
-            slot_class (obj): The slot class to get the slot from.
-            slot_name (str): The name of the slot to get.
+            slot_class (object): Slot class instance.
+            slot_name (str): Name of the slot (method or attribute).
 
         Returns:
-            (obj) The slot of the same name. ie. <b000 slot> from <b000 slot_class>.
+            object or None: The slot, or None if not found.
         """
-        slot = getattr(slot_class, slot_name, None)
-        if slot is None:
-            self.logger.debug(f"Slot {slot_name} not found in {slot_class}")
-        else:
-            self.logger.debug(f"Slot {slot_name} found in {slot_class}")
-        return slot
+        try:
+            return getattr(slot_class, slot_name)
+        except AttributeError:
+            self.logger.debug(
+                f"Slot '{slot_name}' not found in '{slot_class.__class__.__name__}'"
+            )
+            return None
+        except Exception:
+            self.logger.error(
+                f"Exception occurred while accessing slot '{slot_name}' in '{slot_class.__class__.__name__}':\n"
+                f"{traceback.format_exc()}"
+            )
+            return None
 
     def get_slot_from_widget(self, widget):
         """Get the corresponding slot from a given widget.
@@ -1895,6 +1976,64 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         )
 
         return directory_path
+
+    @staticmethod
+    def simulate_key_press(
+        ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False
+    ):
+        """Simulate a key press event for the given UI and optionally release the keyboard.
+
+        Parameters:
+            ui (QtWidgets.QWidget): The UI widget to simulate the key press for.
+            key (QtCore.Qt.Key): The key to simulate. Defaults to QtCore.Qt.Key_F12.
+            modifiers (QtCore.Qt.KeyboardModifiers): The keyboard modifiers to apply. Defaults to QtCore.Qt.NoModifier.
+            release (bool): Whether to simulate a key release event.
+        """
+        if not isinstance(ui, QtWidgets.QWidget):
+            raise ValueError("The 'ui' parameter must be a QWidget or a subclass.")
+
+        # Create and post the key press event
+        press_event = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, modifiers)
+        QtWidgets.QApplication.postEvent(ui, press_event)
+
+        # Optionally create and post the key release event
+        if release:
+            release_event = QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, key, modifiers)
+            QtWidgets.QApplication.postEvent(ui, release_event)
+
+    def defer(self, method: callable, *args, delay_ms: int = 300, **kwargs) -> None:
+        """Defer execution of any callable with arguments after a delay.
+
+        Parameters:
+            method (callable): The method to be called after the delay.
+            *args: Positional arguments for the method.
+            delay_ms (int, optional): Delay in milliseconds before execution. Default is 300.
+            **kwargs: Keyword arguments for the method.
+
+        Raises:
+            ValueError: If method is not callable.
+            TypeError: If delay_ms is not an integer.
+        """
+        if not callable(method):
+            raise ValueError(f"defer: Expected a callable, got {type(method).__name__}")
+
+        if not isinstance(delay_ms, int):
+            raise TypeError(
+                f"defer: delay_ms must be an integer, got {type(delay_ms).__name__}"
+            )
+
+        def safe_call():
+            """Executes the method safely and logs any exceptions."""
+            try:
+                method(*args, **kwargs)
+            except Exception as e:
+                self.logger.error(
+                    f"defer: Exception in deferred call to {method.__name__}: {e}"
+                )
+                self.logger.debug(traceback.format_exc())
+
+        # Schedule the deferred execution
+        QtCore.QTimer.singleShot(delay_ms, safe_call)
 
     def gc_protect(self, obj=None, clear=False):
         """Protect the given object from garbage collection.

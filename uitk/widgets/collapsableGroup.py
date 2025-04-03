@@ -1,13 +1,17 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtWidgets, QtGui
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class CollapsableGroup(QtWidgets.QGroupBox):
-    def __init__(self, title, parent=None):
+class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
+    def __init__(self, title, parent=None, **kwargs):
         super().__init__(title, parent)
         self.setCheckable(True)
         self.toggled.connect(self.toggle_expand)
+
+        self.setProperty("class", self.__class__.__name__)
+        self.set_attributes(**kwargs)
 
     def show_content(self):
         for i in range(self.layout().count()):

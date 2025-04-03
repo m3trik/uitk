@@ -18,6 +18,7 @@ class LineEdit(QtWidgets.QLineEdit, AttributesMixin):
             self, mode="option", position="cursorPos", fixed_item_height=20
         )
 
+        self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
     def contextMenuEvent(self, event):

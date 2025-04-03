@@ -32,11 +32,12 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
 
         self.setStyleSheet("OptionBox {border: none;}")
 
-        self.setText("⧉")
-        self.set_attributes(**kwargs)
-
         # Connect the clicked signal to the show_menu slot
         self.clicked.connect(self.show_menu)
+
+        self.setText("⧉")
+        self.setProperty("class", self.__class__.__name__)
+        self.set_attributes(**kwargs)
 
     def remove_border_for_widget(self, wrapped_widget):
         """Removes the border from the wrapped widget and the instance of this class.

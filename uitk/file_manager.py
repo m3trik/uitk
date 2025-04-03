@@ -270,7 +270,7 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
             return caller_dir
         return None
 
-    def _get_base_dir(self, caller_info=0):
+    def get_base_dir(self, caller_info=0):
         """Identifies the base directory based on the caller's frame index or an object.
 
         Parameters:
@@ -299,26 +299,30 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
 
         return None
 
-    def _resolve_path(self, target_obj, **metadata):
-        """Resolves a path based on different types of target objects.
-
-        Parameters:
-            target_obj (int/str/module/class): The target object to resolve.
-            **metadata: Additional keyword arguments used to construct the container.
-
-        Returns:
-            str: Absolute path of the target.
-        """
+    def resolve_path(self, target_obj, validate=0, path_type="Path", **metadata):
         base_dir_option = metadata.get("base_dir", 0)
-        base_dir = self._get_base_dir(base_dir_option)
+        base_dir = self.get_base_dir(base_dir_option)
 
         if isinstance(target_obj, str):
-            return os.path.abspath(
+            path = os.path.abspath(
                 target_obj
                 if os.path.isabs(target_obj)
                 else os.path.join(base_dir, target_obj)
             )
-        return ptk.get_object_path(target_obj)
+        else:
+            path = ptk.get_object_path(target_obj)
+
+        if validate > 0:
+            valid = ptk.FileUtils.is_valid(path)
+            if not valid:
+                msg = f"[FileManager] Invalid {path_type}: {path}"
+                if validate == 2:
+                    raise FileNotFoundError(msg)
+                elif validate == 1:
+                    print(f"Warning: {msg}")
+                return None
+
+        return path
 
     def create(self, descriptor, objects=None, **metadata):
         """Creates a named tuple container for the specified files.
@@ -379,7 +383,7 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
             list: List of tuples containing the file information based on the fields.
         """
         fields = metadata.get("fields", ["filename", "filepath"])
-        dir_path = self._resolve_path(obj, **metadata)
+        dir_path = self.resolve_path(obj, **metadata)
 
         if dir_path in self.processing_stack:
             raise RecursionError(
@@ -445,7 +449,7 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
         """
         container = getattr(self, container_descriptor, None)
         if container:
-            resolved_path = self._resolve_path(location)
+            resolved_path = self.resolve_path(location)
             return any(resolved_path in nt for nt in container.named_tuples)
         return False
 

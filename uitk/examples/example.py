@@ -9,7 +9,7 @@ class ExampleSlots:
         self.ui = self.sb.loaded_ui.example
 
     def header_init(self, widget):
-        widget.configure_buttons(
+        widget.config_buttons(
             menu_button=True, minimize_button=True, hide_button=True
         )
         widget.menu.setTitle("DRAGGABLE MENU")

@@ -41,6 +41,7 @@ class StyleSheet(QtCore.QObject):
             "MAIN_FOREGROUND": "rgb(255,255,255)",  # Bright white for better contrast
             "MAIN_BACKGROUND": "rgb(70,70,70)",  # Slightly darker than widget background
             "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,185)",
+            "HEADER_BACKGROUND": "rgba(127,127,127,200)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",  # As per your request
             "BUTTON_PRESSED": "rgb(120,120,120)",  # Slightly darker than widget background
             "BUTTON_HOVER": "rgb(82,133,166)",
@@ -58,6 +59,7 @@ class StyleSheet(QtCore.QObject):
             "MAIN_FOREGROUND": "rgb(200,200,200)",  # Lighter color for better contrast
             "MAIN_BACKGROUND": "rgb(90,90,90)",  # Darker than widget background
             "MAIN_BACKGROUND_ALPHA": "rgba(90,90,90,185)",
+            "HEADER_BACKGROUND": "rgba(90,90,90,200)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",  # As per your request
             "BUTTON_PRESSED": "rgb(50,50,50)",  # Slightly darker than widget background
             "BUTTON_HOVER": "rgb(82,133,166)",
@@ -177,12 +179,12 @@ class StyleSheet(QtCore.QObject):
             QLabel {
                 background-color: {WIDGET_BACKGROUND};
                 color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
+                border-style: outset;
                 border-radius: 1px;
-                padding: 0px 1px 0px 1px; /* top, right, bottom, left */
+                border: 1px solid {BORDER_COLOR};
+                padding: 0px 1px 0px 1px;
             }
             QLabel::hover {
-                border: 1px solid {BORDER_COLOR};
                 background-color: {BUTTON_HOVER};
                 color: {TEXT_HOVER};
             }
@@ -680,6 +682,33 @@ class StyleSheet(QtCore.QObject):
                 font-weight: bold;
             }
         """,
+        "Header": """
+            Header {
+                background-color: {HEADER_BACKGROUND};
+                border: none;
+            }
+            Header::hover {
+                background-color: {HEADER_BACKGROUND};
+                border: none;
+            }
+            Header > QLabel {
+                font-weight: bold;
+                padding-left: 20px;
+                color: {TEXT_COLOR};
+            }
+            Header > QPushButton {
+                background-color: transparent;
+                border: none;
+            }
+            Header > QPushButton:hover {
+                background-color: {MAIN_BACKGROUND_ALPHA};
+                border: none;
+            }
+            Header > QPushButton#hide_button:hover {
+                background-color: red;
+                border: none;
+            }
+        """,
     }
 
     @ptk.listify
@@ -708,10 +737,8 @@ class StyleSheet(QtCore.QObject):
 
         if style_class:
             widget.setProperty("class", style_class)
-
-        # Check if the widget is a QMainWindow, and set the central widget class
-        if isinstance(widget, QtWidgets.QMainWindow):
-            widget.centralWidget().setProperty("class", style_class)
+            if isinstance(widget, QtWidgets.QMainWindow):
+                widget.centralWidget().setProperty("class", style_class)
 
         # If the widget is a QMainWindow, apply the combined stylesheet
         if widget is self:

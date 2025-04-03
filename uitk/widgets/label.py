@@ -19,6 +19,7 @@ class Label(QtWidgets.QLabel, AttributesMixin):
         )
 
         self.setTextFormat(QtCore.Qt.RichText)
+        self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
     def mousePressEvent(self, event):
