@@ -1979,7 +1979,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
     @staticmethod
     def simulate_key_press(
-        ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=True
+        ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False
     ):
         """Simulate a key press event for the given UI and optionally release the keyboard.
 
@@ -1987,7 +1987,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             ui (QtWidgets.QWidget): The UI widget to simulate the key press for.
             key (QtCore.Qt.Key): The key to simulate. Defaults to QtCore.Qt.Key_F12.
             modifiers (QtCore.Qt.KeyboardModifiers): The keyboard modifiers to apply. Defaults to QtCore.Qt.NoModifier.
-            release (bool): Whether to simulate a key release event. Defaults to True.
+            release (bool): Whether to simulate a key release event.
         """
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError("The 'ui' parameter must be a QWidget or a subclass.")
