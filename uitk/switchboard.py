@@ -1504,7 +1504,13 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
     @staticmethod
     def center_widget(
-        widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None
+        widget,
+        pos=None,
+        offset_x=0,
+        offset_y=0,
+        padding_x=None,
+        padding_y=None,
+        relative: QtWidgets.QWidget = None,
     ):
         """Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor, or at the widget's current position if no point is given.
 
@@ -1513,22 +1519,18 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
             offset_x (int, optional): The desired offset percentage on the x axis. Defaults to 0.
             offset_y (int, optional): The desired offset percentage on the y axis. Defaults to 0.
-            padding_x (int, optional): Additional width from the widget's minimum size. If not specified, the widget's current width is used.
-            padding_y (int, optional): Additional height from the widget's minimum size. If not specified, the widget's current height is used.
+            padding_x (int, optional): Additional width from the widget's minimum size or relative widget. If not specified, the widget's current width is used.
+            padding_y (int, optional): Additional height from the widget's minimum size or relative widget. If not specified, the widget's current height is used.
+            relative (QWidget, optional): If given, use this widget's current size as the base size for resizing.
         """
         # Resize the widget if padding values are provided
         if padding_x is not None or padding_y is not None:
             p1 = widget.rect().center()
-            x = (
-                widget.minimumSizeHint().width()
-                if padding_x is not None
-                else widget.width()
-            )
-            y = (
-                widget.minimumSizeHint().height()
-                if padding_y is not None
-                else widget.height()
-            )
+
+            w = widget if not relative else relative
+            x = w.minimumSizeHint().width() if padding_x is not None else w.width()
+            y = w.minimumSizeHint().height() if padding_y is not None else w.height()
+
             widget.resize(
                 x + (padding_x if padding_x is not None else 0),
                 y + (padding_y if padding_y is not None else 0),
