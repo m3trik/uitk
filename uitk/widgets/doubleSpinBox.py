@@ -100,7 +100,6 @@ if __name__ == "__main__":
         setObjectName="button_test",
         setPrefix="Prefix:",
         resize=QSize(125, 45),
-        setWhatsThis="",
         # setVisible=True,
     )
 

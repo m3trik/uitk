@@ -124,7 +124,6 @@ if __name__ == "__main__":
         setObjectName="chk000",
         setText="A Check Box <b>w/Rich TextMixin</b>",
         resize=QSize(125, 45),
-        setWhatsThis="",
         setChecked=False,
         setVisible=True,
     )

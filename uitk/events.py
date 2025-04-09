@@ -76,6 +76,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
     Attributes:
         _prev_mouse_over (list): List of widgets that were previously under the mouse cursor.
         _mouse_over (list): List of widgets that are currently under the mouse cursor.
+        _widgets (set): Set of child widgets of the parent.
         _filtered_widgets (set): Set of widgets that have been processed for special handling (widgets with a viewport).
         logger (Logger): Instance of a logger that logs mouse tracking events.
 
@@ -99,9 +100,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             raise TypeError("Parent must be a QWidget derived type")
 
         self.logger.setLevel(log_level)
-        self._prev_mouse_over = []
-        self._mouse_over = []
-        self._filtered_widgets = set()
+
+        self._prev_mouse_over: set[QtWidgets.QWidget] = set()
+        self._mouse_over: set[QtWidgets.QWidget] = set()
+        self._filtered_widgets: set[QtWidgets.QWidget] = set()
 
         parent.installEventFilter(self)
 
@@ -121,42 +123,47 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                 return False
         return True
 
-    def _update_widgets_under_cursor(self):
+    def _update_widgets_under_cursor(self, top_widget: QtWidgets.QWidget):
         """Updates the list of widgets currently under the cursor."""
         self._get_child_widgets()
-        top_widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-        self._mouse_over = (
-            [top_widget] if top_widget and top_widget in self._widgets else []
-        )
+        self._mouse_over = {top_widget} if top_widget in self._widgets else set()
         self.logger.debug(
-            f"Widgets under cursor: {[f'{w}, {type(w)}' for w in self._mouse_over]}"
+            f"Widgets under cursor: {[f'{w.objectName()}, {type(w).__name__}' for w in self._mouse_over]}"
         )
 
     def _get_child_widgets(self):
-        """Updates the list of child widgets of the parent."""
+        """Updates the set of child widgets of the parent."""
         parent = self.parent()
-        self._widgets = (
+        widgets = (
             parent.currentWidget().findChildren(QtWidgets.QWidget)
             if isinstance(parent, QtWidgets.QStackedWidget)
             else parent.findChildren(QtWidgets.QWidget)
         )
+        self._widgets: set[QtWidgets.QWidget] = set(widgets)
 
     def track(self):
-        """Updates tracking data and sends enter and leave events to widgets."""
+        """Efficiently updates tracking data and sends enter and leave events to widgets."""
+        cursor_pos = QtGui.QCursor.pos()
+        top_widget = QtWidgets.QApplication.widgetAt(cursor_pos)
+
         self.logger.info(f"Previous widgets under cursor: {self._prev_mouse_over}")
-        self.logger.info(f"Current widgets under cursor: {self._mouse_over}")
         self._release_mouse_for_widgets(self._mouse_over)
-        self._update_widgets_under_cursor()
 
-        for widget in self._prev_mouse_over:
-            if widget not in self._mouse_over:
-                self._send_leave_event(widget)
-        for widget in self._mouse_over:
-            if widget not in self._prev_mouse_over:
-                self._send_enter_event(widget)
+        self._update_widgets_under_cursor(top_widget)
+        self.logger.info(f"Current widgets under cursor: {self._mouse_over}")
 
-        self._handle_mouse_grab()
-        self._prev_mouse_over = self._mouse_over.copy()
+        for widget in self._prev_mouse_over - self._mouse_over:
+            if not isinstance(widget, QtWidgets.QWidget) or not widget.parent():
+                continue
+            self._send_leave_event(widget)
+
+        for widget in self._mouse_over - self._prev_mouse_over:
+            if not isinstance(widget, QtWidgets.QWidget) or not widget.parent():
+                continue
+            self._send_enter_event(widget)
+
+        self._handle_mouse_grab(top_widget)
+        self._prev_mouse_over = set(self._mouse_over)
         self._filter_viewport_widgets()
 
     def _release_mouse_for_widgets(self, widgets):
@@ -166,17 +173,23 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
     def _send_leave_event(self, widget):
         """Sends a leave event to a widget."""
-        self.logger.info(
-            f"Sending Leave event to: {widget}, Name: {widget.objectName()}, Parent: {widget.parent().objectName()}"
-        )
-        QtGui.QGuiApplication.sendEvent(widget, QtCore.QEvent(QtCore.QEvent.Leave))
+        try:
+            self.logger.info(
+                f"Sending Leave event to: {widget}, Name: {widget.objectName()}, Parent: {widget.parent().objectName()}"
+            )
+            QtGui.QGuiApplication.sendEvent(widget, QtCore.QEvent(QtCore.QEvent.Leave))
+        except RuntimeError:
+            self.logger.debug("Widget deleted before leave event could be sent.")
 
     def _send_enter_event(self, widget):
         """Sends an enter event to a widget."""
-        self.logger.info(
-            f"Sending Enter event to: {widget}, Name: {widget.objectName()}, Parent: {widget.parent().objectName()}"
-        )
-        QtGui.QGuiApplication.sendEvent(widget, QtCore.QEvent(QtCore.QEvent.Enter))
+        try:
+            self.logger.info(
+                f"Sending Enter event to: {widget}, Name: {widget.objectName()}, Parent: {widget.parent().objectName()}"
+            )
+            QtGui.QGuiApplication.sendEvent(widget, QtCore.QEvent(QtCore.QEvent.Enter))
+        except RuntimeError:
+            self.logger.debug("Widget deleted before enter event could be sent.")
 
     def _send_release_event(self, widget, button):
         """Sends a release event to a widget."""
@@ -192,23 +205,23 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         )
         QtGui.QGuiApplication.postEvent(widget, release_event)
 
-    def _handle_mouse_grab(self):
+    def _handle_mouse_grab(self, top_widget: QtWidgets.QWidget):
         """Handles mouse grabbing depending on the widget currently under the cursor."""
-        top_widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-        if top_widget:
-            self.logger.debug(f"Top widget under cursor: {top_widget}")
-            widget_to_grab = (
-                top_widget
-                if self.should_capture_mouse(top_widget)
-                else QtWidgets.QApplication.activeWindow()
-            )
-            self.logger.info(f"Grabbing mouse for widget: {widget_to_grab}")
-            widget_to_grab.grabMouse()
-        else:
-            self.logger.debug(
-                "No widget under cursor. Grabbing mouse for active window."
-            )
-            QtWidgets.QApplication.activeWindow().grabMouse()
+        try:
+            if top_widget and self.should_capture_mouse(top_widget):
+                self.logger.info(
+                    f"Grabbing mouse for widget: {top_widget.objectName()}"
+                )
+                top_widget.grabMouse()
+            else:
+                active_window = QtWidgets.QApplication.activeWindow()
+                if active_window:
+                    self.logger.info(
+                        f"Grabbing mouse for active window: {active_window.objectName()}"
+                    )
+                    active_window.grabMouse()
+        except RuntimeError:
+            self.logger.debug("Could not grab mouse: widget may have been deleted.")
 
     def _filter_viewport_widgets(self):
         """Adds special handling for widgets with a viewport."""
@@ -230,9 +243,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         etype = event.type()
 
         if etype == QtCore.QEvent.MouseMove:
-            self.logger.info(
-                f"MouseMove event filter triggered by: {widget} with event: {etype}"
-            )
+            if self.logger.isEnabledFor(self.logging.DEBUG):
+                self.logger.debug(
+                    f"MouseMove event filter triggered by: {widget} with event: {etype}"
+                )
             self.track()
 
         elif etype == QtCore.QEvent.MouseButtonRelease:
