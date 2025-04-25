@@ -1,7 +1,8 @@
 # !/usr/bin/python
 # coding=utf-8
 import inspect
-from qtpy import QtCore, QtGui, QtWidgets
+from typing import Optional, Union
+from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from uitk.widgets.optionBox import OptionBox
 from uitk.widgets.header import Header
@@ -26,19 +27,26 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
     def __init__(
         self,
-        parent=None,
-        mode=None,
-        position="cursorPos",
-        min_item_height=None,
-        max_item_height=None,
-        fixed_item_height=None,
-        add_header=True,
+        parent: Optional[QtWidgets.QWidget] = None,
+        name: Optional[str] = None,
+        mode: Optional[str] = None,
+        position: Union[str, QtCore.QPoint, list, tuple, None] = "cursorPos",
+        min_item_height: Optional[int] = None,
+        max_item_height: Optional[int] = None,
+        fixed_item_height: Optional[int] = None,
+        add_header: bool = True,
         **kwargs,
     ):
-        """Initializes a Menu instance.
+        """Initializes a custom qwidget instance that acts as a menu.
+
+        The menu can be positioned relative to the cursor, a specific coordinate, a widget, or its parent.
+        It can also have a draggable header and an apply button.
+        The menu can be styled using the provided keyword arguments.
+        The menu can be set to different modes: 'context', 'option', or 'popup'.
 
         Parameters:
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
+            name (str, optional): The name of the menu. Defaults to None.
             mode (str, optional): Possible values include: 'context', 'option', and 'popup'.
             position (str, optional): The position of the menu. Can be "right", "cursorPos", a coordinate pair, or a widget.
             min_item_height (int, optional): The minimum height of items in the menu. Defaults to None.
@@ -46,9 +54,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
             fixed_item_height (int, optional): The fixed height of items in the menu. Defaults to None.
             add_header (bool, optional): Whether to add a draggable  to the menu. Defaults to True.
             **kwargs: Additional keyword arguments to set attributes on the menu.
+
+        Example:
+                menu = Menu(parent=parent_widget, name="MyMenu", mode="context", position="cursorPos")
+                menu.add("QLabel", setText="Label A")
+                menu.add("QPushButton", setText="Button A")
+                menu.show()
         """
         super().__init__(parent)
 
+        self.name = self.objectName()
         self.mode = mode
         self.position = position
         self.min_item_height = min_item_height
@@ -59,6 +74,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         self.widget_data = {}
         self.prevent_hide = False
         self.option_box = None
+
+        self.name = name or self.objectName()
+        self.setObjectName(self.name)
 
         self.setProperty("class", "translucentBgWithBorder")
         self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
@@ -297,8 +315,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         elif isinstance(x, map):
             return [self.add(item, **kwargs) for item in list(x)]
 
-        # get the widget from the value passed to x
-        if isinstance(x, str):
+        elif isinstance(x, QtWidgets.QAction):
+            return self._add_action_widget(
+                x, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan
+            )
+
+        elif isinstance(x, str):
             try:
                 widget = getattr(QtWidgets, x)(self)
             except (AttributeError, TypeError):
@@ -312,25 +334,22 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
         else:
             raise TypeError(
-                f"Unsupported item type: expected str, QWidget, a subclass of QWidget, or a collection (list, tuple, set, map, zip, dict), but got '{type(x)}'"
+                f"Unsupported item type: expected str, QWidget, QAction, or a collection (list, tuple, set, dict, zip, map), got '{type(x)}'"
             )
 
         widget.item_text = lambda i=widget: self.get_item_text(i)
         widget.item_data = lambda i=widget: self.get_item_data(i)
 
-        # If no position is specified, place the widget at the last row and first column
         if row is None:
             row = 0
             while self.gridLayout.itemAtPosition(row, col) is not None:
                 row += 1
 
-        # If no span is specified, make the widget span across all columns
         if colSpan is None:
-            colSpan = self.gridLayout.columnCount()
+            colSpan = self.gridLayout.columnCount() or 1
 
         self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
         self.on_item_added.emit(widget)
-
         self.set_item_data(widget, data)
 
         if self.min_item_height is not None:
@@ -342,12 +361,46 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
         self.set_attributes(widget, **kwargs)
         widget.installEventFilter(self)
-        # Add the widget as a menu attribute
         setattr(self, widget.objectName(), widget)
 
         self.resize(self.sizeHint())
         self.layout.invalidate()
 
+        return widget
+
+    def _add_action_widget(
+        self,
+        action: QtWidgets.QAction,
+        row: Optional[int] = None,
+        col: int = 0,
+        rowSpan: int = 1,
+        colSpan: Optional[int] = None,
+    ) -> Optional[QtWidgets.QWidget]:
+        temp_menu = QtWidgets.QMenu(self)
+        temp_menu.addAction(action)
+
+        temp_menu.ensurePolished()
+        temp_menu.show()
+        QtWidgets.QApplication.processEvents()
+
+        widget = temp_menu.widgetForAction(action)
+        if not widget:
+            temp_menu.hide()
+            temp_menu.deleteLater()
+            return None
+
+        widget.setParent(self)
+        temp_menu.hide()
+        temp_menu.deleteLater()
+
+        if row is None:
+            row = 0
+            while self.gridLayout.itemAtPosition(row, col):
+                row += 1
+        if colSpan is None:
+            colSpan = self.gridLayout.columnCount() or 1
+
+        self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
         return widget
 
     def get_padding(widget):

@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
@@ -237,57 +237,59 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         super().showEvent(event)
 
-    def attach_to(self, widget: QtWidgets.QWidget):
-        """Attaches the header to the given widget by adding the header on top.
-        After which, the header can be accessed as an attribute of the widget. <widget>.header
+    def attach_to(self, widget: QtWidgets.QWidget) -> None:
+        """Attach this header to the top of a QWidget or QMainWindow.
+
+        The header is inserted at the top of the widget's layout or menu area.
+        After attachment, it can be accessed as: <widget>.header
 
         Parameters:
-            widget (QWidget): The widget to which the header will be attached.
+            widget (QtWidgets.QWidget): The widget to which the header will be attached.
         """
-        # Check if the widget is a QMainWindow
+        if hasattr(widget, "header") and getattr(widget, "header") is self:
+            return  # already attached
+
         if isinstance(widget, QtWidgets.QMainWindow):
-            # Check if the QMainWindow uses setMenuWidget()
             menu_widget = widget.menuWidget()
+
             if menu_widget:
-                # Create a container to hold the header and the menu widget
+                # Wrap header and menu widget in a container
                 container = QtWidgets.QWidget(widget)
-                container_layout = QtWidgets.QVBoxLayout(container)
-                container_layout.setContentsMargins(0, 0, 0, 0)
-                container_layout.setSpacing(0)
+                layout = QtWidgets.QVBoxLayout(container)
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(0)
 
-                # Add the header and the existing menu widget to the container layout
-                container_layout.addWidget(self)
-                container_layout.addWidget(menu_widget)
+                layout.addWidget(self)
+                layout.addWidget(menu_widget)
 
-                # Set the container as the new menu widget
                 widget.setMenuWidget(container)
-
             else:
-                # Handle case where QMainWindow uses a central widget
-                existing_central_widget = widget.centralWidget()
-                if not existing_central_widget:
-                    # Create a new central widget if none exists
-                    existing_central_widget = QtWidgets.QWidget()
-                    widget.setCentralWidget(existing_central_widget)
+                central_widget = widget.centralWidget()
+                if not central_widget:
+                    central_widget = QtWidgets.QWidget()
+                    widget.setCentralWidget(central_widget)
 
-                # Get or create the layout for the central widget
-                existing_layout = existing_central_widget.layout()
-                if not existing_layout:
-                    existing_layout = QtWidgets.QVBoxLayout(existing_central_widget)
-                    existing_central_widget.setLayout(existing_layout)
+                layout = (
+                    central_widget.layout()
+                    if callable(central_widget.layout)
+                    else central_widget.layout
+                )
+                if not isinstance(layout, QtWidgets.QLayout):
+                    layout = QtWidgets.QVBoxLayout(central_widget)
+                    layout.setContentsMargins(0, 0, 0, 0)
+                    central_widget.setLayout(layout)
 
-                # Insert the header at the top of the central layout
-                existing_layout.insertWidget(0, self)
+                layout.insertWidget(0, self)
 
         else:
-            # Handle generic QWidget or any other widget type
-            layout = widget.layout() or QtWidgets.QVBoxLayout(widget)
-            widget.setLayout(layout)
+            layout = widget.layout() if callable(widget.layout) else widget.layout
+            if not isinstance(layout, QtWidgets.QLayout):
+                layout = QtWidgets.QVBoxLayout(widget)
+                layout.setContentsMargins(0, 0, 0, 0)
+                widget.setLayout(layout)
 
-            # Insert the header as the first widget in the layout
             layout.insertWidget(0, self)
 
-        # Set the header as an attribute of the widget for reference
         setattr(widget, "header", self)
 
 

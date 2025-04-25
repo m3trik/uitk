@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from typing import Union, Optional, Type
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtWidgets, QtCore, QtGui
 
 
 class ConvertMixin:

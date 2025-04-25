@@ -94,15 +94,16 @@ class AttributesMixin:
 
     def set_attribute_or_call_method(self, obj, attr, value):
         try:
-            # Check if the attribute is a window attribute
             attr_value = getattr(QtCore.Qt, attr)
             obj.setAttribute(attr_value, value)
         except AttributeError:
             try:
-                # Attempt to call the attribute as a method
-                getattr(obj, attr)(value)
+                method = getattr(obj, attr)
+                if callable(method):
+                    method(value)
+                else:
+                    raise AttributeError(f"Attribute '{attr}' is not callable on {obj}")
             except AttributeError:
-                # Pass attribute to set_custom_attribute if it does not exist
                 self.set_custom_attribute(obj, attr, value)
 
     def set_custom_attribute(self, w, attr, value):
@@ -202,31 +203,30 @@ class AttributesMixin:
             print(f"Error: {e}")
 
     def set_flags(self, **flags):
-        """Sets or unsets any given window flag(s) for top-level windows.
+        """Sets or unsets given window flags, safely ignoring unsupported cases.
 
         Parameters:
-            **flags: Keyword arguments where the flag is the key and the value indicates whether to set or unset the flag.
+            flags (dict): A dictionary where keys are flag names (as strings) and values are booleans indicating whether to set or unset the flag.
 
-        Note:
-            This method only sets window flags if the object is a top-level window.
+        Example:
+            set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=False)
         """
+        try:
+            current_flags = self.windowFlags()
 
-        # Check if the object is a top-level window
-        if not self.parent() is None:
-            print("Not a top-level window, cannot set window flags.")
-            return
+            for flag, add in flags.items():
+                if hasattr(QtCore.Qt, flag):
+                    flag_value = getattr(QtCore.Qt, flag)
+                    current_flags = (
+                        current_flags | flag_value
+                        if add
+                        else current_flags & ~flag_value
+                    )
 
-        current_flags = self.windowFlags()
+            self.setWindowFlags(current_flags)
 
-        for flag, add in flags.items():
-            if hasattr(QtCore.Qt, flag):
-                flag_value = getattr(QtCore.Qt, flag)
-                if add:
-                    current_flags |= flag_value
-                else:
-                    current_flags &= ~flag_value
-
-        self.setWindowFlags(current_flags)
+        except Exception as e:
+            print(f"[AttributeMixin] Set_flags failed: {e}")
 
     def set_spinbox_limits(self, spinbox, limits):
         """Configure the minimum, maximum, step values, and decimal precision for a given spinbox widget.

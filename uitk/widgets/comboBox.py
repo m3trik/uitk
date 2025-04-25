@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtWidgets, QtCore, QtGui
 from uitk.signals import Signals
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -99,10 +99,10 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
         self.prev_index = -1
         self.has_header = False
         self.header_text = None
-
+        self.restore_state = False
         self.editable = editable
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
 
+        self.menu = Menu(self, mode="option", fixed_item_height=20)
         self.currentIndexChanged.connect(self.check_index)
 
         self.setProperty("class", self.__class__.__name__)
@@ -263,6 +263,7 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
                 f"Unsupported item type: '{type(x)}'. Expected str, list, tuple, set, map, zip, or dict."
             )
 
+        self.restore_state = not self.has_header
         self.set_attributes(**kwargs)
 
         # At the end of the add method

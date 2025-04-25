@@ -3,7 +3,7 @@
 import sys
 from typing import Any, Optional, Union, List, Dict
 from functools import partial
-from qtpy import QtCore, QtWidgets
+from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 from uitk import __package__
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -28,6 +28,7 @@ class MainWindow(
         self,
         switchboard_instance: object,
         central_widget: Optional[QtWidgets.QWidget] = None,
+        parent: Optional[QtWidgets.QWidget] = None,
         name: str = None,
         tags: set = None,
         path: str = None,
@@ -87,7 +88,7 @@ class MainWindow(
         Methods:
             - init_child(widget): Initializes and manages child widgets within the main window.
             - init_child_changed_signal(widget): Sets up signals for child widgets when their state changes.
-            - defer(func, *args, priority=0): Defers the execution of a function until the window is shown.
+            - defer_until_show(func, *args, priority=0): Defers the execution of a function until the window is shown.
             - trigger_deferred(): Executes all deferred methods in priority order.
 
         Example:
@@ -104,7 +105,7 @@ class MainWindow(
             main_window.show()
             ```
         """
-        super().__init__()
+        super().__init__(parent)
 
         self.logger.setLevel(log_level)
         self.sb = switchboard_instance
@@ -118,6 +119,7 @@ class MainWindow(
         self.is_connected = False
         self.prevent_hide = False
         self.widgets = set()
+        self.restored_widgets = set()
         self._deferred = {}
         self.lock_style = False
         self.original_style = ""
@@ -242,6 +244,9 @@ class MainWindow(
         # Additional widget setup
         widget.refresh = True
         widget.is_initialized = False
+        # Allow widgets the option to define their own restore_state
+        if not hasattr(widget, "restore_state"):
+            widget.restore_state = True
         widget.installEventFilter(self)
 
         # Apply additional attributes from kwargs
@@ -251,9 +256,11 @@ class MainWindow(
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
 
+        # Auto-cleanup on deletion
+        widget.destroyed.connect(lambda: self.widgets.discard(widget))
+
         # Post-initialization actions
         self.on_child_added.emit(widget)
-        self.sb.restore_widget_state(widget)
         self.init_child_changed_signal(widget)
 
         if self.is_connected:
@@ -349,7 +356,7 @@ class MainWindow(
                 method()
         self._deferred.clear()
 
-    def defer(self, func, *args, priority=0):
+    def defer_until_show(self, func, *args, priority=0):
         """Defer execution of a function until after window is shown. The function is added to a dictionary of deferred
         methods, with a specified priority. Lower priority values will be executed before higher ones.
 
@@ -535,23 +542,27 @@ class MainWindow(
 
     def eventFilter(self, widget, event):
         """Filter out specific events related to the widget."""
-        if event.type() == QtCore.QEvent.ChildPolished:
+        etype = event.type()
+
+        # Initialize child widgets when they are added to the main window
+        if etype == QtCore.QEvent.ChildPolished:
             child = event.child()
             if isinstance(child, QtWidgets.QWidget):
                 self.init_child(child)
 
-        elif event.type() == QtCore.QEvent.Show:
-            if widget is not self:
-                for relative in self.sb.get_ui_relatives(
-                    widget.ui, exact=True, upstream=True, downstream=True
-                ):
-                    if widget.name:
-                        rel_widget = getattr(relative, widget.name, None)
-                        if isinstance(rel_widget, QtWidgets.QWidget):
-                            rel_widget.init_slot()
+        elif etype == QtCore.QEvent.Show:
+            if not hasattr(widget, "name") or widget is self:
+                return False
+            for relative in self.sb.get_ui_relatives(
+                widget.ui, exact=True, upstream=True, downstream=True
+            ):
+                if widget.name:
+                    rel_widget = getattr(relative, widget.name, None)
+                    if isinstance(rel_widget, QtWidgets.QWidget):
+                        rel_widget.init_slot()
 
-                if not widget.is_initialized:
-                    widget.is_initialized = True
+            if not widget.is_initialized:
+                widget.is_initialized = True
 
         return super().eventFilter(widget, event)
 
@@ -580,8 +591,23 @@ class MainWindow(
             if exit_code != -1:
                 sys.exit(exit_code)
 
+    def restore_widget_states(self) -> None:
+        """Restores the state of all widgets that have a restore_state attribute set to True."""
+        for widget in self.widgets - self.restored_widgets:
+            if getattr(widget, "restore_state", False):
+                self.sb.restore_widget_state(widget)
+                self.restored_widgets.add(widget)
+
+    def initialize_untracked_widgets(self) -> None:
+        """Ensure any QWidget not already tracked is initialized."""
+        for child in self.findChildren(QtWidgets.QWidget):
+            if child not in self.widgets:
+                self.init_child(child)
+
     def showEvent(self, event):
-        """Reimplement showEvent to emit custom signal when window is shown."""
+        """Override the show event to initialize untracked widgets and restore their states."""
+        self.initialize_untracked_widgets()
+        self.restore_widget_states()
         self.sb.connect_slots(self)
         self.activateWindow()
         self.on_show.emit()

@@ -1,8 +1,8 @@
 # !/usr/bin/python
 # coding=utf-8
-from typing import Union
 import re
-from qtpy import QtCore, QtWidgets
+from typing import Union
+from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 
 

@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import inspect
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 

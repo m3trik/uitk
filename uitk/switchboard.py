@@ -7,7 +7,7 @@ import inspect
 import traceback
 from typing import List, Union, Optional
 from xml.etree.ElementTree import ElementTree
-from qtpy import QtCore, QtGui, QtWidgets, QtUiTools
+from qtpy import QtWidgets, QtCore, QtGui, QtUiTools
 import pythontk as ptk
 
 # From this package:
@@ -455,9 +455,16 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         tags = tags or (self._parse_tags(derived_name) if derived_name else None)
         path = ptk.format_path(path, "path") if path else None
 
+        # Parent to the swtichboard parent if not given.
+        parent = kwargs.pop(
+            "parent",
+            self.parent() if isinstance(self.parent(), QtWidgets.QMainWindow) else None,
+        )
+
         main_window = self.registered_widgets.MainWindow(
             switchboard_instance=self,
             central_widget=central_widget,
+            parent=parent,
             name=derived_name,
             tags=tags,
             path=path,
@@ -716,11 +723,12 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             raise ValueError(f"Invalid datatype: {type(ui)}")
 
         if widgets is None:
-            if ui.is_connected:
+            if getattr(ui, "is_connected", False):
                 return
             widgets = ui.widgets
 
-        for widget in ptk.make_iterable(widgets):
+        # Make snapshot to avoid mutation during iteration
+        for widget in ptk.make_iterable(widgets, snapshot=True):
             self.connect_slot(widget)
 
         ui.is_connected = True
@@ -1273,6 +1281,9 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         Parameters:
             widget (QWidget): The widget whose state is to be restored.
         """
+        if not getattr(widget, "restore_state", False):
+            return  # Early return if restore_state is False
+
         widget_name = widget.objectName()
         if not widget_name:
             return  # Exit if widget does not have a name
@@ -1310,7 +1321,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             signal_name (str): The name of the signal that triggered the state change.
             value (Union[str, float, int]): The value to set the widget's state to.
         """
-        # Define a dictionary that maps signal names to lambda functions
         action_map = {
             "textChanged": lambda w, v: (
                 w.setText(str(v)) if hasattr(w, "setText") else None
@@ -1329,10 +1339,20 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             ),
         }
 
-        # Call the appropriate lambda function if the signal_name exists in action_map
         action = action_map.get(signal_name)
         if action:
-            action(widget, value)
+            try:  # Skip restoring invalid indexes for ComboBoxes
+                if (
+                    isinstance(widget, QtWidgets.QComboBox)
+                    and signal_name == "currentIndexChanged"
+                ):
+                    if not isinstance(value, int) or value >= widget.count():
+                        return
+
+                widget.blockSignals(True)
+                action(widget, value)
+            finally:
+                widget.blockSignals(False)
 
     def _set_numeric_value(self, widget, value):
         try:
@@ -2003,34 +2023,38 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             release_event = QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, key, modifiers)
             QtWidgets.QApplication.postEvent(ui, release_event)
 
-    def defer(self, method: callable, *args, delay_ms: int = 300, **kwargs) -> None:
+    def defer_with_timer(
+        self, func: callable, *args, delay_ms: int = 300, **kwargs
+    ) -> None:
         """Defer execution of any callable with arguments after a delay.
 
         Parameters:
-            method (callable): The method to be called after the delay.
-            *args: Positional arguments for the method.
+            func (callable): The function to be called after the delay.
+            *args: Positional arguments for the function.
             delay_ms (int, optional): Delay in milliseconds before execution. Default is 300.
-            **kwargs: Keyword arguments for the method.
+            **kwargs: Keyword arguments for the function.
 
         Raises:
-            ValueError: If method is not callable.
+            ValueError: If func is not callable.
             TypeError: If delay_ms is not an integer.
         """
-        if not callable(method):
-            raise ValueError(f"defer: Expected a callable, got {type(method).__name__}")
+        if not callable(func):
+            raise ValueError(
+                f"[defer_with_timer] Expected a callable, got {type(func).__name__}"
+            )
 
         if not isinstance(delay_ms, int):
             raise TypeError(
-                f"defer: delay_ms must be an integer, got {type(delay_ms).__name__}"
+                f"[defer_with_timer] delay_ms must be an integer, got {type(delay_ms).__name__}"
             )
 
         def safe_call():
-            """Executes the method safely and logs any exceptions."""
+            """Executes the function safely and logs any exceptions."""
             try:
-                method(*args, **kwargs)
+                func(*args, **kwargs)
             except Exception as e:
                 self.logger.error(
-                    f"defer: Exception in deferred call to {method.__name__}: {e}"
+                    f"[defer_with_timer] Exception in deferred call to {func.__name__}: {e}"
                 )
                 self.logger.debug(traceback.format_exc())
 

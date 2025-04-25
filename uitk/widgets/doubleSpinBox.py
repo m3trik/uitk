@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtWidgets, QtGui, QtCore
 from uitk.widgets.menu import Menu
 from uitk.widgets.messageBox import MessageBox
 from uitk.widgets.mixins.attributes import AttributesMixin
