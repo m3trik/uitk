@@ -417,7 +417,7 @@ class StyleSheet(QtCore.QObject):
                 color: {TEXT_COLOR};
                 background-attachment: fixed; /* fixed, scroll */
             }
-            QTextEdit#hud_text {
+            QTextEdit#hudTextEdit {
                 border: none;
                 background-color: transparent;
                 color: white;

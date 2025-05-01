@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
+from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.signals import Signals
 from uitk.widgets.menu import Menu
@@ -135,25 +136,44 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
     def setItemText(self, index, text):
         self.setRichText(text, index)
 
-    def setAsCurrent(self, i, blockSignals=False):
+    def setAsCurrent(
+        self,
+        i: Union[str, int],
+        blockSignals: bool = False,
+        strict: bool = False,
+        fallback_index: int = None,
+    ) -> None:
+        """Set the current item by value or index, with optional fallback if not found.
+
+        Parameters:
+            i (str|int): The item text or index to set as current.
+            blockSignals (bool): Whether to block signals during the operation.
+            strict (bool): If True, raise error if item is not found.
+            fallback_index (int): Index to use if item is not found and strict is False.
+                                Defaults to -1 if header is present, else 0.
+        """
         if blockSignals:
             self.blockSignals(True)
 
+        index = None
         try:
             index = (
                 self.items.index(i)
                 if isinstance(i, str)
-                else i if isinstance(i, int) else None
+                else i if isinstance(i, int) and 0 <= i < self.count() else None
             )
         except ValueError:
-            raise ValueError(
-                f"The item '{i}' was not found in ComboBox. Available items are {self.items}."
-            )
+            if strict:
+                raise ValueError(
+                    f"The item '{i}' was not found in ComboBox. "
+                    f"Available items are {[str(item) for item in self.items]}."
+                )
 
         if index is None:
-            raise RuntimeError(
-                f"Failed to set current item in ComboBox: expected int or str, got {i, type(i)}"
-            )
+            index = fallback_index
+            if index is None:
+                index = -1 if self.has_header else 0
+            print(f"ComboBox: '{i}' not found. Defaulting to index {index}.")
 
         self.setCurrentIndex(index)
 

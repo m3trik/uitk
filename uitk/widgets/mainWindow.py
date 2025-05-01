@@ -21,7 +21,7 @@ class MainWindow(
     on_close = QtCore.Signal()
     on_focus_in = QtCore.Signal()
     on_focus_out = QtCore.Signal()
-    on_child_added = QtCore.Signal(object)
+    on_child_registered = QtCore.Signal(object)
     on_child_changed = QtCore.Signal(object, object)
 
     def __init__(
@@ -51,7 +51,7 @@ class MainWindow(
             - on_close: Emitted when the window is closed.
             - on_focus_in: Emitted when the window gains focus.
             - on_focus_out: Emitted when the window loses focus.
-            - on_child_added: Emitted when a child widget is added to the main window.
+            - on_child_init: Emitted when a child widget is added to the main window.
             - on_child_changed: Emitted when a child widget's state is changed.
 
         Parameters:
@@ -70,8 +70,9 @@ class MainWindow(
             - legal_name_no_tags (str): A tag-free version of the legal name.
             - path (str): The file path associated with the UI, primarily for loaded UI files.
             - tags (set): A set of tags associated with the UI, used for categorization and management.
-            - is_initialized (bool): Indicates whether the UI has been initialized.
+            - is_registered (bool): Indicates whether the UI has been registered with the Switchboard.
             - is_connected (bool): Indicates whether the UI is connected to its respective slots.
+            - is_initialized (bool): Indicates whether the UI has been initialized.
             - prevent_hide (bool): Prevents the window from being hidden if set to True.
             - widgets (set): A set of child widgets managed within the main window.
             - settings (QtCore.QSettings): The settings object for storing UI-specific settings.
@@ -86,8 +87,7 @@ class MainWindow(
             - is_current_ui (bool): Indicates whether the UI is the currently active UI in the Switchboard.
 
         Methods:
-            - init_child(widget): Initializes and manages child widgets within the main window.
-            - init_child_changed_signal(widget): Sets up signals for child widgets when their state changes.
+            - register_widget(widget): Initializes and manages child widgets within the main window.
             - defer_until_show(func, *args, priority=0): Defers the execution of a function until the window is shown.
             - trigger_deferred(): Executes all deferred methods in priority order.
 
@@ -189,23 +189,30 @@ class MainWindow(
             or the parent class.
         """
         found_widget = self.sb._get_widget_from_ui(self, attr_name)
-        if found_widget:  # This is likely never used
-            self.init_child(found_widget)
+        if found_widget:
+            self.register_widget(found_widget)
             return found_widget
 
         raise AttributeError(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
-    # def __repr__(self) -> str:
-    #     """Return a string representation of the MainWindow instance."""
-    #     return f"<MainWindow name='{self.name}' id={hex(id(self))}>"
-
     def __str__(self):
         """Return the filename"""
         return self.name
 
-    def init_child(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None:
+    def is_registered(self, widget: QtWidgets.QWidget) -> bool:
+        """Check if the widget has already been added to the main window.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to check.
+
+        Returns:
+            bool: True if the widget has not been added, False otherwise.
+        """
+        return getattr(widget, "is_registered", False)
+
+    def register_widget(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None:
         """Assign additional attributes to the widget for easier access and better management.
 
         Parameters:
@@ -214,7 +221,7 @@ class MainWindow(
         """
         self.logger.debug(f"Initializing child widget: {widget}")
 
-        if widget in self.widgets:
+        if self.is_registered(widget):
             self.logger.debug(f"Widget {widget} is already initialized.")
             return
 
@@ -256,12 +263,9 @@ class MainWindow(
         setattr(self, widget.name, widget)
         self.widgets.add(widget)
 
-        # Auto-cleanup on deletion
-        widget.destroyed.connect(lambda: self.widgets.discard(widget))
-
-        # Post-initialization actions
-        self.on_child_added.emit(widget)
-        self.init_child_changed_signal(widget)
+        # Add signals for widget destruction and state changes
+        self._add_child_changed_signal(widget)
+        self._add_child_destroyed_signal(widget)
 
         if self.is_connected:
             self.logger.debug(
@@ -269,11 +273,27 @@ class MainWindow(
             )
             self.sb.connect_slot(widget)
 
-        # Recursively initialize child widgets
-        for child in widget.findChildren(QtWidgets.QWidget):
-            self.init_child(child)
+        # Post-initialization actions
+        self.on_child_registered.emit(widget)
+        widget.is_registered = True
 
-    def init_child_changed_signal(self, widget):
+        for child in widget.findChildren(QtWidgets.QWidget):
+            if not self.is_registered(child):
+                self.register_widget(child)
+
+    def _add_child_destroyed_signal(self, widget):
+        """Initializes the signal for a given widget that will be emitted when the widget is destroyed.
+
+        This method connects the `destroyed` signal of the widget to a slot that removes the widget from the
+        parent object's list of widgets. This ensures that the parent object can keep track of its child widgets
+        and clean up any references to them when they are no longer needed.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to initialize the signal for.
+        """
+        widget.destroyed.connect(lambda: self.widgets.discard(widget))
+
+    def _add_child_changed_signal(self, widget):
         """Initializes the signal for a given widget that will be emitted when the widget's state changes.
 
         This method iterates over a dictionary of default signals, which maps widget types to signal names.
@@ -548,7 +568,7 @@ class MainWindow(
         if etype == QtCore.QEvent.ChildPolished:
             child = event.child()
             if isinstance(child, QtWidgets.QWidget):
-                self.init_child(child)
+                self.register_widget(child)
 
         elif etype == QtCore.QEvent.Show:
             if not hasattr(widget, "name") or widget is self:
@@ -601,8 +621,8 @@ class MainWindow(
     def initialize_untracked_widgets(self) -> None:
         """Ensure any QWidget not already tracked is initialized."""
         for child in self.findChildren(QtWidgets.QWidget):
-            if child not in self.widgets:
-                self.init_child(child)
+            if not self.is_registered(child):
+                self.register_widget(child)
 
     def showEvent(self, event):
         """Override the show event to initialize untracked widgets and restore their states."""
