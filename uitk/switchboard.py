@@ -2,15 +2,15 @@
 # coding=utf-8
 import re
 import sys
-import json
 import inspect
 import traceback
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Any, Type
 from xml.etree.ElementTree import ElementTree
 from qtpy import QtWidgets, QtCore, QtGui, QtUiTools
 import pythontk as ptk
 
 # From this package:
+from uitk.state_manager import StateManager
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins import ConvertMixin
 
@@ -26,7 +26,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
     functionality within the slots class.
 
     Attributes:
-        default_signals (dict): Default signals to be connected per widget type when no specific signals are defined.
+        default_signals (dict): Which widgets are tracked, and default signals to be connected if no signals are overridden.
         module_dir (str): Directory of this module.
         default_dir (str): Default directory used for relative path resolution.
 
@@ -96,7 +96,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         self.logger.setLevel(log_level)
 
         self.ui_name_delimiters = ui_name_delimiters
-
+        self.state = StateManager()
         self.registry = FileManager()
         base_dir = 1 if not __name__ == "__main__" else 0
 
@@ -256,23 +256,28 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         self.set_slot_class(added_ui, found_slots)
         return added_ui
 
-    def _resolve_widget(self, attr_name):
+    def resolve_widget_class(
+        self, class_name: str
+    ) -> Optional[Type[QtWidgets.QWidget]]:
+        """Return the widget class registered under the given name."""
+        return self.registry.widget_registry.get(
+            classname=class_name, return_field="classobj"
+        )
+
+    def _resolve_widget(self, class_name: str) -> Optional[QtWidgets.QWidget]:
         """Resolver for dynamically loading registered widgets when accessed.
 
         Parameters:
-            attr_name (str): The name of the widget to resolve.
+            class_name (str): The name of the widget to resolve.
 
         Returns:
-            object: The widget object if it's found, or None if it's not found.
+            QWidget or None: The resolved and registered widget, or None if not found.
         """
-        self.logger.debug(f"Resolving widget: {attr_name}")
+        self.logger.debug(f"Resolving widget: {class_name}")
 
-        # Check if the attribute matches a widget file
-        widget_class = self.registry.widget_registry.get(
-            classname=attr_name, return_field="classobj"
-        )
+        widget_class = self.resolve_widget_class(class_name)
         if not widget_class:
-            raise AttributeError(f"Unable to resolve widget class for '{attr_name}'.")
+            raise AttributeError(f"Unable to resolve widget class for '{class_name}'.")
 
         widget = self.register_widget(widget_class)
         self.logger.debug(
@@ -1223,158 +1228,6 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             None,
         )
 
-    def sync_widget_values(self, value, widget):
-        """Synchronizes the value of a given widget with all its relative widgets.
-
-        This method first retrieves all the relative UIs of the given widget, including both upstream and downstream relatives.
-        It then iterates over these relatives, and for each relative, it tries to get a widget with the same name as the given widget.
-
-        If such a widget exists in the relative UI, the method checks the type of the widget and uses the appropriate method to set the widget's value.
-        The appropriate method is determined based on the signal that the widget emits when its state changes.
-
-        The signal names and corresponding methods are stored in the `default_signals` dictionary, which maps widget types to signal names.
-
-        Parameters:
-            value (any): The value to set the widget's relatives to.
-            widget (QWidget): The widget to synchronize the value for.
-        """
-        relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
-        for relative in relatives:
-            # self.logger.debug("name:      ", widget.name)
-            relative_widget = self.get_widget(widget.name, relative)
-            # self.logger.debug("get widget:", relative_widget)
-            if relative_widget is not None and relative_widget is not widget:
-                signal_name = self.default_signals.get(widget.derived_type)
-                if signal_name:
-                    self._apply_state_to_widget(relative_widget, signal_name, value)
-                    self.store_widget_state(relative_widget, signal_name, value)
-
-        # Store the state of the original widget regardless of whether it has relatives
-        original_signal_name = self.default_signals.get(widget.derived_type)
-        if original_signal_name:
-            self.store_widget_state(widget, original_signal_name, value)
-
-    def store_widget_state(
-        self, widget: QtWidgets.QWidget, signal_name: str, value: any
-    ) -> None:
-        """Stores the current state of a widget in the application settings.
-        Serializes complex objects into JSON for storable formats.
-
-        Parameters:
-            widget (QWidget): The widget whose state is to be stored.
-            signal_name (str): The name of the signal indicating a state change in the widget.
-            value (any): The current state of the widget, to be serialized if complex.
-        """
-        # Serialize complex objects into a storable format (e.g., JSON string)
-        if isinstance(value, (dict, list, tuple)):
-            value = json.dumps(value)
-        elif not isinstance(value, (int, float, str, bool)):
-            # Log or handle non-serializable objects here
-            return
-
-        widget.ui.settings.setValue(f"{widget.objectName()}/{signal_name}", value)
-
-    def restore_widget_state(self, widget: QtWidgets.QWidget) -> None:
-        """Restores the state of a given widget using QSettings.
-        Deserializes stored JSON strings back into Python objects.
-
-        Parameters:
-            widget (QWidget): The widget whose state is to be restored.
-        """
-        if not getattr(widget, "restore_state", False):
-            return  # Early return if restore_state is False
-
-        widget_name = widget.objectName()
-        if not widget_name:
-            return  # Exit if widget does not have a name
-
-        signal_name = self.default_signals.get(widget.derived_type)
-        if signal_name:
-            try:
-                value = widget.ui.settings.value(f"{widget_name}/{signal_name}")
-                if value is not None:
-                    # Attempt to parse the value assuming it might be JSON
-                    try:
-                        parsed_value = json.loads(value)
-                    except (TypeError, json.JSONDecodeError):
-                        parsed_value = value  # Use the original value if parsing fails
-                    self._apply_state_to_widget(widget, signal_name, parsed_value)
-            except EOFError:
-                return
-
-    def clear_widget_state(self, widget):
-        """Clears the stored state of a given widget from the application settings.
-
-        Parameters:
-            widget (QWidget): The widget whose state is to be cleared.
-        """
-        signal_name = self.default_signals.get(widget.derived_type)
-        if signal_name:
-            key = f"{widget.name}/{signal_name}"
-            widget.ui.settings.remove(key)
-
-    def _apply_state_to_widget(self, widget, signal_name, value):
-        """Applies the stored state to a widget based on the given signal name.
-
-        Parameters:
-            widget (QWidget): The widget whose state is to be updated.
-            signal_name (str): The name of the signal that triggered the state change.
-            value (Union[str, float, int]): The value to set the widget's state to.
-        """
-        action_map = {
-            "textChanged": lambda w, v: (
-                w.setText(str(v)) if hasattr(w, "setText") else None
-            ),
-            "valueChanged": lambda w, v: (
-                self._set_numeric_value(w, v) if hasattr(w, "setValue") else None
-            ),
-            "currentIndexChanged": lambda w, v: (
-                self._set_index_value(w, v) if hasattr(w, "setCurrentIndex") else None
-            ),
-            "toggled": lambda w, v: (
-                self._set_boolean_value(w, v) if hasattr(w, "setChecked") else None
-            ),
-            "stateChanged": lambda w, v: (
-                self._set_check_state(w, v) if hasattr(w, "setCheckState") else None
-            ),
-        }
-
-        action = action_map.get(signal_name)
-        if action:
-            try:  # Skip restoring invalid indexes for ComboBoxes
-                if (
-                    isinstance(widget, QtWidgets.QComboBox)
-                    and signal_name == "currentIndexChanged"
-                ):
-                    if not isinstance(value, int) or value >= widget.count():
-                        return
-
-                widget.blockSignals(True)
-                action(widget, value)
-            finally:
-                widget.blockSignals(False)
-
-    def _set_numeric_value(self, widget, value):
-        try:
-            widget.setValue(float(value))
-        except (ValueError, TypeError):
-            pass  # Optionally log this error
-
-    def _set_index_value(self, widget, value):
-        try:
-            widget.setCurrentIndex(int(value))
-        except (ValueError, TypeError):
-            pass  # Optionally log this error
-
-    def _set_boolean_value(self, widget, value):
-        widget.setChecked(value in ["true", "True", 1, "1"])
-
-    def _set_check_state(self, widget, value):
-        try:
-            widget.setCheckState(QtCore.Qt.CheckState(int(value)))
-        except (ValueError, TypeError):
-            pass  # Optionally log this error
-
     def set_widget_attrs(self, ui, widget_names, **kwargs):
         """Set multiple properties, for multiple widgets, on multiple UI's at once.
 
@@ -1395,6 +1248,17 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
                     setattr(w, attr, value)
                 except AttributeError:
                     pass
+
+    def sync_widget_values(self, value: Any, widget: QtWidgets.QWidget) -> None:
+        """Synchronizes the value of a given widget with all its relative widgets."""
+        relatives = self.get_ui_relatives(widget.ui, upstream=True, downstream=True)
+        for relative in relatives:
+            relative_widget = self.get_widget(widget.name, relative)
+            if relative_widget and relative_widget is not widget:
+                self.state.apply(relative_widget, value)
+                self.state.store(relative_widget, value)
+
+        self.state.store(widget, value)
 
     def is_widget(self, obj):
         """Returns True if the given obj is a valid widget.

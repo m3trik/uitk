@@ -5,6 +5,8 @@ from typing import Any, Optional, Union, List, Dict
 from functools import partial
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
+
+# From this package
 from uitk import __package__
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
@@ -221,14 +223,14 @@ class MainWindow(
         """
         self.logger.debug(f"Initializing child widget: {widget}")
 
-        if self.is_registered(widget):
-            self.logger.debug(f"Widget {widget} is already initialized.")
-            return
-
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(
-                f"Attempted to initialize a non-widget: {widget}. type: {type(widget)}"
+                f"Expected a widget object, but received {type(widget)}"
             )
+            return
+
+        if self.is_registered(widget):
+            self.logger.debug(f"Widget {widget} is already initialized.")
             return
 
         # Initialize widget attributes
@@ -437,6 +439,25 @@ class MainWindow(
             wrapper = self.sb._create_slot_wrapper(slot, widget)
             wrapper(*args, **kwargs)
 
+    def clear_all_saved_widget_states(self) -> None:
+        """Clears the stored state of all widgets in this UI via the Switchboard."""
+        for widget in self.widgets:
+            if getattr(widget, "restore_state", False):
+                self.sb.state.clear(widget)
+        self.settings.sync()
+        self.logger.info(f"Cleared all widget states for UI: {self.name}")
+
+    def restore_widget_states(self) -> None:
+        """Restores the state of all widgets that have a restore_state attribute set to True."""
+        for widget in self.widgets - self.restored_widgets:
+            if getattr(widget, "restore_state", False):
+                self.sb.state.restore(widget)
+                self.restored_widgets.add(widget)
+
+    def reset_all_widget_states(self) -> None:
+        """Clears and re-restores widget states using current widget defaults."""
+        self.clear_all_widget_states()
+
     def store_settings(
         self,
         keys: Union[str, List[str]],
@@ -610,13 +631,6 @@ class MainWindow(
             exit_code = self.sb.app.exec_()
             if exit_code != -1:
                 sys.exit(exit_code)
-
-    def restore_widget_states(self) -> None:
-        """Restores the state of all widgets that have a restore_state attribute set to True."""
-        for widget in self.widgets - self.restored_widgets:
-            if getattr(widget, "restore_state", False):
-                self.sb.restore_widget_state(widget)
-                self.restored_widgets.add(widget)
 
     def initialize_untracked_widgets(self) -> None:
         """Ensure any QWidget not already tracked is initialized."""

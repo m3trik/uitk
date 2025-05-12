@@ -6,7 +6,6 @@ import pkgutil
 import inspect
 from uitk.signals import Signals
 
-
 __package__ = "uitk"
 __version__ = "1.0.25"
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
