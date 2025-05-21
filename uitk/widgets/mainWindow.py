@@ -75,6 +75,7 @@ class MainWindow(
             - is_registered (bool): Indicates whether the UI has been registered with the Switchboard.
             - is_connected (bool): Indicates whether the UI is connected to its respective slots.
             - is_initialized (bool): Indicates whether the UI has been initialized.
+            - restore_widget_states (bool): Indicates whether to restore widget states automatically.
             - prevent_hide (bool): Prevents the window from being hidden if set to True.
             - widgets (set): A set of child widgets managed within the main window.
             - settings (QtCore.QSettings): The settings object for storing UI-specific settings.
@@ -121,6 +122,7 @@ class MainWindow(
         self.is_connected = False
         self.prevent_hide = False
         self.widgets = set()
+        self.restore_widget_states = True
         self.restored_widgets = set()
         self._deferred = {}
         self.lock_style = False
@@ -447,12 +449,18 @@ class MainWindow(
         self.settings.sync()
         self.logger.info(f"Cleared all widget states for UI: {self.name}")
 
-    def restore_widget_states(self) -> None:
-        """Restores the state of all widgets that have a restore_state attribute set to True."""
-        for widget in self.widgets - self.restored_widgets:
-            if getattr(widget, "restore_state", False):
-                self.sb.state.restore(widget)
-                self.restored_widgets.add(widget)
+    def restore_widget_state(self, widget: QtWidgets.QWidget, force=False) -> None:
+        """Restore widget state if auto_restore_widget_states is True and widget.restore_state is True.
+        Ensures each widget is only restored once per session.
+        """
+        if not getattr(self, "restore_widget_states", False):
+            return
+        if (
+            getattr(widget, "restore_state", False)
+            and widget not in self.restored_widgets
+        ) or force:
+            self.sb.state.restore(widget)
+            self.restored_widgets.add(widget)
 
     def reset_all_widget_states(self) -> None:
         """Clears and re-restores widget states using current widget defaults."""
@@ -601,6 +609,7 @@ class MainWindow(
                     rel_widget = getattr(relative, widget.name, None)
                     if isinstance(rel_widget, QtWidgets.QWidget):
                         rel_widget.init_slot()
+                        self.restore_widget_state(rel_widget, force=True)
 
             if not widget.is_initialized:
                 widget.is_initialized = True
@@ -641,7 +650,6 @@ class MainWindow(
     def showEvent(self, event):
         """Override the show event to initialize untracked widgets and restore their states."""
         self.initialize_untracked_widgets()
-        self.restore_widget_states()
         self.sb.connect_slots(self)
         self.activateWindow()
         self.on_show.emit()

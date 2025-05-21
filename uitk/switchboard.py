@@ -254,6 +254,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             self.loaded_ui[attr_name] = added_ui
 
         self.set_slot_class(added_ui, found_slots)
+
         return added_ui
 
     def resolve_widget_class(
@@ -1425,7 +1426,7 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
 
         # Determine the center point based on the provided pos value
         if pos == "screen":
-            rect = QtWidgets.QApplication.desktop().availableGeometry(widget)
+            rect = QtWidgets.QApplication.primaryScreen().availableGeometry()
             centerPoint = rect.center()
         elif pos == "cursor":
             centerPoint = QtGui.QCursor.pos()
