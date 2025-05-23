@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import weakref
 from typing import Iterable
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
@@ -32,15 +33,24 @@ class EventFactoryFilter(QtCore.QObject):
         }
         self.propagate_to_children = propagate_to_children
         self._handler_cache: dict[int, callable | None] = {}
-        self._installed_widgets: set[QtCore.QObject] = set()
+        self._installed_widgets: "weakref.WeakSet[QtCore.QObject]" = weakref.WeakSet()
 
     def install(self, widgets: QtCore.QObject | Iterable[QtCore.QObject]):
         """Install this event filter on one or more widgets."""
+        import weakref
+
         for w in ptk.make_iterable(widgets):
             w.installEventFilter(self)
             if not self.propagate_to_children:
                 self._installed_widgets.add(w)
-            w.destroyed.connect(lambda: self.uninstall(w))
+            wr = weakref.ref(w)
+
+            def _on_destroyed(obj, wr=wr):
+                widget = wr()
+                if widget:
+                    self.uninstall(widget)
+
+            w.destroyed.connect(_on_destroyed)
 
     def uninstall(self, widgets: QtCore.QObject | Iterable[QtCore.QObject]):
         """Uninstall this event filter from one or more widgets."""
@@ -53,11 +63,11 @@ class EventFactoryFilter(QtCore.QObject):
         return widget in self._installed_widgets
 
     def eventFilter(self, widget: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Event filter method that processes events and calls the appropriate handler."""
         try:
-            if widget is None or widget.parent() is None:
+            if widget is None:
                 return False
         except RuntimeError:
-            # Widget already deleted
             return False
 
         etype = event.type()
@@ -78,12 +88,12 @@ class EventFactoryFilter(QtCore.QObject):
             try:
                 return bool(handler(widget, event))
             except RuntimeError:
-                # Handler tried to use a deleted widget
                 return False
 
         return False
 
     def _normalize_event_type(self, etype: str | int) -> int:
+        """Normalize event type to an integer value."""
         if isinstance(etype, int):
             return etype
         try:
@@ -92,8 +102,15 @@ class EventFactoryFilter(QtCore.QObject):
             raise ValueError(f"Invalid QEvent type string: '{etype}'")
 
     def _default_event_name(self, event_type: int) -> str:
-        name = QtCore.QEvent.Type(event_type).name
-        return name[0].lower() + name[1:] + "Event"
+        """Return a default event name based on the event type."""
+        try:  # Try to get name via QEvent.Type, fallback to int
+            enum_member = QtCore.QEvent.Type(event_type)
+            name = enum_member.name  # PySide6>=6.2
+        except Exception:  # Fallback: manually map or just use the integer value
+            name = f"Type{int(event_type)}"
+        return (
+            name[0].lower() + name[1:] + "Event" if name else f"type{event_type}Event"
+        )
 
     def _format_event_name(self, event_type: int) -> str:
         return f"{self.event_name_prefix}{self._default_event_name(event_type)}"
@@ -184,21 +201,38 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._mouse_over = {top_widget} if top_widget in self._widgets else set()
 
         for widget in self._prev_mouse_over - self._mouse_over:
-            if widget and widget.parent():
+            if self.is_widget_valid(widget):
                 self._send_leave_event(widget)
 
         for widget in self._mouse_over - self._prev_mouse_over:
-            if widget and widget.parent():
+            if self.is_widget_valid(widget):
                 self._send_enter_event(widget)
 
-        self._handle_mouse_grab(top_widget)
+        if self.is_widget_valid(top_widget):
+            self._handle_mouse_grab(top_widget)
+
         self._prev_mouse_over = set(self._mouse_over)
         self._filter_viewport_widgets()
 
+    @staticmethod
+    def is_widget_valid(widget):
+        """Return True if the Qt widget and its C++ object still exist."""
+        if widget is None:
+            return False
+        try:  # This will throw if the C++ object is deleted
+            widget.objectName()
+        except RuntimeError:
+            return False
+        return True
+
     def _release_mouse_for_widgets(self, widgets):
-        """Releases mouse for given widgets."""
+        """Releases mouse for given widgets if still valid."""
         for widget in widgets:
-            widget.releaseMouse()
+            if self.is_widget_valid(widget):
+                try:
+                    widget.releaseMouse()
+                except RuntimeError:
+                    continue
 
     def _send_enter_event(self, widget):
         """Sends an enter event to a widget."""

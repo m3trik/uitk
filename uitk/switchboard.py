@@ -129,17 +129,18 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
             self,
             "loaded_ui",
             resolver=self._resolve_ui,
+            use_weakref=True,
         )  # All loaded ui.
         self.registered_widgets = ptk.NamespaceHandler(
             self,
             "registered_widgets",
             resolver=self._resolve_widget,
-        )  # All registered custom widgets.
+            use_weakref=True,
+        )  # All registered widgets.
         self._current_ui = None
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
-        self._gc_protect = set()  # Objects protected from garbage collection.
 
         self.convert = ConvertMixin()
 
@@ -1927,20 +1928,34 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         QtCore.QTimer.singleShot(delay_ms, safe_call)
 
     def gc_protect(self, obj=None, clear=False):
-        """Protect the given object from garbage collection.
-
-        Parameters:
-            obj (obj/list): The obj(s) to add to the protected list.
-            clear (bool): Clear the set before adding any given object(s).
-
-        Returns:
-            (list) protected objects.
         """
+        Protect the given object(s) from garbage collection by holding a strong reference.
+        Parameters:
+            obj (obj/list): The obj(s) to add to the protected dict.
+            clear (bool): Clear the dict before adding any given object(s).
+        Returns:
+            dict: The protected objects.
+        """
+        if not hasattr(self, "_gc_protect"):
+            self._gc_protect = {}
+
         if clear:
             self._gc_protect.clear()
 
         for o in ptk.make_iterable(obj):
-            self._gc_protect.add(o)
+            key = o.objectName() or id(o)
+            self._gc_protect[key] = o
+
+            # Remove from dict when destroyed
+            def _cleanup(key=key):
+                self._gc_protect.pop(key, None)
+
+            try:
+                o.destroyed.connect(_cleanup)
+            except AttributeError:
+                self.logger.debug(
+                    f"Object {o} does not have a 'destroyed' signal. Cannot connect to it."
+                )
 
         return self._gc_protect
 
