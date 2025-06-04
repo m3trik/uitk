@@ -238,58 +238,23 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         super().showEvent(event)
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:
-        """Attach this header to the top of a QWidget or QMainWindow.
-
-        The header is inserted at the top of the widget's layout or menu area.
-        After attachment, it can be accessed as: <widget>.header
-
-        Parameters:
-            widget (QtWidgets.QWidget): The widget to which the header will be attached.
-        """
+        """Attach this header to the top of a QWidget or QMainWindow's centralWidget if appropriate."""
+        # Avoid double-attachment
         if hasattr(widget, "header") and getattr(widget, "header") is self:
-            return  # already attached
+            return
 
-        if isinstance(widget, QtWidgets.QMainWindow):
-            menu_widget = widget.menuWidget()
+        # If passed a QMainWindow (or subclass), redirect to its central widget.
+        if isinstance(widget, QtWidgets.QMainWindow) and widget.centralWidget():
+            widget = widget.centralWidget()
 
-            if menu_widget:
-                # Wrap header and menu widget in a container
-                container = QtWidgets.QWidget(widget)
-                layout = QtWidgets.QVBoxLayout(container)
-                layout.setContentsMargins(0, 0, 0, 0)
-                layout.setSpacing(0)
-
-                layout.addWidget(self)
-                layout.addWidget(menu_widget)
-
-                widget.setMenuWidget(container)
-            else:
-                central_widget = widget.centralWidget()
-                if not central_widget:
-                    central_widget = QtWidgets.QWidget()
-                    widget.setCentralWidget(central_widget)
-
-                layout = (
-                    central_widget.layout()
-                    if callable(central_widget.layout)
-                    else central_widget.layout
-                )
-                if not isinstance(layout, QtWidgets.QLayout):
-                    layout = QtWidgets.QVBoxLayout(central_widget)
-                    layout.setContentsMargins(0, 0, 0, 0)
-                    central_widget.setLayout(layout)
-
-                layout.insertWidget(0, self)
-
-        else:
-            layout = widget.layout() if callable(widget.layout) else widget.layout
-            if not isinstance(layout, QtWidgets.QLayout):
-                layout = QtWidgets.QVBoxLayout(widget)
-                layout.setContentsMargins(0, 0, 0, 0)
-                widget.setLayout(layout)
-
-            layout.insertWidget(0, self)
-
+        # Attach to the widget's layout
+        layout = widget.layout()
+        if not isinstance(layout, QtWidgets.QLayout):
+            layout = QtWidgets.QVBoxLayout(widget)
+            layout.setContentsMargins(0, 0, 0, 0)
+            widget.setLayout(layout)
+        layout.insertWidget(0, self)
+        self.setParent(widget)
         setattr(widget, "header", self)
 
 

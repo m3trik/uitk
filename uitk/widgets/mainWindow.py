@@ -416,6 +416,8 @@ class MainWindow(
             widget.refresh = False  # Default to False before calling init where you can choose to set refresh to True.
             slot_init(widget)
 
+        self.restore_widget_state(widget)
+
     def call_slot(self, widget, *args, **kwargs):
         """Executes the associated slot for a given widget.
 
@@ -609,7 +611,6 @@ class MainWindow(
                     rel_widget = getattr(relative, widget.name, None)
                     if isinstance(rel_widget, QtWidgets.QWidget):
                         rel_widget.init_slot()
-                        self.restore_widget_state(rel_widget, force=True)
 
             if not widget.is_initialized:
                 widget.is_initialized = True
@@ -654,6 +655,11 @@ class MainWindow(
         self.activateWindow()
         self.on_show.emit()
         super().showEvent(event)
+
+        for widget in self.widgets:
+            if getattr(widget, "restore_state", False):
+                self.restore_widget_state(widget, force=True)
+
         self.is_initialized = True
 
     def focusInEvent(self, event):
