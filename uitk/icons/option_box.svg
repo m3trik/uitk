@@ -1,0 +1,6 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer thin border -->
+  <rect x="4.5" y="4.5" width="15" height="15" fill="none" stroke="#D6D6D6" stroke-width="1.5"></rect>
+  <!-- Slightly thicker top line -->
+  <rect x="5.25" y="5.25" width="13.5" height="2.25" fill="#D6D6D6" stroke="none"></rect>
+</svg>
