@@ -173,6 +173,12 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             self.toggle_pin()
         self.window().hide()
 
+    def unhide_window(self):
+        """Unhide the parent window."""
+        self.window().show()
+        if not self.pinned:
+            self.toggle_pin()
+
     @property
     def menu(self):
         try:

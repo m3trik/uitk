@@ -204,6 +204,11 @@ class Switchboard(QtUiTools.QUiLoader, ptk.HelpMixin, ptk.LoggingMixin):
         except IndexError:
             return None
 
+    @property
+    def visible_windows(self) -> set:
+        """Return all currently visible MainWindow instances."""
+        return {w for w in self.loaded_ui.values() if w.isVisible()}.copy()
+
     def _resolve_ui(self, attr_name):
         """Resolver for dynamically loading UIs when accessed via NamespaceHandler.
 

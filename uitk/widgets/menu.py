@@ -119,7 +119,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
 
         # Create a QVBoxLayout inside the central widget
         self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
-        self.centralWidgetLayout.setContentsMargins(12, 12, 12, 12)
+        self.centralWidgetLayout.setContentsMargins(2, 2, 2, 2)
         self.centralWidgetLayout.setSpacing(1)
 
         # Create a form layout inside the QVBoxLayout
