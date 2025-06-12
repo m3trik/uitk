@@ -782,7 +782,6 @@ class StyleSheet(QtCore.QObject):
             raise ValueError(
                 f"# Error: {__file__} in _get_style_sheet\n#\tKeyError: '{widget_type}'"
             )
-            return ""
 
         for k, v in self._get_color_values(style=style, **kwargs).items():
             css = css.replace(f"{{{k.upper()}}}", v)
