@@ -22,8 +22,8 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
     # Define button properties
     button_definitions = {
         "menu_button": ("≡", "show_menu"),
-        "minimize_button": ("–", "minimize_window"),
-        "hide_button": ("×", "hide_window"),
+        "minimize_button": ("\u2013", "minimize_window"),
+        "hide_button": ("\u0078", "hide_window"),
         "pin_button": ("\u25cb", "toggle_pin"),
     }
 
@@ -68,6 +68,17 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self.config_buttons(**button_args)
         self.set_attributes(**kwargs)
 
+    @property
+    def menu(self):
+        try:
+            return self._menu
+        except AttributeError:
+            from uitk.widgets.menu import Menu
+
+            # print(f"[Header.menu] constructing new menu for: {self.objectName()}")
+            self._menu = Menu(self, fixed_item_height=20)
+            return self._menu
+
     def create_button(self, text, callback, button_type=None):
         """Create a button with the given text and callback."""
         button = QtWidgets.QPushButton(text, self)
@@ -78,37 +89,33 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         return button
 
     def config_buttons(self, **kwargs):
-        """Configure buttons based on the given parameters."""
-        # Track buttons already in the layout
-        existing_buttons = {
-            btn.objectName(): btn for btn in self.findChildren(QtWidgets.QPushButton)
-        }
+        """Configure header buttons in the declared keyword order and align them to the right."""
+        # Clear layout
+        while self.container_layout.count():
+            item = self.container_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
 
-        # Update visibility and reuse existing buttons
         self.buttons = {}
-        for param, visible in kwargs.items():
+
+        # Re-add left-side stretch so buttons align to the right
+        self.container_layout.addStretch(1)
+
+        # Insert buttons in order (they go to the right)
+        for param in kwargs:
             if param not in self.button_definitions:
                 continue
 
+            visible = kwargs[param]
             text, method_name = self.button_definitions[param]
             callback = getattr(self, method_name)
-            button = existing_buttons.get(param)
 
-            if not button:
-                button = self.create_button(text, callback, button_type=param)
-                self.container_layout.addWidget(button)
-            else:
-                button.clicked.disconnect()
-                button.clicked.connect(callback)
-
-            button.setText(text)
+            button = self.create_button(text, callback, button_type=param)
             button.setVisible(visible)
-            self.buttons[param] = button
 
-        # Hide buttons not included in this config
-        for param, button in existing_buttons.items():
-            if param not in self.buttons:
-                button.setVisible(False)
+            self.container_layout.addWidget(button)
+            self.buttons[param] = button
 
         self.container_layout.invalidate()
         self.trigger_resize_event()
@@ -179,16 +186,6 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         if not self.pinned:
             self.toggle_pin()
 
-    @property
-    def menu(self):
-        try:
-            return self._menu
-        except AttributeError:
-            from uitk.widgets.menu import Menu
-
-            self._menu = Menu(self, fixed_item_height=20)
-            return self._menu
-
     def show_menu(self):
         """Show the menu."""
         self.menu.setVisible(True)
@@ -236,12 +233,17 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         super().mouseReleaseEvent(event)
 
     def showEvent(self, event):
-        """Show the menu button if it exists and contains items."""
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._finalize_menu_button_visibility)
+
+    def _finalize_menu_button_visibility(self):
         menu_button = self.buttons.get("menu_button")
         if menu_button:
-            menu_button.setVisible(self.menu.contains_items)
-
-        super().showEvent(event)
+            visible = self.menu.contains_items
+            # print(
+            #     f"[Header._finalize_menu_button_visibility] setting menu_button visible = {visible}"
+            # )
+            menu_button.setVisible(visible)
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:
         """Attach this header to the top of a QWidget or QMainWindow's centralWidget if appropriate."""

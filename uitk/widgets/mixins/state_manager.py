@@ -1,3 +1,5 @@
+# !/usr/bin/python
+# coding=utf-8
 import json
 from typing import Any, Optional
 from qtpy import QtWidgets, QtCore
@@ -5,37 +7,31 @@ import pythontk as ptk
 
 
 class StateManager(ptk.LoggingMixin):
-    """Manages persistent widget state using QSettings."""
-
-    def __init__(self):
+    def __init__(self, qsettings: QtCore.QSettings):
         super().__init__()
         self.logger.setLevel("WARNING")
+        self.qsettings = qsettings
         self._defaults = {}
 
     def _get_settings(self, widget: QtWidgets.QWidget) -> QtCore.QSettings:
-        return widget.ui.settings
+        return self.qsettings
 
     def _get_state_key(
         self, widget: QtWidgets.QWidget, prefix: str = ""
     ) -> Optional[str]:
+        """Returns the state key for a widget based on its objectName and signal type."""
         if not getattr(widget, "restore_state", False):
             return None
-
         name = widget.objectName()
-        signal_name = widget.derived_type and widget.ui.sb.default_signals.get(
-            widget.derived_type
-        )
-
+        signal_name = widget.derived_type and widget.default_signals()
         if not name or not signal_name:
             self.logger.debug(f"Invalid state key: name={name}, signal={signal_name}")
             return None
-
         return f"{prefix}{name}/{signal_name}"
 
     def _get_current_value(self, widget: QtWidgets.QWidget) -> Any:
-        signal_name = widget.derived_type and widget.ui.sb.default_signals.get(
-            widget.derived_type
-        )
+        """Gets the current value of the widget using its mapped signal getter."""
+        signal_name = widget.derived_type and widget.default_signals()
         if not signal_name:
             return None
         getter = {
@@ -55,65 +51,29 @@ class StateManager(ptk.LoggingMixin):
         try:
             widget.setValue(float(value))
         except (ValueError, TypeError):
-            pass
+            self.logger.debug(f"Could not set numeric value '{value}' on {widget}")
 
     def _set_index_value(self, widget, value):
         try:
             widget.setCurrentIndex(int(value))
         except (ValueError, TypeError):
-            pass
+            self.logger.debug(f"Could not set index value '{value}' on {widget}")
 
     def _set_boolean_value(self, widget, value):
-        widget.setChecked(value in ["true", "True", 1, "1"])
+        try:
+            widget.setChecked(value in ["true", "True", 1, "1"])
+        except Exception:
+            self.logger.debug(f"Could not set checked state '{value}' on {widget}")
 
     def _set_check_state(self, widget, value):
         try:
             widget.setCheckState(QtCore.Qt.CheckState(int(value)))
         except (ValueError, TypeError):
-            pass
+            self.logger.debug(f"Could not set check state '{value}' on {widget}")
 
-    def store(self, widget: QtWidgets.QWidget, value: Any) -> None:
-        key = self._get_state_key(widget)
-        if not key:
-            return
-
-        if isinstance(value, (dict, list, tuple)):
-            value = json.dumps(value)
-        elif not isinstance(value, (int, float, str, bool)):
-            return
-
-        self._get_settings(widget).setValue(key, value)
-
-    def restore(self, widget: QtWidgets.QWidget) -> None:
-        key = self._get_state_key(widget)
-        if not key:
-            return
-
-        # Capture the default only once
-        if widget not in self._defaults:
-            self._defaults[widget] = self._get_current_value(widget)
-
-        try:
-            value = self._get_settings(widget).value(key)
-            if value is not None:
-                try:
-                    parsed_value = json.loads(value)
-                except (TypeError, json.JSONDecodeError):
-                    parsed_value = value
-                self.apply(widget, parsed_value)
-        except EOFError:
-            return
-
-    def clear(self, widget: QtWidgets.QWidget) -> None:
-        key = self._get_state_key(widget)
-        if key:
-            self._get_settings(widget).remove(key)
-            self.logger.debug(f"Cleared stored state for: {key}")
-
-    def apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
-        signal_name = widget.derived_type and widget.ui.sb.default_signals.get(
-            widget.derived_type
-        )
+    def _apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
+        """Apply the given value to the widget based on its signal type."""
+        signal_name = widget.derived_type and widget.default_signals()
         if not signal_name:
             return
 
@@ -149,9 +109,56 @@ class StateManager(ptk.LoggingMixin):
             finally:
                 widget.blockSignals(False)
 
-    def has_default(self, widget: QtWidgets.QWidget) -> bool:
-        """Check if a widget has a stored default value."""
-        return widget in self._defaults
+    def save(self, widget: QtWidgets.QWidget, value: Any = None) -> None:
+        """Save the current value of the widget to QSettings.
+
+        If no value is provided, it attempts to retrieve it automatically
+        using the widget's default signal mapping.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget whose state should be saved.
+            value (Any, optional): The value to save. If None, it will be derived.
+        """
+        if value is None:
+            value = self._get_current_value(widget)
+
+        key = self._get_state_key(widget)
+        if not key:
+            return
+
+        # Serialize non-primitive values
+        if isinstance(value, (dict, list, tuple)):
+            value = json.dumps(value)
+        elif not isinstance(value, (int, float, str, bool)):
+            self.logger.debug(f"Unsupported type for {key}: {type(value)}")
+            return
+
+        try:
+            self._get_settings(widget).setValue(key, value)
+            self.logger.debug(f"Stored state: {key} -> {value}")
+        except Exception as e:
+            self.logger.warning(f"Failed to store state for {key}: {e}")
+
+    def load(self, widget: QtWidgets.QWidget) -> None:
+        """Load the saved value from QSettings and apply it to the widget."""
+        key = self._get_state_key(widget)
+        if not key:
+            return
+
+        if widget not in self._defaults:
+            self._defaults[widget] = self._get_current_value(widget)
+
+        try:
+            value = self._get_settings(widget).value(key)
+            if value is not None:
+                try:
+                    parsed_value = json.loads(value)
+                except (TypeError, json.JSONDecodeError):
+                    parsed_value = value
+                self._apply(widget, parsed_value)
+                self.logger.debug(f"Loaded state: {key} -> {parsed_value}")
+        except EOFError:
+            self.logger.debug(f"EOFError reading state for {key}")
 
     def reset_all(self) -> None:
         """Reset all widgets with stored defaults to their original values."""
@@ -159,14 +166,26 @@ class StateManager(ptk.LoggingMixin):
             self.apply(widget, default_value)
 
     def reset(self, widget: QtWidgets.QWidget) -> None:
+        """Reset a widget to its default value."""
         if widget in self._defaults:
             self.apply(widget, self._defaults[widget])
+
+    def clear(self, widget: QtWidgets.QWidget) -> None:
+        """Removes the stored state for the widget from QSettings."""
+        key = self._get_state_key(widget)
+        if key:
+            self._get_settings(widget).remove(key)
+            self.logger.debug(f"Cleared stored state for: {key}")
+
+    def has_default(self, widget: QtWidgets.QWidget) -> bool:
+        """Check if a widget has a stored default value."""
+        return widget in self._defaults
 
 
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    from uitk import Switchboard
+    ...
 
 
 # -----------------------------------------------------------------------------

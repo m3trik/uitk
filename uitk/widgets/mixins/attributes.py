@@ -56,9 +56,8 @@ class AttributesMixin:
         import re
 
         legal_name = re.sub(r"[^0-9a-zA-Z]", "_", name)
-        if (
-            name != legal_name
-        ):  # if the name contains illegal chars; set an alternate attribute using legal characters.
+        # if the name contains illegal chars; set an alternate attribute using legal characters.
+        if name != legal_name:
             setattr(obj, legal_name, value)
             if also_set_original:
                 setattr(obj, name, value)

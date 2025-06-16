@@ -63,7 +63,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         """
         super().__init__(parent)
 
-        self.name = self.objectName()
+        if name is not None:
+            if not isinstance(name, str):
+                raise TypeError(f"Expected 'name' to be a string, got {type(name)}")
+            self.setObjectName(name)
+
         self.mode = mode
         self.position = position
         self.min_item_height = min_item_height
@@ -74,9 +78,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         self.widget_data = {}
         self.prevent_hide = False
         self.option_box = None
-
-        self.name = name or self.objectName()
-        self.setObjectName(self.name)
 
         self.setProperty("class", "translucentBgWithBorder")
         self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
@@ -93,14 +94,17 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
             self.parent().installEventFilter(self)
         self.set_attributes(**kwargs)
 
-    def setCentralWidget(self, widget):
-        """Set a widget as the central widget, replacing the current one."""
+    def setCentralWidget(self, widget, overwrite=False):
+        if not overwrite and getattr(self, "_central_widget", None) is widget:
+            return  # skip if same
+
         current_central_widget = getattr(self, "_central_widget", None)
-        if current_central_widget:
-            current_central_widget.deleteLater()  # delete the current central widget
-        self._central_widget = widget  # set the new central widget
-        self._central_widget.setProperty("class", "centralWidget")  # for stylesheet
-        self.layout.addWidget(self._central_widget)  # add it to the layout
+        if current_central_widget and current_central_widget is not widget:
+            current_central_widget.setParent(None)  # Avoid deleteLater()
+
+        self._central_widget = widget
+        self._central_widget.setProperty("class", "centralWidget")
+        self.layout.addWidget(self._central_widget)
 
     def centralWidget(self):
         """Return the central widget."""

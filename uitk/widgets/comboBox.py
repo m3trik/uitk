@@ -103,7 +103,6 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
         self.restore_state = False
         self.editable = editable
 
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
         self.currentIndexChanged.connect(self.check_index)
 
         self.setProperty("class", self.__class__.__name__)
@@ -115,6 +114,16 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
             self.itemData(i) if self.itemData(i) else self.itemText(i)
             for i in range(self.count())
         ]
+
+    @property
+    def menu(self):
+        try:
+            return self._menu
+        except AttributeError:
+            from uitk.widgets.menu import Menu
+
+            self._menu = Menu(self, mode="option", fixed_item_height=20)
+            return self._menu
 
     @Signals.blockSignals
     def currentData(self):
