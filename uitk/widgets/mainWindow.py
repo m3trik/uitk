@@ -206,19 +206,16 @@ class MainWindow(
 
         self.sb.init_slot(widget, force=True)
         self.restore_widget_state(widget, force=True)
+        widget.is_initialized = True
+        self.widgets.add(widget)
+        self.on_child_registered.emit(widget)
 
         # After slot init, register any new children that were dynamically added
         for child in widget.findChildren(
             QtWidgets.QWidget, options=QtCore.Qt.FindDirectChildrenOnly
         ):
             if child.objectName() and child not in self.widgets:
-                # print(
-                #     f"[{self.objectName()}] [register_widget -> child] {child.objectName()} ({type(child).__name__})"
-                # )
                 self.register_widget(child)
-
-        self.widgets.add(widget)
-        self.on_child_registered.emit(widget)
 
     def _add_child_destroyed_signal(self, widget):
         """Initializes the signal for a given widget that will be emitted when the widget is destroyed.
