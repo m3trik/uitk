@@ -1,6 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-import re
 import sys
 from typing import Any, Optional
 from functools import partial
@@ -194,7 +193,7 @@ class MainWindow(
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
 
         widget.is_initialized = False
-        widget.refresh = True
+        widget.refresh_on_show = False
         if not hasattr(widget, "restore_state"):
             widget.restore_state = True
 
@@ -203,6 +202,7 @@ class MainWindow(
 
         self._add_child_changed_signal(widget)
         self._add_child_destroyed_signal(widget)
+        self._add_child_refresh_on_show_signal(widget)
 
         self.sb.init_slot(widget, force=True)
         self.restore_widget_state(widget, force=True)
@@ -246,16 +246,35 @@ class MainWindow(
             widget (QtWidgets.QWidget): The widget to initialize the signal for.
         """
         signal_name = widget.default_signals()
-        if signal_name:
-            # Get the signal by its name
-            signal = getattr(widget, signal_name, None)
-            if signal and isinstance(signal, QtCore.Signal):
-                # Connect the signal to the slot
-                signal.connect(
-                    lambda v=None, w=widget: (
-                        self.on_child_changed.emit(w, v) if v is not None else None
-                    )
+        if not signal_name:
+            return
+
+        signal = getattr(widget, signal_name, None)
+        if not signal:
+            self.logger.debug(f"No signal '{signal_name}' on {widget}")
+            return
+
+        try:
+            signal.connect(
+                lambda *args, w=widget: self.on_child_changed.emit(
+                    w, args[0] if args else None
                 )
+            )
+        except Exception as e:
+            self.logger.debug(
+                f"Could not connect signal '{signal_name}' on {widget}: {e}"
+            )
+
+    def _add_child_refresh_on_show_signal(self, widget):
+        def maybe_refresh():
+            # Only refresh if initialized AND we've already shown at least once
+            if getattr(widget, "refresh_on_show", False):
+                if getattr(widget, "_is_not_first_show", False):
+                    self.sb.init_slot(widget, force=True)
+                else:  # Mark as shown for the next time
+                    widget._is_not_first_show = True
+
+        self.on_show.connect(maybe_refresh)
 
     def trigger_deferred(self):
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
@@ -295,13 +314,16 @@ class MainWindow(
             self.restored_widgets.add(widget)
 
     def sync_widget_values(self, widget: QtWidgets.QWidget, value: Any) -> None:
-        """Synchronizes the value of a given widget with all its relative widgets."""
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.warning(f"[sync_widget_values] Invalid widget: {widget}")
+            return
+
         relatives = self.sb.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
             relative_widget = self.sb.get_widget(widget.objectName(), relative)
             if relative_widget and relative_widget is not widget:
                 self.state.save(relative_widget, value)
-        # Always store on self after syncing relatives
+
         self.state.save(widget, value)
 
     def eventFilter(self, watched, event):

@@ -4,7 +4,6 @@ import re
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.signals import Signals
-from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 

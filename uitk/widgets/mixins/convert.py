@@ -8,7 +8,7 @@ class ConvertMixin:
     """Class providing utility methods to handle common conversions related to Qt objects."""
 
     # Adjusted types dictionary without rigid tuple length, relying on dynamic handling instead.
-    types = {
+    TYPES = {
         QtCore.QPoint: lambda x: QtCore.QPoint(*x),
         QtCore.QSize: lambda x: QtCore.QSize(*x),
         QtCore.QRect: lambda x: QtCore.QRect(*x),
@@ -26,61 +26,52 @@ class ConvertMixin:
     }
 
     @staticmethod
-    def can_convert(value, q_object_type: Type) -> bool:
-        """Check if a given value can be converted to the specified QObject type.
-
-        Parameters:
-            value: The value to check for conversion compatibility.
-            q_object_type: The Qt class type to check against.
-
-        Returns:
-            True if a conversion function exists for `q_object_type`, False otherwise.
-        """
-        # Check for a direct match or string conversion for QColor
-        if issubclass(q_object_type, QtGui.QColor) and isinstance(
-            value, (str, tuple, list)
-        ):
-            return True
-
-        # Check for the existence of a conversion function in the types dictionary
-        return q_object_type in ConvertMixin.types
+    def _resolve_qtype(q_object_type):
+        """Accept either a Qt type or a string ('QColor'), and return the type object."""
+        if isinstance(q_object_type, str):
+            # Try QtCore, then QtGui
+            for mod in (QtCore, QtGui):
+                qt_type = getattr(mod, q_object_type, None)
+                if qt_type is not None:
+                    return qt_type
+            raise ValueError(
+                f"Qt type string '{q_object_type}' not found in QtCore or QtGui."
+            )
+        return q_object_type
 
     @staticmethod
-    def to_qobject(
-        value, q_object_type: Type[Union[QtCore.QObject, QtGui.QColor]]
-    ) -> Optional[Union[QtCore.QObject, QtGui.QColor]]:
-        """Convert a value to a QObject of the specified type if not already one.
+    def can_convert(value, q_object_type) -> bool:
+        """Check if a value can be converted to the specified QObject type (accepts class or string)."""
+        qt_type = ConvertMixin._resolve_qtype(q_object_type)
+        if issubclass(qt_type, QtGui.QColor) and isinstance(value, (str, tuple, list)):
+            return True
+        return qt_type in ConvertMixin.TYPES
 
-        This method dynamically handles conversions, leveraging the types dictionary
-        for mappings and utilizing special handling where necessary.
-        """
-        # Directly return the value if it's already an instance of the target Qt type
-        if isinstance(value, q_object_type):
+    @staticmethod
+    def to_qobject(value, q_object_type):
+        """Convert a value to a QObject of the specified type (accepts class or string)."""
+        qt_type = ConvertMixin._resolve_qtype(q_object_type)
+        if isinstance(value, qt_type):
             return value
 
-        # Dynamic handling for QColor to support a variety of initialization formats
-        if issubclass(q_object_type, QtGui.QColor):
+        # Dynamic QColor support
+        if issubclass(qt_type, QtGui.QColor):
             if isinstance(value, str):
                 return QtGui.QColor(value)
             elif isinstance(value, (tuple, list)):
                 if all(isinstance(v, float) for v in value):
-                    # Treat as normalized float values
                     return QtGui.QColor.fromRgbF(*value)
                 elif all(isinstance(v, int) for v in value):
-                    # Treat as integer RGB values
                     return QtGui.QColor.fromRgb(*value)
 
-        # Handle conversions for other types specified in the types dictionary
-        constructor = ConvertMixin.types.get(q_object_type)
+        constructor = ConvertMixin.TYPES.get(qt_type)
         if constructor:
-            try:  # Attempt to construct the QObject using the provided value
+            try:
                 return constructor(value)
             except Exception as e:
-                print(
-                    f"Failed to construct {q_object_type.__name__} from value {value}: {e}"
-                )
+                print(f"Failed to construct {qt_type.__name__} from value {value}: {e}")
 
-        print(f"Conversion to {q_object_type.__name__} failed for value: {value}")
+        print(f"Conversion to {qt_type.__name__} failed for value: {value}")
         return None
 
     @staticmethod

@@ -86,7 +86,7 @@ class MyProjectSlots(MyProject):
         widget.clear()
 
         # Optional: Call this method each time the combo box is shown.
-        widget.refresh = True
+        widget.refresh_on_show = True  # Call this method on show
 
         # Your items to add. Can be list of strings, or dict with data.
         items = {"Item A": 1, "Item B": 2, "Item C": 3}

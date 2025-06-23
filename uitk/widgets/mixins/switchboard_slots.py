@@ -10,32 +10,33 @@ import pythontk as ptk
 class SwitchboardSlotsMixin:
     """Mixin for managing slot connections and signal-slot handling in the Switchboard."""
 
-    default_signals = {  # the signals to be connected per widget type should no signals be specified using the slot decorator.
+    default_signals = {
         QtWidgets.QAction: "triggered",
-        QtWidgets.QLabel: "released",
-        QtWidgets.QPushButton: "clicked",
-        QtWidgets.QListWidget: "itemClicked",
-        QtWidgets.QTreeWidget: "itemClicked",
-        QtWidgets.QComboBox: "currentIndexChanged",
-        QtWidgets.QSpinBox: "valueChanged",
-        QtWidgets.QDoubleSpinBox: "valueChanged",
         QtWidgets.QCheckBox: "stateChanged",
-        QtWidgets.QRadioButton: "toggled",
-        QtWidgets.QLineEdit: "textChanged",
-        QtWidgets.QTextEdit: "textChanged",
-        QtWidgets.QSlider: "valueChanged",
-        QtWidgets.QProgressBar: "valueChanged",
-        QtWidgets.QDial: "valueChanged",
-        QtWidgets.QScrollBar: "valueChanged",
+        QtWidgets.QComboBox: "currentIndexChanged",
         QtWidgets.QDateEdit: "dateChanged",
         QtWidgets.QDateTimeEdit: "dateTimeChanged",
-        QtWidgets.QTimeEdit: "timeChanged",
+        QtWidgets.QDial: "valueChanged",
+        QtWidgets.QDoubleSpinBox: "valueChanged",
+        QtWidgets.QLabel: "released",
+        QtWidgets.QLineEdit: "textChanged",
+        QtWidgets.QListWidget: "itemClicked",
         QtWidgets.QMenu: "triggered",
         QtWidgets.QMenuBar: "triggered",
+        QtWidgets.QProgressBar: "valueChanged",
+        QtWidgets.QPushButton: "clicked",
+        QtWidgets.QRadioButton: "toggled",
+        QtWidgets.QScrollBar: "valueChanged",
+        QtWidgets.QSlider: "valueChanged",
+        QtWidgets.QSpinBox: "valueChanged",
+        QtWidgets.QStackedWidget: "currentChanged",
         QtWidgets.QTabBar: "currentChanged",
         QtWidgets.QTabWidget: "currentChanged",
+        QtWidgets.QTableWidget: "cellChanged",
+        QtWidgets.QTextEdit: "textChanged",
+        QtWidgets.QTimeEdit: "timeChanged",
         QtWidgets.QToolBox: "currentChanged",
-        QtWidgets.QStackedWidget: "currentChanged",
+        QtWidgets.QTreeWidget: "itemClicked",
     }
 
     def get_default_signals(self, widget):
@@ -278,12 +279,7 @@ class SwitchboardSlotsMixin:
 
     def init_slot(self, widget, force=False):
         """Initialize a slot for a widget.
-        This method checks if the widget is a valid QWidget instance and retrieves the slot class associated with the widget's UI.
-        If the widget's `refresh` attribute is set to True or if `force` is True, it calls the initialization method for the slot.
-
-        Parameters:
-            widget (QWidget): The widget to initialize the slot for.
-            force (bool): If True, forces the initialization even if `widget.refresh` is False.
+        If force is True or widget is not initialized, calls the initialization method for the slot.
         """
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(
@@ -294,29 +290,20 @@ class SwitchboardSlotsMixin:
         slots = self.get_slot_class(widget.ui)
         slot_init = getattr(slots, f"{widget.objectName()}_init", None)
 
-        if widget.refresh or force:
-            widget.refresh = False
+        # Always run if force=True, otherwise only on first initialization
+        if force or not getattr(widget, "is_initialized", False):
             if slot_init:
                 slot_init(widget)
 
     def call_slot(self, widget, *args, **kwargs):
         """Call a slot method for a widget.
-        This method retrieves the slot associated with the widget's UI and calls it with the provided arguments.
-        If the widget is not a valid QWidget instance, it logs a warning and returns.
-
-        Parameters:
-            widget (QWidget): The widget to call the slot for.
-            *args: Positional arguments to pass to the slot.
-            **kwargs: Keyword arguments to pass to the slot.
+        Retrieves the slot associated with the widget's UI and calls it with the provided arguments.
         """
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(
                 f"Expected a widget object, but received {type(widget)}"
             )
             return
-
-        if widget.refresh:
-            self.init_slot(widget)
 
         slot = self.get_slot(
             self.get_slot_class(widget.ui),
