@@ -34,15 +34,12 @@ class CellFormatMixin(ConvertMixin):
     """Generic cell/column/header formatting for QTableWidget."""
 
     ACTION_COLOR_MAP = {
-        "valid_fg": "#333333",
-        "invalid_fg": "#B97A7A",
-        "warning_fg": "#B49B5C",
-        "info_fg": "#6D9BAA",
-        "inactive_fg": "#AAAAAA",
-        "invalid_bg": "#FBEAEA",
-        "warning_bg": "#FFF6DC",
-        "info_bg": "#E2F3F9",
-        "selected_bg": "#E6E6E6",
+        "valid": ("#3C8D3C", "#E6F4EA"),
+        "invalid": ("#B97A7A", "#FBEAEA"),
+        "warning": ("#B49B5C", "#FFF6DC"),
+        "info": ("#6D9BAA", "#E2F3F9"),
+        "inactive": ("#AAAAAA", None),
+        "reset": (None, None),
     }
 
     def __init__(self, *args, **kwargs):
@@ -50,27 +47,12 @@ class CellFormatMixin(ConvertMixin):
         self._col_formatters = {}
         self._header_formatters = {}
         self._cell_formatters = {}
+        self._item_defaults = {}  # {(row, col): (fg, bg)}
         self.cellChanged.connect(self._on_cell_edited)
 
-    @staticmethod
-    def action_color_formatter(item, value, *_):
-        color = CellFormatMixin.ACTION_COLOR_MAP.get(str(value).lower())
-        if color:
-            item.setBackground(CellFormatMixin.to_qobject(color, QtGui.QColor))
-            item.setForeground(CellFormatMixin.to_qobject("#222222", QtGui.QColor))
-
-    @staticmethod
-    def make_color_map_formatter(color_map):
-        def _fmt(item, value, *_):
-            key = str(value).lower()
-            if key in color_map:
-                item.setBackground(
-                    CellFormatMixin.to_qobject(color_map[key], QtGui.QColor)
-                )
-
-        return _fmt
-
+    # Public API
     def set_column_formatter(self, col, formatter, append=False):
+        """Set a formatter for a specific column."""
         idx = self._resolve_col(col)
         if idx is None:
             return
@@ -80,6 +62,7 @@ class CellFormatMixin(ConvertMixin):
             self._col_formatters[idx] = [formatter]
 
     def set_header_formatter(self, header, formatter, append=False):
+        """Set a formatter for a specific header."""
         idx = self._resolve_col(header)
         if idx is None:
             return
@@ -89,6 +72,7 @@ class CellFormatMixin(ConvertMixin):
             self._header_formatters[header] = [formatter]
 
     def set_cell_formatter(self, row, col, formatter, append=False):
+        """Set a formatter for a specific cell (row, column)."""
         key = (row, col)
         if append:
             self._cell_formatters.setdefault(key, []).append(formatter)
@@ -96,11 +80,14 @@ class CellFormatMixin(ConvertMixin):
             self._cell_formatters[key] = [formatter]
 
     def clear_formatters(self):
+        """Clear all column, header, and cell formatters."""
         self._col_formatters.clear()
         self._header_formatters.clear()
         self._cell_formatters.clear()
+        self._item_defaults.clear()
 
     def apply_formatting(self):
+        """Apply formatting based on the registered formatters."""
         for row in range(self.rowCount()):
             for col in range(self.columnCount()):
                 item = self.item(row, col)
@@ -115,13 +102,94 @@ class CellFormatMixin(ConvertMixin):
                         self,
                     )
 
+    def ensure_valid_color(self, color, color_type, item, row, col):
+        """Ensure a valid QColor, using fallback if needed."""
+        try:
+            return self.to_qobject(color, "QColor")
+        except Exception:
+            pass
+
+        cached = self._get_default_colors(item, row, col)[
+            0 if color_type == "fg" else 1
+        ]
+        try:
+            return self.to_qobject(cached, "QColor")
+        except Exception:
+            print(
+                f"[WARNING] Invalid {color_type} color: {color!r}, and fallback {cached!r} failed. Using None."
+            )
+            return None
+
+    def set_action_color(
+        self,
+        item: QtWidgets.QTableWidgetItem,
+        key: str,
+        row: int = -1,
+        col: int = -1,
+        use_bg: bool = False,
+    ):
+        """Apply semantic color, but skip reset if nothing defined."""
+        fg_raw, bg_raw = self.ACTION_COLOR_MAP.get(str(key).lower(), (None, None))
+
+        # Skip entirely if reset and nothing to restore
+        if key == "reset" and fg_raw is None and bg_raw is None:
+            return
+
+        fg = self.ensure_valid_color(fg_raw, "fg", item, row, col)
+        bg = self.ensure_valid_color(bg_raw, "bg", item, row, col) if use_bg else None
+
+        if row >= 0 and col >= 0:
+            default_fg, default_bg = self._get_default_colors(item, row, col)
+            fg = fg or self.to_qobject(default_fg, "QColor")
+            if use_bg:
+                bg = bg or self.to_qobject(default_bg, "QColor")
+
+        if fg:
+            item.setForeground(fg)
+        if use_bg and bg:
+            item.setBackground(bg)
+
+    def action_color_formatter(self, item, value, *_):
+        key = str(value).lower()
+        fg, bg = CellFormatMixin.ACTION_COLOR_MAP.get(key, (None, None))
+        fg = self.ensure_valid_color(fg, "fg", item, item.row(), item.column())
+        bg = self.ensure_valid_color(bg, "bg", item, item.row(), item.column())
+        item.setForeground(fg)
+        item.setBackground(bg)
+
+    def make_color_map_formatter(self, color_map: dict):
+        def _fmt(item, value, *_):
+            key = str(value).lower()
+            fg, bg = color_map.get(key, (None, None))
+            fg = self.ensure_valid_color(fg, "fg", item, item.row(), item.column())
+            bg = self.ensure_valid_color(bg, "bg", item, item.row(), item.column())
+            item.setForeground(fg)
+            item.setBackground(bg)
+
+        return _fmt
+
+    # Private methods
     def _on_cell_edited(self, row, col):
         item = self.item(row, col)
         if item:
             for fmt in self._get_formatters(row, col):
                 fmt(item, item.data(QtCore.Qt.UserRole) or item.text(), row, col, self)
 
-    def _get_formatters(self, row, col) -> List[Callable]:
+    @staticmethod
+    def _get_default_colors(item, row: int, col: int):
+        """Get the cached default colors for the item at the given row and col."""
+        table = item.tableWidget()
+        if not hasattr(table, "_item_defaults"):
+            table._item_defaults = {}
+        key = (row, col)
+        cache = table._item_defaults
+        if key not in cache:
+            fg = item.foreground().color().name()
+            bg = item.background().color().name()
+            cache[key] = (fg, bg)
+        return cache[key]
+
+    def _get_formatters(self, row, col) -> list:
         formatters = []
         key = (row, col)
         if key in self._cell_formatters:
@@ -148,19 +216,21 @@ class CellFormatMixin(ConvertMixin):
 
 
 class TableWidget(QtWidgets.QTableWidget, HeaderMixin, CellFormatMixin):
+
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent)
         self._init_header_behavior()
         CellFormatMixin.__init__(self)
 
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
-        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.verticalHeader().setVisible(False)
-        self.setAlternatingRowColors(True)
-        self.setWordWrap(False)  # Always off, for all cells
-
+        self.setAlternatingRowColors(False)
+        self.setWordWrap(False)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+
+        # Disable selection
+        self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
 
     @property
     def menu(self):
@@ -268,9 +338,13 @@ class TableWidget(QtWidgets.QTableWidget, HeaderMixin, CellFormatMixin):
     def clear_all(self):
         self.setRowCount(0)
 
-    def fit_to_path_column(self, path_col: int = 1):
-        self.resizeColumnToContents(path_col)
-        self.resizeRowsToContents()
+    def stretch_column_to_fill(self, stretch_col: int):
+        header = self.horizontalHeader()
+        for col in range(self.columnCount()):
+            if col == stretch_col:
+                header.setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
+            else:
+                header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeToContents)
 
 
 # -----------------------------------------------------------------------------

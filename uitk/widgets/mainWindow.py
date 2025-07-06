@@ -14,12 +14,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
 
 
-class MainWindow(
-    QtWidgets.QMainWindow,
-    AttributesMixin,
-    StyleSheet,
-    ptk.LoggingMixin,
-):
+class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     on_show = QtCore.Signal()
     on_hide = QtCore.Signal()
     on_close = QtCore.Signal()
@@ -44,6 +39,8 @@ class MainWindow(
 
         self.logger.setLevel(log_level)
         self.sb = switchboard_instance
+
+        self.style = StyleSheet(self, log_level="WARNING")
 
         self.setObjectName(name)
         self.legal_name = lambda: self.sb.convert_to_legal_name(self.objectName())
@@ -135,7 +132,7 @@ class MainWindow(
         Returns:
             list: A list of the slots connected to the widget's signals.
         """
-        return self.sb.get_slot_class(self)
+        return self.sb.get_slots_instance(self)
 
     @property
     def is_stacked_widget(self):
@@ -184,7 +181,7 @@ class MainWindow(
         )
 
         widget.get_slot = lambda w=widget: getattr(
-            self.sb.get_slot_class(w.ui), w.objectName(), None
+            self.sb.get_slots_instance(w.ui), w.objectName(), None
         )
         widget.init_slot = lambda *args, w=widget: self.sb.init_slot(w)
         widget.call_slot = lambda *args, w=widget, **kwargs: self.sb.call_slot(
@@ -204,8 +201,8 @@ class MainWindow(
         self._add_child_destroyed_signal(widget)
         self._add_child_refresh_on_show_signal(widget)
 
-        self.sb.init_slot(widget, force=True)
-        self.restore_widget_state(widget, force=True)
+        self.sb.init_slot(widget)
+        self.restore_widget_state(widget)
         widget.is_initialized = True
         self.widgets.add(widget)
         self.on_child_registered.emit(widget)
@@ -270,7 +267,7 @@ class MainWindow(
             # Only refresh if initialized AND we've already shown at least once
             if getattr(widget, "refresh_on_show", False):
                 if getattr(widget, "_is_not_first_show", False):
-                    self.sb.init_slot(widget, force=True)
+                    self.sb.init_slot(widget)
                 else:  # Mark as shown for the next time
                     widget._is_not_first_show = True
 
@@ -314,16 +311,20 @@ class MainWindow(
             self.restored_widgets.add(widget)
 
     def sync_widget_values(self, widget: QtWidgets.QWidget, value: Any) -> None:
+        """Sync a widget's state value across related UIs and apply the value using StateManager."""
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(f"[sync_widget_values] Invalid widget: {widget}")
             return
 
+        # Save and apply to all relative widgets
         relatives = self.sb.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
             relative_widget = self.sb.get_widget(widget.objectName(), relative)
             if relative_widget and relative_widget is not widget:
                 self.state.save(relative_widget, value)
+                self.state.apply(relative_widget, value)
 
+        # Save for the current widget
         self.state.save(widget, value)
 
     def eventFilter(self, watched, event):

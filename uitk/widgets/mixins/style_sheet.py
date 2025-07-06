@@ -51,35 +51,30 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     def __init__(
         self, parent: Union[QtWidgets.QWidget, None] = None, log_level: str = "WARNING"
     ):
-        """Initialize StyleSheet with optional parent widget and logging."""
         super().__init__(parent)
-        self.logger = ptk.get_logger("StyleSheet")
         self.logger.setLevel(log_level)
-        self.logger.info("StyleSheet initialized.")
+        self.set = self._set_style
 
-    @classmethod
     def _load_qss_file(
-        cls, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
+        self, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
     ) -> str:
-        """Load QSS content from the package directory."""
         cache_key = f"{package}:{resource}"
-        if cache_key not in cls._qss_cache:
+        if cache_key not in self._qss_cache:
             try:
                 with importlib.resources.files(package).joinpath(resource).open(
                     "r", encoding="utf-8"
                 ) as f:
-                    cls._qss_cache[cache_key] = f.read()
-                cls.logger.info(f"Loaded QSS from package: {package}/{resource}")
+                    self._qss_cache[cache_key] = f.read()
+                self.logger.info(f"Loaded QSS from package: {package}/{resource}")
             except Exception as e:
-                cls.logger.error(f"Failed to load QSS from {package}/{resource} ({e})")
+                self.logger.error(f"Failed to load QSS from {package}/{resource} ({e})")
                 raise
         else:
-            cls.logger.debug(f"Using cached QSS for: {package}/{resource}")
-        return cls._qss_cache[cache_key]
+            self.logger.debug(f"Using cached QSS for: {package}/{resource}")
+        return self._qss_cache[cache_key]
 
     @staticmethod
     def _apply_theme_variables(qss: str, theme_vars: dict) -> str:
-        """Substitute {VARNAME} in QSS with theme variable values."""
         for k, v in theme_vars.items():
             qss = qss.replace("{" + k + "}", v)
         return qss
@@ -91,7 +86,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             widget.centralWidget().setProperty("class", style_class)
 
     @ptk.listify
-    def set_style(
+    def _set_style(
         self,
         widget: Union[QtWidgets.QWidget, None] = None,
         theme: str = "light",
@@ -102,15 +97,16 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         **kwargs,
     ):
         if widget is None:
-            widget = self
+            if isinstance(self.parent(), QtWidgets.QWidget):
+                widget = self.parent()
+            else:
+                raise ValueError(
+                    f"No valid QWidget found for styling (self={self}, parent={self.parent()})"
+                )
 
         if not isinstance(widget, QtWidgets.QWidget):
-            self.logger.error(
-                f"Invalid datatype for widget: expected QWidget, got {type(widget)}."
-            )
-            raise ValueError(
-                f"Invalid datatype for widget: expected QWidget, got {type(widget)}."
-            )
+            self.logger.error(f"Invalid datatype for widget: {type(widget)}")
+            raise ValueError(f"Expected QWidget, got {type(widget)}.")
 
         if style_class:
             self._set_class_property(widget, style_class)
@@ -121,26 +117,26 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         try:
             qss = self._load_qss_file(resource, package)
             qss_final = self._apply_theme_variables(qss, self.themes[theme])
-            # --- LOG THE FINAL STYLE SHEET HERE ---
             self.logger.debug(
                 f"Applying QSS to widget '{widget.objectName()}':\n---BEGIN QSS---\n{qss_final}\n---END QSS---"
             )
+            widget.setStyleSheet("")  # Optional clear
             widget.setStyleSheet(qss_final)
             self.logger.info(
                 f"Applied QSS style to widget: {widget.objectName()} (theme='{theme}', class='{style_class}')"
             )
         except Exception as e:
             self.logger.error(
-                f"Failed to apply QSS style to widget {widget.objectName()}: {e}"
+                f"Failed to apply QSS style to {widget.objectName()}: {e}"
             )
             raise
 
         if recursive:
             for child in widget.findChildren(QtWidgets.QWidget):
                 self.logger.debug(
-                    f"Recursively setting style on child: {child.objectName()} ({type(child).__name__})"
+                    f"Recursively setting style on: {child.objectName()} ({type(child).__name__})"
                 )
-                self.set_style(
+                self._set_style(
                     child,
                     theme=theme,
                     recursive=False,

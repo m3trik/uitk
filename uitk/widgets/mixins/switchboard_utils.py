@@ -437,33 +437,26 @@ class SwitchboardUtilsMixin:
         return result
 
     def message_box(self, string, *buttons, location="topMiddle", timeout=3):
-        """Spawns a message box with the given text and optionally sets buttons.
-
-        Parameters:
-            string (str): The message to display.
-            *buttons (str): Variable length argument list of buttons to display.
-            location (str/QPoint, optional): The location to move the messagebox to. Default is 'topMiddle'.
-            timeout (int, optional): Time in seconds before the messagebox auto closes. Default is 3.
-
-        Returns:
-            The result of the message box interaction if buttons are provided, None otherwise.
-        """
-        if not hasattr(self, "_messageBox"):
-            self._messageBox = self.registered_widgets.MessageBox(self.parent())
-
-        self._messageBox.location = location
-        self._messageBox.timeout = timeout
-
-        self._messageBox.setStandardButtons(*buttons)
-
+        """Spawns a message box with the given text and optionally sets buttons."""
         # Log text without HTML tags
         self.logger.info(f"# {re.sub('<.*?>', '', string)}")
 
-        self._messageBox.setText(string)
+        # Use a new instance for modal (exec) boxes to avoid reentrancy bugs
+        if buttons:
+            msg_box = self.registered_widgets.MessageBox(self.parent())
+            msg_box.location = location
+            msg_box.timeout = timeout
+            msg_box.setStandardButtons(*buttons)
+            msg_box.setText(string)
+            return msg_box.exec_()
+        else:
+            # Safe to reuse for passive popups
+            if not hasattr(self, "_messageBox"):
+                self._messageBox = self.registered_widgets.MessageBox(self.parent())
 
-        if buttons:  # If buttons are provided, use exec_() and return the result
-            return self._messageBox.exec_()
-        else:  # If no buttons, use show() and do not wait for a result
+            self._messageBox.location = location
+            self._messageBox.timeout = timeout
+            self._messageBox.setText(string)
             self._messageBox.show()
             return None
 
@@ -548,29 +541,27 @@ class SwitchboardUtilsMixin:
             release_event = QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, key, modifiers)
             QtWidgets.QApplication.postEvent(ui, release_event)
 
-    def defer_with_timer(
-        self, func: callable, *args, delay_ms: int = 300, **kwargs
-    ) -> None:
+    def defer_with_timer(self, func: callable, *args, ms: int = 300, **kwargs) -> None:
         """Defer execution of any callable with arguments after a delay.
 
         Parameters:
             func (callable): The function to be called after the delay.
             *args: Positional arguments for the function.
-            delay_ms (int, optional): Delay in milliseconds before execution. Default is 300.
+            ms (int, optional): Delay in milliseconds before execution. Default is 300.
             **kwargs: Keyword arguments for the function.
 
         Raises:
             ValueError: If func is not callable.
-            TypeError: If delay_ms is not an integer.
+            TypeError: If ms is not an integer.
         """
         if not callable(func):
             raise ValueError(
                 f"[defer_with_timer] Expected a callable, got {type(func).__name__}"
             )
 
-        if not isinstance(delay_ms, int):
+        if not isinstance(ms, int):
             raise TypeError(
-                f"[defer_with_timer] delay_ms must be an integer, got {type(delay_ms).__name__}"
+                f"[defer_with_timer] ms must be an integer, got {type(ms).__name__}"
             )
 
         def safe_call():
@@ -582,9 +573,13 @@ class SwitchboardUtilsMixin:
                     f"[defer_with_timer] Exception in deferred call to {func.__name__}: {e}"
                 )
                 self.logger.debug(traceback.format_exc())
+                if args and "ms" not in kwargs and isinstance(args[0], int):
+                    raise TypeError(
+                        "[defer_with_timer] Did you mean to pass ms as a keyword argument?"
+                    )
 
         # Schedule the deferred execution
-        QtCore.QTimer.singleShot(delay_ms, safe_call)
+        QtCore.QTimer.singleShot(ms, safe_call)
 
     def gc_protect(self, obj=None, clear=False):
         """

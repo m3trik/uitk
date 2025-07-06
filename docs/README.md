@@ -47,7 +47,7 @@ ui = sb.example  # Access the UI using its filename.
 
 ui.set_attributes(WA_TranslucentBackground=True)  # Set properties using keyword arguments.
 ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
-ui.set_style(theme="dark", style_class="translucentBgWithBorder")
+ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 
 print(repr(ui))
 ui.show(pos="screen", app_exec=True)

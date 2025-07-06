@@ -46,7 +46,7 @@ class Switchboard(
                     ui = sb.my_project
                     ui.set_attributes(WA_TranslucentBackground=True)
                     ui.set_flags(Tool=True, FramelessWindowHint=True, WindowStaysOnTopHint=True)
-                    ui.set_style(theme="dark", style_class="translucentBgWithBorder")
+                    ui.style.set(theme="dark", style_class="translucentBgWithBorder")
                     return ui
 
         - Instantiating and displaying the UI:
@@ -68,7 +68,7 @@ class Switchboard(
         ui_source=None,
         slot_source=None,
         widget_source=None,
-        ui_name_delimiters=[".", "#"],
+        ui_name_delimiters=".",
         log_level: str = "WARNING",
     ):
         super().__init__(parent)
@@ -117,12 +117,22 @@ class Switchboard(
             use_weakref=True,
         )  # All registered widgets.
 
+        self.slot_instances = ptk.NamespaceHandler(
+            self,
+            "slot_instances",
+            resolver=self._resolve_slots_instance,
+        )  # All slot instances.
+
         self._current_ui = None
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
 
         self.convert = ConvertMixin()
+
+    def __new__(cls, *args, **kwargs):
+        instance = super().__new__(cls)
+        return instance
 
     @property
     def current_ui(self) -> QtWidgets.QWidget:
@@ -194,6 +204,9 @@ class Switchboard(
         Returns:
             str: The converted name with only alphanumeric characters and underscores.
         """
+        if not isinstance(name, str):
+            raise ValueError(f"Expected a string, got {type(name)}")
+
         return re.sub(r"[^0-9a-zA-Z]", "_", name)
 
     @staticmethod
@@ -206,6 +219,9 @@ class Switchboard(
         Returns:
             str: The base name extracted from the input name.
         """
+        if not isinstance(name, str):
+            raise ValueError(f"Expected a string, got {type(name)}")
+
         if not name:
             return ""
 
@@ -267,7 +283,7 @@ class Switchboard(
             list: A list of unknown tags extracted from the tag_string.
 
         Note:
-            Known tags are defined as 'submenu' and 'startmenu'. Any other tag found in the string
+            Known tags are defined for example 'submenu' and 'startmenu'. Any other tag found in the string
             is considered unknown. Tags are expected to be prefixed by a '#' symbol.
         """
         # Join known_tags into a pattern string
@@ -299,7 +315,7 @@ class Switchboard(
     @property
     def visible_windows(self) -> set:
         """Return all currently visible MainWindow instances."""
-        return {w for w in self.loaded_ui.values() if w.isVisible()}.copy()
+        return {ui for ui in self.loaded_ui.values() if ui.isVisible()}.copy()
 
     def _resolve_ui(self, attr_name):
         """Resolver for dynamically loading UIs when accessed via NamespaceHandler.
@@ -331,29 +347,22 @@ class Switchboard(
         return ui
 
     def _resolve_ui_using_slots(self, attr_name) -> QtWidgets.QWidget:
-        """Resolve a UI using a slot class if no UI file is found.
-        Accounts for scenarios where the UI is registered during slot class instantiation.
+        if getattr(self, "_resolving_ui", None) == attr_name:
+            raise RuntimeError(f"Recursive resolution detected for key: '{attr_name}'")
+        self._resolving_ui = attr_name
+        try:
+            found_slots = self._find_slots_class(attr_name)
+            if not found_slots:
+                raise AttributeError(f"Slot class '{attr_name}' not found.")
 
-        Parameters:
-            attr_name (str): The name of the UI to load.
+            ui = self.add_ui(name=attr_name)
 
-        Returns:
-            (obj) The loaded UI object.
-        """
-        # Check if it matches a slot class
-        found_slots = self._find_slot_class(attr_name)
-        if not found_slots:
-            raise AttributeError(f"Slot class '{attr_name}' not found.")
+            # Use slot cache and instance logic
+            self.get_slots_instance(ui)
 
-        try:  # Ensure UI does not exist before adding a new one
-            added_ui = self.loaded_ui[attr_name]
-        except KeyError:
-            added_ui = self.add_ui(name=attr_name)
-            self.loaded_ui[attr_name] = added_ui
-
-        self.set_slot_class(added_ui, found_slots)
-
-        return added_ui
+            return ui
+        finally:
+            self._resolving_ui = None
 
     def register(
         self,
@@ -448,7 +457,7 @@ class Switchboard(
         loaded_ui = self.load(file)
         return loaded_ui
 
-    def _add_existing_wrapped_window(
+    def _add_existing_wrapped_ui(
         self, window: QtWidgets.QMainWindow, name: Optional[str] = None
     ) -> QtWidgets.QMainWindow:
         """Add an existing MainWindow (already wrapped) to this Switchboard.
@@ -473,9 +482,7 @@ class Switchboard(
 
         if not hasattr(window, "_slots"):
             try:
-                slot_class = self._find_slot_class(window)
-                if slot_class:
-                    self.set_slot_class(window, slot_class)
+                self.get_slots_instance(window)  # Uses cached or resolves if needed
             except Exception as e:
                 self.logger.warning(
                     f"Failed to set slot class for UI '{window.objectName()}': {e}"
@@ -517,7 +524,7 @@ class Switchboard(
             del self.loaded_ui[name]
 
         if isinstance(widget, self.registered_widgets.MainWindow):
-            return self._add_existing_wrapped_window(widget, name=name)
+            return self._add_existing_wrapped_ui(widget, name=name)
 
         # continue normal wrapping logic
         central_widget = (
@@ -579,45 +586,6 @@ class Switchboard(
             raise ValueError(
                 f"Invalid datatype for ui: Expected str or QWidget, got {type(ui)}"
             )
-
-    def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
-        """Get the UI history.
-
-        Parameters:
-            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
-            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
-            inc (str/list): The objects(s) to include.
-                    supports using the '*' operator: startswith*, *endswith, *contains*
-                    Will include all items that satisfy ANY of the given search terms.
-                    meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
-                    strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str/list): The objects(s) to exclude. Similar to include.
-                    exclude take precedence over include.
-        Returns:
-            (str/list): String of a single UI name or list of UI names based on the index or slice.
-
-        Examples:
-            ui_history() -> ['previousName4', 'previousName3', 'previousName2', 'previousName1', 'currentName']
-            ui_history(-2) -> 'previousName1'
-            ui_history(slice(-3, None)) -> ['previousName2', 'previousName1', 'currentName']
-        """
-        # Keep original list length restricted to last 200 elements
-        self._ui_history = self._ui_history[-200:]
-        # Remove any previous duplicates if they exist; keeping the last added element.
-        if not allow_duplicates:
-            self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
-
-        history = self._ui_history
-        if inc or exc:
-            history = ptk.filter_list(history, inc, exc, lambda u: u.objectName())
-
-        if index is None:
-            return history  # Return entire list if index is None
-        else:
-            try:
-                return history[index]  # Return UI(s) based on the index
-            except IndexError:
-                return [] if isinstance(index, int) else None
 
     def get_ui_relatives(
         self, ui, upstream=False, exact=False, downstream=False, reverse=False
@@ -719,6 +687,45 @@ class Switchboard(
 
         return result
 
+    def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
+        """Get the UI history.
+
+        Parameters:
+            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
+            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
+            inc (str/list): The objects(s) to include.
+                    supports using the '*' operator: startswith*, *endswith, *contains*
+                    Will include all items that satisfy ANY of the given search terms.
+                    meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
+                    strings containing 'Normal'. NOT strings satisfying both terms.
+            exc (str/list): The objects(s) to exclude. Similar to include.
+                    exclude take precedence over include.
+        Returns:
+            (str/list): String of a single UI name or list of UI names based on the index or slice.
+
+        Examples:
+            ui_history() -> ['previousName4', 'previousName3', 'previousName2', 'previousName1', 'currentName']
+            ui_history(-2) -> 'previousName1'
+            ui_history(slice(-3, None)) -> ['previousName2', 'previousName1', 'currentName']
+        """
+        # Keep original list length restricted to last 200 elements
+        self._ui_history = self._ui_history[-200:]
+        # Remove any previous duplicates if they exist; keeping the last added element.
+        if not allow_duplicates:
+            self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
+
+        history = self._ui_history
+        if inc or exc:
+            history = ptk.filter_list(history, inc, exc, lambda u: u.objectName())
+
+        if index is None:
+            return history  # Return entire list if index is None
+        else:
+            try:
+                return history[index]  # Return UI(s) based on the index
+            except IndexError:
+                return [] if isinstance(index, int) else None
+
 
 # --------------------------------------------------------------------------------------------
 
@@ -729,7 +736,7 @@ if __name__ == "__main__":
     ui = sb.example
     # ui.set_attributes(WA_TranslucentBackground=True)
     # ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
-    # ui.set_style(theme="dark", style_class="translucentBgWithBorder")
+    # ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 
     # print(repr(ui))
     # print(sb.QWidget)

@@ -519,7 +519,7 @@ if __name__ == "__main__":
     unknown_attr = UnknownType()
     window.add_attributes("Unknown Attribute", unknown_attr)
 
-    window.set_style(theme="dark")
+    window.style.set(theme="dark")
 
     window.labelToggled.connect(lambda *args: print(args))
     window.valueChanged.connect(lambda *args: print(args))

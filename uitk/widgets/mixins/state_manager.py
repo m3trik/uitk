@@ -71,7 +71,7 @@ class StateManager(ptk.LoggingMixin):
         except (ValueError, TypeError):
             self.logger.debug(f"Could not set check state '{value}' on {widget}")
 
-    def _apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
+    def apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
         """Apply the given value to the widget based on its signal type."""
         signal_name = widget.derived_type and widget.default_signals()
         if not signal_name:
@@ -155,7 +155,7 @@ class StateManager(ptk.LoggingMixin):
                     parsed_value = json.loads(value)
                 except (TypeError, json.JSONDecodeError):
                     parsed_value = value
-                self._apply(widget, parsed_value)
+                self.apply(widget, parsed_value)
                 self.logger.debug(f"Loaded state: {key} -> {parsed_value}")
         except EOFError:
             self.logger.debug(f"EOFError reading state for {key}")

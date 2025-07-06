@@ -10,7 +10,7 @@ from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
+class Menu(QtWidgets.QWidget, AttributesMixin):
     """A custom Qt Widget that serves as a menu with additional features.
 
     The Menu class inherits from QtWidgets.QWidget and mixes in AttributesMixin and StyleSheet.
@@ -78,6 +78,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, StyleSheet):
         self.widget_data = {}
         self.prevent_hide = False
         self.option_box = None
+
+        self.style = StyleSheet(self, log_level="WARNING")
 
         self.setProperty("class", "translucentBgWithBorder")
         self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
@@ -629,7 +631,7 @@ if __name__ == "__main__":
 
     menu.on_item_interacted.connect(lambda x: print(x))
 
-    menu.set_style(theme="dark")
+    menu.style.set(theme="dark")
 
     menu.show()
     print(menu.get_items())

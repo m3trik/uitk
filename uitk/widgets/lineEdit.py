@@ -1,11 +1,50 @@
 # !/usr/bin/python
 # coding=utf-8
+from typing import Callable
 from qtpy import QtCore, QtWidgets
 from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
-class LineEdit(QtWidgets.QLineEdit, AttributesMixin):
+class LineEditFormatMixin:
+    """Lazily formats QLineEdit with reversible visual state feedback."""
+
+    ACTION_COLOR_MAP = {
+        "valid": ("#3C8D3C", "#E6F4EA"),
+        "invalid": ("#B97A7A", "#FBEAEA"),
+        "warning": ("#B49B5C", "#FFF6DC"),
+        "info": ("#6D9BAA", "#E2F3F9"),
+        "inactive": ("#AAAAAA", None),
+    }
+
+    _original_fg = None
+    _original_bg = None
+
+    def set_action_color(self, key: str) -> None:
+        self._cache_original_colors()
+        fg, bg = self.ACTION_COLOR_MAP.get(key, (self._original_fg, self._original_bg))
+        fg = fg or self._original_fg
+        bg = bg or self._original_bg
+        self.setStyleSheet(f"QLineEdit {{ background-color: {bg}; color: {fg}; }}")
+
+    def reset_action_color(self) -> None:
+        self._cache_original_colors()
+        self.setStyleSheet(
+            f"QLineEdit {{ background-color: {self._original_bg}; color: {self._original_fg}; }}"
+        )
+
+    def _cache_original_colors(self) -> None:
+        if (
+            (self._original_fg is None or self._original_bg is None)
+            and self.isVisible()
+            and self.testAttribute(QtCore.Qt.WA_WState_Polished)
+        ):
+            pal = self.palette()
+            self._original_fg = pal.color(self.foregroundRole()).name()
+            self._original_bg = pal.color(self.backgroundRole()).name()
+
+
+class LineEdit(QtWidgets.QLineEdit, AttributesMixin, LineEditFormatMixin):
     """ """
 
     shown = QtCore.Signal()
