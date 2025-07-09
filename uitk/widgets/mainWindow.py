@@ -31,9 +31,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         parent: Optional[QtWidgets.QWidget] = None,
         tags: set = None,
         path: str = None,
-        log_level: int = "WARNING",
+        log_level: int = "DEBUG",
         **kwargs,
-    ):
+    ) -> None:
         """Initializes the main window and its properties."""
         super().__init__(parent)
 
@@ -96,11 +96,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         else:
             self.setWindowFlags(central_widget.windowFlags())
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return the filename"""
         return self.objectName()
 
-    def __getattr__(self, attr_name):
+    def __getattr__(self, attr_name) -> Any:
         """Looks for the widget in the parent class.
         If found, the widget is initialized and returned, else an AttributeError is raised.
 
@@ -108,7 +108,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             attr_name (str): the name of the attribute being accessed.
 
         Returns:
-            () The value of the widget attribute if it exists, or raises an AttributeError
+            The value of the widget attribute if it exists, or raises an AttributeError
             if the attribute cannot be found.
 
         Raises:
@@ -126,7 +126,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         )
 
     @property
-    def slots(self):
+    def slots(self) -> list:
         """Returns a list of the slots connected to the widget's signals.
 
         Returns:
@@ -135,17 +135,17 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         return self.sb.get_slots_instance(self)
 
     @property
-    def is_stacked_widget(self):
+    def is_stacked_widget(self) -> bool:
         """Checks if the parent of the widget is a QStackedWidget."""
         return isinstance(self.parent(), QtWidgets.QStackedWidget)
 
     @property
-    def is_current_ui(self):
+    def is_current_ui(self) -> bool:
         """Returns True if the widget is the currently active UI, False otherwise."""
         return self == self.sb.current_ui
 
     @is_current_ui.setter
-    def is_current_ui(self, value: bool):
+    def is_current_ui(self, value: bool) -> None:
         """Sets the widget as the currently active UI if value is True.
 
         Raises:
@@ -214,7 +214,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             if child.objectName() and child not in self.widgets:
                 self.register_widget(child)
 
-    def _add_child_destroyed_signal(self, widget):
+    def _add_child_destroyed_signal(self, widget) -> None:
         """Initializes the signal for a given widget that will be emitted when the widget is destroyed.
 
         This method connects the `destroyed` signal of the widget to a slot that removes the widget from the
@@ -226,7 +226,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """
         widget.destroyed.connect(lambda: self.widgets.discard(widget))
 
-    def _add_child_changed_signal(self, widget):
+    def _add_child_changed_signal(self, widget) -> None:
         """Initializes the signal for a given widget that will be emitted when the widget's state changes.
 
         This method iterates over a dictionary of default signals, which maps widget types to signal names.
@@ -262,7 +262,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                 f"Could not connect signal '{signal_name}' on {widget}: {e}"
             )
 
-    def _add_child_refresh_on_show_signal(self, widget):
+    def _add_child_refresh_on_show_signal(self, widget) -> None:
         def maybe_refresh():
             # Only refresh if initialized AND we've already shown at least once
             if getattr(widget, "refresh_on_show", False):
@@ -273,7 +273,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
         self.on_show.connect(maybe_refresh)
 
-    def trigger_deferred(self):
+    def trigger_deferred(self) -> None:
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
         will be applied at this point. Once all deferred methods have executed, the dictionary is cleared.
         """
@@ -282,7 +282,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                 method()
         self._deferred.clear()
 
-    def defer_until_show(self, func, *args, priority=0, once=False):
+    def defer_until_show(self, func, *args, priority=0, once=False) -> None:
         """Defer execution of a function until after window is shown."""
         method = partial(func, *args)
 
@@ -327,7 +327,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         # Save for the current widget
         self.state.save(widget, value)
 
-    def eventFilter(self, watched, event):
+    def eventFilter(self, watched, event) -> bool:
         """Override the event filter to register widgets when they are polished."""
         if watched is self and event.type() == QtCore.QEvent.ChildPolished:
             child = event.child()
@@ -336,13 +336,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                     self.register_widget(child)
         return super().eventFilter(watched, event)
 
-    def setVisible(self, visible):
+    def setVisible(self, visible) -> None:
         """Reimplement setVisible to prevent window from being hidden when prevent_hide is True."""
         if self.prevent_hide and not visible:
             return
         super().setVisible(visible)
 
-    def show(self, pos=None, app_exec=False):
+    def show(self, pos=None, app_exec=False) -> None:
         """Show the MainWindow.
 
         Parameters:
@@ -360,7 +360,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             if exit_code != -1:
                 sys.exit(exit_code)
 
-    def showEvent(self, event):
+    def showEvent(self, event) -> None:
         """Override the show event to initialize untracked widgets and restore their states."""
         if not self.is_initialized:
             self.register_all_children()
@@ -376,7 +376,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.on_show.emit()
         self.is_initialized = True
 
-    def eventFilter(self, watched, event):
+    def eventFilter(self, watched, event) -> bool:
         """Override the event filter to register widgets when they are polished."""
         if watched is self and event.type() == QtCore.QEvent.ChildPolished:
             child = event.child()
@@ -388,7 +388,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     def register_all_children(self) -> None:
         """Registers all child widgets of the central widget, if it exists."""
 
-        def _walk_and_register(widget):
+        def _walk_and_register(widget) -> None:
             if widget.objectName() and widget not in self.widgets:
                 self.register_widget(widget)
             for child in widget.findChildren(
@@ -400,27 +400,27 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if central:
             _walk_and_register(central)
 
-    def focusInEvent(self, event):
+    def focusInEvent(self, event) -> None:
         """Override the focus event to set the current UI when this window gains focus."""
         self.sb.current_ui = self
         super().focusInEvent(event)
         self.on_focus_in.emit()
 
-    def focusOutEvent(self, event):
+    def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
         self.on_focus_out.emit()
 
-    def hideEvent(self, event):
+    def hideEvent(self, event) -> None:
         """Reimplement hideEvent to emit custom signal when window is hidden."""
         super().hideEvent(event)
         self.on_hide.emit()
 
-    def closeEvent(self, event):
+    def closeEvent(self, event) -> None:
         """Reimplement closeEvent to prevent window from being hidden when prevent_hide is True."""
         super().closeEvent(event)
         self.on_close.emit()
 
-    def setStyleSheet(self, style: str):
+    def setStyleSheet(self, style: str) -> None:
         """Overrides the setStyleSheet method to respect locking.
 
         Parameters:
@@ -434,7 +434,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             self.original_style = self.styleSheet()
             super().setStyleSheet(style)
 
-    def reset_style(self):
+    def reset_style(self) -> None:
         """Resets the window's stylesheet to its original state."""
         if not self.lock_style:
             self.setStyleSheet(self.original_style)

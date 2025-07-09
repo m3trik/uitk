@@ -69,8 +69,8 @@ class Switchboard(
         slot_source=None,
         widget_source=None,
         ui_name_delimiters=".",
-        log_level: str = "WARNING",
-    ):
+        log_level: str = "DEBUG",
+    ) -> None:
         super().__init__(parent)
         """ """
         self.logger.setLevel(log_level)
@@ -126,6 +126,7 @@ class Switchboard(
         self._current_ui = None
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
+        self._pending_slot_init = {}  # Slots that are pending initialization.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
 
         self.convert = ConvertMixin()
@@ -247,11 +248,11 @@ class Switchboard(
             bool: True if any of the given tags are present in the tags set, False otherwise.
         """
         if not isinstance(ui, QtWidgets.QWidget):
-            self.logger.warning(f"Invalid UI type: {type(ui)}. Expected QWidget.")
+            self.logger.debug(f"Invalid UI type: {type(ui)}. Expected QWidget.")
             return False
 
         if not hasattr(ui, "tags"):
-            self.logger.warning(f"UI '{ui.objectName()}' has no 'tags' attribute.")
+            self.logger.debug(f"UI '{ui.objectName()}' has no 'tags' attribute.")
             return False
 
         if tags is None:
@@ -484,7 +485,7 @@ class Switchboard(
             try:
                 self.get_slots_instance(window)  # Uses cached or resolves if needed
             except Exception as e:
-                self.logger.warning(
+                self.logger.debug(
                     f"Failed to set slot class for UI '{window.objectName()}': {e}"
                 )
 

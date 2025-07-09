@@ -102,26 +102,18 @@ class SwitchboardSlotsMixin:
         return signals
 
     def _find_slots_class(self, base_name: str) -> Optional[Type]:
-        """Find the slot class associated with the given base name.
-
-        Attempts to construct legal class names based on the base name by capitalizing
-        parts split by underscores and checking for both the base name and a 'Slots' suffix.
-
-        Parameters:
-            base_name (str): The base name to resolve into a slot class.
-
-        Returns:
-            Type or None: The matched slot class, if found.
-        """
         legal_name = self.convert_to_legal_name(base_name)
         capitalized = "".join(part.title() for part in legal_name.split("_"))
-
         try_names = [f"{capitalized}Slots", capitalized]
+
+        self.logger.debug(f"[_find_slots_class] Looking for: {try_names}")
+
         for name in try_names:
             cls = self.registry.slot_registry.get(
                 classname=name, return_field="classobj"
             )
             if cls:
+                self.logger.debug(f"[SlotResolver] Resolved '{name}' to {cls}")
                 return cls
         return None
 
@@ -134,18 +126,27 @@ class SwitchboardSlotsMixin:
             ui = getattr(widget, "ui", None) or widget.parent()
 
         if not ui or not ui.objectName():
-            self.logger.warning(
+            self.logger.debug(
                 f"[_resolve_slots_instance] Could not resolve UI: {widget}"
             )
             return None
 
         return self.get_slots_instance(ui)
 
+    def slots_instanciated(self, key: str) -> bool:
+        raw = self.slot_instances.raw(key)
+        if isinstance(raw, self.slot_instances.Placeholder):
+            return raw.meta.get("ready", False)
+        return getattr(raw, "_is_ready", False)
+
+    def mark_slots_instanciated(self, key: str, slots: object) -> None:
+        setattr(slots, "_is_ready", True)
+        if self.slot_instances.has_placeholder(key):
+            self.slot_instances.placeholders[key].meta["ready"] = True
+
     def get_slots_instance(self, ui: QtWidgets.QWidget) -> Optional[object]:
         if not hasattr(ui, "connected_slots"):
-            self.logger.warning(
-                f"[get_slots_instance] UI has no 'connected_slots': {ui}"
-            )
+            self.logger.debug(f"[get_slots_instance] UI has no 'connected_slots': {ui}")
             return None
 
         if "default" in ui.connected_slots:
@@ -157,48 +158,89 @@ class SwitchboardSlotsMixin:
             self.logger.debug(f"[get_slots_instance] Preventing recursion: '{key}'")
             return None
 
-        instance = self.slot_instances.get(str(key))
-        if instance:
-            self.set_slots_instance(ui, instance)
-            return instance
+        existing = self.slot_instances.raw(key)
+        if existing and not isinstance(existing, self.slot_instances.Placeholder):
+            self.set_slots_instance(ui, existing)
+            return existing
 
-        slot_cls = self._find_slots_class(key)
-        if not slot_cls:
+        slots_cls = self._find_slots_class(key)
+        if not slots_cls:
             return None
 
         token = object()
         ui.connected_slots["default"] = token
 
         try:
-            instance = slot_cls(ui=ui, switchboard=self)
+            slots = slots_cls(ui=ui, switchboard=self)
 
             if ui.connected_slots.get("default") is token:
-                self.slot_instances[str(key)] = instance
-                self.set_slots_instance(ui, instance)
+                self.slot_instances[key] = slots
+                self.set_slots_instance(ui, slots)
+                self.mark_slots_instanciated(key, slots)
 
-                if hasattr(instance, "__init_slots__"):
-                    instance.__init_slots__()
+                for pending_widget in self._pending_slot_init.pop(key, []):
+                    self.init_slot(pending_widget)
 
-                self.logger.debug(
-                    f"[get_slots_instance] Initialized: {slot_cls.__name__}"
-                )
             else:
-                instance = ui.connected_slots["default"]
+                slots = ui.connected_slots["default"]
 
-            return instance
+            return slots
+
         except Exception as e:
             if ui.connected_slots.get("default") is token:
                 del ui.connected_slots["default"]
-            self.logger.error(f"[get_slots_instance] Error for '{key}': {e}")
+            self.logger.error(f"[get_slots_instance] Error initializing '{key}': {e}")
             return None
 
     def set_slots_instance(self, ui: QtWidgets.QWidget, instance: object):
         if not hasattr(ui, "connected_slots"):
-            self.logger.warning(
-                f"[set_slots_instance] UI has no 'connected_slots': {ui}"
-            )
+            self.logger.debug(f"[set_slots_instance] UI has no 'connected_slots': {ui}")
             return
         ui.connected_slots["default"] = instance
+
+    def init_slot(self, widget: QtWidgets.QWidget) -> None:
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.debug(f"Expected QWidget, got {type(widget)}")
+            return
+
+        ui = getattr(widget, "ui", None)
+        if not ui or not ui.objectName():
+            self.logger.debug(f"[init_slot] Invalid widget or missing UI: {widget}")
+            return
+
+        key = self.get_base_name(ui.objectName())
+        if not self.slots_instanciated(key):
+            self._pending_slot_init.setdefault(key, []).append(widget)
+            self.logger.debug(
+                f"[init_slot] Deferred: {widget.objectName()} (slots not ready)"
+            )
+            return
+
+        slots = self.get_slots_instance(ui)
+        slot = getattr(slots, f"{widget.objectName()}_init", None)
+
+        self.logger.debug(
+            f"[init_slot] {ui.objectName()}.{widget.objectName()} → {slot}"
+        )
+        if callable(slot):
+            slot(widget)
+
+    def call_slot(self, widget, *args, **kwargs):
+        """Call a slot method for a widget.
+        Retrieves the slot associated with the widget's UI and calls it with the provided arguments.
+        """
+        if not isinstance(widget, QtWidgets.QWidget):
+            self.logger.debug(f"Expected a widget object, but received {type(widget)}")
+            return
+
+        slot = self.get_slot(
+            self.get_slots_instance(widget.ui),
+            widget.objectName(),
+            wrap=True,
+            widget=widget,
+        )
+        if slot:
+            slot(*args, **kwargs)
 
     def get_slot(
         self,
@@ -254,41 +296,6 @@ class SwitchboardSlotsMixin:
         slot_class = self.get_slots_instance(widget.ui)
         return self.get_slot(slot_class, widget.objectName(), wrap=wrap, widget=widget)
 
-    def init_slot(self, widget):
-        """Initialize a slot for a widget.
-        If force is True or widget is not initialized, calls the initialization method for the slot.
-        """
-        if not isinstance(widget, QtWidgets.QWidget):
-            self.logger.warning(
-                f"Expected a widget object, but received {type(widget)}"
-            )
-            return
-
-        slots = self.get_slots_instance(widget.ui)
-        slot_init = getattr(slots, f"{widget.objectName()}_init", None)
-
-        if slot_init:
-            slot_init(widget)
-
-    def call_slot(self, widget, *args, **kwargs):
-        """Call a slot method for a widget.
-        Retrieves the slot associated with the widget's UI and calls it with the provided arguments.
-        """
-        if not isinstance(widget, QtWidgets.QWidget):
-            self.logger.warning(
-                f"Expected a widget object, but received {type(widget)}"
-            )
-            return
-
-        slot = self.get_slot(
-            self.get_slots_instance(widget.ui),
-            widget.objectName(),
-            wrap=True,
-            widget=widget,
-        )
-        if slot:
-            slot(*args, **kwargs)
-
     def slot_history(
         self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[]
     ):
@@ -322,7 +329,7 @@ class SwitchboardSlotsMixin:
                 try:
                     self._slot_history.remove(item)
                 except ValueError:
-                    self.logger.warning(f"Item '{item}' not found in slot history.")
+                    self.logger.debug(f"Item '{item}' not found in slot history.")
         # Remove any previous duplicates if they exist; keeping the last added element.
         if not allow_duplicates:
             self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
@@ -401,7 +408,7 @@ class SwitchboardSlotsMixin:
 
             signal = getattr(widget, signal_name, None)
             if not signal:
-                self.logger.warning(
+                self.logger.debug(
                     f"No valid signal found for '{widget.ui.objectName()}.{widget.objectName()}' {widget.derived_type}. "
                     f"Expected str, got '{type(signal_name)}'"
                 )
