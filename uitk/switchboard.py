@@ -68,13 +68,15 @@ class Switchboard(
         ui_source=None,
         slot_source=None,
         widget_source=None,
+        tag_delimiter: str = "#",
         ui_name_delimiters=".",
-        log_level: str = "DEBUG",
+        log_level: str = "WARNING",
     ) -> None:
         super().__init__(parent)
         """ """
         self.logger.setLevel(log_level)
 
+        self.tag_delimiter = tag_delimiter
         self.ui_name_delimiters = ui_name_delimiters
         self.registry = FileManager()
         base_dir = 1 if not __name__ == "__main__" else 0
@@ -210,31 +212,37 @@ class Switchboard(
 
         return re.sub(r"[^0-9a-zA-Z]", "_", name)
 
-    @staticmethod
-    def get_base_name(name: str) -> str:
-        """Extract a robust, human-readable base name without suffixes or tags.
-
-        Parameters:
-            name (str): The name to process.
-
-        Returns:
-            str: The base name extracted from the input name.
-        """
+    def get_base_name(self, name: str) -> str:
         if not isinstance(name, str):
             raise ValueError(f"Expected a string, got {type(name)}")
-
         if not name:
             return ""
-
-        # Remove tags (e.g., myWidget#001 -> myWidget)
-        name = name.split("#")[0]
-
-        # Remove trailing digits or underscores (e.g., myWidget_02 -> myWidget)
+        name = name.split(self.tag_delimiter)[0]
         name = re.sub(r"[_\d]+$", "", name)
-
-        # Extract leading alphanumeric base with at least one letter
         match = re.search(r"\b[a-zA-Z]\w*", name)
         return match.group() if match else name
+
+    def _parse_tags(self, name: str) -> set[str]:
+        parts = name.split(self.tag_delimiter)
+        return set(parts[1:]) if len(parts) > 1 else set()
+
+    def clean_tag_string(self, tag_string: str) -> str:
+        unknown_tags = self.get_unknown_tags(tag_string)
+        tag_re = "|".join(re.escape(self.tag_delimiter + tag) for tag in unknown_tags)
+        return re.sub(tag_re, "", tag_string)
+
+    def get_unknown_tags(
+        self, tag_string: str, known_tags: list[str] = ["submenu", "startmenu"]
+    ) -> list[str]:
+        known_tags_list = ptk.make_iterable(known_tags)
+        pattern = "|".join(known_tags_list)
+        tag_re = re.escape(self.tag_delimiter) + f"(?!{pattern})[a-zA-Z0-9]*"
+        unknown_tags = re.findall(tag_re, tag_string)
+        return [
+            tag[len(self.tag_delimiter) :]
+            for tag in unknown_tags
+            if tag != self.tag_delimiter
+        ]
 
     def has_tags(self, ui, tags=None) -> bool:
         """Check if any of the given tag(s) are present in the UI's tags set.
@@ -261,77 +269,21 @@ class Switchboard(
         tags_to_check = ptk.make_iterable(tags)
         return any(tag in ui.tags for tag in tags_to_check)
 
-    def _parse_tags(self, name: str) -> set:
-        """Parse tags from the given name.
-
-        Parameters:
-            name (str): The name to parse tags from.
-
-        Returns:
-            set: A set of tags parsed from the name.
-        """
-        parts = name.split("#")
-        return set(parts[1:]) if len(parts) > 1 else set()
-
-    @staticmethod
-    def get_unknown_tags(tag_string, known_tags=["submenu", "startmenu"]):
-        """Extracts all tags from a given string that are not known tags.
-
-        Parameters:
-            tag_string (str/list): The known tags in which to derive any unknown tags from.
-
-        Returns:
-            list: A list of unknown tags extracted from the tag_string.
-
-        Note:
-            Known tags are defined for example 'submenu' and 'startmenu'. Any other tag found in the string
-            is considered unknown. Tags are expected to be prefixed by a '#' symbol.
-        """
-        # Join known_tags into a pattern string
-        known_tags_list = ptk.make_iterable(known_tags)
-        known_tags_pattern = "|".join(known_tags_list)
-        unknown_tags = re.findall(f"#(?!{known_tags_pattern})[a-zA-Z0-9]*", tag_string)
-        # Remove leading '#' from all tags
-        unknown_tags = [tag[1:] for tag in unknown_tags if tag != "#"]
-        return unknown_tags
-
-    def clean_tag_string(self, tag_string):
-        """Cleans a given tag string by removing unknown tags.
-
-        Parameters:
-            tag_string (str): The string from which to remove unknown tags.
-
-        Returns:
-            str: The cleaned tag string with unknown tags removed.
-
-        Note:
-            This function utilizes the get_unknown_tags function to identify and subsequently
-            remove unknown tags from the provided string.
-        """
-        unknown_tags = self.get_unknown_tags(tag_string)
-        # Remove unknown tags from the string
-        cleaned_tag_string = re.sub("#" + "|#".join(unknown_tags), "", tag_string)
-        return cleaned_tag_string
-
     @property
     def visible_windows(self) -> set:
         """Return all currently visible MainWindow instances."""
-        return {ui for ui in self.loaded_ui.values() if ui.isVisible()}.copy()
+        visible = {ui for ui in self.loaded_ui.values() if ui.isVisible()}
+        self.logger.debug(
+            f"[visible_windows] {len(visible)} visible window(s): {[u.objectName() for u in visible]}"
+        )
+        return visible.copy()
 
     def _resolve_ui(self, attr_name):
-        """Resolver for dynamically loading UIs when accessed via NamespaceHandler.
+        """Resolver for dynamically loading UIs when accessed via NamespaceHandler."""
+        self.logger.debug(f"[{attr_name}] Resolving UI")
 
-        Parameters:
-            attr_name (str): The name of the UI to load.
-
-        Returns:
-            (obj) The loaded UI object.
-        """
-        self.logger.debug(f"Resolving UI: {attr_name}")
-
-        # Check if the attribute matches a UI file
         actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
-        if not actual_ui_name:  # Check if the attribute matches a slot class
+        if not actual_ui_name:
             return self._resolve_ui_using_slots(attr_name)
 
         ui_filepath = self.registry.ui_registry.get(
@@ -344,7 +296,7 @@ class Switchboard(
         name = ptk.format_path(ui_filepath, "name")
         ui = self.add_ui(name, widget=loaded_ui, path=ui_filepath)
 
-        self.logger.debug(f"UI '{name}' loaded successfully.")
+        self.logger.debug(f"[{name}] UI loaded successfully from {ui_filepath}")
         return ui
 
     def _resolve_ui_using_slots(self, attr_name) -> QtWidgets.QWidget:
@@ -354,13 +306,13 @@ class Switchboard(
         try:
             found_slots = self._find_slots_class(attr_name)
             if not found_slots:
+                self.logger.debug(
+                    f"[{attr_name}] No slot class found during resolution"
+                )
                 raise AttributeError(f"Slot class '{attr_name}' not found.")
 
             ui = self.add_ui(name=attr_name)
-
-            # Use slot cache and instance logic
             self.get_slots_instance(ui)
-
             return ui
         finally:
             self._resolving_ui = None
@@ -373,20 +325,7 @@ class Switchboard(
         base_dir=1,
         validate=0,
     ):
-        """Add new locations to the Switchboard.
-
-        Parameters:
-            ui_location (optional): Path to the UI file.
-            slot_location (optional): Slot class.
-            widget_location (optional): Path to widget files.
-            base_dir (optional): Base directory for relative paths. Derived from the call stack.
-                0 for this modules dir, 1 for the caller module, etc.
-            validate (int): Validation level:
-                0: No validation
-                1: Warn on invalid path
-                2: Raise on invalid path
-        """
-        # UI path
+        """Add new locations to the Switchboard."""
         if ui_location and not self.registry.contains_location(
             ui_location, "ui_registry"
         ):
@@ -394,8 +333,8 @@ class Switchboard(
                 ui_location, base_dir=base_dir, validate=validate, path_type="UI"
             ):
                 self.registry.ui_registry.extend(ui_location, base_dir=base_dir)
+                self.logger.debug(f"[register] UI location added: {ui_location}")
 
-        # Slot path
         if slot_location and not self.registry.contains_location(
             slot_location, "slot_registry"
         ):
@@ -408,8 +347,8 @@ class Switchboard(
                 slot_path, base_dir=base_dir, validate=validate, path_type="Slot"
             ):
                 self.registry.slot_registry.extend(slot_location, base_dir=base_dir)
+                self.logger.debug(f"[register] Slot location added: {slot_path}")
 
-        # Widget path
         if widget_location and not self.registry.contains_location(
             widget_location, "widget_registry"
         ):
@@ -420,6 +359,9 @@ class Switchboard(
                 path_type="Widget",
             ):
                 self.registry.widget_registry.extend(widget_location, base_dir=base_dir)
+                self.logger.debug(
+                    f"[register] Widget location added: {widget_location}"
+                )
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.
@@ -431,15 +373,7 @@ class Switchboard(
         return [self.load_ui(f) for f in filepaths]
 
     def load_ui(self, file: str) -> QtWidgets.QMainWindow:
-        """Loads a UI from the given path to the UI file and adds it to the switchboard.
-
-        Parameters:
-            file (str): The full file path to the UI file.
-
-        Returns:
-            MainWindow: The UI wrapped in the MainWindow class.
-        """
-        # Register any custom widgets found in the UI file.
+        """Loads a UI from the given path to the UI file and adds it to the switchboard."""
         custom_widgets = self.get_property_from_ui_file(file, "customwidget")
         for widget in custom_widgets:
             try:
@@ -454,28 +388,20 @@ class Switchboard(
                 if widget_class_info:
                     self.register_widget(widget_class_info)
 
-        # Load the UI file using QUiLoader.
         loaded_ui = self.load(file)
+        name = ptk.format_path(file, "name")
+        self.logger.debug(f"[{name}] UI loaded via QUiLoader from {file}")
         return loaded_ui
 
     def _add_existing_wrapped_ui(
         self, window: QtWidgets.QMainWindow, name: Optional[str] = None
     ) -> QtWidgets.QMainWindow:
-        """Add an existing MainWindow (already wrapped) to this Switchboard.
-
-        Parameters:
-            window (QMainWindow): The existing MainWindow to add.
-            name (str, optional): Override name for the UI. Updates window.objectName() if provided.
-
-        Returns:
-            QMainWindow: The added window.
-        """
         if name:
             window.setObjectName(name)
 
         if window.objectName() in self.loaded_ui:
             self.logger.warning(
-                f"UI '{window.objectName()}' already exists in this Switchboard."
+                f"[{window.objectName()}] UI already exists in this Switchboard"
             )
             return self.loaded_ui[window.objectName()]
 
@@ -483,13 +409,13 @@ class Switchboard(
 
         if not hasattr(window, "_slots"):
             try:
-                self.get_slots_instance(window)  # Uses cached or resolves if needed
+                self.get_slots_instance(window)
             except Exception as e:
                 self.logger.debug(
-                    f"Failed to set slot class for UI '{window.objectName()}': {e}"
+                    f"[{window.objectName()}] Failed to set slot class: {e}"
                 )
 
-        self.logger.debug(f"Added existing wrapped window '{window.objectName()}'.")
+        self.logger.debug(f"[{window.objectName()}] Existing wrapped window added")
         return window
 
     def add_ui(
@@ -502,32 +428,17 @@ class Switchboard(
         overwrite: bool = False,
         **kwargs,
     ) -> QtWidgets.QMainWindow:
-        """Adds a given QWidget or QMainWindow to the Switchboard wrapped in MainWindow.
-
-        Parameters:
-            name (str): Name of the UI. If not given, derived from widget or file path.
-            widget (QWidget or QMainWindow, optional): Central widget or MainWindow instance.
-            parent (QWidget, optional): Parent widget for the new MainWindow.
-            tags (set, optional): Tags for the UI.
-            path (str, optional): Associated path.
-            overwrite (bool, optional): If True, overwrite existing UI. Defaults to False.
-            **kwargs: Additional keyword arguments for MainWindow.
-
-        Returns:
-            QMainWindow: Wrapped UI instance.
-        """
         if name in self.loaded_ui:
             if not overwrite:
-                self.logger.debug(f"UI '{name}' already exists. Returning existing.")
+                self.logger.debug(f"[{name}] UI already exists. Returning existing.")
                 return self.loaded_ui[name]
 
-            self.logger.debug(f"Overwriting existing UI '{name}'.")
+            self.logger.debug(f"[{name}] Overwriting existing UI")
             del self.loaded_ui[name]
 
         if isinstance(widget, self.registered_widgets.MainWindow):
             return self._add_existing_wrapped_ui(widget, name=name)
 
-        # continue normal wrapping logic
         central_widget = (
             widget.centralWidget()
             if isinstance(widget, QtWidgets.QMainWindow) and widget.centralWidget()
@@ -537,7 +448,6 @@ class Switchboard(
         tags = tags or (self._parse_tags(name) if name else None)
         path = ptk.format_path(path, "path") if path else None
 
-        # Parent to the swtichboard parent if not given.
         parent = parent or (
             self.parent() if isinstance(self.parent(), QtWidgets.QMainWindow) else None
         )
@@ -555,32 +465,30 @@ class Switchboard(
         self.loaded_ui[name] = main_window
 
         self.logger.debug(
-            f"MainWindow Added: Name={main_window.objectName()}, Tags={main_window.tags}, Path={main_window.path}"
+            f"[{main_window.objectName()}] MainWindow added with Tags={main_window.tags}, Path={main_window.path}"
         )
         return main_window
 
     def get_ui(self, ui=None) -> QtWidgets.QWidget:
-        """Get a dynamic UI using its string name, or if no argument is given, return the current UI.
-
-        Parameters:
-            ui (str/list/QWidget): The UI or name(s) of the UI.
-
-        Raises:
-            ValueError: If the given UI is of an incorrect datatype.
-
-        Returns:
-            (obj/list): If a list is given, a list is returned. Otherwise, a QWidget object is returned.
-        """
+        """Get a dynamic UI using its string name, or if no argument is given, return the current UI."""
         if isinstance(ui, QtWidgets.QWidget):
+            self.logger.debug(f"[{ui.objectName()}] get_ui received QWidget directly")
             return ui
 
         elif isinstance(ui, str):
+            self.logger.debug(f"[{ui}] Resolving get_ui by name")
             return getattr(self.loaded_ui, ui)
 
         elif isinstance(ui, (list, set, tuple)):
             return [self.get_ui(u) for u in ui]
 
         elif ui is None:
+            if self._current_ui:
+                self.logger.debug(
+                    f"[{self._current_ui.objectName()}] Returning current_ui"
+                )
+            else:
+                self.logger.debug("[get_ui] No current_ui set")
             return self.current_ui
 
         else:
@@ -623,26 +531,25 @@ class Switchboard(
     def find_ui_filename(
         self, legal_name: str, unique_match: bool = False
     ) -> Union[str, List[str], None]:
-        """Convert the given legal name to its original name(s) by searching the UI files.
-
-        Parameters:
-            legal_name (str): The legal name to convert back to the original name.
-            unique_match (bool, optional): If True, return None when there is more than one possible match, otherwise, return all possible matches. Defaults to False.
-
-        Returns:
-            Union[str, List[str], None]: The original name(s) or None if unique_match is True and multiple matches are found.
-        """
-        # Replace underscores with a regex pattern to match any non-alphanumeric character
+        """Convert the given legal name to its original name(s) by searching the UI files."""
         pattern = re.sub(r"_", r"[^0-9a-zA-Z]", legal_name)
-
-        # Retrieve all filenames from the ui_registry container
         filenames = self.registry.ui_registry.get("filename")
-        # Find matches using the regex pattern
         matches = [name for name in filenames if re.fullmatch(pattern, name)]
 
         if unique_match:
-            return None if len(matches) != 1 else matches[0]
+            if len(matches) != 1:
+                self.logger.debug(
+                    f"[find_ui_filename] Ambiguous or no match for '{legal_name}': {matches}"
+                )
+                return None
+            self.logger.debug(
+                f"[find_ui_filename] Unique match for '{legal_name}': {matches[0]}"
+            )
+            return matches[0]
         else:
+            self.logger.debug(
+                f"[find_ui_filename] Matches for '{legal_name}': {matches}"
+            )
             return matches
 
     @staticmethod
@@ -689,29 +596,8 @@ class Switchboard(
         return result
 
     def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
-        """Get the UI history.
-
-        Parameters:
-            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
-            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
-            inc (str/list): The objects(s) to include.
-                    supports using the '*' operator: startswith*, *endswith, *contains*
-                    Will include all items that satisfy ANY of the given search terms.
-                    meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
-                    strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str/list): The objects(s) to exclude. Similar to include.
-                    exclude take precedence over include.
-        Returns:
-            (str/list): String of a single UI name or list of UI names based on the index or slice.
-
-        Examples:
-            ui_history() -> ['previousName4', 'previousName3', 'previousName2', 'previousName1', 'currentName']
-            ui_history(-2) -> 'previousName1'
-            ui_history(slice(-3, None)) -> ['previousName2', 'previousName1', 'currentName']
-        """
-        # Keep original list length restricted to last 200 elements
+        """Get the UI history."""
         self._ui_history = self._ui_history[-200:]
-        # Remove any previous duplicates if they exist; keeping the last added element.
         if not allow_duplicates:
             self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
 
@@ -720,11 +606,22 @@ class Switchboard(
             history = ptk.filter_list(history, inc, exc, lambda u: u.objectName())
 
         if index is None:
-            return history  # Return entire list if index is None
+            self.logger.debug("[ui_history] Returning full UI history list")
+            return history
         else:
             try:
-                return history[index]  # Return UI(s) based on the index
+                result = history[index]
+                if isinstance(result, list):
+                    self.logger.debug(
+                        f"[ui_history] Returning history slice: {[u.objectName() for u in result]}"
+                    )
+                else:
+                    self.logger.debug(
+                        f"[ui_history] Returning UI: {result.objectName()}"
+                    )
+                return result
             except IndexError:
+                self.logger.debug(f"[ui_history] Index out of range: {index}")
                 return [] if isinstance(index, int) else None
 
 

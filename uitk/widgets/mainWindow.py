@@ -31,15 +31,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         parent: Optional[QtWidgets.QWidget] = None,
         tags: set = None,
         path: str = None,
-        log_level: int = "DEBUG",
+        log_level: int = "WARNING",
         **kwargs,
     ) -> None:
         """Initializes the main window and its properties."""
         super().__init__(parent)
 
         self.logger.setLevel(log_level)
-        self.sb = switchboard_instance
+        self.logger.set_log_prefix(f"[{name}] ")
 
+        self.sb = switchboard_instance
         self.style = StyleSheet(self, log_level="WARNING")
 
         self.setObjectName(name)
@@ -201,11 +202,18 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self._add_child_destroyed_signal(widget)
         self._add_child_refresh_on_show_signal(widget)
 
-        self.sb.init_slot(widget)
-        self.restore_widget_state(widget)
-        widget.is_initialized = True
         self.widgets.add(widget)
         self.on_child_registered.emit(widget)
+
+        # Defer slot init until slot instance is ready
+        key = self.sb.get_base_name(self.objectName())
+        if not self.sb.slots_instanciated(key):
+            self.sb._pending_slot_init.setdefault(key, []).append(widget)
+            self.logger.debug(
+                f"[register_widget] Deferred init_slot for {widget.objectName()}"
+            )
+        else:
+            self.sb.init_slot(widget)
 
         # After slot init, register any new children that were dynamically added
         for child in widget.findChildren(
