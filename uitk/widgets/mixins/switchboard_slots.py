@@ -39,7 +39,7 @@ class SwitchboardSlotsMixin:
         QtWidgets.QTreeWidget: "itemClicked",
     }
 
-    def get_default_signals(self, widget):
+    def get_default_signals(self, widget: QtWidgets.QWidget) -> set:
         """Retrieves the default signals for a given widget type.
 
         This method iterates over a dictionary of default signals, which maps widget types to signal names.
@@ -117,43 +117,20 @@ class SwitchboardSlotsMixin:
                 return cls
         return None
 
-    def _resolve_slots_instance(
-        self, widget: Union[str, QtWidgets.QWidget]
-    ) -> Optional[object]:
-        if isinstance(widget, str):
-            ui = self.get_ui(widget)
-        else:
-            ui = getattr(widget, "ui", None) or widget.parent()
+    def slots_instantiated(self, key: str) -> bool:
+        return key in self.slot_instances and not isinstance(
+            self.slot_instances.raw(key), self.slot_instances.Placeholder
+        )
 
-        if not ui or not ui.objectName():
-            self.logger.debug(
-                f"[_resolve_slots_instance] Could not resolve UI: {widget}"
-            )
-            return None
-
-        return self.get_slots_instance(ui)
-
-    def slots_instanciated(self, key: str) -> bool:
-        raw = self.slot_instances.raw(key)
-        if isinstance(raw, self.slot_instances.Placeholder):
-            return raw.meta.get("ready", False)
-        return getattr(raw, "_is_ready", False)
-
-    def mark_slots_instanciated(self, key: str, slots: object) -> None:
-        setattr(slots, "_is_ready", True)
-        if self.slot_instances.has_placeholder(key):
-            self.slot_instances.placeholders[key].meta["ready"] = True
-
-    def get_slots_instance(self, ui: QtWidgets.QWidget) -> Optional[object]:
-        if not hasattr(ui, "connected_slots"):
-            self.logger.debug(f"[{ui.objectName()}] UI has no 'connected_slots'")
-            return None
+    def get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]:
+        """Check if a slots instance already exists."""
+        if isinstance(ui, str):
+            ui = self.get_ui(ui)
 
         if "default" in ui.connected_slots:
             return ui.connected_slots["default"]
 
         key = self.get_base_name(ui.objectName())
-
         if self.slot_instances.is_resolving(key):
             self.logger.debug(
                 f"[{ui.objectName()}] Preventing recursion for key '{key}'"
@@ -161,92 +138,135 @@ class SwitchboardSlotsMixin:
             return None
 
         existing = self.slot_instances.raw(key)
-        if existing:
+        if existing and not isinstance(existing, self.slot_instances.Placeholder):
             return existing
 
-        slots_cls = self._find_slots_class(key)
+        # Resolve and create a new slots instance
+        slots_cls = self._find_slots_class(self.get_base_name(ui.objectName()))
         if not slots_cls:
-            self.logger.debug(
-                f"[{ui.objectName()}] No slots class found for key '{key}'"
-            )
+            self.logger.debug(f"[{ui.objectName()}] No slots class found")
             return None
 
-        token = object()
-        ui.connected_slots["default"] = token
+        return self._create_slots_instance(ui, slots_cls)
+
+    def _get_deferred_widgets(self, key: str) -> list:
+        """Helper method to extract deferred widgets from a placeholder."""
+        placeholder = self.slot_instances.get_placeholder(key)
+        if placeholder and "deferred_widgets" in placeholder.meta:
+            return placeholder.meta.get("deferred_widgets", [])
+        return []
+
+    def _create_slots_instance(
+        self, ui: QtWidgets.QWidget, slots_cls: Type
+    ) -> Optional[object]:
+        """Create and initialize a new slots instance."""
+        key = self.get_base_name(ui.objectName())
+        self.logger.debug(f"[{ui.objectName()}] Creating slot instance: {slots_cls}")
 
         try:
-            self.logger.debug(
-                f"[{ui.objectName()}] Creating slot instance: {slots_cls}"
-            )
-            slots = slots_cls(ui=ui, switchboard=self)
+            # Get deferred widgets BEFORE creating the instance
+            deferred_widgets = self._get_deferred_widgets(key)
+            if deferred_widgets:
+                self.logger.debug(
+                    f"[{ui.objectName()}] Found {len(deferred_widgets)} deferred widgets to process"
+                )
 
-            if ui.connected_slots.get("default") is token:
-                self.slot_instances[key] = slots
-                self.set_slots_instance(ui, slots)
-                self.mark_slots_instanciated(key, slots)
+            # Create the instance
+            instance = slots_cls(ui=ui, switchboard=self)
 
-                pending = self._pending_slot_init.pop(key, [])
-                if pending:
-                    self.logger.debug(
-                        f"[{ui.objectName()}] Initializing {len(pending)} deferred widgets"
-                    )
-                for pending_widget in pending:
-                    self.init_slot(pending_widget)
+            # Update storage
+            self.slot_instances[key] = instance
+            ui.connected_slots["default"] = instance
 
-            else:
-                slots = ui.connected_slots["default"]
+            # Process deferred widgets AFTER instance is created
+            self._process_deferred_widgets(ui, deferred_widgets)
 
-            return slots
-
+            return instance
         except Exception as e:
-            if ui.connected_slots.get("default") is token:
-                del ui.connected_slots["default"]
             self.logger.error(
                 f"[{ui.objectName()}] Error initializing slots for '{key}': {e}"
             )
             return None
 
-    def set_slots_instance(self, ui: QtWidgets.QWidget, instance: object):
-        if not hasattr(ui, "connected_slots"):
-            self.logger.debug(f"[{ui.objectName()}] UI has no 'connected_slots'")
-            return
-        ui.connected_slots["default"] = instance
-
-    def init_slot(self, widget: QtWidgets.QWidget) -> None:
-        if not isinstance(widget, QtWidgets.QWidget):
-            return
-
-        ui = getattr(widget, "ui", None)
-        if not ui or not ui.objectName():
-            self.logger.debug(
-                f"[UnknownUI.{widget.objectName()}] Widget missing valid UI or object name"
-            )
+    def _process_deferred_widgets(
+        self, ui: QtWidgets.QWidget, deferred_widgets: list
+    ) -> None:
+        """Process a list of deferred widgets for initialization."""
+        if not deferred_widgets:
             return
 
         self.logger.debug(
-            f"[{ui.objectName()}.{widget.objectName()}] Initializing slot"
+            f"[{ui.objectName()}] Initializing {len(deferred_widgets)} deferred widgets"
+        )
+        successful_inits = 0
+        for widget in deferred_widgets:
+            try:
+                self._perform_slot_init(ui, widget)
+                successful_inits += 1
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to initialize widget {widget.objectName()}: {e}"
+                )
+
+        self.logger.debug(
+            f"[{ui.objectName()}] Successfully initialized {successful_inits}/{len(deferred_widgets)} widgets"
         )
 
+    def _add_to_placeholder(self, key: str, widget: QtWidgets.QWidget) -> None:
+        """Add a widget to a placeholder's deferred_widgets metadata."""
+        placeholder = self.slot_instances.get_placeholder(key)
+        if placeholder:
+            # Add widget to existing placeholder's metadata
+            placeholder.meta.setdefault("deferred_widgets", []).append(widget)
+            self.logger.debug(
+                f"[{widget.ui.objectName()}.{widget.objectName()}] Added to placeholder metadata"
+            )
+        else:
+            # Create new placeholder with widget in metadata
+            slots_cls = self._find_slots_class(key)
+            if slots_cls:
+                placeholder = self.slot_instances.Placeholder(
+                    slots_cls, meta={"deferred_widgets": [widget]}
+                )
+                self.slot_instances.set_placeholder(key, placeholder)
+                self.logger.debug(
+                    f"[{widget.ui.objectName()}.{widget.objectName()}] Created placeholder with metadata"
+                )
+
+    def init_slot(self, widget: QtWidgets.QWidget) -> None:
+        """Initialize a slot for the given widget."""
+        if not isinstance(widget, QtWidgets.QWidget):
+            return
+
+        ui = widget.ui
+        key = self.get_base_name(ui.objectName())
+
+        # Check if the key exists in slot_instances
+        if not self.slots_instantiated(key):
+            self._add_to_placeholder(key, widget)
+            return
+
+        self._perform_slot_init(ui, widget)
+
+    def _perform_slot_init(self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget):
+        self.logger.debug(
+            f"[{ui.objectName()}.{widget.objectName()}] Initializing slot"
+        )
         slots = self.get_slots_instance(ui)
         if not slots:
-            self.logger.debug(
-                f"[{ui.objectName()}.{widget.objectName()}] No slot instance resolved"
-            )
             return
 
         slot_func = getattr(slots, f"{widget.objectName()}_init", None)
-        if callable(slot_func):
+        if slot_func:
             slot_func(widget)
             self.logger.debug(
-                f"[{ui.objectName()}.{widget.objectName()}] Init method called successfully"
-            )
-        else:
-            self.logger.debug(
-                f"[{ui.objectName()}.{widget.objectName()}] No init method found in {slots.__class__.__name__}"
+                f"[{ui.objectName()}.{widget.objectName()}] Init method called"
             )
 
         widget.ui.restore_widget_state(widget)
         widget.is_initialized = True
+
+        widget.ui.register_all_children(widget)
 
     def call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs):
         """Call a slot method for a widget.
@@ -319,58 +339,6 @@ class SwitchboardSlotsMixin:
 
         slot_class = self.get_slots_instance(widget.ui)
         return self.get_slot(slot_class, widget.objectName(), wrap=wrap, widget=widget)
-
-    def slot_history(
-        self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[]
-    ):
-        """Get the slot history.
-
-        Parameters:
-            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
-            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
-            inc (str/int/list): The objects(s) to include.
-                            supports using the '*' operator: startswith*, *endswith, *contains*
-                            Will include all items that satisfy ANY of the given search terms.
-                            meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
-                            strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str/int/list): The objects(s) to exclude. Similar to include.
-                            exclude take precedence over include.
-            add (object/list, optional): New entrie(s) to append to the slot history.
-            remove (object/list, optional): Entry/entries to remove from the slot history.
-
-        Returns:
-            (object/list): Slot method(s) based on index or slice.
-        """
-        # Keep original list length restricted to last 200 elements
-        self._slot_history = self._slot_history[-200:]
-        # Append new entries to the history
-        if add:
-            self._slot_history.extend(ptk.make_iterable(add))
-        # Remove entries from the history
-        if remove:
-            remove_items = ptk.make_iterable(remove)
-            for item in remove_items:
-                try:
-                    self._slot_history.remove(item)
-                except ValueError:
-                    self.logger.debug(f"Item '{item}' not found in slot history.")
-        # Remove any previous duplicates if they exist; keeping the last added element.
-        if not allow_duplicates:
-            self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
-
-        history = self._slot_history
-        if inc or exc:
-            history = ptk.filter_list(
-                history, inc, exc, lambda m: m.__name__, check_unmapped=True
-            )
-
-        if index is None:
-            return history  # Return entire list if index is None
-        else:
-            try:
-                return history[index]  # Return slot(s) based on the index
-            except IndexError:
-                return [] if isinstance(index, int) else None
 
     def connect_slots(self, ui, widgets=None):
         """Connects the default slots to their corresponding signals for all widgets of a given UI.
@@ -519,6 +487,66 @@ class SwitchboardSlotsMixin:
 
         ui.is_connected = False
         self.logger.debug(f"[{ui.objectName()}] Slots disconnected")
+
+    def slot_history(
+        self,
+        index=None,
+        allow_duplicates=False,
+        inc=[],
+        exc=[],
+        add=[],
+        remove=[],
+        length=200,
+    ):
+        """Get the slot history.
+
+        Parameters:
+            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
+            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
+            inc (str/int/list): The objects(s) to include.
+                            supports using the '*' operator: startswith*, *endswith, *contains*
+                            Will include all items that satisfy ANY of the given search terms.
+                            meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
+                            strings containing 'Normal'. NOT strings satisfying both terms.
+            exc (str/int/list): The objects(s) to exclude. Similar to include.
+                            exclude take precedence over include.
+            add (object/list, optional): New entrie(s) to append to the slot history.
+            remove (object/list, optional): Entry/entries to remove from the slot history.
+            length (int): Maximum length of the slot history. If the history exceeds this length, it will be truncated.
+
+        Returns:
+            (object/list): Slot method(s) based on index or slice.
+        """
+        # Keep original list length restricted to last 'length' elements
+        self._slot_history = self._slot_history[-length:]
+        # Append new entries to the history
+        if add:
+            self._slot_history.extend(ptk.make_iterable(add))
+        # Remove entries from the history
+        if remove:
+            remove_items = ptk.make_iterable(remove)
+            for item in remove_items:
+                try:
+                    self._slot_history.remove(item)
+                except ValueError:
+                    self.logger.debug(f"Item '{item}' not found in slot history.")
+        # Remove any previous duplicates if they exist; keeping the last added element.
+        if not allow_duplicates:
+            self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
+
+        history = self._slot_history
+        if inc or exc:
+            history = ptk.filter_list(
+                history, inc, exc, lambda m: m.__name__, check_unmapped=True
+            )
+
+        if index is None:
+            return history  # Return entire list if index is None
+        else:
+            try:
+                return history[index]  # Return slot(s) based on the index
+            except IndexError:
+                return [] if isinstance(index, int) else None
 
 
 # --------------------------------------------------------------------------------------------

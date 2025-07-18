@@ -70,7 +70,7 @@ class Switchboard(
         widget_source=None,
         tag_delimiter: str = "#",
         ui_name_delimiters=".",
-        log_level: str = "WARNING",
+        log_level: str = "warning",
     ) -> None:
         super().__init__(parent)
         """ """
@@ -122,13 +122,12 @@ class Switchboard(
         self.slot_instances = ptk.NamespaceHandler(
             self,
             "slot_instances",
-            resolver=self._resolve_slots_instance,
+            resolver=self.get_slots_instance,
         )  # All slot instances.
 
         self._current_ui = None
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
-        self._pending_slot_init = {}  # Slots that are pending initialization.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
 
         self.convert = ConvertMixin()

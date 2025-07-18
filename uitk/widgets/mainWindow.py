@@ -205,15 +205,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.widgets.add(widget)
         self.on_child_registered.emit(widget)
 
-        # Defer slot init until slot instance is ready
-        key = self.sb.get_base_name(self.objectName())
-        if not self.sb.slots_instanciated(key):
-            self.sb._pending_slot_init.setdefault(key, []).append(widget)
-            self.logger.debug(
-                f"[register_widget] Deferred init_slot for {widget.objectName()}"
-            )
-        else:
-            self.sb.init_slot(widget)
+        self.sb.init_slot(widget)
 
         # After slot init, register any new children that were dynamically added
         for child in widget.findChildren(
@@ -393,8 +385,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                     self.register_widget(child)
         return super().eventFilter(watched, event)
 
-    def register_all_children(self) -> None:
-        """Registers all child widgets of the central widget, if it exists."""
+    def register_all_children(
+        self, root_widget: Optional[QtWidgets.QWidget] = None
+    ) -> None:
+        """Registers all child widgets starting from the given widget (or central widget if None)."""
 
         def _walk_and_register(widget) -> None:
             if widget.objectName() and widget not in self.widgets:
@@ -404,9 +398,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             ):
                 _walk_and_register(child)
 
-        central = self.centralWidget()
-        if central:
-            _walk_and_register(central)
+        root = root_widget or self.centralWidget()
+        if root:
+            _walk_and_register(root)
 
     def focusInEvent(self, event) -> None:
         """Override the focus event to set the current UI when this window gains focus."""
