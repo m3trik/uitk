@@ -54,7 +54,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.tags = tags or set()
         self.has_tags = lambda tags=None: self.sb.has_tags(self, tags)
         self.is_initialized = False
-        self.is_connected = False
         self.prevent_hide = False
         self.widgets = set()
         self.restore_widget_states = True
@@ -96,10 +95,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             self.setWindowFlags(window.windowFlags())
         else:
             self.setWindowFlags(central_widget.windowFlags())
-
-    def __str__(self) -> str:
-        """Return the filename"""
-        return self.objectName()
 
     def __getattr__(self, attr_name) -> Any:
         """Looks for the widget in the parent class.
@@ -161,15 +156,15 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
     def register_widget(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None:
         """Registers a widget with the main window, initializing it and connecting its signals."""
-        # print(
-        #     f"[{self.objectName()}] [register_widget] {widget.objectName()} ({type(widget).__name__})"
-        # )
-
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(f"Expected widget, got {type(widget)}")
             return
 
         if widget in self.widgets or not widget.objectName():
+            if not widget.objectName():
+                self.logger.debug(
+                    f"[register_widget]: {widget} has no objectName, cannot register"
+                )
             return
 
         widget.ui = self
@@ -188,7 +183,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         widget.call_slot = lambda *args, w=widget, **kwargs: self.sb.call_slot(
             w, *args, **kwargs
         )
-        widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(s)
+        widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(w, s)
+        widget.perform_restore_state = (
+            lambda w=widget, force=False: self.perform_restore_state(w, force=force)
+        )
+        widget.register_children = lambda w=widget: self.register_children(w)
 
         widget.is_initialized = False
         widget.refresh_on_show = False
@@ -204,15 +203,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
         self.widgets.add(widget)
         self.on_child_registered.emit(widget)
-
-        self.sb.init_slot(widget)
-
-        # After slot init, register any new children that were dynamically added
-        for child in widget.findChildren(
-            QtWidgets.QWidget, options=QtCore.Qt.FindDirectChildrenOnly
-        ):
-            if child.objectName() and child not in self.widgets:
-                self.register_widget(child)
+        widget.init_slot()
+        # self.logger.debug(f"[register_widget]: {widget.objectName()} ({widget.type})")
 
     def _add_child_destroyed_signal(self, widget) -> None:
         """Initializes the signal for a given widget that will be emitted when the widget is destroyed.
@@ -267,7 +259,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             # Only refresh if initialized AND we've already shown at least once
             if getattr(widget, "refresh_on_show", False):
                 if getattr(widget, "_is_not_first_show", False):
-                    self.sb.init_slot(widget)
+                    widget.init_slot()
                 else:  # Mark as shown for the next time
                     widget._is_not_first_show = True
 
@@ -277,6 +269,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
         will be applied at this point. Once all deferred methods have executed, the dictionary is cleared.
         """
+        self.logger.debug(
+            f"[trigger_deferred]: Triggering deferred methods: {self._deferred}"
+        )
         for priority in sorted(self._deferred):
             for method in self._deferred[priority]:
                 method()
@@ -298,9 +293,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         else:
             self._deferred[priority] = (method,)
 
-    def restore_widget_state(self, widget: QtWidgets.QWidget, force=False) -> None:
+    def perform_restore_state(self, widget: QtWidgets.QWidget, force=False) -> None:
         """Restores the state of a given widget if it has a restore_state attribute."""
-        if not getattr(self, "restore_widget_states", False):
+        if not self.restore_widget_states:
             return
 
         if (
@@ -321,6 +316,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         for relative in relatives:
             relative_widget = self.sb.get_widget(widget.objectName(), relative)
             if relative_widget and relative_widget is not widget:
+                self.logger.debug(
+                    f"[{self.objectName()}] [sync_widget_values] Syncing {widget.objectName()} to {relative_widget.objectName()}"
+                )
+
                 self.state.save(relative_widget, value)
                 self.state.apply(relative_widget, value)
 
@@ -363,11 +362,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     def showEvent(self, event) -> None:
         """Override the show event to initialize untracked widgets and restore their states."""
         if not self.is_initialized:
-            self.register_all_children()
-
-        if not self.is_connected:
-            self.sb.connect_slots(self)
-            self.is_connected = True
+            self.logger.debug(f"[showEvent]: Registering children on first show.")
+            self.register_children()
+            self.logger.debug(f"[showEvent]: Registering children done.")
 
         self.trigger_deferred()
         self.activateWindow()
@@ -378,14 +375,14 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
     def eventFilter(self, watched, event) -> bool:
         """Override the event filter to register widgets when they are polished."""
-        if watched is self and event.type() == QtCore.QEvent.ChildPolished:
+        if event.type() == QtCore.QEvent.ChildPolished:
             child = event.child()
             if isinstance(child, QtWidgets.QWidget):
                 if child.objectName() and child not in self.widgets:
                     self.register_widget(child)
         return super().eventFilter(watched, event)
 
-    def register_all_children(
+    def register_children(
         self, root_widget: Optional[QtWidgets.QWidget] = None
     ) -> None:
         """Registers all child widgets starting from the given widget (or central widget if None)."""

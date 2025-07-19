@@ -153,7 +153,7 @@ class Switchboard(
         if filepaths and len(filepaths) == 1:
             ui_filepath = filepaths[0]
             newly_loaded_ui = self.load_ui(ui_filepath)
-            name = self.format_ui_name(ui_filepath)
+            name = ptk.format_path(ui_filepath, "name")
             ui = self.add_ui(name, widget=newly_loaded_ui, path=ui_filepath)
             self.current_ui = ui
             return ui
@@ -498,34 +498,50 @@ class Switchboard(
     def get_ui_relatives(
         self, ui, upstream=False, exact=False, downstream=False, reverse=False
     ):
-        """Get the UI relatives based on the hierarchy matching.
+        """Get UIs related to the given UI, based on hierarchical name matching.
 
         Parameters:
-            ui (str or obj): A dynamic UI object or its name for which relatives are to be found.
-            upstream (bool, optional): If True, return the relatives that are upstream of the target UI. Defaults to False.
-            exact (bool, optional): If True, return only the relatives that exactly match the target UI. Defaults to False.
-            downstream (bool, optional): If True, return the relatives that are downstream of the target UI. Defaults to False.
-            reverse (bool, optional): If True, search for relatives in the reverse direction. Defaults to False.
+            ui (str or QWidget): Target UI name or object.
+            upstream (bool): Include higher-level ancestors.
+            exact (bool): Include only exact matches.
+            downstream (bool): Include children/submenus.
+            reverse (bool): Reverse order of matches.
 
         Returns:
-            list: A list of UI relative names (if ui is given as a string) or UI relative objects (if ui is given as an object) found based on the hierarchy matching.
+            list[str] or list[QWidget]: Matching UI names or loaded QWidget objects,
+                                        depending on input type.
         """
-        ui_name = str(ui)
-        ui_filenames = self.registry.ui_registry.get(
-            "filename"
-        )  # Get the filenames from the named tuple
+        # --- Step 1: Resolve target name ---
+        if isinstance(ui, QtWidgets.QWidget):
+            target_name = ui.objectName()
+            return_type = "object"
+        elif isinstance(ui, str):
+            target_name = ui
+            return_type = "string"
+        else:
+            raise TypeError(f"Invalid type for 'ui': {type(ui)}")
 
-        relatives = ptk.get_matching_hierarchy_items(
-            ui_filenames,
-            ui_name,
-            upstream,
-            exact,
-            downstream,
-            reverse,
-            self.ui_name_delimiters,
+        if not target_name:
+            return []
+
+        # --- Step 2: Normalize all UI filenames into canonical names ---
+        ui_filenames = self.registry.ui_registry.get("filename") or []
+
+        # --- Step 3: Match based on hierarchy ---
+        matched_names = ptk.get_matching_hierarchy_items(
+            hierarchy_items=ui_filenames,
+            target=target_name,
+            upstream=upstream,
+            exact=exact,
+            downstream=downstream,
+            reverse=reverse,
+            delimiters=[self.ui_name_delimiters, self.tag_delimiter],
         )
-        # Return strings if ui given as a string, else UI objects.
-        return relatives if ui_name == ui else self.get_ui(relatives)
+
+        # --- Step 4: Return matching names or UI instances ---
+        if return_type == "string":
+            return matched_names
+        return self.get_ui(matched_names)
 
     def find_ui_filename(
         self, legal_name: str, unique_match: bool = False
