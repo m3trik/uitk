@@ -123,33 +123,49 @@ class SwitchboardSlotsMixin:
         )
 
     def get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]:
-        """Check if a slots instance already exists."""
+        """Get or create a slots instance for the given UI."""
         if isinstance(ui, str):
             ui = self.get_ui(ui)
 
-        if "default" in ui.connected_slots:
-            return ui.connected_slots["default"]
-
         key = self.get_base_name(ui.objectName())
-        if self.slot_instances.is_resolving(key):
+
+        # Check if already instantiated
+        if self.slots_instantiated(key):
+            return self.slot_instances[key]
+
+        # Check if creation is in progress using placeholder metadata
+        placeholder = self.slot_instances.get_placeholder(key)
+        if placeholder and placeholder.meta.get("creation_in_progress", False):
             self.logger.debug(
-                f"[_get_slots_instance] [{ui.objectName()}] Preventing recursion for key '{key}'"
+                f"[get_slots_instance] [{ui.objectName()}] Slots creation already in progress"
             )
             return None
 
-        existing = self.slot_instances.raw(key)
-        if existing and not isinstance(existing, self.slot_instances.Placeholder):
-            return existing
+        # Find and create the slots instance
+        slots_cls = self._find_slots_class(key)
+        if slots_cls:
+            try:
+                # Set creation in progress flag
+                if not placeholder:
+                    placeholder = self.slot_instances.Placeholder(
+                        slots_cls, meta={"creation_in_progress": True}
+                    )
+                    self.slot_instances.set_placeholder(key, placeholder)
+                else:
+                    placeholder.meta["creation_in_progress"] = True
 
-        # Resolve and create a new slots instance
-        slots_cls = self._find_slots_class(self.get_base_name(ui.objectName()))
-        if not slots_cls:
-            self.logger.debug(
-                f"[_get_slots_instance] [{ui.objectName()}] No slots class found"
-            )
-            return None
+                self.logger.debug(
+                    f"[get_slots_instance] [{ui.objectName()}] Creating slots instance"
+                )
+                instance = self._create_slots_instance(ui, slots_cls)
+                return instance
+            finally:
+                # Clear flag in case the placeholder still exists
+                placeholder = self.slot_instances.get_placeholder(key)
+                if placeholder and "creation_in_progress" in placeholder.meta:
+                    placeholder.meta["creation_in_progress"] = False
 
-        return self._create_slots_instance(ui, slots_cls)
+        return None
 
     def _get_deferred_widgets(self, key: str) -> list:
         """Helper method to extract deferred widgets from a placeholder."""
@@ -310,33 +326,24 @@ class SwitchboardSlotsMixin:
         )
 
     def init_slot(self, widget: QtWidgets.QWidget) -> None:
-        """Initialize a slot for the given widget."""
+        """Initialize a slot for the given widget.
+
+        This method focuses solely on initializing a slot for a widget,
+        delegating instance management to get_slots_instance.
+        """
         if not isinstance(widget, QtWidgets.QWidget):
             return
 
         ui = widget.ui
         key = self.get_base_name(ui.objectName())
 
-        # If slots aren't instantiated yet, try to create them now
-        if not self.slots_instantiated(key):
-            # First try to create the slots instance
-            slots_cls = self._find_slots_class(key)
-            if slots_cls:
-                self.logger.debug(
-                    f"[init_slot] [{ui.objectName()}] Creating slots instance before initializing widget"
-                )
-                instance = self._create_slots_instance(ui, slots_cls)
-                if instance:
-                    # Slots were created successfully, now we can initialize the widget
-                    self._perform_slot_init(ui, widget)
-                    return
+        # Try to get or create slots instance
+        slots = self.get_slots_instance(ui)
 
-            # If we couldn't create the instance, add to placeholder
+        if slots:  # Slots exist or were created, initialize the widget
+            self._perform_slot_init(ui, widget)
+        else:  # No slots instance available, add to placeholder for later
             self._add_to_placeholder(key, widget)
-            return
-
-        # If we already have an instance, initialize directly
-        self._perform_slot_init(ui, widget)
 
     def call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs):
         """Call a slot method for a widget.

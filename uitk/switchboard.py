@@ -129,7 +129,6 @@ class Switchboard(
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
-
         self.convert = ConvertMixin()
 
     def __new__(cls, *args, **kwargs):
