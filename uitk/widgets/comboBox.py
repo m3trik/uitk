@@ -1,9 +1,9 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from qtpy import QtCore, QtGui, QtWidgets
+from typing import Union
+from qtpy import QtWidgets, QtCore, QtGui
 from uitk.signals import Signals
-from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
@@ -99,9 +99,8 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
         self.prev_index = -1
         self.has_header = False
         self.header_text = None
-
+        self.restore_state = False
         self.editable = editable
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
 
         self.currentIndexChanged.connect(self.check_index)
 
@@ -114,6 +113,16 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
             self.itemData(i) if self.itemData(i) else self.itemText(i)
             for i in range(self.count())
         ]
+
+    @property
+    def menu(self):
+        try:
+            return self._menu
+        except AttributeError:
+            from uitk.widgets.menu import Menu
+
+            self._menu = Menu(self, mode="option", fixed_item_height=20)
+            return self._menu
 
     @Signals.blockSignals
     def currentData(self):
@@ -135,25 +144,44 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
     def setItemText(self, index, text):
         self.setRichText(text, index)
 
-    def setAsCurrent(self, i, blockSignals=False):
+    def setAsCurrent(
+        self,
+        i: Union[str, int],
+        blockSignals: bool = False,
+        strict: bool = False,
+        fallback_index: int = None,
+    ) -> None:
+        """Set the current item by value or index, with optional fallback if not found.
+
+        Parameters:
+            i (str|int): The item text or index to set as current.
+            blockSignals (bool): Whether to block signals during the operation.
+            strict (bool): If True, raise error if item is not found.
+            fallback_index (int): Index to use if item is not found and strict is False.
+                                Defaults to -1 if header is present, else 0.
+        """
         if blockSignals:
             self.blockSignals(True)
 
+        index = None
         try:
             index = (
                 self.items.index(i)
                 if isinstance(i, str)
-                else i if isinstance(i, int) else None
+                else i if isinstance(i, int) and 0 <= i < self.count() else None
             )
         except ValueError:
-            raise ValueError(
-                f"The item '{i}' was not found in ComboBox. Available items are {self.items}."
-            )
+            if strict:
+                raise ValueError(
+                    f"The item '{i}' was not found in ComboBox. "
+                    f"Available items are {[str(item) for item in self.items]}."
+                )
 
         if index is None:
-            raise RuntimeError(
-                f"Failed to set current item in ComboBox: expected int or str, got {i, type(i)}"
-            )
+            index = fallback_index
+            if index is None:
+                index = -1 if self.has_header else 0
+            print(f"ComboBox: '{i}' not found. Defaulting to index {index}.")
 
         self.setCurrentIndex(index)
 
@@ -175,7 +203,13 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
         elif index == -1 and self.has_header:
             self.setEditText(self.header_text)
 
-    def setEditable(self, editable):
+    def focusOutEvent(self, event):
+        if self.isEditable():
+            # Exit edit mode without emitting a signal
+            self.setEditable(False, emit_signal=False)  # Pass emit_signal as False
+        super().focusOutEvent(event)
+
+    def setEditable(self, editable, emit_signal=True):
         if editable:
             current_text = self.currentText()
             super().setEditable(True)
@@ -187,7 +221,8 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
             new_text = lineEdit.text()
             super().setEditable(False)
             self.setCurrentText(new_text)
-            self.on_editing_finished.emit(new_text)
+            if emit_signal:
+                self.on_editing_finished.emit(new_text)
 
     def force_header_display(self):
         if self.header_text:
@@ -218,24 +253,6 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
         _recursion=False,
         **kwargs,
     ):
-        """Add items to the combobox's standard modelView without triggering any signals.
-
-        Parameters:
-            x (str/list/dict): A string, list of strings, or dict with 'string':data pairs to fill the comboBox with.
-            data (optional): The data associated with the items.
-            header (str, optional): An optional value for the first index of the comboBox's list.
-            clear (bool, optional): Whether to clear any previous items before adding new. Defaults to True.
-            restore_index (bool, optional): Whether to restore the previous index after clearing. Defaults to False.
-            ascending (bool, optional): Whether to insert in ascending order. If True, new item(s) will be added to the top of the list. Defaults to False.
-            _recursion (bool, optional): Internal use only. Differentiates between the initial call and recursive calls.
-            kwargs: Arbitrary keyword arguments to set attributes for the added items.
-
-        Returns:
-            widget/list: The added widget or list of added widgets.
-
-        Raises:
-            TypeError: If the type of 'x' is unsupported.
-        """
         self.restore_previous_index = restore_index
         if restore_index:
             self.prev_index = self.currentIndex()
@@ -246,11 +263,20 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
         if header:
             self.setHeaderText(header)
             self.setHeaderAlignment(header_alignment)
-            self.has_header = True  # Set has_header to True
+            self.has_header = True
         else:
-            self.has_header = False  # Set has_header to False
+            self.has_header = False
 
-        if isinstance(x, dict):
+        # Handle list of (label, data) tuples
+        if (
+            isinstance(x, (list, tuple))
+            and x
+            and isinstance(x[0], (tuple, list))
+            and len(x[0]) == 2
+        ):
+            for label, value in x:
+                self.add_single(label, value, ascending)
+        elif isinstance(x, dict):
             [self.add_single(k, v, ascending) for k, v in x.items()]
         elif isinstance(x, (list, tuple, set)):
             [self.add_single(item, data, ascending) for item in x]
@@ -263,22 +289,19 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
                 f"Unsupported item type: '{type(x)}'. Expected str, list, tuple, set, map, zip, or dict."
             )
 
+        self.restore_state = not self.has_header
         self.set_attributes(**kwargs)
 
-        # At the end of the add method
         if not _recursion:
             if header or self.header_text:
                 self.force_header_display()
-            # Default index based on header presence
             final_index = -1 if self.header_text else 0
-
             if restore_index and self.prev_index > -1:
                 self.setCurrentIndex(self.prev_index)
                 final_index = self.prev_index
             elif self.header_text:
-                self.prev_index = -1  # Set prev_index to header index
-                final_index = -1  # Force the header display
-
+                self.prev_index = -1
+                final_index = -1
             self.currentIndexChanged.emit(final_index)
 
     @Signals.blockSignals

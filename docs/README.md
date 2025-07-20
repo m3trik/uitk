@@ -1,5 +1,5 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
-[![Version](https://img.shields.io/badge/Version-1.0.25-blue.svg)](https://pypi.org/project/uitk/)
+[![Version](https://img.shields.io/badge/Version-1.0.26-blue.svg)](https://pypi.org/project/uitk/)
 
 # UITK: Dynamic UI Management for Python with qtpy
 
@@ -47,7 +47,7 @@ ui = sb.example  # Access the UI using its filename.
 
 ui.set_attributes(WA_TranslucentBackground=True)  # Set properties using keyword arguments.
 ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
-ui.set_style(theme="dark", style_class="translucentBgWithBorder")
+ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 
 print(repr(ui))
 ui.show(pos="screen", app_exec=True)

@@ -1,18 +1,17 @@
 # !/usr/bin/python
 # coding=utf-8
 from typing import Union, Optional, Type
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtWidgets, QtCore, QtGui
 
 
 class ConvertMixin:
     """Class providing utility methods to handle common conversions related to Qt objects."""
 
-    # Adjusted types dictionary without rigid tuple length, relying on dynamic handling instead.
-    types = {
+    TYPES = {
         QtCore.QPoint: lambda x: QtCore.QPoint(*x),
         QtCore.QSize: lambda x: QtCore.QSize(*x),
         QtCore.QRect: lambda x: QtCore.QRect(*x),
-        QtGui.QColor: lambda x: QtGui.QColor(*x),  # Now flexible for RGB/RGBA.
+        QtGui.QColor: lambda x: QtGui.QColor(*x),  # Flexible for RGB/RGBA.
         QtCore.QPointF: lambda x: QtCore.QPointF(*x),
         QtCore.QLineF: lambda x: QtCore.QLineF(*x),
         QtCore.QLine: lambda x: QtCore.QLine(*x),
@@ -26,80 +25,89 @@ class ConvertMixin:
     }
 
     @staticmethod
-    def can_convert(value, q_object_type: Type) -> bool:
-        """Check if a given value can be converted to the specified QObject type.
-
-        Parameters:
-            value: The value to check for conversion compatibility.
-            q_object_type: The Qt class type to check against.
-
-        Returns:
-            True if a conversion function exists for `q_object_type`, False otherwise.
-        """
-        # Check for a direct match or string conversion for QColor
-        if issubclass(q_object_type, QtGui.QColor) and isinstance(
-            value, (str, tuple, list)
-        ):
-            return True
-
-        # Check for the existence of a conversion function in the types dictionary
-        return q_object_type in ConvertMixin.types
+    def _resolve_qtype(q_object_type):
+        """Accept either a Qt type or a string ('QColor'), and return the type object."""
+        if isinstance(q_object_type, str):
+            # Try QtCore, then QtGui
+            for mod in (QtCore, QtGui):
+                qt_type = getattr(mod, q_object_type, None)
+                if qt_type is not None:
+                    return qt_type
+            raise ValueError(
+                f"Qt type string '{q_object_type}' not found in QtCore or QtGui."
+            )
+        return q_object_type
 
     @staticmethod
-    def to_qobject(
-        value, q_object_type: Type[Union[QtCore.QObject, QtGui.QColor]]
-    ) -> Optional[Union[QtCore.QObject, QtGui.QColor]]:
-        """Convert a value to a QObject of the specified type if not already one.
+    def can_convert(value, q_object_type) -> bool:
+        """Check if a value can be converted to the specified QObject type (accepts class or string)."""
+        qt_type = ConvertMixin._resolve_qtype(q_object_type)
+        if isinstance(value, qt_type):
+            return True
+        if qt_type is QtGui.QColor and isinstance(value, (str, tuple, list)):
+            return True
+        return qt_type in ConvertMixin.TYPES
 
-        This method dynamically handles conversions, leveraging the types dictionary
-        for mappings and utilizing special handling where necessary.
-        """
-        # Directly return the value if it's already an instance of the target Qt type
-        if isinstance(value, q_object_type):
+    @staticmethod
+    def to_qobject(value, q_object_type):
+        """Convert a value to a QObject of the specified type (accepts class or string)."""
+        qt_type = ConvertMixin._resolve_qtype(q_object_type)
+
+        # If the value is already of the correct type, return it
+        if isinstance(value, qt_type):
             return value
 
-        # Dynamic handling for QColor to support a variety of initialization formats
-        if issubclass(q_object_type, QtGui.QColor):
+        # Early exit for invalid values like None
+        if value is None:
+            raise ValueError(
+                f"[ERROR] Invalid value 'None' for {qt_type.__name__} conversion, please provide a valid {qt_type.__name__}."
+            )
+
+        # Handle specific cases based on Qt type
+        if qt_type is QtGui.QColor:
             if isinstance(value, str):
                 return QtGui.QColor(value)
             elif isinstance(value, (tuple, list)):
-                if all(isinstance(v, float) for v in value):
-                    # Treat as normalized float values
-                    return QtGui.QColor.fromRgbF(*value)
-                elif all(isinstance(v, int) for v in value):
-                    # Treat as integer RGB values
-                    return QtGui.QColor.fromRgb(*value)
+                if all(isinstance(v, (int, float)) for v in value):
+                    return QtGui.QColor(*value)
 
-        # Handle conversions for other types specified in the types dictionary
-        constructor = ConvertMixin.types.get(q_object_type)
+        elif qt_type is QtCore.QPoint:
+            if isinstance(value, (tuple, list)) and len(value) == 2:
+                return QtCore.QPoint(*value)
+            else:
+                raise ValueError(f"[ERROR] Invalid value for QPoint: {value}")
+
+        elif qt_type is QtCore.QSize:
+            if isinstance(value, (tuple, list)) and len(value) == 2:
+                return QtCore.QSize(*value)
+            else:
+                raise ValueError(f"[ERROR] Invalid value for QSize: {value}")
+
+        # General conversion handling for other types
+        constructor = ConvertMixin.TYPES.get(qt_type)
         if constructor:
-            try:  # Attempt to construct the QObject using the provided value
+            try:
                 return constructor(value)
             except Exception as e:
-                print(
-                    f"Failed to construct {q_object_type.__name__} from value {value}: {e}"
+                raise ValueError(
+                    f"Failed to construct {qt_type.__name__} from value {value}: {e}"
                 )
 
-        print(f"Conversion to {q_object_type.__name__} failed for value: {value}")
-        return None
+        # If none of the above worked, raise an error
+        raise ValueError(f"Conversion to {qt_type.__name__} failed for value: {value}")
 
     @staticmethod
     def to_qkey(key: Union[str, QtCore.Qt.Key]) -> Optional[QtCore.Qt.Key]:
-        """Convert a given key identifier to a Qt key constant. Handles both string identifiers and Qt.Key enum values.
-
-        Parameters:
-            key: The key identifier to convert, which can be a string or a QtCore.Qt.Key enum.
-
-        Returns:
-            The corresponding Qt key constant if the conversion is successful, otherwise None.
-        """
+        """Convert a given key identifier to a Qt key constant."""
         if isinstance(key, QtCore.Qt.Key):
             return key
         elif isinstance(key, str):
             key_string = f"Key_{key}" if not key.startswith("Key_") else key
             return getattr(QtCore.Qt, key_string, None)
         else:
-            return None
+            raise ValueError(
+                f"[ERROR] Invalid key value: {key}. Expected QtCore.Qt.Key or string."
+            )
 
 
 # ----------------------------------------------------------------------------

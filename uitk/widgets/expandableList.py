@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import inspect
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
@@ -496,7 +496,7 @@ if __name__ == "__main__":
 
     from uitk.widgets.mixins.style_sheet import StyleSheet
 
-    StyleSheet().set_style(widget=lw.get_items(), theme="dark")
+    StyleSheet().set(widget=lw.get_items(), theme="dark")
 
     window.resize(765, 255)
     window.show()

@@ -2,6 +2,7 @@
 # coding=utf-8
 from qtpy import QtWidgets
 from uitk.widgets.mixins.text import RichText
+from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
@@ -31,11 +32,9 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
         self.sizeHint = self.richTextSizeHint
 
         self.setStyleSheet("OptionBox {border: none;}")
+        IconManager.set_icon(self, "option_box", size=(17, 17))
 
-        # Connect the clicked signal to the show_menu slot
         self.clicked.connect(self.show_menu)
-
-        self.setText("⧉")
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
@@ -51,56 +50,91 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
         )
         self.setStyleSheet(self.__class__.__name__ + " {border: none;}")
 
-    def wrap(self, wrapped_widget):
-        """Wraps the option box around another widget. This involves creating a container
-        widget, setting up a new layout, and placing the wrapped widget and the option
-        box within that layout.
+    def wrap(self, wrapped_widget: QtWidgets.QWidget) -> None:
+        """Wraps the option box around another widget, creating a container and syncing border style."""
+        self.wrapped_widget = wrapped_widget
+        self.container = self._create_wrapping_container(wrapped_widget)
 
-        Parameters:
-            wrapped_widget (QWidget): The widget to be wrapped by the option box.
-        """
-        g_parent = wrapped_widget.parent()
-        container = QtWidgets.QWidget(g_parent)
-        container.setProperty("class", "withBorder")
+        self._adjust_wrapped_widget_size(wrapped_widget)
+        self._sync_object_name(wrapped_widget)
+        self._patch_stylesheet_sync(wrapped_widget)
+        self._sync_container_border()
+        self.container.setVisible(True)
 
-        # Set the height of the container to match the original parent's height
+    def _create_wrapping_container(
+        self, wrapped_widget: QtWidgets.QWidget
+    ) -> QtWidgets.QWidget:
+        """Create and return a container QWidget that wraps around the given widget."""
+        parent = wrapped_widget.parent()
+        container = QtWidgets.QWidget(parent)
         container.setFixedHeight(wrapped_widget.height())
-
-        # Set the size policy to prevent automatic resizing
-        sizePolicy = QtWidgets.QSizePolicy(
-            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+        container.setSizePolicy(
+            QtWidgets.QSizePolicy(
+                QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+            )
         )
-        container.setSizePolicy(sizePolicy)
 
-        if g_parent.layout() is not None:
-            g_parent.layout().replaceWidget(wrapped_widget, container)
-            g_parent.layout().update()
+        if parent.layout():
+            parent.layout().replaceWidget(wrapped_widget, container)
+            parent.layout().update()
         else:
-            initial_pos = wrapped_widget.pos()
-            container.move(initial_pos)
-
-        self.setObjectName("{}_optionBox".format(wrapped_widget.objectName()))
-
-        self.setMaximumSize(
-            wrapped_widget.size().height(), wrapped_widget.size().height()
-        )
-        wrapped_widget.setMinimumSize(
-            wrapped_widget.size().width() - wrapped_widget.size().height(),
-            wrapped_widget.size().height(),
-        )
+            container.move(wrapped_widget.pos())
 
         layout = QtWidgets.QHBoxLayout(container)
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
-        layout.addWidget(wrapped_widget, 0)
-        layout.addWidget(self, 1)
+        self.setParent(container)
+        layout.addWidget(wrapped_widget)
+        layout.addWidget(self)
 
-        self.wrapped_widget = wrapped_widget
-        self.remove_border_for_widget(wrapped_widget)
-        container.setVisible(True)
+        return container
 
-        # Install wrapped widget's event filter onto the option box
-        self.installEventFilter(self.wrapped_widget)
+    def _adjust_wrapped_widget_size(self, wrapped_widget: QtWidgets.QWidget) -> None:
+        """Adjust minimum and maximum sizes of the option box and wrapped widget."""
+        height = wrapped_widget.size().height()
+        width = wrapped_widget.size().width()
+
+        self.setMaximumSize(height, height)
+        wrapped_widget.setMinimumSize(width - height, height)
+
+    def _sync_object_name(self, wrapped_widget: QtWidgets.QWidget) -> None:
+        """Bind the option box's objectName to track the wrapped widget's objectName."""
+
+        def sync_name():
+            self.setObjectName(f"{wrapped_widget.objectName()}_optionBox")
+
+        sync_name()
+
+        original_set_name = wrapped_widget.setObjectName
+
+        def new_set_name(name):
+            original_set_name(name)
+            sync_name()
+
+        wrapped_widget.setObjectName = new_set_name.__get__(wrapped_widget)
+
+    def _patch_stylesheet_sync(self, wrapped_widget: QtWidgets.QWidget) -> None:
+        """Patch wrapped widget's setStyleSheet to sync container border style."""
+        original_set_style = wrapped_widget.setStyleSheet
+
+        def new_set_style(this, style):
+            original_set_style(style)
+            self._sync_container_border()
+
+        wrapped_widget.setStyleSheet = new_set_style.__get__(wrapped_widget)
+
+    def _sync_container_border(self) -> None:
+        """Syncs the container's border with the wrapped widget's border style."""
+        style = self.wrapped_widget.styleSheet()
+        border = ""
+        # Extract any line containing 'border'
+        for line in style.split(";"):
+            if "border" in line:
+                border += line.strip() + ";"
+        if border:  # Set the border for the container
+            self.container.setStyleSheet(f"QWidget.withBorder {{{border}}}")
+        else:  # Default/fallback border style
+            self.container.setStyleSheet("QWidget.withBorder {border: none;}")
 
     def show_menu(self):
         """Shows the option menu if it contains items."""

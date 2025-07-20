@@ -1,25 +1,23 @@
 # !/usr/bin/python
 # coding=utf-8
+from typing import Optional
 from qtpy import QtWidgets
-from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class PushButton(QtWidgets.QPushButton, AttributesMixin, RichText, TextOverlay):
-    """ """
+class Separator(QtWidgets.QFrame, AttributesMixin):
+    """A simple horizontal separator with optional styling and attributes."""
 
-    def __init__(self, parent=None, **kwargs):
-        QtWidgets.QPushButton.__init__(self, parent)
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, **kwargs):
+        super().__init__(parent)
 
-        # override built-ins
-        self.text = self.richText
-        self.setText = self.setRichText
-        self.sizeHint = self.richTextSizeHint
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
+        self.setProperty("class", "separator")
+        self.setFrameShape(QtWidgets.QFrame.HLine)
+        self.setFrameShadow(QtWidgets.QFrame.Sunken)
+        self.setFixedHeight(1)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
-        self.setProperty("class", self.__class__.__name__)
-        self.set_attributes(**kwargs)
+        self.set_attributes(self, **kwargs)
 
 
 # ----------------------------------------------------------------------------
@@ -32,14 +30,7 @@ if __name__ == "__main__":
         sys.argv
     )  # return the existing QApplication object, or create a new one if none exists.
 
-    w = PushButton(
-        parent=None,
-        setObjectName="button_test",
-        setText='<hl style="color:black;">A QPushButton <hl style="color:violet;"><b>with Rich Text</b></hl>',
-        resize=QSize(125, 45),
-        # setVisible=True,
-    )
-
+    w = Separator(setStyleSheet="background-color: red;", setMinimumSize=QSize(200, 1))
     w.show()
     sys.exit(app.exec_())
 
