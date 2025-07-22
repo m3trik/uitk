@@ -3,7 +3,7 @@
 
 # UITK: Dynamic UI Management for Python with qtpy
 
-UITK is a comprehensive Python package designed to streamline the creation, management, and interaction of user interfaces (UIs) using Python3|qtpy. With a focus on versatility, UITK leverages a naming convention-based switchboard module to dynamically load UI files, register custom widgets, manage slots, styles, states, and facilitate interaction with widgets. The primary goal of UITK is to simplify the development process of complex UIs and enhance the efficiency of event handling.
+UITK is dynamic UI loader designed to manage multiple UI from one central switchboard.  Leverages naming convention to dynamically load UI files, register custom widgets, auto connect slots, set styles, restore and sync states, etc.
 
 ## Key Features
 
