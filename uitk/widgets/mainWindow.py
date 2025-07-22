@@ -204,7 +204,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.widgets.add(widget)
         self.on_child_registered.emit(widget)
         widget.init_slot()
+
         # self.logger.debug(f"[register_widget]: {widget.objectName()} ({widget.type})")
+        # self.register_children(widget)
 
     def _add_child_destroyed_signal(self, widget) -> None:
         """Initializes the signal for a given widget that will be emitted when the widget is destroyed.
