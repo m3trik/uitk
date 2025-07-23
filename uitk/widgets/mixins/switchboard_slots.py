@@ -204,8 +204,10 @@ class SwitchboardSlotsMixin:
 
     def _perform_slot_init(self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget):
         """Initialize a slot for a widget."""
-        # Check if widget is already initialized
-        if getattr(widget, "is_initialized", False):
+        # Only skip if already initialized AND not refreshing
+        if getattr(widget, "is_initialized", False) and not getattr(
+            widget, "refresh_on_show", False
+        ):
             self.logger.debug(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Already initialized, skipping"
             )

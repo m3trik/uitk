@@ -257,7 +257,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             )
 
     def _add_child_refresh_on_show_signal(self, widget) -> None:
-        def maybe_refresh():
+        def refresh_if_not_first_show():
             # Only refresh if initialized AND we've already shown at least once
             if getattr(widget, "refresh_on_show", False):
                 if getattr(widget, "_is_not_first_show", False):
@@ -265,7 +265,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                 else:  # Mark as shown for the next time
                     widget._is_not_first_show = True
 
-        self.on_show.connect(maybe_refresh)
+        self.on_show.connect(refresh_if_not_first_show)
 
     def trigger_deferred(self) -> None:
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
