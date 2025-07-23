@@ -204,8 +204,10 @@ class SwitchboardSlotsMixin:
 
     def _perform_slot_init(self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget):
         """Initialize a slot for a widget."""
-        # Check if widget is already initialized
-        if getattr(widget, "is_initialized", False):
+        # Only skip if already initialized AND not refreshing
+        if getattr(widget, "is_initialized", False) and not getattr(
+            widget, "refresh_on_show", False
+        ):
             self.logger.debug(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Already initialized, skipping"
             )
@@ -326,24 +328,21 @@ class SwitchboardSlotsMixin:
         )
 
     def init_slot(self, widget: QtWidgets.QWidget) -> None:
-        """Initialize a slot for the given widget.
-
-        This method focuses solely on initializing a slot for a widget,
-        delegating instance management to get_slots_instance.
-        """
         if not isinstance(widget, QtWidgets.QWidget):
             return
 
         ui = widget.ui
         key = self.get_base_name(ui.objectName())
 
-        # Try to get or create slots instance
+        # Always add to placeholder first, in case slot isn't ready
+        self._add_to_placeholder(key, widget)
+
+        # Then try to get or create the slots instance
         slots = self.get_slots_instance(ui)
 
-        if slots:  # Slots exist or were created, initialize the widget
+        # If it succeeded, process it immediately
+        if slots:
             self._perform_slot_init(ui, widget)
-        else:  # No slots instance available, add to placeholder for later
-            self._add_to_placeholder(key, widget)
 
     def call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs):
         """Call a slot method for a widget.

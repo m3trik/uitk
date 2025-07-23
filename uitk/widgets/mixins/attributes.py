@@ -18,13 +18,13 @@ class AttributesMixin:
       This method intelligently distinguishes between regular attributes, method calls, and signal connections,
       routing each type to its specific handling procedure.
 
-    - is_signal: Checks if a given attribute name corresponds to a Qt signal on the widget.
+    - _is_signal: Checks if a given attribute name corresponds to a Qt signal on the widget.
 
-    - connect_signal: Connects Qt signals to specified callback functions.
+    - _connect_signal: Connects Qt signals to specified callback functions.
 
-    - set_attribute_or_call_method: Handles setting standard attributes and calling methods on widgets.
+    - _set_attribute_or_call_method: Handles setting standard attributes and calling methods on widgets.
 
-    - set_custom_attribute: A flexible method designed to set custom attributes. This method can be
+    - _set_custom_attribute: A flexible method designed to set custom attributes. This method can be
       overridden or extended in subclasses to accommodate specific custom attributes beyond the standard Qt attributes.
 
     Usage:
@@ -41,6 +41,32 @@ class AttributesMixin:
             self.set_attributes(self, setWindowTitle="My Application", set_size=(200, 100))
     ```
     """
+
+    def set_flags(self, **flags):
+        """Sets or unsets given window flags, safely ignoring unsupported cases.
+
+        Parameters:
+            flags (dict): A dictionary where keys are flag names (as strings) and values are booleans indicating whether to set or unset the flag.
+
+        Example:
+            set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=False)
+        """
+        try:
+            current_flags = self.windowFlags()
+
+            for flag, add in flags.items():
+                if hasattr(QtCore.Qt, flag):
+                    flag_value = getattr(QtCore.Qt, flag)
+                    current_flags = (
+                        current_flags | flag_value
+                        if add
+                        else current_flags & ~flag_value
+                    )
+
+            self.setWindowFlags(current_flags)
+
+        except Exception as e:
+            print(f"[AttributeMixin] Set_flags failed: {e}")
 
     def set_legal_attribute(self, obj, name, value, also_set_original=False):
         """If the original name contains illegal characters, this method sets an attribute using
@@ -73,17 +99,17 @@ class AttributesMixin:
 
         for obj in objects:
             for attr, value in attributes.items():
-                if self.is_signal(obj, attr):
-                    self.connect_signal(obj, attr, value)
+                if self._is_signal(obj, attr):
+                    self._connect_signal(obj, attr, value)
                 else:
-                    self.set_attribute_or_call_method(obj, attr, value)
+                    self._set_attribute_or_call_method(obj, attr, value)
 
-    def is_signal(self, obj, attr_name):
+    def _is_signal(self, obj, attr_name):
         """Check if an attribute is a signal."""
         attr = getattr(obj, attr_name, None)
         return isinstance(attr, QtCore.Signal)
 
-    def connect_signal(self, obj, signal_name, callback):
+    def _connect_signal(self, obj, signal_name, callback):
         """Connect a signal to a callback function."""
         signal = getattr(obj, signal_name, None)
         if signal and isinstance(signal, QtCore.Signal):
@@ -91,7 +117,8 @@ class AttributesMixin:
         else:
             print(f"Error: {obj} has no signal named {signal_name}")
 
-    def set_attribute_or_call_method(self, obj, attr, value):
+    def _set_attribute_or_call_method(self, obj, attr, value):
+        """Set an attribute or call a method on the object."""
         try:
             attr_value = getattr(QtCore.Qt, attr)
             obj.setAttribute(attr_value, value)
@@ -103,9 +130,9 @@ class AttributesMixin:
                 else:
                     raise AttributeError(f"Attribute '{attr}' is not callable on {obj}")
             except AttributeError:
-                self.set_custom_attribute(obj, attr, value)
+                self._set_custom_attribute(obj, attr, value)
 
-    def set_custom_attribute(self, w, attr, value):
+    def _set_custom_attribute(self, w, attr, value):
         """AttributesMixin that throw an AttributeError in 'set_attributes' are sent here, where they can be assigned a value.
         Custom attributes can be set using a trailing underscore convention to aid readability, and differentiate them from standard attributes.
 
@@ -130,7 +157,7 @@ class AttributesMixin:
         """
         try:
             if attr == "transfer_properties":
-                self.transfer_widget_properties(value, w)
+                self._transfer_widget_properties(value, w)
 
             elif attr == "set_size":
                 x, y = value
@@ -177,11 +204,11 @@ class AttributesMixin:
 
             # presets
             elif attr == "set_limits":
-                self.set_spinbox_limits(w, value)
+                self._set_spinbox_limits(w, value)
 
             elif attr == "set_by_value":
                 if isinstance(w, QtWidgets.QAbstractSpinBox):
-                    self.set_spinbox_by_value(w, value)
+                    self._set_spinbox_by_value(w, value)
 
             elif attr == "setCheckState":
                 state = {
@@ -201,33 +228,7 @@ class AttributesMixin:
         except AttributeError as e:
             print(f"Error: {e}")
 
-    def set_flags(self, **flags):
-        """Sets or unsets given window flags, safely ignoring unsupported cases.
-
-        Parameters:
-            flags (dict): A dictionary where keys are flag names (as strings) and values are booleans indicating whether to set or unset the flag.
-
-        Example:
-            set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=False)
-        """
-        try:
-            current_flags = self.windowFlags()
-
-            for flag, add in flags.items():
-                if hasattr(QtCore.Qt, flag):
-                    flag_value = getattr(QtCore.Qt, flag)
-                    current_flags = (
-                        current_flags | flag_value
-                        if add
-                        else current_flags & ~flag_value
-                    )
-
-            self.setWindowFlags(current_flags)
-
-        except Exception as e:
-            print(f"[AttributeMixin] Set_flags failed: {e}")
-
-    def set_spinbox_limits(self, spinbox, limits):
+    def _set_spinbox_limits(self, spinbox, limits):
         """Configure the minimum, maximum, step values, and decimal precision for a given spinbox widget.
 
         The function allows you to set these parameters using a tuple of up to four values. The decimal precision,
@@ -276,7 +277,7 @@ class AttributesMixin:
             set_button_symbols="NoButtons",
         )
 
-    def set_spinbox_by_value(self, spinbox, value):
+    def _set_spinbox_by_value(self, spinbox, value):
         """Set a spinbox's attributes according to a given value.
 
         Parameters:
@@ -318,7 +319,7 @@ class AttributesMixin:
             )
 
     @staticmethod
-    def transfer_widget_properties(source, target):
+    def _transfer_widget_properties(source, target):
         """Transfers the properties of a source widget to a target widget.
 
         This function retrieves the meta-object of the source widget and iterates over its properties.
