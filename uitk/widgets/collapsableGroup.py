@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtWidgets, QtGui
+from qtpy import QtWidgets, QtGui, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
@@ -8,49 +8,103 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
     def __init__(self, title, parent=None, **kwargs):
         super().__init__(title, parent)
         self.setCheckable(True)
+        self.setChecked(True)  # Start expanded
+
+        # Connect the toggle signal
         self.toggled.connect(self.toggle_expand)
 
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
-    def show_content(self):
+    def toggle_expand(self, checked):
+        """Toggle the expanded/collapsed state"""
+        # Store the current window size before toggling
+        window = self.window()
+        old_size = window.size()
+
+        # Simply show/hide all child widgets
+        self._set_content_visible(checked)
+
+        # Let Qt handle the layout automatically
+        self.updateGeometry()
+
+        # Notify parent that our size changed
+        if self.parent():
+            self.parent().updateGeometry()
+
+        # Adjust window size based on the size change
+        QtCore.QTimer.singleShot(0, lambda: self._adjust_window_size(old_size))
+
+    def _adjust_window_size(self, old_size):
+        """Adjust the window size after collapse/expand"""
+        window = self.window()
+
+        # Get the new size hint
+        new_hint = window.sizeHint()
+
+        # Calculate the height difference
+        height_diff = new_hint.height() - old_size.height()
+
+        # Only resize if there's a significant change
+        if abs(height_diff) > 5:  # Threshold to avoid tiny adjustments
+            new_height = max(old_size.height() + height_diff, window.minimumHeight())
+            window.resize(old_size.width(), new_height)
+
+    def _set_content_visible(self, visible):
+        """Show or hide all child widgets"""
+        # Only process if we have a layout
+        if not self.layout():
+            return
+
         for i in range(self.layout().count()):
             item = self.layout().itemAt(i)
-            if item.widget():
-                item.widget().show()
+            if item and item.widget():
+                item.widget().setVisible(visible)
 
-    def hide_content(self):
-        for i in range(self.layout().count()):
-            item = self.layout().itemAt(i)
-            if item.widget():
-                item.widget().hide()
+    def setLayout(self, layout):
+        """Override to ensure proper margins for title"""
+        super().setLayout(layout)
+        if layout:
+            # Ensure we have enough top margin for the title
+            margins = layout.contentsMargins()
+            if margins.top() < 15:
+                layout.setContentsMargins(
+                    margins.left(), 20, margins.right(), margins.bottom()
+                )
 
-    def calculate_content_height(self):
-        return sum(
-            item.widget().sizeHint().height() if item.widget() else 0
-            for item in [self.layout().itemAt(i) for i in range(self.layout().count())]
-        )
+    def addWidget(self, widget):
+        """Add a widget to the collapsible content area"""
+        # Create layout if it doesn't exist
+        if not self.layout():
+            self.setLayout(QtWidgets.QVBoxLayout())
 
-    def titleHeight(self):
-        return self.fontMetrics().height() + self.style().pixelMetric(
-            QtWidgets.QStyle.PM_IndicatorWidth
-        )
+        self.layout().addWidget(widget)
 
-    def toggle_expand(self, state):
-        top_level_widget = self.window()
-        current_window_height = top_level_widget.height()
-        current_content_height = self.calculate_content_height() - 35
+        # If we're collapsed, hide the new widget
+        if not self.isChecked():
+            widget.setVisible(False)
 
-        if state:
-            self.show_content()
-            new_window_height = current_window_height + current_content_height
-        else:
-            new_window_height = current_window_height - current_content_height
-            self.hide_content()
+    def addLayout(self, layout):
+        """Add a layout to the collapsible content area"""
+        if not self.layout():
+            self.setLayout(QtWidgets.QVBoxLayout())
 
-        top_level_widget.resize(top_level_widget.width(), new_window_height)
+        self.layout().addLayout(layout)
+
+    def sizeHint(self):
+        """Return appropriate size hint based on current state"""
+        hint = super().sizeHint()
+
+        # If collapsed, return minimal height
+        if not self.isChecked():
+            title_height = self.fontMetrics().height()
+            collapsed_height = title_height + 25  # Add padding for frame
+            return QtCore.QSize(hint.width(), collapsed_height)
+
+        return hint
 
     def paintEvent(self, event):
+        """Custom paint event for styling"""
         painter = QtWidgets.QStylePainter(self)
         option = QtWidgets.QStyleOptionGroupBox()
         self.initStyleOption(option)
@@ -66,9 +120,7 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             self,
         )
         text_color = (
-            QtGui.QColor("light blue")
-            if not self.isChecked()
-            else QtGui.QColor("white")
+            QtGui.QColor("lightblue") if not self.isChecked() else QtGui.QColor("white")
         )
         painter.setPen(text_color)
         painter.drawText(text_rect, self.alignment(), self.title())
@@ -82,9 +134,27 @@ if __name__ == "__main__":
     # return the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
+    # Create main window
+    main_window = QtWidgets.QMainWindow()
+    central_widget = QtWidgets.QWidget()
+    main_window.setCentralWidget(central_widget)
+
+    layout = QtWidgets.QVBoxLayout(central_widget)
+
+    # Create collapsible group
     expandable_area = CollapsableGroup("CLICK ME")
-    expandable_area.setLayout(QtWidgets.QVBoxLayout())
-    expandable_area.show()
+
+    # Add some content to test
+    expandable_area.addWidget(QtWidgets.QLabel("Content line 1"))
+    expandable_area.addWidget(QtWidgets.QLabel("Content line 2"))
+    expandable_area.addWidget(QtWidgets.QPushButton("Test Button"))
+
+    layout.addWidget(expandable_area)
+    layout.addStretch()  # Push content to top
+
+    main_window.resize(300, 200)
+    main_window.show()
+
     sys.exit(app.exec_())
 
 

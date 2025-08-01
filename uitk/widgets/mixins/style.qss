@@ -467,6 +467,25 @@ QProgressBar::chunk {
     margin: 0.5px;
 }
 
+/* -- Size Grip -- */
+QSizeGrip {
+    background-color: transparent;
+    border: 1px solid none;
+    border-radius: 1px;
+    width: 6px;
+    height: 6px;
+    border-bottom-right-radius: 0px;
+    border-bottom: 3px solid {TEXT_COLOR};
+    border-right: 3px solid {TEXT_COLOR};
+    border-bottom-right-radius: 0px;
+}
+QSizeGrip:hover {
+    background-color: {BUTTON_HOVER};
+    border-right: 3px solid {TEXT_HOVER};
+    border-bottom-right-radius: 0px;
+}
+
+
 /* -- Custom Classes -- */
 .default {
     background-color: {WIDGET_BACKGROUND};
@@ -559,3 +578,4 @@ Header > QPushButton#hide_button:hover {
     background-color: red;
     border: none;
 }
+

@@ -44,10 +44,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.style = StyleSheet(self, log_level="WARNING")
 
         self.setObjectName(name)
-        self.legal_name = lambda: self.sb.convert_to_legal_name(self.objectName())
-        self.base_name = lambda: self.sb.get_base_name(self.objectName())
+        self.legal_name = lambda: self.sb.convert_to_legal_name(name)
+        self.base_name = lambda: self.sb.get_base_name(name)
 
-        self.settings = SettingsManager(org=__package__, app=self.objectName())
+        self.settings = SettingsManager(org=__package__, app=name)
         self.state = StateManager(self.settings)
 
         self.path = path
@@ -80,6 +80,26 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if central_widget:
             self.setCentralWidget(central_widget)
 
+        # Always create size grip, even if no layout exists yet
+        self._create_size_grip()
+
+    def _create_size_grip(self) -> None:
+        """Create the size grip if it doesn't exist and add it to layout if available."""
+        # Check if size grip already exists
+        existing_grip = self.findChild(QtWidgets.QSizeGrip, "size_grip")
+        if existing_grip:
+            return
+
+        # Create the size grip
+        size_grip = QtWidgets.QSizeGrip(self)
+        size_grip.setObjectName("size_grip")
+
+        # Add to layout if one exists
+        layout = self.centralWidget().layout() if self.centralWidget() else None
+        if layout:
+            layout.addWidget(size_grip)
+            layout.setAlignment(size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight)
+
     def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
         """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""
         # Set the new central widget
@@ -87,6 +107,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
         # Initialize window flags based on the new central widget
         self.initialize_window_flags(widget)
+
+        # Ensure size grip exists and is properly positioned
+        self._create_size_grip()
 
     def initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None:
         """Initializes the window flags based on the central widget."""
