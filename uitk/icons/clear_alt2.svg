@@ -1,0 +1,6 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Alternative 2: Ultra minimal version -->
+  <!-- Just the X with no background -->
+  <path d="M8 8L16 16" stroke="#777777" stroke-width="1.8" stroke-linecap="round"></path>
+  <path d="M16 8L8 16" stroke="#777777" stroke-width="1.8" stroke-linecap="round"></path>
+</svg>

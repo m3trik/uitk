@@ -460,9 +460,23 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
 
     def create_option_box(self):
         """ """
-        self.option_box = OptionBox()
-        self.option_box.menu = self
-        self.option_box.wrap(self.parent())
+        parent_widget = self.parent()
+
+        # Check if widget already has an option box manager that should handle this
+        if (
+            hasattr(parent_widget, "option_box")
+            and parent_widget.option_box._option_box is not None
+        ):
+            # Use the existing option box from the manager
+            self.option_box = parent_widget.option_box._option_box
+            # Set this menu as its action handler
+            self.option_box.set_action_handler(self)
+        else:
+            # Create our own option box (original behavior)
+            from uitk.widgets.optionBox import OptionBox
+
+            self.option_box = OptionBox(action_handler=self)
+            self.option_box.wrap(parent_widget)
 
     def center_on_cursor_position(self):
         """ """

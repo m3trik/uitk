@@ -32,9 +32,22 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         tags: set = None,
         path: str = None,
         log_level: int = "WARNING",
+        restore_window_size: bool = True,
         **kwargs,
     ) -> None:
-        """Initializes the main window and its properties."""
+        """Initializes the main window and its properties.
+
+        Parameters:
+            name: The name of the window
+            switchboard_instance: The switchboard instance to use
+            central_widget: Optional central widget to set
+            parent: Optional parent widget
+            tags: Optional set of tags
+            path: Optional path
+            log_level: Logging level to use
+            restore_window_size: Whether to save and restore window geometry. Defaults to True.
+            **kwargs: Additional keyword arguments
+        """
         super().__init__(parent)
 
         self.logger.setLevel(log_level)
@@ -44,10 +57,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.style = StyleSheet(self, log_level="WARNING")
 
         self.setObjectName(name)
-        self.legal_name = lambda: self.sb.convert_to_legal_name(self.objectName())
-        self.base_name = lambda: self.sb.get_base_name(self.objectName())
+        self.legal_name = lambda: self.sb.convert_to_legal_name(name)
+        self.base_name = lambda: self.sb.get_base_name(name)
 
-        self.settings = SettingsManager(org=__package__, app=self.objectName())
+        self.settings = SettingsManager(org=__package__, app=name)
         self.state = StateManager(self.settings)
 
         self.path = path
@@ -55,6 +68,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.has_tags = lambda tags=None: self.sb.has_tags(self, tags)
         self.is_initialized = False
         self.prevent_hide = False
+        self.restore_window_size = (
+            restore_window_size  # Enable/disable window size saving
+        )
         self.widgets = set()
         self.restore_widget_states = True
         self.restored_widgets = set()
@@ -80,6 +96,26 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if central_widget:
             self.setCentralWidget(central_widget)
 
+        # Always create size grip, even if no layout exists yet
+        self._create_size_grip()
+
+    def _create_size_grip(self) -> None:
+        """Create the size grip if it doesn't exist and add it to layout if available."""
+        # Check if size grip already exists
+        existing_grip = self.findChild(QtWidgets.QSizeGrip, "size_grip")
+        if existing_grip:
+            return
+
+        # Create the size grip
+        size_grip = QtWidgets.QSizeGrip(self)
+        size_grip.setObjectName("size_grip")
+
+        # Add to layout if one exists
+        layout = self.centralWidget().layout() if self.centralWidget() else None
+        if layout:
+            layout.addWidget(size_grip)
+            layout.setAlignment(size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight)
+
     def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
         """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""
         # Set the new central widget
@@ -87,6 +123,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
         # Initialize window flags based on the new central widget
         self.initialize_window_flags(widget)
+
+        # Ensure size grip exists and is properly positioned
+        self._create_size_grip()
 
     def initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None:
         """Initializes the window flags based on the central widget."""
@@ -279,22 +318,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                 method()
         self._deferred.clear()
 
-    def defer_until_show(self, func, *args, priority=0, once=False) -> None:
-        """Defer execution of a function until after window is shown."""
-        method = partial(func, *args)
-
-        if once:
-            key = (func.__name__, tuple(map(id, args)))
-            for group in self._deferred.values():
-                if any(getattr(f, "__key__", None) == key for f in group):
-                    return
-            method.__key__ = key  # custom tag for deduping
-
-        if priority in self._deferred:
-            self._deferred[priority] += (method,)
-        else:
-            self._deferred[priority] = (method,)
-
     def perform_restore_state(self, widget: QtWidgets.QWidget, force=False) -> None:
         """Restores the state of a given widget if it has a restore_state attribute."""
         if not self.restore_widget_states:
@@ -337,6 +360,52 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                     self.register_widget(child)
         return super().eventFilter(watched, event)
 
+    def save_window_geometry(self) -> None:
+        """Save the current window geometry (size and position) to settings."""
+        if not self.restore_window_size:
+            return
+
+        geometry = self.saveGeometry()
+        # Store QByteArray directly using the clean API
+        self.settings.setByteArray("window_geometry", geometry)
+        self.logger.debug(
+            f"[save_window_geometry]: Saved window geometry for {self.objectName()}"
+        )
+
+    def restore_window_geometry(self) -> None:
+        """Restore the window geometry (size and position) from settings."""
+        if not self.restore_window_size:
+            return
+
+        # Get QByteArray directly using the clean API
+        geometry = self.settings.getByteArray("window_geometry")
+
+        if geometry and isinstance(geometry, QtCore.QByteArray):
+            try:
+                if self.restoreGeometry(geometry):
+                    self.logger.debug(
+                        f"[restore_window_geometry]: Restored window geometry for {self.objectName()}"
+                    )
+                else:
+                    self.logger.debug(
+                        f"[restore_window_geometry]: Failed to restore window geometry for {self.objectName()}"
+                    )
+            except Exception as e:
+                self.logger.warning(
+                    f"[restore_window_geometry]: Error restoring geometry: {e}"
+                )
+        else:
+            self.logger.debug(
+                f"[restore_window_geometry]: No valid geometry data found for {self.objectName()}"
+            )
+
+    def clear_saved_geometry(self) -> None:
+        """Clear any saved window geometry from settings."""
+        self.settings.clear("window_geometry")
+        self.logger.debug(
+            f"[clear_saved_geometry]: Cleared saved geometry for {self.objectName()}"
+        )
+
     def setVisible(self, visible) -> None:
         """Reimplement setVisible to prevent window from being hidden when prevent_hide is True."""
         if self.prevent_hide and not visible:
@@ -365,14 +434,22 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """Override the show event to initialize untracked widgets and restore their states."""
         if not self.is_initialized:
             self.logger.debug(f"[showEvent]: Registering children on first show.")
-            self.register_children()
-            self.logger.debug(f"[showEvent]: Registering children done.")
+            try:
+                self.register_children()
+                self.logger.debug(f"[showEvent]: Registering children done.")
+            except Exception as e:
+                self.logger.debug(f"[showEvent]: Error during register_children: {e}")
 
         self.trigger_deferred()
         self.activateWindow()
 
         super().showEvent(event)
         self.on_show.emit()
+
+        # Defer geometry restoration until after the window is fully shown
+        # if self.restore_window_size:
+        #     self.sb.defer_with_timer(self.restore_window_geometry, ms=100)
+
         self.is_initialized = True
 
     def eventFilter(self, watched, event) -> bool:
@@ -417,7 +494,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.on_hide.emit()
 
     def closeEvent(self, event) -> None:
-        """Reimplement closeEvent to prevent window from being hidden when prevent_hide is True."""
+        """Reimplement closeEvent to save window geometry and emit custom signal."""
+        # Save window geometry before closing
+        self.save_window_geometry()
+
         super().closeEvent(event)
         self.on_close.emit()
 

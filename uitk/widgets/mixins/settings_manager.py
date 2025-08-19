@@ -55,6 +55,16 @@ class SettingsManager:
             value = json.dumps(value)
         self.settings.setValue(self._ns_key(key), value)
 
+    def setByteArray(self, key: str, value: QtCore.QByteArray) -> None:
+        """Set a QByteArray value directly without JSON serialization."""
+        self.settings.setValue(self._ns_key(key), value)
+
+    def getByteArray(
+        self, key: str, default: QtCore.QByteArray = None
+    ) -> QtCore.QByteArray:
+        """Get a QByteArray value directly."""
+        return self.settings.value(self._ns_key(key), default)
+
     def clear(self, key: Optional[str] = None) -> None:
         """Clears a specific key or all if key is None."""
         if key:

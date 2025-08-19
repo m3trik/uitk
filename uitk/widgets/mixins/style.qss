@@ -37,6 +37,9 @@ QGroupBox {
     margin: 12px 0px 1px 0px;
     background-color: {MAIN_BACKGROUND_ALPHA};
 }
+QGroupBox:hover {
+    border: 1px solid {TEXT_HOVER};
+}
 QGroupBox::title {
     top: -13px;
     background-color: {MAIN_BACKGROUND_ALPHA};
@@ -101,25 +104,25 @@ QAbstractButton {
     padding: 0px 1px 0px 1px;
     spacing: 1px;
 }
-QAbstractButton::hover {
+QAbstractButton:hover {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
-QAbstractButton::hover:checked {
+QAbstractButton:hover:checked {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
-QAbstractButton::enabled {
+QAbstractButton:enabled {
     color: {TEXT_COLOR};
 }
-QAbstractButton::disabled {
+QAbstractButton:disabled {
     color: {TEXT_DISABLED};
 }
-QAbstractButton::checked {
+QAbstractButton:checked {
     background-color: {BUTTON_HOVER};
     color: {TEXT_CHECKED};
 }
-QAbstractButton::checked:hover {
+QAbstractButton:checked:hover {
     background-color: {BUTTON_HOVER};
     color: {TEXT_CHECKED};
 }
@@ -202,13 +205,12 @@ QAbstractSpinBox {
     color: {TEXT_COLOR};
     border: 1px solid {BORDER_COLOR};
 }
-QAbstractSpinBox::disabled {
+QAbstractSpinBox:disabled {
     color: {TEXT_DISABLED};
 }
-QAbstractSpinBox::hover {
-    background-color: {WIDGET_BACKGROUND};
+QAbstractSpinBox:hover {
+    border: 1px solid {TEXT_HOVER};
     color: {TEXT_HOVER};
-    border: 1px solid {BORDER_COLOR};
 }
 QScrollBar:left-arrow,
 QScrollBar::right-arrow,
@@ -242,8 +244,8 @@ QComboBox {
     border-radius: 1px;
     min-width: 0em;
 }
-QComboBox::hover {
-    background-color: {BUTTON_HOVER};
+QComboBox:hover {
+    border: 1px solid {TEXT_HOVER};
     color: {TEXT_HOVER};
 }
 QComboBox::open {
@@ -286,14 +288,14 @@ QLabel {
     border: 1px solid {BORDER_COLOR};
     padding: 0px 1px 0px 1px;
 }
-QLabel::hover {
-    background-color: {BUTTON_HOVER};
+QLabel:hover {
+    border: 1px solid {TEXT_HOVER};
     color: {TEXT_HOVER};
 }
-QLabel::enabled {
+QLabel:enabled {
     color: {TEXT_COLOR};
 }
-QLabel::disabled {
+QLabel:disabled {
     color: {TEXT_DISABLED};
 }
 QLineEdit {
@@ -304,10 +306,13 @@ QLineEdit {
     border-radius: 1px;
     padding: 0 8px;
 }
-QLineEdit::disabled {
+QLineEdit:hover {
+    border: 1px solid {TEXT_HOVER};
+}
+QLineEdit:disabled {
     color: {MAIN_BACKGROUND};
 }
-QLineEdit::enabled {
+QLineEdit:enabled {
     color: {TEXT_COLOR};
 }
 QLineEdit:read-only {
@@ -316,6 +321,11 @@ QLineEdit:read-only {
 QTextEdit {
     color: {TEXT_COLOR};
     background-attachment: fixed;
+    border: 1px solid {BORDER_COLOR};
+    background-color: {WIDGET_BACKGROUND};
+}
+QTextEdit:hover {
+    border: 1px solid {TEXT_HOVER};
 }
 QTextEdit QWidget#qt_scrollarea_viewport {
     background-color: {WIDGET_BACKGROUND};
@@ -328,7 +338,12 @@ QTextEdit#hudTextEdit {
     selection-color: white;
 }
 QPlainTextEdit {
-    /* Inherits from QAbstractScrollArea */
+    background-color: {WIDGET_BACKGROUND};
+    border: 1px solid {BORDER_COLOR};
+    color: {TEXT_COLOR};
+}
+QPlainTextEdit:hover {
+    border: 1px solid {TEXT_HOVER};
 }
 
 /* -- Item Views -- */
@@ -361,16 +376,50 @@ QAbstractItemView::item:hover {
 /* QListView: Inherits from QAbstractItemView */
 /* QTableView: Inherits from QAbstractItemView */
 QTreeView::branch {
-    background: palette(base);
-    border-image: none;
-    border-width: 0;
-    border-style: solid;
-    border-color: {MAIN_BACKGROUND};
+    background-color: transparent;
+    border: none;
+    margin: 2px;
+}
+QTreeView::branch:has-siblings:!adjoins-item {
+    background-color: transparent;
+}
+QTreeView::branch:has-siblings:adjoins-item {
+    background-color: transparent;
+}
+QTreeView::branch:!has-children:!has-siblings:adjoins-item {
+    background-color: transparent;
+}
+QTreeView::branch:has-children:closed {
+    background-color: {WIDGET_BACKGROUND};
+    border: 1px solid {BORDER_COLOR};
+    border-radius: 2px;
+    width: 14px;
+    height: 14px;
+    margin: 1px;
+}
+QTreeView::branch:has-children:closed:hover {
+    background-color: {BUTTON_HOVER};
+    border: 1px solid {TEXT_HOVER};
+}
+QTreeView::branch:has-children:open {
+    background-color: {WIDGET_BACKGROUND};
+    border: 1px solid {BORDER_COLOR};
+    border-radius: 2px;
+    width: 14px;
+    height: 14px;
+    margin: 1px;
+}
+QTreeView::branch:has-children:open:hover {
+    background-color: {BUTTON_HOVER};
+    border: 1px solid {TEXT_HOVER};
 }
 
 /* -- Frames -- */
 QFrame {
     border-radius: 1px;
+}
+QFrame:hover {
+    border: 1px solid {TEXT_HOVER};
 }
 
 /* -- Scroll Areas -- */
@@ -380,6 +429,9 @@ QAbstractScrollArea {
     selection-background-color: {BUTTON_HOVER};
     selection-color: {TEXT_COLOR};
 }
+QAbstractScrollArea:hover {
+    border: 1px solid {TEXT_HOVER};
+}
 /* QScrollArea: Inherits from QAbstractScrollArea */
 /* QGraphicsView: Inherits from QAbstractScrollArea */
 /* QMdiArea: Inherits from QAbstractScrollArea */
@@ -388,6 +440,9 @@ QAbstractScrollArea {
 QAbstractSlider {
     border: 1px solid {BORDER_COLOR};
     background-color: {WIDGET_BACKGROUND};
+}
+QAbstractSlider:hover {
+    border: 1px solid {TEXT_HOVER};
 }
 QAbstractSlider::handle {
     width: 10px;
@@ -412,21 +467,43 @@ QAbstractSlider::add-page {
     background-color: {WIDGET_BACKGROUND};
 }
 /* QSlider: Inherits from QAbstractSlider */
-QScrollBar:vertical, QScrollBar:horizontal {
-    background: {WIDGET_BACKGROUND};
+QScrollBar:vertical {
+    background: transparent;
     border: none;
-    width: 10px;
-    margin: 0px 0 0px 0;
+    width: 0px;
+    margin: 0px;
 }
-QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+QScrollBar:horizontal {
+    background: transparent;
+    border: none;
+    height: 12px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: transparent;
+    min-height: 0px;
+    width: 0px;
+}
+QScrollBar::handle:horizontal {
     background: {MAIN_BACKGROUND};
-    min-height: 20px;
     min-width: 20px;
+    border: 1px solid black;
+    border-radius: 1px;
+    margin: 1px 0px;
 }
-QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
-    background: {BUTTON_HOVER};
+QScrollBar::handle:vertical:hover {
+    background: transparent;
 }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::handle:horizontal:hover {
+    background: {MAIN_BACKGROUND};
+    border: 1px solid {TEXT_HOVER};
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: transparent;
+    height: 0px;
+    width: 0px;
+}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     border: none;
     background: none;
@@ -435,13 +512,15 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     subcontrol-position: top left;
     subcontrol-origin: margin;
 }
-QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover,
+QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {
+    background: transparent;
+}
 QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
-    height: 0px;
-    width: 0px;
     background: none;
 }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+}
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     height: 0px;
     width: 0px;
@@ -450,8 +529,11 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 
 /* -- Progress Bar -- */
 QProgressBar {
-    border: none;
+    border: 1px solid {BORDER_COLOR};
     background-color: {MAIN_BACKGROUND};
+}
+QProgressBar:hover {
+    border: 1px solid {TEXT_HOVER};
 }
 QProgressBar[orientation="Qt::Horizontal"] {
     padding-right: 10000px;
@@ -467,6 +549,23 @@ QProgressBar::chunk {
     margin: 0.5px;
 }
 
+/* -- Size Grip -- */
+QSizeGrip {
+    background-color: transparent;
+    border: 1px solid none;
+    border-radius: 1px;
+    width: 6px;
+    height: 6px;
+    border-bottom-right-radius: 0px;
+    border-bottom: 3px solid {TEXT_COLOR};
+    border-right: 3px solid {TEXT_COLOR};
+}
+QSizeGrip:hover {
+    border-bottom: 3px solid {TEXT_HOVER};
+    border-right: 3px solid {TEXT_HOVER};
+}
+
+
 /* -- Custom Classes -- */
 .default {
     background-color: {WIDGET_BACKGROUND};
@@ -477,18 +576,18 @@ QProgressBar::chunk {
     padding: 0px 1px 0px 1px;
     spacing: 1px;
 }
-.default::hover {
+.default:hover {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
-.default::hover:checked {
+.default:hover:checked {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
-.default::enabled {
+.default:enabled {
     color: {TEXT_COLOR};
 }
-.default::disabled {
+.default:disabled {
     color: {TEXT_DISABLED};
 }
 .transparentBgNoBorder {
@@ -525,6 +624,28 @@ QProgressBar::chunk {
 .withBorder {
     border: 1px solid {BORDER_COLOR};
 }
+
+/* OptionBox Container Styling - Higher specificity to override QWidget rule */
+QWidget#optionBoxContainer {
+    border: 1px solid {BORDER_COLOR} !important;
+    padding: 0px;
+    margin: 0px;
+}
+
+QPushButton#optionBox {
+    border: 1px solid {BORDER_COLOR};
+    border-left: none !important; /* remove internal left divider */
+    padding: 0px;
+    margin: 0px;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+}
+
+QWidget[class~="withBorder"] {
+    border: 1px solid {BORDER_COLOR} !important;
+}
 .noPadding {
     padding: 0px 0px 0px 0px;
 }
@@ -538,7 +659,7 @@ Header {
     background-color: {HEADER_BACKGROUND};
     border: none;
 }
-Header::hover {
+Header:hover {
     background-color: {HEADER_BACKGROUND};
     border: none;
 }
@@ -559,3 +680,4 @@ Header > QPushButton#hide_button:hover {
     background-color: red;
     border: none;
 }
+

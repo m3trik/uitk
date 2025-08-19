@@ -224,24 +224,6 @@ class Switchboard(
         parts = name.split(self.tag_delimiter)
         return set(parts[1:]) if len(parts) > 1 else set()
 
-    def clean_tag_string(self, tag_string: str) -> str:
-        unknown_tags = self.get_unknown_tags(tag_string)
-        tag_re = "|".join(re.escape(self.tag_delimiter + tag) for tag in unknown_tags)
-        return re.sub(tag_re, "", tag_string)
-
-    def get_unknown_tags(
-        self, tag_string: str, known_tags: list[str] = ["submenu", "startmenu"]
-    ) -> list[str]:
-        known_tags_list = ptk.make_iterable(known_tags)
-        pattern = "|".join(known_tags_list)
-        tag_re = re.escape(self.tag_delimiter) + f"(?!{pattern})[a-zA-Z0-9]*"
-        unknown_tags = re.findall(tag_re, tag_string)
-        return [
-            tag[len(self.tag_delimiter) :]
-            for tag in unknown_tags
-            if tag != self.tag_delimiter
-        ]
-
     def has_tags(self, ui, tags=None) -> bool:
         """Check if any of the given tag(s) are present in the UI's tags set.
         If no tags are provided, it checks if the UI has any tags at all.
@@ -266,6 +248,82 @@ class Switchboard(
 
         tags_to_check = ptk.make_iterable(tags)
         return any(tag in ui.tags for tag in tags_to_check)
+
+    def remove_tags(self, tag_string: str, tags_to_remove: list[str]) -> str:
+        """Remove specific tags from a tag string.
+
+        Parameters:
+            tag_string (str): The string containing tags (e.g., "menu#submenu#startmenu")
+            tags_to_remove (list[str]): List of tag names to remove (e.g., ["submenu", "startmenu"])
+
+        Returns:
+            str: The tag string with specified tags removed
+        """
+        if not tags_to_remove:
+            return tag_string
+
+        tags_to_remove_list = ptk.make_iterable(tags_to_remove)
+        tag_re = "|".join(
+            re.escape(self.tag_delimiter + tag) for tag in tags_to_remove_list
+        )
+        return re.sub(tag_re, "", tag_string)
+
+    def filter_tags(
+        self,
+        tag_string: str,
+        keep_tags: list[str] = None,
+        remove_tags: list[str] = None,
+    ) -> str:
+        """Filter tags from a tag string - either keep only specified tags or remove specified tags.
+
+        Parameters:
+            tag_string (str): The string containing tags
+            keep_tags (list[str], optional): If provided, keep only these tags
+            remove_tags (list[str], optional): If provided, remove these tags
+
+        Returns:
+            str: The filtered tag string
+        """
+        if keep_tags is not None:
+            # Keep only specified tags
+            base_name = tag_string.split(self.tag_delimiter)[0]
+            current_tags = self._parse_tags(tag_string)
+            keep_tags_set = set(ptk.make_iterable(keep_tags))
+            filtered_tags = current_tags.intersection(keep_tags_set)
+
+            if filtered_tags:
+                return (
+                    base_name
+                    + self.tag_delimiter
+                    + self.tag_delimiter.join(sorted(filtered_tags))
+                )
+            else:
+                return base_name
+
+        elif remove_tags is not None:
+            return self.remove_tags(tag_string, remove_tags)
+
+        return tag_string
+
+    def get_unknown_tags(self, tag_string: str, known_tags: list[str]) -> list[str]:
+        """Get tags that are not in the known_tags list.
+
+        Parameters:
+            tag_string (str): The string containing tags
+            known_tags (list[str]): List of known/expected tags
+
+        Returns:
+            list[str]: List of unknown tag names (without delimiter prefix)
+        """
+        known_tags_list = ptk.make_iterable(known_tags)
+        pattern = "|".join(re.escape(tag) for tag in known_tags_list)
+        tag_re = re.escape(self.tag_delimiter) + f"(?!{pattern})[a-zA-Z0-9]*"
+        unknown_tags = re.findall(tag_re, tag_string)
+        return [
+            tag[len(self.tag_delimiter) :]
+            for tag in unknown_tags
+            if tag != self.tag_delimiter
+        ]
 
     @property
     def visible_windows(self) -> set:

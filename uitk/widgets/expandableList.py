@@ -40,6 +40,10 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         expandable_list.on_item_interacted.connect(my_item_interacted_func)
     """
 
+    # Class constants
+    VALID_POSITIONS = {"right", "left", "top", "bottom", "center"}
+    DEFAULT_LAYOUT_SPACING = 0.5
+
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
 
@@ -55,10 +59,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         **kwargs,
     ):
         super().__init__(parent)
-        if position not in ["right", "left", "top", "bottom", "center"]:
+
+        if position not in self.VALID_POSITIONS:
             raise ValueError(
-                "Invalid position. Must be 'right', 'left', 'top', 'bottom', or 'center'."
+                f"Invalid position '{position}'. Must be one of: {', '.join(self.VALID_POSITIONS)}"
             )
+
         self.position = position
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
@@ -69,19 +75,24 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         self.widget_data = {}
 
-        # Create a new layout with no margins
+        self._setup_layout()
+        self._setup_widget_properties()
+
+    def _setup_layout(self):
+        """Initialize the widget's layout with appropriate settings."""
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0.5)
+        self.layout.setSpacing(self.DEFAULT_LAYOUT_SPACING)
         self.setLayout(self.layout)
 
+    def _setup_widget_properties(self):
+        """Configure widget properties and event handling."""
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
-
         self.installEventFilter(self)
         self.setProperty("class", self.__class__.__name__)
-        self.set_attributes(**kwargs)
+        self.set_attributes(**self.kwargs)
 
     def get_items(self):
         """Get all items in the list and its sublists.
@@ -97,10 +108,25 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 items.extend(item.sublist.get_items())
         return items
 
+    def _get_widget_attribute(self, widget, attribute, default=None):
+        """Get an attribute from a widget safely.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to get the attribute from.
+            attribute (str): The attribute name to retrieve.
+            default: The default value to return if attribute doesn't exist.
+
+        Returns:
+            Any: The attribute value or default if not found.
+        """
+        return (
+            getattr(widget, attribute, lambda: default)()
+            if hasattr(widget, attribute)
+            else default
+        )
+
     def get_item_text(self, widget):
         """Get the textual representation of a widget.
-
-        This method tries to retrieve the text attribute of the passed widget. If the widget does not possess a text attribute, it will return None.
 
         Parameters:
             widget (QtWidgets.QWidget): The widget for which to get the text.
@@ -108,15 +134,10 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             str: The text associated with the widget, or None if the widget does not have a text attribute.
         """
-        try:
-            return widget.text()
-        except AttributeError:
-            return None
+        return self._get_widget_attribute(widget, "text")
 
     def get_parent_item_text(self, widget):
         """Get the text attribute of the parent item of a widget's sublist.
-
-        This method attempts to retrieve the text attribute of the widget's parent item in the sublist. If the parent item does not exist or does not have a text attribute, it returns None.
 
         Parameters:
             widget (QtWidgets.QWidget): The widget for which to get the parent item's text.
@@ -125,14 +146,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             str: The text of the parent item, or None if the parent item does not exist or does not have a text attribute.
         """
         try:
-            return widget.sublist.parent_list.parent_item.text()
+            return self.get_item_text(widget.sublist.parent_list.parent_item)
         except AttributeError:
             return None
 
     def get_item_data(self, widget):
         """Get data associated with a widget in the list or its sublists.
-
-        This method returns the data associated with the widget in the list or any sublist. If the widget is not found, it returns None.
 
         Parameters:
             widget (QtWidgets.QWidget): The widget to get the data for.
@@ -140,15 +159,10 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             Any: The data associated with the widget, or None if the widget is not found.
         """
-        try:
-            return self.widget_data.get(widget)
-        except KeyError:
-            return None
+        return self.widget_data.get(widget)
 
     def get_parent_item_data(self, widget):
         """Get the data associated with the parent item of a widget's sublist.
-
-        This method attempts to retrieve the data associated with the widget's parent item in the sublist. If the parent item does not exist or does not have associated data, it returns None.
 
         Parameters:
             widget (QtWidgets.QWidget): The widget for which to get the parent item's data.
@@ -157,8 +171,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             Any: The data associated with the parent item, or None if the parent item does not exist or does not have associated data.
         """
         try:
-            return self.widget_data.get(widget.sublist.parent_list.parent_item)
-        except KeyError:
+            return self.get_item_data(widget.sublist.parent_list.parent_item)
+        except AttributeError:
             return None
 
     def set_item_data(self, widget, data):
@@ -178,20 +192,97 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         This method recursively removes all items from the list, including items from all nested sublists.
         """
-        # We're going backwards to avoid index errors.
+        # Process widgets in reverse order to avoid index errors
         for i in reversed(range(self.layout.count())):
             widget = self.layout.itemAt(i).widget()
             if widget:
-                # If the widget has a sublist, clear it too
+                # Recursively clear sublist if it exists
                 if hasattr(widget, "sublist"):
                     widget.sublist.clear()
 
+                # Remove and clean up the widget
                 self.layout.removeWidget(widget)
                 widget.setParent(None)
                 widget.deleteLater()
 
         # Reset the widget_data dictionary
-        self.widget_data = {}
+        self.widget_data.clear()
+
+    def _create_widget_from_input(self, x):
+        """Create a widget from various input types.
+
+        Parameters:
+            x (str, QtWidgets.QWidget, type): Input to create widget from.
+
+        Returns:
+            QtWidgets.QWidget: The created widget.
+
+        Raises:
+            TypeError: If the input type is not supported.
+        """
+        if isinstance(x, str):
+            try:
+                return getattr(QtWidgets, x)(self)
+            except (AttributeError, TypeError):
+                widget = QtWidgets.QLabel()
+                widget.setText(x)
+                return widget
+
+        elif isinstance(x, QtWidgets.QWidget):
+            return x
+
+        elif inspect.isclass(x) and issubclass(x, QtWidgets.QWidget):
+            return x(self)
+
+        else:
+            raise TypeError(
+                f"Unsupported item type: expected str, QWidget, a subclass of QWidget, "
+                f"or a collection (list, tuple, set, map, zip, dict), but got '{type(x)}'"
+            )
+
+    def _configure_widget_properties(self, widget):
+        """Configure common widget properties like height constraints.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to configure.
+        """
+        if self.min_item_height is not None:
+            widget.setMinimumHeight(self.min_item_height)
+        if self.max_item_height is not None:
+            widget.setMaximumHeight(self.max_item_height)
+        if self.fixed_item_height is not None:
+            widget.setFixedHeight(self.fixed_item_height)
+
+    def _setup_widget_methods(self, widget):
+        """Add convenience methods to the widget for accessing item data.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to add methods to.
+        """
+        widget.item_text = lambda: self.get_item_text(widget)
+        widget.item_data = lambda: self.get_item_data(widget)
+        widget.parent_item_text = lambda: self.get_parent_item_text(widget)
+        widget.parent_item_data = lambda: self.get_parent_item_data(widget)
+
+    def _finalize_widget_setup(self, widget, data, **kwargs):
+        """Complete the widget setup process.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to finalize.
+            data: Data to associate with the widget.
+            **kwargs: Additional attributes to set.
+        """
+        self.layout.addWidget(widget)
+        self.on_item_added.emit(widget)
+
+        self.set_item_data(widget, data)
+        self._add_sublist(widget)
+        self._configure_widget_properties(widget)
+        self.set_attributes(widget, **kwargs)
+        widget.installEventFilter(self)
+
+        self.resize(self.sizeHint())
+        self.layout.invalidate()
 
     def add(self, x, data=None, **kwargs):
         """Add an item or multiple items to the list or its sublists.
@@ -206,6 +297,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             widget/list: The added widget or list of added widgets.
         """
+        # Handle collections
         if isinstance(x, dict):
             return [self.add(key, data=val, **kwargs) for key, val in x.items()]
         elif isinstance(x, (list, tuple, set)):
@@ -215,55 +307,49 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         elif isinstance(x, map):
             return [self.add(item, **kwargs) for item in list(x)]
 
-        # get the widget from the value passed to x
-        if isinstance(x, str):
-            try:
-                widget = getattr(QtWidgets, x)(self)
-            except (AttributeError, TypeError):
-                widget = QtWidgets.QLabel()
-                widget.setText(x)
+        # Create widget from input
+        widget = self._create_widget_from_input(x)
 
-        elif isinstance(x, QtWidgets.QWidget) or (
-            inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
-        ):
-            widget = x(self) if callable(x) else x
-
-        else:
-            raise TypeError(
-                f"Unsupported item type: expected str, QWidget, a subclass of QWidget, or a collection (list, tuple, set, map, zip, dict), but got '{type(x)}'"
-            )
-
-        widget.item_text = lambda i=widget: self.get_item_text(i)
-        widget.item_data = lambda i=widget: self.get_item_data(i)
-        widget.parent_item_text = lambda i=widget: self.get_parent_item_text(i)
-        widget.parent_item_data = lambda i=widget: self.get_parent_item_data(i)
-
-        self.layout.addWidget(widget)
-        self.on_item_added.emit(widget)
-
-        self.set_item_data(widget, data)
-        self._add_sublist(widget)
-
-        if self.min_item_height is not None:
-            widget.setMinimumHeight(self.min_item_height)
-        if self.max_item_height is not None:
-            widget.setMaximumHeight(self.max_item_height)
-        if self.fixed_item_height is not None:
-            widget.setFixedHeight(self.fixed_item_height)
-
-        self.set_attributes(widget, **kwargs)
-        widget.installEventFilter(self)
-
-        self.resize(self.sizeHint())
-        self.layout.invalidate()
+        # Setup widget methods and finalize
+        self._setup_widget_methods(widget)
+        self._finalize_widget_setup(widget, data, **kwargs)
 
         return widget
 
+    def _create_sublist_config(self):
+        """Create configuration dictionary for sublists.
+
+        Returns:
+            dict: Configuration parameters for creating sublists.
+        """
+        return {
+            "position": self.position,
+            "min_item_height": self.min_item_height,
+            "max_item_height": self.max_item_height,
+            "fixed_item_height": self.fixed_item_height,
+            "sublist_x_offset": self.sublist_x_offset,
+            "sublist_y_offset": self.sublist_y_offset,
+            **self.kwargs,
+        }
+
+    def _setup_sublist_relationships(self, widget, sublist):
+        """Setup parent-child relationships for sublists.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The parent widget.
+            sublist (ExpandableList): The sublist to setup relationships for.
+        """
+        widget.sublist = sublist
+        sublist.parent_list = self
+        sublist.parent_item = widget
+
+        # Find the root list by iterating through parent lists
+        sublist.root_list = self
+        while hasattr(sublist.root_list, "parent_list"):
+            sublist.root_list = sublist.root_list.parent_list
+
     def _add_sublist(self, widget):
         """Add an expanding list to the given widget.
-
-        This method adds an expandable list to the given widget. The expanding list is created as a ExpandableList
-        object and is initially hidden.
 
         Parameters:
             widget (obj): Widget object to which the expandable list will be added.
@@ -271,32 +357,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             obj: The added ExpandableList object.
         """
-        sublist = ExpandableList(
-            self.parent(),
-            position=self.position,
-            min_item_height=self.min_item_height,
-            max_item_height=self.max_item_height,
-            fixed_item_height=self.fixed_item_height,
-            sublist_x_offset=self.sublist_x_offset,
-            sublist_y_offset=self.sublist_y_offset,
-            **self.kwargs,  # Forward kwargs to the new ExpandableList
-        )
+        sublist = ExpandableList(self.parent(), **self._create_sublist_config())
         sublist.setVisible(False)
 
         # Connect the signals of the sublist to the signals of the parent list
         sublist.on_item_interacted.connect(self.on_item_interacted.emit)
         sublist.on_item_added.connect(self.on_item_added.emit)
 
-        widget.sublist = sublist
-        widget.sublist.parent_list = self
-        widget.sublist.parent_item = widget  # Set the parent_item of the widget
-
-        # find the root list by iterating through its parent lists.
-        widget.sublist.root_list = self
-        while hasattr(widget.sublist.root_list, "parent_list"):
-            widget.sublist.root_list = widget.sublist.root_list.parent_list
-
-        return widget.sublist
+        self._setup_sublist_relationships(widget, sublist)
+        return sublist
 
     def _hide_sublists(self, sublist, force=False):
         """Hide the given list and all previous lists in its hierarchy.
@@ -315,10 +384,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             sublist.hide()
             sublist = sublist.parent_list
 
+    @staticmethod
     def get_padding(widget):
         """Get the padding values around a widget.
-
-        This method calculates the padding values (distance from content to frame boundary) for a widget in all four directions.
 
         Parameters:
             widget (obj): A widget object to get the padding values for.
@@ -365,10 +433,90 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         return QtCore.QSize(total_width, total_height)
 
+    def _calculate_sublist_position(
+        self,
+        widget,
+        parent_list_width,
+        parent_list_height,
+        child_widget_width,
+        new_list_width,
+        new_list_height,
+    ):
+        """Calculate the position for a sublist based on the configured position.
+
+        Parameters:
+            widget: The parent widget of the sublist.
+            parent_list_width: Width of the parent list.
+            parent_list_height: Height of the parent list.
+            child_widget_width: Width of the child widget.
+            new_list_width: Width of the new sublist.
+            new_list_height: Height of the new sublist.
+
+        Returns:
+            tuple: (x, y) coordinates for the sublist position.
+        """
+        overlap = 1
+
+        position_configs = {
+            "right": (
+                parent_list_width - overlap + self.sublist_x_offset,
+                self.sublist_y_offset,
+            ),
+            "left": (
+                -new_list_width + overlap + self.sublist_x_offset,
+                self.sublist_y_offset,
+            ),
+            "top": (
+                -child_widget_width // 2 + self.sublist_x_offset,
+                -new_list_height + overlap + self.sublist_y_offset,
+            ),
+            "bottom": (
+                -child_widget_width // 2 + self.sublist_x_offset,
+                parent_list_height - overlap + self.sublist_y_offset,
+            ),
+            "center": (
+                parent_list_width // 2 - new_list_width // 2 + self.sublist_x_offset,
+                parent_list_height // 2 - new_list_height // 2 + self.sublist_y_offset,
+            ),
+        }
+
+        return position_configs[self.position]
+
+    def _handle_widget_enter_event(self, widget):
+        """Handle the enter event for a widget with a sublist.
+
+        Parameters:
+            widget: The widget that was entered.
+        """
+        if not (hasattr(widget, "sublist") and widget.sublist.get_items()):
+            return
+
+        widget.sublist.show()
+        widget.updateGeometry()
+
+        # Get dimensions
+        parent_list_width = self.width()
+        parent_list_height = self.height()
+        child_widget_width = widget.width()
+        new_list_width = widget.sublist.width()
+        new_list_height = widget.sublist.height()
+
+        # Calculate position
+        x, y = self._calculate_sublist_position(
+            widget,
+            parent_list_width,
+            parent_list_height,
+            child_widget_width,
+            new_list_width,
+            new_list_height,
+        )
+
+        # Map to global coordinates and position the sublist
+        pos = self.window().mapFromGlobal(widget.mapToGlobal(QtCore.QPoint(x, y)))
+        widget.sublist.move(pos)
+
     def eventFilter(self, widget, event):
         """Filter events for the ExpandableList.
-
-        This method filters the events of the ExpandableList and its widgets, such as mouse movement and button presses.
 
         Parameters:
             widget (obj): The object that the event was sent to.
@@ -377,84 +525,29 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             bool: False if the event should be further processed, and True if the event should be ignored.
         """
-        if event.type() == QtCore.QEvent.Enter:
-            try:
-                if widget.sublist.get_items():
-                    widget.sublist.show()
+        event_type = event.type()
 
-                widget.updateGeometry()
+        if event_type == QtCore.QEvent.Enter:
+            self._handle_widget_enter_event(widget)
 
-                parent_list_width = self.width()
-                parent_list_height = self.height()  # excluding window frame
-                child_widget_width = widget.width()
-                # child_widget_height = widget.height()
-                new_list_width = widget.sublist.width()  # excluding window frame
-                new_list_height = widget.sublist.height()  # excluding window frame
-
-                padding_x, padding_y = self.get_padding()  # get the padding
-                overlap = 1  # overlap value
-
-                # dictionary for x and y coordinates
-                pos_dict = {
-                    "right": (
-                        parent_list_width - overlap + self.sublist_x_offset,
-                        self.sublist_y_offset,
-                    ),
-                    "left": (
-                        -new_list_width + overlap + self.sublist_x_offset,
-                        self.sublist_y_offset,
-                    ),
-                    "top": (
-                        -child_widget_width // 2 + self.sublist_x_offset,
-                        -new_list_height + overlap + self.sublist_y_offset,
-                    ),
-                    "bottom": (
-                        -child_widget_width // 2 + self.sublist_x_offset,
-                        parent_list_height - overlap + self.sublist_y_offset,
-                    ),
-                    "center": (
-                        parent_list_width // 2
-                        - new_list_width // 2
-                        + self.sublist_x_offset,
-                        parent_list_height // 2
-                        - new_list_height // 2
-                        + self.sublist_y_offset,
-                    ),
-                }
-
-                pos = self.window().mapFromGlobal(
-                    widget.mapToGlobal(
-                        QtCore.QPoint(
-                            pos_dict[self.position][0],  # x coordinate
-                            pos_dict[self.position][1],  # y coordinate
-                        )
-                    )
-                )
-                widget.sublist.move(pos)
-
-            except AttributeError:
-                pass
-
-        elif event.type() == QtCore.QEvent.MouseButtonRelease:
+        elif event_type == QtCore.QEvent.MouseButtonRelease:
             # Check if widget is a child of this ExpandableList
             if widget in self.get_items():
                 self.on_item_interacted.emit(widget)
 
-        elif event.type() == QtCore.QEvent.MouseMove:
-            # check if the mouse left the list widget
+        elif event_type == QtCore.QEvent.MouseMove:
+            # Check if the mouse left the list widget
             if not self.rect().contains(self.mapFromGlobal(QtGui.QCursor.pos())):
                 if hasattr(widget, "parent_list"):
                     self.hide()
 
-        elif event.type() == QtCore.QEvent.Leave:
-            try:
+        elif event_type == QtCore.QEvent.Leave:
+            if hasattr(widget, "sublist"):
+                cursor_pos = QtGui.QCursor.pos()
                 if not widget.sublist.rect().contains(
-                    widget.sublist.mapFromGlobal(QtGui.QCursor.pos())
+                    widget.sublist.mapFromGlobal(cursor_pos)
                 ):
-                    if hasattr(widget, "sublist"):
-                        widget.sublist.hide()
-            except AttributeError:
-                pass
+                    widget.sublist.hide()
 
         return super().eventFilter(widget, event)
 
