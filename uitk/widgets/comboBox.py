@@ -105,9 +105,7 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
         self.currentIndexChanged.connect(self.check_index)
 
         self.setProperty("class", self.__class__.__name__)
-        self.setSizeAdjustPolicy(
-            QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon
-        )
+        self.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContentsOnFirstShow)
         self.set_attributes(**kwargs)
 
     @property

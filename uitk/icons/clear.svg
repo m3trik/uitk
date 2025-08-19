@@ -1,0 +1,9 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Modern minimal clear/close icon with clean lines -->
+  <!-- Outer subtle circle for visual consistency -->
+  <circle cx="12" cy="12" r="9" fill="none" stroke="#E0E0E0" stroke-width="1" opacity="0.3"></circle>
+  
+  <!-- Clean X marks with rounded caps -->
+  <path d="M8.5 8.5L15.5 15.5" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M15.5 8.5L8.5 15.5" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+</svg>

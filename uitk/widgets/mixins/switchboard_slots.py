@@ -185,8 +185,7 @@ class SwitchboardSlotsMixin:
             # Get deferred widgets BEFORE creating the instance
             deferred_widgets = self._get_deferred_widgets(key)
 
-            # Create the instance
-            instance = slots_cls(ui=ui, switchboard=self)
+            instance = slots_cls(switchboard=self)
 
             # Update storage
             self.slot_instances[key] = instance
@@ -197,9 +196,27 @@ class SwitchboardSlotsMixin:
 
             return instance
         except Exception as e:
-            self.logger.error(
-                f"[_create_slots_instance] [{ui.objectName()}] Error creating slots instance for '{key}': {e}"
+            # Use logger's built-in spam prevention with a custom cache key
+            cache_key = (
+                f"{slots_cls.__name__ if slots_cls else 'Unknown'}_{type(e).__name__}"
             )
+            deferred_count = (
+                len(deferred_widgets) if "deferred_widgets" in locals() else 0
+            )
+            deferred_names = (
+                [w.objectName() for w in deferred_widgets]
+                if "deferred_widgets" in locals() and deferred_widgets
+                else []
+            )
+            error_message = (
+                f"[_create_slots_instance] [{ui.objectName()}] Failed to create slots instance for '{key}':\n"
+                f"  Error: {type(e).__name__}: {e}\n"
+                f"  Slots Class: {slots_cls.__name__ if slots_cls else 'Unknown'} "
+                f"(from {getattr(slots_cls, '__module__', 'Unknown') if slots_cls else 'Unknown'})\n"
+                f"  Deferred Widgets: {deferred_count} widgets - {deferred_names}\n"
+                f"  Traceback:\n{traceback.format_exc()}"
+            )
+            self.logger.error_once(error_message, cache_key=cache_key)
             return None
 
     def _perform_slot_init(self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget):

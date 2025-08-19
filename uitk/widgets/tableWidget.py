@@ -5,6 +5,7 @@ from typing import Optional, Callable, List
 
 # From this package:
 from uitk.widgets.mixins.convert import ConvertMixin
+from uitk.widgets.mixins.attributes import AttributesMixin
 
 
 class HeaderMixin:
@@ -215,7 +216,9 @@ class CellFormatMixin(ConvertMixin):
         return hi.text() if hi else str(col)
 
 
-class TableWidget(QtWidgets.QTableWidget, HeaderMixin, CellFormatMixin):
+class TableWidget(
+    QtWidgets.QTableWidget, HeaderMixin, AttributesMixin, CellFormatMixin
+):
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent)
@@ -231,6 +234,8 @@ class TableWidget(QtWidgets.QTableWidget, HeaderMixin, CellFormatMixin):
         # Disable selection
         self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+
+        self.set_attributes(**kwargs)
 
     @property
     def menu(self):
@@ -256,7 +261,7 @@ class TableWidget(QtWidgets.QTableWidget, HeaderMixin, CellFormatMixin):
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
         self.setItem(row, column, item)
 
-    def add(self, data, clear: bool = True, headers: list = None):
+    def add(self, data, clear: bool = True, headers: list = None, **kwargs):
         self.setUpdatesEnabled(False)
         try:
             if clear:
@@ -319,6 +324,7 @@ class TableWidget(QtWidgets.QTableWidget, HeaderMixin, CellFormatMixin):
             self.blockSignals(False)
         finally:
             self.setUpdatesEnabled(True)
+        self.set_attributes(**kwargs)
         self.apply_formatting()
 
     def selected_node(self):

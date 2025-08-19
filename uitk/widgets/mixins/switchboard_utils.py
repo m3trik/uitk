@@ -387,21 +387,14 @@ class SwitchboardUtilsMixin:
         # Return as string by default
         return axis_string
 
-    def hide_unmatched_groupboxes(self, ui, tag_string) -> None:
+    def hide_unmatched_groupboxes(self, ui, unknown_tags) -> None:
         """Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted
         from the provided tag string.
 
         Parameters:
             ui (QObject): The UI object in which to hide unmatched QGroupBox widgets.
-            tag_string (str): The string from which to extract unknown tags for comparison.
-
-        Note:
-            This function uses the get_unknown_tags function to determine which QGroupBox widgets
-            to hide. If a QGroupBox widget's name does not match one of the unknown tags,
-            the widget will be hidden.
+            unknown_tags (list): A list of tags that should not be hidden. If empty, all groupboxes will be hidden.
         """
-        unknown_tags = self.get_unknown_tags(tag_string)
-
         # Find all QGroupBox widgets in the UI
         groupboxes = ui.findChildren(QtWidgets.QGroupBox)
 
