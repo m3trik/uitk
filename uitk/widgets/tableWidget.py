@@ -230,12 +230,21 @@ class TableWidget(
         self.setAlternatingRowColors(False)
         self.setWordWrap(False)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
 
         # Disable selection
         self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
 
         self.set_attributes(**kwargs)
+
+    def _show_context_menu(self, position):
+        """Show the context menu at the given position."""
+        if self.menu.contains_items:
+            # Set the position before showing
+            global_pos = self.mapToGlobal(position)
+            self.menu.position = global_pos
+            self.menu.show()
 
     @property
     def menu(self):
@@ -244,7 +253,7 @@ class TableWidget(
         except AttributeError:
             from uitk.widgets.menu import Menu
 
-            self._menu = Menu(self, mode="option", fixed_item_height=20)
+            self._menu = Menu(self, mode="context", fixed_item_height=20)
             return self._menu
 
     def item_data(self, row: int, column: int):

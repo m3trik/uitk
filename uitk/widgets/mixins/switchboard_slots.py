@@ -12,7 +12,7 @@ class SwitchboardSlotsMixin:
 
     default_signals = {
         QtWidgets.QAction: "triggered",
-        QtWidgets.QCheckBox: "stateChanged",
+        QtWidgets.QCheckBox: "toggled",
         QtWidgets.QComboBox: "currentIndexChanged",
         QtWidgets.QDateEdit: "dateChanged",
         QtWidgets.QDateTimeEdit: "dateTimeChanged",

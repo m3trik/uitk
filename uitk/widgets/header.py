@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtWidgets, QtCore, QtGui
+import os
+from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
@@ -19,12 +20,12 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     toggled = QtCore.Signal(bool)
 
-    # Define button properties
+    # Define button properties with icon paths and callbacks
     button_definitions = {
-        "menu_button": ("≡", "show_menu"),
-        "minimize_button": ("\u2013", "minimize_window"),
-        "hide_button": ("\u0078", "hide_window"),
-        "pin_button": ("\u25cb", "toggle_pin"),
+        "menu_button": ("menu.svg", "show_menu"),
+        "minimize_button": ("minimize.svg", "minimize_window"),
+        "hide_button": ("hide.svg", "hide_window"),
+        "pin_button": ("pin.svg", "toggle_pin"),
     }
 
     def __init__(
@@ -79,11 +80,41 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             self._menu = Menu(self, fixed_item_height=20)
             return self._menu
 
-    def create_button(self, text, callback, button_type=None):
-        """Create a button with the given text and callback."""
-        button = QtWidgets.QPushButton(text, self)
+    def get_icon_path(self, icon_filename):
+        """Get the full path to an icon file in the uitk/icons directory."""
+        # Get the directory where this module is located
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up one level to uitk, then into icons
+        icons_dir = os.path.join(os.path.dirname(current_dir), "icons")
+        return os.path.join(icons_dir, icon_filename)
+
+    def create_svg_icon(self, icon_filename, size=16):
+        """Create a QIcon from an SVG file."""
+        icon_path = self.get_icon_path(icon_filename)
+        if os.path.exists(icon_path):
+            # Create a pixmap from SVG with proper scaling
+            svg_renderer = QtSvg.QSvgRenderer(icon_path)
+            pixmap = QtGui.QPixmap(size, size)
+            pixmap.fill(QtCore.Qt.transparent)
+            painter = QtGui.QPainter(pixmap)
+            svg_renderer.render(painter)
+            painter.end()
+            return QtGui.QIcon(pixmap)
+        else:
+            # Fallback to empty icon if file not found
+            return QtGui.QIcon()
+
+    def create_button(self, icon_filename, callback, button_type=None):
+        """Create a button with the given icon and callback."""
+        button = QtWidgets.QPushButton(self)
         if button_type:
             button.setObjectName(button_type)
+
+        # Set the icon
+        icon = self.create_svg_icon(icon_filename, 16)
+        button.setIcon(icon)
+        button.setIconSize(QtCore.QSize(16, 16))
+
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
         button.clicked.connect(callback)
         return button
@@ -108,10 +139,10 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
                 continue
 
             visible = kwargs[param]
-            text, method_name = self.button_definitions[param]
+            icon_filename, method_name = self.button_definitions[param]
             callback = getattr(self, method_name)
 
-            button = self.create_button(text, callback, button_type=param)
+            button = self.create_button(icon_filename, callback, button_type=param)
             button.setVisible(visible)
 
             self.container_layout.addWidget(button)
@@ -196,11 +227,14 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         self.pinned = state
         self.window().prevent_hide = state
-        pin_button_text = "\u25cf" if state else "\u25cb"
+
+        # Switch between pin icons based on state
+        pin_icon_filename = "pin_active.svg" if state else "pin.svg"
 
         pin_button = self.buttons.get("pin_button")
         if pin_button:
-            pin_button.setText(pin_button_text)
+            icon = self.create_svg_icon(pin_icon_filename, 16)
+            pin_button.setIcon(icon)
             if not state:
                 self.window().hide()
 
