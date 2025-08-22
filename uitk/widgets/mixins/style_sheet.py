@@ -15,7 +15,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "HEADER_BACKGROUND": "rgba(127,127,127,200)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",
             "BUTTON_PRESSED": "rgb(120,120,120)",
-            "BUTTON_HOVER": "rgb(82,133,166)",
+            "BUTTON_HOVER": "rgb(100,130,150)",  # Desaturated blue
             "TEXT_COLOR": "rgb(255,255,255)",
             "TEXT_CHECKED": "rgb(255,255,255)",
             "TEXT_DISABLED": "rgba(150,150,150,175)",
@@ -33,7 +33,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "HEADER_BACKGROUND": "rgba(90,90,90,200)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
             "BUTTON_PRESSED": "rgb(50,50,50)",
-            "BUTTON_HOVER": "rgb(82,133,166)",
+            "BUTTON_HOVER": "rgb(100,130,150)",  # Desaturated blue
             "TEXT_COLOR": "rgb(220,220,220)",
             "TEXT_CHECKED": "rgb(255,255,255)",
             "TEXT_DISABLED": "rgba(150,150,150,175)",

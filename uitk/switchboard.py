@@ -104,7 +104,9 @@ class Switchboard(
         )
 
         # Include this package's widgets
-        self.registry.widget_registry.extend("widgets", base_dir=0)
+        import uitk.switchboard as switchboard_module
+
+        self.registry.widget_registry.extend("widgets", base_dir=switchboard_module)
 
         self.loaded_ui = ptk.NamespaceHandler(
             self,
