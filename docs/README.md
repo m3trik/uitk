@@ -3,7 +3,7 @@
 
 # UITK: UI Toolkit for Dynamic Qt Applications
 
-UITK is a Python package that simplifies Qt application development by providing dynamic UI loading, automatic signal-slot connections, and enhanced widgets. Built on qtpy for cross-platform compatibility, UITK uses naming conventions to automatically connect UI files with their corresponding slot classes, reducing boilerplate code and streamlining the development process.
+UITK is dynamic UI loader designed to manage multiple UI from one central switchboard.  Leverages naming convention to dynamically load UI files, register custom widgets, auto connect slots, set styles, restore and sync states, etc.
 
 ## What UITK Does
 
