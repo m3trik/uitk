@@ -220,7 +220,19 @@ class TableWidget(
     QtWidgets.QTableWidget, HeaderMixin, AttributesMixin, CellFormatMixin
 ):
 
-    def __init__(self, parent=None, **kwargs):
+    def __init__(self, parent=None, selection_mode="extended", **kwargs):
+        """
+        Initialize TableWidget.
+
+        Args:
+            parent: Parent widget
+            selection_mode: Selection mode string. Options:
+                - "none": No selection allowed
+                - "single": Single item selection only
+                - "extended": Ctrl+Click multi-selection (default)
+                - "multi": Click to toggle selection
+            **kwargs: Additional attributes to set
+        """
         super().__init__(parent)
         self._init_header_behavior()
         CellFormatMixin.__init__(self)
@@ -232,11 +244,29 @@ class TableWidget(
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
-        # Disable selection
-        self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        # Set selection mode
+        self._set_selection_mode(selection_mode)
 
         self.set_attributes(**kwargs)
+
+    def _set_selection_mode(self, mode_str):
+        """Set the selection mode from a string."""
+        mode_map = {
+            "none": QtWidgets.QAbstractItemView.NoSelection,
+            "single": QtWidgets.QAbstractItemView.SingleSelection,
+            "extended": QtWidgets.QAbstractItemView.ExtendedSelection,
+            "multi": QtWidgets.QAbstractItemView.MultiSelection,
+        }
+
+        mode = mode_map.get(
+            mode_str.lower(), QtWidgets.QAbstractItemView.ExtendedSelection
+        )
+        self.setSelectionMode(mode)
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+
+    def set_selection_mode(self, mode_str):
+        """Change the selection mode after initialization."""
+        self._set_selection_mode(mode_str)
 
     def _show_context_menu(self, position):
         """Show the context menu at the given position."""
@@ -349,6 +379,43 @@ class TableWidget(
             return None
         data = self.item(row, 0)
         return data.text() if data else None
+
+    def selected_nodes(self):
+        """Get all selected nodes (UserRole data from column 1)"""
+        selected_items = self.selectedItems()
+        nodes = []
+        processed_rows = set()
+
+        for item in selected_items:
+            row = item.row()
+            if row not in processed_rows:
+                processed_rows.add(row)
+                data_item = self.item(row, 1)
+                if data_item:
+                    node_data = data_item.data(QtCore.Qt.UserRole)
+                    if node_data:
+                        nodes.append(node_data)
+        return nodes
+
+    def selected_labels(self):
+        """Get all selected labels (text from column 0)"""
+        selected_items = self.selectedItems()
+        labels = []
+        processed_rows = set()
+
+        for item in selected_items:
+            row = item.row()
+            if row not in processed_rows:
+                processed_rows.add(row)
+                label_item = self.item(row, 0)
+                if label_item:
+                    labels.append(label_item.text())
+        return labels
+
+    def selected_rows(self):
+        """Get all selected row numbers"""
+        selected_items = self.selectedItems()
+        return sorted(set(item.row() for item in selected_items))
 
     def clear_all(self):
         self.setRowCount(0)

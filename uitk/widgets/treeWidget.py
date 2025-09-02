@@ -6,7 +6,166 @@ from typing import Optional, Callable, List, Union, Any, Dict
 # From this package:
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.signals import Signals
+
+
+class HierarchyIconMixin:
+    """Mixin to handle custom hierarchy icons in tree widgets using CSS branch styling."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._hierarchy_icons_enabled = True
+        self._icon_style = "plus_minus"  # Default style
+        self._setup_hierarchy_icons()
+
+    def _setup_hierarchy_icons(self):
+        """Setup custom hierarchy icons via CSS stylesheet."""
+        self._apply_hierarchy_stylesheet()
+
+    def _apply_hierarchy_stylesheet(self):
+        """Apply custom stylesheet for hierarchy indicators using SVG images."""
+        # Get the icons directory path - use absolute path for CSS
+        from pathlib import Path
+
+        icons_dir = Path(__file__).parent.parent / "icons"
+
+        # Use absolute paths for CSS - Qt expects normal file paths
+        expand_plus_path = str(icons_dir / "expand_plus.svg").replace("\\", "/")
+        collapse_minus_path = str(icons_dir / "collapse_minus.svg").replace("\\", "/")
+        tree_branch_path = str(icons_dir / "tree_branch.svg").replace("\\", "/")
+        tree_vertical_path = str(icons_dir / "tree_vertical.svg").replace("\\", "/")
+        tree_end_path = str(icons_dir / "tree_end.svg").replace("\\", "/")
+        tree_end_circle_path = str(icons_dir / "tree_end_circle.svg").replace("\\", "/")
+
+        style = f"""
+            QTreeWidget {{
+                outline: none;
+                background-color: #393939;
+                color: #cccccc;
+                selection-background-color: rgba(90, 140, 190, 0.3);
+                show-decoration-selected: 1;
+                font-size: 12px;
+                gridline-color: transparent;
+            }}
+            
+            QTreeWidget::branch {{
+                background: transparent;
+                border: none;
+                width: 16px;
+                height: 16px;
+                margin: 0px;
+                padding: 0px;
+                spacing: 0px;
+            }}
+            
+            /* Vertical continuation lines (items that have siblings below them) */
+            QTreeWidget::branch:has-siblings:!adjoins-item {{
+                background: transparent;
+                border-image: none;
+                image: url({tree_vertical_path});
+            }}
+            
+            /* T-junction: item with siblings that also has children (branch through) */
+            QTreeWidget::branch:has-siblings:adjoins-item {{
+                background: transparent;
+                border-image: none;
+                image: url({tree_branch_path});
+            }}
+            
+            /* L-junction: last item in a group that has no children (end with circle) */
+            QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {{
+                background: transparent;
+                border-image: none;
+                image: url({tree_end_path});
+            }}
+            
+            /* L-junction: last item in a group that has children but is closed */
+            QTreeWidget::branch:has-children:!has-siblings:closed {{
+                background: transparent;
+                border-image: none;
+                image: url({expand_plus_path});
+            }}
+            
+            /* L-junction: last item in a group that has children and is open */
+            QTreeWidget::branch:has-children:!has-siblings:open {{
+                background: transparent;
+                border-image: none;
+                image: url({collapse_minus_path});
+            }}
+            
+            /* T-junction: item with siblings that has children (closed) */
+            QTreeWidget::branch:closed:has-children:has-siblings {{
+                background: transparent;
+                border-image: none;
+                image: url({expand_plus_path});
+            }}
+            
+            /* T-junction: item with siblings that has children (open) */
+            QTreeWidget::branch:open:has-children:has-siblings {{
+                background: transparent;
+                border-image: none;
+                image: url({collapse_minus_path});
+            }}
+            
+            QTreeWidget::item {{
+                padding: 0px 2px;
+                border: none;
+                min-height: 16px;
+                max-height: 16px;
+                color: #cccccc;
+                background: transparent;
+                spacing: 0px;
+                margin: 0px;
+            }}
+            
+            QTreeWidget::item:selected {{
+                background-color: rgba(90, 140, 190, 0.4);
+                color: #ffffff;
+                border: none;
+            }}
+            
+            QTreeWidget::item:hover:!selected {{
+                background-color: rgba(255, 255, 255, 0.1);
+            }}
+            
+            /* Maya-style indentation and spacing */
+            QTreeWidget::item:has-children {{
+                font-weight: normal;
+            }}
+        """
+
+        current_style = self.styleSheet()
+        self.setStyleSheet(current_style + style)
+
+    def set_icon_style(self, style: str):
+        """Set the icon style for hierarchy indicators.
+
+        Available styles:
+        - 'plus_minus': Plus and minus signs (default)
+        - 'arrows': Triangle arrows pointing right/down
+        - 'modern': Clean modern style with subtle indicators
+        """
+        self._icon_style = style
+        if self._hierarchy_icons_enabled:
+            self._apply_hierarchy_stylesheet()
+
+    def enable_hierarchy_icons(self, enabled=True):
+        """Enable or disable custom hierarchy icons."""
+        self._hierarchy_icons_enabled = enabled
+        if enabled:
+            self._apply_hierarchy_stylesheet()
+        else:
+            # Reset to default Qt styling
+            self.setStyleSheet("")
+
+    def get_available_icon_styles(self) -> list:
+        """Get list of available icon styles."""
+        return ["plus_minus", "arrows", "modern"]
+
+    def get_current_icon_style(self) -> str:
+        """Get the currently active icon style."""
+        return self._icon_style
 
 
 class TreeFormatMixin(ConvertMixin):
@@ -168,28 +327,70 @@ class TreeFormatMixin(ConvertMixin):
         return formatters
 
 
-class TreeWidget(QtWidgets.QTreeWidget, AttributesMixin, TreeFormatMixin):
-    """Enhanced QTreeWidget with flexible data handling and formatting capabilities."""
+class TreeWidget(
+    QtWidgets.QTreeWidget, AttributesMixin, TreeFormatMixin, HierarchyIconMixin
+):
+    """Enhanced QTreeWidget with flexible data handling, formatting capabilities, and custom hierarchy icons."""
 
     # Signals
     item_selected = QtCore.Signal(QtWidgets.QTreeWidgetItem)
     item_data_changed = QtCore.Signal(QtWidgets.QTreeWidgetItem, int)
 
-    def __init__(self, parent=None, **kwargs):
+    def __init__(self, parent=None, selection_mode="extended", **kwargs):
+        """
+        Initialize TreeWidget.
+
+        Args:
+            parent: Parent widget
+            selection_mode: Selection mode string. Options:
+                - "none": No selection allowed
+                - "single": Single item selection only
+                - "extended": Ctrl+Click multi-selection (default)
+                - "multi": Click to toggle selection
+            **kwargs: Additional attributes to set
+        """
         super().__init__(parent)
         TreeFormatMixin.__init__(self)
+        HierarchyIconMixin.__init__(self)
 
         # Default settings
         self.setProperty("class", self.__class__.__name__)
         self.setAlternatingRowColors(False)
         self.setRootIsDecorated(True)
-        self.setIndentation(20)
+        self.setIndentation(16)  # Match icon width for proper alignment
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+
+        # Set selection mode
+        self._set_selection_mode(selection_mode)
+
+        # For custom deselection behavior
+        self._last_clicked_item = None
+        self._click_timer = QtCore.QTimer()
+        self._click_timer.setSingleShot(True)
+        self._click_timer.timeout.connect(self._handle_delayed_click)
 
         # Connect signals
         self.itemSelectionChanged.connect(self._on_selection_changed)
 
         self.set_attributes(**kwargs)
+
+    def _set_selection_mode(self, mode_str):
+        """Set the selection mode from a string."""
+        mode_map = {
+            "none": QtWidgets.QAbstractItemView.NoSelection,
+            "single": QtWidgets.QAbstractItemView.SingleSelection,
+            "extended": QtWidgets.QAbstractItemView.ExtendedSelection,
+            "multi": QtWidgets.QAbstractItemView.MultiSelection,
+        }
+
+        mode = mode_map.get(
+            mode_str.lower(), QtWidgets.QAbstractItemView.ExtendedSelection
+        )
+        self.setSelectionMode(mode)
+
+    def set_selection_mode(self, mode_str):
+        """Change the selection mode after initialization."""
+        self._set_selection_mode(mode_str)
 
     @property
     def menu(self):
@@ -207,6 +408,46 @@ class TreeWidget(QtWidgets.QTreeWidget, AttributesMixin, TreeFormatMixin):
         current = self.currentItem()
         if current:
             self.item_selected.emit(current)
+
+    def mousePressEvent(self, event):
+        """Custom mouse press handling for deselection behavior."""
+        item = self.itemAt(event.pos())
+        modifiers = event.modifiers()
+
+        # Store state for potential deselection
+        self._last_clicked_item = item
+        self._was_selected = item.isSelected() if item else False
+        self._ctrl_pressed = bool(modifiers & QtCore.Qt.ControlModifier)
+        self._shift_pressed = bool(modifiers & QtCore.Qt.ShiftModifier)
+
+        # Call parent implementation
+        super().mousePressEvent(event)
+
+        # Handle deselection logic after parent processing
+        if (
+            item
+            and self._was_selected
+            and not self._shift_pressed
+            and event.button() == QtCore.Qt.LeftButton
+        ):
+
+            # In extended mode with Ctrl, toggle selection
+            if self.selectionMode() == QtWidgets.QAbstractItemView.ExtendedSelection:
+                if self._ctrl_pressed:
+                    # Ctrl+click on selected item should deselect it
+                    item.setSelected(False)
+                elif len(self.selectedItems()) == 1:
+                    # Single selected item clicked without modifiers should deselect
+                    QtCore.QTimer.singleShot(0, lambda: item.setSelected(False))
+
+            # In multi mode, always toggle
+            elif self.selectionMode() == QtWidgets.QAbstractItemView.MultiSelection:
+                item.setSelected(False)
+
+    def _handle_delayed_click(self):
+        """Handle delayed click processing for deselection."""
+        # This method can be used for more complex click timing if needed
+        pass
 
     def create_item(
         self,
@@ -354,15 +595,45 @@ class TreeWidget(QtWidgets.QTreeWidget, AttributesMixin, TreeFormatMixin):
         """Get the currently selected item."""
         return self.currentItem()
 
+    def selected_items(self) -> List[QtWidgets.QTreeWidgetItem]:
+        """Get all selected items."""
+        return self.selectedItems()
+
     def selected_data(self, column: int = 0) -> Any:
         """Get data from the currently selected item."""
         item = self.selected_item()
         return self.item_data(item, column) if item else None
 
+    def selected_data_list(self, column: int = 0) -> List[Any]:
+        """Get data from all selected items."""
+        items = self.selected_items()
+        return [self.item_data(item, column) for item in items if item]
+
     def selected_text(self, column: int = 0) -> Optional[str]:
         """Get text from the currently selected item."""
         item = self.selected_item()
         return item.text(column) if item else None
+
+    def selected_text_list(self, column: int = 0) -> List[str]:
+        """Get text from all selected items."""
+        items = self.selected_items()
+        return [item.text(column) for item in items if item]
+
+    def select_items_by_data(self, data_list: List[Any], column: int = 0):
+        """Select multiple items by their data values."""
+        self.clearSelection()
+        for data in data_list:
+            item = self.find_item_by_data(data, column)
+            if item:
+                item.setSelected(True)
+
+    def select_items_by_text(self, text_list: List[str], column: int = 0):
+        """Select multiple items by their text values."""
+        self.clearSelection()
+        for text in text_list:
+            item = self.find_item_by_text(text, column)
+            if item:
+                item.setSelected(True)
 
     def expand_all_items(self):
         """Expand all items in the tree."""
@@ -391,6 +662,29 @@ class TreeWidget(QtWidgets.QTreeWidget, AttributesMixin, TreeFormatMixin):
                 index = self.indexOfTopLevelItem(item)
                 if index >= 0:
                     self.takeTopLevelItem(index)
+
+    def set_item_icon(self, item: QtWidgets.QTreeWidgetItem, icon_name: str):
+        """Set a custom icon for a specific item."""
+        if item and icon_name:
+            icon = IconManager.get(icon_name, size=(16, 16))
+            item.setIcon(0, icon)
+
+    def set_item_type_icon(
+        self, item: QtWidgets.QTreeWidgetItem, icon_name: str, column: int = 0
+    ):
+        """Set a custom type icon for a specific item (separate from hierarchy indicators).
+
+        This sets an icon in the item itself (next to the text) to indicate object type,
+        while leaving the hierarchy indicators (tree lines, +/- boxes) untouched.
+
+        Args:
+            item: The tree widget item
+            icon_name: Name of the icon (from IconManager)
+            column: Column to set the icon in (default 0)
+        """
+        if item and icon_name:
+            icon = IconManager.get(icon_name, size=(16, 16))
+            item.setIcon(column, icon)
 
 
 # -----------------------------------------------------------------------------
