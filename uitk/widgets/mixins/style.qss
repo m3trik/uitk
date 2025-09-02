@@ -375,6 +375,21 @@ QAbstractItemView::item:hover {
 /* QListWidget: Inherits from QAbstractItemView */
 /* QListView: Inherits from QAbstractItemView */
 /* QTableView: Inherits from QAbstractItemView */
+
+/* QTableWidget hierarchy support */
+QTableWidget::item {
+    padding: 2px 4px;
+    border: none;
+}
+QTableWidget::item:selected {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_CHECKED};
+}
+QTableWidget::item:hover {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+}
+
 QTreeView::branch {
     background-color: transparent;
     border: none;
@@ -679,5 +694,138 @@ Header > QPushButton:hover {
 Header > QPushButton#hide_button:hover {
     background-color: red;
     border: none;
+}
+
+/* -- TreeWidget Specific Styling -- */
+QTreeWidget {
+    outline: none;
+    background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_COLOR};
+    selection-background-color: {BUTTON_HOVER};
+    show-decoration-selected: 1;
+    gridline-color: transparent;
+    alternate-background-color: {MAIN_BACKGROUND};
+}
+
+QTreeWidget::branch {
+    background: transparent;
+    border: none;
+    width: 16px;
+    height: 16px;
+    margin: 0px;
+    padding: 0px;
+}
+
+/* Vertical continuation lines (items that have siblings below them) */
+QTreeWidget::branch:has-siblings:!adjoins-item {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* T-junction: item with siblings that also has children (branch through) */
+QTreeWidget::branch:has-siblings:adjoins-item {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* L-junction: last item in a group that has no children (end node) */
+QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* Expandable nodes - closed */
+QTreeWidget::branch:has-children:closed {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+QTreeWidget::branch:has-children:closed:hover {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* Expandable nodes - open */
+QTreeWidget::branch:has-children:open {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+QTreeWidget::branch:has-children:open:hover {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* T-junction: item with siblings that has children (closed) */
+QTreeWidget::branch:closed:has-children:has-siblings {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* T-junction: item with siblings that has children (open) */
+QTreeWidget::branch:open:has-children:has-siblings {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* L-junction: last item in a group that has children but is closed */
+QTreeWidget::branch:has-children:!has-siblings:closed {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+/* L-junction: last item in a group that has children and is open */
+QTreeWidget::branch:has-children:!has-siblings:open {
+    background: transparent;
+    border-image: none;
+    /* Icon path set dynamically by TreeWidget */
+}
+
+QTreeWidget::item {
+    padding: 2px 4px;
+    border: none;
+    min-height: 18px;
+    color: {TEXT_COLOR};
+    background: transparent;
+}
+
+QTreeWidget::item:selected {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_CHECKED};
+    border: none;
+}
+
+QTreeWidget::item:hover:!selected {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: {TEXT_HOVER};
+}
+
+QTreeWidget::item:alternate {
+    background-color: {MAIN_BACKGROUND};
+}
+
+/* Custom TreeWidget class support */
+TreeWidget {
+    outline: none;
+    background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_COLOR};
+    selection-background-color: {BUTTON_HOVER};
+    show-decoration-selected: 1;
+    gridline-color: transparent;
+}
+
+TreeWidget::item:selected {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_CHECKED};
 }
 

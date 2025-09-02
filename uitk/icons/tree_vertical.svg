@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <!-- Aligned vertical line -->
+  <line x1="8" y1="0" x2="8" y2="16" stroke="#666666" stroke-width="1"/>
+</svg>

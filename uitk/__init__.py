@@ -7,7 +7,7 @@ import inspect
 from uitk.signals import Signals
 
 __package__ = "uitk"
-__version__ = "1.0.29"
+__version__ = "1.0.30"
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 
