@@ -7,7 +7,7 @@ import inspect
 from uitk.signals import Signals
 
 __package__ = "uitk"
-__version__ = "1.0.30"
+__version__ = "1.0.31"
 __path__ = [os.path.abspath(os.path.dirname(__file__))]
 
 
@@ -26,6 +26,12 @@ IMPORTED_MODULES = {}
 
 
 def __getattr__(name):
+    # Handle special module imports
+    if name == "examples":
+        from uitk import examples
+
+        return examples
+
     # Check if the requested attribute is a class we need to import
     if name in CLASS_TO_MODULE:
         module_name = CLASS_TO_MODULE[name]

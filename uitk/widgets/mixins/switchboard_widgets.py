@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from typing import Optional, Type
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 
@@ -36,6 +36,45 @@ class SwitchboardWidgetMixin:
             f"Widget class '{widget_class.__name__}' loaded successfully."
         )
         return widget
+
+    def _resolve_icon(self, icon_name: str) -> Optional[QtGui.QIcon]:
+        """Resolver for dynamically loading registered icons when accessed.
+
+        Parameters:
+            icon_name (str): The name of the icon to resolve (without file extension).
+
+        Returns:
+            QIcon or None: The resolved icon, or None if not found.
+        """
+        self.logger.debug(f"Resolving icon: {icon_name}")
+
+        # Try to find the icon file in the registry
+        icon_path = self.registry.icon_registry.get(
+            filename=icon_name, return_field="filepath"
+        )
+        if not icon_path:
+            self.logger.warning(f"Icon '{icon_name}' not found in registry.")
+            return None
+
+        # Create and return QIcon
+        icon = QtGui.QIcon(icon_path)
+        if icon.isNull():
+            self.logger.warning(f"Failed to load icon from path: {icon_path}")
+            return None
+
+        self.logger.debug(f"Icon '{icon_name}' loaded successfully from: {icon_path}")
+        return icon
+
+    def get_icon(self, icon_name: str) -> QtGui.QIcon:
+        """Get a registered icon by name.
+
+        Parameters:
+            icon_name (str): The name of the icon (without file extension).
+
+        Returns:
+            QIcon: The icon if found, or a null icon if not found.
+        """
+        return getattr(self.registered_icons, icon_name, QtGui.QIcon())
 
     @staticmethod
     def _get_widgets_from_ui(
