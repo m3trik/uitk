@@ -68,6 +68,7 @@ class Switchboard(
         ui_source=None,
         slot_source=None,
         widget_source=None,
+        icon_source=None,
         tag_delimiter: str = "#",
         ui_name_delimiters=".",
         log_level: str = "warning",
@@ -102,11 +103,18 @@ class Switchboard(
             inc_files="*.py",
             base_dir=base_dir,
         )
+        self.registry.create(
+            "icon_registry",
+            icon_source,
+            inc_files=["*.svg", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.ico"],
+            base_dir=base_dir,
+        )
 
         # Include this package's widgets
-        import uitk.switchboard as switchboard_module
+        self.registry.widget_registry.extend("widgets", base_dir=self)
 
-        self.registry.widget_registry.extend("widgets", base_dir=switchboard_module)
+        # Include this package's default icons
+        self.registry.icon_registry.extend("icons", base_dir=self)
 
         self.loaded_ui = ptk.NamespaceHandler(
             self,
@@ -120,6 +128,12 @@ class Switchboard(
             resolver=self._resolve_widget,
             use_weakref=True,
         )  # All registered widgets.
+        self.registered_icons = ptk.NamespaceHandler(
+            self,
+            "registered_icons",
+            resolver=self._resolve_icon,
+            use_weakref=True,
+        )  # All registered icons.
 
         self.slot_instances = ptk.NamespaceHandler(
             self,

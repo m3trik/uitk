@@ -1,0 +1,8 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Theme/palette icon -->
+  <circle cx="12" cy="12" r="10" stroke="#888888" stroke-width="2" fill="none"/>
+  <path d="M12 2a10 10 0 0 0 0 20 4 4 0 0 0 0-8 6 6 0 0 0 0-12z" stroke="#888888" stroke-width="2" fill="none"/>
+  <circle cx="8.5" cy="8.5" r="1.5" stroke="#888888" stroke-width="1.5" fill="#888888"/>
+  <circle cx="15.5" cy="8.5" r="1.5" stroke="#888888" stroke-width="1.5" fill="#888888"/>
+  <circle cx="12" cy="6" r="1.5" stroke="#888888" stroke-width="1.5" fill="#888888"/>
+</svg>

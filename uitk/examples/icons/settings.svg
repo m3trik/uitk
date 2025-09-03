@@ -1,0 +1,12 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Settings icon - simple gear -->
+  <circle cx="12" cy="12" r="3" stroke="#888888" stroke-width="2" fill="none"></circle>
+  <path d="M12 1v6" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M12 17v6" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M4.22 4.22l4.24 4.24" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M15.54 15.54l4.24 4.24" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M1 12h6" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M17 12h6" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M4.22 19.78l4.24-4.24" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+  <path d="M15.54 8.46l4.24-4.24" stroke="#888888" stroke-width="2" stroke-linecap="round"></path>
+</svg>
