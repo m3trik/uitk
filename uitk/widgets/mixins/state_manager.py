@@ -4,9 +4,17 @@ import json
 from typing import Any, Optional
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
+from uitk.widgets.mixins.value_manager import ValueManager
 
 
 class StateManager(ptk.LoggingMixin):
+    """Manages widget state persistence using QSettings.
+
+    This class has been refactored to use WidgetValueManager for all value
+    getting/setting operations, eliminating code duplication and ensuring
+    consistent behavior across the codebase.
+    """
+
     def __init__(self, qsettings: QtCore.QSettings):
         super().__init__()
         self.logger.setLevel("WARNING")
@@ -30,84 +38,33 @@ class StateManager(ptk.LoggingMixin):
         return f"{prefix}{name}/{signal_name}"
 
     def _get_current_value(self, widget: QtWidgets.QWidget) -> Any:
-        """Gets the current value of the widget using its mapped signal getter."""
+        """Get the current value from the widget using ValueManager."""
         signal_name = widget.derived_type and widget.default_signals()
-        if not signal_name:
-            return None
-        getter = {
-            "textChanged": lambda w: w.text() if hasattr(w, "text") else None,
-            "valueChanged": lambda w: w.value() if hasattr(w, "value") else None,
-            "currentIndexChanged": lambda w: (
-                w.currentIndex() if hasattr(w, "currentIndex") else None
-            ),
-            "toggled": lambda w: w.isChecked() if hasattr(w, "isChecked") else None,
-            "stateChanged": lambda w: (
-                w.checkState() if hasattr(w, "checkState") else None
-            ),
-        }.get(signal_name)
-        return getter(widget) if getter else None
-
-    def _set_numeric_value(self, widget, value):
-        try:
-            widget.setValue(float(value))
-        except (ValueError, TypeError):
-            self.logger.debug(f"Could not set numeric value '{value}' on {widget}")
-
-    def _set_index_value(self, widget, value):
-        try:
-            widget.setCurrentIndex(int(value))
-        except (ValueError, TypeError):
-            self.logger.debug(f"Could not set index value '{value}' on {widget}")
-
-    def _set_boolean_value(self, widget, value):
-        try:
-            widget.setChecked(value in ["true", "True", 1, "1"])
-        except Exception:
-            self.logger.debug(f"Could not set checked state '{value}' on {widget}")
-
-    def _set_check_state(self, widget, value):
-        try:
-            widget.setCheckState(QtCore.Qt.CheckState(int(value)))
-        except (ValueError, TypeError):
-            self.logger.debug(f"Could not set check state '{value}' on {widget}")
+        if signal_name:
+            # Use signal-based approach for compatibility
+            return ValueManager.get_value_by_signal(widget, signal_name)
+        else:
+            # Fallback to direct value getting
+            return ValueManager.get_value(widget)
 
     def apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
-        """Apply the given value to the widget based on its signal type."""
+        """Apply the given value to the widget using ValueManager."""
         signal_name = widget.derived_type and widget.default_signals()
-        if not signal_name:
-            return
 
-        action_map = {
-            "textChanged": lambda w, v: (
-                w.setText(str(v)) if hasattr(w, "setText") else None
-            ),
-            "valueChanged": lambda w, v: (
-                self._set_numeric_value(w, v) if hasattr(w, "setValue") else None
-            ),
-            "currentIndexChanged": lambda w, v: (
-                self._set_index_value(w, v) if hasattr(w, "setCurrentIndex") else None
-            ),
-            "toggled": lambda w, v: (
-                self._set_boolean_value(w, v) if hasattr(w, "setChecked") else None
-            ),
-            "stateChanged": lambda w, v: (
-                self._set_check_state(w, v) if hasattr(w, "setCheckState") else None
-            ),
-        }
+        try:
+            if signal_name:
+                # Use signal-based approach for compatibility with existing behavior
+                ValueManager.set_value_by_signal(
+                    widget, value, signal_name, block_signals=True
+                )
+            else:
+                # Fallback to direct value setting
+                ValueManager.set_value(widget, value, block_signals=True)
 
-        action = action_map.get(signal_name)
-        if action:
-            try:
-                if (
-                    isinstance(widget, QtWidgets.QComboBox)
-                    and signal_name == "currentIndexChanged"
-                    and (not isinstance(value, int) or value >= widget.count())
-                ):
-                    return
-                widget.blockSignals(True)
-                action(widget, value)
-            finally:
-                widget.blockSignals(False)
+        except Exception as e:
+            self.logger.debug(
+                f"Could not apply value '{value}' to widget {widget}: {e}"
+            )
 
     def save(self, widget: QtWidgets.QWidget, value: Any = None) -> None:
         """Save the current value of the widget to QSettings.
@@ -191,3 +148,23 @@ if __name__ == "__main__":
 # -----------------------------------------------------------------------------
 # Notes
 # -----------------------------------------------------------------------------
+
+"""
+Refactoring Notes:
+==================
+This StateManager has been refactored to use WidgetValueManager for all value operations.
+
+Removed methods (now handled by WidgetValueManager):
+- _set_numeric_value() -> WidgetValueManager.set_value_by_signal()
+- _set_index_value() -> WidgetValueManager.set_value_by_signal()  
+- _set_boolean_value() -> WidgetValueManager.set_value_by_signal()
+- _set_check_state() -> WidgetValueManager.set_value_by_signal()
+- Complex apply() method -> Simplified to use WidgetValueManager
+- Signal-based getter dict -> WidgetValueManager.get_value_by_signal()
+
+Benefits:
+- Eliminated ~50 lines of duplicate code
+- Improved error handling and type conversion
+- Consistent behavior with other value management systems
+- Single source of truth for widget value operations
+"""

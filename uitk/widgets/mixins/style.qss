@@ -174,6 +174,43 @@ QToolButton::menu-indicator {
     subcontrol-position: bottom right;
     padding: 0px 5px 5px 0px;
 }
+/* Hide QPushButton menu indicators to avoid stray dots next to icons */
+QPushButton::menu-indicator {
+    image: none;
+    width: 0px;
+    height: 0px;
+    padding: 0px;
+    margin: 0px;
+    border: none;
+    background: transparent;
+    subcontrol-origin: padding;
+    subcontrol-position: bottom right;
+}
+
+/* Extra-specific rules for our option buttons to override host styles */
+QPushButton#pinButton::menu-indicator,
+QPushButton#clearButton::menu-indicator,
+QPushButton#actionButton::menu-indicator,
+QPushButton#optionBox::menu-indicator {
+    image: none;
+    width: 0px;
+    height: 0px;
+    padding: 0px;
+    margin: 0px;
+    border: none;
+    background: transparent;
+}
+
+/* Within the option box container, suppress any menu indicators on buttons */
+QWidget#optionBoxContainer QPushButton::menu-indicator {
+    image: none;
+    width: 0px;
+    height: 0px;
+    padding: 0px;
+    margin: 0px;
+    border: none;
+    background: transparent;
+}
 QToolButton::down-arrow,
 QToolButton::up-arrow,
 QToolButton::left-arrow,

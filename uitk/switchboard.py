@@ -9,11 +9,11 @@ from qtpy import QtWidgets, QtCore, QtGui, QtUiTools
 import pythontk as ptk
 
 # From this package:
-from uitk.file_manager import FileManager
-from uitk.widgets.mixins import ConvertMixin
 from uitk.widgets.mixins import SwitchboardSlotsMixin
 from uitk.widgets.mixins import SwitchboardWidgetMixin
 from uitk.widgets.mixins import SwitchboardUtilsMixin
+from uitk.file_manager import FileManager
+from uitk.widgets.mixins import ConvertMixin
 
 
 class Switchboard(
@@ -519,10 +519,6 @@ class Switchboard(
 
         tags = tags or (self._parse_tags(name) if name else None)
         path = ptk.format_path(path, "path") if path else None
-
-        parent = parent or (
-            self.parent() if isinstance(self.parent(), QtWidgets.QMainWindow) else None
-        )
 
         main_window = self.registered_widgets.MainWindow(
             name=name,

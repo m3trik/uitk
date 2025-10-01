@@ -1,0 +1,262 @@
+#!/usr/bin/env python
+"""
+OptionBoxMixin - drop-in mixin that exposes a per-widget OptionBox manager and a friendly wrapper.
+
+Works with the autopatched `QWidget.option_box` property; if absent, it creates a manager.
+Provides `options` as a convenience alias returning a thin, chainable wrapper implemented here.
+"""
+from qtpy import QtWidgets
+from typing import Optional, TYPE_CHECKING, Callable, Iterable, Tuple
+
+if TYPE_CHECKING:
+    from uitk.widgets.optionBox import OptionBoxManager
+
+
+def _resolve_qwidget_option_box_property(self) -> Optional["OptionBoxManager"]:
+    """Safely access the autopatched QWidget.option_box property, if present.
+
+    Avoids recursion by calling the property's descriptor directly on QWidget.
+    """
+    q_prop = getattr(QtWidgets.QWidget, "option_box", None)
+    if isinstance(q_prop, property):
+        try:
+            return q_prop.__get__(self, type(self))  # type: ignore[no-any-return]
+        except Exception:
+            return None
+    return None
+
+
+class OptionBoxMixin:
+    @property
+    def option_box(self) -> Optional["OptionBoxManager"]:
+        # Fast-path: if we already cached a manager on this instance
+        existing = getattr(self, "_option_box_manager", None)
+        if existing is not None:
+            return existing
+
+        # Try autopatched QWidget property
+        mgr = _resolve_qwidget_option_box_property(self)
+        if mgr is not None:
+            return mgr
+
+        # Fallback: create and cache manager on this instance
+        try:
+            from uitk.widgets.optionBox import OptionBoxManager
+
+            mgr = OptionBoxManager(self)  # type: ignore[arg-type]
+            setattr(self, "_option_box_manager", mgr)
+
+            # Ensure `self.menu` points to our custom Menu early via a lazy proxy.
+            # This prevents accidental access to Qt's built-in menu() method object.
+            try:
+                class_menu_attr = getattr(type(self), "menu", None)
+                # If class doesn't define a property named `menu`, or even if it does,
+                # assign an instance-level alias that forwards to the OptionBox menu.
+                # Instance attributes override non-data descriptors (like a read-only property),
+                # and also shadow built-in bound methods from Qt classes.
+                setattr(self, "menu", _MenuAliasProxy(self))
+            except Exception:
+                pass
+            return mgr
+        except Exception:
+            return None
+
+    @property
+    def container(self):
+        """Return the OptionBox container for this widget if available.
+
+        This mirrors the common convenience seen on some widgets and keeps
+        container access DRY across consumers.
+        """
+        mgr = self.option_box
+        return None if mgr is None else mgr.container
+
+    def has_pin_values(self) -> bool:
+        """Return True if a pin-values system is attached to this widget.
+
+        Checks via the OptionBox manager first, then falls back to scanning the
+        parent option box container for a pin button.
+        """
+        service = self.get_pin_values_service()
+        if service is not None:
+            return True
+
+        # Fallback container scan (legacy/defensive)
+        try:
+            parent = getattr(self, "parent", lambda: None)()
+            if (
+                parent
+                and hasattr(parent, "objectName")
+                and parent.objectName() == "optionBoxContainer"
+            ):
+                for child in parent.children():
+                    obj_name = getattr(child, "objectName", lambda: "")()
+                    if obj_name == "pinButton":
+                        return True
+        except Exception:
+            pass
+
+        return False
+
+    def get_pin_values_service(self):
+        """Return the pin values service for this widget if available.
+
+        Looks up the controller via the OptionBox manager, otherwise searches
+        the parent option box container for a controller exposing a `service`.
+        """
+        # Preferred: via OptionBox manager
+        try:
+            mgr = self.option_box
+            if mgr is not None and hasattr(mgr, "_pin_values_controller"):
+                controller = getattr(mgr, "_pin_values_controller")
+                if controller and hasattr(controller, "service"):
+                    return controller.service
+        except Exception:
+            pass
+
+        # Fallback: scan parent container
+        try:
+            parent = getattr(self, "parent", lambda: None)()
+            if (
+                parent
+                and hasattr(parent, "objectName")
+                and parent.objectName() == "optionBoxContainer"
+            ):
+                for child in parent.children():
+                    controller = getattr(child, "_pin_values_controller", None)
+                    if controller and hasattr(controller, "service"):
+                        return controller.service
+        except Exception:
+            pass
+
+        return None
+
+    class _OptionsWrapper:
+        """Thin, chainable wrapper proxying to OptionBoxManager.
+
+        Methods return self for chaining and operate on the underlying manager.
+        """
+
+        def __init__(self, owner: QtWidgets.QWidget):
+            self._owner = owner
+
+        @property
+        def _mgr(self) -> Optional["OptionBoxManager"]:
+            return getattr(self._owner, "option_box", None)  # via mixin property
+
+        # Chainable helpers
+        def clear(self) -> "OptionBoxMixin._OptionsWrapper":
+            mgr = self._mgr
+            if mgr is not None:
+                mgr.enable_clear()
+            return self
+
+        def pin(
+            self,
+            settings_key: Optional[str] = None,
+            *,
+            double_click_to_edit: bool = False,
+            single_click_restore: bool = False,
+        ) -> "OptionBoxMixin._OptionsWrapper":
+            mgr = self._mgr
+            if mgr is not None:
+                mgr.pin(
+                    settings_key=settings_key,
+                    double_click_to_edit=double_click_to_edit,
+                    single_click_restore=single_click_restore,
+                )
+            return self
+
+        def action(self, handler: Callable) -> "OptionBoxMixin._OptionsWrapper":
+            mgr = self._mgr
+            if mgr is not None:
+                mgr.set_action(handler)
+            return self
+
+        def option_menu(
+            self,
+            *,
+            title: Optional[str] = None,
+            items: Optional[Iterable[Tuple[str, Callable]]] = None,
+            build_menu: Optional[Callable] = None,
+            position: str = "cursorPos",
+            add_header: bool = True,
+            tooltip: str = "Options",
+            menu=None,
+        ) -> "OptionBoxMixin._OptionsWrapper":
+            mgr = self._mgr
+            if mgr is not None:
+                cfg = {
+                    "title": title,
+                    "items": items,
+                    "build_menu": build_menu,
+                    "position": position,
+                    "add_header": add_header,
+                    "tooltip": tooltip,
+                }
+                # Remove Nones
+                cfg = {k: v for k, v in cfg.items() if v is not None}
+                if menu is not None:
+                    cfg["menu"] = menu
+                mgr.enable_option_menu(**cfg)
+            return self
+
+        @property
+        def container(self):
+            mgr = self._mgr
+            return None if mgr is None else mgr.container
+
+        @property
+        def menu(self):
+            mgr = self._mgr
+            if mgr is None:
+                return None
+            return mgr.get_option_menu(create=True)
+
+    @property
+    def options(self) -> "OptionBoxMixin._OptionsWrapper":
+        # Always return a fresh thin wrapper bound to this instance
+        return OptionBoxMixin._OptionsWrapper(self)
+
+
+class _MenuAliasProxy:
+    """Instance-level lazy alias that forwards attribute access to the OptionBox Menu.
+
+    Accessing `instance.menu` will return this proxy if set, and any attribute
+    on it will be resolved against the real Menu obtained via the OptionBox manager.
+    """
+
+    def __init__(self, owner: QtWidgets.QWidget):
+        self._owner = owner
+
+    @property
+    def _menu(self):
+        try:
+            mgr = getattr(self._owner, "option_box", None)
+            if mgr is not None and hasattr(mgr, "get_option_menu"):
+                return mgr.get_option_menu(create=True)
+        except Exception:
+            pass
+        return None
+
+    def __getattr__(self, item):
+        menu = self._menu
+        if menu is None:
+            raise AttributeError(
+                f"Menu is not available yet; missing attribute: {item}"
+            )
+        return getattr(menu, item)
+
+    def __repr__(self) -> str:
+        return f"<MenuAliasProxy target={self._menu!r}>"
+
+    def __getattr__(self, item):
+        menu = self._menu
+        if menu is None:
+            raise AttributeError(
+                f"Menu is not available yet; missing attribute: {item}"
+            )
+        return getattr(menu, item)
+
+    def __repr__(self) -> str:
+        return f"<MenuAliasProxy target={self._menu!r}>"
