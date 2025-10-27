@@ -14,7 +14,9 @@ class DoubleSpinBox(QtWidgets.QDoubleSpinBox, AttributesMixin):
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QDoubleSpinBox.__init__(self, parent)
 
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
+        self.menu = Menu(
+            self, trigger_button="right", fixed_item_height=20, hide_on_leave=True
+        )
         self.msgBox = MessageBox(self, timeout=1)
 
         self.setProperty("class", self.__class__.__name__)

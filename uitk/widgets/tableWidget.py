@@ -283,7 +283,9 @@ class TableWidget(
         except AttributeError:
             from uitk.widgets.menu import Menu
 
-            self._menu = Menu(self, mode="context", fixed_item_height=20)
+            self._menu = Menu(
+                self, trigger_button="right", fixed_item_height=20, hide_on_leave=True
+            )
             return self._menu
 
     def item_data(self, row: int, column: int):

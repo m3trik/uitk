@@ -1,9 +1,9 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtCore, QtWidgets
-from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.optionBox import add_option_box, add_clear_option, add_menu_option
+from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
 class LineEditFormatMixin:
@@ -44,52 +44,55 @@ class LineEditFormatMixin:
             self._original_bg = pal.color(self.backgroundRole()).name()
 
 
-class LineEdit(QtWidgets.QLineEdit, AttributesMixin, LineEditFormatMixin):
-    """Simple, clean LineEdit with elegant option box functionality.
+class LineEdit(
+    QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin
+):
+    """LineEdit with automatic Menu and OptionBox integration.
+
+    Features:
+    - self.menu: Context menu (via MenuMixin)
+    - self.option_box: OptionBox functionality (via OptionBoxMixin)
+    - self.option_box.menu: Separate option box menu
+    - self.option_box.clear_option: Enable/disable clear button
 
     Usage Examples:
         # Basic LineEdit
         line_edit = LineEdit()
         layout.addWidget(line_edit)
 
-        # Elegant option box interface (NEW - recommended)
+        # Enable clear button via option box
         line_edit.option_box.clear_option = True
         layout.addWidget(line_edit.option_box.container)
 
-        # Fluent interface
-        line_edit.option_box.enable_clear().set_action(my_function)
-        layout.addWidget(line_edit.option_box.container)
+        # Add items to option box menu
+        line_edit.option_box.menu.add("Copy")
+        line_edit.option_box.menu.add("Paste")
 
-        # Legacy convenience functions (still supported)
-        container = add_clear_option(line_edit)
-        layout.addWidget(container)
+        # Standalone context menu
+        line_edit.menu.add("Context Item")
     """
 
     shown = QtCore.Signal()
     hidden = QtCore.Signal()
 
     def __init__(self, parent=None, **kwargs):
-        """Initialize clean LineEdit.
+        """Initialize LineEdit with Menu and OptionBox mixins.
 
         Parameters:
             parent: Parent widget
             **kwargs: Attributes to set on the widget
-
-        Example:
-            # Basic usage
-            line_edit = LineEdit()
-
-            # Add options using simple functions
-            container = add_clear_option(line_edit)
-            layout.addWidget(container)
         """
         super().__init__(parent)
         self.setProperty("class", self.__class__.__name__)
 
-        # Traditional menu for context menu (separate from option box menu)
-        self.menu = Menu(
-            self, mode="option", position="cursorPos", fixed_item_height=20
-        )
+        # Customize standalone context menu (provided by MenuMixin)
+        self.menu.trigger_button = "right"
+        self.menu.position = "cursorPos"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
+
+        # OptionBox is also available via OptionBoxMixin
+        # Users can access: self.option_box.menu, self.option_box.clear_option, etc.
 
         # Set any provided attributes
         self.set_attributes(**kwargs)
@@ -114,6 +117,8 @@ class LineEdit(QtWidgets.QLineEdit, AttributesMixin, LineEditFormatMixin):
 
 if __name__ == "__main__":
     import sys
+    from uitk.widgets.menu import Menu
+    from uitk.widgets.optionBox import add_clear_option, add_menu_option
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
@@ -161,7 +166,7 @@ if __name__ == "__main__":
     line_edit5.setText("Text with menu options")
 
     # Create menu
-    custom_menu = Menu(line_edit5, mode="option", position="cursorPos")
+    custom_menu = Menu(line_edit5, trigger_button="left", position="cursorPos")
     custom_menu.add("QPushButton", setText="Option 1", setObjectName="opt1")
     custom_menu.add("QPushButton", setText="Option 2", setObjectName="opt2")
     custom_menu.add("QPushButton", setText="Option 3", setObjectName="opt3")
@@ -180,7 +185,7 @@ if __name__ == "__main__":
     line_edit6.setText("Legacy menu approach")
 
     # Create another menu for legacy example
-    legacy_menu = Menu(line_edit6, mode="option", position="cursorPos")
+    legacy_menu = Menu(line_edit6, trigger_button="left", position="cursorPos")
     legacy_menu.add("QPushButton", setText="Legacy Option 1", setObjectName="leg1")
     legacy_menu.add("QPushButton", setText="Legacy Option 2", setObjectName="leg2")
 

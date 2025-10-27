@@ -23,7 +23,9 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
+        self.menu = Menu(
+            self, trigger_button="right", fixed_item_height=20, hide_on_leave=True
+        )
 
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
@@ -93,9 +95,9 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
         Note:
             Other mouse events are passed to the parent class.
         """
-        if event.button() == QtCore.Qt.RightButton:
-            if self.menu:
-                self.menu.show()
+        # if event.button() == QtCore.Qt.RightButton:
+        #     if self.menu:
+        #         self.menu.show()
 
         if self.isTristate():
             # The next_state dictionary defines the order in which states should be cycled.

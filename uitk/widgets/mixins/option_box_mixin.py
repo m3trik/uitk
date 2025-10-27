@@ -1,9 +1,27 @@
 #!/usr/bin/env python
-"""
-OptionBoxMixin - drop-in mixin that exposes a per-widget OptionBox manager and a friendly wrapper.
+"""OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 
-Works with the autopatched `QWidget.option_box` property; if absent, it creates a manager.
-Provides `options` as a convenience alias returning a thin, chainable wrapper implemented here.
+This mixin provides automatic OptionBox integration for widgets.
+Just inherit from it and `self.option_box` will be available.
+
+Usage:
+    class MyWidget(QtWidgets.QWidget, OptionBoxMixin):
+        def __init__(self):
+            super().__init__()
+            # OptionBox is automatically available
+            self.option_box.clear_option = True
+            self.option_box.menu.add("Item 1")
+
+Example with customization:
+    class MyLineEdit(QtWidgets.QLineEdit, OptionBoxMixin, MenuMixin):
+        def __init__(self):
+            super().__init__()
+            # Enable clear button
+            self.option_box.clear_option = True
+            # Customize the option box menu
+            self.option_box.menu.trigger_button = "left"
+            self.option_box.menu.add("Copy")
+            self.option_box.menu.add("Paste")
 """
 from qtpy import QtWidgets
 from typing import Optional, TYPE_CHECKING, Callable, Iterable, Tuple
@@ -46,17 +64,11 @@ class OptionBoxMixin:
             mgr = OptionBoxManager(self)  # type: ignore[arg-type]
             setattr(self, "_option_box_manager", mgr)
 
-            # Ensure `self.menu` points to our custom Menu early via a lazy proxy.
-            # This prevents accidental access to Qt's built-in menu() method object.
-            try:
-                class_menu_attr = getattr(type(self), "menu", None)
-                # If class doesn't define a property named `menu`, or even if it does,
-                # assign an instance-level alias that forwards to the OptionBox menu.
-                # Instance attributes override non-data descriptors (like a read-only property),
-                # and also shadow built-in bound methods from Qt classes.
-                setattr(self, "menu", _MenuAliasProxy(self))
-            except Exception:
-                pass
+            # REMOVED: Don't set menu alias proxy - MenuMixin descriptor handles coordination
+            # The _MenuDescriptor in MenuMixin now properly checks for OptionBoxManager's menu
+            # and coordinates between the two systems without needing a proxy object.
+            # This prevents the proxy from interfering with _menu_instance caching.
+
             return mgr
         except Exception:
             return None
@@ -211,7 +223,7 @@ class OptionBoxMixin:
             mgr = self._mgr
             if mgr is None:
                 return None
-            return mgr.get_option_menu(create=True)
+            return mgr.get_menu(create=True)
 
     @property
     def options(self) -> "OptionBoxMixin._OptionsWrapper":
@@ -233,8 +245,8 @@ class _MenuAliasProxy:
     def _menu(self):
         try:
             mgr = getattr(self._owner, "option_box", None)
-            if mgr is not None and hasattr(mgr, "get_option_menu"):
-                return mgr.get_option_menu(create=True)
+            if mgr is not None and hasattr(mgr, "get_menu"):
+                return mgr.get_menu(create=True)
         except Exception:
             pass
         return None

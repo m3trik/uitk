@@ -191,6 +191,7 @@ QPushButton::menu-indicator {
 QPushButton#pinButton::menu-indicator,
 QPushButton#clearButton::menu-indicator,
 QPushButton#actionButton::menu-indicator,
+QPushButton#optionMenuButton::menu-indicator,
 QPushButton#optionBox::menu-indicator {
     image: none;
     width: 0px;
@@ -211,6 +212,31 @@ QWidget#optionBoxContainer QPushButton::menu-indicator {
     border: none;
     background: transparent;
 }
+
+/* Specific styling for option menu button to prevent any artifacts */
+QPushButton#optionMenuButton {
+    text-align: center;
+    padding-left: 0px;
+    padding-right: 0px;
+}
+
+/* Suppress all sub-controls that might cause artifacts */
+QPushButton#optionMenuButton::menu-indicator,
+QPushButton#optionMenuButton::menu-arrow,
+QPushButton#optionMenuButton::down-arrow,
+QPushButton[class~="OptionMenuButton"]::menu-indicator,
+QPushButton[class~="OptionMenuButton"]::menu-arrow {
+    image: none;
+    width: 0px;
+    height: 0px;
+    padding: 0px;
+    margin: 0px;
+    border: none;
+    background: transparent;
+    subcontrol-origin: padding;
+    subcontrol-position: center;
+}
+
 QToolButton::down-arrow,
 QToolButton::up-arrow,
 QToolButton::left-arrow,

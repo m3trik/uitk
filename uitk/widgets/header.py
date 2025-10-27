@@ -76,8 +76,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         except AttributeError:
             from uitk.widgets.menu import Menu
 
-            # print(f"[Header.menu] constructing new menu for: {self.objectName()}")
-            self._menu = Menu(self, fixed_item_height=20)
+            self._menu = Menu(self, fixed_item_height=20, hide_on_leave=True)
             return self._menu
 
     def get_icon_path(self, icon_filename):

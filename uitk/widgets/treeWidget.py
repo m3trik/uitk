@@ -400,7 +400,9 @@ class TreeWidget(
         except AttributeError:
             from uitk.widgets.menu import Menu
 
-            self._menu = Menu(self, mode="option", fixed_item_height=20)
+            self._menu = Menu(
+                self, trigger_button="left", fixed_item_height=20, hide_on_leave=True
+            )
             return self._menu
 
     def _on_selection_changed(self):

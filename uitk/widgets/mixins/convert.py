@@ -109,6 +109,110 @@ class ConvertMixin:
                 f"[ERROR] Invalid key value: {key}. Expected QtCore.Qt.Key or string."
             )
 
+    @staticmethod
+    def to_qmousebutton(
+        button: Union[str, QtCore.Qt.MouseButton, tuple, list, None],
+    ) -> Union[QtCore.Qt.MouseButton, tuple, None, bool]:
+        """Convert button identifier(s) to Qt MouseButton constant(s).
+
+        Parameters:
+            button: Button identifier - can be:
+                - String: "left", "right", "middle", "back", "forward", "any", "none"
+                - Qt.MouseButton constant
+                - Tuple/list of strings or Qt.MouseButton constants
+                - None (same as "none" - no auto-trigger)
+
+        Returns:
+            QtCore.Qt.MouseButton: Single button constant
+            tuple: Multiple button constants
+            None: Any button allowed (from "any" only)
+            False: No auto-trigger (from "none" or None input) - sentinel value
+
+        Raises:
+            ValueError: If button type is invalid or string is not recognized
+
+        Examples:
+            >>> ConvertMixin.to_qmousebutton("left")
+            <MouseButton.LeftButton: 1>
+
+            >>> ConvertMixin.to_qmousebutton("right")
+            <MouseButton.RightButton: 2>
+
+            >>> ConvertMixin.to_qmousebutton("any")
+            None  # Any button allowed
+
+            >>> ConvertMixin.to_qmousebutton("none")
+            False  # No auto-trigger
+
+            >>> ConvertMixin.to_qmousebutton(None)
+            False  # Same as "none" - no auto-trigger
+
+            >>> ConvertMixin.to_qmousebutton(("left", "right"))
+            (<MouseButton.LeftButton: 1>, <MouseButton.RightButton: 2>)
+        """
+        # Button string to Qt constant mapping
+        button_map = {
+            "left": QtCore.Qt.LeftButton,
+            "right": QtCore.Qt.RightButton,
+            "middle": QtCore.Qt.MiddleButton,
+            "back": QtCore.Qt.BackButton,
+            "forward": QtCore.Qt.ForwardButton,
+            "any": None,  # Special: any button triggers
+            "none": False,  # Special: no auto-trigger (sentinel value)
+        }
+
+        # Handle None input - treat as "none" (no auto-trigger)
+        if button is None:
+            return False
+
+        # Handle string input
+        if isinstance(button, str):
+            normalized = button.lower().strip()
+            if normalized in button_map:
+                return button_map[normalized]
+            else:
+                valid_keys = ", ".join(button_map.keys())
+                raise ValueError(
+                    f"Invalid button string '{button}'. "
+                    f"Valid values are: {valid_keys}"
+                )
+
+        # Handle tuple/list of buttons
+        if isinstance(button, (tuple, list)):
+            normalized_buttons = []
+            for btn in button:
+                if isinstance(btn, str):
+                    # Recursively convert string
+                    converted = ConvertMixin.to_qmousebutton(btn)
+                    # Skip None and False sentinels in tuples (they don't make sense)
+                    if converted is not None and converted is not False:
+                        normalized_buttons.append(converted)
+                elif isinstance(btn, QtCore.Qt.MouseButton):
+                    normalized_buttons.append(btn)
+                else:
+                    raise ValueError(
+                        f"Invalid button type in collection: {type(btn)}. "
+                        f"Expected str or QtCore.Qt.MouseButton"
+                    )
+
+            # Return based on count
+            if len(normalized_buttons) == 0:
+                return None  # Empty tuple = any button
+            elif len(normalized_buttons) == 1:
+                return normalized_buttons[0]
+            else:
+                return tuple(normalized_buttons)
+
+        # Handle Qt MouseButton constant
+        if isinstance(button, QtCore.Qt.MouseButton):
+            return button
+
+        # Invalid type
+        raise ValueError(
+            f"Invalid button type: {type(button)}. "
+            f"Expected str, QtCore.Qt.MouseButton, tuple, list, or None"
+        )
+
 
 # ----------------------------------------------------------------------------
 
