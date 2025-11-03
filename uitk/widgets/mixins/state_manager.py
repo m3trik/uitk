@@ -13,6 +13,11 @@ class StateManager(ptk.LoggingMixin):
     This class has been refactored to use WidgetValueManager for all value
     getting/setting operations, eliminating code duplication and ensuring
     consistent behavior across the codebase.
+
+    Protections:
+    - Skips applying None values to text-based widgets to prevent clearing valid text
+    - Only saves primitive types (int, float, str, bool) to prevent state corruption
+    - Handles non-stateful signals (like 'clicked') by not triggering state sync
     """
 
     def __init__(self, qsettings: QtCore.QSettings):
@@ -50,6 +55,15 @@ class StateManager(ptk.LoggingMixin):
     def apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
         """Apply the given value to the widget using ValueManager."""
         signal_name = widget.derived_type and widget.default_signals()
+
+        # Don't apply None values for text-based widgets to prevent clearing valid text
+        if value is None:
+            if hasattr(widget, "text") and callable(widget.text):
+                # Skip applying None to widgets with text (like QPushButton, QLineEdit, etc.)
+                self.logger.debug(
+                    f"Skipping apply of None value to text widget {widget.objectName()}"
+                )
+                return
 
         try:
             if signal_name:

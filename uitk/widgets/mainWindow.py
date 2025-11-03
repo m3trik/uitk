@@ -2,7 +2,6 @@
 # coding=utf-8
 import sys
 from typing import Any, Optional
-from functools import partial
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 
@@ -334,6 +333,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """Sync a widget's state value across related UIs and apply the value using StateManager."""
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(f"[sync_widget_values] Invalid widget: {widget}")
+            return
+
+        # Skip syncing None values to prevent clearing valid widget states
+        if value is None:
+            self.logger.debug(
+                f"[{self.objectName()}] [sync_widget_values] Skipping sync of None value for {widget.objectName()}"
+            )
             return
 
         # Save and apply to all relative widgets
