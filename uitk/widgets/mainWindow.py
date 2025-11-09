@@ -160,6 +160,27 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         )
 
     @property
+    def is_pinned(self) -> bool:
+        """Check if the window is pinned (should not auto-hide).
+
+        This is the single source of truth for pin state checking.
+        Checks both the prevent_hide flag and the header's pin button state.
+
+        Returns:
+            bool: True if window should stay visible (pinned), False otherwise
+        """
+        # Check prevent_hide flag
+        if self.prevent_hide:
+            return True
+
+        # Check header pin button state (if header exists and has pin functionality)
+        header = getattr(self, "header", None)
+        if header and hasattr(header, "pinned"):
+            return header.pinned
+
+        return False
+
+    @property
     def slots(self) -> list:
         """Returns a list of the slots connected to the widget's signals.
 
@@ -413,8 +434,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         )
 
     def setVisible(self, visible) -> None:
-        """Reimplement setVisible to prevent window from being hidden when prevent_hide is True."""
-        if self.prevent_hide and not visible:
+        """Reimplement setVisible to prevent window from being hidden when pinned."""
+        if self.is_pinned and not visible:
             return
         super().setVisible(visible)
 

@@ -958,7 +958,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             if self.add_header:
                 # Create Header instance WITHOUT explicit parent to avoid tree overhead
                 # Parent will be assigned when added to layout
-                self.header = Header(hide_button=True)
+                self.header = Header(config_buttons=["pin_button"])
                 self.centralWidgetLayout.addWidget(self.header)
                 _log_step("Header_created")
 
@@ -994,9 +994,14 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         Only hides if the mouse has entered the menu at least once.
         This prevents immediate hiding when menu is positioned away from cursor.
+        Also respects the pinned state - won't hide if pinned.
         """
         if not self.isVisible():
             self._leave_timer.stop()
+            return
+
+        # Don't hide if menu is pinned
+        if self.is_pinned:
             return
 
         # Get cursor position relative to this widget
@@ -1092,6 +1097,26 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     def get_all_children(self):
         children = self.findChildren(QtWidgets.QWidget)
         return children
+
+    @property
+    def is_pinned(self) -> bool:
+        """Check if the menu is pinned (should not auto-hide).
+
+        This is the single source of truth for pin state checking.
+        Checks both the legacy prevent_hide flag and the header's pin button state.
+
+        Returns:
+            bool: True if menu should stay visible (pinned), False otherwise
+        """
+        # Check legacy prevent_hide flag
+        if self.prevent_hide:
+            return True
+
+        # Check header pin button state (if header exists and has pin functionality)
+        if self.header and hasattr(self.header, "pinned"):
+            return self.header.pinned
+
+        return False
 
     @property
     def contains_items(self) -> bool:
@@ -1714,7 +1739,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             widget: Optional anchor widget to position the menu relative to
             button: The mouse button to simulate (default: LeftButton)
         """
-        if self.prevent_hide:
+        # Don't allow hiding if menu is pinned
+        if self.is_pinned:
             return
 
         # Use centralized trigger logic
