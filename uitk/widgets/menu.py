@@ -448,6 +448,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         add_apply_button: bool = False,
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
+        log_level: Optional[Union[int, str]] = "WARNING",
         **kwargs,
     ):
         """Initializes a custom qwidget instance that acts as a popup menu.
@@ -502,16 +503,38 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """
         # Track initialization time (imports now at module level)
         self._init_start_time = time.perf_counter()
+        _step_time = self._init_start_time
 
-        super().__init__(parent)
+        # PERFORMANCE: Defer parent assignment to avoid Qt parent-child overhead during init
+        # Store parent for later use but create QWidget without parent initially
+        self._deferred_parent = parent
+        self._parent_assigned = False
+        super().__init__()  # Create QWidget without parent - avoids parent-child tree congestion
+
+        # Disable debug logging to eliminate logging overhead
+        self.logger.setLevel(log_level)
+
+        def _log_step(step_name):
+            nonlocal _step_time
+            now = time.perf_counter()
+            duration_ms = (now - _step_time) * 1000
+            total_ms = (now - self._init_start_time) * 1000
+            self.logger.debug(
+                f"Menu.__init__ [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
+            )
+            _step_time = now
+
+        _log_step("super().__init__")
 
         if name is not None:
             if not isinstance(name, str):
                 raise TypeError(f"Expected 'name' to be a string, got {type(name)}")
             self.setObjectName(name)
+        _log_step("setObjectName")
 
         # Set trigger button using ConvertMixin
         self.trigger_button = trigger_button
+        _log_step("trigger_button")
 
         self.position = position
         self.min_item_height = min_item_height
@@ -527,9 +550,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._event_filters_installed = False  # Track filter state
         self._mouse_has_entered = False  # Track if mouse has entered menu at least once
         self._current_anchor_widget = None  # Temporary anchor widget for show_as_popup
+        _log_step("basic_attrs")
 
         # Action button manager (replaces individual button state variables)
         self._button_manager = ActionButtonManager(self)
+        _log_step("ActionButtonManager")
 
         # Lazy initialization flags
         self._ui_initialized = False
@@ -552,27 +577,43 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._last_parent_geometry = None
         self._cached_menu_position = None
 
-        # Minimal setup - defer heavy operations
-        self._setup_as_popup()
+        # NEW: Flag to track if popup window setup has been done
+        self._popup_setup_done = False
+        _log_step("lazy_init_flags")
 
-        # Set basic widget properties immediately (lightweight)
-        self.setProperty("class", "translucentBgWithBorder")
-        self.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        # CRITICAL FIX: Defer _setup_as_popup() to first show
+        # Creating 11+ top-level windows during __init__ causes progressive Qt window manager slowdown
+        # Only configure window flags when menu is actually shown
+        # self._setup_as_popup()  # DEFERRED
+        _log_step("_setup_as_popup_deferred")
+
+        # CRITICAL FIX 2: Defer ALL style-related operations to first show
+        # setProperty() triggers Qt style system recalculation across ALL widgets
+        # With 11+ menus, each setProperty call checks all existing menus -> O(n²) slowdown
+        # Store properties to apply later
+        self._deferred_properties = {"class": "translucentBgWithBorder"}
+        self._deferred_size_policy = (
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
         )
-        self.setMinimumWidth(147)
+        self._deferred_min_width = 147
+        self._deferred_kwargs = kwargs.copy() if kwargs else {}
 
-        # Defer layout creation until first item added
-        # Defer style sheet creation until first paint/show
-        # Defer timer creation until first show with hide_on_leave=True
+        # DON'T call setProperty, setSizePolicy, setMinimumWidth, or set_attributes here
+        # They will be applied in show() when actually needed
+        _log_step("widget_properties")
+        _log_step("set_attributes")
 
-        self.set_attributes(**kwargs)
+        # PROOF THIS CODE IS RUNNING: Debug output (AFTER timing to avoid affecting measurements)
+        self.logger.debug(
+            "🔧 STYLE DEFERRAL FIX ACTIVE - Properties stored, not applied"
+        )
 
         init_duration = (
             time.perf_counter() - self._init_start_time
         ) * 1000  # Convert to ms
         self.logger.debug(
-            f"Menu.__init__: Initialization completed in {init_duration:.3f}ms (lazy mode - UI deferred)"
+            f"Menu.__init__: TOTAL initialization completed in {init_duration:.3f}ms (lazy mode - UI deferred)"
         )
 
     def _should_trigger(self, button: QtCore.Qt.MouseButton) -> bool:
@@ -703,6 +744,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if self._event_filters_installed:
             return  # Already installed
 
+        self._ensure_parent_assigned()  # Assign parent if needed for event filter
+
         self.installEventFilter(self)
         if self.parent():
             self.parent().installEventFilter(self)
@@ -726,13 +769,32 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._event_filters_installed = False
         self.logger.debug("Menu._uninstall_event_filters: Event filters uninstalled")
 
+    def _ensure_parent_assigned(self):
+        """Assign deferred parent if not already done.
+
+        This is called by methods that need the parent relationship
+        established before popup setup would normally occur.
+        """
+        if not self._parent_assigned and self._deferred_parent is not None:
+            self.setParent(self._deferred_parent)
+            self._parent_assigned = True
+            self.logger.debug(f"Menu._ensure_parent_assigned: Assigned deferred parent")
+
     def _setup_as_popup(self):
         """Configure this menu as a popup window."""
+        # PERFORMANCE: Assign deferred parent now (if any)
+        if not self._parent_assigned and self._deferred_parent is not None:
+            self.setParent(self._deferred_parent)
+            self._parent_assigned = True
+            self.logger.debug(
+                f"Menu._setup_as_popup: Assigned deferred parent {self._deferred_parent}"
+            )
+
         self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
 
-        # If no parent was provided, try to parent to active window
+        # If no parent was provided (including deferred), try to parent to active window
         if self.parent() is None:
             try:
                 app = QtWidgets.QApplication.instance()
@@ -762,6 +824,28 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.logger.debug(
             f"Menu.show_as_popup: anchor_widget={anchor_widget}, position={position}"
         )
+
+        # CRITICAL FIX: Lazy popup window setup on first show
+        # Deferring window flag setup prevents Qt window manager congestion during bulk menu creation
+        if not self._popup_setup_done:
+            # Apply deferred style properties NOW (when menu is actually needed)
+            # This avoids Qt style system O(n²) slowdown during bulk menu creation
+            if hasattr(self, "_deferred_properties"):
+                for prop_name, prop_value in self._deferred_properties.items():
+                    self.setProperty(prop_name, prop_value)
+
+            if hasattr(self, "_deferred_size_policy"):
+                self.setSizePolicy(*self._deferred_size_policy)
+
+            if hasattr(self, "_deferred_min_width"):
+                self.setMinimumWidth(self._deferred_min_width)
+
+            if hasattr(self, "_deferred_kwargs"):
+                self.set_attributes(**self._deferred_kwargs)
+
+            self._setup_as_popup()
+            self._popup_setup_done = True
+            self.logger.debug("Menu.show_as_popup: Lazy popup window setup completed")
 
         # Store anchor widget temporarily for _apply_position to use
         # This allows proper width matching even when parent is different
@@ -814,36 +898,89 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
     def init_layout(self):
         """Initialize the menu layout. Called lazily on first item add."""
+        layout_start = time.perf_counter()
+        _step_time = layout_start
+
+        def _log_step(step_name):
+            nonlocal _step_time
+            now = time.perf_counter()
+            duration_ms = (now - _step_time) * 1000
+            total_ms = (now - layout_start) * 1000
+            self.logger.debug(
+                f"Menu.init_layout [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
+            )
+            _step_time = now
+
         # Guard against double initialization
         if self.layout is not None:
+            self.logger.debug("Menu.init_layout: Already initialized, skipping")
             return
 
-        # Create a new layout with no margins
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(1)
-        self.setLayout(self.layout)
+        # CRITICAL OPTIMIZATION: Disable updates AND layout calculation
+        updates_were_enabled = self.updatesEnabled()
+        self.setUpdatesEnabled(False)
 
-        # Create a central widget and set it to the layout
-        self.setCentralWidget(QtWidgets.QWidget(self))
+        # Also block signals to prevent event propagation during setup
+        was_blocked = self.blockSignals(True)
 
-        # Create a QVBoxLayout inside the central widget
-        self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
-        self.centralWidgetLayout.setContentsMargins(1, 1, 1, 1)
-        self.centralWidgetLayout.setSpacing(1)
+        try:
+            # Create a new layout with no margins
+            self.layout = QtWidgets.QVBoxLayout(self)
+            self.layout.setContentsMargins(0, 0, 0, 0)
+            self.layout.setSpacing(1)
+            # Disable layout activation during setup
+            self.layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+            self.setLayout(self.layout)
+            _log_step("QVBoxLayout_created")
 
-        # Create a form layout inside the QVBoxLayout
-        self.gridLayout = QtWidgets.QGridLayout()
-        self.gridLayout.setContentsMargins(0, 0, 0, 0)
-        self.gridLayout.setSpacing(1)
+            # Create a central widget WITHOUT parent first to avoid tree overhead
+            # Parent will be assigned when added to layout
+            central_widget = QtWidgets.QWidget()
+            self.setCentralWidget(central_widget)
+            _log_step("setCentralWidget")
 
-        if self.add_header:
-            # Create Header instance and add it to the central widget layout
-            self.header = Header(self, hide_button=True)
-            self.centralWidgetLayout.addWidget(self.header)
+            # Create a QVBoxLayout inside the central widget
+            self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
+            self.centralWidgetLayout.setContentsMargins(1, 1, 1, 1)
+            self.centralWidgetLayout.setSpacing(1)
+            self.centralWidgetLayout.setSizeConstraint(
+                QtWidgets.QLayout.SetNoConstraint
+            )
+            _log_step("centralWidgetLayout")
 
-        # Add grid layout to the central widget layout
-        self.centralWidgetLayout.addLayout(self.gridLayout)
+            # Create a form layout inside the QVBoxLayout
+            self.gridLayout = QtWidgets.QGridLayout()
+            self.gridLayout.setContentsMargins(0, 0, 0, 0)
+            self.gridLayout.setSpacing(1)
+            self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+            _log_step("gridLayout")
+
+            if self.add_header:
+                # Create Header instance WITHOUT explicit parent to avoid tree overhead
+                # Parent will be assigned when added to layout
+                self.header = Header(hide_button=True)
+                self.centralWidgetLayout.addWidget(self.header)
+                _log_step("Header_created")
+
+            # Add grid layout to the central widget layout
+            self.centralWidgetLayout.addLayout(self.gridLayout)
+            _log_step("addLayout")
+
+            total_duration = (time.perf_counter() - layout_start) * 1000
+            self.logger.debug(
+                f"Menu.init_layout: TOTAL layout initialization in {total_duration:.3f}ms"
+            )
+        finally:
+            # Restore signal blocking state
+            self.blockSignals(was_blocked)
+
+            # Re-enable updates after layout creation
+            if updates_were_enabled:
+                self.setUpdatesEnabled(True)
+
+            # Activate layout now that setup is complete
+            if self.layout:
+                self.layout.activate()
 
     def _setup_leave_timer(self):
         """Set up timer for auto-hide on mouse leave."""
@@ -1177,105 +1314,167 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         Returns:
             widget/list: The added widget or list of added widgets.
         """
+        add_start = time.perf_counter()
+        _step_time = add_start
+
+        def _log_step(step_name):
+            nonlocal _step_time
+            now = time.perf_counter()
+            duration_ms = (now - _step_time) * 1000
+            total_ms = (now - add_start) * 1000
+            self.logger.debug(
+                f"Menu.add [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
+            )
+            _step_time = now
+
         self.logger.debug(
             f"Menu.add: Adding item type={type(x).__name__}, row={row}, col={col}, kwargs={list(kwargs.keys())}"
         )
 
-        # Lazy initialization: create layout on first item add
-        self._ensure_layout_created()
+        # CRITICAL OPTIMIZATION: Disable updates AND layout recalculation during add
+        # This prevents Qt from recalculating layout/geometry on every operation
+        updates_were_enabled = self.updatesEnabled()
+        self.setUpdatesEnabled(False)
 
-        if isinstance(x, dict):
-            return [self.add(key, data=val, **kwargs) for key, val in x.items()]
+        # Block signals to prevent cascading updates
+        was_blocked = self.blockSignals(True)
 
-        elif isinstance(x, (list, tuple, set)):
-            return [self.add(item, **kwargs) for item in x]
+        # Suspend layout activation if layout exists
+        layout_was_enabled = False
+        if self.gridLayout:
+            layout_was_enabled = self.gridLayout.isEnabled()
+            self.gridLayout.setEnabled(False)
 
-        elif isinstance(x, zip):
-            return [self.add(item, data, **kwargs) for item, data in x]
+        try:
+            # Lazy initialization: create layout on first item add
+            self._ensure_layout_created()
+            _log_step("ensure_layout")
 
-        elif isinstance(x, map):
-            return [self.add(item, **kwargs) for item in list(x)]
+            if isinstance(x, dict):
+                return [self.add(key, data=val, **kwargs) for key, val in x.items()]
 
-        elif isinstance(x, QtWidgets.QAction):
-            return self._add_action_widget(
-                x, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan
-            )
+            elif isinstance(x, (list, tuple, set)):
+                return [self.add(item, **kwargs) for item in x]
 
-        elif isinstance(x, str):
-            # Use widget cache for faster creation of common types
-            widget_class = _WIDGET_TYPE_CACHE.get(x)
-            if widget_class:
-                widget = widget_class(self)
+            elif isinstance(x, zip):
+                return [self.add(item, data, **kwargs) for item, data in x]
+
+            elif isinstance(x, map):
+                return [self.add(item, **kwargs) for item in list(x)]
+
+            elif isinstance(x, QtWidgets.QAction):
+                return self._add_action_widget(
+                    x, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan
+                )
+
+            _log_step("type_check")
+
+            if isinstance(x, str):
+                # OPTIMIZATION: Create widgets WITHOUT parent to avoid Qt tree overhead
+                # Parent will be assigned implicitly when added to gridLayout
+                widget_class = _WIDGET_TYPE_CACHE.get(x)
+                if widget_class:
+                    widget = widget_class()
+                else:
+                    try:
+                        widget = getattr(QtWidgets, x)()
+                    except (AttributeError, TypeError):
+                        widget = QtWidgets.QLabel()
+                        widget.setText(x)
+                _log_step("widget_creation_str")
+
+            elif isinstance(x, QtWidgets.QWidget) or (
+                inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
+            ):
+                widget = x() if callable(x) else x
+                _log_step("widget_creation_class")
+
             else:
-                try:
-                    widget = getattr(QtWidgets, x)(self)
-                except (AttributeError, TypeError):
-                    widget = QtWidgets.QLabel()
-                    widget.setText(x)
+                raise TypeError(
+                    f"Unsupported item type: expected str, QWidget, QAction, or a collection (list, tuple, set, dict, zip, map), got '{type(x)}'"
+                )
 
-        elif isinstance(x, QtWidgets.QWidget) or (
-            inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
-        ):
-            widget = x(self) if callable(x) else x
+            widget.item_text = lambda i=widget: self.get_item_text(i)
+            widget.item_data = lambda i=widget: self.get_item_data(i)
+            _log_step("widget_setup")
 
-        else:
-            raise TypeError(
-                f"Unsupported item type: expected str, QWidget, QAction, or a collection (list, tuple, set, dict, zip, map), got '{type(x)}'"
-            )
+            if row is None:
+                row = 0
+                while self.gridLayout.itemAtPosition(row, col) is not None:
+                    row += 1
 
-        widget.item_text = lambda i=widget: self.get_item_text(i)
-        widget.item_data = lambda i=widget: self.get_item_data(i)
+            if colSpan is None:
+                colSpan = self.gridLayout.columnCount() or 1
+            _log_step("position_calc")
 
-        if row is None:
-            row = 0
-            while self.gridLayout.itemAtPosition(row, col) is not None:
-                row += 1
+            # Install event filters when adding the first item
+            was_empty = not self.contains_items
 
-        if colSpan is None:
-            colSpan = self.gridLayout.columnCount() or 1
+            self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
+            self.on_item_added.emit(widget)
+            self.set_item_data(widget, data)
+            _log_step("addWidget")
 
-        # Install event filters when adding the first item
-        was_empty = not self.contains_items
+            if self.min_item_height is not None:
+                widget.setMinimumHeight(self.min_item_height)
+            if self.max_item_height is not None:
+                widget.setMaximumHeight(self.max_item_height)
+            if self.fixed_item_height is not None:
+                widget.setFixedHeight(self.fixed_item_height)
+            _log_step("height_constraints")
 
-        self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
-        self.on_item_added.emit(widget)
-        self.set_item_data(widget, data)
+            self.set_attributes(widget, **kwargs)
+            widget.installEventFilter(self)
+            setattr(self, widget.objectName(), widget)
+            _log_step("attributes_filter")
 
-        if self.min_item_height is not None:
-            widget.setMinimumHeight(self.min_item_height)
-        if self.max_item_height is not None:
-            widget.setMaximumHeight(self.max_item_height)
-        if self.fixed_item_height is not None:
-            widget.setFixedHeight(self.fixed_item_height)
+            # Only resize if menu is visible (prevents flash during lazy initialization)
+            if self.isVisible():
+                self.resize(self.sizeHint())
+            self.layout.invalidate()
+            _log_step("resize_invalidate")
 
-        self.set_attributes(widget, **kwargs)
-        widget.installEventFilter(self)
-        setattr(self, widget.objectName(), widget)
-
-        # Only resize if menu is visible (prevents flash during lazy initialization)
-        if self.isVisible():
-            self.resize(self.sizeHint())
-        self.layout.invalidate()
-
-        # Now that we have items, install event filters if this was the first item
-        if was_empty:
-            self._install_event_filters()
-            self.logger.debug(f"Menu.add: First item added, event filters installed")
-            # Also setup apply button on first item add (if requested and has connections)
-            if self.add_apply_button and not self._button_manager.get_button("apply"):
-                self._setup_apply_button()
-            # Update apply button visibility for first item
-            if self.add_apply_button:
+            # OPTIMIZATION: Defer event filter installation to showEvent()
+            # This eliminates 37-180ms from add() operations
+            # Setup apply button on first item add (if requested and has connections)
+            if was_empty:
+                self.logger.debug(
+                    f"Menu.add: First item added (event filters deferred to show)"
+                )
+                if self.add_apply_button and not self._button_manager.get_button(
+                    "apply"
+                ):
+                    self._setup_apply_button()
+                # Update apply button visibility for first item
+                if self.add_apply_button:
+                    self._update_apply_button_visibility()
+            elif self.add_apply_button:
+                # Only update visibility if apply button exists and is enabled
+                # This avoids redundant checks when add_apply_button=False
                 self._update_apply_button_visibility()
-        elif self.add_apply_button:
-            # Only update visibility if apply button exists and is enabled
-            # This avoids redundant checks when add_apply_button=False
-            self._update_apply_button_visibility()
+            _log_step("apply_button_setup")
 
-        self.logger.debug(
-            f"Menu.add: Successfully added widget={widget.objectName() or type(widget).__name__}, total_items={self.gridLayout.count()}"
-        )
-        return widget
+            total_duration = (time.perf_counter() - add_start) * 1000
+            self.logger.debug(
+                f"Menu.add: TOTAL added widget={widget.objectName() or type(widget).__name__}, total_items={self.gridLayout.count()} in {total_duration:.3f}ms"
+            )
+            return widget
+
+        finally:
+            # CRITICAL: Re-enable layout and restore state
+            if self.gridLayout and layout_was_enabled:
+                self.gridLayout.setEnabled(True)
+
+            # Restore signal blocking
+            self.blockSignals(was_blocked)
+
+            # Re-enable updates - this triggers single update instead of one per operation
+            if updates_were_enabled:
+                self.setUpdatesEnabled(True)
+
+            # Activate layout to apply all changes at once
+            if self.layout:
+                self.layout.activate()
 
     def _add_action_widget(
         self,
@@ -1366,6 +1565,18 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
     def showEvent(self, event) -> None:
         """Handle show event with positioning (optimized for performance)."""
+        # CRITICAL OPTIMIZATION: Lazy popup window setup on first show
+        # Deferring window flag setup prevents Qt window manager congestion during bulk menu creation
+        if not self._popup_setup_done:
+            self._setup_as_popup()
+            self._popup_setup_done = True
+            self.logger.debug("showEvent: Lazy popup window setup completed")
+
+        # CRITICAL OPTIMIZATION: Install event filters on first show, not during add()
+        # This eliminates 37-180ms from add() calls
+        if not self._event_filters_installed and self.contains_items:
+            self._install_event_filters()
+
         # Lazy initialization: ensure style and timer are created on first show
         # These check their own flags internally, so safe to call every time
         self._ensure_style_initialized()

@@ -144,6 +144,18 @@ class MenuOption(ActionOption):
 
         # Special handling for menu objects
         if hasattr(self._action_handler, "contains_items") and hasattr(
+            self._action_handler, "show_as_popup"
+        ):
+            # Prefer showing via popup helper so positioning/flags are applied lazily
+            anchor = self.wrapped_widget if self.wrapped_widget else self._widget
+            position = getattr(self._action_handler, "position", "cursorPos")
+            self._action_handler.show_as_popup(
+                anchor_widget=anchor,
+                position=position,
+            )
+            return
+
+        if hasattr(self._action_handler, "contains_items") and hasattr(
             self._action_handler, "show"
         ):
             if not self.wrapped_widget or self.wrapped_widget.isVisible():

@@ -52,6 +52,10 @@ class _MenuDescriptor:
     """
 
     def __get__(self, instance: Any, owner: type):
+        import time
+
+        get_start = time.perf_counter()
+
         if instance is None:
             return self
 
@@ -61,6 +65,11 @@ class _MenuDescriptor:
         if inst_menu is not None:
             MenuCls = _get_menu_class()
             if MenuCls is not None and isinstance(inst_menu, MenuCls):
+                duration_ms = (time.perf_counter() - get_start) * 1000
+                if hasattr(instance, "logger"):
+                    instance.logger.debug(
+                        f"_MenuDescriptor.__get__: FAST PATH (cached) in {duration_ms:.3f}ms"
+                    )
                 return inst_menu
 
         # MEDIUM PATH: Check if OptionBox has an existing menu (without triggering creation)
@@ -75,6 +84,11 @@ class _MenuDescriptor:
                     if MenuCls is not None and isinstance(mgr._menu, MenuCls):
                         # Cache it for future fast-path access
                         instance.__dict__["_menu_instance"] = mgr._menu
+                        duration_ms = (time.perf_counter() - get_start) * 1000
+                        if hasattr(instance, "logger"):
+                            instance.logger.debug(
+                                f"_MenuDescriptor.__get__: MEDIUM PATH (from OptionBox) in {duration_ms:.3f}ms"
+                            )
                         return mgr._menu
             except Exception:
                 pass
@@ -83,6 +97,11 @@ class _MenuDescriptor:
         menu = self._create_menu(instance)
         if menu is not None:
             instance.__dict__["_menu_instance"] = menu
+        duration_ms = (time.perf_counter() - get_start) * 1000
+        if hasattr(instance, "logger"):
+            instance.logger.debug(
+                f"_MenuDescriptor.__get__: SLOW PATH (created new) in {duration_ms:.3f}ms"
+            )
         return menu
 
     def _create_menu(self, instance: Any):
