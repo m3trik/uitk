@@ -274,6 +274,7 @@ class OptionBoxManager(ptk.LoggingMixin):
                     "parent": self._widget,
                     "trigger_button": "none",  # OptionBox button handles triggering
                     "match_parent_width": False,  # Don't constrain width to prevent cropping
+                    "add_apply_button": True,  # Enable apply button for option box menus
                 }
                 default_kwargs.update(menu_kwargs)
 

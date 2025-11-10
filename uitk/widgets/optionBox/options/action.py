@@ -124,7 +124,10 @@ class MenuOption(ActionOption):
             tooltip: Tooltip text (default: "Show menu")
         """
         super().__init__(
-            wrapped_widget=wrapped_widget, callback=menu, icon=icon, tooltip=tooltip
+            wrapped_widget=wrapped_widget,
+            callback=self._show_menu,
+            icon=icon,
+            tooltip=tooltip,
         )
         self._menu = menu
 
@@ -135,38 +138,21 @@ class MenuOption(ActionOption):
             menu: Menu object to show
         """
         self._menu = menu
-        self.set_action_handler(menu)
 
-    def _handle_action(self):
-        """Handle the menu show action with special positioning."""
-        if not self._action_handler:
+    def set_wrapped_widget(self, widget):
+        """Update wrapped widget and reparent menu if needed."""
+        super().set_wrapped_widget(widget)
+        if self._menu and widget:
+            # Reparent menu to wrapped widget for proper anchoring
+            self._menu.setParent(widget)
+
+    def _show_menu(self):
+        """Show the menu at the button position."""
+        if not self._menu:
             return
 
-        # Special handling for menu objects
-        if hasattr(self._action_handler, "contains_items") and hasattr(
-            self._action_handler, "show_as_popup"
-        ):
-            # Prefer showing via popup helper so positioning/flags are applied lazily
-            anchor = self.wrapped_widget if self.wrapped_widget else self._widget
-            position = getattr(self._action_handler, "position", "cursorPos")
-            self._action_handler.show_as_popup(
-                anchor_widget=anchor,
-                position=position,
-            )
-            return
+        # Use wrapped widget as anchor if available, otherwise use button
+        anchor = self.wrapped_widget if self.wrapped_widget else self._widget
+        position = getattr(self._menu, "position", "bottom")
 
-        if hasattr(self._action_handler, "contains_items") and hasattr(
-            self._action_handler, "show"
-        ):
-            if not self.wrapped_widget or self.wrapped_widget.isVisible():
-                self._action_handler.show()
-            else:
-                orig = getattr(self._action_handler, "position", None)
-                if orig is not None:
-                    self._action_handler.position = "cursorPos"
-                self._action_handler.show()
-                if orig is not None:
-                    self._action_handler.position = orig
-        else:
-            # Fallback to standard action handling
-            super()._handle_action()
+        self._menu.show_as_popup(anchor_widget=anchor, position=position)

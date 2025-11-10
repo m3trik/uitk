@@ -3,7 +3,7 @@
 import inspect
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Union, Callable, Dict, Any
+from typing import Optional, Union, Callable, Dict, Any, Tuple
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from uitk.widgets.header import Header
@@ -377,35 +377,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         Args:
             parent: Parent widget (typically the wrapped widget)
             **overrides: Override any default parameters
-
-        Returns:
-            Menu: Configured dropdown menu instance
-
-        Example:
-            menu = Menu.create_dropdown_menu(widget, position='bottom')
-            menu.add("Option 1")
-            menu.add("Option 2")
         """
+
         config = MenuConfig.for_dropdown_menu(parent, **overrides)
-        return cls.from_config(config)
-
-    @classmethod
-    def create_popup_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides):
-        """Factory method: Create a popup menu with no auto-trigger.
-
-        Args:
-            parent: Parent widget
-            **overrides: Override any default parameters
-
-        Returns:
-            Menu: Configured popup menu instance
-
-        Example:
-            menu = Menu.create_popup_menu(widget)
-            menu.add("Item 1")
-            menu.show_as_popup(position='cursorPos')
-        """
-        config = MenuConfig.for_popup_menu(parent, **overrides)
         return cls.from_config(config)
 
     @classmethod
@@ -415,11 +389,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         This allows for more flexible configuration and better testability.
 
         Args:
-            config: MenuConfig instance
+            config: Menu configuration descriptor
 
         Returns:
             Menu: Configured menu instance
         """
+
         return cls(
             parent=config.parent,
             name=config.name,
@@ -501,120 +476,72 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 menu.add("QPushButton", setText="Button A")
                 menu.show()
         """
-        # Track initialization time (imports now at module level)
-        self._init_start_time = time.perf_counter()
-        _step_time = self._init_start_time
-
-        # PERFORMANCE: Defer parent assignment to avoid Qt parent-child overhead during init
-        # Store parent for later use but create QWidget without parent initially
-        self._deferred_parent = parent
-        self._parent_assigned = False
-        super().__init__()  # Create QWidget without parent - avoids parent-child tree congestion
-
-        # Disable debug logging to eliminate logging overhead
-        self.logger.setLevel(log_level)
-
-        def _log_step(step_name):
-            nonlocal _step_time
-            now = time.perf_counter()
-            duration_ms = (now - _step_time) * 1000
-            total_ms = (now - self._init_start_time) * 1000
-            self.logger.debug(
-                f"Menu.__init__ [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
-            )
-            _step_time = now
-
-        _log_step("super().__init__")
+        super().__init__(parent)
 
         if name is not None:
             if not isinstance(name, str):
                 raise TypeError(f"Expected 'name' to be a string, got {type(name)}")
             self.setObjectName(name)
-        _log_step("setObjectName")
 
-        # Set trigger button using ConvertMixin
+        self.logger.setLevel(log_level)
+
+        # Core event state
+        self._event_filters_installed = False
+        self._mouse_has_entered = False
+        self._current_anchor_widget = None
+        self._active_window_before_show = None
+        self._filter_target = None
+        self._pending_event_filter_install = False
+        self._parent_signal_source: Optional[Tuple[QtWidgets.QWidget, str]] = None
+        self._pending_trigger_hook = False
+
+        # Widget structure
+        self.layout: Optional[QtWidgets.QVBoxLayout] = None
+        self.gridLayout: Optional[QtWidgets.QGridLayout] = None
+        self.centralWidgetLayout: Optional[QtWidgets.QVBoxLayout] = None
+        self._central_widget: Optional[QtWidgets.QWidget] = None
+        self.style: Optional[StyleSheet] = None
+        self.header: Optional[Header] = None
+
+        # Helpers and caches
+        self._button_manager = ActionButtonManager(self)
+        self._leave_timer: Optional[QtCore.QTimer] = None
+        self._last_parent_geometry = None
+        self._cached_menu_position = None
+        self._popup_configured = False  # Track if popup setup has been done
+
+        # Data containers and flags
+        self.widget_data: Dict[QtWidgets.QWidget, Any] = {}
+        self.prevent_hide = False
+
+        # Configuration attributes
         self.trigger_button = trigger_button
-        _log_step("trigger_button")
-
         self.position = position
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
         self.add_header = add_header
         self.add_apply_button = add_apply_button
-        self.hide_on_leave = hide_on_leave
         self.match_parent_width = match_parent_width
-        self.kwargs = kwargs
-        self.widget_data = {}
-        self.prevent_hide = False
-        self._event_filters_installed = False  # Track filter state
-        self._mouse_has_entered = False  # Track if mouse has entered menu at least once
-        self._current_anchor_widget = None  # Temporary anchor widget for show_as_popup
-        _log_step("basic_attrs")
 
-        # Action button manager (replaces individual button state variables)
-        self._button_manager = ActionButtonManager(self)
-        _log_step("ActionButtonManager")
+        self._hide_on_leave = False
+        self.hide_on_leave = hide_on_leave
 
-        # Lazy initialization flags
-        self._ui_initialized = False
-        self._layout_created = False
-        self._style_initialized = False
-
-        # Initialize attributes as None - will be created lazily
-        self.layout = None
-        self.gridLayout = None
-        self.centralWidgetLayout = None
-        self._central_widget = None
-        self.style = None
-        self.header = None  # Created in init_layout() if add_header=True
-
-        # Auto-hide timer - create lazily
-        self._leave_timer: Optional[QtCore.QTimer] = None
-        # Note: Timer creation deferred to first show() if hide_on_leave is True
-
-        # Position caching for performance
-        self._last_parent_geometry = None
-        self._cached_menu_position = None
-
-        # NEW: Flag to track if popup window setup has been done
-        self._popup_setup_done = False
-        _log_step("lazy_init_flags")
-
-        # CRITICAL FIX: Defer _setup_as_popup() to first show
-        # Creating 11+ top-level windows during __init__ causes progressive Qt window manager slowdown
-        # Only configure window flags when menu is actually shown
-        # self._setup_as_popup()  # DEFERRED
-        _log_step("_setup_as_popup_deferred")
-
-        # CRITICAL FIX 2: Defer ALL style-related operations to first show
-        # setProperty() triggers Qt style system recalculation across ALL widgets
-        # With 11+ menus, each setProperty call checks all existing menus -> O(n²) slowdown
-        # Store properties to apply later
-        self._deferred_properties = {"class": "translucentBgWithBorder"}
-        self._deferred_size_policy = (
-            QtWidgets.QSizePolicy.Expanding,
-            QtWidgets.QSizePolicy.Expanding,
+        # Base styling
+        self.setProperty("class", "translucentBgWithBorder")
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
-        self._deferred_min_width = 147
-        self._deferred_kwargs = kwargs.copy() if kwargs else {}
+        self.setMinimumWidth(147)
+        if kwargs:
+            self.set_attributes(**kwargs)
 
-        # DON'T call setProperty, setSizePolicy, setMinimumWidth, or set_attributes here
-        # They will be applied in show() when actually needed
-        _log_step("widget_properties")
-        _log_step("set_attributes")
+        # Build UI immediately
+        self.init_layout()
+        self.style = StyleSheet(self, log_level="WARNING")
 
-        # PROOF THIS CODE IS RUNNING: Debug output (AFTER timing to avoid affecting measurements)
-        self.logger.debug(
-            "🔧 STYLE DEFERRAL FIX ACTIVE - Properties stored, not applied"
-        )
-
-        init_duration = (
-            time.perf_counter() - self._init_start_time
-        ) * 1000  # Convert to ms
-        self.logger.debug(
-            f"Menu.__init__: TOTAL initialization completed in {init_duration:.3f}ms (lazy mode - UI deferred)"
-        )
+        # Configure as popup window
+        self._setup_as_popup()
 
     def _should_trigger(self, button: QtCore.Qt.MouseButton) -> bool:
         """Check if the given button should trigger the menu.
@@ -676,6 +603,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.logger.warning(f"{e}. Defaulting to LeftButton.")
             self._trigger_button = QtCore.Qt.LeftButton
 
+        # Keep trigger event filters in sync with the trigger_button setting
+        if self._trigger_button is False:
+            self._uninstall_event_filters()
+        else:
+            # Install filters immediately if we already have content/parent
+            if self.contains_items and not (
+                self._event_filters_installed or self._parent_signal_source
+            ):
+                self._ensure_trigger_hook()
+
     @property
     def hide_on_leave(self) -> bool:
         """Get whether menu auto-hides when mouse leaves.
@@ -689,41 +626,29 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     def hide_on_leave(self, value: bool) -> None:
         """Set whether menu auto-hides when mouse leaves.
 
-        Timer creation is deferred until first show() for performance.
-        This setter only stores the configuration.
-
         Parameters:
             value: True to enable auto-hide on leave, False to disable
         """
         self._hide_on_leave = bool(value)
 
         if self._hide_on_leave:
-            # Just store the setting - timer will be created on first show
-            pass
+            if self._leave_timer is None:
+                self._setup_leave_timer()
         else:
-            # Disable: stop and clear timer if it exists
-            if hasattr(self, "_leave_timer") and self._leave_timer is not None:
+            if self._leave_timer is not None:
                 self._leave_timer.stop()
                 self._leave_timer.deleteLater()
                 self._leave_timer = None
 
-    def _ensure_ui_initialized(self):
-        """Ensure basic UI is initialized (called on first use)."""
-        if not self._ui_initialized:
-            self._ui_initialized = True
-            self.logger.debug("Menu._ensure_ui_initialized: Initializing UI components")
-
     def _ensure_layout_created(self):
         """Ensure layout is created (called when first item is added)."""
-        if not self._layout_created:
-            self._layout_created = True
+        if self.layout is None or self.gridLayout is None:
             self.init_layout()
             self.logger.debug("Menu._ensure_layout_created: Layout created")
 
     def _ensure_style_initialized(self):
         """Ensure stylesheet is initialized (called on first show)."""
-        if not self._style_initialized:
-            self._style_initialized = True
+        if self.style is None:
             self.style = StyleSheet(self, log_level="WARNING")
             self.logger.debug("Menu._ensure_style_initialized: StyleSheet created")
 
@@ -735,67 +660,186 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 "Menu._ensure_timer_created: Timer created for hide_on_leave"
             )
 
-    def _install_event_filters(self):
-        """Install event filters on the menu and its parent.
+    def _get_anchor_widget(self) -> Optional[QtWidgets.QWidget]:
+        """Get the effective anchor widget (parent or filter target)."""
+        return self.parent() or self._filter_target
 
-        This method is called when the first item is added to the menu.
-        It ensures we don't waste resources on empty menus.
-        """
+    def _get_parent_signal_slot(self, signal_name: str):
+        """Get the appropriate slot for a parent signal name."""
+        if signal_name in ("clicked", "pressed"):
+            return self._on_parent_triggered
+        return None
+
+    def _disconnect_parent_signal(self) -> None:
+        if not self._parent_signal_source:
+            return
+
+        parent, signal_name = self._parent_signal_source
+        slot = self._get_parent_signal_slot(signal_name)
+        if parent and slot:
+            try:
+                getattr(parent, signal_name).disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        self.logger.debug(
+            f"Menu._disconnect_parent_signal: Disconnected {signal_name} from {parent}"
+        )
+        self._parent_signal_source = None
+
+    def _connect_parent_signal(self, parent: QtWidgets.QWidget) -> bool:
+        """Attempt to hook into the parent's Qt signal for triggering."""
+        # Always disconnect any previous connection before wiring a new one
+        self._disconnect_parent_signal()
+
+        # Try to find a suitable signal
+        signal_name = None
+        if hasattr(parent, "clicked"):
+            signal_name = "clicked"
+        elif hasattr(parent, "pressed"):
+            signal_name = "pressed"
+        else:
+            return False
+
+        slot = self._on_parent_triggered
+        signal = getattr(parent, signal_name)
+
+        # Disconnect any existing connection and connect the slot
+        try:
+            signal.disconnect(slot)
+        except (TypeError, RuntimeError):
+            pass
+
+        try:
+            signal.connect(slot)
+        except (TypeError, RuntimeError):
+            return False
+
+        self._parent_signal_source = (parent, signal_name)
+        self.logger.debug(
+            f"Menu._connect_parent_signal: Connected {signal_name} signal on {parent}"
+        )
+        return True
+
+    def _remove_parent_event_filter(self) -> None:
         if self._event_filters_installed:
-            return  # Already installed
+            try:
+                self.removeEventFilter(self)
+            except Exception:
+                pass
 
-        self._ensure_parent_assigned()  # Assign parent if needed for event filter
-
-        self.installEventFilter(self)
-        if self.parent():
-            self.parent().installEventFilter(self)
-
-        self._event_filters_installed = True
-        self.logger.debug("Menu._install_event_filters: Event filters installed")
-
-    def _uninstall_event_filters(self):
-        """Uninstall event filters from the menu and its parent.
-
-        This method is called when the menu becomes empty.
-        It frees up resources by removing unnecessary event monitoring.
-        """
-        if not self._event_filters_installed:
-            return  # Already uninstalled
-
-        self.removeEventFilter(self)
-        if self.parent():
-            self.parent().removeEventFilter(self)
+        if self._filter_target:
+            try:
+                self._filter_target.removeEventFilter(self)
+            except Exception:
+                pass
+            self._filter_target = None
 
         self._event_filters_installed = False
-        self.logger.debug("Menu._uninstall_event_filters: Event filters uninstalled")
+        self._pending_event_filter_install = False
 
-    def _ensure_parent_assigned(self):
-        """Assign deferred parent if not already done.
+    def _ensure_trigger_hook(self) -> None:
+        """Ensure the menu connects to its trigger source (signal or event filter)."""
+        if self._trigger_button is False:
+            self._disconnect_parent_signal()
+            if self._event_filters_installed or self._filter_target:
+                self._remove_parent_event_filter()
+            self._pending_trigger_hook = False
+            self._pending_event_filter_install = False
+            return
 
-        This is called by methods that need the parent relationship
-        established before popup setup would normally occur.
-        """
-        if not self._parent_assigned and self._deferred_parent is not None:
-            self.setParent(self._deferred_parent)
-            self._parent_assigned = True
-            self.logger.debug(f"Menu._ensure_parent_assigned: Assigned deferred parent")
-
-    def _setup_as_popup(self):
-        """Configure this menu as a popup window."""
-        # PERFORMANCE: Assign deferred parent now (if any)
-        if not self._parent_assigned and self._deferred_parent is not None:
-            self.setParent(self._deferred_parent)
-            self._parent_assigned = True
+        parent = self._get_anchor_widget()
+        if parent is None:
+            self._pending_trigger_hook = True
+            self._pending_event_filter_install = True
             self.logger.debug(
-                f"Menu._setup_as_popup: Assigned deferred parent {self._deferred_parent}"
+                "Menu._ensure_trigger_hook: Parent unavailable, deferring"
+            )
+            return
+
+        # Prefer signal-based triggering for left-button clicks
+        if (
+            self._trigger_button == QtCore.Qt.LeftButton
+            and self._connect_parent_signal(parent)
+        ):
+            if self._event_filters_installed or self._filter_target:
+                self._remove_parent_event_filter()
+            self._pending_trigger_hook = False
+            self._pending_event_filter_install = False
+            return
+
+        # Fallback to event filters when signals aren't available or for non-left triggers
+        self._disconnect_parent_signal()
+
+        if not self._event_filters_installed:
+            self.installEventFilter(self)
+            parent.installEventFilter(self)
+            self._filter_target = parent
+            self._event_filters_installed = True
+            self.logger.debug(
+                f"Menu._ensure_trigger_hook: Installed event filter on {parent}"
+            )
+        elif self._filter_target is not parent:
+            if self._filter_target:
+                try:
+                    self._filter_target.removeEventFilter(self)
+                except Exception:
+                    pass
+            parent.installEventFilter(self)
+            self._filter_target = parent
+            self.logger.debug(
+                f"Menu._ensure_trigger_hook: Updated event filter target to {parent}"
             )
 
+        self._pending_trigger_hook = False
+        self._pending_event_filter_install = False
+
+    def _uninstall_event_filters(self):
+        """Remove any trigger hooks (signals or event filters)."""
+        if not self._event_filters_installed and not self._parent_signal_source:
+            self._pending_event_filter_install = False
+            self._pending_trigger_hook = False
+            return
+
+        self._disconnect_parent_signal()
+        if self._event_filters_installed or self._filter_target:
+            self._remove_parent_event_filter()
+
+        self._pending_event_filter_install = False
+        self._pending_trigger_hook = False
+        self.logger.debug("Menu._uninstall_event_filters: Trigger hooks removed")
+
+    def _on_parent_triggered(self, checked: bool = False) -> None:  # type: ignore[override]
+        """Handle parent widget signal (clicked or pressed)."""
+        if self.is_pinned:
+            return
+        self.trigger_from_widget(self._get_anchor_widget(), button=QtCore.Qt.LeftButton)
+
+    # Alias for backward compatibility
+    _install_event_filters = _ensure_trigger_hook
+
+    def _setup_as_popup(self):
+        """Configure this menu as a popup window.
+
+        Only runs once to avoid repeated reparenting issues.
+        """
+        if self._popup_configured:
+            return
+
+        self._popup_configured = True
+
+        # Store current parent before changing window flags
+        parent_widget = self.parentWidget()
+
+        # Set window flags to make this a tool window
         self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
 
-        # If no parent was provided (including deferred), try to parent to active window
-        if self.parent() is None:
+        # Re-apply parent with the new window flags so Qt treats this as a tool window
+        if parent_widget is not None:
+            self.setParent(parent_widget, self.windowFlags())
+        else:
+            # If no parent, try to parent to the active window
             try:
                 app = QtWidgets.QApplication.instance()
                 if app:
@@ -825,28 +869,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             f"Menu.show_as_popup: anchor_widget={anchor_widget}, position={position}"
         )
 
-        # CRITICAL FIX: Lazy popup window setup on first show
-        # Deferring window flag setup prevents Qt window manager congestion during bulk menu creation
-        if not self._popup_setup_done:
-            # Apply deferred style properties NOW (when menu is actually needed)
-            # This avoids Qt style system O(n²) slowdown during bulk menu creation
-            if hasattr(self, "_deferred_properties"):
-                for prop_name, prop_value in self._deferred_properties.items():
-                    self.setProperty(prop_name, prop_value)
-
-            if hasattr(self, "_deferred_size_policy"):
-                self.setSizePolicy(*self._deferred_size_policy)
-
-            if hasattr(self, "_deferred_min_width"):
-                self.setMinimumWidth(self._deferred_min_width)
-
-            if hasattr(self, "_deferred_kwargs"):
-                self.set_attributes(**self._deferred_kwargs)
-
-            self._setup_as_popup()
-            self._popup_setup_done = True
-            self.logger.debug("Menu.show_as_popup: Lazy popup window setup completed")
-
         # Store anchor widget temporarily for _apply_position to use
         # This allows proper width matching even when parent is different
         self._current_anchor_widget = anchor_widget
@@ -865,15 +887,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if not (self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint):
             self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
 
+        # Ensure geometry matches current content before showing
+        self.adjustSize()
+
         # Show the menu
         self.show()
         self.raise_()
         self.activateWindow()
-
-        # Mark mouse as entered for hide_on_leave to work immediately
-        # This is set here because the menu was intentionally opened
-        if self.hide_on_leave:
-            self._mouse_has_entered = True
 
         # Clear anchor widget after show
         self._current_anchor_widget = None
@@ -1122,7 +1142,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     def contains_items(self) -> bool:
         """Check if the QMenu contains any items."""
         # Handle lazy initialization - gridLayout may not exist yet
-        if self.gridLayout is None or not self._layout_created:
+        if self.gridLayout is None:
             return False
         return bool(self.gridLayout.count())
 
@@ -1459,18 +1479,19 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.layout.invalidate()
             _log_step("resize_invalidate")
 
-            # OPTIMIZATION: Defer event filter installation to showEvent()
-            # This eliminates 37-180ms from add() operations
+            # Ensure trigger event filters are installed once the menu has content
+            # This allows trigger_button clicks to work before the first show()
+            if self._trigger_button is not False and not (
+                self._event_filters_installed or self._parent_signal_source
+            ):
+                self._ensure_trigger_hook()
+            _log_step("trigger_filters")
+
             # Setup apply button on first item add (if requested and has connections)
             if was_empty:
-                self.logger.debug(
-                    f"Menu.add: First item added (event filters deferred to show)"
-                )
-                if self.add_apply_button and not self._button_manager.get_button(
-                    "apply"
-                ):
-                    self._setup_apply_button()
-                # Update apply button visibility for first item
+                self.logger.debug("Menu.add: First item added")
+                # Don't create apply button here - defer to showEvent when connections exist
+                # Update apply button visibility for first item (if button already exists)
                 if self.add_apply_button:
                     self._update_apply_button_visibility()
             elif self.add_apply_button:
@@ -1590,35 +1611,67 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
     def showEvent(self, event) -> None:
         """Handle show event with positioning (optimized for performance)."""
-        # CRITICAL OPTIMIZATION: Lazy popup window setup on first show
-        # Deferring window flag setup prevents Qt window manager congestion during bulk menu creation
-        if not self._popup_setup_done:
-            self._setup_as_popup()
-            self._popup_setup_done = True
-            self.logger.debug("showEvent: Lazy popup window setup completed")
+        # Track which window was active before showing menu
+        # This allows us to restore focus only if our app was active
+        app = QtWidgets.QApplication.instance()
+        if app:
+            self._active_window_before_show = app.activeWindow()
+            self.logger.debug(
+                f"showEvent: Active window before show: {self._active_window_before_show}"
+            )
 
         # CRITICAL OPTIMIZATION: Install event filters on first show, not during add()
         # This eliminates 37-180ms from add() calls
-        if not self._event_filters_installed and self.contains_items:
-            self._install_event_filters()
+        if (
+            self.contains_items
+            and self._trigger_button is not False
+            and not (self._event_filters_installed or self._parent_signal_source)
+        ):
+            self._ensure_trigger_hook()
 
         # Lazy initialization: ensure style and timer are created on first show
         # These check their own flags internally, so safe to call every time
         self._ensure_style_initialized()
         self._ensure_timer_created()
 
-        # Reset mouse entered flag when menu is shown
-        self._mouse_has_entered = False
+        # Check if cursor is already inside menu when it appears
+        # This prevents immediate hide-on-leave when menu pops up under cursor
+        cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
+        if self.rect().contains(cursor_pos):
+            self._mouse_has_entered = True
+            self.logger.debug(
+                "showEvent: Cursor already inside menu, marking as entered"
+            )
+        else:
+            # Reset to False when cursor is outside - menu must wait for cursor to enter
+            self._mouse_has_entered = False
+            self.logger.debug("showEvent: Cursor outside menu, waiting for entry")
+
+        # Setup apply button on first show if requested and not already created
+        # Deferred to showEvent because parent's signal connections may not exist during add()
+        if self.add_apply_button and not self._button_manager.get_button("apply"):
+            self._setup_apply_button()
+            # Update visibility immediately (this shows the container)
+            self._update_apply_button_visibility()
+            # Force complete layout update
+            if self.layout:
+                self.layout.invalidate()
+                self.layout.activate()
+            # Use adjustSize to recalculate based on new content
+            self.adjustSize()
+            self.logger.debug(
+                f"showEvent: Apply button added, menu resized to {self.size()}"
+            )
+
+        # Update apply button visibility when menu is shown (for subsequent shows)
+        # Only if apply button feature is enabled and button already exists
+        elif self.add_apply_button:
+            self._update_apply_button_visibility()
 
         # Only auto-position if we have a position setting
         # _apply_position now caches calculations for performance
         if self.position:
             self._apply_position()
-
-        # Update apply button visibility when menu is shown
-        # Only if apply button feature is enabled
-        if self.add_apply_button:
-            self._update_apply_button_visibility()
 
         # Start leave timer if enabled
         # Timer is only created if hide_on_leave is True, so this is safe
@@ -1628,12 +1681,52 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         super().showEvent(event)
 
+    def hide(self, force: bool = False) -> bool:
+        """Hide the menu, respecting the pinned state.
+
+        Parameters:
+            force: If True, hide even if the menu is pinned
+
+        Returns:
+            bool: True if the menu was hidden, False if prevented by pinning
+        """
+        if self.is_pinned and not force:
+            self.logger.debug("hide: Menu is pinned, ignoring hide request")
+            return False
+
+        super().hide()
+        return True
+
     def hideEvent(self, event) -> None:
-        """Handle hide event."""
+        """Handle hide event.
+
+        Restores focus to parent widget to prevent application focus loss
+        when menu (Qt.Tool window) is hidden.
+        """
         # Stop leave timer when menu is hidden
         if self._leave_timer and self._leave_timer.isActive():
             self._leave_timer.stop()
             self.logger.debug("hideEvent: Leave timer stopped")
+
+        # CRITICAL FIX: Restore focus to prevent application focus loss
+        # Qt.Tool windows can cause focus loss when hidden
+        focus_target = None
+
+        # Prefer the window that was active before menu showed
+        if self._active_window_before_show:
+            app = QtWidgets.QApplication.instance()
+            if app and self._active_window_before_show in app.topLevelWidgets():
+                focus_target = self._active_window_before_show
+
+        # Fallback to parent window if still visible
+        if not focus_target and self.parent() and self.parent().isVisible():
+            focus_target = self.parent().window()
+
+        # Restore focus if we found a target
+        if focus_target:
+            focus_target.raise_()
+            focus_target.activateWindow()
+            self.logger.debug(f"hideEvent: Restored focus to {focus_target}")
 
         super().hideEvent(event)
 
@@ -1662,14 +1755,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     )
             return
 
-        # Parent-relative positioning - cache based on parent geometry
+        # Parent-relative positioning - cache based on parent global position
         if self.parent() and isinstance(self.position, str):
             anchor = getattr(self, "_current_anchor_widget", None) or self.parent()
 
-            # Create cache key from anchor geometry and position
+            # Create cache key from anchor's GLOBAL position and size
+            # Use mapToGlobal to get screen coordinates so cache invalidates when window moves
+            anchor_global_pos = anchor.mapToGlobal(QtCore.QPoint(0, 0))
             anchor_geo = (
-                anchor.geometry().x(),
-                anchor.geometry().y(),
+                anchor_global_pos.x(),
+                anchor_global_pos.y(),
                 anchor.width(),
                 anchor.height(),
                 self.position,
@@ -1702,19 +1797,34 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         This filter handles:
         - Parent widget clicks to toggle menu visibility
+        - Parent hide events to auto-hide menu
         - Item interactions to emit signals
         """
-        if event.type() == QtCore.QEvent.MouseButtonPress:
-            if widget is self.parent():
-                # Use centralized trigger logic
-                if self._should_trigger(event.button()):
-                    new_state = not self.isVisible()
+        event_type = event.type()
+        parent_widget = self._get_anchor_widget()
+
+        if event_type == QtCore.QEvent.MouseButtonPress and widget is parent_widget:
+            # Use centralized trigger logic
+            if self._should_trigger(event.button()):
+                new_state = not self.isVisible()
+                # Don't hide if pinned (but allow showing)
+                if not new_state and self.is_pinned:
+                    self.logger.debug(
+                        "eventFilter: Menu is pinned, ignoring hide request"
+                    )
+                else:
                     self.logger.debug(
                         f"eventFilter: Parent clicked, toggling menu visibility to {new_state}"
                     )
                     self.setVisible(new_state)
 
-        elif event.type() == QtCore.QEvent.MouseButtonRelease:
+        elif event_type == QtCore.QEvent.Hide and widget is parent_widget:
+            # Hide menu when parent is hidden (unless pinned)
+            if self.isVisible() and not self.is_pinned:
+                self.logger.debug("eventFilter: Parent hidden, hiding menu")
+                self.hide()
+
+        elif event_type == QtCore.QEvent.MouseButtonRelease:
             if widget in self.get_items():
                 self.logger.debug(
                     f"eventFilter: Item interacted: {widget.objectName() or type(widget).__name__}"

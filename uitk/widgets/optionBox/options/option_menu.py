@@ -14,25 +14,15 @@ import pythontk as ptk
 class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
     """A dropdown menu option that displays a list of choices.
 
-    This option creates a button that, when clicked, shows a dropdown
-    menu with customizable items. Uses the custom Menu class to leverage
-    all existing functionality including hide_on_leave behavior.
+    This is a thin wrapper around the Menu class. Simply creates a button
+    that shows a dropdown menu when clicked. All menu configuration and
+    item management is delegated to the Menu instance.
 
     Example:
-        def handler1():
-            print("Option 1 selected")
+        option = OptionMenuOption()
+        option.menu.add("Option 1", lambda: print("Option 1"))
+        option.menu.add("Option 2", lambda: print("Option 2"))
 
-        def handler2():
-            print("Option 2 selected")
-
-        menu_items = [
-            ("Option 1", handler1),
-            ("Option 2", handler2),
-            ("separator", None),
-            ("Option 3", lambda: print("Option 3"))
-        ]
-
-        option = OptionMenuOption(menu_items=menu_items)
         option_box = OptionBox(options=[option])
         option_box.wrap(my_widget)
     """
@@ -43,31 +33,17 @@ class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
         menu_items=None,
         icon="menu",
         tooltip="Show options",
-        hide_on_leave=True,
-        position="bottom",
-        match_parent_width=False,
-        min_item_height=None,
-        max_item_height=None,
-        fixed_item_height=None,
-        add_header=True,
-        add_apply_button=True,
+        **menu_config,
     ):
         """Initialize the option menu.
 
         Args:
             wrapped_widget: The widget this option is attached to
-            menu_items: List of (label, callback) tuples or "separator"
+            menu_items: List of (label, callback) tuples or "separator" (optional)
             icon: Icon name for the button (default: "menu")
             tooltip: Tooltip text (default: "Show options")
-            hide_on_leave: Whether menu auto-hides when mouse leaves (default: True)
-            position: Menu position relative to button (default: "bottom")
-            match_parent_width: Whether menu matches parent width (default: False).
-                Set to True if you want dropdown-style menus that match widget width.
-            min_item_height: Minimum item height in pixels (default: None)
-            max_item_height: Maximum item height in pixels (default: None)
-            fixed_item_height: Fixed item height in pixels (default: None)
-            add_header: Whether to add a draggable header (default: True)
-            add_apply_button: Whether to add an apply button (default: True)
+            **menu_config: Any Menu configuration (position, hide_on_leave, etc.)
+                Default config for dropdown menus is applied via Menu.create_dropdown_menu()
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -76,17 +52,22 @@ class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
             callback=self._show_menu,
         )
         self._menu_items = menu_items or []
-        self._menu = None
+        self._menu_config = menu_config
 
-        # Store default values for menu attributes (used before menu is created)
-        self._hide_on_leave_default = hide_on_leave
-        self._position_default = position
-        self._match_parent_width_default = match_parent_width
-        self._min_item_height_default = min_item_height
-        self._max_item_height_default = max_item_height
-        self._fixed_item_height_default = fixed_item_height
-        self._add_header_default = add_header
-        self._add_apply_button_default = add_apply_button
+        # Create menu immediately instead of deferring
+        from uitk.widgets.menu import Menu
+
+        menu_parent = wrapped_widget if wrapped_widget else None
+        self._menu = Menu.create_dropdown_menu(parent=menu_parent, **menu_config)
+
+        # Add initial menu items if provided
+        for item in menu_items or []:
+            if isinstance(item, str) and item.lower() == "separator":
+                # Menu doesn't have addSeparator - skip for now
+                pass
+            elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                label, callback = item[0], item[1]
+                self._menu.add(label, callback)
 
     def create_widget(self):
         """Create the menu button widget."""
@@ -99,221 +80,31 @@ class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
         return button
 
     def setup_widget(self):
-        """Setup the widget after creation.
-
-        Note: We don't create the menu here because wrapped_widget may not be
-        set yet. Menu creation is deferred to first show.
-        """
+        """Setup the widget after creation."""
         super().setup_widget()
 
-    def _create_menu(self):
-        """Create the custom Menu with items.
-
-        This is called lazily on first show to ensure wrapped_widget is available.
-        """
-        from uitk.widgets.menu import Menu
-
-        # Use wrapped_widget as parent if available (the actual LineEdit/etc),
-        # otherwise fall back to the option button widget.
-        # This is important for match_parent_width to work correctly - we want
-        # the menu to match the width of the wrapped widget, not the tiny option button.
-        menu_parent = self.wrapped_widget if self.wrapped_widget else self._widget
-
-        # Use factory method for dropdown menus with stored defaults
-        self._menu = Menu.create_dropdown_menu(
-            parent=menu_parent,
-            position=self._position_default,
-            min_item_height=self._min_item_height_default,
-            max_item_height=self._max_item_height_default,
-            fixed_item_height=self._fixed_item_height_default,
-            add_header=self._add_header_default,
-            add_apply_button=self._add_apply_button_default,
-            hide_on_leave=self._hide_on_leave_default,
-            match_parent_width=self._match_parent_width_default,
-        )
-
-        # Add menu items
-        for item in self._menu_items:
-            if isinstance(item, str) and item.lower() == "separator":
-                self._menu.addSeparator()
-            elif isinstance(item, (tuple, list)) and len(item) >= 2:
-                label, callback = item[0], item[1]
-                self._menu.add(label, callback)
-            else:
-                print(f"Warning: Invalid menu item format: {item}")
+    def set_wrapped_widget(self, widget):
+        """Update wrapped widget and reparent menu if needed."""
+        super().set_wrapped_widget(widget)
+        if self._menu and widget:
+            # Reparent menu to wrapped widget for proper anchoring
+            self._menu.setParent(widget)
 
     def _show_menu(self):
         """Show the menu at the button position."""
-        # Create menu lazily on first show - this ensures wrapped_widget is set
-        if not self._menu:
-            self._create_menu()
-
         if self._menu and self._widget:
-            # Use wrapped_widget as anchor if available (for proper width matching),
-            # otherwise use the button widget. This ensures match_parent_width
-            # matches the actual widget being wrapped, not the tiny option button.
+            # Use wrapped_widget as anchor if available (for proper width matching)
             anchor = self.wrapped_widget if self.wrapped_widget else self._widget
             self._menu.show_as_popup(anchor_widget=anchor, position=self._menu.position)
-
-    def add_menu_item(self, label, callback=None):
-        """Add a new item to the menu.
-
-        Args:
-            label: The text label for the menu item
-            callback: Function to call when item is clicked
-        """
-        self._menu_items.append((label, callback))
-        # Update menu if it's already been created
-        if self._menu:
-            self._menu.add(label, callback)
-
-    def add_separator(self):
-        """Add a separator to the menu."""
-        self._menu_items.append("separator")
-        # Update menu if it's already been created
-        if self._menu:
-            self._menu.addSeparator()
-
-    def clear_menu(self):
-        """Clear all menu items."""
-        self._menu_items.clear()
-        # Update menu if it's already been created
-        if self._menu:
-            self._menu.clear()
-
-    # Menu attribute pass-through properties
-    @property
-    def hide_on_leave(self):
-        """Get whether menu auto-hides when mouse leaves.
-
-        Returns:
-            bool: True if menu auto-hides on leave, False otherwise
-        """
-        if self._menu:
-            return self._menu.hide_on_leave
-        return self._hide_on_leave_default
-
-    @hide_on_leave.setter
-    def hide_on_leave(self, value):
-        """Set whether menu auto-hides when mouse leaves.
-
-        This can be set at any time - before or after menu creation.
-
-        Args:
-            value: True to enable auto-hide on leave, False to disable
-        """
-        self._hide_on_leave_default = bool(value)
-        if self._menu:
-            self._menu.hide_on_leave = bool(value)
-
-    @property
-    def position(self):
-        """Get the menu position relative to the button.
-
-        Returns:
-            str: Position string ("bottom", "top", "left", "right", "cursorPos")
-        """
-        if self._menu:
-            return self._menu.position
-        return self._position_default
-
-    # Simplified property delegation - other menu properties can be accessed directly
-    # via the menu property or by setting attributes before menu creation
-    def __getattr__(self, name):
-        """Delegate unknown attributes to the underlying menu if it exists.
-
-        This allows direct access to menu properties without explicit pass-through.
-        For example: option.position = 'bottom' works even if menu exists.
-        """
-        # Only delegate to menu if it exists, otherwise raise AttributeError
-        # to allow normal Python attribute behavior (setting new attributes)
-        if name.startswith("_"):
-            # Don't intercept private attributes
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
-            )
-
-        if self._menu is not None and hasattr(self._menu, name):
-            return getattr(self._menu, name)
-
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
-
-    def __setattr__(self, name, value):
-        """Set attributes, forwarding menu properties to underlying menu if it exists."""
-        # These are our own attributes - set them directly
-        if name in (
-            "_menu",
-            "_menu_items",
-            "_widget",
-            "wrapped_widget",
-            "icon",
-            "tooltip",
-            "callback",
-            "_hide_on_leave_default",
-            "_position_default",
-            "_match_parent_width_default",
-            "_min_item_height_default",
-            "_max_item_height_default",
-            "_fixed_item_height_default",
-            "_add_header_default",
-            "_add_apply_button_default",
-        ):
-            object.__setattr__(self, name, value)
-            return
-
-        # Forward menu properties to the actual menu if it exists
-        menu_properties = {
-            "position",
-            "match_parent_width",
-            "min_item_height",
-            "max_item_height",
-            "fixed_item_height",
-            "add_header",
-            "add_apply_button",
-        }
-
-        if name in menu_properties:
-            # Update default for pre-creation configuration
-            default_name = f"_{name}_default"
-            if hasattr(self, default_name):
-                object.__setattr__(self, default_name, value)
-
-            # Forward to menu if it exists
-            if hasattr(self, "_menu") and self._menu is not None:
-                setattr(self._menu, name, value)
-            return
-
-        # For everything else, use normal attribute setting
-        object.__setattr__(self, name, value)
 
     @property
     def menu(self):
         """Get the underlying Menu instance.
 
         Returns:
-            Menu: The Menu widget, or None if not yet created
+            Menu: The Menu widget
         """
         return self._menu
-
-    def set_menu_items(self, menu_items):
-        """Replace all menu items.
-
-        Args:
-            menu_items: List of (label, callback) tuples or "separator"
-        """
-        self._menu_items = menu_items or []
-        # If menu already exists, clear it and repopulate
-        # Otherwise items will be added when menu is created on first show
-        if self._menu:
-            self._menu.clear()
-            for item in self._menu_items:
-                if isinstance(item, str) and item.lower() == "separator":
-                    self._menu.addSeparator()
-                elif isinstance(item, (tuple, list)) and len(item) >= 2:
-                    label, callback = item[0], item[1]
-                    self._menu.add(label, callback)
 
 
 class ContextMenuOption(OptionMenuOption):
@@ -343,14 +134,7 @@ class ContextMenuOption(OptionMenuOption):
         menu_provider=None,
         icon="menu",
         tooltip="Context menu",
-        hide_on_leave=True,
-        position="bottom",
-        match_parent_width=False,
-        min_item_height=None,
-        max_item_height=None,
-        fixed_item_height=None,
-        add_header=True,
-        add_apply_button=True,
+        **menu_config,
     ):
         """Initialize the context menu option.
 
@@ -359,29 +143,15 @@ class ContextMenuOption(OptionMenuOption):
             menu_provider: Function that returns menu_items list based on widget state
             icon: Icon name for the button
             tooltip: Tooltip text
-            hide_on_leave: Whether menu auto-hides when mouse leaves (default: True)
-            position: Menu position relative to button (default: "bottom")
-            match_parent_width: Whether menu matches parent width (default: False).
-                Set to True if you want dropdown-style menus that match widget width.
-            min_item_height: Minimum item height in pixels (default: None)
-            max_item_height: Maximum item height in pixels (default: None)
-            fixed_item_height: Fixed item height in pixels (default: None)
-            add_header: Whether to add a draggable header (default: True)
-            add_apply_button: Whether to add an apply button (default: True)
+            **menu_config: Any Menu configuration (position, hide_on_leave, etc.)
         """
+        # Don't pass menu_items to parent - we'll populate dynamically
         super().__init__(
             wrapped_widget=wrapped_widget,
-            menu_items=[],
+            menu_items=None,
             icon=icon,
             tooltip=tooltip,
-            hide_on_leave=hide_on_leave,
-            position=position,
-            match_parent_width=match_parent_width,
-            min_item_height=min_item_height,
-            max_item_height=max_item_height,
-            fixed_item_height=fixed_item_height,
-            add_header=add_header,
-            add_apply_button=add_apply_button,
+            **menu_config,
         )
         self._menu_provider = menu_provider
 
@@ -390,15 +160,20 @@ class ContextMenuOption(OptionMenuOption):
         if self._menu_provider and self.wrapped_widget:
             # Get dynamic menu items
             menu_items = self._menu_provider(self.wrapped_widget)
-            self.set_menu_items(menu_items)
+
+            # Clear menu
+            self._menu.clear()
+
+            # Add dynamic items
+            for item in menu_items:
+                if isinstance(item, str) and item.lower() == "separator":
+                    # Menu doesn't have addSeparator - skip for now
+                    pass
+                elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                    label, callback = item[0], item[1]
+                    self._menu.add(label, callback)
 
         # Show the menu
-        super()._show_menu()
-
-    def set_menu_provider(self, provider):
-        """Set the menu provider function.
-
-        Args:
-            provider: Function that takes wrapped_widget and returns menu_items list
-        """
-        self._menu_provider = provider
+        if self._menu and self._widget:
+            anchor = self.wrapped_widget if self.wrapped_widget else self._widget
+            self._menu.show_as_popup(anchor_widget=anchor, position=self._menu.position)

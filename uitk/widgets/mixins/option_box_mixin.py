@@ -261,14 +261,3 @@ class _MenuAliasProxy:
 
     def __repr__(self) -> str:
         return f"<MenuAliasProxy target={self._menu!r}>"
-
-    def __getattr__(self, item):
-        menu = self._menu
-        if menu is None:
-            raise AttributeError(
-                f"Menu is not available yet; missing attribute: {item}"
-            )
-        return getattr(menu, item)
-
-    def __repr__(self) -> str:
-        return f"<MenuAliasProxy target={self._menu!r}>"
