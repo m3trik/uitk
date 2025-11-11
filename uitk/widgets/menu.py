@@ -423,7 +423,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         add_apply_button: bool = False,
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
-        log_level: Optional[Union[int, str]] = "WARNING",
+        log_level: Optional[Union[int, str]] = "DEBUG",
         **kwargs,
     ):
         """Initializes a custom qwidget instance that acts as a popup menu.
@@ -513,6 +513,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Data containers and flags
         self.widget_data: Dict[QtWidgets.QWidget, Any] = {}
         self.prevent_hide = False
+        self._persistent_mode = False
+        self._persistent_state: Dict[str, Any] = {}
+        self._persistent_hide_button: Optional[QtWidgets.QPushButton] = None
 
         # Configuration attributes
         self.trigger_button = trigger_button
@@ -639,6 +642,129 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self._leave_timer.stop()
                 self._leave_timer.deleteLater()
                 self._leave_timer = None
+
+    # ------------------------------------------------------------------
+    # Persistent mode (keep menu visible even when parent hides)
+    # ------------------------------------------------------------------
+
+    def enable_persistent_mode(self, hide_button_tooltip: str = "Hide menu") -> None:
+        """Keep the menu visible until the user explicitly hides it.
+
+        This temporarily disables all automatic hide behaviour and injects a
+        dedicated Hide button into the header. Call :meth:`disable_persistent_mode`
+        to restore the original behaviour.
+
+        Args:
+            hide_button_tooltip: Tooltip shown on the injected Hide button.
+        """
+        if self._persistent_mode:
+            return
+
+        self.logger.debug("Menu.enable_persistent_mode: Activating persistent mode")
+
+        # Snapshot state so we can restore it later
+        self._persistent_state = {
+            "prevent_hide": self.prevent_hide,
+            "hide_on_leave": self.hide_on_leave,
+            "had_header": bool(self.header),
+        }
+
+        self._persistent_mode = True
+
+        # Block auto-hiding behaviour while in persistent mode
+        self.prevent_hide = True
+        self.hide_on_leave = False
+
+        # Ensure the menu has a header to host the hide button
+        self._ensure_layout_created()
+        if not self.header:
+            self.header = Header(config_buttons=["pin_button"])
+            if self.centralWidgetLayout:
+                self.centralWidgetLayout.insertWidget(0, self.header)
+
+        self._install_persistent_hide_button(hide_button_tooltip)
+
+    def disable_persistent_mode(self) -> None:
+        """Restore default hide behaviour after persistent mode."""
+        if not self._persistent_mode:
+            return
+
+        self.logger.debug("Menu.disable_persistent_mode: Restoring default behaviour")
+
+        original = getattr(self, "_persistent_state", {}) or {}
+
+        # Restore behaviour flags before removing the hide guard
+        self.prevent_hide = original.get("prevent_hide", False)
+        self.hide_on_leave = original.get("hide_on_leave", False)
+
+        self._remove_persistent_hide_button()
+
+        # Remove temporary header if we created one
+        if not original.get("had_header", True) and self.header:
+            if self.centralWidgetLayout:
+                self.centralWidgetLayout.removeWidget(self.header)
+            self.header.deleteLater()
+            self.header = None
+
+        self._persistent_mode = False
+        self._persistent_state = {}
+
+    @property
+    def is_persistent_mode(self) -> bool:
+        """Return True when persistent mode is active."""
+        return self._persistent_mode
+
+    def _install_persistent_hide_button(self, tooltip: str) -> None:
+        """Ensure a dedicated hide button exists in persistent mode."""
+        if not self.header:
+            self.logger.warning(
+                "Menu._install_persistent_hide_button: Cannot install without a header"
+            )
+            return
+
+        # Remove any previous custom hide button before creating a new one
+        self._remove_persistent_hide_button()
+
+        hide_button = self.header.create_button(
+            "hide.svg",
+            self._on_persistent_hide_clicked,
+            button_type="persistent_hide_button",
+        )
+        hide_button.setObjectName("persistentHideButton")
+        hide_button.setToolTip(tooltip)
+        hide_button.setProperty("class", "PersistentHideButton")
+        hide_button.setAutoDefault(False)
+        hide_button.setDefault(False)
+
+        self.header.container_layout.addWidget(hide_button)
+        self.header.buttons["persistent_hide_button"] = hide_button
+        self.header.container_layout.invalidate()
+        self.header.trigger_resize_event()
+
+        self._persistent_hide_button = hide_button
+
+    def _remove_persistent_hide_button(self) -> None:
+        """Remove the injected persistent hide button, if any."""
+        button = self._persistent_hide_button
+        if not button:
+            return
+
+        if self.header:
+            try:
+                self.header.container_layout.removeWidget(button)
+            except Exception:
+                pass
+            self.header.buttons.pop("persistent_hide_button", None)
+
+        button.hide()
+        button.deleteLater()
+        self._persistent_hide_button = None
+
+    def _on_persistent_hide_clicked(self) -> None:
+        """Handle clicks on the injected Hide button."""
+        # Restore default behaviour, then hide immediately
+        self.disable_persistent_mode()
+        self.hide(force=True)
 
     def _ensure_layout_created(self):
         """Ensure layout is created (called when first item is added)."""
@@ -898,8 +1024,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Clear anchor widget after show
         self._current_anchor_widget = None
 
-        self.logger.debug("Menu.show_as_popup: Menu shown successfully")
-
     def setCentralWidget(self, widget, overwrite=False):
         if not overwrite and getattr(self, "_central_widget", None) is widget:
             return  # skip if same
@@ -918,22 +1042,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
     def init_layout(self):
         """Initialize the menu layout. Called lazily on first item add."""
-        layout_start = time.perf_counter()
-        _step_time = layout_start
-
-        def _log_step(step_name):
-            nonlocal _step_time
-            now = time.perf_counter()
-            duration_ms = (now - _step_time) * 1000
-            total_ms = (now - layout_start) * 1000
-            self.logger.debug(
-                f"Menu.init_layout [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
-            )
-            _step_time = now
-
         # Guard against double initialization
         if self.layout is not None:
-            self.logger.debug("Menu.init_layout: Already initialized, skipping")
             return
 
         # CRITICAL OPTIMIZATION: Disable updates AND layout calculation
@@ -951,13 +1061,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # Disable layout activation during setup
             self.layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
             self.setLayout(self.layout)
-            _log_step("QVBoxLayout_created")
 
             # Create a central widget WITHOUT parent first to avoid tree overhead
             # Parent will be assigned when added to layout
             central_widget = QtWidgets.QWidget()
             self.setCentralWidget(central_widget)
-            _log_step("setCentralWidget")
 
             # Create a QVBoxLayout inside the central widget
             self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
@@ -966,30 +1074,22 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.centralWidgetLayout.setSizeConstraint(
                 QtWidgets.QLayout.SetNoConstraint
             )
-            _log_step("centralWidgetLayout")
 
             # Create a form layout inside the QVBoxLayout
             self.gridLayout = QtWidgets.QGridLayout()
             self.gridLayout.setContentsMargins(0, 0, 0, 0)
             self.gridLayout.setSpacing(1)
             self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
-            _log_step("gridLayout")
 
             if self.add_header:
                 # Create Header instance WITHOUT explicit parent to avoid tree overhead
                 # Parent will be assigned when added to layout
                 self.header = Header(config_buttons=["pin_button"])
                 self.centralWidgetLayout.addWidget(self.header)
-                _log_step("Header_created")
 
             # Add grid layout to the central widget layout
             self.centralWidgetLayout.addLayout(self.gridLayout)
-            _log_step("addLayout")
 
-            total_duration = (time.perf_counter() - layout_start) * 1000
-            self.logger.debug(
-                f"Menu.init_layout: TOTAL layout initialization in {total_duration:.3f}ms"
-            )
         finally:
             # Restore signal blocking state
             self.blockSignals(was_blocked)
@@ -1007,7 +1107,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._leave_timer = QtCore.QTimer(self)
         self._leave_timer.setInterval(100)  # Check every 100ms
         self._leave_timer.timeout.connect(self._check_cursor_position)
-        self.logger.debug("_setup_leave_timer: Leave timer created")
 
     def _check_cursor_position(self):
         """Check if cursor is outside menu bounds and hide if so.
@@ -1359,23 +1458,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         Returns:
             widget/list: The added widget or list of added widgets.
         """
-        add_start = time.perf_counter()
-        _step_time = add_start
-
-        def _log_step(step_name):
-            nonlocal _step_time
-            now = time.perf_counter()
-            duration_ms = (now - _step_time) * 1000
-            total_ms = (now - add_start) * 1000
-            self.logger.debug(
-                f"Menu.add [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
-            )
-            _step_time = now
-
-        self.logger.debug(
-            f"Menu.add: Adding item type={type(x).__name__}, row={row}, col={col}, kwargs={list(kwargs.keys())}"
-        )
-
         # CRITICAL OPTIMIZATION: Disable updates AND layout recalculation during add
         # This prevents Qt from recalculating layout/geometry on every operation
         updates_were_enabled = self.updatesEnabled()
@@ -1393,7 +1475,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         try:
             # Lazy initialization: create layout on first item add
             self._ensure_layout_created()
-            _log_step("ensure_layout")
 
             if isinstance(x, dict):
                 return [self.add(key, data=val, **kwargs) for key, val in x.items()]
@@ -1412,8 +1493,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     x, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan
                 )
 
-            _log_step("type_check")
-
             if isinstance(x, str):
                 # OPTIMIZATION: Create widgets WITHOUT parent to avoid Qt tree overhead
                 # Parent will be assigned implicitly when added to gridLayout
@@ -1426,13 +1505,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     except (AttributeError, TypeError):
                         widget = QtWidgets.QLabel()
                         widget.setText(x)
-                _log_step("widget_creation_str")
 
             elif isinstance(x, QtWidgets.QWidget) or (
                 inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
             ):
                 widget = x() if callable(x) else x
-                _log_step("widget_creation_class")
 
             else:
                 raise TypeError(
@@ -1441,7 +1518,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
             widget.item_text = lambda i=widget: self.get_item_text(i)
             widget.item_data = lambda i=widget: self.get_item_data(i)
-            _log_step("widget_setup")
 
             if row is None:
                 row = 0
@@ -1450,7 +1526,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
             if colSpan is None:
                 colSpan = self.gridLayout.columnCount() or 1
-            _log_step("position_calc")
 
             # Install event filters when adding the first item
             was_empty = not self.contains_items
@@ -1458,7 +1533,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
             self.on_item_added.emit(widget)
             self.set_item_data(widget, data)
-            _log_step("addWidget")
 
             if self.min_item_height is not None:
                 widget.setMinimumHeight(self.min_item_height)
@@ -1466,18 +1540,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 widget.setMaximumHeight(self.max_item_height)
             if self.fixed_item_height is not None:
                 widget.setFixedHeight(self.fixed_item_height)
-            _log_step("height_constraints")
 
             self.set_attributes(widget, **kwargs)
             widget.installEventFilter(self)
             setattr(self, widget.objectName(), widget)
-            _log_step("attributes_filter")
 
             # Only resize if menu is visible (prevents flash during lazy initialization)
             if self.isVisible():
                 self.resize(self.sizeHint())
             self.layout.invalidate()
-            _log_step("resize_invalidate")
 
             # Ensure trigger event filters are installed once the menu has content
             # This allows trigger_button clicks to work before the first show()
@@ -1485,11 +1556,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self._event_filters_installed or self._parent_signal_source
             ):
                 self._ensure_trigger_hook()
-            _log_step("trigger_filters")
 
             # Setup apply button on first item add (if requested and has connections)
             if was_empty:
-                self.logger.debug("Menu.add: First item added")
                 # Don't create apply button here - defer to showEvent when connections exist
                 # Update apply button visibility for first item (if button already exists)
                 if self.add_apply_button:
@@ -1498,12 +1567,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 # Only update visibility if apply button exists and is enabled
                 # This avoids redundant checks when add_apply_button=False
                 self._update_apply_button_visibility()
-            _log_step("apply_button_setup")
 
-            total_duration = (time.perf_counter() - add_start) * 1000
-            self.logger.debug(
-                f"Menu.add: TOTAL added widget={widget.objectName() or type(widget).__name__}, total_items={self.gridLayout.count()} in {total_duration:.3f}ms"
-            )
             return widget
 
         finally:
@@ -1674,10 +1738,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self._apply_position()
 
         # Start leave timer if enabled
-        # Timer is only created if hide_on_leave is True, so this is safe
+        # Add grace period before first check to prevent immediate hide when menu
+        # appears at cursor position but cursor hasn't entered menu bounds yet
         if self._leave_timer:
-            self._leave_timer.start()
-            self.logger.debug("showEvent: Leave timer started")
+            # Reset the "has entered" flag - menu must wait for cursor to enter
+            self._mouse_has_entered = False
+            # Delay timer start by 200ms to give user time to move cursor into menu
+            QtCore.QTimer.singleShot(
+                200, lambda: self._leave_timer.start() if self._leave_timer else None
+            )
 
         super().showEvent(event)
 
@@ -1729,6 +1798,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.logger.debug(f"hideEvent: Restored focus to {focus_target}")
 
         super().hideEvent(event)
+
+        if self._persistent_mode:
+            self.disable_persistent_mode()
 
     def _apply_position(self):
         """Apply the configured position setting with caching for performance."""
@@ -1821,7 +1893,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         elif event_type == QtCore.QEvent.Hide and widget is parent_widget:
             # Hide menu when parent is hidden (unless pinned)
             if self.isVisible() and not self.is_pinned:
-                self.logger.debug("eventFilter: Parent hidden, hiding menu")
                 self.hide()
 
         elif event_type == QtCore.QEvent.MouseButtonRelease:
