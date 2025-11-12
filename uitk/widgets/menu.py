@@ -290,11 +290,28 @@ class MenuPositioner:
         if not anchor_widget:
             return
 
+        # Get anchor width
         anchor_width = anchor_widget.width()
-        if menu.width() != anchor_width:
-            menu.setFixedWidth(anchor_width)
+
+        # The issue is that when we use setFixedWidth, Qt includes the border in the total width,
+        # but the content area needs to fit within that. Since the menu has a 1px border on each side,
+        # the actual content width is (total_width - 2px).
+        # To match the anchor width AND show the full content, we need to ensure the menu's
+        # total width accounts for both the content and the border.
+
+        # Get the menu's content width (what it wants to be)
+        content_width = menu.sizeHint().width()
+
+        # Use whichever is larger: anchor width or content width
+        # This ensures we don't clip content when it's wider than the anchor
+        target_width = max(anchor_width, content_width)
+
+        if menu.width() != target_width:
+            menu.setFixedWidth(target_width)
             if logger:
-                logger.debug(f"MenuPositioner: Matched anchor width: {anchor_width}px")
+                logger.debug(
+                    f"MenuPositioner: Set width to {target_width}px (anchor={anchor_width}px, content={content_width}px)"
+                )
 
     @staticmethod
     def position_and_match_width(
@@ -347,69 +364,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
 
-    @classmethod
-    def create_context_menu(
-        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
-    ):
-        """Factory method: Create a standalone context menu with sensible defaults.
-
-        Args:
-            parent: Parent widget
-            **overrides: Override any default parameters
-
-        Returns:
-            Menu: Configured context menu instance
-
-        Example:
-            menu = Menu.create_context_menu(widget)
-            menu.add("Copy")
-            menu.add("Paste")
-        """
-        config = MenuConfig.for_context_menu(parent, **overrides)
-        return cls.from_config(config)
-
-    @classmethod
-    def create_dropdown_menu(
-        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
-    ):
-        """Factory method: Create a dropdown menu for option boxes.
-
-        Args:
-            parent: Parent widget (typically the wrapped widget)
-            **overrides: Override any default parameters
-        """
-
-        config = MenuConfig.for_dropdown_menu(parent, **overrides)
-        return cls.from_config(config)
-
-    @classmethod
-    def from_config(cls, config: MenuConfig):
-        """Create a Menu from a MenuConfig object.
-
-        This allows for more flexible configuration and better testability.
-
-        Args:
-            config: Menu configuration descriptor
-
-        Returns:
-            Menu: Configured menu instance
-        """
-
-        return cls(
-            parent=config.parent,
-            name=config.name,
-            trigger_button=config.trigger_button,
-            position=config.position,
-            min_item_height=config.min_item_height,
-            max_item_height=config.max_item_height,
-            fixed_item_height=config.fixed_item_height,
-            add_header=config.add_header,
-            add_apply_button=config.add_apply_button,
-            hide_on_leave=config.hide_on_leave,
-            match_parent_width=config.match_parent_width,
-            **config.extra_attrs,
-        )
-
     def __init__(
         self,
         parent: Optional[QtWidgets.QWidget] = None,
@@ -423,7 +377,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         add_apply_button: bool = False,
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
-        log_level: Optional[Union[int, str]] = "DEBUG",
+        log_level: Optional[Union[int, str]] = "WARNING",
         **kwargs,
     ):
         """Initializes a custom qwidget instance that acts as a popup menu.
@@ -545,6 +499,69 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         # Configure as popup window
         self._setup_as_popup()
+
+    @classmethod
+    def create_context_menu(
+        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
+    ):
+        """Factory method: Create a standalone context menu with sensible defaults.
+
+        Args:
+            parent: Parent widget
+            **overrides: Override any default parameters
+
+        Returns:
+            Menu: Configured context menu instance
+
+        Example:
+            menu = Menu.create_context_menu(widget)
+            menu.add("Copy")
+            menu.add("Paste")
+        """
+        config = MenuConfig.for_context_menu(parent, **overrides)
+        return cls.from_config(config)
+
+    @classmethod
+    def create_dropdown_menu(
+        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
+    ):
+        """Factory method: Create a dropdown menu for option boxes.
+
+        Args:
+            parent: Parent widget (typically the wrapped widget)
+            **overrides: Override any default parameters
+        """
+
+        config = MenuConfig.for_dropdown_menu(parent, **overrides)
+        return cls.from_config(config)
+
+    @classmethod
+    def from_config(cls, config: MenuConfig):
+        """Create a Menu from a MenuConfig object.
+
+        This allows for more flexible configuration and better testability.
+
+        Args:
+            config: Menu configuration descriptor
+
+        Returns:
+            Menu: Configured menu instance
+        """
+
+        return cls(
+            parent=config.parent,
+            name=config.name,
+            trigger_button=config.trigger_button,
+            position=config.position,
+            min_item_height=config.min_item_height,
+            max_item_height=config.max_item_height,
+            fixed_item_height=config.fixed_item_height,
+            add_header=config.add_header,
+            add_apply_button=config.add_apply_button,
+            hide_on_leave=config.hide_on_leave,
+            match_parent_width=config.match_parent_width,
+            **config.extra_attrs,
+        )
 
     def _should_trigger(self, button: QtCore.Qt.MouseButton) -> bool:
         """Check if the given button should trigger the menu.

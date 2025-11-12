@@ -6,6 +6,7 @@ from typing import Optional, Callable, List
 # From this package:
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.menu_mixin import MenuMixin
 
 
 class HeaderMixin:
@@ -217,7 +218,7 @@ class CellFormatMixin(ConvertMixin):
 
 
 class TableWidget(
-    QtWidgets.QTableWidget, HeaderMixin, AttributesMixin, CellFormatMixin
+    QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin
 ):
 
     def __init__(self, parent=None, selection_mode="extended", **kwargs):
@@ -243,6 +244,11 @@ class TableWidget(
         self.setWordWrap(False)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
+
+        # Customize standalone menu provided by MenuMixin
+        self.menu.trigger_button = "right"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
 
         # Set selection mode
         self._set_selection_mode(selection_mode)
@@ -275,18 +281,6 @@ class TableWidget(
             global_pos = self.mapToGlobal(position)
             self.menu.position = global_pos
             self.menu.show()
-
-    @property
-    def menu(self):
-        try:
-            return self._menu
-        except AttributeError:
-            from uitk.widgets.menu import Menu
-
-            self._menu = Menu(
-                self, trigger_button="right", fixed_item_height=20, hide_on_leave=True
-            )
-            return self._menu
 
     def item_data(self, row: int, column: int):
         item = self.item(row, column)

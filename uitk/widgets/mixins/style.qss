@@ -216,8 +216,20 @@ QWidget#optionBoxContainer QPushButton::menu-indicator {
 /* Specific styling for option menu button to prevent any artifacts */
 QPushButton#optionMenuButton {
     text-align: center;
+    padding: 0px;
     padding-left: 0px;
     padding-right: 0px;
+    margin: 0px;
+    spacing: 0px;
+    border-left-width: 0px;
+    border-left-style: none;
+}
+
+QPushButton#optionMenuButton:hover {
+    padding: 0px;
+    padding-left: 0px;
+    padding-right: 0px;
+    margin: 0px;
 }
 
 /* Suppress all sub-controls that might cause artifacts */
@@ -285,15 +297,20 @@ QScrollBar::down-arrow {
 }
 QAbstractSpinBox::up-arrow,
 QAbstractSpinBox::down-arrow {
-    width: 3px;
-    height: 3px;
-    border: 1px solid {BUTTON_PRESSED};
+    width: 0px;
+    height: 0px;
+    border: none;
+    image: none;
 }
 QAbstractSpinBox::up-button,
 QAbstractSpinBox::down-button {
-    border: 1px solid {BUTTON_PRESSED};
-    background-color: {WIDGET_BACKGROUND};
+    border: none;
+    background: transparent;
     subcontrol-origin: border;
+    width: 0px;
+    height: 0px;
+    margin: 0px;
+    padding: 0px;
 }
 /* QSpinBox: Inherits from QAbstractSpinBox */
 /* QDoubleSpinBox: Inherits from QAbstractSpinBox */
@@ -306,6 +323,11 @@ QComboBox {
     padding: 0px 1px 0px 1px;
     border-radius: 1px;
     min-width: 0em;
+}
+QComboBox:disabled {
+    background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_DISABLED};
+    border: 1px solid {BORDER_COLOR};
 }
 QComboBox:hover {
     border: 1px solid {TEXT_HOVER};
@@ -337,6 +359,9 @@ QComboBox::drop-down {
     border-left-style: solid;
     border-top-right-radius: 1px;
     border-bottom-right-radius: 1px;
+}
+QComboBox:disabled::drop-down {
+    border-left-color: {BORDER_COLOR};
 }
 QComboBox QAbstractItemView {
     selection-background-color: {BUTTON_HOVER};
@@ -712,13 +737,29 @@ QWidget#optionBoxContainer {
 
 QPushButton#optionBox {
     border: 1px solid {BORDER_COLOR};
-    border-left: none !important; /* remove internal left divider */
+    border-left-width: 0px; /* remove internal left divider */
+    border-left-style: none;
     padding: 0px;
+    padding-left: 0px;
+    padding-right: 0px;
     margin: 0px;
+    text-align: center;
     border-top-right-radius: 0px;
     border-bottom-right-radius: 0px;
     border-top-left-radius: 0px;
     border-bottom-left-radius: 0px;
+}
+
+/* Suppress any sub-controls on optionBox button that might create artifacts */
+QPushButton#optionBox::menu-indicator,
+QPushButton#optionBox::menu-arrow {
+    image: none;
+    width: 0px;
+    height: 0px;
+    padding: 0px;
+    margin: 0px;
+    border: 0px none transparent;
+    background: transparent;
 }
 
 QWidget[class~="withBorder"] {

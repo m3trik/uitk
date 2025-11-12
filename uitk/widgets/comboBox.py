@@ -6,6 +6,8 @@ from qtpy import QtWidgets, QtCore, QtGui
 from uitk.signals import Signals
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
+from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
 class CustomStyle(QtWidgets.QProxyStyle):
@@ -79,8 +81,13 @@ class AlignedComboBox(QtWidgets.QComboBox):
             top_padding = self.get_stylesheet_property("padding-top")
             bottom_padding = self.get_stylesheet_property("padding-bottom")
 
+            # Add extra left padding for header text (4px)
+            header_left_padding = 4
             rect = self.rect().adjusted(
-                left_padding, top_padding, -right_padding, -bottom_padding
+                left_padding + header_left_padding,
+                top_padding,
+                -right_padding,
+                -bottom_padding,
             )
 
             alignment = self.header_alignment
@@ -88,7 +95,17 @@ class AlignedComboBox(QtWidgets.QComboBox):
             painter.end()
 
 
-class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
+class ComboBox(
+    AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay
+):
+    """QComboBox with automatic Menu and OptionBox integration.
+
+    Features:
+    - self.menu: Standalone menu (via MenuMixin)
+    - self.option_box: OptionBox functionality (via OptionBoxMixin)
+    - self.option_box.menu: Separate option box menu
+    """
+
     before_popup_shown = QtCore.Signal()
     on_editing_finished = QtCore.Signal(str)
     on_item_deleted = QtCore.Signal(str)
@@ -104,6 +121,17 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
 
         self.currentIndexChanged.connect(self.check_index)
 
+        # Customize standalone menu (provided by MenuMixin)
+        self.menu.trigger_button = "right"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
+
+        # OptionBox is also available via OptionBoxMixin
+        # Users can access: self.option_box.menu, self.option_box.clear_option, etc.
+
+        # Set maximum visible items to 25
+        self.setMaxVisibleItems(25)
+
         self.setProperty("class", self.__class__.__name__)
         self.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContentsOnFirstShow)
         self.set_attributes(**kwargs)
@@ -114,18 +142,6 @@ class ComboBox(AlignedComboBox, AttributesMixin, RichText, TextOverlay):
             self.itemData(i) if self.itemData(i) else self.itemText(i)
             for i in range(self.count())
         ]
-
-    @property
-    def menu(self):
-        try:
-            return self._menu
-        except AttributeError:
-            from uitk.widgets.menu import Menu
-
-            self._menu = Menu(
-                self, trigger_button="right", fixed_item_height=20, hide_on_leave=True
-            )
-            return self._menu
 
     @Signals.blockSignals
     def currentData(self):

@@ -14,6 +14,12 @@ class StateManager(ptk.LoggingMixin):
     getting/setting operations, eliminating code duplication and ensuring
     consistent behavior across the codebase.
 
+    Widget Attributes:
+    - restore_state (bool): If True, widget state is saved/restored. Default: True
+    - block_signals_on_restore (bool): If True, signals are blocked during state
+      restoration to prevent side effects. Set to False to allow signals during
+      restore (useful for widgets that need to trigger updates). Default: True
+
     Protections:
     - Skips applying None values to text-based widgets to prevent clearing valid text
     - Only saves primitive types (int, float, str, bool) to prevent state corruption
@@ -65,15 +71,18 @@ class StateManager(ptk.LoggingMixin):
                 )
                 return
 
+        # Check if widget wants signals blocked during restore (default: True)
+        block_signals = getattr(widget, "block_signals_on_restore", True)
+
         try:
             if signal_name:
                 # Use signal-based approach for compatibility with existing behavior
                 ValueManager.set_value_by_signal(
-                    widget, value, signal_name, block_signals=True
+                    widget, value, signal_name, block_signals=block_signals
                 )
             else:
                 # Fallback to direct value setting
-                ValueManager.set_value(widget, value, block_signals=True)
+                ValueManager.set_value(widget, value, block_signals=block_signals)
 
         except Exception as e:
             self.logger.debug(

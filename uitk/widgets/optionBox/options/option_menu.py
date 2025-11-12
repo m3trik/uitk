@@ -71,12 +71,21 @@ class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
 
     def create_widget(self):
         """Create the menu button widget."""
+        from qtpy import QtWidgets
+
         button = super().create_widget()
 
         if not button.objectName():
             button.setObjectName("optionMenuButton")
 
         button.setProperty("class", "OptionMenuButton")
+
+        # CRITICAL: Ensure no text is rendered (prevents artifacts)
+        # Clear text using both native Qt and any overridden setText
+        QtWidgets.QPushButton.setText(button, "")
+        if hasattr(button, "setText") and button.text():
+            button.setText("")
+
         return button
 
     def setup_widget(self):

@@ -269,16 +269,27 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
             wrapped_widget: The main wrapped widget
             option_widgets: List of option widgets (will remove right border from all except last)
         """
-        # Remove right border from wrapped widget
+        # Remove right border from wrapped widget using more explicit rule
+        # Use border-right-width: 0px and border-right-style: none for complete removal
+        existing_style = wrapped_widget.styleSheet()
         wrapped_widget.setStyleSheet(
-            wrapped_widget.styleSheet() + "; border-right: none !important;"
+            existing_style + "; border-right-width: 0px; border-right-style: none;"
         )
 
-        # Remove right border from all option widgets except the last
         if option_widgets:
-            for i, widget in enumerate(option_widgets[:-1]):
+            first_widget = option_widgets[0]
+            first_style = first_widget.styleSheet()
+            first_widget.setStyleSheet(
+                first_style
+                + "; border-left-width: 0px; border-left-style: none; border-left-color: transparent;"
+            )
+
+            # Remove right border from all option widgets except the last
+            for widget in option_widgets[:-1]:
+                existing_style = widget.styleSheet()
                 widget.setStyleSheet(
-                    widget.styleSheet() + "; border-right: none !important;"
+                    existing_style
+                    + "; border-right-width: 0px; border-right-style: none; border-right-color: transparent;"
                 )
 
     def _finalize_container(self, container, wrapped_widget):

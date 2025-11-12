@@ -6,6 +6,7 @@ from typing import Optional, Callable, List, Union, Any, Dict
 # From this package:
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.signals import Signals
 
@@ -328,7 +329,11 @@ class TreeFormatMixin(ConvertMixin):
 
 
 class TreeWidget(
-    QtWidgets.QTreeWidget, AttributesMixin, TreeFormatMixin, HierarchyIconMixin
+    QtWidgets.QTreeWidget,
+    MenuMixin,
+    AttributesMixin,
+    TreeFormatMixin,
+    HierarchyIconMixin,
 ):
     """Enhanced QTreeWidget with flexible data handling, formatting capabilities, and custom hierarchy icons."""
 
@@ -359,6 +364,11 @@ class TreeWidget(
         self.setRootIsDecorated(True)
         self.setIndentation(16)  # Match icon width for proper alignment
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+
+        # Customize standalone menu provided by MenuMixin
+        self.menu.trigger_button = "left"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
 
         # Set selection mode
         self._set_selection_mode(selection_mode)
@@ -391,19 +401,6 @@ class TreeWidget(
     def set_selection_mode(self, mode_str):
         """Change the selection mode after initialization."""
         self._set_selection_mode(mode_str)
-
-    @property
-    def menu(self):
-        """Get or create the context menu."""
-        try:
-            return self._menu
-        except AttributeError:
-            from uitk.widgets.menu import Menu
-
-            self._menu = Menu(
-                self, trigger_button="left", fixed_item_height=20, hide_on_leave=True
-            )
-            return self._menu
 
     def _on_selection_changed(self):
         """Handle selection changes."""

@@ -75,7 +75,29 @@ class ValueManager:
                     widget.setValue(widget.minimum())
 
             elif hasattr(widget, "setText") and callable(widget.setText):
-                # Text widgets (QLineEdit, QLabel, etc.)
+                # Text-capable widgets (QLineEdit, QLabel, etc.)
+                # Skip icon-only option buttons that should never display text
+                if isinstance(widget, QtWidgets.QPushButton):
+                    obj_name = widget.objectName() or ""
+                    class_prop = widget.property("class") or ""
+                    class_prop = (
+                        " ".join(class_prop)
+                        if isinstance(class_prop, (list, tuple))
+                        else str(class_prop)
+                    )
+
+                    is_option_button = obj_name in {
+                        "actionButton",
+                        "optionMenuButton",
+                    } or any(
+                        token in class_prop
+                        for token in ("ActionButton", "OptionMenuButton")
+                    )
+
+                    if is_option_button:
+                        # Preserve icon-only appearance; state data uses ellipsis placeholder
+                        return
+
                 widget.setText(str(value))
 
             elif hasattr(widget, "setCurrentText") and callable(widget.setCurrentText):

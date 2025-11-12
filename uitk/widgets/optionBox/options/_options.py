@@ -108,10 +108,17 @@ class ButtonOption(BaseOption):
 
         # Create a custom button class with our mixins
         # NOTE: RichText mixin removed - option buttons only display icons
+        from qtpy import QtCore
+
         class OptionButton(QtWidgets.QPushButton, AttributesMixin):
             pass
 
         button = OptionButton()
+
+        # Disable default/focus visuals that can introduce stray frame lines
+        button.setAutoDefault(False)
+        button.setDefault(False)
+        button.setFocusPolicy(QtCore.Qt.NoFocus)
 
         # CRITICAL: Clear any default text to prevent artifacts
         # Using native Qt setText (not RichText's setRichText)
