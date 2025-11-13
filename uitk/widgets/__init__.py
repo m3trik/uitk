@@ -1,52 +1,71 @@
 # !/usr/bin/python
 # coding=utf-8
-# import os
-# import importlib
-# import pkgutil
-# import inspect
+"""Lazy exports for UITK widgets with explicit include maps."""
+
+from pythontk.core_utils.module_resolver import bootstrap_package
 
 
-# --------------------------------------------------------------------------------------------
+DEFAULT_INCLUDE = {
+    "attributeWindow": "*",
+    "checkBox": "*",
+    "collapsableGroup": "*",
+    "colorSwatch": "*",
+    "comboBox": "*",
+    "doubleSpinBox": "*",
+    "expandableList": "*",
+    "header": "*",
+    "label": "*",
+    "lineEdit": "*",
+    "mainWindow": "*",
+    "menu": "*",
+    "messageBox": "*",
+    "optionBox": [
+        "OptionBox",
+        "OptionBoxContainer",
+        "OptionBoxWithOrdering",
+        "OptionBoxManager",
+        "ClearButton",
+    ],
+    "optionBox.options": "*",
+    "progressBar": "*",
+    "pushButton": "*",
+    "region": "*",
+    "separator": "*",
+    "tableWidget": "*",
+    "textEdit": "*",
+    "textEditLogHandler": "*",
+    "treeWidget": "*",
+    "widgetComboBox": "*",
+    # Mixins subpackage (re-exposed here for convenience)
+    "mixins.attributes": "*",
+    "mixins.convert": "*",
+    "mixins.docking": "*",
+    "mixins.icon_manager": "*",
+    "mixins.menu_mixin": "*",
+    "mixins.option_box_mixin": "*",
+    "mixins.settings_manager": "*",
+    "mixins.shortcuts": "*",
+    "mixins.state_manager": "*",
+    "mixins.style_sheet": "*",
+    "mixins.switchboard_slots": "*",
+    "mixins.switchboard_utils": "*",
+    "mixins.switchboard_widgets": "*",
+    "mixins.tasks": "*",
+    "mixins.text": "*",
+    "mixins.value_manager": "*",
+}
+
+DEFAULT_FALLBACKS = {
+    "add_option_box": "uitk.widgets.optionBox",
+    "add_clear_option": "uitk.widgets.optionBox",
+    "add_menu_option": "uitk.widgets.optionBox",
+    "patch_widget_class": "uitk.widgets.optionBox",
+    "patch_common_widgets": "uitk.widgets.optionBox",
+}
 
 
-# --------------------------------------------------------------------------------------------
-# Notes
-# --------------------------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------------------------
-# deprecated:
-# --------------------------------------------------------------------------------------------
-
-# __package__ = "uitk.widgets"
-# __path__ = [os.path.abspath(os.path.dirname(__file__))]
-
-# # Define a dictionary to map class names to their respective modules
-# CLASS_TO_MODULE = {}
-
-# # Build the CLASS_TO_MODULE dictionary by iterating over all submodules of the package
-# for importer, modname, ispkg in pkgutil.walk_packages(__path__, __name__ + "."):
-#     module = importlib.import_module(modname)
-#     for name, obj in module.__dict__.items():
-#         if inspect.isclass(obj):
-#             CLASS_TO_MODULE[obj.__name__] = modname
-
-# # Define a dictionary to store imported module objects
-# IMPORTED_MODULES = {}
-
-
-# def __getattr__(name):
-#     # Check if the requested attribute is a class we need to import
-#     if name in CLASS_TO_MODULE:
-#         module_name = CLASS_TO_MODULE[name]
-#         if module_name not in IMPORTED_MODULES:
-#             # If the module hasn't been imported yet, import it and add it to the dictionary
-#             module = importlib.import_module(module_name)
-#             IMPORTED_MODULES[module_name] = module
-#         else:
-#             module = IMPORTED_MODULES[module_name]
-#         # Return the requested class object from the module
-#         return getattr(module, name)
-
-#     # If the requested attribute is not a class we handle, raise an AttributeError
-#     raise AttributeError(f"module {__package__} has no attribute '{name}'")
+bootstrap_package(
+    globals(),
+    include=DEFAULT_INCLUDE,
+    fallbacks=DEFAULT_FALLBACKS,
+)
