@@ -137,7 +137,7 @@ class ActionButtonManager:
             self._container.setObjectName("actionButtonContainer")
             self._container.hide()
             self._layout = QtWidgets.QHBoxLayout(self._container)
-            self._layout.setContentsMargins(1, 1, 1, 1)
+            self._layout.setContentsMargins(0, 0, 0, 0)
             self._layout.setSpacing(1)
         return self._container
 
