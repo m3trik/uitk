@@ -108,6 +108,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             self.logger.error(f"Invalid datatype for widget: {type(widget)}")
             raise ValueError(f"Expected QWidget, got {type(widget)}.")
 
+        if not style_class:
+            default_class = getattr(widget, "_default_style_class", "")
+            if default_class:
+                style_class = default_class
+
         if style_class:
             self._set_class_property(widget, style_class)
             self.logger.debug(

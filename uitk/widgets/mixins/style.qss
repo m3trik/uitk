@@ -653,19 +653,40 @@ QProgressBar::chunk {
 }
 
 /* -- Size Grip -- */
-QSizeGrip {
-    background-color: transparent;
-    border: 1px solid none;
-    border-radius: 1px;
-    width: 6px;
-    height: 6px;
-    border-bottom-right-radius: 0px;
-    border-bottom: 3px solid {TEXT_COLOR};
-    border-right: 3px solid {TEXT_COLOR};
+QSizeGrip,
+QSizeGrip[class~="SizeGrip"] {
+    background: transparent;
+    border: none;
+    width: 12px;
+    height: 12px;
+    image: none;
+    qproperty-baseColor: rgba(255, 255, 255, 100);
+    qproperty-hoverColor: {BUTTON_HOVER};
 }
-QSizeGrip:hover {
-    border-bottom: 3px solid {TEXT_HOVER};
-    border-right: 3px solid {TEXT_HOVER};
+
+.MenuStatusBar {
+    background-color: {MAIN_BACKGROUND_ALPHA};
+    border: none;
+    color: {TEXT_COLOR};
+}
+.MenuStatusBar QLabel,
+.MenuStatusBar QPushButton,
+.MenuStatusBar QToolButton {
+    background: transparent;
+    border: none;
+    color: {TEXT_COLOR};
+}
+.MenuStatusBar QLabel:hover,
+.MenuStatusBar QPushButton:hover,
+.MenuStatusBar QToolButton:hover {
+    background: transparent;
+    color: {TEXT_COLOR};
+}
+.MenuStatusBar QLabel:pressed,
+.MenuStatusBar QPushButton:pressed,
+.MenuStatusBar QToolButton:pressed {
+    background: transparent;
+    color: {TEXT_COLOR};
 }
 
 
@@ -798,6 +819,49 @@ Header > QPushButton:hover {
 Header > QPushButton#hide_button:hover {
     background-color: red;
     border: none;
+}
+
+/* Menu & MainWindow custom widgets inherit translucent border styling */
+Menu,
+MainWindow {
+    background-color: {MAIN_BACKGROUND_ALPHA};
+    border: 1px solid {BORDER_COLOR};
+    color: {TEXT_COLOR};
+    selection-background-color: {TEXT_BACKGROUND};
+    selection-color: {HIGHLIGHT_COLOR};
+}
+
+/* Menu Frame (inner container with border) */
+QFrame#menuFrame {
+    background-color: {MAIN_BACKGROUND_ALPHA};
+    border: 1px solid {BORDER_COLOR};
+    color: {TEXT_COLOR};
+}
+QFrame#menuFrame:hover {
+    background-color: {MAIN_BACKGROUND_ALPHA};
+    border: 1px solid {BORDER_COLOR};
+}
+
+/* Footer Styling */
+Footer {
+    background-color: {HEADER_BACKGROUND};
+    border: none;
+    color: {TEXT_COLOR};
+}
+Footer:hover {
+    background-color: {HEADER_BACKGROUND};
+    border: none;
+}
+Footer > QLabel {
+    background: transparent;
+    border: none;
+    color: {TEXT_COLOR};
+    padding-left: 8px;
+}
+Footer > QLabel:hover {
+    background: transparent;
+    border: none;
+    color: {TEXT_COLOR};
 }
 
 /* -- TreeWidget Specific Styling -- */

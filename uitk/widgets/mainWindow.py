@@ -7,6 +7,7 @@ import pythontk as ptk
 
 # From this package
 from uitk import __package__
+from uitk.widgets.footer import Footer
 from uitk.widgets.mixins.state_manager import StateManager
 from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -32,6 +33,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         path: str = None,
         log_level: int = "WARNING",
         restore_window_size: bool = True,
+        add_footer: bool = True,
         **kwargs,
     ) -> None:
         """Initializes the main window and its properties.
@@ -45,9 +47,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             path: Optional path
             log_level: Logging level to use
             restore_window_size: Whether to save and restore window geometry. Defaults to True.
+            add_footer: Whether to add a footer with size grip. Defaults to True.
             **kwargs: Additional keyword arguments
         """
         super().__init__(parent)
+
+        # Default style class ensures translucent border styling even when callers don't specify one
+        self._default_style_class = "translucentBgWithBorder"
 
         self.logger.setLevel(log_level)
         self.logger.set_log_prefix(f"[{name}] ")
@@ -70,6 +76,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.restore_window_size = (
             restore_window_size  # Enable/disable window size saving
         )
+        self.add_footer = add_footer
+        self.footer: Optional[Footer] = None
         self.widgets = set()
         self.restore_widget_states = True
         self.restored_widgets = set()
@@ -99,21 +107,34 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self._create_size_grip()
 
     def _create_size_grip(self) -> None:
-        """Create the size grip if it doesn't exist and add it to layout if available."""
-        # Check if size grip already exists
-        existing_grip = self.findChild(QtWidgets.QSizeGrip, "size_grip")
-        if existing_grip:
-            return
+        """Create the size grip or footer if configured."""
+        if self.add_footer:
+            # Use footer with integrated size grip
+            existing_footer = getattr(self, "footer", None)
+            if existing_footer:
+                return
 
-        # Create the size grip
-        size_grip = QtWidgets.QSizeGrip(self)
-        size_grip.setObjectName("size_grip")
+            central = self.centralWidget()
+            if not central:
+                return
 
-        # Add to layout if one exists
-        layout = self.centralWidget().layout() if self.centralWidget() else None
-        if layout:
-            layout.addWidget(size_grip)
-            layout.setAlignment(size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight)
+            self.footer = Footer(add_size_grip=True)
+            self.footer.attach_to(central)
+        else:
+            # Legacy size grip without footer
+            existing_grip = self.findChild(QtWidgets.QSizeGrip, "size_grip")
+            if existing_grip:
+                return
+
+            size_grip = QtWidgets.QSizeGrip(self)
+            size_grip.setObjectName("size_grip")
+
+            layout = self.centralWidget().layout() if self.centralWidget() else None
+            if layout:
+                layout.addWidget(size_grip)
+                layout.setAlignment(
+                    size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight
+                )
 
     def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
         """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""

@@ -520,6 +520,10 @@ class Switchboard(
         tags = tags or (self._parse_tags(name) if name else None)
         path = ptk.format_path(path, "path") if path else None
 
+        # Don't add footer to stacked UIs (startmenu/submenu)
+        if tags and any(tag in tags for tag in ["startmenu", "submenu"]):
+            kwargs.setdefault("add_footer", False)
+
         main_window = self.registered_widgets.MainWindow(
             name=name,
             switchboard_instance=self,

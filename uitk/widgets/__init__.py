@@ -13,6 +13,7 @@ DEFAULT_INCLUDE = {
     "comboBox": "*",
     "doubleSpinBox": "*",
     "expandableList": "*",
+    "footer": "*",
     "header": "*",
     "label": "*",
     "lineEdit": "*",

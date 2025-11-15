@@ -133,7 +133,9 @@ class ComboBox(
         self.setMaxVisibleItems(25)
 
         self.setProperty("class", self.__class__.__name__)
-        self.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContentsOnFirstShow)
+        self.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
         self.set_attributes(**kwargs)
 
     @property

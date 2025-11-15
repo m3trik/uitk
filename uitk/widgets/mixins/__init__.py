@@ -15,6 +15,7 @@ DEFAULT_INCLUDE = {
     "settings_manager": "*",
     "shortcuts": "*",
     "state_manager": "*",
+    "size_grip": "*",
     "style_sheet": "*",
     "switchboard_slots": "*",
     "switchboard_utils": "*",

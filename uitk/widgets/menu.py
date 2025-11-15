@@ -7,6 +7,7 @@ from typing import Optional, Union, Callable, Dict, Any, Tuple
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from uitk.widgets.header import Header
+from uitk.widgets.footer import Footer
 from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.convert import ConvertMixin
@@ -42,6 +43,7 @@ class MenuConfig:
     max_item_height: Optional[int] = None
     fixed_item_height: Optional[int] = None
     add_header: bool = True
+    add_footer: bool = True
     add_apply_button: bool = False
     hide_on_leave: bool = False
     match_parent_width: bool = True
@@ -304,7 +306,32 @@ class MenuPositioner:
 
         # Use whichever is larger: anchor width or content width
         # This ensures we don't clip content when it's wider than the anchor
-        target_width = max(anchor_width, content_width)
+        # Compute total horizontal padding introduced by layout margins and borders
+        horizontal_padding = 0
+
+        layout = menu.layout()
+        if layout:
+            margins = layout.contentsMargins()
+            horizontal_padding += margins.left() + margins.right()
+
+        frame = getattr(menu, "_frame", None)
+        if frame:
+            frame_layout = frame.layout()
+            if frame_layout:
+                margins = frame_layout.contentsMargins()
+                horizontal_padding += margins.left() + margins.right()
+
+        central_layout = getattr(menu, "centralWidgetLayout", None)
+        if central_layout:
+            margins = central_layout.contentsMargins()
+            horizontal_padding += margins.left() + margins.right()
+
+        # Account for stylesheet border (1px each side)
+        horizontal_padding += 2
+
+        width_from_anchor = anchor_width + horizontal_padding
+
+        target_width = max(width_from_anchor, content_width)
 
         if menu.width() != target_width:
             menu.setFixedWidth(target_width)
@@ -374,6 +401,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         max_item_height: Optional[int] = None,
         fixed_item_height: Optional[int] = None,
         add_header: bool = True,
+        add_footer: bool = True,
         add_apply_button: bool = False,
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
@@ -401,6 +429,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             max_item_height (int, optional): The maximum height of items in the menu. Defaults to None.
             fixed_item_height (int, optional): The fixed height of items in the menu. Defaults to None.
             add_header (bool, optional): Whether to add a draggable header to the menu. Defaults to True.
+            add_footer (bool, optional): Whether to add a footer with size grip. Defaults to True.
             add_apply_button (bool, optional): Whether to add an apply button. Defaults to False.
                 The apply button will emit the parent's 'clicked' signal if available.
             hide_on_leave (bool, optional): Whether to automatically hide the menu when the mouse leaves. Defaults to False.
@@ -456,6 +485,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._central_widget: Optional[QtWidgets.QWidget] = None
         self.style: Optional[StyleSheet] = None
         self.header: Optional[Header] = None
+        self.footer: Optional[Footer] = None
 
         # Helpers and caches
         self._button_manager = ActionButtonManager(self)
@@ -478,14 +508,14 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
         self.add_header = add_header
+        self.add_footer = add_footer
         self.add_apply_button = add_apply_button
         self.match_parent_width = match_parent_width
 
         self._hide_on_leave = False
         self.hide_on_leave = hide_on_leave
 
-        # Base styling
-        self.setProperty("class", "translucentBgWithBorder")
+        # Base styling handled via QSS type selectors
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -557,6 +587,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             max_item_height=config.max_item_height,
             fixed_item_height=config.fixed_item_height,
             add_header=config.add_header,
+            add_footer=config.add_footer,
             add_apply_button=config.add_apply_button,
             hide_on_leave=config.hide_on_leave,
             match_parent_width=config.match_parent_width,
@@ -1025,10 +1056,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             logger=self.logger,
         )
 
-        # Ensure stay-on-top is enabled before the window becomes visible.
-        # Setting the flag while hidden avoids native teardown/flash cycles.
-        if not (self.windowFlags() & QtCore.Qt.WindowStaysOnTopHint):
-            self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        # Don't use WindowStaysOnTopHint as it keeps menu on top even when other apps are focused
+        # The Tool window flag with raise_() and activateWindow() is sufficient for popup behavior
 
         # Ensure geometry matches current content before showing
         self.adjustSize()
@@ -1071,13 +1100,35 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         was_blocked = self.blockSignals(True)
 
         try:
-            # Create a new layout with no margins
+            # Create outer layout for the translucent window (margins for frame border)
             self.layout = QtWidgets.QVBoxLayout(self)
-            self.layout.setContentsMargins(0, 0, 0, 0)
-            self.layout.setSpacing(1)
-            # Disable layout activation during setup
+            # Provide a 2px transparent gutter so translucent borders never touch window edges
+            self.layout.setContentsMargins(2, 2, 2, 2)
+            self.layout.setSpacing(0)
             self.layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
             self.setLayout(self.layout)
+
+            # Create frame container that will have the border
+            self._frame = QtWidgets.QFrame(self)
+            self._frame.setObjectName("menuFrame")
+            self._frame.setProperty("class", "translucentBgWithBorder")
+            self._frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+            self._frame.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+            )
+            self.layout.addWidget(self._frame)
+
+            # Create inner layout inside the frame (with spacing for border)
+            frame_layout = QtWidgets.QVBoxLayout(self._frame)
+            # One extra pixel inside the frame keeps children off the painted border
+            frame_layout.setContentsMargins(1, 1, 1, 1)
+            frame_layout.setSpacing(1)
+            frame_layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+
+            # Add header to top area
+            if self.add_header:
+                self.header = Header(config_buttons=["pin_button"])
+                frame_layout.addWidget(self.header)
 
             # Create a central widget WITHOUT parent first to avoid tree overhead
             # Parent will be assigned when added to layout
@@ -1086,7 +1137,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
             # Create a QVBoxLayout inside the central widget
             self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
-            self.centralWidgetLayout.setContentsMargins(1, 1, 1, 1)
+            self.centralWidgetLayout.setContentsMargins(2, 1, 2, 1)
             self.centralWidgetLayout.setSpacing(1)
             self.centralWidgetLayout.setSizeConstraint(
                 QtWidgets.QLayout.SetNoConstraint
@@ -1098,14 +1149,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.gridLayout.setSpacing(1)
             self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
 
-            if self.add_header:
-                # Create Header instance WITHOUT explicit parent to avoid tree overhead
-                # Parent will be assigned when added to layout
-                self.header = Header(config_buttons=["pin_button"])
-                self.centralWidgetLayout.addWidget(self.header)
-
             # Add grid layout to the central widget layout
             self.centralWidgetLayout.addLayout(self.gridLayout)
+
+            # Add central widget to frame layout
+            frame_layout.addWidget(self._central_widget)
+
+            # Add footer to bottom area (always last)
+            if self.add_footer:
+                self.footer = Footer(add_size_grip=True)
+                frame_layout.addWidget(self.footer)
 
         finally:
             # Restore signal blocking state
@@ -1202,7 +1255,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Add the apply button using the button manager
         self._button_manager.add_button("apply", config)
 
-        # Add the action button container to the layout
+        # Add the action button container to the central widget layout
+        # (it goes in the central area, after the grid layout)
         self.centralWidgetLayout.addWidget(self._button_manager.container)
 
         self.logger.debug(
