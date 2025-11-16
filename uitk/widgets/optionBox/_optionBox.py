@@ -118,6 +118,7 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
             if hasattr(option, "widget"):
                 widget = option.widget
                 widget.setParent(self.container)
+                self._wire_option_widget(widget, option, self.container)
                 layout.addWidget(widget)
 
         # Only add the main option box button if using legacy direct action_handler
@@ -145,6 +146,58 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
                 option.widget.setFixedSize(h, h)
         if self.container:
             self.container.adjustSize()
+
+    def _assign_option_object_name(self, option_widget, option):
+        """Ensure option widgets expose stable, descriptive object names."""
+        if option_widget is None:
+            return
+
+        parent_name = "optionHost"
+        if self.wrapped_widget is not None:
+            parent_name = (
+                self.wrapped_widget.objectName()
+                or self.wrapped_widget.__class__.__name__
+            )
+
+        option_type = option.__class__.__name__ if option is not None else "Option"
+        option_widget.setObjectName(f"{parent_name}_{option_type}")
+
+    def _propagate_option_context(self, option_widget):
+        """Copy contextual attributes from the wrapped widget to option widgets."""
+        if option_widget is None or not self.wrapped_widget:
+            return
+
+        host = self.wrapped_widget
+
+        # Provide UI + Switchboard references when available
+        for attr in ("ui", "sb"):
+            if hasattr(host, attr):
+                setattr(option_widget, attr, getattr(host, attr, None))
+
+        # Mirror helper lambdas that the main window injects
+        if hasattr(host, "base_name"):
+            option_widget.base_name = host.base_name
+        else:
+            option_widget.base_name = lambda: option_widget.objectName()
+
+        if hasattr(host, "legal_name"):
+            option_widget.legal_name = host.legal_name
+        else:
+            option_widget.legal_name = lambda: option_widget.objectName()
+
+        # Allow downstream code to find the originating widget if needed
+        option_widget.option_host = host
+
+    def _wire_option_widget(self, option_widget, option, container):
+        """Centralize per-option widget wiring (naming, context, callbacks)."""
+        if option_widget is None:
+            return
+
+        self._assign_option_object_name(option_widget, option)
+        self._propagate_option_context(option_widget)
+
+        if hasattr(option, "on_wrap"):
+            option.on_wrap(self, container)
 
     # ------------------------------------------------------------------
     # Backward compatibility with previous 'menu' attribute usage
@@ -333,6 +386,7 @@ class OptionBox(QtWidgets.QPushButton, AttributesMixin, RichText):
             if hasattr(option, "widget"):
                 widget = option.widget
                 widget.setParent(container)
+                self._wire_option_widget(widget, option, container)
                 layout.addWidget(widget)
                 option_widgets.append(widget)
 
@@ -442,6 +496,7 @@ class OptionBoxWithOrdering(OptionBox):
             if hasattr(option, "widget"):
                 widget = option.widget
                 widget.setParent(container)
+                self._wire_option_widget(widget, option, container)
                 layout.addWidget(widget)
                 option_widgets.append(widget)
 
