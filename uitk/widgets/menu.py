@@ -1755,6 +1755,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 f"showEvent: Active window before show: {self._active_window_before_show}"
             )
 
+        # Always start unpinned when showing to avoid stale state from previous sessions
+        if self.header and hasattr(self.header, "reset_pin_state"):
+            self.header.reset_pin_state()
+
         # CRITICAL OPTIMIZATION: Install event filters on first show, not during add()
         # This eliminates 37-180ms from add() calls
         if (
@@ -1833,6 +1837,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if self.is_pinned and not force:
             self.logger.debug("hide: Menu is pinned, ignoring hide request")
             return False
+
+        if self.header and getattr(self.header, "pinned", False):
+            if hasattr(self.header, "reset_pin_state"):
+                self.header.reset_pin_state()
+                self.logger.debug("hide: Reset pinned state")
 
         super().hide()
         return True

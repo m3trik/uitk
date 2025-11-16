@@ -257,6 +257,21 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         self.toggled.emit(state)
 
+    def reset_pin_state(self):
+        """Force the header into an unpinned state without hiding the window."""
+        if not self.pinned:
+            return
+
+        self.pinned = False
+        self.window().prevent_hide = False
+
+        pin_button = self.buttons.get("pin_button")
+        if pin_button:
+            icon = self.create_svg_icon("pin.svg", 16)
+            pin_button.setIcon(icon)
+
+        self.toggled.emit(False)
+
     def mousePressEvent(self, event):
         """Handle the mouse press event. If the left button is pressed, store the global position of the mouse cursor.
 
