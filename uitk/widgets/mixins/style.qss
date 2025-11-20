@@ -4,7 +4,7 @@ QWidget {
     border: none;
 }
 QWidget::item:selected {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
 }
 QWidget.centralWidget {
     background-color: {MAIN_BACKGROUND_ALPHA};
@@ -38,7 +38,7 @@ QGroupBox {
     background-color: {MAIN_BACKGROUND_ALPHA};
 }
 QGroupBox:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 QGroupBox::title {
     top: -13px;
@@ -57,7 +57,7 @@ QMenu::item {
     border: none;
 }
 QMenu::item:selected {
-    border-color: {BUTTON_HOVER};
+    border-color: {BUTTON_CHECKED};
     background-color: {MAIN_BACKGROUND};
 }
 QMenu::icon:checked {
@@ -88,7 +88,7 @@ QMenuBar::item {
     border-radius: 1px;
 }
 QMenuBar::item:selected {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
 }
 QMenuBar::item:pressed {
     background-color: gray;
@@ -109,7 +109,7 @@ QAbstractButton:hover {
     color: {TEXT_HOVER};
 }
 QAbstractButton:hover:checked {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_HOVER};
 }
 QAbstractButton:enabled {
@@ -119,11 +119,11 @@ QAbstractButton:disabled {
     color: {TEXT_DISABLED};
 }
 QAbstractButton:checked {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
 }
 QAbstractButton:checked:hover {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
 }
 QAbstractButton::indicator {
@@ -284,7 +284,7 @@ QAbstractSpinBox:disabled {
     color: {TEXT_DISABLED};
 }
 QAbstractSpinBox:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
 QScrollBar:left-arrow,
@@ -330,7 +330,7 @@ QComboBox:disabled {
     border: 1px solid {BORDER_COLOR};
 }
 QComboBox:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
 QComboBox::open {
@@ -366,6 +366,11 @@ QComboBox:disabled::drop-down {
 QComboBox QAbstractItemView {
     selection-background-color: {BUTTON_HOVER};
 }
+QComboBox QAbstractItemView::item:selected,
+QComboBox QAbstractItemView::item:hover {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+}
 
 /* -- Text and Input -- */
 QLabel {
@@ -377,7 +382,7 @@ QLabel {
     padding: 0px 1px 0px 1px;
 }
 QLabel:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
 QLabel:enabled {
@@ -395,7 +400,7 @@ QLineEdit {
     padding: 0 8px;
 }
 QLineEdit:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 QLineEdit:disabled {
     color: {MAIN_BACKGROUND};
@@ -413,7 +418,7 @@ QTextEdit {
     background-color: {WIDGET_BACKGROUND};
 }
 QTextEdit:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 QTextEdit QWidget#qt_scrollarea_viewport {
     background-color: {WIDGET_BACKGROUND};
@@ -431,7 +436,7 @@ QPlainTextEdit {
     color: {TEXT_COLOR};
 }
 QPlainTextEdit:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 
 /* -- Item Views -- */
@@ -446,19 +451,38 @@ QAbstractItemView::item:alternate {
 QAbstractItemView::item:selected {
     border: 1px solid {BORDER_COLOR};
     background-color: {BUTTON_HOVER};
+    color: {TEXT_COLOR};
+}
+QAbstractItemView::item:checked {
+    border: 1px solid {BORDER_COLOR};
+    background-color: {BUTTON_CHECKED};
+    color: {TEXT_COLOR};
+}
+QAbstractItemView::item:checked:selected {
+    border: 1px solid {BORDER_COLOR};
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
-}
-QAbstractItemView::item:selected:!active {
-    background-color: {BUTTON_HOVER};
-    color: {TEXT_COLOR};
-}
-QAbstractItemView::item:selected:active {
-    background-color: {BUTTON_HOVER};
-    color: {TEXT_COLOR};
 }
 QAbstractItemView::item:hover {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
+}
+
+QAbstractItemView::indicator {
+    width: 12px;
+    height: 12px;
+    border: 1px solid {BORDER_COLOR};
+    background-color: {WIDGET_BACKGROUND};
+}
+QAbstractItemView::indicator:unchecked:hover {
+    border: 2px solid {BUTTON_HOVER};
+}
+QAbstractItemView::indicator:checked {
+    background-color: {BUTTON_HOVER};
+    border: 2px solid {BUTTON_HOVER};
+}
+QAbstractItemView::indicator:checked:hover {
+    border: 2px solid {BUTTON_HOVER};
 }
 /* QListWidget: Inherits from QAbstractItemView */
 /* QListView: Inherits from QAbstractItemView */
@@ -470,7 +494,15 @@ QTableWidget::item {
     border: none;
 }
 QTableWidget::item:selected {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
+    color: {TEXT_CHECKED};
+}
+QTableWidget::item:checked {
+    background-color: {BUTTON_CHECKED};
+    color: {TEXT_CHECKED};
+}
+QTableWidget::item:checked:selected {
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
 }
 QTableWidget::item:hover {
@@ -502,7 +534,7 @@ QTreeView::branch:has-children:closed {
 }
 QTreeView::branch:has-children:closed:hover {
     background-color: {BUTTON_HOVER};
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 QTreeView::branch:has-children:open {
     background-color: {WIDGET_BACKGROUND};
@@ -514,7 +546,7 @@ QTreeView::branch:has-children:open {
 }
 QTreeView::branch:has-children:open:hover {
     background-color: {BUTTON_HOVER};
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 
 /* -- Frames -- */
@@ -522,7 +554,7 @@ QFrame {
     border-radius: 1px;
 }
 QFrame:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 
 /* -- Scroll Areas -- */
@@ -533,7 +565,7 @@ QAbstractScrollArea {
     selection-color: {TEXT_COLOR};
 }
 QAbstractScrollArea:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 /* QScrollArea: Inherits from QAbstractScrollArea */
 /* QGraphicsView: Inherits from QAbstractScrollArea */
@@ -545,7 +577,7 @@ QAbstractSlider {
     background-color: {WIDGET_BACKGROUND};
 }
 QAbstractSlider:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 QAbstractSlider::handle {
     width: 10px;
@@ -599,7 +631,7 @@ QScrollBar::handle:vertical:hover {
 }
 QScrollBar::handle:horizontal:hover {
     background: {MAIN_BACKGROUND};
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     border: none;
@@ -636,7 +668,7 @@ QProgressBar {
     background-color: {MAIN_BACKGROUND};
 }
 QProgressBar:hover {
-    border: 1px solid {TEXT_HOVER};
+    border: 2px solid {BUTTON_HOVER};
 }
 QProgressBar[orientation="Qt::Horizontal"] {
     padding-right: 10000px;
@@ -705,7 +737,7 @@ QSizeGrip[class~="SizeGrip"] {
     color: {TEXT_HOVER};
 }
 .default:hover:checked {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_HOVER};
 }
 .default:enabled {
@@ -968,7 +1000,7 @@ QTreeWidget::item {
 }
 
 QTreeWidget::item:selected {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
     border: none;
 }
@@ -993,7 +1025,7 @@ TreeWidget {
 }
 
 TreeWidget::item:selected {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
 }
 

@@ -77,19 +77,19 @@ class _MenuDescriptor:
         if "_option_box_manager" in instance.__dict__:
             try:
                 mgr = instance.__dict__.get("_option_box_manager")
-                # Access _menu directly to avoid property auto-creation
-                # This keeps performance while still coordinating with OptionBox
                 if mgr and hasattr(mgr, "_menu") and mgr._menu is not None:
-                    MenuCls = _get_menu_class()
-                    if MenuCls is not None and isinstance(mgr._menu, MenuCls):
-                        # Cache it for future fast-path access
-                        instance.__dict__["_menu_instance"] = mgr._menu
-                        duration_ms = (time.perf_counter() - get_start) * 1000
-                        if hasattr(instance, "logger"):
-                            instance.logger.debug(
-                                f"_MenuDescriptor.__get__: MEDIUM PATH (from OptionBox) in {duration_ms:.3f}ms"
-                            )
-                        return mgr._menu
+                    option_menu = mgr._menu
+                    # Option-box menus should never double as context menus.
+                    if not getattr(option_menu, "_uitk_option_box_only", False):
+                        MenuCls = _get_menu_class()
+                        if MenuCls is not None and isinstance(option_menu, MenuCls):
+                            instance.__dict__["_menu_instance"] = option_menu
+                            duration_ms = (time.perf_counter() - get_start) * 1000
+                            if hasattr(instance, "logger"):
+                                instance.logger.debug(
+                                    f"_MenuDescriptor.__get__: MEDIUM PATH (from OptionBox) in {duration_ms:.3f}ms"
+                                )
+                            return option_menu
             except Exception:
                 pass
 

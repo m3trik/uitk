@@ -616,13 +616,24 @@ class OptionBoxManager(ptk.LoggingMixin):
         """
         from ._optionBox import OptionBoxWithOrdering
 
+        # When `_menu` was accessed before clear/action settings, we might have
+        # pending plugins queued up. Feed them into the new option box so their
+        # buttons are not dropped when we wrap immediately (common in init).
+        pending = self._pending_options or None
+
         self._option_box = OptionBoxWithOrdering(
             action_handler=self._action_handler,
             show_clear=self._clear_enabled,
             option_order=self._option_order,
+            options=pending,
         )
         self._container = self._option_box.wrap(self._widget)
         self._is_wrapped = True  # Mark as wrapped
+
+        # Pending options were consumed above. Clear the list and cancel any
+        # deferred wrap timers that might still be queued from earlier calls.
+        self._pending_options = []
+        self._wrap_retry_scheduled = False
 
     def _recreate_option_box(self):
         """Recreate option box with new settings"""

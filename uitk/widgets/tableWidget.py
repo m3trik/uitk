@@ -221,7 +221,13 @@ class TableWidget(
     QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin
 ):
 
-    def __init__(self, parent=None, selection_mode="extended", **kwargs):
+    def __init__(
+        self,
+        parent=None,
+        selection_mode="extended",
+        left_click_select_only=False,
+        **kwargs,
+    ):
         """
         Initialize TableWidget.
 
@@ -238,8 +244,12 @@ class TableWidget(
         self._init_header_behavior()
         CellFormatMixin.__init__(self)
 
+        self._left_click_select_only = bool(left_click_select_only)
+
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self.verticalHeader().setVisible(False)
+        compact_row_height = max(self.fontMetrics().height() + 4, 18)
+        self.verticalHeader().setDefaultSectionSize(compact_row_height)
         self.setAlternatingRowColors(False)
         self.setWordWrap(False)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -254,6 +264,21 @@ class TableWidget(
         self._set_selection_mode(selection_mode)
 
         self.set_attributes(**kwargs)
+
+    def selectionCommand(self, index, event=None):
+        """Optionally restrict selection changes to left mouse clicks."""
+        if (
+            self._left_click_select_only
+            and event
+            and isinstance(event, QtGui.QMouseEvent)
+        ):
+            if event.button() != QtCore.Qt.LeftButton:
+                return QtCore.QItemSelectionModel.NoUpdate
+        return super().selectionCommand(index, event)
+
+    def set_left_click_select_only(self, enabled: bool):
+        """Toggle whether non-left clicks can change selection."""
+        self._left_click_select_only = bool(enabled)
 
     def _set_selection_mode(self, mode_str):
         """Set the selection mode from a string."""

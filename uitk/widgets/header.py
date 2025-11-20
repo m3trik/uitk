@@ -253,6 +253,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             icon = self.create_svg_icon(pin_icon_filename, 16)
             pin_button.setIcon(icon)
             if not state:
+                # When unpinned via the button, immediately hide until user reopens.
                 self.window().hide()
 
         self.toggled.emit(state)

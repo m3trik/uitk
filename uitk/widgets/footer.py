@@ -1,9 +1,16 @@
 # !/usr/bin/python
 # coding=utf-8
+from typing import Any, Callable, Mapping, Optional
+
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.size_grip import SizeGripMixin
+
+try:
+    from pythontk.str_utils import StrUtils
+except ImportError:  # Optional dependency; controller will fall back to simple slicing.
+    StrUtils = None
 
 
 class Footer(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, SizeGripMixin):
@@ -32,6 +39,7 @@ class Footer(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, SizeGripM
         super().__init__(parent)
 
         self._status_text = ""
+        self._default_status_text = ""
         self._size_grip = None
 
         # Container layout for footer elements
@@ -64,14 +72,21 @@ class Footer(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, SizeGripM
             alignment=QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight,
         )
 
-    def setStatusText(self, text: str) -> None:
+    def setStatusText(self, text: str | None = None) -> None:
         """Set the status text of the footer.
 
         Parameters:
             text (str): The new status text.
         """
-        self._status_text = text
-        self.setText(text)
+        self._status_text = text or ""
+        resolved_text = self._status_text or self._default_status_text
+        self.setText(resolved_text)
+
+    def setDefaultStatusText(self, text: str | None = None) -> None:
+        """Set fallback text shown when no explicit status is provided."""
+        self._default_status_text = text or ""
+        if not self._status_text:
+            self.setText(self._default_status_text)
 
     def statusText(self) -> str:
         """Get the status text of the footer.
@@ -112,6 +127,107 @@ class Footer(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, SizeGripM
         layout.addWidget(self)
         self.setParent(widget)
         setattr(widget, "footer", self)
+
+
+class FooterStatusController:
+    """Helper that keeps a footer in sync with a resolver function."""
+
+    def __init__(
+        self,
+        footer: Footer,
+        resolver: Optional[Callable[[], str]] = None,
+        default_text: str | None = "",
+        truncate_kwargs: Optional[Mapping[str, Any]] = None,
+    ):
+        self._footer = footer
+        self._resolver = resolver or (lambda: "")
+        self._truncate_kwargs = self._sanitize_truncate_kwargs(truncate_kwargs)
+        if default_text is not None:
+            self._footer.setDefaultStatusText(default_text)
+        self.update()
+
+    def set_resolver(self, resolver: Callable[[], str]) -> None:
+        self._resolver = resolver or (lambda: "")
+        self.update()
+
+    def set_truncation(
+        self,
+        truncate_kwargs: Optional[Mapping[str, Any]] = None,
+        **extra_kwargs: Any,
+    ) -> None:
+        """Configure truncation behavior for footer updates via StrUtils.truncate kwargs."""
+        combined: dict[str, Any] = {}
+        if truncate_kwargs:
+            combined.update(dict(truncate_kwargs))
+        if extra_kwargs:
+            combined.update(extra_kwargs)
+        self._truncate_kwargs = self._sanitize_truncate_kwargs(combined)
+        self.update()
+
+    def update(self) -> None:
+        if not self._footer:
+            return
+        value = self._resolver() if self._resolver else ""
+        value = self._truncate_value(value)
+        self._footer.setStatusText(value)
+
+    def _truncate_value(self, value: str) -> str:
+        """Apply optional truncation using StrUtils when available."""
+        if not value:
+            return value
+
+        kwargs = self._truncate_kwargs
+        if not kwargs:
+            return value
+
+        length = kwargs.get("length")
+        if not isinstance(length, int) or length <= 0 or len(value) <= length:
+            return value
+
+        if StrUtils:
+            try:
+                return StrUtils.truncate(
+                    value,
+                    **kwargs,
+                )
+            except Exception:
+                pass  # Fall back to a simplified truncation strategy.
+
+        return self._fallback_truncate(value, kwargs)
+
+    def _fallback_truncate(self, value: str, kwargs: Mapping[str, Any]) -> str:
+        insert = kwargs.get("insert", "..") or ""
+        mode = (kwargs.get("mode") or "start").lower()
+        length = kwargs.get("length")
+        if not isinstance(length, int) or length <= 0:
+            return value
+
+        if mode in ("end", "right"):
+            return value[:length] + insert
+
+        if mode == "middle" and length > len(insert):
+            visible = max(1, length - len(insert))
+            left = visible // 2
+            right = visible - left
+            return value[:left] + insert + value[-right:]
+
+        tail_length = max(1, length - len(insert)) if insert else length
+        return insert + value[-tail_length:]
+
+    @staticmethod
+    def _sanitize_truncate_kwargs(
+        truncate_kwargs: Optional[Mapping[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        if not truncate_kwargs:
+            return None
+        try:
+            candidate = dict(truncate_kwargs)
+        except Exception:
+            return None
+        length = candidate.get("length")
+        if not isinstance(length, int) or length <= 0:
+            return None
+        return candidate
 
 
 # -----------------------------------------------------------------------------
