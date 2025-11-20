@@ -32,25 +32,29 @@ class EventFactoryFilter(QtCore.QObject):
             self._normalize_event_type(e) for e in (event_types or set())
         }
         self.propagate_to_children = propagate_to_children
-        self._handler_cache: dict[int, callable | None] = {}
+        self._handler_cache: dict[tuple[int, int], callable | None] = {}
         self._installed_widgets: "weakref.WeakSet[QtCore.QObject]" = weakref.WeakSet()
 
     def install(self, widgets: QtCore.QObject | Iterable[QtCore.QObject]):
         """Install this event filter on one or more widgets."""
-        import weakref
 
         for w in ptk.make_iterable(widgets):
             w.installEventFilter(self)
             if not self.propagate_to_children:
                 self._installed_widgets.add(w)
-            wr = weakref.ref(w)
+                self._track_widget_lifecycle(w)
 
-            def _on_destroyed(obj, wr=wr):
-                widget = wr()
-                if widget:
-                    self.uninstall(widget)
+    def _track_widget_lifecycle(self, widget: QtCore.QObject):
+        """Connect destroyed signal so we can auto-uninstall tracked widgets."""
 
-            w.destroyed.connect(_on_destroyed)
+        wr = weakref.ref(widget)
+
+        def _on_destroyed(obj=None, wr=wr):
+            dead_widget = wr()
+            if dead_widget:
+                self.uninstall(dead_widget)
+
+        widget.destroyed.connect(_on_destroyed)
 
     def uninstall(self, widgets: QtCore.QObject | Iterable[QtCore.QObject]):
         """Uninstall this event filter from one or more widgets."""
@@ -78,11 +82,12 @@ class EventFactoryFilter(QtCore.QObject):
         if not self.propagate_to_children and widget not in self._installed_widgets:
             return False
 
-        handler = self._handler_cache.get(etype)
+        cache_key = (id(self.forward_events_to), etype)
+        handler = self._handler_cache.get(cache_key)
         if handler is None:
             method_name = self._format_event_name(etype)
             handler = getattr(self.forward_events_to, method_name, None)
-            self._handler_cache[etype] = handler
+            self._handler_cache[cache_key] = handler
 
         if handler:
             try:
@@ -152,7 +157,8 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self.track_on_drag_only = track_on_drag_only
         self._prev_mouse_over: set[QtWidgets.QWidget] = set()
         self._mouse_over: set[QtWidgets.QWidget] = set()
-        self._filtered_widgets: set[QtWidgets.QWidget] = set()
+        self._filtered_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
+        self._mouse_owner: QtWidgets.QWidget | None = None
 
         parent.installEventFilter(self)
 
@@ -233,6 +239,8 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                     widget.releaseMouse()
                 except RuntimeError:
                     continue
+                if widget is self._mouse_owner:
+                    self._mouse_owner = None
 
     def _send_enter_event(self, widget):
         """Sends an enter event to a widget."""
@@ -284,16 +292,38 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                 self.logger.info(
                     f"Grabbing mouse for widget: {top_widget.objectName()}"
                 )
-                top_widget.grabMouse()
+                self._grab_widget(top_widget)
             else:
                 active_window = QtWidgets.QApplication.activeWindow()
                 if active_window and active_window.isVisible():
                     self.logger.info(
                         f"Grabbing mouse for active window: {active_window.objectName()}"
                     )
-                    active_window.grabMouse()
+                    self._grab_widget(active_window)
+                else:
+                    self._release_mouse_owner()
         except RuntimeError:
             self.logger.debug("Could not grab mouse: widget may have been deleted.")
+
+    def _grab_widget(self, widget: QtWidgets.QWidget):
+        """Grab the mouse for a widget only when ownership changes."""
+
+        if widget is self._mouse_owner or not self.is_widget_valid(widget):
+            return
+
+        self._release_mouse_owner()
+        widget.grabMouse()
+        self._mouse_owner = widget
+
+    def _release_mouse_owner(self):
+        """Release the currently grabbed widget, if any."""
+
+        if self._mouse_owner and self.is_widget_valid(self._mouse_owner):
+            try:
+                self._mouse_owner.releaseMouse()
+            except RuntimeError:
+                pass
+        self._mouse_owner = None
 
     def _filter_viewport_widgets(self):
         """Adds special handling for widgets with a viewport."""
@@ -316,6 +346,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
         if etype == QtCore.QEvent.Type.MouseMove:
             if self.track_on_drag_only and not QtWidgets.QApplication.mouseButtons():
+                self._flush_hover_state()
                 return False
             self.track()
 
@@ -327,7 +358,31 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             ):
                 self._send_release_event(top_widget, event.button())
 
+        elif etype in (
+            QtCore.QEvent.Type.Hide,
+            QtCore.QEvent.Type.FocusOut,
+            QtCore.QEvent.Type.WindowDeactivate,
+        ):
+            self._release_mouse_owner()
+            self._flush_hover_state()
+
         return super().eventFilter(widget, event)
+
+    def _flush_hover_state(self):
+        """Release grabbed widgets and emit leave events when tracking pauses."""
+
+        if not (self._mouse_over or self._prev_mouse_over):
+            return
+
+        stale_widgets = self._mouse_over | self._prev_mouse_over
+        self._release_mouse_for_widgets(stale_widgets)
+
+        for widget in stale_widgets:
+            if self.is_widget_valid(widget):
+                self._send_leave_event(widget)
+
+        self._mouse_over.clear()
+        self._prev_mouse_over.clear()
 
 
 # --------------------------------------------------------------------------------------------
