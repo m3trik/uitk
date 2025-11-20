@@ -76,9 +76,9 @@ class SwitchboardWidgetMixin:
         """
         return getattr(self.registered_icons, icon_name, QtGui.QIcon())
 
-    @staticmethod
+    @classmethod
     def _get_widgets_from_ui(
-        ui: QtWidgets.QWidget, inc=[], exc="_*", object_names_only=False
+        cls, ui: QtWidgets.QWidget, inc=[], exc="_*", object_names_only=False
     ) -> dict:
         """Find widgets in a qtpy UI object.
 

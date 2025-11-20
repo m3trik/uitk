@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-from typing import Any, Optional
+from typing import Any, Optional, Union, List
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 
@@ -69,7 +69,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.state = StateManager(self.settings)
 
         self.path = path
-        self.tags = tags or set()
+        self.tags = set(tags or [])
         self.has_tags = lambda tags=None: self.sb.has_tags(self, tags)
         self.is_initialized = False
         self.prevent_hide = False
@@ -154,6 +154,33 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             self.setWindowFlags(window.windowFlags())
         else:
             self.setWindowFlags(central_widget.windowFlags())
+
+    def edit_tags(
+        self,
+        target: Union[str, QtWidgets.QWidget] = None,
+        add: Union[str, List[str]] = None,
+        remove: Union[str, List[str]] = None,
+        clear: bool = False,
+        reset: bool = False,
+    ) -> Union[str, None]:
+        """Edit tags on a widget or a tag string.
+        If target is None, edits tags on this MainWindow.
+
+        Parameters:
+            target (str or QWidget): The widget to edit tags on, or a tag string.
+            add (str or list[str]): Tags to add.
+            remove (str or list[str]): Tags to remove.
+            clear (bool): If True, clears all tags.
+            reset (bool): If True, resets tags to default (only for widgets).
+
+        Returns:
+            str or None: The modified tag string if target is a string, otherwise None.
+        """
+        if target is None:
+            target = self
+        return self.sb.edit_tags(
+            target, add=add, remove=remove, clear=clear, reset=reset
+        )
 
     def __getattr__(self, attr_name) -> Any:
         """Looks for the widget in the parent class.

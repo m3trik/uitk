@@ -12,6 +12,7 @@ import pythontk as ptk
 from uitk.widgets.mixins import SwitchboardSlotsMixin
 from uitk.widgets.mixins import SwitchboardWidgetMixin
 from uitk.widgets.mixins import SwitchboardUtilsMixin
+from uitk.widgets.mixins import SwitchboardNameMixin
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins import ConvertMixin
 
@@ -23,6 +24,7 @@ class Switchboard(
     SwitchboardSlotsMixin,
     SwitchboardWidgetMixin,
     SwitchboardUtilsMixin,
+    SwitchboardNameMixin,
 ):
     """Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
     It facilitates the loading of UI files, dynamic assignment of properties, and
@@ -69,16 +71,16 @@ class Switchboard(
         slot_source=None,
         widget_source=None,
         icon_source=None,
-        tag_delimiter: str = "#",
-        ui_name_delimiters=".",
+        tag_delimiter: str = None,
+        ui_name_delimiters: str = None,
         log_level: str = "warning",
     ) -> None:
         super().__init__(parent)
         """ """
         self.logger.setLevel(log_level)
 
-        self.tag_delimiter = tag_delimiter
-        self.ui_name_delimiters = ui_name_delimiters
+        self.tag_delimiter = tag_delimiter or self.TAG_DELIMITER
+        self.ui_name_delimiters = ui_name_delimiters or self.UI_NAME_DELIMITER
         self.registry = FileManager()
         base_dir = 1 if not __name__ == "__main__" else 0
 
@@ -210,136 +212,6 @@ class Switchboard(
 
         except IndexError:
             return None
-
-    @staticmethod
-    def convert_to_legal_name(name: str) -> str:
-        """Convert a name to a legal format by replacing non-alphanumeric characters with underscores.
-
-        Parameters:
-            name (str): The name to convert.
-
-        Returns:
-            str: The converted name with only alphanumeric characters and underscores.
-        """
-        if not isinstance(name, str):
-            raise ValueError(f"Expected a string, got {type(name)}")
-
-        return re.sub(r"[^0-9a-zA-Z]", "_", name)
-
-    def get_base_name(self, name: str) -> str:
-        if not isinstance(name, str):
-            raise ValueError(f"Expected a string, got {type(name)}")
-        if not name:
-            return ""
-        name = name.split(self.tag_delimiter)[0]
-        name = re.sub(r"[_\d]+$", "", name)
-        match = re.search(r"\b[a-zA-Z]\w*", name)
-        return match.group() if match else name
-
-    def _parse_tags(self, name: str) -> set[str]:
-        parts = name.split(self.tag_delimiter)
-        return set(parts[1:]) if len(parts) > 1 else set()
-
-    def has_tags(self, ui, tags=None) -> bool:
-        """Check if any of the given tag(s) are present in the UI's tags set.
-        If no tags are provided, it checks if the UI has any tags at all.
-
-        Parameters:
-            ui (QWidget): The UI object to check.
-            tags (str/list): The tag(s) to check.
-
-        Returns:
-            bool: True if any of the given tags are present in the tags set, False otherwise.
-        """
-        if not isinstance(ui, QtWidgets.QWidget):
-            self.logger.debug(f"Invalid UI type: {type(ui)}. Expected QWidget.")
-            return False
-
-        if not hasattr(ui, "tags"):
-            self.logger.debug(f"UI '{ui.objectName()}' has no 'tags' attribute.")
-            return False
-
-        if tags is None:
-            return bool(ui.tags)
-
-        tags_to_check = ptk.make_iterable(tags)
-        return any(tag in ui.tags for tag in tags_to_check)
-
-    def remove_tags(self, tag_string: str, tags_to_remove: list[str]) -> str:
-        """Remove specific tags from a tag string.
-
-        Parameters:
-            tag_string (str): The string containing tags (e.g., "menu#submenu#startmenu")
-            tags_to_remove (list[str]): List of tag names to remove (e.g., ["submenu", "startmenu"])
-
-        Returns:
-            str: The tag string with specified tags removed
-        """
-        if not tags_to_remove:
-            return tag_string
-
-        tags_to_remove_list = ptk.make_iterable(tags_to_remove)
-        tag_re = "|".join(
-            re.escape(self.tag_delimiter + tag) for tag in tags_to_remove_list
-        )
-        return re.sub(tag_re, "", tag_string)
-
-    def filter_tags(
-        self,
-        tag_string: str,
-        keep_tags: list[str] = None,
-        remove_tags: list[str] = None,
-    ) -> str:
-        """Filter tags from a tag string - either keep only specified tags or remove specified tags.
-
-        Parameters:
-            tag_string (str): The string containing tags
-            keep_tags (list[str], optional): If provided, keep only these tags
-            remove_tags (list[str], optional): If provided, remove these tags
-
-        Returns:
-            str: The filtered tag string
-        """
-        if keep_tags is not None:
-            # Keep only specified tags
-            base_name = tag_string.split(self.tag_delimiter)[0]
-            current_tags = self._parse_tags(tag_string)
-            keep_tags_set = set(ptk.make_iterable(keep_tags))
-            filtered_tags = current_tags.intersection(keep_tags_set)
-
-            if filtered_tags:
-                return (
-                    base_name
-                    + self.tag_delimiter
-                    + self.tag_delimiter.join(sorted(filtered_tags))
-                )
-            else:
-                return base_name
-
-        elif remove_tags is not None:
-            return self.remove_tags(tag_string, remove_tags)
-
-        return tag_string
-
-    def get_unknown_tags(self, tag_string: str, known_tags: list[str]) -> list[str]:
-        """Get tags that are not in the known_tags list.
-
-        Parameters:
-            tag_string (str): The string containing tags
-            known_tags (list[str]): List of known/expected tags
-
-        Returns:
-            list[str]: List of unknown tag names (without delimiter prefix)
-        """
-        known_tags_list = ptk.make_iterable(known_tags)
-        pattern = "|".join(re.escape(tag) for tag in known_tags_list)
-        tag_re = re.escape(self.tag_delimiter) + f"(?!{pattern})[a-zA-Z0-9]*"
-        unknown_tags = re.findall(tag_re, tag_string)
-        return [
-            tag[len(self.tag_delimiter) :]
-            for tag in unknown_tags
-            if tag != self.tag_delimiter
-        ]
 
     @property
     def visible_windows(self) -> set:
@@ -517,7 +389,7 @@ class Switchboard(
             else widget
         )
 
-        tags = tags or (self._parse_tags(name) if name else None)
+        tags = tags or (self.get_tags_from_name(name) if name else None)
         path = ptk.format_path(path, "path") if path else None
 
         # Don't add footer to stacked UIs (startmenu/submenu)

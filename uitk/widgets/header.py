@@ -123,6 +123,27 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         button.clicked.connect(callback)
         return button
 
+    def has_buttons(self, button_type=None):
+        """Check if the header has a specific button type or any button.
+
+        Parameters:
+            button_type (str or list, optional): The button type(s) to check for.
+                If None, checks if any button exists.
+
+        Returns:
+            bool: True if the button exists, False otherwise.
+        """
+        if button_type is None:
+            return bool(self.buttons)
+
+        if isinstance(button_type, str):
+            return button_type in self.buttons
+
+        if isinstance(button_type, (list, tuple)):
+            return any(btn in self.buttons for btn in button_type)
+
+        return False
+
     def config_buttons(self, *button_list):
         """Configure header buttons from a list and align them to the right.
 

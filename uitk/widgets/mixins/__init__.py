@@ -20,6 +20,7 @@ DEFAULT_INCLUDE = {
     "switchboard_slots": "*",
     "switchboard_utils": "*",
     "switchboard_widgets": "*",
+    "switchboard_names": "*",
     "tasks": "*",
     "text": "*",
     "value_manager": "*",

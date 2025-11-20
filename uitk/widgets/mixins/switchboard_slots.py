@@ -102,9 +102,7 @@ class SwitchboardSlotsMixin:
         return signals
 
     def _find_slots_class(self, base_name: str) -> Optional[Type]:
-        legal_name = self.convert_to_legal_name(base_name)
-        capitalized = "".join(part.title() for part in legal_name.split("_"))
-        try_names = [f"{capitalized}Slots", capitalized]
+        try_names = self.get_slot_class_names(base_name)
 
         self.logger.debug(f"[_find_slots_class] Looking for: {try_names}")
 
@@ -238,7 +236,7 @@ class SwitchboardSlotsMixin:
             return
 
         # Check for and call the widget-specific init method
-        slot_func = getattr(slots, f"{widget.objectName()}_init", None)
+        slot_func = getattr(slots, f"{widget.objectName()}{self.INIT_SUFFIX}", None)
         if slot_func:
             try:
                 slot_func(widget)

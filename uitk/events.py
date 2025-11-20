@@ -293,15 +293,11 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                     f"Grabbing mouse for widget: {top_widget.objectName()}"
                 )
                 self._grab_widget(top_widget)
+            elif self._mouse_owner and QtWidgets.QApplication.mouseButtons():
+                # Keep the current owner if dragging
+                pass
             else:
-                active_window = QtWidgets.QApplication.activeWindow()
-                if active_window and active_window.isVisible():
-                    self.logger.info(
-                        f"Grabbing mouse for active window: {active_window.objectName()}"
-                    )
-                    self._grab_widget(active_window)
-                else:
-                    self._release_mouse_owner()
+                self._release_mouse_owner()
         except RuntimeError:
             self.logger.debug("Could not grab mouse: widget may have been deleted.")
 

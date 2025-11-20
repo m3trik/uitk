@@ -81,8 +81,8 @@ class SwitchboardUtilsMixin:
         # Center the widget considering the offset
         widget.move(centerPoint - widget.rect().center() + offset)
 
-    @staticmethod
-    def unpack_names(name_string):
+    @classmethod
+    def unpack_names(cls, name_string):
         """Unpacks a comma-separated string of names and returns a list of individual names.
 
         Parameters:
@@ -279,8 +279,8 @@ class SwitchboardUtilsMixin:
         immediate_kwargs = {}
 
         for key, value in list(kwargs.items()):
-            if key.startswith("on_"):
-                state_value = key[3:]  # Remove 'on_' prefix
+            if key.startswith(self.STATE_PREFIX):
+                state_value = key[len(self.STATE_PREFIX) :]  # Remove 'on_' prefix
                 # Store the string representation as key - will match against actual signal values
                 state_map[state_value] = value
             else:
