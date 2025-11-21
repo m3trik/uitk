@@ -45,6 +45,12 @@ QGroupBox::title {
     background-color: {MAIN_BACKGROUND_ALPHA};
     color: {TEXT_COLOR};
 }
+QGroupBox:disabled {
+    color: {TEXT_DISABLED};
+}
+QGroupBox::title:disabled {
+    color: {TEXT_DISABLED};
+}
 
 /* -- Menus -- */
 QMenu {
@@ -55,6 +61,9 @@ QMenu {
 QMenu::item {
     padding: 0px 1px 0px 1px;
     border: none;
+}
+QMenu::item:disabled {
+    color: {TEXT_DISABLED};
 }
 QMenu::item:selected {
     border-color: {BUTTON_CHECKED};
@@ -150,7 +159,14 @@ QAbstractButton::indicator:checked:pressed {
     image: none;
 }
 /* QCheckBox: Inherits from QAbstractButton */
+QCheckBox:disabled {
+    color: {TEXT_DISABLED};
+}
+
 /* QRadioButton: Inherits from QAbstractButton */
+QRadioButton:disabled {
+    color: {TEXT_DISABLED};
+}
 QPushButton#toggle_expand {
     border: none;
     padding: 0px 0px 0px 0px;
@@ -403,7 +419,7 @@ QLineEdit:hover {
     border: 2px solid {BUTTON_HOVER};
 }
 QLineEdit:disabled {
-    color: {MAIN_BACKGROUND};
+    color: {TEXT_DISABLED};
 }
 QLineEdit:enabled {
     color: {TEXT_COLOR};
@@ -419,6 +435,9 @@ QTextEdit {
 }
 QTextEdit:hover {
     border: 2px solid {BUTTON_HOVER};
+}
+QTextEdit:disabled {
+    color: {TEXT_DISABLED};
 }
 QTextEdit QWidget#qt_scrollarea_viewport {
     background-color: {WIDGET_BACKGROUND};
@@ -437,6 +456,9 @@ QPlainTextEdit {
 }
 QPlainTextEdit:hover {
     border: 2px solid {BUTTON_HOVER};
+}
+QPlainTextEdit:disabled {
+    color: {TEXT_DISABLED};
 }
 
 /* -- Item Views -- */
