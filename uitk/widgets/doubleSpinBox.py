@@ -1,12 +1,12 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtWidgets, QtGui, QtCore
-from uitk.widgets.menu import Menu
 from uitk.widgets.messageBox import MessageBox
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.menu_mixin import MenuMixin
 
 
-class DoubleSpinBox(QtWidgets.QDoubleSpinBox, AttributesMixin):
+class DoubleSpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin):
     """Custom QDoubleSpinBox with enhanced step size adjustment capabilities.
     Includes handling for Alt, Ctrl, and Ctrl+Alt modifiers for dynamic step size adjustment.
     """
@@ -14,7 +14,10 @@ class DoubleSpinBox(QtWidgets.QDoubleSpinBox, AttributesMixin):
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QDoubleSpinBox.__init__(self, parent)
 
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
+        # Customize standalone menu provided by MenuMixin
+        self.menu.trigger_button = "right"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
         self.msgBox = MessageBox(self, timeout=1)
 
         self.setProperty("class", self.__class__.__name__)

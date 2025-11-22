@@ -1,6 +1,450 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
+
+
+class TextTruncation:
+    """Mixin providing reusable text truncation functionality for UI widgets."""
+
+    def calculate_text_truncation(
+        self,
+        text,
+        container_width=None,
+        reserved_width=0,
+        min_text_width=100,
+        elide_mode=QtCore.Qt.ElideMiddle,
+        font=None,
+        custom_suffix="...",
+    ):
+        """
+        Calculate truncated text that fits within available width using Qt font metrics.
+
+        Parameters:
+            text (str): The text to truncate
+            container_width (int): Total container width. If None, uses self.width() or default
+            reserved_width (int): Width reserved for other elements (buttons, icons, etc.)
+            min_text_width (int): Minimum width to preserve for text
+            elide_mode (Qt.TextElideMode): Truncation type:
+                - QtCore.Qt.ElideLeft: "...end of text"
+                - QtCore.Qt.ElideMiddle: "start...end" (default)
+                - QtCore.Qt.ElideRight: "start of text..."
+                - QtCore.Qt.ElideNone: No truncation (returns original text)
+            font (QFont): Font to use for metrics. If None, uses self.font()
+            custom_suffix (str): Custom suffix for manual truncation (when not using Qt elision)
+
+        Returns:
+            tuple: (truncated_text, available_width, original_width)
+        """
+        if not text:
+            return "", 0, 0
+
+        # Get font metrics
+        if font is None:
+            font = getattr(self, "font", lambda: QtGui.QFont())()
+        fm = QtGui.QFontMetrics(font)
+
+        # Calculate container width
+        if container_width is None:
+            # Try to get width from self, fallback to reasonable default
+            if hasattr(self, "width"):
+                container_width = self.width() if self.width() > 0 else 250
+            else:
+                container_width = 250
+
+        # Calculate available width for text
+        available_width = max(min_text_width, container_width - reserved_width)
+
+        # Get original text width
+        original_width = fm.horizontalAdvance(text)
+
+        # Truncate if necessary
+        if original_width <= available_width:
+            truncated_text = text
+        else:
+            truncated_text = fm.elidedText(text, elide_mode, available_width)
+
+        return truncated_text, available_width, original_width
+
+    def calculate_character_truncation(
+        self, text, max_chars, elide_mode=QtCore.Qt.ElideMiddle, suffix="..."
+    ):
+        """
+        Truncate text by character count (not pixel-based).
+
+        Parameters:
+            text (str): Text to truncate
+            max_chars (int): Maximum number of characters
+            elide_mode (Qt.TextElideMode): Where to truncate
+            suffix (str): Truncation indicator
+
+        Returns:
+            str: Truncated text
+        """
+        if not text or len(text) <= max_chars:
+            return text
+
+        if elide_mode == QtCore.Qt.ElideLeft:
+            return suffix + text[-(max_chars - len(suffix)) :]
+        elif elide_mode == QtCore.Qt.ElideRight:
+            return text[: max_chars - len(suffix)] + suffix
+        elif elide_mode == QtCore.Qt.ElideMiddle:
+            if max_chars <= len(suffix):
+                return suffix[:max_chars]
+            available = max_chars - len(suffix)
+            start_len = available // 2
+            end_len = available - start_len
+            return (
+                text[:start_len] + suffix + text[-end_len:]
+                if end_len > 0
+                else text[:start_len] + suffix
+            )
+        else:  # ElideNone
+            return text
+
+    def calculate_word_truncation(
+        self,
+        text,
+        max_chars,
+        elide_mode=QtCore.Qt.ElideMiddle,
+        suffix="...",
+        word_boundary=True,
+    ):
+        """
+        Truncate text respecting word boundaries.
+
+        Parameters:
+            text (str): Text to truncate
+            max_chars (int): Maximum number of characters
+            elide_mode (Qt.TextElideMode): Where to truncate
+            suffix (str): Truncation indicator
+            word_boundary (bool): Whether to respect word boundaries
+
+        Returns:
+            str: Truncated text
+        """
+        if not text or len(text) <= max_chars:
+            return text
+
+        if not word_boundary:
+            return self.calculate_character_truncation(
+                text, max_chars, elide_mode, suffix
+            )
+
+        words = text.split()
+        if not words:
+            return text
+
+        if elide_mode == QtCore.Qt.ElideRight:
+            result = ""
+            for word in words:
+                test_text = result + (" " if result else "") + word
+                if len(test_text + suffix) <= max_chars:
+                    result = test_text
+                else:
+                    break
+            return result + suffix if result != text else text
+
+        elif elide_mode == QtCore.Qt.ElideLeft:
+            result = ""
+            for word in reversed(words):
+                test_text = word + (" " if result else "") + result
+                if len(suffix + test_text) <= max_chars:
+                    result = test_text
+                else:
+                    break
+            return suffix + result if result != text else text
+
+        elif elide_mode == QtCore.Qt.ElideMiddle:
+            if len(suffix) >= max_chars:
+                return suffix[:max_chars]
+            available = max_chars - len(suffix)
+
+            # Try to keep first and last words
+            if len(words) >= 2:
+                first_word = words[0]
+                last_word = words[-1]
+                if len(first_word + last_word + suffix) <= max_chars:
+                    return first_word + suffix + last_word
+
+            # Fallback to character truncation
+            return self.calculate_character_truncation(
+                text, max_chars, elide_mode, suffix
+            )
+
+        return text
+
+    def calculate_path_truncation(
+        self,
+        path,
+        max_chars,
+        preserve_filename=True,
+        preserve_extension=True,
+        suffix="...",
+    ):
+        """
+        Truncate file/directory paths intelligently.
+
+        Parameters:
+            path (str): File or directory path
+            max_chars (int): Maximum number of characters
+            preserve_filename (bool): Keep filename intact if possible
+            preserve_extension (bool): Keep file extension if possible
+            suffix (str): Truncation indicator
+
+        Returns:
+            str: Truncated path
+        """
+        if not path or len(path) <= max_chars:
+            return path
+
+        import os
+
+        # Handle different path separators
+        separator = "\\" if "\\" in path else "/"
+        parts = path.split(separator)
+
+        if len(parts) <= 1:
+            # No path separators, treat as simple text
+            return self.calculate_character_truncation(
+                path, max_chars, QtCore.Qt.ElideMiddle, suffix
+            )
+
+        filename = parts[-1] if parts[-1] else parts[-2]  # Handle trailing separators
+
+        if preserve_filename and len(filename + suffix) <= max_chars:
+            # Try to preserve filename and truncate directory path
+            available = max_chars - len(filename) - len(suffix) - 1  # -1 for separator
+            if available > 0:
+                dir_path = separator.join(parts[:-1])
+                if len(dir_path) <= available:
+                    return path
+                else:
+                    truncated_dir = self.calculate_character_truncation(
+                        dir_path, available, QtCore.Qt.ElideMiddle, ""
+                    )
+                    return truncated_dir + suffix + separator + filename
+            else:
+                # Not enough space, truncate filename too
+                if preserve_extension and "." in filename:
+                    name, ext = filename.rsplit(".", 1)
+                    available_for_name = (
+                        max_chars - len(ext) - len(suffix) - 1
+                    )  # -1 for dot
+                    if available_for_name > 0:
+                        truncated_name = self.calculate_character_truncation(
+                            name, available_for_name, QtCore.Qt.ElideLeft, ""
+                        )
+                        return truncated_name + suffix + "." + ext
+
+                return self.calculate_character_truncation(
+                    filename, max_chars, QtCore.Qt.ElideMiddle, suffix
+                )
+
+        # Fallback to simple character truncation
+        return self.calculate_character_truncation(
+            path, max_chars, QtCore.Qt.ElideMiddle, suffix
+        )
+
+    def _calculate_truncation_with_type(
+        self, text, container_width, reserved_width, truncation_type
+    ):
+        """
+        Internal helper to calculate text truncation based on type.
+
+        Returns:
+            tuple: (truncated_text, avail_width, orig_width, was_truncated)
+        """
+        if truncation_type == "pixel":
+            truncated_text, avail_width, orig_width = self.calculate_text_truncation(
+                text, container_width, reserved_width
+            )
+            was_truncated = orig_width > avail_width
+        else:
+            # For non-pixel types, estimate character limit from width
+            avail_width = 0  # Not applicable for non-pixel modes
+            orig_width = 0  # Not applicable for non-pixel modes
+
+            if container_width:
+                font = getattr(self, "font", lambda: QtGui.QFont())()
+                fm = QtGui.QFontMetrics(font)
+                avg_char_width = fm.averageCharWidth()
+                available_width = max(50, (container_width or 250) - reserved_width)
+                estimated_chars = max(5, available_width // avg_char_width)
+            else:
+                estimated_chars = 30  # Default
+
+            if truncation_type == "char":
+                truncated_text = self.calculate_character_truncation(
+                    text, estimated_chars
+                )
+            elif truncation_type == "word":
+                truncated_text = self.calculate_word_truncation(text, estimated_chars)
+            elif truncation_type == "path":
+                truncated_text = self.calculate_path_truncation(text, estimated_chars)
+            else:
+                truncated_text = text  # Unknown type, use original
+
+            was_truncated = truncated_text != text
+
+        return truncated_text, avail_width, orig_width, was_truncated
+
+    def _apply_tooltip_if_needed(
+        self, widget, text, truncated_text, tooltip, truncation_type, was_truncated
+    ):
+        """
+        Internal helper to apply tooltip if text was truncated or custom tooltip provided.
+        Only applies tooltip if widget supports setToolTip method.
+        """
+        # Check if widget supports tooltips before trying to set one
+        if hasattr(widget, "setToolTip") and callable(getattr(widget, "setToolTip")):
+            if tooltip:
+                widget.setToolTip(tooltip)
+            elif was_truncated:
+                widget.setToolTip(text)  # Show full text in tooltip
+
+    def apply_text_truncation(
+        self,
+        widget,
+        text,
+        container_width=None,
+        reserved_width=0,
+        tooltip=None,
+        truncation_type="pixel",
+    ):
+        """
+        Apply text truncation to an existing widget.
+
+        Parameters:
+            widget: Widget to apply truncation to (must have setText method)
+            text (str): Text to truncate and apply
+            container_width (int): Container width for calculation
+            reserved_width (int): Width reserved for other elements
+            tooltip (str): Tooltip text. If None, uses original text if truncated
+            truncation_type (str): Type of truncation:
+                - "pixel": Pixel-based using Qt font metrics (default)
+                - "char": Character-based truncation
+                - "word": Word-boundary aware truncation
+                - "path": Intelligent path truncation
+
+        Returns:
+            tuple: (truncated_text, was_truncated) - the applied text and whether it was truncated
+
+        Raises:
+            TypeError: If widget doesn't have setText method
+        """
+        # Validate that the widget supports text setting
+        if not hasattr(widget, "setText") or not callable(getattr(widget, "setText")):
+            widget_type = type(widget).__name__
+            supported_types = "QPushButton, QLabel, QLineEdit, QComboBox, QCheckBox, QRadioButton, etc."
+            raise TypeError(
+                f"Widget type '{widget_type}' does not support text truncation. "
+                f"Widget must have a 'setText' method. Supported types include: {supported_types}"
+            )
+
+        truncated_text, avail_width, orig_width, was_truncated = (
+            self._calculate_truncation_with_type(
+                text, container_width, reserved_width, truncation_type
+            )
+        )
+
+        widget.setText(truncated_text)
+
+        self._apply_tooltip_if_needed(
+            widget, text, truncated_text, tooltip, truncation_type, was_truncated
+        )
+
+        return truncated_text, was_truncated
+
+    def create_truncated_button(
+        self,
+        text,
+        container_width=None,
+        reserved_width=0,
+        tooltip=None,
+        truncation_type="pixel",
+        **button_kwargs,
+    ):
+        """
+        Create a QPushButton with properly truncated text.
+
+        Parameters:
+            text (str): Button text to truncate
+            container_width (int): Container width for calculation
+            reserved_width (int): Width reserved for other elements
+            tooltip (str): Tooltip text. If None, uses original text if truncated
+            truncation_type (str): Type of truncation:
+                - "pixel": Pixel-based using Qt font metrics (default)
+                - "char": Character-based truncation
+                - "word": Word-boundary aware truncation
+                - "path": Intelligent path truncation
+            **button_kwargs: Additional arguments passed to QPushButton constructor
+
+        Returns:
+            QPushButton: Button with truncated text and tooltip
+        """
+        button = QtWidgets.QPushButton(**button_kwargs)
+        self.apply_text_truncation(
+            button, text, container_width, reserved_width, tooltip, truncation_type
+        )
+        return button
+
+    def create_truncated_label(
+        self,
+        text,
+        container_width=None,
+        reserved_width=0,
+        tooltip=None,
+        truncation_type="pixel",
+        **label_kwargs,
+    ):
+        """
+        Create a QLabel with properly truncated text.
+
+        Parameters:
+            text (str): Label text to truncate
+            container_width (int): Container width for calculation
+            reserved_width (int): Width reserved for other elements
+            tooltip (str): Tooltip text. If None, uses original text if truncated
+            truncation_type (str): Type of truncation ("pixel", "char", "word", "path")
+            **label_kwargs: Additional arguments passed to QLabel constructor
+
+        Returns:
+            QLabel: Label with truncated text and tooltip
+        """
+        label = QtWidgets.QLabel(**label_kwargs)
+        self.apply_text_truncation(
+            label, text, container_width, reserved_width, tooltip, truncation_type
+        )
+        return label
+
+    def update_widget_text_truncation(
+        self,
+        widget,
+        text,
+        container_width=None,
+        reserved_width=0,
+        tooltip=None,
+        truncation_type="pixel",
+    ):
+        """
+        Update an existing widget's text with proper truncation.
+
+        Note: This method is now an alias for apply_text_truncation for backwards compatibility.
+
+        Parameters:
+            widget: Widget to update (must have setText method)
+            text (str): New text to set
+            container_width (int): Container width for calculation
+            reserved_width (int): Width reserved for other elements
+            tooltip (str): Tooltip text. If None, uses original text if truncated
+            truncation_type (str): Type of truncation ("pixel", "char", "word", "path")
+
+        Returns:
+            tuple: (truncated_text, was_truncated) - the applied text and whether it was truncated
+        """
+        return self.apply_text_truncation(
+            widget, text, container_width, reserved_width, tooltip, truncation_type
+        )
 
 
 class RichText:

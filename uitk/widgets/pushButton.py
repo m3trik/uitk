@@ -1,13 +1,27 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtWidgets
-from uitk.widgets.menu import Menu
+from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
+from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
-class PushButton(QtWidgets.QPushButton, AttributesMixin, RichText, TextOverlay):
-    """ """
+class PushButton(
+    MenuMixin,
+    QtWidgets.QPushButton,
+    OptionBoxMixin,
+    AttributesMixin,
+    RichText,
+    TextOverlay,
+):
+    """QPushButton with automatic Menu and OptionBox integration.
+
+    Features:
+    - self.menu: Standalone menu (via MenuMixin)
+    - self.option_box: OptionBox functionality (via OptionBoxMixin)
+    - self.option_box.menu: Separate option box menu
+    """
 
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QPushButton.__init__(self, parent)
@@ -16,7 +30,15 @@ class PushButton(QtWidgets.QPushButton, AttributesMixin, RichText, TextOverlay):
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
+
+        # Customize standalone menu (provided by MenuMixin)
+        self.menu.trigger_button = "right"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
+        self.menu.add_apply_button = True  # Enable apply button for pushbutton menus
+
+        # OptionBox is also available via OptionBoxMixin
+        # Users can access: self.option_box.menu, self.option_box.clear_option, etc.
 
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)

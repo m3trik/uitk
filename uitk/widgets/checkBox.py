@@ -1,12 +1,12 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
-from uitk.widgets.menu import Menu
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
-class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
+class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOverlay):
     """ """
 
     def __init__(self, parent=None, **kwargs):
@@ -23,7 +23,11 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-        self.menu = Menu(self, mode="option", fixed_item_height=20)
+
+        # Customize standalone menu provided by MenuMixin
+        self.menu.trigger_button = "right"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
 
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
@@ -93,9 +97,9 @@ class CheckBox(QtWidgets.QCheckBox, AttributesMixin, RichText, TextOverlay):
         Note:
             Other mouse events are passed to the parent class.
         """
-        if event.button() == QtCore.Qt.RightButton:
-            if self.menu:
-                self.menu.show()
+        # if event.button() == QtCore.Qt.RightButton:
+        #     if self.menu:
+        #         self.menu.show()
 
         if self.isTristate():
             # The next_state dictionary defines the order in which states should be cycled.

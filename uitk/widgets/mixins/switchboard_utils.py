@@ -81,8 +81,8 @@ class SwitchboardUtilsMixin:
         # Center the widget considering the offset
         widget.move(centerPoint - widget.rect().center() + offset)
 
-    @staticmethod
-    def unpack_names(name_string):
+    @classmethod
+    def unpack_names(cls, name_string):
         """Unpacks a comma-separated string of names and returns a list of individual names.
 
         Parameters:
@@ -239,19 +239,105 @@ class SwitchboardUtilsMixin:
 
         return ptk.format_return(button_groups)
 
-    def toggle_multi(self, ui, **kwargs):
-        """Set multiple boolean properties, for multiple widgets at once.
+    def toggle_multi(self, ui, trigger=None, signal=None, **kwargs):
+        """Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automatically.
 
         Parameters:
             ui (QWidget): A previously loaded dynamic UI object.
-            *kwargs: The property to modify. ex. setChecked, setUnChecked, setEnabled, setDisabled, setVisible, setHidden
-                        value: string of object_names - object_names separated by ',' ie. 'b000-12,b022'
-        Example:
-            toggle_multi(<ui>, setDisabled='b000', setUnChecked='chk009-12', setVisible='b015,b017')
+            trigger (str/QWidget, optional): If provided, connects this widget's signal to toggle the others.
+                                             If None, toggles immediately.
+            signal (str, optional): Signal name to connect (only used when trigger is provided). Default: 'toggled'.
+            **kwargs: The properties to modify. Can be:
+                     - Direct properties (immediate mode): setChecked, setUnChecked, setEnabled, setDisabled, etc.
+                       Value: string of object_names separated by ',' ie. 'b000-12,b022'
+                     - State mapping (trigger mode): on_<state>={...}, on_default={...}
+                       Value: dict of toggle_multi kwargs to apply for that state
+
+        Examples:
+            # Immediate toggle (original behavior)
+            toggle_multi(<ui>, setDisabled='b000', setUnChecked='chk009-12')
+
+            # Auto-connect with boolean states (True/False)
+            toggle_multi(<ui>, trigger='chk027', signal='toggled',
+                        on_True={'setDisabled': 's005,s006'},
+                        on_False={'setEnabled': 's005,s006'})
+
+            # Auto-connect with any value states (e.g., combobox index)
+            toggle_multi(<ui>, trigger='cmb001', signal='currentIndexChanged',
+                        on_0={'setVisible': 'grp_basic'},
+                        on_1={'setVisible': 'grp_advanced'},
+                        on_2={'setVisible': 'grp_expert'},
+                        on_default={'setHidden': 'grp_basic,grp_advanced,grp_expert'})
+
+            # String states (e.g., from text changed)
+            toggle_multi(<ui>, trigger='line_edit', signal='textChanged',
+                        on_auto={'setEnabled': 's001'},
+                        on_manual={'setDisabled': 's001'})
         """
-        for k in kwargs:  # property_ ie. setUnChecked
+        # Extract state mapping kwargs (those starting with 'on_')
+        state_map = {}
+        immediate_kwargs = {}
+
+        for key, value in list(kwargs.items()):
+            if key.startswith(self.STATE_PREFIX):
+                state_value = key[len(self.STATE_PREFIX) :]  # Remove 'on_' prefix
+                # Store the string representation as key - will match against actual signal values
+                state_map[state_value] = value
+            else:
+                immediate_kwargs[key] = value
+
+        # If trigger provided, set up connection
+        if trigger is not None:
+            # Default signal to 'toggled' if not specified
+            if signal is None:
+                signal = "toggled"
+
+            # Get the trigger widget if string provided
+            if isinstance(trigger, str):
+                trigger_widget = getattr(ui, trigger, None)
+                if not trigger_widget:
+                    self.logger.warning(
+                        f"Widget '{trigger}' not found in UI, cannot connect toggle."
+                    )
+                    return
+            else:
+                trigger_widget = trigger
+
+            # Get default state mapping if provided
+            default_map = state_map.pop("default", None)
+
+            # Create the callback function
+            def toggle_callback(state):
+                # Convert state to string for lookup (to match parameter names)
+                state_key = str(state)
+
+                # Look up the state in the mapping
+                toggle_kwargs = state_map.get(state_key)
+
+                # Fall back to default if state not found
+                if toggle_kwargs is None and default_map is not None:
+                    toggle_kwargs = default_map
+
+                if toggle_kwargs:
+                    self.toggle_multi(ui, **toggle_kwargs)
+
+            # Connect the signal
+            try:
+                signal_obj = getattr(trigger_widget, signal, None)
+                if signal_obj and callable(getattr(signal_obj, "connect", None)):
+                    signal_obj.connect(toggle_callback)
+                else:
+                    self.logger.warning(
+                        f"Signal '{signal}' not found on widget '{trigger_widget}'"
+                    )
+            except Exception as e:
+                self.logger.error(f"Failed to connect toggle: {e}")
+            return
+
+        # Original immediate toggle behavior
+        for k in immediate_kwargs:  # property_ ie. setUnChecked
             # get_widgets_by_string_pattern returns a widget list from a string of object_names.
-            widgets = self.get_widgets_by_string_pattern(ui, kwargs[k])
+            widgets = self.get_widgets_by_string_pattern(ui, immediate_kwargs[k])
 
             state = True
             # strips 'Un' and sets the state from True to False. ie. 'setUnChecked' becomes 'setChecked' (False)

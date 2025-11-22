@@ -27,7 +27,7 @@ class ExampleSlots:
 
     def header_init(self, widget):
         """Initialize the header with draggable menu functionality."""
-        widget.config_buttons(menu_button=True, minimize_button=True, hide_button=True)
+        widget.config_buttons("menu_button", "minimize_button", "hide_button")
         widget.menu.setTitle("EXAMPLE MENU")
 
         # Add interactive label to header menu

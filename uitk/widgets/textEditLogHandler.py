@@ -33,12 +33,20 @@ class TextEditLogHandler(logging.Handler):
         try:
             if getattr(record, "raw", False):
                 msg = record.getMessage()
-                QtCore.QTimer.singleShot(0, lambda: self._safe_append(msg))
             else:
                 msg = self.format(record)
                 color = self.get_color(record.levelname)
-                formatted_msg = f'<span style="color:{color}">{msg}</span>'
-                QtCore.QTimer.singleShot(0, lambda: self._safe_append(formatted_msg))
+                msg = f'<span style="color:{color}">{msg}</span>'
+
+            # Check if we're on the main GUI thread
+            app = QtWidgets.QApplication.instance()
+            if app and app.thread() == QtCore.QThread.currentThread():
+                # Direct call on main thread with immediate processEvents
+                self._safe_append(msg)
+            else:
+                # Thread-safe deferred call from worker thread
+                QtCore.QTimer.singleShot(0, lambda: self._safe_append(msg))
+
         except Exception as e:
             print(f"QtTextEditHandler error: {e}")
 

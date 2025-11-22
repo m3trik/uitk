@@ -1,21 +1,387 @@
 # !/usr/bin/python
 # coding=utf-8
 import inspect
-from typing import Optional, Union
+import time
+from dataclasses import dataclass, field
+from typing import Optional, Union, Callable, Dict, Any, Tuple
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
-from uitk.widgets.optionBox import OptionBox
 from uitk.widgets.header import Header
+from uitk.widgets.footer import Footer
 from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.convert import ConvertMixin
+
+# Widget type cache for faster widget creation
+_WIDGET_TYPE_CACHE: Dict[str, type] = {
+    "QPushButton": QtWidgets.QPushButton,
+    "QLabel": QtWidgets.QLabel,
+    "QCheckBox": QtWidgets.QCheckBox,
+    "QRadioButton": QtWidgets.QRadioButton,
+    "QLineEdit": QtWidgets.QLineEdit,
+    "QTextEdit": QtWidgets.QTextEdit,
+    "QSpinBox": QtWidgets.QSpinBox,
+    "QDoubleSpinBox": QtWidgets.QDoubleSpinBox,
+    "QComboBox": QtWidgets.QComboBox,
+    "QSlider": QtWidgets.QSlider,
+}
 
 
-class Menu(QtWidgets.QWidget, AttributesMixin):
-    """A custom Qt Widget that serves as a menu with additional features.
+@dataclass
+class MenuConfig:
+    """Configuration for Menu initialization.
 
-    The Menu class inherits from QtWidgets.QWidget and mixes in AttributesMixin and StyleSheet.
-    It provides a customizable menu with features such as draggable headers and apply buttons.
-    The menu can be positioned relative to the cursor, a specific coordinate, a widget, or its parent.
+    This dataclass encapsulates all menu configuration parameters,
+    making it easier to create, modify, and extend menu configurations.
+    """
+
+    parent: Optional[QtWidgets.QWidget] = None
+    name: Optional[str] = None
+    trigger_button: Union[QtCore.Qt.MouseButton, str, tuple, list, None] = None
+    position: Union[str, QtCore.QPoint, list, tuple, None] = "cursorPos"
+    min_item_height: Optional[int] = None
+    max_item_height: Optional[int] = None
+    fixed_item_height: Optional[int] = None
+    add_header: bool = True
+    add_footer: bool = True
+    add_apply_button: bool = False
+    hide_on_leave: bool = False
+    match_parent_width: bool = True
+    extra_attrs: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def for_context_menu(
+        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
+    ) -> "MenuConfig":
+        """Create config for a context menu."""
+        defaults = {
+            "parent": parent,
+            "trigger_button": "right",
+            "position": "cursorPos",
+            "fixed_item_height": 20,
+            "add_header": True,
+            "match_parent_width": False,
+            "hide_on_leave": False,
+        }
+        return cls(**{**defaults, **overrides})
+
+    @classmethod
+    def for_dropdown_menu(
+        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
+    ) -> "MenuConfig":
+        """Create config for a dropdown menu."""
+        defaults = {
+            "parent": parent,
+            "trigger_button": "none",
+            "position": "bottom",
+            "hide_on_leave": True,
+            "add_apply_button": True,
+            "add_header": True,
+            "match_parent_width": True,
+        }
+        return cls(**{**defaults, **overrides})
+
+    @classmethod
+    def for_popup_menu(
+        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
+    ) -> "MenuConfig":
+        """Create config for a popup menu."""
+        defaults = {
+            "parent": parent,
+            "trigger_button": "none",
+            "position": "cursorPos",
+            "add_header": True,
+            "match_parent_width": False,
+        }
+        return cls(**{**defaults, **overrides})
+
+
+@dataclass
+class _ActionButtonConfig:
+    """Internal configuration for action buttons in Menu.
+
+    This dataclass encapsulates all properties needed to create and configure
+    an action button within a Menu widget.
+    """
+
+    text: str
+    callback: Optional[Callable] = None
+    tooltip: Optional[str] = None
+    enabled: bool = True
+    visible: bool = True
+    fixed_height: Optional[int] = None
+
+
+class ActionButtonManager:
+    """Manages action buttons for Menu widgets.
+
+    Encapsulates all action button creation, configuration, and visibility management.
+    """
+
+    def __init__(self, menu_widget: QtWidgets.QWidget):
+        """Initialize the action button manager.
+
+        Args:
+            menu_widget: The menu widget that owns these buttons
+        """
+        self.menu = menu_widget
+        self._buttons: Dict[str, QtWidgets.QPushButton] = {}
+        self._container: Optional[QtWidgets.QWidget] = None
+        self._layout: Optional[QtWidgets.QHBoxLayout] = None
+
+    @property
+    def container(self) -> QtWidgets.QWidget:
+        """Get or create the action button container widget."""
+        if self._container is None:
+            self._container = QtWidgets.QWidget()
+            self._container.setObjectName("actionButtonContainer")
+            self._container.hide()
+            self._layout = QtWidgets.QHBoxLayout(self._container)
+            self._layout.setContentsMargins(0, 0, 0, 0)
+            self._layout.setSpacing(1)
+        return self._container
+
+    def create_button(
+        self, button_id: str, config: _ActionButtonConfig
+    ) -> QtWidgets.QPushButton:
+        """Create an action button with the given configuration."""
+        button = QtWidgets.QPushButton(config.text)
+
+        if config.tooltip:
+            button.setToolTip(config.tooltip)
+        if config.callback:
+            button.released.connect(config.callback)
+
+        button.setEnabled(config.enabled)
+        button.setVisible(config.visible)
+
+        if config.fixed_height:
+            button.setFixedHeight(config.fixed_height)
+
+        button.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+        button.setObjectName(f"actionButton_{button_id}")
+
+        self._buttons[button_id] = button
+        return button
+
+    def add_button(
+        self, button_id: str, config: _ActionButtonConfig
+    ) -> QtWidgets.QPushButton:
+        """Add an action button to the container."""
+        button = self.create_button(button_id, config)
+        _ = self.container  # Ensure container exists
+        self._layout.addWidget(button)
+        return button
+
+    def get_button(self, button_id: str) -> Optional[QtWidgets.QPushButton]:
+        """Get an action button by ID."""
+        return self._buttons.get(button_id)
+
+    def show_button(self, button_id: str) -> bool:
+        """Show an action button."""
+        button = self.get_button(button_id)
+        if button:
+            button.show()
+            button.setVisible(True)
+            if self._container and not self._container.isVisible():
+                self._container.show()
+                self._container.setVisible(True)
+                self._container.updateGeometry()
+                if hasattr(self.menu, "updateGeometry"):
+                    self.menu.updateGeometry()
+            return True
+        return False
+
+    def hide_button(self, button_id: str) -> bool:
+        """Hide an action button."""
+        button = self.get_button(button_id)
+        if button:
+            button.hide()
+            # Auto-hide container if no buttons are visible
+            if self._container and not any(
+                btn.isVisible() for btn in self._buttons.values()
+            ):
+                self._container.hide()
+            return True
+        return False
+
+    def has_visible_buttons(self) -> bool:
+        """Check if any buttons are currently visible."""
+        return any(btn.isVisible() for btn in self._buttons.values())
+
+
+class MenuPositioner:
+    """Encapsulates menu positioning and width matching logic."""
+
+    @staticmethod
+    def center_on_cursor(widget: QtWidgets.QWidget) -> None:
+        """Center menu on cursor position."""
+        pos = QtGui.QCursor.pos()
+        center = QtCore.QPoint(
+            pos.x() - (widget.width() / 2),
+            pos.y() - (widget.height() / 4),
+        )
+        widget.move(center)
+
+    @staticmethod
+    def position_at_coordinate(
+        widget: QtWidgets.QWidget, position: Union[QtCore.QPoint, tuple, list]
+    ) -> None:
+        """Position menu at specific coordinates."""
+        if not isinstance(position, QtCore.QPoint):
+            position = QtCore.QPoint(position[0], position[1])
+        widget.move(position)
+
+    @staticmethod
+    def position_relative_to_widget(
+        menu: QtWidgets.QWidget, target_widget: QtWidgets.QWidget, position: str
+    ) -> None:
+        """Position menu relative to another widget."""
+        if position == "cursorPos":
+            MenuPositioner.center_on_cursor(menu)
+            return
+
+        target_rect = target_widget.rect()
+        menu_size = menu.sizeHint()
+
+        positions = {
+            "bottom": lambda: target_widget.mapToGlobal(target_rect.bottomLeft()),
+            "top": lambda: target_widget.mapToGlobal(
+                QtCore.QPoint(
+                    target_rect.left(), target_rect.top() - menu_size.height()
+                )
+            ),
+            "right": lambda: target_widget.mapToGlobal(target_rect.topRight()),
+            "left": lambda: target_widget.mapToGlobal(
+                QtCore.QPoint(target_rect.left() - menu_size.width(), target_rect.top())
+            ),
+            "center": lambda: target_widget.mapToGlobal(target_rect.center()),
+        }
+
+        if position in positions:
+            menu.move(positions[position]())
+        else:
+            # Fallback to cursor position
+            MenuPositioner.center_on_cursor(menu)
+
+    @staticmethod
+    def apply_width_matching(
+        menu: QtWidgets.QWidget,
+        anchor_widget: Optional[QtWidgets.QWidget],
+        match_parent_width: bool,
+        position: Union[str, QtCore.QPoint, tuple, list, None],
+        logger: Optional[Any] = None,
+    ) -> None:
+        """Apply width matching if conditions are met.
+
+        Args:
+            menu: The menu widget to resize
+            anchor_widget: Widget to match width from
+            match_parent_width: Whether width matching is enabled
+            position: Current position setting (only applies to "top"/"bottom")
+            logger: Optional logger for debug output
+        """
+        if not match_parent_width:
+            return
+
+        if not isinstance(position, str) or position not in ("top", "bottom"):
+            return
+
+        if not anchor_widget:
+            return
+
+        # Get anchor width
+        anchor_width = anchor_widget.width()
+
+        # The issue is that when we use setFixedWidth, Qt includes the border in the total width,
+        # but the content area needs to fit within that. Since the menu has a 1px border on each side,
+        # the actual content width is (total_width - 2px).
+        # To match the anchor width AND show the full content, we need to ensure the menu's
+        # total width accounts for both the content and the border.
+
+        # Get the menu's content width (what it wants to be)
+        content_width = menu.sizeHint().width()
+
+        # Use whichever is larger: anchor width or content width
+        # This ensures we don't clip content when it's wider than the anchor
+        # Compute total horizontal padding introduced by layout margins and borders
+        horizontal_padding = 0
+
+        layout = menu.layout()
+        if layout:
+            margins = layout.contentsMargins()
+            horizontal_padding += margins.left() + margins.right()
+
+        frame = getattr(menu, "_frame", None)
+        if frame:
+            frame_layout = frame.layout()
+            if frame_layout:
+                margins = frame_layout.contentsMargins()
+                horizontal_padding += margins.left() + margins.right()
+
+        central_layout = getattr(menu, "centralWidgetLayout", None)
+        if central_layout:
+            margins = central_layout.contentsMargins()
+            horizontal_padding += margins.left() + margins.right()
+
+        # Account for stylesheet border (1px each side)
+        horizontal_padding += 2
+
+        width_from_anchor = anchor_width + horizontal_padding
+
+        target_width = max(width_from_anchor, content_width)
+
+        if menu.width() != target_width:
+            menu.setFixedWidth(target_width)
+            if logger:
+                logger.debug(
+                    f"MenuPositioner: Set width to {target_width}px (anchor={anchor_width}px, content={content_width}px)"
+                )
+
+    @staticmethod
+    def position_and_match_width(
+        menu: QtWidgets.QWidget,
+        anchor_widget: Optional[QtWidgets.QWidget],
+        position: Union[str, QtCore.QPoint, tuple, list, None],
+        match_parent_width: bool,
+        logger: Optional[Any] = None,
+    ) -> None:
+        """Position menu and apply width matching in one operation.
+
+        This combines positioning and width matching to avoid duplication.
+
+        Args:
+            menu: The menu widget to position
+            anchor_widget: Widget to anchor to (optional)
+            position: Position relative to anchor or absolute
+            match_parent_width: Whether to match anchor width
+            logger: Optional logger for debug output
+        """
+        # Apply positioning
+        if anchor_widget:
+            MenuPositioner.position_relative_to_widget(menu, anchor_widget, position)
+        elif position == "cursorPos":
+            MenuPositioner.center_on_cursor(menu)
+        elif isinstance(position, (tuple, list, QtCore.QPoint)):
+            MenuPositioner.position_at_coordinate(menu, position)
+        else:
+            MenuPositioner.center_on_cursor(menu)
+
+        # Apply width matching
+        MenuPositioner.apply_width_matching(
+            menu, anchor_widget, match_parent_width, position, logger
+        )
+
+
+class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
+    """A custom Qt Widget that serves as a popup menu with additional features.
+
+    The Menu class inherits from QtWidgets.QWidget and provides a customizable
+    popup menu with features such as draggable headers and action buttons.
+    The menu can be positioned relative to the cursor, a specific coordinate,
+    a widget, or its parent.
 
     Attributes:
         on_item_added (QtCore.Signal): Signal emitted when an item is added to the menu.
@@ -29,34 +395,66 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         self,
         parent: Optional[QtWidgets.QWidget] = None,
         name: Optional[str] = None,
-        mode: Optional[str] = None,
+        trigger_button: Union[QtCore.Qt.MouseButton, str, tuple, list, None] = None,
         position: Union[str, QtCore.QPoint, list, tuple, None] = "cursorPos",
         min_item_height: Optional[int] = None,
         max_item_height: Optional[int] = None,
         fixed_item_height: Optional[int] = None,
         add_header: bool = True,
+        add_footer: bool = True,
+        add_apply_button: bool = False,
+        hide_on_leave: bool = False,
+        match_parent_width: bool = True,
+        log_level: Optional[Union[int, str]] = "WARNING",
         **kwargs,
     ):
-        """Initializes a custom qwidget instance that acts as a menu.
+        """Initializes a custom qwidget instance that acts as a popup menu.
 
         The menu can be positioned relative to the cursor, a specific coordinate, a widget, or its parent.
         It can also have a draggable header and an apply button.
         The menu can be styled using the provided keyword arguments.
-        The menu can be set to different modes: 'context', 'option', or 'popup'.
 
         Parameters:
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
             name (str, optional): The name of the menu. Defaults to None.
-            mode (str, optional): Possible values include: 'context', 'option', and 'popup'.
+            trigger_button (QtCore.Qt.MouseButton, str, tuple, list, None): The mouse button(s) that trigger the menu.
+                Can be:
+                - A Qt mouse button constant (e.g., QtCore.Qt.LeftButton, QtCore.Qt.RightButton)
+                - A string: "left", "right", "middle", "back", "forward"
+                - "any" to allow any button to trigger the menu
+                - "none" or None to disable auto-triggering (menu must be shown manually via .show()) (default)
+                - A tuple/list of buttons or strings (e.g., ("left", "right"))
             position (str, optional): The position of the menu. Can be "right", "cursorPos", a coordinate pair, or a widget.
             min_item_height (int, optional): The minimum height of items in the menu. Defaults to None.
             max_item_height (int, optional): The maximum height of items in the menu. Defaults to None.
             fixed_item_height (int, optional): The fixed height of items in the menu. Defaults to None.
-            add_header (bool, optional): Whether to add a draggable  to the menu. Defaults to True.
+            add_header (bool, optional): Whether to add a draggable header to the menu. Defaults to True.
+            add_footer (bool, optional): Whether to add a footer with size grip. Defaults to True.
+            add_apply_button (bool, optional): Whether to add an apply button. Defaults to False.
+                The apply button will emit the parent's 'clicked' signal if available.
+            hide_on_leave (bool, optional): Whether to automatically hide the menu when the mouse leaves. Defaults to False.
+            match_parent_width (bool, optional): Whether to match the parent widget's width when using positioned menus
+                (e.g., position="bottom"). Defaults to True. Only applies when position is relative to parent (not "cursorPos").
             **kwargs: Additional keyword arguments to set attributes on the menu.
 
         Example:
-                menu = Menu(parent=parent_widget, name="MyMenu", mode="context", position="cursorPos")
+                # Using string button names (recommended for readability)
+                menu = Menu(parent=parent_widget, name="MyMenu",
+                           trigger_button="right", position="cursorPos")
+
+                # Using Qt constants (also valid)
+                menu = Menu(parent=parent_widget, name="MyMenu",
+                           trigger_button=QtCore.Qt.RightButton, position="cursorPos")
+
+                # Multiple buttons
+                menu = Menu(parent=parent_widget, trigger_button=("left", "right"))
+
+                # Any button triggers
+                menu = Menu(parent=parent_widget, trigger_button="any")
+
+                # No auto-trigger (manual show only)
+                menu = Menu(parent=parent_widget, trigger_button="none")
+
                 menu.add("QLabel", setText="Label A")
                 menu.add("QPushButton", setText="Button A")
                 menu.show()
@@ -68,33 +466,610 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
                 raise TypeError(f"Expected 'name' to be a string, got {type(name)}")
             self.setObjectName(name)
 
-        self.mode = mode
+        self.logger.setLevel(log_level)
+
+        # Core event state
+        self._event_filters_installed = False
+        self._mouse_has_entered = False
+        self._current_anchor_widget = None
+        self._active_window_before_show = None
+        self._filter_target = None
+        self._pending_event_filter_install = False
+        self._parent_signal_source: Optional[Tuple[QtWidgets.QWidget, str]] = None
+        self._pending_trigger_hook = False
+
+        # Widget structure
+        self.layout: Optional[QtWidgets.QVBoxLayout] = None
+        self.gridLayout: Optional[QtWidgets.QGridLayout] = None
+        self.centralWidgetLayout: Optional[QtWidgets.QVBoxLayout] = None
+        self._central_widget: Optional[QtWidgets.QWidget] = None
+        self.style: Optional[StyleSheet] = None
+        self.header: Optional[Header] = None
+        self.footer: Optional[Footer] = None
+
+        # Helpers and caches
+        self._button_manager = ActionButtonManager(self)
+        self._leave_timer: Optional[QtCore.QTimer] = None
+        self._last_parent_geometry = None
+        self._cached_menu_position = None
+        self._popup_configured = False  # Track if popup setup has been done
+
+        # Data containers and flags
+        self.widget_data: Dict[QtWidgets.QWidget, Any] = {}
+        self.prevent_hide = False
+        self._persistent_mode = False
+        self._persistent_state: Dict[str, Any] = {}
+        self._persistent_hide_button: Optional[QtWidgets.QPushButton] = None
+
+        # Configuration attributes
+        self.trigger_button = trigger_button
         self.position = position
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
         self.add_header = add_header
-        self.kwargs = kwargs
-        self.widget_data = {}
-        self.prevent_hide = False
-        self.option_box = None
+        self.add_footer = add_footer
+        self.add_apply_button = add_apply_button
+        self.match_parent_width = match_parent_width
 
-        self.style = StyleSheet(self, log_level="WARNING")
+        self._hide_on_leave = False
+        self.hide_on_leave = hide_on_leave
 
-        self.setProperty("class", "translucentBgWithBorder")
-        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        # Base styling handled via QSS type selectors
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
         self.setMinimumWidth(147)
+        if kwargs:
+            self.set_attributes(**kwargs)
 
+        # Build UI immediately
         self.init_layout()
+        self.style = StyleSheet(self, log_level="WARNING")
 
-        self.installEventFilter(self)
-        if self.parent():
-            self.parent().installEventFilter(self)
-        self.set_attributes(**kwargs)
+        # Configure as popup window
+        self._setup_as_popup()
+
+    @classmethod
+    def create_context_menu(
+        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
+    ):
+        """Factory method: Create a standalone context menu with sensible defaults.
+
+        Args:
+            parent: Parent widget
+            **overrides: Override any default parameters
+
+        Returns:
+            Menu: Configured context menu instance
+
+        Example:
+            menu = Menu.create_context_menu(widget)
+            menu.add("Copy")
+            menu.add("Paste")
+        """
+        config = MenuConfig.for_context_menu(parent, **overrides)
+        return cls.from_config(config)
+
+    @classmethod
+    def create_dropdown_menu(
+        cls, parent: Optional[QtWidgets.QWidget] = None, **overrides
+    ):
+        """Factory method: Create a dropdown menu for option boxes.
+
+        Args:
+            parent: Parent widget (typically the wrapped widget)
+            **overrides: Override any default parameters
+        """
+
+        config = MenuConfig.for_dropdown_menu(parent, **overrides)
+        return cls.from_config(config)
+
+    @classmethod
+    def from_config(cls, config: MenuConfig):
+        """Create a Menu from a MenuConfig object.
+
+        This allows for more flexible configuration and better testability.
+
+        Args:
+            config: Menu configuration descriptor
+
+        Returns:
+            Menu: Configured menu instance
+        """
+
+        return cls(
+            parent=config.parent,
+            name=config.name,
+            trigger_button=config.trigger_button,
+            position=config.position,
+            min_item_height=config.min_item_height,
+            max_item_height=config.max_item_height,
+            fixed_item_height=config.fixed_item_height,
+            add_header=config.add_header,
+            add_footer=config.add_footer,
+            add_apply_button=config.add_apply_button,
+            hide_on_leave=config.hide_on_leave,
+            match_parent_width=config.match_parent_width,
+            **config.extra_attrs,
+        )
+
+    def _should_trigger(self, button: QtCore.Qt.MouseButton) -> bool:
+        """Check if the given button should trigger the menu.
+
+        This centralizes all button-checking logic in one place.
+
+        Parameters:
+            button: The mouse button that was pressed
+
+        Returns:
+            True if this button should trigger the menu, False otherwise
+        """
+        # False sentinel = no auto-trigger (menu must be shown manually)
+        if self.trigger_button is False:
+            return False
+
+        # No trigger button restriction - allow any button
+        if self.trigger_button is None:
+            return True
+
+        # Single button restriction
+        if isinstance(self.trigger_button, QtCore.Qt.MouseButton):
+            return button == self.trigger_button
+
+        # Multiple buttons allowed (tuple)
+        if isinstance(self.trigger_button, (tuple, list)):
+            return button in self.trigger_button
+
+        return False
+
+    @property
+    def trigger_button(self) -> Union[QtCore.Qt.MouseButton, tuple, None, bool]:
+        """Get the current trigger button(s).
+
+        Returns:
+            QtCore.Qt.MouseButton: Single button constant
+            tuple: Multiple button constants
+            None: Any button triggers
+            False: No auto-trigger (manual show only)
+        """
+        return self._trigger_button
+
+    @trigger_button.setter
+    def trigger_button(
+        self, value: Union[QtCore.Qt.MouseButton, str, tuple, list, None]
+    ) -> None:
+        """Set the trigger button(s).
+
+        Accepts Qt constants, strings ("left", "right", "middle", "any", "none"), or tuples/lists.
+
+        Parameters:
+            value: Single button (Qt constant or string), tuple/list of buttons,
+                  "any" for any button, or "none" to disable auto-triggering
+        """
+        # Use ConvertMixin to normalize the value
+        try:
+            self._trigger_button = ConvertMixin.to_qmousebutton(value)
+        except ValueError as e:
+            self.logger.warning(f"{e}. Defaulting to LeftButton.")
+            self._trigger_button = QtCore.Qt.LeftButton
+
+        # Keep trigger event filters in sync with the trigger_button setting
+        if self._trigger_button is False:
+            self._uninstall_event_filters()
+        else:
+            # Install filters immediately if we already have content/parent
+            if self.contains_items and not (
+                self._event_filters_installed or self._parent_signal_source
+            ):
+                self._ensure_trigger_hook()
+
+    @property
+    def hide_on_leave(self) -> bool:
+        """Get whether menu auto-hides when mouse leaves.
+
+        Returns:
+            bool: True if menu auto-hides on leave, False otherwise
+        """
+        return self._hide_on_leave
+
+    @hide_on_leave.setter
+    def hide_on_leave(self, value: bool) -> None:
+        """Set whether menu auto-hides when mouse leaves.
+
+        Parameters:
+            value: True to enable auto-hide on leave, False to disable
+        """
+        self._hide_on_leave = bool(value)
+
+        if self._hide_on_leave:
+            if self._leave_timer is None:
+                self._setup_leave_timer()
+        else:
+            if self._leave_timer is not None:
+                self._leave_timer.stop()
+                self._leave_timer.deleteLater()
+                self._leave_timer = None
+
+    # ------------------------------------------------------------------
+    # Persistent mode (keep menu visible even when parent hides)
+    # ------------------------------------------------------------------
+
+    def enable_persistent_mode(self, hide_button_tooltip: str = "Hide menu") -> None:
+        """Keep the menu visible until the user explicitly hides it.
+
+        This temporarily disables all automatic hide behaviour and injects a
+        dedicated Hide button into the header. Call :meth:`disable_persistent_mode`
+        to restore the original behaviour.
+
+        Args:
+            hide_button_tooltip: Tooltip shown on the injected Hide button.
+        """
+        if self._persistent_mode:
+            return
+
+        self.logger.debug("Menu.enable_persistent_mode: Activating persistent mode")
+
+        # Snapshot state so we can restore it later
+        self._persistent_state = {
+            "prevent_hide": self.prevent_hide,
+            "hide_on_leave": self.hide_on_leave,
+            "had_header": bool(self.header),
+        }
+
+        self._persistent_mode = True
+
+        # Block auto-hiding behaviour while in persistent mode
+        self.prevent_hide = True
+        self.hide_on_leave = False
+
+        # Ensure the menu has a header to host the hide button
+        self._ensure_layout_created()
+        if not self.header:
+            self.header = Header(config_buttons=["pin_button"])
+            if self.centralWidgetLayout:
+                self.centralWidgetLayout.insertWidget(0, self.header)
+
+        self._install_persistent_hide_button(hide_button_tooltip)
+
+    def disable_persistent_mode(self) -> None:
+        """Restore default hide behaviour after persistent mode."""
+        if not self._persistent_mode:
+            return
+
+        self.logger.debug("Menu.disable_persistent_mode: Restoring default behaviour")
+
+        original = getattr(self, "_persistent_state", {}) or {}
+
+        # Restore behaviour flags before removing the hide guard
+        self.prevent_hide = original.get("prevent_hide", False)
+        self.hide_on_leave = original.get("hide_on_leave", False)
+
+        self._remove_persistent_hide_button()
+
+        # Remove temporary header if we created one
+        if not original.get("had_header", True) and self.header:
+            if self.centralWidgetLayout:
+                self.centralWidgetLayout.removeWidget(self.header)
+            self.header.deleteLater()
+            self.header = None
+
+        self._persistent_mode = False
+        self._persistent_state = {}
+
+    @property
+    def is_persistent_mode(self) -> bool:
+        """Return True when persistent mode is active."""
+        return self._persistent_mode
+
+    def _install_persistent_hide_button(self, tooltip: str) -> None:
+        """Ensure a dedicated hide button exists in persistent mode."""
+        if not self.header:
+            self.logger.warning(
+                "Menu._install_persistent_hide_button: Cannot install without a header"
+            )
+            return
+
+        # Remove any previous custom hide button before creating a new one
+        self._remove_persistent_hide_button()
+
+        hide_button = self.header.create_button(
+            "hide.svg",
+            self._on_persistent_hide_clicked,
+            button_type="persistent_hide_button",
+        )
+        hide_button.setObjectName("persistentHideButton")
+        hide_button.setToolTip(tooltip)
+        hide_button.setProperty("class", "PersistentHideButton")
+        hide_button.setAutoDefault(False)
+        hide_button.setDefault(False)
+
+        self.header.container_layout.addWidget(hide_button)
+        self.header.buttons["persistent_hide_button"] = hide_button
+        self.header.container_layout.invalidate()
+        self.header.trigger_resize_event()
+
+        self._persistent_hide_button = hide_button
+
+    def _remove_persistent_hide_button(self) -> None:
+        """Remove the injected persistent hide button, if any."""
+        button = self._persistent_hide_button
+        if not button:
+            return
+
+        if self.header:
+            try:
+                self.header.container_layout.removeWidget(button)
+            except Exception:
+                pass
+            self.header.buttons.pop("persistent_hide_button", None)
+
+        button.hide()
+        button.deleteLater()
+        self._persistent_hide_button = None
+
+    def _on_persistent_hide_clicked(self) -> None:
+        """Handle clicks on the injected Hide button."""
+        # Restore default behaviour, then hide immediately
+        self.disable_persistent_mode()
+        self.hide(force=True)
+
+    def _ensure_layout_created(self):
+        """Ensure layout is created (called when first item is added)."""
+        if self.layout is None or self.gridLayout is None:
+            self.init_layout()
+            self.logger.debug("Menu._ensure_layout_created: Layout created")
+
+    def _ensure_style_initialized(self):
+        """Ensure stylesheet is initialized (called on first show)."""
+        if self.style is None:
+            self.style = StyleSheet(self, log_level="WARNING")
+            self.logger.debug("Menu._ensure_style_initialized: StyleSheet created")
+
+    def _ensure_timer_created(self):
+        """Ensure timer is created if hide_on_leave is enabled (called on first show)."""
+        if self.hide_on_leave and self._leave_timer is None:
+            self._setup_leave_timer()
+            self.logger.debug(
+                "Menu._ensure_timer_created: Timer created for hide_on_leave"
+            )
+
+    def _get_anchor_widget(self) -> Optional[QtWidgets.QWidget]:
+        """Get the effective anchor widget (parent or filter target)."""
+        return self.parent() or self._filter_target
+
+    def _get_parent_signal_slot(self, signal_name: str):
+        """Get the appropriate slot for a parent signal name."""
+        if signal_name in ("clicked", "pressed"):
+            return self._on_parent_triggered
+        return None
+
+    def _disconnect_parent_signal(self) -> None:
+        if not self._parent_signal_source:
+            return
+
+        parent, signal_name = self._parent_signal_source
+        slot = self._get_parent_signal_slot(signal_name)
+        if parent and slot:
+            try:
+                getattr(parent, signal_name).disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        self.logger.debug(
+            f"Menu._disconnect_parent_signal: Disconnected {signal_name} from {parent}"
+        )
+        self._parent_signal_source = None
+
+    def _connect_parent_signal(self, parent: QtWidgets.QWidget) -> bool:
+        """Attempt to hook into the parent's Qt signal for triggering."""
+        # Always disconnect any previous connection before wiring a new one
+        self._disconnect_parent_signal()
+
+        # Try to find a suitable signal
+        signal_name = None
+        if hasattr(parent, "clicked"):
+            signal_name = "clicked"
+        elif hasattr(parent, "pressed"):
+            signal_name = "pressed"
+        else:
+            return False
+
+        slot = self._on_parent_triggered
+        signal = getattr(parent, signal_name)
+
+        # Disconnect any existing connection and connect the slot
+        try:
+            signal.disconnect(slot)
+        except (TypeError, RuntimeError):
+            pass
+
+        try:
+            signal.connect(slot)
+        except (TypeError, RuntimeError):
+            return False
+
+        self._parent_signal_source = (parent, signal_name)
+        self.logger.debug(
+            f"Menu._connect_parent_signal: Connected {signal_name} signal on {parent}"
+        )
+        return True
+
+    def _remove_parent_event_filter(self) -> None:
+        if self._event_filters_installed:
+            try:
+                self.removeEventFilter(self)
+            except Exception:
+                pass
+
+        if self._filter_target:
+            try:
+                self._filter_target.removeEventFilter(self)
+            except Exception:
+                pass
+            self._filter_target = None
+
+        self._event_filters_installed = False
+        self._pending_event_filter_install = False
+
+    def _ensure_trigger_hook(self) -> None:
+        """Ensure the menu connects to its trigger source (signal or event filter)."""
+        if self._trigger_button is False:
+            self._disconnect_parent_signal()
+            if self._event_filters_installed or self._filter_target:
+                self._remove_parent_event_filter()
+            self._pending_trigger_hook = False
+            self._pending_event_filter_install = False
+            return
+
+        parent = self._get_anchor_widget()
+        if parent is None:
+            self._pending_trigger_hook = True
+            self._pending_event_filter_install = True
+            self.logger.debug(
+                "Menu._ensure_trigger_hook: Parent unavailable, deferring"
+            )
+            return
+
+        # Prefer signal-based triggering for left-button clicks
+        if (
+            self._trigger_button == QtCore.Qt.LeftButton
+            and self._connect_parent_signal(parent)
+        ):
+            if self._event_filters_installed or self._filter_target:
+                self._remove_parent_event_filter()
+            self._pending_trigger_hook = False
+            self._pending_event_filter_install = False
+            return
+
+        # Fallback to event filters when signals aren't available or for non-left triggers
+        self._disconnect_parent_signal()
+
+        if not self._event_filters_installed:
+            self.installEventFilter(self)
+            parent.installEventFilter(self)
+            self._filter_target = parent
+            self._event_filters_installed = True
+            self.logger.debug(
+                f"Menu._ensure_trigger_hook: Installed event filter on {parent}"
+            )
+        elif self._filter_target is not parent:
+            if self._filter_target:
+                try:
+                    self._filter_target.removeEventFilter(self)
+                except Exception:
+                    pass
+            parent.installEventFilter(self)
+            self._filter_target = parent
+            self.logger.debug(
+                f"Menu._ensure_trigger_hook: Updated event filter target to {parent}"
+            )
+
+        self._pending_trigger_hook = False
+        self._pending_event_filter_install = False
+
+    def _uninstall_event_filters(self):
+        """Remove any trigger hooks (signals or event filters)."""
+        if not self._event_filters_installed and not self._parent_signal_source:
+            self._pending_event_filter_install = False
+            self._pending_trigger_hook = False
+            return
+
+        self._disconnect_parent_signal()
+        if self._event_filters_installed or self._filter_target:
+            self._remove_parent_event_filter()
+
+        self._pending_event_filter_install = False
+        self._pending_trigger_hook = False
+        self.logger.debug("Menu._uninstall_event_filters: Trigger hooks removed")
+
+    def _on_parent_triggered(self, checked: bool = False) -> None:  # type: ignore[override]
+        """Handle parent widget signal (clicked or pressed)."""
+        if self.is_pinned:
+            return
+        self.trigger_from_widget(self._get_anchor_widget(), button=QtCore.Qt.LeftButton)
+
+    # Alias for backward compatibility
+    _install_event_filters = _ensure_trigger_hook
+
+    def _setup_as_popup(self):
+        """Configure this menu as a popup window.
+
+        Only runs once to avoid repeated reparenting issues.
+        """
+        if self._popup_configured:
+            return
+
+        self._popup_configured = True
+
+        # Store current parent before changing window flags
+        parent_widget = self.parentWidget()
+
+        # Set window flags to make this a tool window
+        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+
+        # Re-apply parent with the new window flags so Qt treats this as a tool window
+        if parent_widget is not None:
+            self.setParent(parent_widget, self.windowFlags())
+        else:
+            # If no parent, try to parent to the active window
+            try:
+                app = QtWidgets.QApplication.instance()
+                if app:
+                    active_window = app.activeWindow()
+                    if active_window and active_window != self:
+                        self.setParent(active_window, self.windowFlags())
+                        self.logger.debug(
+                            f"Menu._setup_as_popup: Parented to active window {active_window}"
+                        )
+            except Exception as e:
+                self.logger.debug(
+                    f"Menu._setup_as_popup: Could not parent to active window: {e}"
+                )
+
+    def show_as_popup(
+        self,
+        anchor_widget: Optional[QtWidgets.QWidget] = None,
+        position: Union[str, QtCore.QPoint, tuple, list] = "bottom",
+    ) -> None:
+        """Show this menu as a popup at the specified position.
+
+        Args:
+            anchor_widget: Widget to anchor the menu to (optional)
+            position: Position relative to anchor widget or "cursorPos"
+        """
+        self.logger.debug(
+            f"Menu.show_as_popup: anchor_widget={anchor_widget}, position={position}"
+        )
+
+        # Store anchor widget temporarily for _apply_position to use
+        # This allows proper width matching even when parent is different
+        self._current_anchor_widget = anchor_widget
+
+        # Use the refactored positioning method (DRY - combines positioning and width matching)
+        MenuPositioner.position_and_match_width(
+            menu=self,
+            anchor_widget=anchor_widget or self.parent(),
+            position=position,
+            match_parent_width=self.match_parent_width,
+            logger=self.logger,
+        )
+
+        # Don't use WindowStaysOnTopHint as it keeps menu on top even when other apps are focused
+        # The Tool window flag with raise_() and activateWindow() is sufficient for popup behavior
+
+        # Ensure geometry matches current content before showing
+        self.adjustSize()
+        self._resize_height_to_content()
+
+        # Show the menu
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+        # Clear anchor widget after show
+        self._current_anchor_widget = None
 
     def setCentralWidget(self, widget, overwrite=False):
         if not overwrite and getattr(self, "_central_widget", None) is widget:
@@ -113,69 +1088,275 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         return self._central_widget
 
     def init_layout(self):
-        """ """
-        # Create a new layout with no margins
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(1)
-        self.setLayout(self.layout)
+        """Initialize the menu layout. Called lazily on first item add."""
+        # Guard against double initialization
+        if self.layout is not None:
+            return
 
-        # Create a central widget and set it to the layout
-        self.setCentralWidget(QtWidgets.QWidget(self))
+        # CRITICAL OPTIMIZATION: Disable updates AND layout calculation
+        updates_were_enabled = self.updatesEnabled()
+        self.setUpdatesEnabled(False)
 
-        # Create a QVBoxLayout inside the central widget
-        self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
-        self.centralWidgetLayout.setContentsMargins(2, 2, 2, 2)
-        self.centralWidgetLayout.setSpacing(1)
+        # Also block signals to prevent event propagation during setup
+        was_blocked = self.blockSignals(True)
 
-        # Create a form layout inside the QVBoxLayout
-        self.gridLayout = QtWidgets.QGridLayout()
-        self.gridLayout.setContentsMargins(0, 0, 0, 0)
-        self.gridLayout.setSpacing(1)
+        try:
+            # Create outer layout for the translucent window (margins for frame border)
+            self.layout = QtWidgets.QVBoxLayout(self)
+            # Provide a 2px transparent gutter so translucent borders never touch window edges
+            self.layout.setContentsMargins(2, 2, 2, 2)
+            self.layout.setSpacing(0)
+            self.layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+            self.setLayout(self.layout)
 
-        if self.add_header:
-            # Create Header instance and add it to the central widget layout
-            self.header = Header(self, hide_button=True)
-            self.centralWidgetLayout.addWidget(self.header)
+            # Create frame container that will have the border
+            self._frame = QtWidgets.QFrame(self)
+            self._frame.setObjectName("menuFrame")
+            self._frame.setProperty("class", "translucentBgWithBorder")
+            self._frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+            self._frame.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+            )
+            self.layout.addWidget(self._frame)
 
-        # Add grid layout to the central widget layout
-        self.centralWidgetLayout.addLayout(self.gridLayout)
+            # Create inner layout inside the frame (with spacing for border)
+            frame_layout = QtWidgets.QVBoxLayout(self._frame)
+            # One extra pixel inside the frame keeps children off the painted border
+            frame_layout.setContentsMargins(1, 1, 1, 1)
+            frame_layout.setSpacing(1)
+            frame_layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+
+            # Add header to top area
+            if self.add_header:
+                self.header = Header(config_buttons=["pin_button"])
+                frame_layout.addWidget(self.header)
+
+            # Create a central widget WITHOUT parent first to avoid tree overhead
+            # Parent will be assigned when added to layout
+            central_widget = QtWidgets.QWidget()
+            self.setCentralWidget(central_widget)
+
+            # Create a QVBoxLayout inside the central widget
+            self.centralWidgetLayout = QtWidgets.QVBoxLayout(self._central_widget)
+            self.centralWidgetLayout.setContentsMargins(2, 1, 2, 1)
+            self.centralWidgetLayout.setSpacing(1)
+            self.centralWidgetLayout.setSizeConstraint(
+                QtWidgets.QLayout.SetNoConstraint
+            )
+
+            # Create a form layout inside the QVBoxLayout
+            self.gridLayout = QtWidgets.QGridLayout()
+            self.gridLayout.setContentsMargins(0, 0, 0, 0)
+            self.gridLayout.setSpacing(1)
+            self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+
+            # Add grid layout to the central widget layout
+            self.centralWidgetLayout.addLayout(self.gridLayout)
+
+            # Add central widget to frame layout
+            frame_layout.addWidget(self._central_widget)
+
+            # Add footer to bottom area (always last)
+            if self.add_footer:
+                self.footer = Footer(add_size_grip=True)
+                frame_layout.addWidget(self.footer)
+
+        finally:
+            # Restore signal blocking state
+            self.blockSignals(was_blocked)
+
+            # Re-enable updates after layout creation
+            if updates_were_enabled:
+                self.setUpdatesEnabled(True)
+
+            # Activate layout now that setup is complete
+            if self.layout:
+                self.layout.activate()
+
+    def _setup_leave_timer(self):
+        """Set up timer for auto-hide on mouse leave."""
+        self._leave_timer = QtCore.QTimer(self)
+        self._leave_timer.setInterval(100)  # Check every 100ms
+        self._leave_timer.timeout.connect(self._check_cursor_position)
+
+    def _check_cursor_position(self):
+        """Check if cursor is outside menu bounds and hide if so.
+
+        Only hides if the mouse has entered the menu at least once.
+        This prevents immediate hiding when menu is positioned away from cursor.
+        Also respects the pinned state - won't hide if pinned.
+        """
+        if not self.isVisible():
+            self._leave_timer.stop()
+            return
+
+        # Don't hide if menu is pinned
+        if self.is_pinned:
+            return
+
+        # Get cursor position relative to this widget
+        cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
+
+        # Check if cursor is within widget bounds
+        if self.rect().contains(cursor_pos):
+            # Mouse has entered the menu
+            if not self._mouse_has_entered:
+                self.logger.debug(
+                    "_check_cursor_position: Mouse entered menu for first time"
+                )
+            self._mouse_has_entered = True
+        elif self._mouse_has_entered:
+            # Only hide if mouse has entered at least once before
+            self.logger.debug("_check_cursor_position: Cursor outside menu, hiding")
+            self.hide()
+            self._leave_timer.stop()
+
+    def _resize_height_to_content(self) -> None:
+        """Collapse stale vertical space before showing the menu again.
+
+        Menus are often rebuilt while hidden. Without explicitly syncing the
+        geometry, Qt can reuse the previous height, leaving an empty gap when
+        fewer items remain. Keeping the width untouched avoids fighting the
+        width-matching logic while still trimming vertical dead space.
+        """
+
+        if not self.layout:
+            return
+
+        self.layout.activate()
+        hint = self.sizeHint()
+        if not hint.isValid():
+            return
+
+        target_height = max(hint.height(), self.minimumHeight())
+        current_width = self.width() or max(hint.width(), self.minimumWidth())
+
+        if self.height() != target_height:
+            self.resize(current_width, target_height)
+
+    def _setup_apply_button(self):
+        """Set up the apply button with proper configuration.
+
+        This method creates an apply button that emits the parent's 'clicked' signal
+        if available. The button is only created if the clicked signal has connections.
+        """
+        if not self.parent():
+            self.logger.debug(
+                "_setup_apply_button: No parent, skipping apply button setup"
+            )
+            return
+
+        if not hasattr(self.parent(), "clicked"):
+            self.logger.debug(
+                "_setup_apply_button: Parent has no 'clicked' signal, skipping"
+            )
+            return
+
+        # Check if the clicked signal has any receivers (connections)
+        try:
+            receiver_count = self.parent().receivers(QtCore.SIGNAL("clicked()"))
+            if receiver_count == 0:
+                self.logger.debug(
+                    "_setup_apply_button: Parent's 'clicked' signal has no connections, skipping"
+                )
+                return
+        except (AttributeError, TypeError) as e:
+            # If we can't check receivers, proceed anyway (fail-safe)
+            self.logger.debug(
+                f"_setup_apply_button: Could not check signal receivers ({e}), proceeding anyway"
+            )
+
+        # Create apply button configuration
+        # Button should be visible if menu has items
+        config = _ActionButtonConfig(
+            text="Apply",
+            callback=lambda: self.parent().clicked.emit(),
+            tooltip="Execute the command",
+            visible=self.contains_items,  # Visible if menu already has items
+            fixed_height=26,
+        )
+
+        # Add the apply button using the button manager
+        self._button_manager.add_button("apply", config)
+
+        # Add the action button container to the central widget layout
+        # (it goes in the central area, after the grid layout)
+        self.centralWidgetLayout.addWidget(self._button_manager.container)
+
+        self.logger.debug(
+            "_setup_apply_button: Apply button created and added to layout"
+        )
+
+    def _update_apply_button_visibility(self):
+        """Update apply button visibility based on menu state.
+
+        The apply button should be visible whenever the menu contains items.
+        """
+        if not self.add_apply_button:
+            return
+
+        apply_button = self._button_manager.get_button("apply")
+        if not apply_button:
+            return
+
+        should_show = self.contains_items
+
+        if should_show:
+            self._button_manager.show_button("apply")
+            self.logger.debug("_update_apply_button_visibility: Showing apply button")
+        else:
+            self._button_manager.hide_button("apply")
+            self.logger.debug("_update_apply_button_visibility: Hiding apply button")
 
     def get_all_children(self):
         children = self.findChildren(QtWidgets.QWidget)
         return children
 
     @property
-    def contains_items(self):
+    def is_pinned(self) -> bool:
+        """Check if the menu is pinned (should not auto-hide).
+
+        This is the single source of truth for pin state checking.
+        Checks both the legacy prevent_hide flag and the header's pin button state.
+
+        Returns:
+            bool: True if menu should stay visible (pinned), False otherwise
+        """
+        # Check legacy prevent_hide flag
+        if self.prevent_hide:
+            return True
+
+        # Check header pin button state (if header exists and has pin functionality)
+        if self.header and hasattr(self.header, "pinned"):
+            return self.header.pinned
+
+        return False
+
+    @property
+    def contains_items(self) -> bool:
         """Check if the QMenu contains any items."""
+        # Handle lazy initialization - gridLayout may not exist yet
+        if self.gridLayout is None:
+            return False
         return bool(self.gridLayout.count())
 
-    @ptk.cached_property
-    def apply_button(self):
-        """Property that returns an apply button."""
-        if not self.parent():
-            return None
-
-        button = QtWidgets.QPushButton("Apply")
-        button.setToolTip("Execute the command.")
-        button.released.connect(lambda: self.parent().clicked.emit())
-        button.setFixedHeight(26)
-        button.hide()
-
-        return button
-
-    def title(self):
-        """ """
-        self.header.text()
+    def title(self) -> str:
+        """Get the menu's title text."""
+        if self.header is None:
+            return ""
+        return self.header.text()
 
     def setTitle(self, title="") -> None:
         """Set the menu's title to the given string.
         If no title is given, the function will attempt to use the menu parents text.
 
         Parameters:
-            title (str): Text to apply to the menu's .
+            title (str): Text to apply to the menu's title.
         """
-        self.header.setText(title)
+        # Ensure layout is created so header exists
+        self._ensure_layout_created()
+        if self.header is not None:
+            self.header.setText(title)
 
     def get_items(self, types=None):
         """Get all items in the list, optionally filtered by type.
@@ -245,6 +1426,36 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
 
         return item
 
+    def get_item_text(self, widget: QtWidgets.QWidget) -> Optional[str]:
+        """Get the textual representation of a widget.
+
+        This method attempts to retrieve text from various widget types by trying
+        common text-retrieval methods in order of likelihood.
+
+        Parameters:
+            widget: The widget to get text from.
+
+        Returns:
+            str: The text associated with the widget, or None if unavailable.
+        """
+        # Try text() method (most common for QLabel, QPushButton, etc.)
+        if hasattr(widget, "text") and callable(widget.text):
+            return widget.text()
+
+        # Try currentText() for combo boxes
+        if hasattr(widget, "currentText") and callable(widget.currentText):
+            return widget.currentText()
+
+        # Try value() for spin boxes
+        if hasattr(widget, "value") and callable(widget.value):
+            return str(widget.value())
+
+        # Try placeholderText for line edits as fallback
+        if hasattr(widget, "placeholderText") and callable(widget.placeholderText):
+            return widget.placeholderText()
+
+        return None
+
     def get_item_data(self, widget):
         """Get data associated with a widget in the list or its sublists.
 
@@ -274,13 +1485,33 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
             self.widget_data[widget] = data
 
     def remove_widget(self, widget):
-        """Remove a widget from the layout."""
+        """Remove a widget from the layout.
+
+        If this results in an empty menu, event filters will be uninstalled
+        to free up resources.
+        """
+        self.logger.debug(
+            f"Menu.remove_widget: Removing widget={widget.objectName() or type(widget).__name__}"
+        )
         self.gridLayout.removeWidget(widget)
         if widget in self.widget_data:
             del self.widget_data[widget]
 
-    def clear(self):
-        """Clear all items in the list."""
+        # Uninstall event filters if menu is now empty
+        if not self.contains_items:
+            self._uninstall_event_filters()
+            self.logger.debug(
+                "Menu.remove_widget: Menu now empty, event filters uninstalled"
+            )
+
+    def clear(self) -> None:
+        """Clear all items in the list.
+
+        This will also uninstall event filters since the menu becomes empty.
+        """
+        item_count = self.gridLayout.count()
+        self.logger.debug(f"Menu.clear: Clearing {item_count} items")
+
         # We're going backwards to avoid index errors.
         for i in reversed(range(self.gridLayout.count())):
             widget = self.gridLayout.itemAt(i).widget()
@@ -292,7 +1523,20 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         # Reset the widget_data dictionary
         self.widget_data = {}
 
-    def add(self, x, data=None, row=None, col=0, rowSpan=1, colSpan=None, **kwargs):
+        # Uninstall event filters since menu is now empty
+        self._uninstall_event_filters()
+        self.logger.debug("Menu.clear: All items cleared, event filters uninstalled")
+
+    def add(
+        self,
+        x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map],
+        data: Any = None,
+        row: Optional[int] = None,
+        col: int = 0,
+        rowSpan: int = 1,
+        colSpan: Optional[int] = None,
+        **kwargs,
+    ) -> Union[QtWidgets.QWidget, list]:
         """Add an item or multiple items to the list.
 
         The function accepts a string, an object, or a collection of items (a dictionary, list, tuple, set, or map).
@@ -309,70 +1553,133 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         Returns:
             widget/list: The added widget or list of added widgets.
         """
-        if isinstance(x, dict):
-            return [self.add(key, data=val, **kwargs) for key, val in x.items()]
+        # CRITICAL OPTIMIZATION: Disable updates AND layout recalculation during add
+        # This prevents Qt from recalculating layout/geometry on every operation
+        updates_were_enabled = self.updatesEnabled()
+        self.setUpdatesEnabled(False)
 
-        elif isinstance(x, (list, tuple, set)):
-            return [self.add(item, **kwargs) for item in x]
+        # Block signals to prevent cascading updates
+        was_blocked = self.blockSignals(True)
 
-        elif isinstance(x, zip):
-            return [self.add(item, data, **kwargs) for item, data in x]
+        # Suspend layout activation if layout exists
+        layout_was_enabled = False
+        if self.gridLayout:
+            layout_was_enabled = self.gridLayout.isEnabled()
+            self.gridLayout.setEnabled(False)
 
-        elif isinstance(x, map):
-            return [self.add(item, **kwargs) for item in list(x)]
+        try:
+            # Lazy initialization: create layout on first item add
+            self._ensure_layout_created()
 
-        elif isinstance(x, QtWidgets.QAction):
-            return self._add_action_widget(
-                x, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan
-            )
+            if isinstance(x, dict):
+                return [self.add(key, data=val, **kwargs) for key, val in x.items()]
 
-        elif isinstance(x, str):
-            try:
-                widget = getattr(QtWidgets, x)(self)
-            except (AttributeError, TypeError):
-                widget = QtWidgets.QLabel()
-                widget.setText(x)
+            elif isinstance(x, (list, tuple, set)):
+                return [self.add(item, **kwargs) for item in x]
 
-        elif isinstance(x, QtWidgets.QWidget) or (
-            inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
-        ):
-            widget = x(self) if callable(x) else x
+            elif isinstance(x, zip):
+                return [self.add(item, data, **kwargs) for item, data in x]
 
-        else:
-            raise TypeError(
-                f"Unsupported item type: expected str, QWidget, QAction, or a collection (list, tuple, set, dict, zip, map), got '{type(x)}'"
-            )
+            elif isinstance(x, map):
+                return [self.add(item, **kwargs) for item in list(x)]
 
-        widget.item_text = lambda i=widget: self.get_item_text(i)
-        widget.item_data = lambda i=widget: self.get_item_data(i)
+            elif isinstance(x, QtWidgets.QAction):
+                return self._add_action_widget(
+                    x, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan
+                )
 
-        if row is None:
-            row = 0
-            while self.gridLayout.itemAtPosition(row, col) is not None:
-                row += 1
+            if isinstance(x, str):
+                # OPTIMIZATION: Create widgets WITHOUT parent to avoid Qt tree overhead
+                # Parent will be assigned implicitly when added to gridLayout
+                widget_class = _WIDGET_TYPE_CACHE.get(x)
+                if widget_class:
+                    widget = widget_class()
+                else:
+                    try:
+                        widget = getattr(QtWidgets, x)()
+                    except (AttributeError, TypeError):
+                        widget = QtWidgets.QLabel()
+                        widget.setText(x)
 
-        if colSpan is None:
-            colSpan = self.gridLayout.columnCount() or 1
+            elif isinstance(x, QtWidgets.QWidget) or (
+                inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
+            ):
+                widget = x() if callable(x) else x
 
-        self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
-        self.on_item_added.emit(widget)
-        self.set_item_data(widget, data)
+            else:
+                raise TypeError(
+                    f"Unsupported item type: expected str, QWidget, QAction, or a collection (list, tuple, set, dict, zip, map), got '{type(x)}'"
+                )
 
-        if self.min_item_height is not None:
-            widget.setMinimumHeight(self.min_item_height)
-        if self.max_item_height is not None:
-            widget.setMaximumHeight(self.max_item_height)
-        if self.fixed_item_height is not None:
-            widget.setFixedHeight(self.fixed_item_height)
+            widget.item_text = lambda i=widget: self.get_item_text(i)
+            widget.item_data = lambda i=widget: self.get_item_data(i)
 
-        self.set_attributes(widget, **kwargs)
-        widget.installEventFilter(self)
-        setattr(self, widget.objectName(), widget)
+            if row is None:
+                row = 0
+                while self.gridLayout.itemAtPosition(row, col) is not None:
+                    row += 1
 
-        self.resize(self.sizeHint())
-        self.layout.invalidate()
+            if colSpan is None:
+                colSpan = self.gridLayout.columnCount() or 1
 
-        return widget
+            # Install event filters when adding the first item
+            was_empty = not self.contains_items
+
+            self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
+            self.on_item_added.emit(widget)
+            self.set_item_data(widget, data)
+
+            if self.min_item_height is not None:
+                widget.setMinimumHeight(self.min_item_height)
+            if self.max_item_height is not None:
+                widget.setMaximumHeight(self.max_item_height)
+            if self.fixed_item_height is not None:
+                widget.setFixedHeight(self.fixed_item_height)
+
+            self.set_attributes(widget, **kwargs)
+            widget.installEventFilter(self)
+            setattr(self, widget.objectName(), widget)
+
+            # Only resize if menu is visible (prevents flash during lazy initialization)
+            if self.isVisible():
+                self.resize(self.sizeHint())
+            self.layout.invalidate()
+
+            # Ensure trigger event filters are installed once the menu has content
+            # This allows trigger_button clicks to work before the first show()
+            if self._trigger_button is not False and not (
+                self._event_filters_installed or self._parent_signal_source
+            ):
+                self._ensure_trigger_hook()
+
+            # Setup apply button on first item add (if requested and has connections)
+            if was_empty:
+                # Don't create apply button here - defer to showEvent when connections exist
+                # Update apply button visibility for first item (if button already exists)
+                if self.add_apply_button:
+                    self._update_apply_button_visibility()
+            elif self.add_apply_button:
+                # Only update visibility if apply button exists and is enabled
+                # This avoids redundant checks when add_apply_button=False
+                self._update_apply_button_visibility()
+
+            return widget
+
+        finally:
+            # CRITICAL: Re-enable layout and restore state
+            if self.gridLayout and layout_was_enabled:
+                self.gridLayout.setEnabled(True)
+
+            # Restore signal blocking
+            self.blockSignals(was_blocked)
+
+            # Re-enable updates - this triggers single update instead of one per operation
+            if updates_were_enabled:
+                self.setUpdatesEnabled(True)
+
+            # Activate layout to apply all changes at once
+            if self.layout:
+                self.layout.activate()
 
     def _add_action_widget(
         self,
@@ -438,6 +1745,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
         Returns:
             QtCore.QSize: The recommended size for the widget.
         """
+        if self.layout is None:
+            return super().sizeHint()
+
         total_height = 0
         total_width = 0
 
@@ -458,172 +1768,286 @@ class Menu(QtWidgets.QWidget, AttributesMixin):
 
         return QtCore.QSize(total_width, total_height)
 
-    def create_option_box(self):
-        """ """
-        parent_widget = self.parent()
-
-        # Check if widget already has an option box manager that should handle this
-        if (
-            hasattr(parent_widget, "option_box")
-            and parent_widget.option_box._option_box is not None
-        ):
-            # Use the existing option box from the manager
-            self.option_box = parent_widget.option_box._option_box
-            # Set this menu as its action handler
-            self.option_box.set_action_handler(self)
-        else:
-            # Create our own option box (original behavior)
-            from uitk.widgets.optionBox import OptionBox
-
-            self.option_box = OptionBox(action_handler=self)
-            self.option_box.wrap(parent_widget)
-
-    def center_on_cursor_position(self):
-        """ """
-        pos = QtGui.QCursor.pos()  # global position
-        center = QtCore.QPoint(
-            pos.x() - (self.width() / 2), pos.y() - (self.height() / 4)
-        )
-        self.move(center)  # center on cursor position.
-
-    def is_position_a_coordinate(self):
-        """ """
-        return isinstance(self.position, (tuple, list, set, QtCore.QPoint))
-
-    def move_to_coordinate(self):
-        """ """
-        if not isinstance(self.position, QtCore.QPoint):
-            self.position = QtCore.QPoint(self.position[0], self.position[1])
-        self.move(self.position)
-
-    def is_position_a_widget(self):
-        """ """
-        return not isinstance(self.position, (type(None), str))
-
-    def move_to_widget_position(self):
-        """ """
-        pos = getattr(self.positionRelativeTo.rect(), self.position)
-        self.move(self.positionRelativeTo.mapToGlobal(pos()))
-
-    @staticmethod
-    def position_widget_relative_to_parent(parent, widget, position):
-        """ """
-        # Get dimensions of the parent and the widget
-        parent_width = parent.width()
-        parent_height = parent.height()
-        widget_width = widget.width()
-        widget_height = widget.height()
-
-        pos_dict = {  # Define position options
-            "right": (
-                parent_width,  # x coordinate
-                parent_height // 2 - widget_height // 2,  # y coordinate
-            ),
-            "left": (
-                -widget_width,  # x coordinate
-                parent_height // 2 - widget_height // 2,  # y coordinate
-            ),
-            "top": (
-                parent_width // 2 - widget_width // 2,  # x coordinate
-                -widget_height,  # y coordinate
-            ),
-            "bottom": (
-                parent_width // 2 - widget_width // 2,  # x coordinate
-                parent_height,  # y coordinate
-            ),
-            "center": (
-                parent_width // 2 - widget_width // 2,  # x coordinate
-                parent_height // 2 - widget_height // 2,  # y coordinate
-            ),
-        }
-
-        # If the position is not one of the options, raise an error
-        if position not in pos_dict:
-            raise ValueError(f"Invalid position: {position}")
-
-        # Get the global position of the parent widget
-        global_pos = parent.mapToGlobal(QtCore.QPoint(0, 0))
-        # Add the local coordinates of the new position
-        new_pos = global_pos + QtCore.QPoint(*pos_dict[position])
-        widget.move(new_pos)
-
-    def hide_on_leave(self) -> None:
-        """Hides the menu if the cursor is not within the menu's boundaries when the timer times out.
-        This method is connected to the menu_timer's timeout signal.
-        """
-        if not self.rect().contains(QtGui.QCursor.pos()):
-            self.hide()
-
-    def leaveEvent(self, event) -> None:
-        """ """
-        self.hide()
-
-        super().leaveEvent(event)
-
-    def hide(self, force=False) -> None:
-        """Sets the widget as invisible.
-        Prevents hide event under certain circumstances.
-
-        Parameters:
-            force (bool): override prevent_hide.
-        """
-        if force or not self.prevent_hide:
-            for w in self.get_items():
-                try:
-                    if w.view().isVisible():  # comboBox menu open.
-                        return
-                except AttributeError:
-                    pass
-
-            super().hide()
-
-    def setVisible(self, visible) -> None:
-        """Called every time the widget is shown or hidden on screen."""
-        if self.prevent_hide:
-            return
-
-        if visible and self.contains_items:
-            super().setVisible(True)
-        else:
-            super().setVisible(False)
-
     def showEvent(self, event) -> None:
-        """ """
-        # set menu position
-        if self.position == "cursorPos":
-            self.center_on_cursor_position()
-        elif self.is_position_a_coordinate():
-            self.move_to_coordinate()
-        elif self.is_position_a_widget():
-            self.move_to_widget_position()
-        elif self.parent():
-            self.position_widget_relative_to_parent(self.parent(), self, self.position)
+        """Handle show event with positioning (optimized for performance)."""
+        # Track which window was active before showing menu
+        # This allows us to restore focus only if our app was active
+        app = QtWidgets.QApplication.instance()
+        if app:
+            self._active_window_before_show = app.activeWindow()
+            self.logger.debug(
+                f"showEvent: Active window before show: {self._active_window_before_show}"
+            )
+
+        # Always start unpinned when showing to avoid stale state from previous sessions
+        if self.header and hasattr(self.header, "reset_pin_state"):
+            self.header.reset_pin_state()
+
+        # CRITICAL OPTIMIZATION: Install event filters on first show, not during add()
+        # This eliminates 37-180ms from add() calls
+        if (
+            self.contains_items
+            and self._trigger_button is not False
+            and not (self._event_filters_installed or self._parent_signal_source)
+        ):
+            self._ensure_trigger_hook()
+
+        # Lazy initialization: ensure style and timer are created on first show
+        # These check their own flags internally, so safe to call every time
+        self._ensure_style_initialized()
+        self._ensure_timer_created()
+
+        # Check if cursor is already inside menu when it appears
+        # This prevents immediate hide-on-leave when menu pops up under cursor
+        cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
+        if self.rect().contains(cursor_pos):
+            self._mouse_has_entered = True
+            self.logger.debug(
+                "showEvent: Cursor already inside menu, marking as entered"
+            )
+        else:
+            # Reset to False when cursor is outside - menu must wait for cursor to enter
+            self._mouse_has_entered = False
+            self.logger.debug("showEvent: Cursor outside menu, waiting for entry")
+
+        # Setup apply button on first show if requested and not already created
+        # Deferred to showEvent because parent's signal connections may not exist during add()
+        if self.add_apply_button and not self._button_manager.get_button("apply"):
+            self._setup_apply_button()
+            # Update visibility immediately (this shows the container)
+            self._update_apply_button_visibility()
+            # Force complete layout update
+            if self.layout:
+                self.layout.invalidate()
+                self.layout.activate()
+            # Use adjustSize to recalculate based on new content
+            self.adjustSize()
+            self.logger.debug(
+                f"showEvent: Apply button added, menu resized to {self.size()}"
+            )
+
+        # Update apply button visibility when menu is shown (for subsequent shows)
+        # Only if apply button feature is enabled and button already exists
+        elif self.add_apply_button:
+            self._update_apply_button_visibility()
+
+        # Ensure the geometry reflects the current item count before positioning.
+        self._resize_height_to_content()
+
+        # Only auto-position if we have a position setting
+        # _apply_position now caches calculations for performance
+        if self.position:
+            self._apply_position()
+
+        # Start leave timer if enabled
+        # Add grace period before first check to prevent immediate hide when menu
+        # appears at cursor position but cursor hasn't entered menu bounds yet
+        if self._leave_timer:
+            # Reset the "has entered" flag - menu must wait for cursor to enter
+            self._mouse_has_entered = False
+            # Delay timer start by 200ms to give user time to move cursor into menu
+            QtCore.QTimer.singleShot(
+                200, lambda: self._leave_timer.start() if self._leave_timer else None
+            )
 
         super().showEvent(event)
 
+    def hide(self, force: bool = False) -> bool:
+        """Hide the menu, respecting the pinned state.
+
+        Parameters:
+            force: If True, hide even if the menu is pinned
+
+        Returns:
+            bool: True if the menu was hidden, False if prevented by pinning
+        """
+        if self.is_pinned and not force:
+            self.logger.debug("hide: Menu is pinned, ignoring hide request")
+            return False
+
+        if self.header and getattr(self.header, "pinned", False):
+            if hasattr(self.header, "reset_pin_state"):
+                self.header.reset_pin_state()
+                self.logger.debug("hide: Reset pinned state")
+
+        super().hide()
+        return True
+
+    def hideEvent(self, event) -> None:
+        """Handle hide event.
+
+        Restores focus to parent widget to prevent application focus loss
+        when menu (Qt.Tool window) is hidden.
+        """
+        # Stop leave timer when menu is hidden
+        if self._leave_timer and self._leave_timer.isActive():
+            self._leave_timer.stop()
+            self.logger.debug("hideEvent: Leave timer stopped")
+
+        # CRITICAL FIX: Restore focus to prevent application focus loss
+        # Qt.Tool windows can cause focus loss when hidden
+        focus_target = None
+
+        # Prefer the window that was active before menu showed
+        if self._active_window_before_show:
+            app = QtWidgets.QApplication.instance()
+            if app and self._active_window_before_show in app.topLevelWidgets():
+                focus_target = self._active_window_before_show
+
+        # Fallback to parent window if still visible
+        if not focus_target and self.parent() and self.parent().isVisible():
+            focus_target = self.parent().window()
+
+        # Restore focus if we found a target
+        if focus_target:
+            focus_target.raise_()
+            focus_target.activateWindow()
+            self.logger.debug(f"hideEvent: Restored focus to {focus_target}")
+
+        super().hideEvent(event)
+
+        if self._persistent_mode:
+            self.disable_persistent_mode()
+
+    def _apply_position(self):
+        """Apply the configured position setting with caching for performance."""
+        # Cursor position - always recalculate (cursor moves)
+        if self.position == "cursorPos":
+            MenuPositioner.center_on_cursor(self)
+            return
+
+        # Fixed coordinate - cache it
+        if isinstance(self.position, (tuple, list, set, QtCore.QPoint)):
+            # Only recalculate if position changed
+            if self._cached_menu_position != self.position:
+                MenuPositioner.position_at_coordinate(self, self.position)
+                self._cached_menu_position = self.position
+            else:
+                # Use cached position
+                if isinstance(self._cached_menu_position, QtCore.QPoint):
+                    self.move(self._cached_menu_position)
+                else:
+                    self.move(
+                        QtCore.QPoint(
+                            self._cached_menu_position[0], self._cached_menu_position[1]
+                        )
+                    )
+            return
+
+        # Parent-relative positioning - cache based on parent global position
+        if self.parent() and isinstance(self.position, str):
+            anchor = getattr(self, "_current_anchor_widget", None) or self.parent()
+
+            # Create cache key from anchor's GLOBAL position and size
+            # Use mapToGlobal to get screen coordinates so cache invalidates when window moves
+            anchor_global_pos = anchor.mapToGlobal(QtCore.QPoint(0, 0))
+            anchor_geo = (
+                anchor_global_pos.x(),
+                anchor_global_pos.y(),
+                anchor.width(),
+                anchor.height(),
+                self.position,
+            )
+
+            # Check if we can use cached position
+            if self._last_parent_geometry == anchor_geo and self._cached_menu_position:
+                self.move(self._cached_menu_position)
+                # Still need to handle width matching (cheap operation) - use refactored method
+                MenuPositioner.apply_width_matching(
+                    self, anchor, self.match_parent_width, self.position, self.logger
+                )
+                return
+
+            # Recalculate position and apply width matching - use refactored combined method
+            MenuPositioner.position_and_match_width(
+                menu=self,
+                anchor_widget=anchor,
+                position=self.position,
+                match_parent_width=self.match_parent_width,
+                logger=self.logger,
+            )
+
+            # Cache the calculated position
+            self._last_parent_geometry = anchor_geo
+            self._cached_menu_position = self.pos()
+
     def eventFilter(self, widget, event):
-        if event.type() == QtCore.QEvent.MouseButtonPress:
-            if widget is self.parent():
-                if (
-                    self.mode == "context" and event.button() == QtCore.Qt.RightButton
-                ) or (self.mode == "popup" and event.button() == QtCore.Qt.LeftButton):
-                    self.setVisible(not self.isVisible())
+        """Handle events for the menu and its children.
 
-        elif event.type() == QtCore.QEvent.Show:
-            if widget is self.parent() and self.contains_items:
-                if self.mode == "option":
-                    # Add apply button to the central widget layout
-                    if hasattr(self.parent(), "clicked"):
-                        self.centralWidgetLayout.addWidget(self.apply_button)
-                        self.apply_button.show()
-                    if self.option_box is None:
-                        self.create_option_box()
+        This filter handles:
+        - Parent widget clicks to toggle menu visibility
+        - Parent hide events to auto-hide menu
+        - Item interactions to emit signals
+        """
+        event_type = event.type()
+        parent_widget = self._get_anchor_widget()
 
-        elif event.type() == QtCore.QEvent.MouseButtonRelease:
+        if event_type == QtCore.QEvent.MouseButtonPress and widget is parent_widget:
+            # Use centralized trigger logic
+            if self._should_trigger(event.button()):
+                new_state = not self.isVisible()
+                # Don't hide if pinned (but allow showing)
+                if not new_state and self.is_pinned:
+                    self.logger.debug(
+                        "eventFilter: Menu is pinned, ignoring hide request"
+                    )
+                else:
+                    self.logger.debug(
+                        f"eventFilter: Parent clicked, toggling menu visibility to {new_state}"
+                    )
+                    self.setVisible(new_state)
+
+        elif event_type == QtCore.QEvent.Hide and widget is parent_widget:
+            # Hide menu when parent is hidden (unless pinned)
+            if self.isVisible() and not self.is_pinned:
+                self.hide()
+
+        elif event_type == QtCore.QEvent.MouseButtonRelease:
             if widget in self.get_items():
+                self.logger.debug(
+                    f"eventFilter: Item interacted: {widget.objectName() or type(widget).__name__}"
+                )
                 self.on_item_interacted.emit(widget)
 
         return super().eventFilter(widget, event)
+
+    def trigger_from_widget(
+        self,
+        widget: Optional[QtWidgets.QWidget] = None,
+        *,
+        button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton,
+    ) -> None:
+        """Toggle visibility using the same rules as the parent click event.
+
+        This method allows programmatic triggering of the menu without
+        requiring a parent widget or event filter. It respects the same
+        trigger button constraints as interactive clicks.
+
+        Parameters:
+            widget: Optional anchor widget to position the menu relative to
+            button: The mouse button to simulate (default: LeftButton)
+        """
+        # Don't allow hiding if menu is pinned
+        if self.is_pinned:
+            return
+
+        # Use centralized trigger logic
+        if not self._should_trigger(button):
+            return
+
+        # Toggle visibility
+        if not self.isVisible():
+            # Show using popup method if we have an anchor widget
+            if widget:
+                self.show_as_popup(
+                    anchor_widget=widget, position=self.position or "bottom"
+                )
+            else:
+                self.setVisible(True)
+                self.raise_()
+                self.activateWindow()
+        else:
+            self.hide()
 
 
 # -----------------------------------------------------------------------------

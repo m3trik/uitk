@@ -1,13 +1,13 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-from typing import Any, Optional
-from functools import partial
+from typing import Any, Optional, Union, List
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 
 # From this package
 from uitk import __package__
+from uitk.widgets.footer import Footer
 from uitk.widgets.mixins.state_manager import StateManager
 from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -33,6 +33,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         path: str = None,
         log_level: int = "WARNING",
         restore_window_size: bool = True,
+        add_footer: bool = True,
+        default_slot_timeout: Optional[float] = None,
         **kwargs,
     ) -> None:
         """Initializes the main window and its properties.
@@ -46,9 +48,14 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             path: Optional path
             log_level: Logging level to use
             restore_window_size: Whether to save and restore window geometry. Defaults to True.
+            add_footer: Whether to add a footer with size grip. Defaults to True.
+            default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
             **kwargs: Additional keyword arguments
         """
         super().__init__(parent)
+
+        # Default style class ensures translucent border styling even when callers don't specify one
+        self._default_style_class = "translucentBgWithBorder"
 
         self.logger.setLevel(log_level)
         self.logger.set_log_prefix(f"[{name}] ")
@@ -64,13 +71,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.state = StateManager(self.settings)
 
         self.path = path
-        self.tags = tags or set()
+        self.tags = set(tags or [])
         self.has_tags = lambda tags=None: self.sb.has_tags(self, tags)
         self.is_initialized = False
         self.prevent_hide = False
         self.restore_window_size = (
             restore_window_size  # Enable/disable window size saving
         )
+        self.add_footer = add_footer
+        self.default_slot_timeout = default_slot_timeout
+        self.footer: Optional[Footer] = None
         self.widgets = set()
         self.restore_widget_states = True
         self.restored_widgets = set()
@@ -100,21 +110,34 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self._create_size_grip()
 
     def _create_size_grip(self) -> None:
-        """Create the size grip if it doesn't exist and add it to layout if available."""
-        # Check if size grip already exists
-        existing_grip = self.findChild(QtWidgets.QSizeGrip, "size_grip")
-        if existing_grip:
-            return
+        """Create the size grip or footer if configured."""
+        if self.add_footer:
+            # Use footer with integrated size grip
+            existing_footer = getattr(self, "footer", None)
+            if existing_footer:
+                return
 
-        # Create the size grip
-        size_grip = QtWidgets.QSizeGrip(self)
-        size_grip.setObjectName("size_grip")
+            central = self.centralWidget()
+            if not central:
+                return
 
-        # Add to layout if one exists
-        layout = self.centralWidget().layout() if self.centralWidget() else None
-        if layout:
-            layout.addWidget(size_grip)
-            layout.setAlignment(size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight)
+            self.footer = Footer(add_size_grip=True)
+            self.footer.attach_to(central)
+        else:
+            # Legacy size grip without footer
+            existing_grip = self.findChild(QtWidgets.QSizeGrip, "size_grip")
+            if existing_grip:
+                return
+
+            size_grip = QtWidgets.QSizeGrip(self)
+            size_grip.setObjectName("size_grip")
+
+            layout = self.centralWidget().layout() if self.centralWidget() else None
+            if layout:
+                layout.addWidget(size_grip)
+                layout.setAlignment(
+                    size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight
+                )
 
     def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
         """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""
@@ -134,6 +157,33 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             self.setWindowFlags(window.windowFlags())
         else:
             self.setWindowFlags(central_widget.windowFlags())
+
+    def edit_tags(
+        self,
+        target: Union[str, QtWidgets.QWidget] = None,
+        add: Union[str, List[str]] = None,
+        remove: Union[str, List[str]] = None,
+        clear: bool = False,
+        reset: bool = False,
+    ) -> Union[str, None]:
+        """Edit tags on a widget or a tag string.
+        If target is None, edits tags on this MainWindow.
+
+        Parameters:
+            target (str or QWidget): The widget to edit tags on, or a tag string.
+            add (str or list[str]): Tags to add.
+            remove (str or list[str]): Tags to remove.
+            clear (bool): If True, clears all tags.
+            reset (bool): If True, resets tags to default (only for widgets).
+
+        Returns:
+            str or None: The modified tag string if target is a string, otherwise None.
+        """
+        if target is None:
+            target = self
+        return self.sb.edit_tags(
+            target, add=add, remove=remove, clear=clear, reset=reset
+        )
 
     def __getattr__(self, attr_name) -> Any:
         """Looks for the widget in the parent class.
@@ -159,6 +209,27 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         raise AttributeError(
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
+
+    @property
+    def is_pinned(self) -> bool:
+        """Check if the window is pinned (should not auto-hide).
+
+        This is the single source of truth for pin state checking.
+        Checks both the prevent_hide flag and the header's pin button state.
+
+        Returns:
+            bool: True if window should stay visible (pinned), False otherwise
+        """
+        # Check prevent_hide flag
+        if self.prevent_hide:
+            return True
+
+        # Check header pin button state (if header exists and has pin functionality)
+        header = getattr(self, "header", None)
+        if header and hasattr(header, "pinned"):
+            return header.pinned
+
+        return False
 
     @property
     def slots(self) -> list:
@@ -336,6 +407,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             self.logger.warning(f"[sync_widget_values] Invalid widget: {widget}")
             return
 
+        # Skip syncing None values to prevent clearing valid widget states
+        if value is None:
+            self.logger.debug(
+                f"[{self.objectName()}] [sync_widget_values] Skipping sync of None value for {widget.objectName()}"
+            )
+            return
+
         # Save and apply to all relative widgets
         relatives = self.sb.get_ui_relatives(widget.ui, upstream=True, downstream=True)
         for relative in relatives:
@@ -407,8 +485,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         )
 
     def setVisible(self, visible) -> None:
-        """Reimplement setVisible to prevent window from being hidden when prevent_hide is True."""
-        if self.prevent_hide and not visible:
+        """Reimplement setVisible to prevent window from being hidden when pinned."""
+        if self.is_pinned and not visible:
             return
         super().setVisible(visible)
 
@@ -445,10 +523,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
         super().showEvent(event)
         self.on_show.emit()
-
-        # Defer geometry restoration until after the window is fully shown
-        # if self.restore_window_size:
-        #     self.sb.defer_with_timer(self.restore_window_geometry, ms=100)
 
         self.is_initialized = True
 
@@ -490,6 +564,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
     def hideEvent(self, event) -> None:
         """Reimplement hideEvent to emit custom signal when window is hidden."""
+        # Explicitly return focus to the parent window (e.g. Maya).
+        # This is necessary in embedded contexts because the OS window manager
+        # may otherwise transfer focus to a different application when a
+        # top-level tool window is hidden.
+        if self.parent():
+            parent_window = self.parent().window()
+            if parent_window and parent_window.isVisible():
+                parent_window.activateWindow()
+                parent_window.raise_()
+
         super().hideEvent(event)
         self.on_hide.emit()
 

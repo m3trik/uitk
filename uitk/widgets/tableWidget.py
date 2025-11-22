@@ -1,11 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+
 from qtpy import QtWidgets, QtGui, QtCore
-from typing import Optional, Callable, List
 
 # From this package:
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.menu_mixin import MenuMixin
 
 
 class HeaderMixin:
@@ -216,11 +219,39 @@ class CellFormatMixin(ConvertMixin):
         return hi.text() if hi else str(col)
 
 
+@dataclass(frozen=True)
+class TableSelection:
+    """Immutable representation of a single selected row."""
+
+    row: int
+    values: Dict[str, Any]
+    items: Dict[str, Optional[QtWidgets.QTableWidgetItem]]
+
+    def __getitem__(self, key: str):
+        return self.values[key]
+
+    def get(self, key: str, default: Any = None):
+        return self.values.get(key, default)
+
+    def item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]:
+        return self.items.get(key)
+
+    def text(self, key: str, default: str = "") -> str:
+        widget_item = self.items.get(key)
+        return widget_item.text() if widget_item is not None else default
+
+
 class TableWidget(
-    QtWidgets.QTableWidget, HeaderMixin, AttributesMixin, CellFormatMixin
+    QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin
 ):
 
-    def __init__(self, parent=None, selection_mode="extended", **kwargs):
+    def __init__(
+        self,
+        parent=None,
+        selection_mode="extended",
+        left_click_select_only=False,
+        **kwargs,
+    ):
         """
         Initialize TableWidget.
 
@@ -237,17 +268,43 @@ class TableWidget(
         self._init_header_behavior()
         CellFormatMixin.__init__(self)
 
+        self._left_click_select_only = bool(left_click_select_only)
+        self._menu_action_registry: Dict[str, Dict[str, Any]] = {}
+        self._menu_dispatch_connected = False
+
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self.verticalHeader().setVisible(False)
+        compact_row_height = max(self.fontMetrics().height() + 4, 18)
+        self.verticalHeader().setDefaultSectionSize(compact_row_height)
         self.setAlternatingRowColors(False)
         self.setWordWrap(False)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
+        # Customize standalone menu provided by MenuMixin
+        self.menu.trigger_button = "right"
+        self.menu.fixed_item_height = 20
+        self.menu.hide_on_leave = True
+
         # Set selection mode
         self._set_selection_mode(selection_mode)
 
         self.set_attributes(**kwargs)
+
+    def selectionCommand(self, index, event=None):
+        """Optionally restrict selection changes to left mouse clicks."""
+        if (
+            self._left_click_select_only
+            and event
+            and isinstance(event, QtGui.QMouseEvent)
+        ):
+            if event.button() != QtCore.Qt.LeftButton:
+                return QtCore.QItemSelectionModel.NoUpdate
+        return super().selectionCommand(index, event)
+
+    def set_left_click_select_only(self, enabled: bool):
+        """Toggle whether non-left clicks can change selection."""
+        self._left_click_select_only = bool(enabled)
 
     def _set_selection_mode(self, mode_str):
         """Set the selection mode from a string."""
@@ -275,16 +332,6 @@ class TableWidget(
             global_pos = self.mapToGlobal(position)
             self.menu.position = global_pos
             self.menu.show()
-
-    @property
-    def menu(self):
-        try:
-            return self._menu
-        except AttributeError:
-            from uitk.widgets.menu import Menu
-
-            self._menu = Menu(self, mode="context", fixed_item_height=20)
-            return self._menu
 
     def item_data(self, row: int, column: int):
         item = self.item(row, column)
@@ -354,9 +401,14 @@ class TableWidget(
                         text, data_val = value
                     else:
                         text, data_val = value, None
-                    item = QtWidgets.QTableWidgetItem(
-                        str(text) if text is not None else ""
-                    )
+
+                    text_str = str(text) if text is not None else ""
+                    item = QtWidgets.QTableWidgetItem(text_str)
+
+                    # Set tooltip to text content by default
+                    if text_str:
+                        item.setToolTip(text_str)
+
                     if data_val is not None:
                         item.setData(QtCore.Qt.UserRole, data_val)
                     self.setItem(row_idx, col_idx, item)
@@ -412,10 +464,15 @@ class TableWidget(
                     labels.append(label_item.text())
         return labels
 
-    def selected_rows(self):
+    def selected_rows(self, include_current=False):
         """Get all selected row numbers"""
         selected_items = self.selectedItems()
-        return sorted(set(item.row() for item in selected_items))
+        rows = {item.row() for item in selected_items}
+        if not rows and include_current:
+            curr = self.currentRow()
+            if curr >= 0:
+                rows.add(curr)
+        return sorted(rows)
 
     def clear_all(self):
         self.setRowCount(0)
@@ -427,6 +484,177 @@ class TableWidget(
                 header.setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
             else:
                 header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeToContents)
+
+    def get_selected_data(self, columns=None, include_current=True):
+        """
+        Get data from selected rows for specified columns.
+
+        Args:
+            columns (list[int], optional): List of column indices to retrieve data from.
+                                           If None, returns data from all columns.
+            include_current (bool): If True, falls back to current row if no selection.
+
+        Returns:
+            list[dict]: A list of dictionaries, one for each selected row.
+                        Each dictionary maps column index to the item's data.
+        """
+        normalized = self._normalize_column_targets(columns)
+        selections = self._build_selection_payload(normalized, include_current)
+
+        result = []
+        for selection in selections:
+            row_data = {}
+            for key, col_idx in normalized:
+                row_data[col_idx] = selection.values.get(key)
+            result.append(row_data)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Selection helpers & menu integrations
+    # ------------------------------------------------------------------
+    def get_selection(
+        self,
+        columns: Optional[
+            Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]
+        ] = None,
+        include_current: bool = True,
+    ) -> List[TableSelection]:
+        """Return detailed selection payload keyed by column aliases."""
+
+        normalized = self._normalize_column_targets(columns)
+        return self._build_selection_payload(normalized, include_current)
+
+    def register_menu_action(
+        self,
+        object_name: str,
+        handler: Callable[[List[TableSelection]], None],
+        *,
+        columns: Optional[
+            Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]
+        ] = None,
+        include_current: bool = True,
+        allow_empty: bool = False,
+        transform: Optional[Callable[[List[TableSelection]], Any]] = None,
+        pass_widget: bool = False,
+    ):
+        """Attach a context-menu item to a callable that receives selection data."""
+
+        if not object_name:
+            raise ValueError("object_name is required")
+        if not callable(handler):
+            raise TypeError("handler must be callable")
+
+        normalized = self._normalize_column_targets(columns)
+        self._menu_action_registry[object_name] = {
+            "handler": handler,
+            "columns": normalized,
+            "include_current": bool(include_current),
+            "allow_empty": bool(allow_empty),
+            "transform": transform,
+            "pass_widget": bool(pass_widget),
+        }
+        self._ensure_menu_dispatch_hook()
+
+    def unregister_menu_action(self, object_name: str):
+        self._menu_action_registry.pop(object_name, None)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _ensure_menu_dispatch_hook(self):
+        if self._menu_dispatch_connected:
+            return
+        menu = getattr(self, "menu", None)
+        signal = getattr(menu, "on_item_interacted", None)
+        if signal is None:
+            return
+        signal.connect(self._dispatch_registered_menu_action)
+        self._menu_dispatch_connected = True
+
+    def _dispatch_registered_menu_action(self, widget: QtWidgets.QWidget):
+        if widget is None:
+            return
+        object_name = widget.objectName()
+        if not object_name:
+            return
+        payload = self._menu_action_registry.get(object_name)
+        if not payload:
+            return
+
+        selections = self._build_selection_payload(
+            payload["columns"], payload["include_current"]
+        )
+        if not selections and not payload["allow_empty"]:
+            return
+
+        data = selections
+        transform = payload.get("transform")
+        if transform:
+            data = transform(selections)
+
+        handler = payload["handler"]
+        if payload["pass_widget"]:
+            handler(data, widget)
+        else:
+            handler(data)
+
+    def _normalize_column_targets(
+        self,
+        columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]],
+    ) -> List[Tuple[str, int]]:
+        targets: List[Tuple[str, int]] = []
+        used_keys = set()
+
+        def _make_key(idx: int, label: Optional[str] = None) -> str:
+            base = (label or "").strip() or f"column_{idx}"
+            key = base
+            suffix = 2
+            while key in used_keys:
+                key = f"{base}_{suffix}"
+                suffix += 1
+            used_keys.add(key)
+            return key
+
+        if columns is None:
+            for idx in range(self.columnCount()):
+                header = self.horizontalHeaderItem(idx)
+                label = header.text() if header else None
+                targets.append((_make_key(idx, label), idx))
+            return targets
+
+        iterable: Iterable[Tuple[Optional[str], Union[int, str]]]
+        if isinstance(columns, dict):
+            iterable = columns.items()
+        else:
+            iterable = ((None, col) for col in columns)
+
+        for alias, ref in iterable:
+            idx = self._resolve_col(ref)
+            if idx is None:
+                continue
+            header = self.horizontalHeaderItem(idx)
+            label = alias or (header.text() if header else None)
+            targets.append((_make_key(idx, label), idx))
+
+        return targets
+
+    def _build_selection_payload(
+        self,
+        normalized_columns: List[Tuple[str, int]],
+        include_current: bool,
+    ) -> List[TableSelection]:
+        rows = self.selected_rows(include_current=include_current)
+        selections: List[TableSelection] = []
+
+        for row in rows:
+            values: Dict[str, Any] = {}
+            items: Dict[str, Optional[QtWidgets.QTableWidgetItem]] = {}
+            for key, col_idx in normalized_columns:
+                items[key] = self.item(row, col_idx)
+                values[key] = self.item_data(row, col_idx)
+            selections.append(TableSelection(row=row, values=values, items=items))
+        return selections
 
 
 # -----------------------------------------------------------------------------

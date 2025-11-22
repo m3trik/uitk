@@ -1,9 +1,11 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
-[![Version](https://img.shields.io/badge/Version-1.0.31-blue.svg)](https://pypi.org/project/uitk/)
+[![Version](https://img.shields.io/badge/Version-1.0.33-blue.svg)](https://pypi.org/project/uitk/)
 
 # UITK: UI Toolkit for Dynamic Qt Applications
 
+<!-- short_description_start -->
 UITK is dynamic UI loader designed to manage multiple UI from one central switchboard.  Leverages naming convention to dynamically load UI files, register custom widgets, auto connect slots, set styles, restore and sync states, etc.
+<!-- short_description_end -->
 
 ## What UITK Does
 

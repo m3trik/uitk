@@ -8,6 +8,11 @@ import json
 class SettingsManager:
     """Manages persistent storage and retrieval of settings via QSettings.
 
+    Provides data integrity protections:
+    - Filters out corrupted "None" strings from old/broken code
+    - Automatic JSON serialization/deserialization for complex types
+    - Namespace support for key grouping
+
     Parameters:
         organization (str): Organization or package name. Defaults to __package__.
         application (str): Application name, typically your UI/window name.
@@ -41,6 +46,11 @@ class SettingsManager:
 
     def value(self, key: str, default: Any = None) -> Any:
         value = self.settings.value(self._ns_key(key), default)
+
+        # Filter out corrupted "None" strings from old code
+        if value == "None":
+            return None
+
         # Try to decode JSON for lists/dicts
         if isinstance(value, str):
             try:

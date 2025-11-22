@@ -31,6 +31,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
     def __init__(
         self,
         parent=None,
+        config_buttons=None,
         **kwargs,
     ):
         super().__init__(parent)
@@ -38,11 +39,14 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         Parameters:
             parent (QWidget, optional): The parent widget. Defaults to None.
-            **kwargs: Additional keyword arguments to configure buttons and other attributes.
-                      Accepts keys corresponding to the button_definitions, and any additional attributes.
+            config_buttons (list, optional): List of button names to show in order.
+                Example: ['menu_button', 'pin_button']
+                Available buttons: 'menu_button', 'minimize_button', 'hide_button', 'pin_button'
+            **kwargs: Additional attributes for the header (e.g., setTitle="My Title").
         """
         self.pinned = False  # unpinned, pinned
         self.__mousePressPos = None
+        self.buttons = {}  # Initialize buttons dict to avoid AttributeError
 
         self.container_layout = QtWidgets.QHBoxLayout(self)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
@@ -52,12 +56,6 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self.setLayout(self.container_layout)
         self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
 
-        # Extract button-related arguments
-        button_args = {
-            key: kwargs.pop(key)
-            for key in list(kwargs.keys())
-            if key in self.button_definitions
-        }
         self.setProperty("class", self.__class__.__name__)
         font = self.font()
         font.setBold(True)
@@ -66,7 +64,14 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self.setIndent(8)  # adds left-side indentation to the text
         self.setFixedHeight(20)
-        self.config_buttons(**button_args)
+
+        if config_buttons:
+            # Unpack the list when calling the method
+            if isinstance(config_buttons, (list, tuple)):
+                self.config_buttons(*config_buttons)
+            else:
+                self.config_buttons(config_buttons)
+
         self.set_attributes(**kwargs)
 
     @property
@@ -76,8 +81,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         except AttributeError:
             from uitk.widgets.menu import Menu
 
-            # print(f"[Header.menu] constructing new menu for: {self.objectName()}")
-            self._menu = Menu(self, fixed_item_height=20)
+            self._menu = Menu(self, fixed_item_height=20, hide_on_leave=True)
             return self._menu
 
     def get_icon_path(self, icon_filename):
@@ -119,8 +123,41 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         button.clicked.connect(callback)
         return button
 
-    def config_buttons(self, **kwargs):
-        """Configure header buttons in the declared keyword order and align them to the right."""
+    def has_buttons(self, button_type=None):
+        """Check if the header has a specific button type or any button.
+
+        Parameters:
+            button_type (str or list, optional): The button type(s) to check for.
+                If None, checks if any button exists.
+
+        Returns:
+            bool: True if the button exists, False otherwise.
+        """
+        if button_type is None:
+            return bool(self.buttons)
+
+        if isinstance(button_type, str):
+            return button_type in self.buttons
+
+        if isinstance(button_type, (list, tuple)):
+            return any(btn in self.buttons for btn in button_type)
+
+        return False
+
+    def config_buttons(self, *button_list):
+        """Configure header buttons from a list and align them to the right.
+
+        Parameters:
+            *button_list: Button names in display order (as args or single list).
+                Examples:
+                    config_buttons('pin_button', 'menu_button')
+                    config_buttons(['pin_button', 'menu_button'])
+                Available: 'menu_button', 'minimize_button', 'hide_button', 'pin_button'
+        """
+        # Support both styles: config_buttons('a', 'b') and config_buttons(['a', 'b'])
+        if len(button_list) == 1 and isinstance(button_list[0], (list, tuple)):
+            button_list = button_list[0]
+
         # Clear layout
         while self.container_layout.count():
             item = self.container_layout.takeAt(0)
@@ -134,19 +171,20 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self.container_layout.addStretch(1)
 
         # Insert buttons in order (they go to the right)
-        for param in kwargs:
-            if param not in self.button_definitions:
+        for button_name in button_list:
+            if button_name not in self.button_definitions:
                 continue
 
-            visible = kwargs[param]
-            icon_filename, method_name = self.button_definitions[param]
+            icon_filename, method_name = self.button_definitions[button_name]
             callback = getattr(self, method_name)
 
-            button = self.create_button(icon_filename, callback, button_type=param)
-            button.setVisible(visible)
+            button = self.create_button(
+                icon_filename, callback, button_type=button_name
+            )
+            button.setVisible(True)
 
             self.container_layout.addWidget(button)
-            self.buttons[param] = button
+            self.buttons[button_name] = button
 
         self.container_layout.invalidate()
         self.trigger_resize_event()
@@ -236,9 +274,25 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             icon = self.create_svg_icon(pin_icon_filename, 16)
             pin_button.setIcon(icon)
             if not state:
+                # When unpinned via the button, immediately hide until user reopens.
                 self.window().hide()
 
         self.toggled.emit(state)
+
+    def reset_pin_state(self):
+        """Force the header into an unpinned state without hiding the window."""
+        if not self.pinned:
+            return
+
+        self.pinned = False
+        self.window().prevent_hide = False
+
+        pin_button = self.buttons.get("pin_button")
+        if pin_button:
+            icon = self.create_svg_icon("pin.svg", 16)
+            pin_button.setIcon(icon)
+
+        self.toggled.emit(False)
 
     def mousePressEvent(self, event):
         """Handle the mouse press event. If the left button is pressed, store the global position of the mouse cursor.
@@ -311,10 +365,7 @@ if __name__ == "__main__":
     w = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(w)
     header = Header(
-        menu_button=True,
-        minimize_button=True,
-        pin_button=True,
-        hide_button=True,
+        config_buttons=["menu_button", "minimize_button", "pin_button", "hide_button"],
         setTitle="DRAG ME!",
     )
     header.toggled.connect(lambda state: print(f"Header pinned: {state}!"))
