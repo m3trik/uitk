@@ -34,6 +34,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         log_level: int = "WARNING",
         restore_window_size: bool = True,
         add_footer: bool = True,
+        default_slot_timeout: Optional[float] = None,
         **kwargs,
     ) -> None:
         """Initializes the main window and its properties.
@@ -48,6 +49,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             log_level: Logging level to use
             restore_window_size: Whether to save and restore window geometry. Defaults to True.
             add_footer: Whether to add a footer with size grip. Defaults to True.
+            default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
             **kwargs: Additional keyword arguments
         """
         super().__init__(parent)
@@ -77,6 +79,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             restore_window_size  # Enable/disable window size saving
         )
         self.add_footer = add_footer
+        self.default_slot_timeout = default_slot_timeout
         self.footer: Optional[Footer] = None
         self.widgets = set()
         self.restore_widget_states = True

@@ -7,6 +7,74 @@ from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 
 
+class SlotWrapper:
+    """Wrapper class for slots to handle argument injection, history tracking, and timeout monitoring."""
+
+    def __init__(self, slot, widget, switchboard):
+        self.slot = slot
+        self.widget = widget
+        self.sb = switchboard
+
+        # Pre-calculate signature info
+        self.sig = inspect.signature(slot)
+        self.param_names = set(self.sig.parameters.keys())
+        self.wants_widget = "widget" in self.param_names
+
+    def _get_timeout(self):
+        """Resolve the timeout value dynamically."""
+        # Check widget first
+        timeout = getattr(self.widget, "slot_timeout", None)
+
+        # Fallback to UI (MainWindow) setting if not on widget
+        if (
+            timeout is None
+            and hasattr(self.widget, "ui")
+            and hasattr(self.widget.ui, "default_slot_timeout")
+        ):
+            timeout = self.widget.ui.default_slot_timeout
+
+        if timeout:
+            self.sb.logger.debug(
+                f"Resolved timeout for {self.widget.objectName()}: {timeout}"
+            )
+
+        return timeout
+
+    def __call__(self, *args, **kwargs):
+        """The method called by the Qt Signal."""
+
+        # Argument Injection Logic
+        if self.wants_widget and "widget" not in kwargs:
+            kwargs["widget"] = self.widget
+
+        # Filter kwargs to match signature (prevents TypeErrors)
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.param_names}
+
+        # History Tracking
+        self.sb.slot_history(add=self.slot)
+
+        # Execution Strategy
+        timeout = self._get_timeout()
+        if timeout and timeout > 0:
+            msg = f"Slot '{self.slot.__name__}' on '{self.widget.objectName()}'"
+            monitored_slot = ptk.ExecutionMonitor.execution_monitor(
+                threshold=timeout,
+                message=msg,
+                logger=self.sb.logger,
+                allow_escape_cancel=True,
+            )(self.slot)
+
+            try:
+                return monitored_slot(*args, **filtered_kwargs)
+            except KeyboardInterrupt:
+                self.sb.logger.warning(
+                    f"Execution of {self.slot.__name__} aborted by user."
+                )
+                return None
+        else:
+            return self.slot(*args, **filtered_kwargs)
+
+
 class SwitchboardSlotsMixin:
     """Mixin for managing slot connections and signal-slot handling in the Switchboard."""
 
@@ -488,38 +556,16 @@ class SwitchboardSlotsMixin:
                 )
 
     def _create_slot_wrapper(self, slot, widget):
-        """Creates a wrapper function for a slot that includes the widget as a parameter if possible.
+        """Creates a wrapper object for a slot that includes the widget as a parameter if possible.
 
         Parameters:
             slot (callable): The slot function to be wrapped.
             widget (QWidget): The widget that the slot is connected to.
 
         Returns:
-            callable: The slot wrapper function.
+            SlotWrapper: The slot wrapper object.
         """
-        sig = inspect.signature(slot)
-        param_names = [
-            name
-            for name, param in sig.parameters.items()
-            if param.kind
-            in [inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY]
-        ]
-
-        def wrapper(*args, **kwargs):
-            # Check if the only parameter is 'widget'
-            if len(param_names) == 1 and "widget" in param_names:
-                # Call the slot with only the 'widget' argument
-                return slot(widget)
-
-            # Otherwise, prepare arguments normally
-            filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}
-            if "widget" in param_names and "widget" not in kwargs:
-                filtered_kwargs["widget"] = widget
-
-            self.slot_history(add=slot)
-            return slot(*args, **filtered_kwargs)
-
-        return wrapper
+        return SlotWrapper(slot, widget, self)
 
     def disconnect_slot(self, widget, slot=None):
         """Disconnects a slot from a widget.
