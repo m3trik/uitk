@@ -1061,6 +1061,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         # Ensure geometry matches current content before showing
         self.adjustSize()
+        self._resize_height_to_content()
 
         # Show the menu
         self.show()
@@ -1209,6 +1210,29 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.logger.debug("_check_cursor_position: Cursor outside menu, hiding")
             self.hide()
             self._leave_timer.stop()
+
+    def _resize_height_to_content(self) -> None:
+        """Collapse stale vertical space before showing the menu again.
+
+        Menus are often rebuilt while hidden. Without explicitly syncing the
+        geometry, Qt can reuse the previous height, leaving an empty gap when
+        fewer items remain. Keeping the width untouched avoids fighting the
+        width-matching logic while still trimming vertical dead space.
+        """
+
+        if not self.layout:
+            return
+
+        self.layout.activate()
+        hint = self.sizeHint()
+        if not hint.isValid():
+            return
+
+        target_height = max(hint.height(), self.minimumHeight())
+        current_width = self.width() or max(hint.width(), self.minimumWidth())
+
+        if self.height() != target_height:
+            self.resize(current_width, target_height)
 
     def _setup_apply_button(self):
         """Set up the apply button with proper configuration.
@@ -1806,6 +1830,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Only if apply button feature is enabled and button already exists
         elif self.add_apply_button:
             self._update_apply_button_visibility()
+
+        # Ensure the geometry reflects the current item count before positioning.
+        self._resize_height_to_content()
 
         # Only auto-position if we have a position setting
         # _apply_position now caches calculations for performance

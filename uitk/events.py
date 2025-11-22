@@ -146,7 +146,13 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         TypeError: If parent is not a QWidget derived type.
     """
 
-    def __init__(self, parent, track_on_drag_only: bool = True, log_level="WARNING"):
+    def __init__(
+        self,
+        parent,
+        track_on_drag_only: bool = True,
+        log_level="WARNING",
+        auto_update: bool = True,
+    ):
         super().__init__(parent)
 
         if not isinstance(parent, QtWidgets.QWidget):
@@ -155,6 +161,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self.logger.setLevel(log_level)
 
         self.track_on_drag_only = track_on_drag_only
+        self.auto_update = auto_update
         self._prev_mouse_over: set[QtWidgets.QWidget] = set()
         self._mouse_over: set[QtWidgets.QWidget] = set()
         self._filtered_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
@@ -180,20 +187,20 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
     def _update_widgets_under_cursor(self, top_widget: QtWidgets.QWidget):
         """Updates the list of widgets currently under the cursor."""
-        self._get_child_widgets()
+        self.update_child_widgets()
         self._mouse_over = {top_widget} if top_widget in self._widgets else set()
         self.logger.debug(
             f"Widgets under cursor: {[f'{w.objectName()}, {type(w).__name__}' for w in self._mouse_over]}"
         )
 
-    def _get_child_widgets(self):
+    def update_child_widgets(self):
         """Updates the set of child widgets of the parent."""
         parent = self.parent()
-        widgets = (
-            parent.currentWidget().findChildren(QtWidgets.QWidget)
-            if isinstance(parent, QtWidgets.QStackedWidget)
-            else parent.findChildren(QtWidgets.QWidget)
-        )
+        if hasattr(parent, "currentWidget") and callable(parent.currentWidget):
+            current = parent.currentWidget()
+            widgets = current.findChildren(QtWidgets.QWidget) if current else []
+        else:
+            widgets = parent.findChildren(QtWidgets.QWidget)
         self._widgets: set[QtWidgets.QWidget] = set(widgets)
 
     def track(self):
@@ -202,7 +209,8 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         top_widget = QtWidgets.QApplication.widgetAt(cursor_pos)
 
         self._release_mouse_for_widgets(self._mouse_over)
-        self._get_child_widgets()
+        if self.auto_update:
+            self.update_child_widgets()
 
         self._mouse_over = {top_widget} if top_widget in self._widgets else set()
 

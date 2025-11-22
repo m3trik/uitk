@@ -524,10 +524,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         super().showEvent(event)
         self.on_show.emit()
 
-        # Defer geometry restoration until after the window is fully shown
-        # if self.restore_window_size:
-        #     self.sb.defer_with_timer(self.restore_window_geometry, ms=100)
-
         self.is_initialized = True
 
     def eventFilter(self, watched, event) -> bool:
@@ -568,6 +564,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
     def hideEvent(self, event) -> None:
         """Reimplement hideEvent to emit custom signal when window is hidden."""
+        # Explicitly return focus to the parent window (e.g. Maya).
+        # This is necessary in embedded contexts because the OS window manager
+        # may otherwise transfer focus to a different application when a
+        # top-level tool window is hidden.
+        if self.parent():
+            parent_window = self.parent().window()
+            if parent_window and parent_window.isVisible():
+                parent_window.activateWindow()
+                parent_window.raise_()
+
         super().hideEvent(event)
         self.on_hide.emit()
 

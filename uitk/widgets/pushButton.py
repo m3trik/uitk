@@ -8,8 +8,8 @@ from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
 class PushButton(
-    QtWidgets.QPushButton,
     MenuMixin,
+    QtWidgets.QPushButton,
     OptionBoxMixin,
     AttributesMixin,
     RichText,

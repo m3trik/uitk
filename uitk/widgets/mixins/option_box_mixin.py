@@ -30,21 +30,23 @@ if TYPE_CHECKING:
     from uitk.widgets.optionBox import OptionBoxManager
 
 
-def _resolve_qwidget_option_box_property(self) -> Optional["OptionBoxManager"]:
-    """Safely access the autopatched QWidget.option_box property, if present.
-
-    Avoids recursion by calling the property's descriptor directly on QWidget.
-    """
-    q_prop = getattr(QtWidgets.QWidget, "option_box", None)
-    if isinstance(q_prop, property):
-        try:
-            return q_prop.__get__(self, type(self))  # type: ignore[no-any-return]
-        except Exception:
-            return None
-    return None
-
-
 class OptionBoxMixin:
+    """Mixin that provides automatic OptionBox integration for widgets."""
+
+    @staticmethod
+    def _resolve_qwidget_option_box_property(self) -> Optional["OptionBoxManager"]:
+        """Safely access the autopatched QWidget.option_box property, if present.
+
+        Avoids recursion by calling the property's descriptor directly on QWidget.
+        """
+        q_prop = getattr(QtWidgets.QWidget, "option_box", None)
+        if isinstance(q_prop, property):
+            try:
+                return q_prop.__get__(self, type(self))  # type: ignore[no-any-return]
+            except Exception:
+                return None
+        return None
+
     @property
     def option_box(self) -> Optional["OptionBoxManager"]:
         # Fast-path: if we already cached a manager on this instance
@@ -53,7 +55,7 @@ class OptionBoxMixin:
             return existing
 
         # Try autopatched QWidget property
-        mgr = _resolve_qwidget_option_box_property(self)
+        mgr = self._resolve_qwidget_option_box_property(self)
         if mgr is not None:
             return mgr
 
@@ -63,11 +65,6 @@ class OptionBoxMixin:
 
             mgr = OptionBoxManager(self)  # type: ignore[arg-type]
             setattr(self, "_option_box_manager", mgr)
-
-            # REMOVED: Don't set menu alias proxy - MenuMixin descriptor handles coordination
-            # The _MenuDescriptor in MenuMixin now properly checks for OptionBoxManager's menu
-            # and coordinates between the two systems without needing a proxy object.
-            # This prevents the proxy from interfering with _menu_instance caching.
 
             return mgr
         except Exception:
@@ -229,35 +226,3 @@ class OptionBoxMixin:
     def options(self) -> "OptionBoxMixin._OptionsWrapper":
         # Always return a fresh thin wrapper bound to this instance
         return OptionBoxMixin._OptionsWrapper(self)
-
-
-class _MenuAliasProxy:
-    """Instance-level lazy alias that forwards attribute access to the OptionBox Menu.
-
-    Accessing `instance.menu` will return this proxy if set, and any attribute
-    on it will be resolved against the real Menu obtained via the OptionBox manager.
-    """
-
-    def __init__(self, owner: QtWidgets.QWidget):
-        self._owner = owner
-
-    @property
-    def _menu(self):
-        try:
-            mgr = getattr(self._owner, "option_box", None)
-            if mgr is not None and hasattr(mgr, "get_menu"):
-                return mgr.get_menu(create=True)
-        except Exception:
-            pass
-        return None
-
-    def __getattr__(self, item):
-        menu = self._menu
-        if menu is None:
-            raise AttributeError(
-                f"Menu is not available yet; missing attribute: {item}"
-            )
-        return getattr(menu, item)
-
-    def __repr__(self) -> str:
-        return f"<MenuAliasProxy target={self._menu!r}>"

@@ -43,12 +43,11 @@ def _get_menu_class():
 
 
 class _MenuDescriptor:
-    """Descriptor that provides a uitk Menu object with smart coordination.
+    """Descriptor that provides a uitk Menu object with lazy initialization.
 
     Resolution order (optimized for performance):
     1. Existing instance menu (cached) - FAST PATH
-    2. OptionBox menu (if OptionBox exists and has menu) - MEDIUM PATH
-    3. Create new menu (if no OptionBox) - SLOW PATH
+    2. Create new menu - SLOW PATH
     """
 
     def __get__(self, instance: Any, owner: type):
@@ -71,27 +70,6 @@ class _MenuDescriptor:
                         f"_MenuDescriptor.__get__: FAST PATH (cached) in {duration_ms:.3f}ms"
                     )
                 return inst_menu
-
-        # MEDIUM PATH: Check if OptionBox has an existing menu (without triggering creation)
-        # We directly access _menu attribute to avoid calling the auto-creating property
-        if "_option_box_manager" in instance.__dict__:
-            try:
-                mgr = instance.__dict__.get("_option_box_manager")
-                if mgr and hasattr(mgr, "_menu") and mgr._menu is not None:
-                    option_menu = mgr._menu
-                    # Option-box menus should never double as context menus.
-                    if not getattr(option_menu, "_uitk_option_box_only", False):
-                        MenuCls = _get_menu_class()
-                        if MenuCls is not None and isinstance(option_menu, MenuCls):
-                            instance.__dict__["_menu_instance"] = option_menu
-                            duration_ms = (time.perf_counter() - get_start) * 1000
-                            if hasattr(instance, "logger"):
-                                instance.logger.debug(
-                                    f"_MenuDescriptor.__get__: MEDIUM PATH (from OptionBox) in {duration_ms:.3f}ms"
-                                )
-                            return option_menu
-            except Exception:
-                pass
 
         # SLOW PATH: Create standalone menu (option_box doesn't exist or has no menu)
         menu = self._create_menu(instance)
@@ -145,7 +123,6 @@ class MenuMixin:
     """Simple drop-in mixin that provides automatic Menu integration.
 
     Just inherit from this mixin and `self.menu` will be automatically available.
-    The descriptor handles coordination with OptionBox if present.
 
     Example:
         class MyWidget(QtWidgets.QWidget, MenuMixin):
@@ -160,9 +137,3 @@ class MenuMixin:
 
     # Descriptor provides smart menu access
     menu = _MenuDescriptor()
-
-    def __init_subclass__(cls, **kwargs):  # type: ignore[override]
-        """Ensure descriptor is present on all subclasses."""
-        super().__init_subclass__(**kwargs)  # type: ignore[misc]
-        if not isinstance(cls.__dict__.get("menu"), _MenuDescriptor):
-            cls.menu = _MenuDescriptor()  # type: ignore[assignment]

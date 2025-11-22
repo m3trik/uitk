@@ -25,24 +25,14 @@ class Label(QtWidgets.QLabel, MenuMixin, AttributesMixin):
         self.set_attributes(**kwargs)
 
     def mousePressEvent(self, event):
-        """
-        Parameters:
-                event (QEvent) =
-        """
+        """ """
         if event.button() == QtCore.Qt.LeftButton:
             self.clicked.emit()
-            self.menu.show()
-
-        if event.button() == QtCore.Qt.RightButton:
-            self.menu.show()
 
         QtWidgets.QLabel.mousePressEvent(self, event)
 
     def mouseReleaseEvent(self, event):
-        """
-        Parameters:
-                event (QEvent) =
-        """
+        """ """
         if event.button() == QtCore.Qt.LeftButton:
             self.released.emit()
 
