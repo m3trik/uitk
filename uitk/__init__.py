@@ -5,7 +5,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.0.31"
+__version__ = "1.0.33"
 
 
 DEFAULT_INCLUDE = {
