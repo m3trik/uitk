@@ -439,6 +439,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         parent_list_width,
         parent_list_height,
         child_widget_width,
+        child_widget_height,
         new_list_width,
         new_list_height,
     ):
@@ -449,17 +450,18 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             parent_list_width: Width of the parent list.
             parent_list_height: Height of the parent list.
             child_widget_width: Width of the child widget.
+            child_widget_height: Height of the child widget.
             new_list_width: Width of the new sublist.
             new_list_height: Height of the new sublist.
 
         Returns:
             tuple: (x, y) coordinates for the sublist position.
         """
-        overlap = 1
+        overlap = getattr(self, "overlap", 0)
 
         position_configs = {
             "right": (
-                parent_list_width - overlap + self.sublist_x_offset,
+                child_widget_width - overlap + self.sublist_x_offset,
                 self.sublist_y_offset,
             ),
             "left": (
@@ -467,16 +469,16 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 self.sublist_y_offset,
             ),
             "top": (
-                -child_widget_width // 2 + self.sublist_x_offset,
+                self.sublist_x_offset,
                 -new_list_height + overlap + self.sublist_y_offset,
             ),
             "bottom": (
-                -child_widget_width // 2 + self.sublist_x_offset,
-                parent_list_height - overlap + self.sublist_y_offset,
+                self.sublist_x_offset,
+                child_widget_height - overlap + self.sublist_y_offset,
             ),
             "center": (
-                parent_list_width // 2 - new_list_width // 2 + self.sublist_x_offset,
-                parent_list_height // 2 - new_list_height // 2 + self.sublist_y_offset,
+                (child_widget_width - new_list_width) // 2 + self.sublist_x_offset,
+                (child_widget_height - new_list_height) // 2 + self.sublist_y_offset,
             ),
         }
 
@@ -498,6 +500,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         parent_list_width = self.width()
         parent_list_height = self.height()
         child_widget_width = widget.width()
+        child_widget_height = widget.height()
         new_list_width = widget.sublist.width()
         new_list_height = widget.sublist.height()
 
@@ -507,12 +510,20 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             parent_list_width,
             parent_list_height,
             child_widget_width,
+            child_widget_height,
             new_list_width,
             new_list_height,
         )
 
-        # Map to global coordinates and position the sublist
-        pos = self.window().mapFromGlobal(widget.mapToGlobal(QtCore.QPoint(x, y)))
+        # Compute base position using widget's top-left, then apply offsets
+        parent = widget.sublist.parent()
+        base_point = widget.mapToGlobal(QtCore.QPoint(0, 0))
+
+        if parent:
+            parent_origin = parent.mapToGlobal(QtCore.QPoint(0, 0))
+            base_point -= parent_origin
+
+        pos = base_point + QtCore.QPoint(x, y)
         widget.sublist.move(pos)
 
     def eventFilter(self, widget, event):
