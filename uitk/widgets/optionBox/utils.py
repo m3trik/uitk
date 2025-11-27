@@ -23,8 +23,9 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._menu = None
         self._option_order = [
             "clear",
+            "pin",
             "action",
-        ]  # Default order: clear button first, then action button
+        ]  # Default order: clear button first, then pin, then action button
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -56,7 +57,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         if not isinstance(order, (list, tuple)):
             raise ValueError("Option order must be a list or tuple")
 
-        valid_options = {"clear", "action"}
+        valid_options = {"clear", "pin", "action"}
         if not all(opt in valid_options for opt in order):
             raise ValueError(
                 f"Invalid options in order. Valid options: {valid_options}"
@@ -66,6 +67,32 @@ class OptionBoxManager(ptk.LoggingMixin):
         if self._option_box:
             # Recreate with new order
             self._recreate_option_box()
+
+    def pin(
+        self,
+        settings_key: Optional[str] = None,
+        *,
+        double_click_to_edit: bool = False,
+        single_click_restore: bool = False,
+    ):
+        """Enable pin values option (fluent interface).
+
+        Args:
+            settings_key: Key for persistent settings (not yet implemented)
+            double_click_to_edit: Require double click to edit pinned value
+            single_click_restore: Restore value on single click
+        """
+        from ..optionBox.options import PinValuesOption
+
+        # Create pin option
+        pin_option = PinValuesOption(
+            wrapped_widget=self._widget,
+            settings_key=settings_key,
+            double_click_to_edit=double_click_to_edit,
+            single_click_restore=single_click_restore,
+        )
+        self.add_option(pin_option)
+        return self
 
     def enable_clear(self):
         """Enable clear option (fluent interface)"""
