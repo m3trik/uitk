@@ -445,7 +445,7 @@ class OptionBoxWithOrdering(OptionBox):
     """OptionBox that supports configurable option ordering"""
 
     def __init__(self, *args, option_order=None, **kwargs):
-        self._option_order = option_order or ["clear", "action"]
+        self._option_order = option_order or ["clear", "pin", "action"]
         super().__init__(*args, **kwargs)
 
     def wrap(self, wrapped_widget: QtWidgets.QWidget):
@@ -466,6 +466,7 @@ class OptionBoxWithOrdering(OptionBox):
         # because the plugin creates its own button
         from .options.action import MenuOption, ActionOption
         from .options.clear import ClearOption
+        from .options.pin_values import PinValuesOption
 
         has_action_plugin = any(
             isinstance(opt, (MenuOption, ActionOption)) for opt in self._options
@@ -479,11 +480,16 @@ class OptionBoxWithOrdering(OptionBox):
                     return self._option_order.index("clear")
                 except ValueError:
                     return 0
+            elif isinstance(option, PinValuesOption):
+                try:
+                    return self._option_order.index("pin")
+                except ValueError:
+                    return 1
             elif isinstance(option, (MenuOption, ActionOption)):
                 try:
                     return self._option_order.index("action")
                 except ValueError:
-                    return 1
+                    return 2
             else:
                 # Unknown option types go last
                 return 999
