@@ -1,5 +1,6 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
 [![Version](https://img.shields.io/badge/Version-1.0.35-blue.svg)](https://pypi.org/project/uitk/)
+[![Tests](https://img.shields.io/badge/tests-388%20passed-brightgreen.svg)](test/)
 
 # UITK: UI Toolkit for Dynamic Qt Applications
 

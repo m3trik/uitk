@@ -100,7 +100,7 @@ class SwitchboardWidgetMixin:
             if (not object_names_only or c.objectName())
         }
 
-        return ptk.filter_dict(dct, inc, exc, keys=True, values=True)
+        return ptk.filter_dict(dct, inc=inc, exc=exc, keys=True, values=True)
 
     @staticmethod
     def _get_widget_from_ui(
