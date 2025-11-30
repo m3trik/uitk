@@ -210,10 +210,7 @@ ui.restore_window_size = False  # Disable if needed
 # Apply theme
 ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 
-# Icons auto-switch with theme
-# save.svg       → used in light theme
-# save_dark.svg  → used in dark theme
-
+# Icons are monochrome and auto-colored to match the theme
 icon = sb.get_icon("save")
 ```
 
@@ -439,7 +436,7 @@ uitk/
 │       ├── switchboard_utils.py    # Helper utilities
 │       └── switchboard_names.py    # Name/tag handling
 │
-├── icons/                      # Built-in icons (light/dark variants)
+├── icons/                      # Monochrome icons (auto-colored by theme)
 └── examples/                   # Example application
 ```
 
