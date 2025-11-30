@@ -338,10 +338,10 @@ folder = sb.dir_dialog()
 
 ```python
 sb.center_widget(widget)                    # Center on screen
-sb.center_widget(widget, reference=other)   # Center on another widget
+sb.center_widget(widget, relative=other)    # Size relative to another widget
 
-sb.toggle_multi(ui, widgets, visible=True)  # Batch visibility
-sb.connect_multi(ui, widgets, signals, slots)  # Batch connect
+sb.toggle_multi(ui, setDisabled="btn_a,btn_b")  # Batch property toggle
+sb.connect_multi(ui, widgets, signals, slots)   # Batch connect
 
 sb.create_button_groups(ui, "chk_001-3")    # Radio group from range
 ```
@@ -351,7 +351,8 @@ sb.create_button_groups(ui, "chk_001-3")    # Radio group from range
 ```python
 sb.current_ui                  # Active UI
 sb.prev_ui                     # Previous UI
-sb.ui_history(limit=10)        # Recent UIs
+sb.ui_history()                # Full UI history
+sb.ui_history(-1)              # Previous UI by index
 sb.get_ui("editor")            # Get by name
 sb.get_ui_relatives(ui, upstream=True)
 ```
@@ -472,12 +473,15 @@ class EditorSlots:
         widget.addItems(["Arial", "Helvetica", "Courier"])
 
     def cmb_font(self, index):
-        font = self.ui.cmb_font.currentText()
-        self.ui.txt_content.setFont(font)
+        from PySide6.QtGui import QFont
+        font_name = self.ui.cmb_font.currentText()
+        self.ui.txt_content.setFont(QFont(font_name))
 
     # Checkbox with state parameter
     def chk_wrap(self, state):
-        self.ui.txt_content.setLineWrapMode(state)
+        from PySide6.QtWidgets import QTextEdit
+        mode = QTextEdit.WidgetWidth if state else QTextEdit.NoWrap
+        self.ui.txt_content.setLineWrapMode(mode)
 
     def show_recent(self):
         self.sb.message_box("Recent files...")
