@@ -37,7 +37,7 @@ class ResizeHandle(QtWidgets.QFrame):
     Shows visual feedback on hover.
     """
 
-    def __init__(self, target_widget, min_height=120, max_height=600, parent=None):
+    def __init__(self, target_widget, min_height=250, max_height=600, parent=None):
         super().__init__(parent)
         self.target_widget = target_widget
         self.min_height = min_height

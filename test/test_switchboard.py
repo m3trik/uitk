@@ -1068,7 +1068,9 @@ class TestSlotWrapperEdgeCases(QtBaseTestCase):
         from uitk.widgets.mixins.switchboard_slots import SlotWrapper
 
         call_log = []
-        wrapper = SlotWrapper(lambda: call_log.append("lambda"), self.ui.button_a, self.sb)
+        wrapper = SlotWrapper(
+            lambda: call_log.append("lambda"), self.ui.button_a, self.sb
+        )
         wrapper()
 
         self.assertEqual(call_log, ["lambda"])
