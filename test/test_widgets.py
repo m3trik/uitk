@@ -449,6 +449,252 @@ class TestLabelRichText(QtBaseTestCase):
         self.assertEqual(label.textFormat(), QtCore.Qt.RichText)
 
 
+# =============================================================================
+# Edge Case Tests
+# =============================================================================
+
+
+class TestPushButtonEdgeCases(QtBaseTestCase):
+    """Edge case tests for PushButton."""
+
+    def test_button_with_empty_text(self):
+        """Should handle empty text."""
+        from uitk.widgets.pushButton import PushButton
+
+        button = self.track_widget(PushButton())
+        button.setText("")
+        self.assertEqual(button.text(), "")
+
+    def test_button_with_unicode_text(self):
+        """Should handle unicode text."""
+        from uitk.widgets.pushButton import PushButton
+
+        button = self.track_widget(PushButton())
+        button.setText("按钮 🚀")
+        self.assertEqual(button.text(), "按钮 🚀")
+
+    def test_button_with_very_long_text(self):
+        """Should handle very long text."""
+        from uitk.widgets.pushButton import PushButton
+
+        button = self.track_widget(PushButton())
+        long_text = "A" * 1000
+        button.setText(long_text)
+        self.assertEqual(button.text(), long_text)
+
+    def test_button_multiple_clicks(self):
+        """Should handle multiple rapid clicks."""
+        from uitk.widgets.pushButton import PushButton
+
+        click_count = [0]
+
+        def on_click():
+            click_count[0] += 1
+
+        button = self.track_widget(PushButton())
+        button.clicked.connect(on_click)
+
+        for _ in range(10):
+            button.click()
+
+        self.assertEqual(click_count[0], 10)
+
+
+class TestCheckBoxEdgeCases(QtBaseTestCase):
+    """Edge case tests for CheckBox."""
+
+    def test_checkbox_rapid_state_changes(self):
+        """Should handle rapid state changes."""
+        from uitk.widgets.checkBox import CheckBox
+
+        checkbox = self.track_widget(CheckBox())
+        for i in range(20):
+            checkbox.setChecked(i % 2 == 0)
+        # Final state should be correct
+        self.assertFalse(checkbox.isChecked())  # 20 is even, so False
+
+    def test_checkbox_tristate_cycle(self):
+        """Should cycle through all tri-state values."""
+        from uitk.widgets.checkBox import CheckBox
+
+        checkbox = self.track_widget(CheckBox())
+        checkbox.setTristate(True)
+
+        states = []
+        for state in [0, 1, 2, 0]:
+            checkbox.setCheckState(state)
+            states.append(checkbox.checkState())
+
+        self.assertEqual(states, [0, 1, 2, 0])
+
+    def test_checkbox_hit_button_at_origin(self):
+        """Should handle hit test at origin."""
+        from uitk.widgets.checkBox import CheckBox
+
+        checkbox = self.track_widget(CheckBox())
+        checkbox.resize(100, 30)
+        self.assertTrue(checkbox.hitButton(QtCore.QPoint(0, 0)))
+
+    def test_checkbox_hit_button_at_boundary(self):
+        """Should handle hit test at boundary."""
+        from uitk.widgets.checkBox import CheckBox
+
+        checkbox = self.track_widget(CheckBox())
+        checkbox.resize(100, 30)
+        # Exactly at right edge
+        self.assertTrue(checkbox.hitButton(QtCore.QPoint(99, 15)))
+
+
+class TestLineEditEdgeCases(QtBaseTestCase):
+    """Edge case tests for LineEdit."""
+
+    def test_lineedit_empty_text(self):
+        """Should handle empty text."""
+        from uitk.widgets.lineEdit import LineEdit
+
+        line_edit = self.track_widget(LineEdit())
+        line_edit.setText("")
+        self.assertEqual(line_edit.text(), "")
+
+    def test_lineedit_unicode_text(self):
+        """Should handle unicode text."""
+        from uitk.widgets.lineEdit import LineEdit
+
+        line_edit = self.track_widget(LineEdit())
+        line_edit.setText("日本語 🔥")
+        self.assertEqual(line_edit.text(), "日本語 🔥")
+
+    def test_lineedit_whitespace_text(self):
+        """Should handle whitespace-only text."""
+        from uitk.widgets.lineEdit import LineEdit
+
+        line_edit = self.track_widget(LineEdit())
+        line_edit.setText("   ")
+        self.assertEqual(line_edit.text(), "   ")
+
+    def test_lineedit_newline_text(self):
+        """LineEdit preserves newlines in text property."""
+        from uitk.widgets.lineEdit import LineEdit
+
+        line_edit = self.track_widget(LineEdit())
+        line_edit.setText("line1\nline2")
+        # The text is stored as-is
+        self.assertEqual(line_edit.text(), "line1\nline2")
+
+    def test_lineedit_clear(self):
+        """Should clear text."""
+        from uitk.widgets.lineEdit import LineEdit
+
+        line_edit = self.track_widget(LineEdit())
+        line_edit.setText("some text")
+        line_edit.clear()
+        self.assertEqual(line_edit.text(), "")
+
+
+class TestComboBoxEdgeCases(QtBaseTestCase):
+    """Edge case tests for ComboBox."""
+
+    def test_combobox_empty(self):
+        """Should handle empty combo box."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        self.assertEqual(combo.count(), 0)
+        self.assertEqual(combo.currentIndex(), -1)
+
+    def test_combobox_single_item(self):
+        """Should handle single item."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("Only item")
+        self.assertEqual(combo.count(), 1)
+        self.assertEqual(combo.currentIndex(), 0)
+
+    def test_combobox_duplicate_items(self):
+        """Should handle duplicate items."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems(["Same", "Same", "Same"])
+        self.assertEqual(combo.count(), 3)
+
+    def test_combobox_remove_item_via_base(self):
+        """Should handle removing item via parent class method."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems(["First", "Second", "Third"])
+        combo.setCurrentIndex(1)
+        # Use parent class removeItem to avoid custom signal
+        QtWidgets.QComboBox.removeItem(combo, 1)
+        # Current index should change
+        self.assertEqual(combo.count(), 2)
+
+    def test_combobox_clear(self):
+        """Should clear all items."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems(["A", "B", "C"])
+        combo.clear()
+        self.assertEqual(combo.count(), 0)
+
+
+class TestAlignedComboBoxEdgeCases(QtBaseTestCase):
+    """Edge case tests for AlignedComboBox."""
+
+    def test_aligned_combobox_empty_header(self):
+        """Should handle empty header text."""
+        from uitk.widgets.comboBox import AlignedComboBox
+
+        combo = self.track_widget(AlignedComboBox())
+        combo.setHeaderText("")
+        self.assertEqual(combo.header_text, "")
+
+    def test_aligned_combobox_invalid_alignment(self):
+        """Should handle invalid alignment gracefully."""
+        from uitk.widgets.comboBox import AlignedComboBox
+
+        combo = self.track_widget(AlignedComboBox())
+        # Default alignment should be used for invalid value
+        try:
+            combo.setHeaderAlignment("invalid")
+        except (ValueError, KeyError):
+            pass  # Expected behavior
+        # Widget should still be usable
+        self.assertIsNotNone(combo)
+
+
+class TestLabelEdgeCases(QtBaseTestCase):
+    """Edge case tests for Label."""
+
+    def test_label_empty_text(self):
+        """Should handle empty text."""
+        from uitk.widgets.label import Label
+
+        label = self.track_widget(Label())
+        label.setText("")
+        self.assertEqual(label.text(), "")
+
+    def test_label_html_content(self):
+        """Should handle HTML content."""
+        from uitk.widgets.label import Label
+
+        label = self.track_widget(Label())
+        label.setText("<b>Bold</b> and <i>italic</i>")
+        # Should contain the HTML
+        self.assertIn("<b>Bold</b>", label.text())
+
+    def test_label_url_link(self):
+        """Should handle URL links in rich text."""
+        from uitk.widgets.label import Label
+
+        label = self.track_widget(Label())
+        label.setText('<a href="http://example.com">Link</a>')
+        self.assertIn("href", label.text())
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

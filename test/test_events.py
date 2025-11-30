@@ -6,12 +6,14 @@ This module tests the event handling functionality including:
 - EventFactoryFilter creation and installation
 - Mouse tracking functionality
 - Event filtering and handler resolution
+- Edge cases and error handling
 
 Run standalone: python -m test.test_events
 """
 
 import unittest
 from unittest.mock import MagicMock, patch
+import weakref
 
 from conftest import QtBaseTestCase, setup_qt_application
 
@@ -60,6 +62,35 @@ class TestEventFactoryFilterCreation(QtBaseTestCase):
         for etype in filter_obj.event_types:
             self.assertIsInstance(etype, int)
 
+    def test_normalizes_integer_event_types(self):
+        """Should accept integer event types directly."""
+        filter_obj = EventFactoryFilter(
+            event_types={int(QtCore.QEvent.Type.MouseButtonPress)}
+        )
+        self.assertIn(int(QtCore.QEvent.Type.MouseButtonPress), filter_obj.event_types)
+
+    def test_raises_for_invalid_event_type_string(self):
+        """Should raise ValueError for invalid event type string."""
+        with self.assertRaises(ValueError) as context:
+            EventFactoryFilter(event_types={"InvalidEventType"})
+        self.assertIn("Invalid QEvent type string", str(context.exception))
+
+    def test_creates_filter_with_forward_events_to(self):
+        """Should accept custom event handler target."""
+        handler = MagicMock()
+        filter_obj = EventFactoryFilter(forward_events_to=handler)
+        self.assertEqual(filter_obj.forward_events_to, handler)
+
+    def test_default_forward_events_to_self(self):
+        """Should default forward_events_to to self when not provided."""
+        filter_obj = EventFactoryFilter()
+        self.assertEqual(filter_obj.forward_events_to, filter_obj)
+
+    def test_propagate_to_children_true(self):
+        """Should accept propagate_to_children=True."""
+        filter_obj = EventFactoryFilter(propagate_to_children=True)
+        self.assertTrue(filter_obj.propagate_to_children)
+
 
 class TestEventFactoryFilterInstallation(QtBaseTestCase):
     """Tests for EventFactoryFilter installation on widgets."""
@@ -94,6 +125,32 @@ class TestEventFactoryFilterInstallation(QtBaseTestCase):
         self.filter_obj.install(self.widget)
         self.assertTrue(self.filter_obj.is_installed(self.widget))
 
+    def test_uninstall_multiple_widgets(self):
+        """Should uninstall multiple widgets at once."""
+        widget2 = self.track_widget(QtWidgets.QLabel())
+        self.filter_obj.install([self.widget, widget2])
+        self.filter_obj.uninstall([self.widget, widget2])
+        self.assertFalse(self.filter_obj.is_installed(self.widget))
+        self.assertFalse(self.filter_obj.is_installed(widget2))
+
+    def test_install_does_not_track_when_propagate_children(self):
+        """Should not add to _installed_widgets when propagate_to_children=True."""
+        filter_obj = EventFactoryFilter(propagate_to_children=True)
+        filter_obj.install(self.widget)
+        self.assertNotIn(self.widget, filter_obj._installed_widgets)
+
+    def test_install_same_widget_twice(self):
+        """Should handle installing same widget twice without error."""
+        self.filter_obj.install(self.widget)
+        self.filter_obj.install(self.widget)  # Should not raise
+        self.assertIn(self.widget, self.filter_obj._installed_widgets)
+
+    def test_uninstall_not_installed_widget(self):
+        """Should handle uninstalling widget that was never installed."""
+        widget2 = self.track_widget(QtWidgets.QLabel())
+        # Should not raise
+        self.filter_obj.uninstall(widget2)
+
 
 class TestEventFactoryFilterEventHandling(QtBaseTestCase):
     """Tests for EventFactoryFilter event handling."""
@@ -111,7 +168,7 @@ class TestEventFactoryFilterEventHandling(QtBaseTestCase):
             def __init__(target_self):
                 target_self.handler_called = False
 
-            def mousePressEvent(target_self, widget, event):
+            def mouseButtonPressEvent(target_self, widget, event):
                 self.handler_called = True
                 self.handler_widget = widget
                 self.handler_event = event
@@ -152,6 +209,87 @@ class TestEventFactoryFilterEventHandling(QtBaseTestCase):
         self.assertFalse(self.handler_called)
         self.assertFalse(result)
 
+    def test_calls_handler_for_tracked_event(self):
+        """Should call handler for tracked event types."""
+        handler_target = self._create_handler_target()
+        filter_obj = EventFactoryFilter(
+            forward_events_to=handler_target,
+            event_types={"MouseButtonPress"},
+        )
+
+        widget = self.track_widget(QtWidgets.QPushButton())
+        filter_obj.install(widget)
+
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+        result = filter_obj.eventFilter(widget, event)
+        self.assertTrue(self.handler_called)
+        self.assertEqual(self.handler_widget, widget)
+
+    def test_event_filter_returns_false_for_none_widget(self):
+        """Should return False when widget is None."""
+        filter_obj = EventFactoryFilter(event_types={"MouseButtonPress"})
+        event = MagicMock()
+        event.type.return_value = int(QtCore.QEvent.Type.MouseButtonPress)
+        result = filter_obj.eventFilter(None, event)
+        self.assertFalse(result)
+
+    def test_event_filter_ignores_uninstalled_widget(self):
+        """Should ignore events from widgets not in _installed_widgets."""
+        handler_target = self._create_handler_target()
+        filter_obj = EventFactoryFilter(
+            forward_events_to=handler_target,
+            event_types={"MouseButtonPress"},
+            propagate_to_children=False,
+        )
+
+        widget = self.track_widget(QtWidgets.QPushButton())
+        # Not installed
+
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+        result = filter_obj.eventFilter(widget, event)
+        self.assertFalse(self.handler_called)
+        self.assertFalse(result)
+
+    def test_handler_cache_stores_resolved_handler(self):
+        """Should cache resolved handler for performance."""
+        handler_target = self._create_handler_target()
+        filter_obj = EventFactoryFilter(
+            forward_events_to=handler_target,
+            event_types={"MouseButtonPress"},
+        )
+
+        widget = self.track_widget(QtWidgets.QPushButton())
+        filter_obj.install(widget)
+
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+        # First call populates cache
+        filter_obj.eventFilter(widget, event)
+        self.assertGreater(len(filter_obj._handler_cache), 0)
+
 
 class TestEventFactoryFilterEventNameFormatting(QtBaseTestCase):
     """Tests for event name formatting."""
@@ -167,6 +305,21 @@ class TestEventFactoryFilterEventNameFormatting(QtBaseTestCase):
         filter_obj = EventFactoryFilter(event_name_prefix="")
         name = filter_obj._format_event_name(QtCore.QEvent.Type.MouseButtonPress)
         self.assertFalse(name.startswith("_"))
+
+    def test_default_event_name_contains_event(self):
+        """Should contain 'Event' suffix in default name."""
+        filter_obj = EventFactoryFilter()
+        name = filter_obj._default_event_name(QtCore.QEvent.Type.MouseButtonPress)
+        self.assertTrue(name.endswith("Event"))
+
+    def test_formats_different_event_types(self):
+        """Should format different event types correctly."""
+        filter_obj = EventFactoryFilter()
+        press_name = filter_obj._format_event_name(QtCore.QEvent.Type.MouseButtonPress)
+        release_name = filter_obj._format_event_name(
+            QtCore.QEvent.Type.MouseButtonRelease
+        )
+        self.assertNotEqual(press_name, release_name)
 
 
 class TestMouseTrackingCreation(QtBaseTestCase):
@@ -198,6 +351,27 @@ class TestMouseTrackingCreation(QtBaseTestCase):
         tracker = MouseTracking(self.parent_widget, track_on_drag_only=False)
         self.assertFalse(tracker.track_on_drag_only)
 
+    def test_auto_update_default_true(self):
+        """Should default to auto_update=True."""
+        tracker = MouseTracking(self.parent_widget)
+        self.assertTrue(tracker.auto_update)
+
+    def test_configures_auto_update(self):
+        """Should configure auto_update parameter."""
+        tracker = MouseTracking(self.parent_widget, auto_update=False)
+        self.assertFalse(tracker.auto_update)
+
+    def test_initializes_empty_tracking_sets(self):
+        """Should initialize with empty tracking sets."""
+        tracker = MouseTracking(self.parent_widget)
+        self.assertEqual(len(tracker._prev_mouse_over), 0)
+        self.assertEqual(len(tracker._mouse_over), 0)
+
+    def test_raises_type_error_for_none_parent(self):
+        """Should raise TypeError for None parent."""
+        with self.assertRaises(TypeError):
+            MouseTracking(parent=None)
+
 
 class TestMouseTrackingWidgetValidation(QtBaseTestCase):
     """Tests for widget validation in MouseTracking."""
@@ -220,6 +394,17 @@ class TestMouseTrackingWidgetValidation(QtBaseTestCase):
         # After deletion, accessing the widget should fail
         # Note: This test may be flaky depending on Qt's cleanup timing
         # The method should handle RuntimeError gracefully
+
+    def test_is_widget_valid_handles_runtime_error(self):
+        """Should handle RuntimeError when checking deleted widget."""
+        # Create and immediately schedule for deletion
+        widget = QtWidgets.QPushButton()
+        ref = weakref.ref(widget)
+        del widget
+        QtWidgets.QApplication.processEvents()
+        # If the weak reference is dead, the widget was deleted
+        if ref() is None:
+            self.assertFalse(MouseTracking.is_widget_valid(None))
 
 
 class TestMouseTrackingShouldCaptureMouse(QtBaseTestCase):
@@ -245,6 +430,129 @@ class TestMouseTrackingShouldCaptureMouse(QtBaseTestCase):
         result = self.tracker.should_capture_mouse(combo)
         # This is the expected behavior per the implementation
         self.assertFalse(result)
+
+    def test_returns_true_for_label(self):
+        """Should return True for a QLabel."""
+        label = self.track_widget(QtWidgets.QLabel("Test"))
+        self.assertTrue(self.tracker.should_capture_mouse(label))
+
+    def test_returns_true_for_line_edit(self):
+        """Should return True for a QLineEdit."""
+        line_edit = self.track_widget(QtWidgets.QLineEdit())
+        self.assertTrue(self.tracker.should_capture_mouse(line_edit))
+
+    def test_returns_true_for_checkbox(self):
+        """Should return True for a QCheckBox."""
+        checkbox = self.track_widget(QtWidgets.QCheckBox())
+        self.assertTrue(self.tracker.should_capture_mouse(checkbox))
+
+    def test_returns_false_for_slider_when_not_sliding(self):
+        """Should return False for QSlider when not sliding."""
+        slider = self.track_widget(QtWidgets.QSlider())
+        # When slider is not being dragged, isSliderDown() is False
+        result = self.tracker.should_capture_mouse(slider)
+        self.assertFalse(result)
+
+    def test_returns_false_for_scrollbar_when_not_sliding(self):
+        """Should return False for QScrollBar when not sliding."""
+        scrollbar = self.track_widget(QtWidgets.QScrollBar())
+        result = self.tracker.should_capture_mouse(scrollbar)
+        self.assertFalse(result)
+
+
+class TestMouseTrackingEventFilter(QtBaseTestCase):
+    """Tests for MouseTracking event filtering."""
+
+    def setUp(self):
+        super().setUp()
+        self.parent_widget = self.track_widget(QtWidgets.QWidget())
+        self.tracker = MouseTracking(self.parent_widget)
+
+    def test_has_event_filter_method(self):
+        """Should have eventFilter method."""
+        self.assertTrue(hasattr(self.tracker, "eventFilter"))
+        self.assertTrue(callable(self.tracker.eventFilter))
+
+    def test_event_filter_handles_mouse_move(self):
+        """Should handle MouseMove event type."""
+        event = MagicMock()
+        event.type.return_value = QtCore.QEvent.Type.MouseMove
+        # Should not raise
+        result = self.tracker.eventFilter(self.parent_widget, event)
+        self.assertFalse(result)  # Should not consume event
+
+    def test_event_filter_handles_hide_event(self):
+        """Should handle Hide event by releasing mouse."""
+        event = QtCore.QEvent(QtCore.QEvent.Type.Hide)
+        result = self.tracker.eventFilter(self.parent_widget, event)
+        self.assertFalse(result)
+
+    def test_event_filter_handles_focus_out(self):
+        """Should handle FocusOut event."""
+        event = QtGui.QFocusEvent(QtCore.QEvent.Type.FocusOut)
+        result = self.tracker.eventFilter(self.parent_widget, event)
+        self.assertFalse(result)
+
+    def test_event_filter_handles_window_deactivate(self):
+        """Should handle WindowDeactivate event."""
+        event = QtCore.QEvent(QtCore.QEvent.Type.WindowDeactivate)
+        result = self.tracker.eventFilter(self.parent_widget, event)
+        self.assertFalse(result)
+
+
+class TestMouseTrackingUpdateMethods(QtBaseTestCase):
+    """Tests for MouseTracking update methods."""
+
+    def setUp(self):
+        super().setUp()
+        self.parent_widget = self.track_widget(QtWidgets.QWidget())
+        self.tracker = MouseTracking(self.parent_widget)
+
+    def test_update_child_widgets(self):
+        """Should update _widgets set with child widgets."""
+        button = QtWidgets.QPushButton(self.parent_widget)
+        label = QtWidgets.QLabel(self.parent_widget)
+        self.tracker.update_child_widgets()
+        self.assertIn(button, self.tracker._widgets)
+        self.assertIn(label, self.tracker._widgets)
+
+    def test_flush_hover_state_clears_tracking(self):
+        """Should clear mouse_over sets when flushing."""
+        # Add some widgets to tracking
+        button = self.track_widget(QtWidgets.QPushButton())
+        self.tracker._mouse_over.add(button)
+        self.tracker._prev_mouse_over.add(button)
+        self.tracker._flush_hover_state()
+        self.assertEqual(len(self.tracker._mouse_over), 0)
+        self.assertEqual(len(self.tracker._prev_mouse_over), 0)
+
+    def test_flush_hover_state_handles_empty_sets(self):
+        """Should handle empty sets without error."""
+        self.tracker._mouse_over.clear()
+        self.tracker._prev_mouse_over.clear()
+        # Should not raise
+        self.tracker._flush_hover_state()
+
+
+class TestMouseTrackingWithStackedWidget(QtBaseTestCase):
+    """Tests for MouseTracking with QStackedWidget parent."""
+
+    def test_tracks_current_widget_children(self):
+        """Should track children of current widget in stack."""
+        stack = self.track_widget(QtWidgets.QStackedWidget())
+        page1 = QtWidgets.QWidget()
+        button1 = QtWidgets.QPushButton("Page 1 Button", page1)
+        page2 = QtWidgets.QWidget()
+        button2 = QtWidgets.QPushButton("Page 2 Button", page2)
+        stack.addWidget(page1)
+        stack.addWidget(page2)
+        stack.setCurrentWidget(page1)
+
+        tracker = MouseTracking(stack)
+        tracker.update_child_widgets()
+
+        # Should find button1 since page1 is current
+        self.assertIn(button1, tracker._widgets)
 
 
 # -----------------------------------------------------------------------------

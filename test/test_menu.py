@@ -745,6 +745,222 @@ class TestMenuGridLayout(QtBaseTestCase):
         self.assertIn(label, menu.get_items())
 
 
+# =============================================================================
+# Edge Case Tests
+# =============================================================================
+
+
+class TestMenuConfigEdgeCases(unittest.TestCase):
+    """Edge case tests for MenuConfig."""
+
+    def test_config_with_empty_name(self):
+        """Should handle empty name."""
+        config = MenuConfig(name="")
+        self.assertEqual(config.name, "")
+
+    def test_config_with_all_options(self):
+        """Should handle all options set."""
+        config = MenuConfig(
+            parent=None,
+            name="full_menu",
+            trigger_button="middle",
+            position="top",
+            add_header=False,
+            add_footer=False,
+            add_apply_button=True,
+            match_parent_width=False,
+            hide_on_leave=True,
+            fixed_item_height=50,
+            min_item_height=20,
+            max_item_height=100,
+        )
+        self.assertEqual(config.name, "full_menu")
+        self.assertFalse(config.add_header)
+        self.assertTrue(config.add_apply_button)
+
+    def test_config_extra_attrs(self):
+        """Should store extra attributes."""
+        config = MenuConfig(extra_attrs={"custom": "value"})
+        self.assertEqual(config.extra_attrs["custom"], "value")
+
+
+class TestMenuPositionerEdgeCases(QtBaseTestCase):
+    """Edge case tests for MenuPositioner."""
+
+    def test_position_at_negative_coordinates(self):
+        """Should handle negative coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+        MenuPositioner.position_at_coordinate(widget, (-10, -10))
+        self.assertEqual(widget.pos(), QtCore.QPoint(-10, -10))
+
+    def test_position_at_zero(self):
+        """Should handle zero coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+        MenuPositioner.position_at_coordinate(widget, (0, 0))
+        self.assertEqual(widget.pos(), QtCore.QPoint(0, 0))
+
+    def test_position_at_large_coordinates(self):
+        """Should handle very large coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+        MenuPositioner.position_at_coordinate(widget, (10000, 10000))
+        self.assertEqual(widget.pos(), QtCore.QPoint(10000, 10000))
+
+
+class TestMenuItemEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu item management."""
+
+    def test_add_empty_string_label(self):
+        """Should handle empty string label."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="")
+        self.assertEqual(label.text(), "")
+
+    def test_add_unicode_label(self):
+        """Should handle unicode text."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="日本語 🍣")
+        self.assertEqual(label.text(), "日本語 🍣")
+
+    def test_add_very_long_text(self):
+        """Should handle very long text."""
+        menu = self.track_widget(Menu())
+        long_text = "A" * 1000
+        label = menu.add("QLabel", setText=long_text)
+        self.assertEqual(label.text(), long_text)
+
+    def test_add_many_items(self):
+        """Should handle many items."""
+        menu = self.track_widget(Menu())
+        for i in range(100):
+            menu.add("QLabel", setText=f"Item {i}")
+        self.assertEqual(len(menu.get_items()), 100)
+
+    def test_get_item_with_zero_index(self):
+        """Should get first item with index 0."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="First")
+        menu.add("QLabel", setText="Second")
+        item = menu.get_item(0)
+        self.assertEqual(item.text(), "First")
+
+    def test_get_item_with_negative_index(self):
+        """Should raise ValueError for negative index."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="First")
+        menu.add("QLabel", setText="Last")
+        with self.assertRaises(ValueError):
+            menu.get_item(-1)
+
+
+class TestMenuTriggerEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu trigger handling."""
+
+    def test_trigger_button_middle(self):
+        """Should handle middle button trigger."""
+        menu = self.track_widget(Menu(trigger_button="middle"))
+        self.assertEqual(menu.trigger_button, QtCore.Qt.MiddleButton)
+
+    def test_trigger_button_multiple(self):
+        """Should handle multiple trigger buttons."""
+        menu = self.track_widget(Menu(trigger_button=("left", "middle", "right")))
+        self.assertEqual(
+            menu.trigger_button,
+            (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton, QtCore.Qt.RightButton),
+        )
+
+
+class TestMenuHideEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu hiding."""
+
+    def test_hide_already_hidden_menu(self):
+        """Should handle hiding already hidden menu."""
+        menu = self.track_widget(Menu())
+        menu.hide()  # First hide
+        result = menu.hide()  # Second hide
+        self.assertTrue(result)
+
+    def test_show_then_hide_rapidly(self):
+        """Should handle rapid show/hide cycles."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="Item")
+        for _ in range(10):
+            menu.show()
+            menu.hide()
+        self.assertFalse(menu.isVisible())
+
+
+class TestMenuDataEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu item data."""
+
+    def test_item_data_none(self):
+        """Should handle None data."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="Test", data=None)
+        self.assertIsNone(label.item_data())
+
+    def test_item_data_complex_object(self):
+        """Should handle complex object data."""
+        menu = self.track_widget(Menu())
+        data = {"nested": {"key": [1, 2, 3]}, "list": [{"a": 1}]}
+        label = menu.add("QLabel", setText="Test", data=data)
+        self.assertEqual(label.item_data(), data)
+
+    def test_item_data_callable(self):
+        """Should handle callable data."""
+        menu = self.track_widget(Menu())
+
+        def my_func():
+            return 42
+
+        label = menu.add("QLabel", setText="Test", data=my_func)
+        self.assertEqual(label.item_data()(), 42)
+
+
+class TestMenuClearEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu clear."""
+
+    def test_clear_empty_menu(self):
+        """Should handle clearing empty menu."""
+        menu = self.track_widget(Menu())
+        menu.clear()  # Should not raise
+        self.assertFalse(menu.contains_items)
+
+    def test_clear_then_add(self):
+        """Should allow adding items after clear."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="First")
+        menu.clear()
+        menu.add("QLabel", setText="Second")
+        self.assertEqual(len(menu.get_items()), 1)
+        self.assertEqual(menu.get_items()[0].text(), "Second")
+
+
+class TestMenuTitleEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu title."""
+
+    def test_title_empty_string(self):
+        """Should handle empty string title."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.setTitle("")
+        self.assertEqual(menu.title(), "")
+
+    def test_title_unicode(self):
+        """Should handle unicode title."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.setTitle("メニュー 🎨")
+        self.assertEqual(menu.title(), "メニュー 🎨")
+
+    def test_title_without_header(self):
+        """Should handle title without header."""
+        menu = self.track_widget(Menu(add_header=False))
+        menu.setTitle("Test")
+        # Title may be stored even without header
+        self.assertIsNotNone(menu.title())
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

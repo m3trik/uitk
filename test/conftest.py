@@ -13,10 +13,13 @@ from pathlib import Path
 from typing import Optional
 from unittest import TestCase
 
-# Add package root to path for imports
+# Add package root and test directory to path for imports
 PACKAGE_ROOT = Path(__file__).parent.parent.absolute()
+TEST_DIR = Path(__file__).parent.absolute()
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
+if str(TEST_DIR) not in sys.path:
+    sys.path.insert(0, str(TEST_DIR))
 
 
 def setup_qt_application():
@@ -108,8 +111,7 @@ class QtBaseTestCase(BaseTestCase):
         return widget
 
 
-# Test data paths
-TEST_DIR = Path(__file__).parent
+# Test data paths (TEST_DIR already defined at top)
 UITK_DIR = PACKAGE_ROOT / "uitk"
 EXAMPLES_DIR = UITK_DIR / "examples"
 WIDGETS_DIR = UITK_DIR / "widgets"

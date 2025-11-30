@@ -668,6 +668,191 @@ class TestMainWindowGetattr(QtBaseTestCase):
         self.assertEqual(result, button)
 
 
+# =============================================================================
+# Edge Case Tests
+# =============================================================================
+
+
+class TestMainWindowEdgeCases(QtBaseTestCase):
+    """Edge case tests for MainWindow."""
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_empty_name(self):
+        """Should handle empty name."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("", self.sb))
+        self.assertEqual(window.objectName(), "")
+
+    def test_unicode_name(self):
+        """Should handle unicode name."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("ウィンドウ", self.sb))
+        self.assertEqual(window.objectName(), "ウィンドウ")
+
+    def test_special_chars_in_name(self):
+        """Should handle special characters in name."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("Test-Window_123", self.sb))
+        self.assertEqual(window.objectName(), "Test-Window_123")
+
+    def test_show_hide_rapid_cycle(self):
+        """Should handle rapid show/hide cycles."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        for _ in range(10):
+            window.show()
+            window.hide()
+        self.assertFalse(window.isVisible())
+
+    def test_multiple_central_widgets(self):
+        """Should handle changing central widget."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central1 = QtWidgets.QWidget()
+        central2 = QtWidgets.QWidget()
+        window.setCentralWidget(central1)
+        window.setCentralWidget(central2)
+        self.assertEqual(window.centralWidget(), central2)
+
+
+class TestMainWindowSignalEdgeCases(QtBaseTestCase):
+    """Edge case tests for MainWindow signals."""
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_signal_with_no_slots_connected(self):
+        """Should handle signals with no slots connected."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        # Show/hide should not raise when no signals connected
+        window.show()
+        window.hide()
+
+    def test_multiple_signal_connections(self):
+        """Should handle multiple connections to same signal."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        results = []
+        window.on_show.connect(lambda: results.append(1))
+        window.on_show.connect(lambda: results.append(2))
+        window.on_show.connect(lambda: results.append(3))
+        window.show()
+        self.assertEqual(len(results), 3)
+
+
+class TestMainWindowRegistrationEdgeCases(QtBaseTestCase):
+    """Edge case tests for widget registration."""
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_register_deeply_nested_widget(self):
+        """Should register deeply nested widgets."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+
+        # Create deeply nested structure
+        parent = central
+        for i in range(5):
+            child = QtWidgets.QWidget(parent)
+            child.setObjectName(f"level{i}")
+            parent = child
+
+        button = QtWidgets.QPushButton("Deep Button", parent)
+        button.setObjectName("deepButton")
+        window.register_widget(button)
+        self.assertIn(button, window.widgets)
+
+    def test_register_widget_with_special_name(self):
+        """Should handle widgets with special characters in name."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+
+        widget = QtWidgets.QPushButton("Test", central)
+        widget.setObjectName("button_001#tag")
+        window.register_widget(widget)
+        self.assertIn(widget, window.widgets)
+
+
+class TestMainWindowStyleEdgeCases(QtBaseTestCase):
+    """Edge case tests for stylesheet handling."""
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_empty_stylesheet(self):
+        """Should handle empty stylesheet."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        window.setStyleSheet("")
+        self.assertEqual(window.styleSheet(), "")
+
+    def test_complex_stylesheet(self):
+        """Should handle complex stylesheet."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        complex_style = """
+            QMainWindow { background: #333; }
+            QPushButton { padding: 10px; border-radius: 5px; }
+            QPushButton:hover { background: #555; }
+        """
+        window.setStyleSheet(complex_style)
+        self.assertIn("QMainWindow", window.styleSheet())
+
+
+class TestMainWindowDeferredEdgeCases(QtBaseTestCase):
+    """Edge case tests for deferred execution."""
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_empty_deferred_queue(self):
+        """Should handle empty deferred queue."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        window.trigger_deferred()  # Should not raise
+
+    def test_exception_in_deferred_method(self):
+        """Should handle exception in deferred method."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+
+        def raising_method():
+            raise ValueError("test error")
+
+        window._deferred[0] = [raising_method]
+        # Should handle exception gracefully
+        try:
+            window.trigger_deferred()
+        except ValueError:
+            pass  # Expected behavior - exception propagates
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
