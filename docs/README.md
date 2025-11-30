@@ -521,8 +521,8 @@ ui.show(pos="screen", app_exec=True)
 - Menu with dynamic `add()`
 
 ### Theming
-- Light/dark theme support
-- Automatic icon switching
+- Light/dark themes with custom theme support
+- Monochrome icons auto-colored by theme
 - StyleSheet manager
 - Translucent window styles
 
