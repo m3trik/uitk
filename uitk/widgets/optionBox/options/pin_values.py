@@ -34,7 +34,7 @@ class PinnedValueEntry:
         return hash(_normalize_value(self.value))
 
 
-class PinnedValuesPopup:
+class PinnedValuesPopup(QtCore.QObject):
     """A popup that displays pinned values using the Menu widget.
 
     This popup shows:
@@ -43,7 +43,10 @@ class PinnedValuesPopup:
     """
 
     def __init__(self, parent=None):
+        super().__init__(parent)
         from uitk.widgets.menu import Menu
+
+        self._parent_widget = parent
 
         # Create a Menu configured as a popup
         self._menu = Menu(
@@ -58,6 +61,9 @@ class PinnedValuesPopup:
         )
         self._menu.setMinimumWidth(150)
 
+        # Install event filters on parent and ancestors to close on hide
+        self._install_visibility_filters()
+
         # Callbacks for handling actions
         self._on_value_pinned = None
         self._on_value_unpinned = None
@@ -68,6 +74,30 @@ class PinnedValuesPopup:
     def menu(self):
         """Get the underlying Menu widget."""
         return self._menu
+
+    def _install_visibility_filters(self):
+        """Install event filters on parent and ancestors to detect hide events."""
+        self._watched_widgets = []
+        widget = self._parent_widget
+        while widget is not None:
+            widget.installEventFilter(self)
+            self._watched_widgets.append(widget)
+            widget = widget.parent()
+
+    def _remove_visibility_filters(self):
+        """Remove event filters from watched widgets."""
+        for widget in self._watched_widgets:
+            try:
+                widget.removeEventFilter(self)
+            except RuntimeError:
+                pass  # Widget may already be deleted
+        self._watched_widgets.clear()
+
+    def eventFilter(self, watched, event):
+        """Close popup when any parent widget is hidden."""
+        if event.type() == QtCore.QEvent.Hide:
+            self.close()
+        return False  # Don't block the event
 
     def connect_signals(
         self,
@@ -91,7 +121,8 @@ class PinnedValuesPopup:
         self._menu.show()
 
     def close(self):
-        """Close the popup."""
+        """Close the popup and clean up event filters."""
+        self._remove_visibility_filters()
         self._menu.hide()
 
     def move(self, pos):

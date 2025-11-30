@@ -14,6 +14,9 @@ class IconManager:
     _svg_cache = {}  # Cache for raw SVG content
     _widget_icons = {}  # Track widgets and their icon settings for theme updates
     _default_color = None  # Default icon color (set by theme)
+    _last_update_color = (
+        {}
+    )  # Track last color applied per widget to avoid redundant updates
 
     @classmethod
     def set_default_color(cls, color: str):
@@ -21,10 +24,38 @@ class IconManager:
 
         This is typically called when a theme is applied.
         """
+        color = cls._normalize_color(color)
         if cls._default_color != color:
             cls._default_color = color
-            # Clear cache to force re-creation with new color
+            # Clear caches to force re-creation with new color
             cls._cache.clear()
+            cls._last_update_color.clear()
+
+    @staticmethod
+    def _normalize_color(color: str) -> str:
+        """Normalize color to lowercase hex format for consistent comparison.
+
+        Converts rgb(r,g,b) to #rrggbb format.
+        """
+        if not color:
+            return color
+
+        color = color.strip().lower()
+
+        # Already hex format
+        if color.startswith("#"):
+            return color
+
+        # Convert rgb(r,g,b) to hex
+        import re
+
+        match = re.match(r"rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)", color)
+        if match:
+            r, g, b = int(match.group(1)), int(match.group(2)), int(match.group(3))
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        # Return as-is if can't parse
+        return color
 
     @classmethod
     def register_icon_dir(cls, path):
@@ -124,7 +155,7 @@ class IconManager:
             QIcon instance
         """
         # Use default color if no explicit color and use_theme is True
-        effective_color = color
+        effective_color = cls._normalize_color(color) if color else None
         if effective_color is None and use_theme and cls._default_color:
             effective_color = cls._default_color
 
@@ -199,27 +230,35 @@ class IconManager:
 
             # If we got the fallback color but have a default set, use the default
             # This handles widgets created before being parented to a themed window
+            color = cls._normalize_color(color)
             if color == "#888888" and cls._default_color:
                 color = cls._default_color
+        else:
+            color = cls._normalize_color(color)
 
         icon = cls.get(name, size, color)
         widget.setIcon(icon)
         widget.setIconSize(QtCore.QSize(*size))
 
-        # Register widget for theme updates
+        # Register widget for theme updates and track current color
+        widget_id = id(widget)
         if auto_theme:
-            cls._widget_icons[id(widget)] = {
+            cls._widget_icons[widget_id] = {
                 "widget": widget,
                 "name": name,
                 "size": size,
             }
+            cls._last_update_color[widget_id] = color
 
     @classmethod
     def update_widget_icons(cls, root_widget: QtWidgets.QWidget, color: str):
         """Update all registered icons under a widget tree with a new color.
 
-        Called when theme changes.
+        Called when theme changes. Skips widgets already at the target color.
+        Also refreshes tree widget item icons.
         """
+        color = cls._normalize_color(color)
+
         # Find all registered widgets that are children of root_widget
         to_remove = []
         for widget_id, info in cls._widget_icons.items():
@@ -235,9 +274,14 @@ class IconManager:
 
                 # Check if this widget is root or a descendant of root
                 if widget is root_widget or root_widget.isAncestorOf(widget):
+                    # Skip if already at this color (prevents redundant updates)
+                    if cls._last_update_color.get(widget_id) == color:
+                        continue
+
                     icon = cls.get(info["name"], info["size"], color)
                     widget.setIcon(icon)
                     widget.setIconSize(QtCore.QSize(*info["size"]))
+                    cls._last_update_color[widget_id] = color
             except RuntimeError:
                 # Widget was deleted
                 to_remove.append(widget_id)
@@ -245,6 +289,17 @@ class IconManager:
         # Clean up deleted widgets
         for widget_id in to_remove:
             del cls._widget_icons[widget_id]
+            cls._last_update_color.pop(widget_id, None)
+
+        # Also refresh tree widget item icons
+        try:
+            from uitk.widgets.treeWidget import TreeWidget
+
+            for tree in root_widget.findChildren(TreeWidget):
+                if hasattr(tree, "refresh_item_icons"):
+                    tree.refresh_item_icons(color)
+        except ImportError:
+            pass  # TreeWidget not available
 
 
 # -----------------------------------------------------------------------------

@@ -667,6 +667,10 @@ class TreeWidget(
         if item and icon_name:
             icon = IconManager.get(icon_name, size=(16, 16))
             item.setIcon(0, icon)
+            # Store icon info for theme updates
+            item.setData(
+                0, QtCore.Qt.UserRole + 100, {"icon_name": icon_name, "column": 0}
+            )
 
     def set_item_type_icon(
         self, item: QtWidgets.QTreeWidgetItem, icon_name: str, column: int = 0
@@ -684,6 +688,37 @@ class TreeWidget(
         if item and icon_name:
             icon = IconManager.get(icon_name, size=(16, 16))
             item.setIcon(column, icon)
+            # Store icon info for theme updates
+            item.setData(
+                column,
+                QtCore.Qt.UserRole + 100,
+                {"icon_name": icon_name, "column": column},
+            )
+
+    def refresh_item_icons(self, color: str = None):
+        """Refresh all item icons with the current theme color.
+
+        Called when theme changes to update tree item icons.
+
+        Args:
+            color: Optional color to use. If None, uses IconManager default.
+        """
+
+        def refresh_item(item):
+            for col in range(item.columnCount()):
+                icon_data = item.data(col, QtCore.Qt.UserRole + 100)
+                if icon_data and isinstance(icon_data, dict):
+                    icon_name = icon_data.get("icon_name")
+                    if icon_name:
+                        icon = IconManager.get(icon_name, size=(16, 16), color=color)
+                        item.setIcon(col, icon)
+            # Recurse to children
+            for i in range(item.childCount()):
+                refresh_item(item.child(i))
+
+        # Refresh all top-level items and their children
+        for i in range(self.topLevelItemCount()):
+            refresh_item(self.topLevelItem(i))
 
 
 # -----------------------------------------------------------------------------

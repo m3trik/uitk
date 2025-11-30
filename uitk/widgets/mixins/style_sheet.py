@@ -31,7 +31,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
-            "ICON_COLOR": "#ffffff",
+            "ICON_COLOR": "rgb(220,220,220)",
         },
         "dark": {
             "MAIN_FOREGROUND": "rgb(200,200,200)",
@@ -41,7 +41,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
             "BUTTON_PRESSED": "rgb(50,50,50)",
             "BUTTON_HOVER": "rgb(100,130,150)",  # Desaturated blue
-            "BUTTON_CHECKED": "rgb(165,135,110)",  # Further desaturated orange
+            "BUTTON_CHECKED": "rgb(165,135,100)",  # Further desaturated orange
             "TEXT_COLOR": "rgb(220,220,220)",
             "TEXT_CHECKED": "rgb(255,255,255)",
             "TEXT_DISABLED": "rgba(150,150,150,175)",
@@ -51,7 +51,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(35,35,35)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
-            "ICON_COLOR": "#dcdcdc",
+            "ICON_COLOR": "rgb(190,190,190)",
         },
     }
 
