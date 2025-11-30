@@ -5,6 +5,8 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 
 
 class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
+    """Expandable/collapsible group box that shows or hides its contents."""
+
     def __init__(self, title, parent=None, **kwargs):
         super().__init__(title, parent)
         self.setCheckable(True)

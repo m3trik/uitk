@@ -121,28 +121,30 @@ class TestHeaderCreateButton(QtBaseTestCase):
     def test_create_button_returns_push_button(self):
         """Should create QPushButton."""
         header = self.track_widget(Header())
-        button = header.create_button("pin.svg", lambda: None)
+        button = header.create_button("radio_empty.svg", lambda: None)
         self.assertIsInstance(button, QtWidgets.QPushButton)
 
     def test_create_button_sets_object_name(self):
         """Should set object name when provided."""
         header = self.track_widget(Header())
         button = header.create_button(
-            "pin.svg", lambda: None, button_type="test_button"
+            "radio_empty.svg", lambda: None, button_type="test_button"
         )
         self.assertEqual(button.objectName(), "test_button")
 
     def test_create_button_has_arrow_cursor(self):
         """Should have arrow cursor on button."""
         header = self.track_widget(Header())
-        button = header.create_button("pin.svg", lambda: None)
+        button = header.create_button("radio_empty.svg", lambda: None)
         self.assertEqual(button.cursor().shape(), QtCore.Qt.ArrowCursor)
 
     def test_create_button_connects_callback(self):
         """Should connect callback to clicked signal."""
         header = self.track_widget(Header())
         callback_called = []
-        button = header.create_button("pin.svg", lambda: callback_called.append(True))
+        button = header.create_button(
+            "radio_empty.svg", lambda: callback_called.append(True)
+        )
         button.click()
         self.assertTrue(callback_called)
 
@@ -369,19 +371,19 @@ class TestHeaderIconMethods(QtBaseTestCase):
     def test_get_icon_path_returns_string(self):
         """Should return string path."""
         header = self.track_widget(Header())
-        path = header.get_icon_path("pin.svg")
+        path = header.get_icon_path("radio_empty.svg")
         self.assertIsInstance(path, str)
 
     def test_get_icon_path_includes_filename(self):
         """Should include filename in path."""
         header = self.track_widget(Header())
-        path = header.get_icon_path("pin.svg")
-        self.assertIn("pin.svg", path)
+        path = header.get_icon_path("radio_empty.svg")
+        self.assertIn("radio_empty.svg", path)
 
     def test_create_svg_icon_returns_qicon(self):
         """Should return QIcon."""
         header = self.track_widget(Header())
-        icon = header.create_svg_icon("pin.svg")
+        icon = header.create_svg_icon("radio_empty.svg")
         self.assertIsInstance(icon, QtGui.QIcon)
 
 

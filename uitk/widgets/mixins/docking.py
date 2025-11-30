@@ -134,6 +134,8 @@ class CustomDockWidget(QDockWidget):
 
 
 class DockingMixin(QObject):
+    """Enables window docking with visual overlay for dock position preview."""
+
     dock_position_changed = Signal()
     tool_windows = []
     docked_window_groups = []

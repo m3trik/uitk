@@ -15,15 +15,31 @@ class PushButton(
     RichText,
     TextOverlay,
 ):
-    """QPushButton with automatic Menu and OptionBox integration.
+    """Enhanced QPushButton with menu, option box, and rich text support.
 
-    Features:
-    - self.menu: Standalone menu (via MenuMixin)
-    - self.option_box: OptionBox functionality (via OptionBoxMixin)
-    - self.option_box.menu: Separate option box menu
+    Extends QPushButton with:
+    - Built-in right-click context menu (via MenuMixin)
+    - OptionBox for pinnable settings (via OptionBoxMixin)
+    - Rich text label support with HTML formatting
+    - Text overlay capabilities
+
+    Attributes:
+        menu: Context menu accessible via right-click.
+        option_box: OptionBox for persistent widget settings.
+
+    Example:
+        button = PushButton(setText="<b>Click</b>")
+        button.menu.add("Settings")
+        button.option_box.add_pin()  # Add pin functionality
     """
 
     def __init__(self, parent=None, **kwargs):
+        """Initialize the PushButton.
+
+        Parameters:
+            parent (QWidget, optional): Parent widget.
+            **kwargs: Additional attributes to set via set_attributes().
+        """
         QtWidgets.QPushButton.__init__(self, parent)
 
         # override built-ins

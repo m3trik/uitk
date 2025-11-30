@@ -6,12 +6,37 @@ from uitk.widgets.mixins.menu_mixin import MenuMixin
 
 
 class Label(QtWidgets.QLabel, MenuMixin, AttributesMixin):
-    """ """
+    """Enhanced QLabel with click signals and context menu support.
+
+    Extends QLabel with:
+    - Click and release signals for interactive labels
+    - Built-in right-click context menu (via MenuMixin)
+    - Rich text support enabled by default
+    - Attribute setting via kwargs
+
+    Signals:
+        clicked: Emitted on left mouse button press.
+        released: Emitted on left mouse button release.
+
+    Attributes:
+        menu: Context menu accessible via right-click (from MenuMixin).
+
+    Example:
+        label = Label(setText="<b>Click me</b>")
+        label.clicked.connect(lambda: print("Clicked!"))
+        label.menu.add("Copy")
+    """
 
     clicked = QtCore.Signal()
     released = QtCore.Signal()
 
     def __init__(self, parent=None, **kwargs):
+        """Initialize the Label.
+
+        Parameters:
+            parent (QWidget, optional): Parent widget.
+            **kwargs: Additional attributes to set via set_attributes().
+        """
         QtWidgets.QLabel.__init__(self, parent)
 
         # Customize standalone menu provided by MenuMixin
@@ -25,14 +50,22 @@ class Label(QtWidgets.QLabel, MenuMixin, AttributesMixin):
         self.set_attributes(**kwargs)
 
     def mousePressEvent(self, event):
-        """ """
+        """Handle mouse press events to emit clicked signal.
+
+        Parameters:
+            event (QMouseEvent): The mouse event.
+        """
         if event.button() == QtCore.Qt.LeftButton:
             self.clicked.emit()
 
         QtWidgets.QLabel.mousePressEvent(self, event)
 
     def mouseReleaseEvent(self, event):
-        """ """
+        """Handle mouse release events to emit released signal.
+
+        Parameters:
+            event (QMouseEvent): The mouse event.
+        """
         if event.button() == QtCore.Qt.LeftButton:
             self.released.emit()
 

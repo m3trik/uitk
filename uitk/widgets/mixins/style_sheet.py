@@ -7,6 +7,11 @@ import pythontk as ptk
 
 
 class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
+    """Theme and stylesheet manager with light/dark theme support."""
+
+    # Signal emitted when theme changes: (widget, theme_name, theme_vars)
+    theme_changed = QtCore.Signal(object, str, dict)
+
     themes = {
         "light": {
             "MAIN_FOREGROUND": "rgb(255,255,255)",
@@ -26,6 +31,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
+            "ICON_COLOR": "#ffffff",
         },
         "dark": {
             "MAIN_FOREGROUND": "rgb(200,200,200)",
@@ -45,10 +51,13 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(35,35,35)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
+            "ICON_COLOR": "#dcdcdc",
         },
     }
 
     _qss_cache: dict[str, str] = {}
+    # Track current theme per widget for icon color lookups
+    _widget_themes: dict = {}
 
     def __init__(
         self, parent: Union[QtWidgets.QWidget, None] = None, log_level: str = "WARNING"
@@ -56,6 +65,28 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         super().__init__(parent)
         self.logger.setLevel(log_level)
         self.set = self._set_style
+
+    @classmethod
+    def get_icon_color(cls, widget: QtWidgets.QWidget = None) -> str:
+        """Get the icon color for a widget based on its current theme.
+
+        Args:
+            widget: The widget to get icon color for. If None, returns default.
+
+        Returns:
+            Hex color string for icons (e.g., "#ffffff")
+        """
+        if widget is not None:
+            # Walk up the widget hierarchy to find a themed ancestor
+            w = widget
+            while w is not None:
+                if w in cls._widget_themes:
+                    theme_name = cls._widget_themes[w]
+                    return cls.themes.get(theme_name, {}).get("ICON_COLOR", "#888888")
+                w = w.parent() if hasattr(w, "parent") else None
+
+        # Default fallback
+        return "#888888"
 
     def _load_qss_file(
         self, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
@@ -132,6 +163,20 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             self.logger.info(
                 f"Applied QSS style to widget: {widget.objectName()} (theme='{theme}', class='{style_class}')"
             )
+
+            # Track theme for this widget
+            StyleSheet._widget_themes[widget] = theme
+
+            # Update default icon color and refresh icons for this widget tree
+            icon_color = self.themes[theme].get("ICON_COLOR", "#888888")
+            from uitk.widgets.mixins.icon_manager import IconManager
+
+            IconManager.set_default_color(icon_color)
+            IconManager.update_widget_icons(widget, icon_color)
+
+            # Emit signal for any custom handlers
+            self.theme_changed.emit(widget, theme, self.themes[theme])
+
         except Exception as e:
             self.logger.error(
                 f"Failed to apply QSS style to {widget.objectName()}: {e}"

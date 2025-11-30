@@ -6,7 +6,7 @@ from uitk.widgets.mixins.menu_mixin import MenuMixin
 
 
 class TextEdit(QtWidgets.QTextEdit, MenuMixin, AttributesMixin):
-    """ """
+    """Rich text editor with context menu and visibility signals."""
 
     shown = QtCore.Signal()
     hidden = QtCore.Signal()

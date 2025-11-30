@@ -142,6 +142,7 @@ class TestEventFactoryFilterEventHandling(QtBaseTestCase):
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonPress,
             QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),  # globalPos
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,

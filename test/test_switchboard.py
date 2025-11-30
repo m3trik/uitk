@@ -72,7 +72,7 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
 
     def test_spinbox_call_slot_with_value(self):
         """Spinbox slot should accept value argument."""
-        result = self.ui.spinbox.call_slot(5)
+        result = self.ui.spinbox.call_slot(42)
         self.assertIsNone(result)
 
     def test_checkbox_call_slot_with_state(self):
@@ -80,10 +80,10 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
         result = self.ui.checkbox.call_slot(True)
         self.assertIsNone(result)
 
-    def test_document_edit_call_slot(self):
-        """Document edit slot should be callable."""
-        # document_edit is a QTextEdit - call its slot
-        result = self.ui.document_edit.call_slot()
+    def test_txt_input_call_slot(self):
+        """Text input slot should be callable."""
+        # txt_input is a LineEdit - call its slot
+        result = self.ui.txt_input.call_slot()
         self.assertIsNone(result)
 
 

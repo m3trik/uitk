@@ -1,7 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <!-- Perfect square with full edge-to-edge border -->
-  <rect x="0" y="0" width="16" height="16" fill="#4a4a4a" stroke="#888888" stroke-width="1"/>
-  <!-- Minus sign -->
-  <line x1="4" y1="8" x2="12" y2="8" stroke="#cccccc" stroke-width="1"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <rect x="3" y="3" width="10" height="10" rx="1" stroke="#888888" stroke-width="1" fill="none"/>
+  <line x1="5" y1="8" x2="11" y2="8" stroke="#888888" stroke-width="1.5"/>
 </svg>

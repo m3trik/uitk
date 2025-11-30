@@ -4,6 +4,7 @@ import os
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
+from uitk.widgets.mixins.icon_manager import IconManager
 
 
 class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
@@ -24,17 +25,18 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
     button_definitions = {
         "menu_button": ("menu.svg", "show_menu"),
         "minimize_button": ("minimize.svg", "minimize_window"),
-        "hide_button": ("hide.svg", "hide_window"),
-        "pin_button": ("pin.svg", "toggle_pin"),
+        "maximize_button": ("maximize.svg", "toggle_maximize"),
+        "hide_button": ("close.svg", "hide_window"),
+        "pin_button": ("radio_empty.svg", "toggle_pin"),
     }
 
     def __init__(
         self,
         parent=None,
         config_buttons=None,
+        hide_on_pin_click=False,
         **kwargs,
     ):
-        super().__init__(parent)
         """Initialize the Header with buttons and layout.
 
         Parameters:
@@ -42,9 +44,14 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             config_buttons (list, optional): List of button names to show in order.
                 Example: ['menu_button', 'pin_button']
                 Available buttons: 'menu_button', 'minimize_button', 'hide_button', 'pin_button'
+            hide_on_pin_click (bool, optional): If True, clicking the pin button hides the
+                window instead of toggling pin state. Dragging still pins the window.
+                Defaults to False.
             **kwargs: Additional attributes for the header (e.g., setTitle="My Title").
         """
+        super().__init__(parent)
         self.pinned = False  # unpinned, pinned
+        self.hide_on_pin_click = hide_on_pin_click
         self.__mousePressPos = None
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
 
@@ -114,10 +121,9 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         if button_type:
             button.setObjectName(button_type)
 
-        # Set the icon
-        icon = self.create_svg_icon(icon_filename, 16)
-        button.setIcon(icon)
-        button.setIconSize(QtCore.QSize(16, 16))
+        # Set the icon using IconManager for theme support
+        icon_name = icon_filename.replace(".svg", "")
+        IconManager.set_icon(button, icon_name, size=(16, 16))
 
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
         button.clicked.connect(callback)
@@ -243,38 +249,67 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         """Minimize the parent window."""
         self.window().showMinimized()
 
+    def toggle_maximize(self):
+        """Toggle between maximized and normal window state."""
+        window = self.window()
+        if window.isMaximized():
+            window.showNormal()
+            # Update icon to maximize
+            if "maximize_button" in self.buttons:
+                IconManager.set_icon(
+                    self.buttons["maximize_button"], "maximize", size=(16, 16)
+                )
+        else:
+            window.showMaximized()
+            # Update icon to restore (overlapping windows)
+            if "maximize_button" in self.buttons:
+                IconManager.set_icon(
+                    self.buttons["maximize_button"], "restore", size=(16, 16)
+                )
+
     def hide_window(self):
         """Hide the parent window."""
         if self.pinned:
-            self.toggle_pin()
+            self.toggle_pin(from_drag=True)  # Programmatic toggle, not user click
         self.window().hide()
 
     def unhide_window(self):
         """Unhide the parent window."""
         self.window().show()
         if not self.pinned:
-            self.toggle_pin()
+            self.toggle_pin(from_drag=True)  # Programmatic toggle, not user click
 
     def show_menu(self):
         """Show the menu."""
         self.menu.setVisible(True)
 
-    def toggle_pin(self):
-        """Toggle pinning of the window."""
+    def toggle_pin(self, from_drag=False):
+        """Toggle pinning of the window.
+
+        Parameters:
+            from_drag (bool): If True, this was triggered by dragging the header.
+                Used to differentiate between click and drag when hide_on_pin_click is enabled.
+        """
+        # If hide_on_pin_click is enabled and this is a button click (not drag),
+        # just hide the window without changing pin state
+        if self.hide_on_pin_click and not from_drag:
+            self.window().hide()
+            return
+
         state = not self.pinned
 
         self.pinned = state
         self.window().prevent_hide = state
 
-        # Switch between pin icons based on state
-        pin_icon_filename = "pin_active.svg" if state else "pin.svg"
+        # Switch between radio icons based on state (filled = pinned, empty = unpinned)
+        icon_name = "radio" if state else "radio_empty"
 
         pin_button = self.buttons.get("pin_button")
         if pin_button:
-            icon = self.create_svg_icon(pin_icon_filename, 16)
-            pin_button.setIcon(icon)
-            if not state:
+            IconManager.set_icon(pin_button, icon_name, size=(16, 16))
+            if not state and not self.hide_on_pin_click:
                 # When unpinned via the button, immediately hide until user reopens.
+                # Skip this if hide_on_pin_click is enabled (handled above)
                 self.window().hide()
 
         self.toggled.emit(state)
@@ -289,8 +324,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         pin_button = self.buttons.get("pin_button")
         if pin_button:
-            icon = self.create_svg_icon("pin.svg", 16)
-            pin_button.setIcon(icon)
+            IconManager.set_icon(pin_button, "radio_empty", size=(16, 16))
 
         self.toggled.emit(False)
 
@@ -312,7 +346,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
                 self.window().move(self.window().pos() + moveAmount)
                 self.__mousePressPos = event.globalPos()
                 if not self.pinned:  # Only change state if not already pinned
-                    self.toggle_pin()
+                    self.toggle_pin(from_drag=True)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):

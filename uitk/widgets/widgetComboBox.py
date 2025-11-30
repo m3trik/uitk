@@ -468,10 +468,21 @@ class WidgetComboBox(ComboBox):
             added_items.append(widget)
 
         elif isinstance(x, type) and issubclass(x, QtWidgets.QWidget):
+            # Widget class passed - instantiate and apply kwargs to the widget
             widget = x()
+            # Apply kwargs to the widget using set_attributes pattern
+            for key, value in kwargs.items():
+                if hasattr(widget, key):
+                    attr = getattr(widget, key)
+                    if callable(attr):
+                        attr(value)
+                    else:
+                        setattr(widget, key, value)
             label = self._infer_label(widget, None)
             self._add_widget_item(widget, label, data, ascending)
             added_items.append(widget)
+            # Clear kwargs so they don't get applied to combo
+            kwargs = {}
 
         elif isinstance(x, str):
             add_single_item(x, data, is_widget=False)

@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from typing import Optional
-from qtpy import QtWidgets
+from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
@@ -14,8 +14,16 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
         self.setProperty("class", "separator")
         self.setFrameShape(QtWidgets.QFrame.HLine)
         self.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.setFixedHeight(1)
+        self.setFixedHeight(9)  # Total height including padding
+        self.setLineWidth(1)
+        self.setMidLineWidth(0)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        # Ensure the line is visible with a subtle style
+        self.setStyleSheet("QFrame { color: rgba(255,255,255,40); margin: 4px 8px; }")
+
+        # Disable mouse interaction - separators are purely visual
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
 
         self.set_attributes(self, **kwargs)
 

@@ -1,5 +1,40 @@
 # !/usr/bin/python
 # coding=utf-8
+"""Dynamic UI loader and event handler for PyQt/PySide applications.
+
+The Switchboard is the core of UITK, providing automatic loading of Qt Designer
+UI files, dynamic signal-slot connections based on naming conventions, and
+integration of custom widget classes.
+
+Classes:
+    Switchboard: Main class for loading UIs and connecting slots.
+
+Key Features:
+    - Load .ui files and access them as attributes (sb.my_ui)
+    - Automatic slot connection via naming convention (widget 'btn_save' -> method 'btn_save')
+    - Support for _init suffix methods for widget initialization
+    - Custom widget class registration and promotion
+    - Theme and style management
+
+Example:
+    Basic usage::
+
+        from uitk import Switchboard
+
+        class MySlots:
+            def __init__(self, switchboard):
+                self.sb = switchboard
+
+            def btn_save(self, widget=None):
+                print("Save clicked")
+
+            def btn_save_init(self, widget):
+                widget.setText("Save File")
+
+        sb = Switchboard(ui_source="app.ui", slot_source=MySlots)
+        ui = sb.app
+        ui.show(app_exec=True)
+"""
 import re
 import sys
 import inspect

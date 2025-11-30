@@ -1,5 +1,26 @@
 # !/usr/bin/python
 # coding=utf-8
+"""File and directory management utilities for UITK.
+
+This module provides tools for managing files, directories, and path
+manipulations used by the Switchboard for UI and slot discovery.
+
+Classes:
+    FileContainer: Specialized container for file metadata with
+        lazy loading and query capabilities.
+    FileManager: Central manager for file registries supporting
+        UI files, slot modules, widget classes, and icon resources.
+
+Example:
+    Creating and querying a file registry::
+
+        manager = FileManager()
+        manager.create("ui_registry", "./ui", inc_files="*.ui")
+
+        # Query by name
+        ui_file = manager.ui_registry.get_file("main_window")
+        print(ui_file.filepath)
+"""
 import os
 import inspect
 from collections import namedtuple

@@ -261,7 +261,9 @@ class TestSuiteRunner:
     def _update_readme_badge(self, result: unittest.TestResult):
         """Update the test badge in the README file."""
         if not README_PATH.exists():
-            self.logger.warning(f"README not found at {README_PATH}, skipping badge update")
+            self.logger.warning(
+                f"README not found at {README_PATH}, skipping badge update"
+            )
             return
 
         total = result.testsRun
@@ -287,26 +289,26 @@ class TestSuiteRunner:
             content = README_PATH.read_text(encoding="utf-8")
 
             # Pattern to match existing test badge or the position after version badge
-            test_badge_pattern = r'\[!\[Tests\]\([^\)]+\)\]\([^\)]*\)\n?'
+            test_badge_pattern = r"\[!\[Tests\]\([^\)]+\)\]\([^\)]*\)\n?"
 
             if re.search(test_badge_pattern, content):
                 # Replace existing test badge
                 new_content = re.sub(test_badge_pattern, badge_markdown + "\n", content)
             else:
                 # Insert after the Version badge line (or License badge if Version not found)
-                version_pattern = r'(\[!\[Version\]\([^\)]+\)\]\([^\)]+\))\n'
-                license_pattern = r'(\[!\[License[^\]]*\]\([^\)]+\)\]\([^\)]+\))\n'
+                version_pattern = r"(\[!\[Version\]\([^\)]+\)\]\([^\)]+\))\n"
+                license_pattern = r"(\[!\[License[^\]]*\]\([^\)]+\)\]\([^\)]+\))\n"
 
                 if re.search(version_pattern, content):
                     new_content = re.sub(
                         version_pattern,
-                        r'\1\n' + badge_markdown + "\n",
+                        r"\1\n" + badge_markdown + "\n",
                         content,
                     )
                 elif re.search(license_pattern, content):
                     new_content = re.sub(
                         license_pattern,
-                        r'\1\n' + badge_markdown + "\n",
+                        r"\1\n" + badge_markdown + "\n",
                         content,
                     )
                 else:
@@ -314,7 +316,9 @@ class TestSuiteRunner:
                     new_content = badge_markdown + "\n" + content
 
             README_PATH.write_text(new_content, encoding="utf-8")
-            self.logger.info(f"Updated test badge in README: {passed}/{total} tests passed")
+            self.logger.info(
+                f"Updated test badge in README: {passed}/{total} tests passed"
+            )
 
         except Exception as e:
             self.logger.warning(f"Failed to update README badge: {e}")

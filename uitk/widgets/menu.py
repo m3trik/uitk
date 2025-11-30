@@ -2,12 +2,14 @@
 # coding=utf-8
 import inspect
 import time
+import warnings
 from dataclasses import dataclass, field
 from typing import Optional, Union, Callable, Dict, Any, Tuple
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
+from uitk.widgets.separator import Separator
 from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.convert import ConvertMixin
@@ -24,6 +26,8 @@ _WIDGET_TYPE_CACHE: Dict[str, type] = {
     "QDoubleSpinBox": QtWidgets.QDoubleSpinBox,
     "QComboBox": QtWidgets.QComboBox,
     "QSlider": QtWidgets.QSlider,
+    "Separator": Separator,
+    "QSeparator": Separator,  # Alias for consistency with Qt naming
 }
 
 
@@ -386,10 +390,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     Attributes:
         on_item_added (QtCore.Signal): Signal emitted when an item is added to the menu.
         on_item_interacted (QtCore.Signal): Signal emitted when an item in the menu is interacted with.
+        on_hidden (QtCore.Signal): Signal emitted when the menu is hidden.
     """
 
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
+    on_hidden = QtCore.Signal()
 
     def __init__(
         self,
@@ -654,6 +660,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.logger.warning(f"{e}. Defaulting to LeftButton.")
             self._trigger_button = QtCore.Qt.LeftButton
 
+        # Left-click menus act like instant-action menus:
+        # - No apply button (actions execute immediately)
+        # - Auto-hide when mouse leaves (like standard menus)
+        if self._trigger_button == QtCore.Qt.LeftButton:
+            self.add_apply_button = False
+            self.hide_on_leave = True
+
         # Keep trigger event filters in sync with the trigger_button setting
         if self._trigger_button is False:
             self._uninstall_event_filters()
@@ -851,10 +864,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         parent, signal_name = self._parent_signal_source
         slot = self._get_parent_signal_slot(signal_name)
         if parent and slot:
-            try:
-                getattr(parent, signal_name).disconnect(slot)
-            except (TypeError, RuntimeError):
-                pass
+            # Use warnings filter to suppress PyQt's RuntimeWarning when slot wasn't connected
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                try:
+                    getattr(parent, signal_name).disconnect(slot)
+                except (TypeError, RuntimeError):
+                    pass
         self.logger.debug(
             f"Menu._disconnect_parent_signal: Disconnected {signal_name} from {parent}"
         )
@@ -878,10 +894,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         signal = getattr(parent, signal_name)
 
         # Disconnect any existing connection and connect the slot
-        try:
-            signal.disconnect(slot)
-        except (TypeError, RuntimeError):
-            pass
+        # Use warnings filter to suppress PyQt's RuntimeWarning when slot wasn't connected
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
 
         try:
             signal.connect(slot)
@@ -1197,8 +1216,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Get cursor position relative to this widget
         cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
 
-        # Check if cursor is within widget bounds
-        if self.rect().contains(cursor_pos):
+        # Check if cursor is within widget bounds OR over a child widget
+        cursor_inside = self.rect().contains(cursor_pos)
+
+        # Also check if cursor is over a child widget (for nested widgets)
+        if not cursor_inside:
+            widget_at = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+            if widget_at and self.isAncestorOf(widget_at):
+                cursor_inside = True
+
+        if cursor_inside:
             # Mouse has entered the menu
             if not self._mouse_has_entered:
                 self.logger.debug(
@@ -1843,9 +1870,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Add grace period before first check to prevent immediate hide when menu
         # appears at cursor position but cursor hasn't entered menu bounds yet
         if self._leave_timer:
-            # Reset the "has entered" flag - menu must wait for cursor to enter
-            self._mouse_has_entered = False
             # Delay timer start by 200ms to give user time to move cursor into menu
+            # Note: _mouse_has_entered was already set above based on cursor position
             QtCore.QTimer.singleShot(
                 200, lambda: self._leave_timer.start() if self._leave_timer else None
             )
@@ -1905,6 +1931,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.logger.debug(f"hideEvent: Restored focus to {focus_target}")
 
         super().hideEvent(event)
+
+        # Emit signal after hide event is processed
+        self.on_hidden.emit()
 
         if self._persistent_mode:
             self.disable_persistent_mode()

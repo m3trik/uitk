@@ -244,6 +244,7 @@ class TableSelection:
 class TableWidget(
     QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin
 ):
+    """Enhanced QTableWidget with cell formatting, sorting, and context menu support."""
 
     def __init__(
         self,

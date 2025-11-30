@@ -1,5 +1,40 @@
 # !/usr/bin/python
 # coding=utf-8
+"""UITK - User Interface Toolkit for Qt/PySide applications.
+
+A comprehensive UI framework that extends Qt Designer workflows with:
+- Dynamic UI loading via Switchboard
+- Custom widget classes with enhanced functionality
+- Automatic signal-slot connection management
+- Theme and style management
+- State persistence and settings
+
+Example:
+    Basic usage with Switchboard::
+
+        from uitk import Switchboard
+
+        sb = Switchboard(ui_source="my_app.ui", slot_source=MySlots)
+        ui = sb.my_app
+        ui.show(app_exec=True)
+
+    Using individual widgets::
+
+        from uitk.widgets.pushButton import PushButton
+
+        button = PushButton("Click Me")
+        button.menu.add("Option 1")  # Built-in menu support
+
+Key Modules:
+    switchboard: Dynamic UI loader and event handler
+    signals: Signal decorator for slot annotations
+    events: Event filters and mouse tracking utilities
+    file_manager: File and path management utilities
+    widgets: Enhanced Qt widget classes with mixins
+
+Attributes:
+    __version__: Current package version string.
+"""
 import importlib
 
 from pythontk.core_utils.module_resolver import bootstrap_package
