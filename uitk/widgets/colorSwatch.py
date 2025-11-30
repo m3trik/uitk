@@ -6,6 +6,8 @@ from uitk.widgets.mixins import AttributesMixin, ConvertMixin
 
 
 class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
+    """Color picker button that displays and stores a selectable color value."""
+
     initializeRequested = QtCore.Signal()
 
     def __init__(self, parent=None, color=None, settings=None, **kwargs):

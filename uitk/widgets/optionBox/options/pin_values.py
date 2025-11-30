@@ -6,6 +6,13 @@ from qtpy import QtWidgets, QtCore, QtGui
 from ._options import ButtonOption
 
 
+def _normalize_value(value):
+    """Normalize a value for comparison (strips whitespace from strings)."""
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
 class PinnedValueEntry:
     """Represents a pinned value with an optional alias."""
 
@@ -20,102 +27,144 @@ class PinnedValueEntry:
 
     def __eq__(self, other):
         if isinstance(other, PinnedValueEntry):
-            return self.value == other.value
-        return self.value == other
+            return _normalize_value(self.value) == _normalize_value(other.value)
+        return _normalize_value(self.value) == _normalize_value(other)
 
     def __hash__(self):
-        return hash(self.value)
+        return hash(_normalize_value(self.value))
 
 
-class PinnedValuesPopup(QtWidgets.QWidget):
-    """A popup widget that displays pinned values with pin/unpin controls.
+class PinnedValuesPopup(QtCore.QObject):
+    """A popup that displays pinned values using the Menu widget.
 
     This popup shows:
     - The current value (with option to pin/unpin it)
     - All previously pinned values (with options to restore or unpin them)
     """
 
-    # Signals
-    value_pinned = QtCore.Signal(object)  # value
-    value_unpinned = QtCore.Signal(object)  # value
-    value_selected = QtCore.Signal(object)  # value
-    alias_set = QtCore.Signal(object)  # PinnedValueEntry (alias was set/changed)
-    alias_reverted = QtCore.Signal(object)  # PinnedValueEntry (alias was cleared)
-
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
-        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        from uitk.widgets.menu import Menu
 
-        # Setup UI
-        self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(4, 4, 4, 4)
-        self._layout.setSpacing(2)
+        self._parent_widget = parent
 
-        # Style the popup
-        self.setStyleSheet(
-            """
-            PinnedValuesPopup {
-                background: palette(window);
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-            }
-        """
+        # Create a Menu configured as a popup
+        self._menu = Menu(
+            parent=parent,
+            trigger_button="none",  # We control showing manually
+            position=None,  # We position manually - don't auto-reposition
+            add_header=False,
+            add_footer=False,
+            add_apply_button=False,
+            hide_on_leave=True,  # Hide when mouse leaves
+            match_parent_width=False,
         )
+        self._menu.setMinimumWidth(150)
+
+        # Install event filters on parent and ancestors to close on hide
+        self._install_visibility_filters()
+
+        # Callbacks for handling actions
+        self._on_value_pinned = None
+        self._on_value_unpinned = None
+        self._on_value_selected = None
+        self._on_alias_changed = None
+
+    @property
+    def menu(self):
+        """Get the underlying Menu widget."""
+        return self._menu
+
+    def _install_visibility_filters(self):
+        """Install event filters on parent and ancestors to detect hide events."""
+        self._watched_widgets = []
+        widget = self._parent_widget
+        while widget is not None:
+            widget.installEventFilter(self)
+            self._watched_widgets.append(widget)
+            widget = widget.parent()
+
+    def _remove_visibility_filters(self):
+        """Remove event filters from watched widgets."""
+        for widget in self._watched_widgets:
+            try:
+                widget.removeEventFilter(self)
+            except RuntimeError:
+                pass  # Widget may already be deleted
+        self._watched_widgets.clear()
+
+    def eventFilter(self, watched, event):
+        """Close popup when any parent widget is hidden."""
+        if event.type() == QtCore.QEvent.Hide:
+            self.close()
+        return False  # Don't block the event
+
+    def connect_signals(
+        self,
+        on_value_pinned=None,
+        on_value_unpinned=None,
+        on_value_selected=None,
+        on_alias_changed=None,
+    ):
+        """Connect signal handlers."""
+        self._on_value_pinned = on_value_pinned
+        self._on_value_unpinned = on_value_unpinned
+        self._on_value_selected = on_value_selected
+        self._on_alias_changed = on_alias_changed
 
     def clear(self):
         """Clear all items from the popup."""
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._menu.clear()
+
+    def show(self):
+        """Show the popup."""
+        self._menu.show()
+
+    def close(self):
+        """Close the popup and clean up event filters."""
+        self._remove_visibility_filters()
+        self._menu.hide()
+
+    def move(self, pos):
+        """Move the popup to a position."""
+        self._menu.move(pos)
+
+    def adjustSize(self):
+        """Adjust the popup size."""
+        self._menu.adjustSize()
+
+    def width(self):
+        """Get popup width."""
+        return self._menu.width()
 
     def add_current_value(self, value, is_pinned=False):
-        """Add the current value row.
-
-        Args:
-            value: The current value
-            is_pinned: Whether the current value is already pinned
-        """
+        """Add the current value row."""
         row = self._create_value_row(value, is_current=True, is_pinned=is_pinned)
-        self._layout.addWidget(row)
+        self._menu.add(row)
 
     def add_separator(self):
         """Add a separator line."""
         separator = QtWidgets.QFrame()
+        separator.setObjectName("pinnedValuesSeparator")
         separator.setFrameShape(QtWidgets.QFrame.HLine)
         separator.setFrameShadow(QtWidgets.QFrame.Sunken)
-        separator.setStyleSheet("background: palette(mid);")
         separator.setFixedHeight(1)
-        self._layout.addWidget(separator)
+        self._menu.add(separator)
 
     def add_pinned_value(self, entry):
-        """Add a pinned value row.
-
-        Args:
-            entry: PinnedValueEntry with value and optional alias
-        """
+        """Add a pinned value row."""
         row = self._create_value_row(entry, is_current=False, is_pinned=True)
-        self._layout.addWidget(row)
+        self._menu.add(row)
 
     def add_empty_message(self):
         """Add a message when there are no pinned values."""
         label = QtWidgets.QLabel("No pinned values")
+        label.setObjectName("pinnedValuesEmptyLabel")
         label.setAlignment(QtCore.Qt.AlignCenter)
-        label.setStyleSheet("padding: 8px; color: gray; font-style: italic;")
-        self._layout.addWidget(label)
+        self._menu.add(label)
 
     def _create_value_row(self, value_or_entry, is_current=False, is_pinned=False):
-        """Create a row widget for a value.
-
-        Args:
-            value_or_entry: The value or PinnedValueEntry to display
-            is_current: Whether this is the current widget value
-            is_pinned: Whether this value is pinned
-
-        Returns:
-            QWidget: A row widget with value button and pin button
-        """
+        """Create a row widget for a value."""
         from uitk.widgets.mixins.icon_manager import IconManager
 
         # Handle both raw values and PinnedValueEntry
@@ -129,9 +178,13 @@ class PinnedValuesPopup(QtWidgets.QWidget):
             display_text = str(value)
 
         container = QtWidgets.QWidget()
+        container.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
+        container.setObjectName(
+            "pinnedValueRow_current" if is_current else "pinnedValueRow"
+        )
         layout = QtWidgets.QHBoxLayout(container)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(4)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setSpacing(1)
 
         # Stacked widget to switch between button and edit mode
         stack = QtWidgets.QStackedWidget()
@@ -139,57 +192,31 @@ class PinnedValuesPopup(QtWidgets.QWidget):
 
         # Value button - clicking selects/restores the value
         value_btn = QtWidgets.QPushButton(display_text)
+        value_btn.setObjectName("pinnedValueButton")
         value_btn.setFlat(True)
         value_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        value_btn.setStyleSheet(
-            """
-            QPushButton {
-                text-align: left;
-                padding: 4px 8px;
-                border: none;
-                background: transparent;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background: palette(highlight);
-                color: palette(highlighted-text);
-            }
-        """
-        )
         value_btn.clicked.connect(lambda: self._on_value_clicked(value))
-
-        # Always show tooltip with full value
         value_btn.setToolTip(str(value))
 
-        # Add context menu for all pinned entries (current or not)
+        # Add context menu for pinned entries
         if entry is not None:
             value_btn.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
             value_btn.customContextMenuRequested.connect(
-                lambda pos, e=entry, s=stack: self._show_context_menu(pos, e, s)
+                lambda pos, e=entry, s=stack, b=value_btn: self._show_context_menu(
+                    pos, e, s, b
+                )
             )
 
         stack.addWidget(value_btn)  # Index 0: button
 
         # Line edit for alias editing
         alias_edit = QtWidgets.QLineEdit()
-        alias_edit.setStyleSheet(
-            """
-            QLineEdit {
-                padding: 3px 7px;
-                border: 1px solid palette(highlight);
-                border-radius: 3px;
-                background: palette(base);
-            }
-        """
-        )
+        alias_edit.setObjectName("pinnedValueAliasEdit")
         alias_edit.setPlaceholderText("Enter alias...")
-
-        # Store references for the edit handlers
         alias_edit.setProperty("_entry", entry)
         alias_edit.setProperty("_stack", stack)
         alias_edit.setProperty("_button", value_btn)
 
-        # Connect enter key and focus out to finish editing
         alias_edit.returnPressed.connect(
             lambda e=alias_edit: self._finish_alias_edit(e)
         )
@@ -198,74 +225,42 @@ class PinnedValuesPopup(QtWidgets.QWidget):
         )
 
         stack.addWidget(alias_edit)  # Index 1: edit
-
-        layout.addWidget(stack, 1)  # Stretch to fill
+        layout.addWidget(stack, 1)
 
         # Pin/unpin button
         pin_btn = QtWidgets.QPushButton()
+        pin_btn.setObjectName("pinnedValuePinButton")
         pin_btn.setFixedSize(22, 22)
         pin_btn.setCursor(QtCore.Qt.PointingHandCursor)
         pin_btn.setFlat(True)
-        pin_btn.setStyleSheet(
-            """
-            QPushButton {
-                border: none;
-                background: transparent;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background: rgba(0, 0, 0, 0.1);
-            }
-        """
-        )
 
         if is_pinned:
-            IconManager.set_icon(pin_btn, "pin_active", size=(14, 14))
+            IconManager.set_icon(pin_btn, "radio", size=(14, 14))
             pin_btn.setToolTip("Unpin this value")
             pin_btn.clicked.connect(lambda: self._on_unpin_clicked(value))
         else:
-            IconManager.set_icon(pin_btn, "pin", size=(14, 14))
+            IconManager.set_icon(pin_btn, "radio_empty", size=(14, 14))
             pin_btn.setToolTip("Pin this value")
             pin_btn.clicked.connect(lambda: self._on_pin_clicked(value))
 
         layout.addWidget(pin_btn)
 
-        # Style the container for current value
-        if is_current:
-            container.setStyleSheet(
-                """
-                QWidget {
-                    background: rgba(0, 120, 215, 0.15);
-                    border-radius: 3px;
-                }
-            """
-            )
-
         return container
 
     def _start_alias_edit(self, stack):
-        """Start inline alias editing.
-
-        Args:
-            stack: The QStackedWidget containing button and edit widgets
-        """
-        alias_edit = stack.widget(1)  # Get the line edit
+        """Start inline alias editing."""
+        alias_edit = stack.widget(1)
         entry = alias_edit.property("_entry")
 
         if entry:
-            # Set current alias or original value as starting text
             alias_edit.setText(entry.alias or str(entry.value))
             alias_edit.selectAll()
 
-        stack.setCurrentIndex(1)  # Switch to edit mode
+        stack.setCurrentIndex(1)
         alias_edit.setFocus()
 
     def _finish_alias_edit(self, alias_edit):
-        """Finish inline alias editing.
-
-        Args:
-            alias_edit: The QLineEdit widget
-        """
+        """Finish inline alias editing."""
         entry = alias_edit.property("_entry")
         stack = alias_edit.property("_stack")
         button = alias_edit.property("_button")
@@ -273,7 +268,6 @@ class PinnedValuesPopup(QtWidgets.QWidget):
         if entry is None or stack is None:
             return
 
-        # Prevent double-processing
         if stack.currentIndex() != 1:
             return
 
@@ -283,76 +277,64 @@ class PinnedValuesPopup(QtWidgets.QWidget):
             entry.alias = new_alias
             if button:
                 button.setText(new_alias)
-            self.alias_set.emit(entry)
+            if self._on_alias_changed:
+                self._on_alias_changed(entry)
         else:
-            # Cleared or same as original - revert to showing original
             entry.alias = None
             if button:
                 button.setText(str(entry.value))
-            self.alias_reverted.emit(entry)
+            if self._on_alias_changed:
+                self._on_alias_changed(entry)
 
-        stack.setCurrentIndex(0)  # Switch back to button mode
+        stack.setCurrentIndex(0)
 
-    def _show_context_menu(self, pos, entry, stack):
-        """Show context menu for a pinned value.
+    def _show_context_menu(self, pos, entry, stack, button):
+        """Show context menu for a pinned value."""
+        # Temporarily disable hide_on_leave to prevent menu closing during context menu
+        original_hide_on_leave = self._menu.hide_on_leave
+        self._menu.hide_on_leave = False
 
-        Args:
-            pos: Position for the menu
-            entry: The PinnedValueEntry
-            stack: The QStackedWidget for this row
-        """
-        button = stack.widget(0)
-        menu = QtWidgets.QMenu(self)
+        menu = QtWidgets.QMenu(self._menu)
 
-        # Set/Change Alias option - starts inline edit
         if entry.alias:
             set_alias_action = menu.addAction("Change Alias")
         else:
             set_alias_action = menu.addAction("Set Alias")
         set_alias_action.triggered.connect(lambda: self._start_alias_edit(stack))
 
-        # Revert to Original option (only if alias is set)
         if entry.alias:
-            revert_action = menu.addAction("Revert to Original")
-            revert_action.triggered.connect(lambda: self._revert_alias_inline(stack))
+            remove_alias_action = menu.addAction("Remove Alias")
+            remove_alias_action.triggered.connect(
+                lambda: self._remove_alias_inline(stack, button, entry)
+            )
 
         menu.exec_(button.mapToGlobal(pos))
 
-    def _revert_alias_inline(self, stack):
-        """Revert alias inline without going through edit mode.
+        # Restore hide_on_leave after context menu closes
+        self._menu.hide_on_leave = original_hide_on_leave
 
-        Args:
-            stack: The QStackedWidget for this row
-        """
-        alias_edit = stack.widget(1)
-        button = stack.widget(0)
-        entry = alias_edit.property("_entry")
-
-        if entry:
-            entry.alias = None
-            button.setText(str(entry.value))
-            self.alias_reverted.emit(entry)
+    def _remove_alias_inline(self, stack, button, entry):
+        """Remove alias inline without going through edit mode."""
+        entry.alias = None
+        button.setText(str(entry.value))
+        if self._on_alias_changed:
+            self._on_alias_changed(entry)
 
     def _on_value_clicked(self, value):
         """Handle value button click."""
-        self.value_selected.emit(value)
+        if self._on_value_selected:
+            self._on_value_selected(value)
         self.close()
 
     def _on_pin_clicked(self, value):
         """Handle pin button click."""
-        self.value_pinned.emit(value)
+        if self._on_value_pinned:
+            self._on_value_pinned(value)
 
     def _on_unpin_clicked(self, value):
         """Handle unpin button click."""
-        self.value_unpinned.emit(value)
-
-    def showEvent(self, event):
-        """Adjust size when shown."""
-        super().showEvent(event)
-        self.adjustSize()
-        # Ensure minimum width
-        if self.width() < 150:
-            self.setFixedWidth(150)
+        if self._on_value_unpinned:
+            self._on_value_unpinned(value)
 
 
 class PinValuesOption(ButtonOption):
@@ -402,7 +384,7 @@ class PinValuesOption(ButtonOption):
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
-            icon="pin",
+            icon="radio_empty",
             tooltip="Pinned values",
             callback=self._show_popup,
             checkable=True,
@@ -472,14 +454,34 @@ class PinValuesOption(ButtonOption):
 
         button.setProperty("class", "PinButton")
 
-        # Update icon based on loaded values
-        if self._pinned_entries:
-            self._update_button_icon()
+        # Connect to wrapped widget's value change signals to update icon
+        self._connect_value_change_signals()
+
+        # Defer initial icon update to ensure wrapped widget has its value set
+        QtCore.QTimer.singleShot(0, self._update_button_icon)
 
         return button
 
-    def _on_popup_destroyed(self):
-        """Handle popup being destroyed."""
+    def _connect_value_change_signals(self):
+        """Connect to the wrapped widget's value change signals."""
+        widget = self.wrapped_widget
+        if not widget:
+            return
+
+        # Try to connect to common value change signals
+        if hasattr(widget, "textChanged"):
+            widget.textChanged.connect(self._update_button_icon)
+        elif hasattr(widget, "textEdited"):
+            widget.textEdited.connect(self._update_button_icon)
+        if hasattr(widget, "valueChanged"):
+            widget.valueChanged.connect(self._update_button_icon)
+        if hasattr(widget, "currentTextChanged"):
+            widget.currentTextChanged.connect(self._update_button_icon)
+        if hasattr(widget, "currentIndexChanged"):
+            widget.currentIndexChanged.connect(self._update_button_icon)
+
+    def _on_popup_hidden(self):
+        """Handle popup being hidden."""
         self._popup = None
         # Block the next click to prevent immediate reopen
         self.block_next_click()
@@ -499,40 +501,48 @@ class PinValuesOption(ButtonOption):
             return
 
         # Button is checked - show popup
-        # Create a fresh popup
-        self._popup = PinnedValuesPopup()
+        # Create a fresh popup with wrapped widget as parent for theme inheritance
+        self._popup = PinnedValuesPopup(parent=self.wrapped_widget)
 
-        # Connect destroyed signal to clear reference and uncheck button
-        self._popup.destroyed.connect(self._on_popup_destroyed)
+        # Connect menu's on_hidden signal to uncheck button when menu closes
+        self._popup.menu.on_hidden.connect(self._on_popup_hidden)
 
-        # Connect signals
-        self._popup.value_pinned.connect(self._pin_value)
-        self._popup.value_unpinned.connect(self._unpin_value)
-        self._popup.value_selected.connect(self._restore_value)
-        self._popup.alias_set.connect(self._on_alias_changed)
-        self._popup.alias_reverted.connect(self._on_alias_changed)
+        # Connect callbacks
+        self._popup.connect_signals(
+            on_value_pinned=self._pin_value,
+            on_value_unpinned=self._unpin_value,
+            on_value_selected=self._restore_value,
+            on_alias_changed=self._on_alias_changed,
+        )
 
-        # Populate the popup
+        # Populate and size the popup first
         self._populate_popup()
+        self._popup.adjustSize()
 
         # Position and show the popup
         if self._widget:
-            # Position below the button, aligned to right edge
-            button_rect = self._widget.rect()
-            global_pos = self._widget.mapToGlobal(
-                QtCore.QPoint(button_rect.right(), button_rect.bottom())
-            )
-            # Adjust to align popup's right edge with button's right edge
-            self._popup.adjustSize()
-            global_pos.setX(global_pos.x() - self._popup.width())
+            # Get the wrapped widget (the actual input widget, not the pin button)
+            wrapped = self.wrapped_widget
+            if wrapped:
+                # Position below the wrapped widget, aligned to left edge
+                widget_rect = wrapped.rect()
+                global_pos = wrapped.mapToGlobal(QtCore.QPoint(0, widget_rect.height()))
+            else:
+                # Fallback: position below the button
+                button_rect = self._widget.rect()
+                global_pos = self._widget.mapToGlobal(
+                    QtCore.QPoint(button_rect.right(), button_rect.bottom())
+                )
+                global_pos.setX(global_pos.x() - self._popup.width())
+
             self._popup.move(global_pos)
 
         self._popup.show()
 
     def _get_entry_for_value(self, value):
-        """Find the PinnedValueEntry for a given value."""
+        """Find the PinnedValueEntry for a given value using normalized comparison."""
         for entry in self._pinned_entries:
-            if entry.value == value:
+            if entry == value:  # Uses PinnedValueEntry.__eq__ with normalization
                 return entry
         return None
 
@@ -555,15 +565,19 @@ class PinValuesOption(ButtonOption):
                 self._popup.add_current_value(current_entry, is_pinned=True)
             else:
                 self._popup.add_current_value(current_value, is_pinned=False)
+            self._popup.add_separator()
 
         # Get pinned values excluding current, sorted alphabetically by display text
+        # Use normalized comparison to handle trailing slashes/whitespace differences
+        normalized_current = _normalize_value(current_value)
         pinned_excluding_current = sorted(
-            [e for e in self._pinned_entries if e.value != current_value],
+            [
+                e
+                for e in self._pinned_entries
+                if _normalize_value(e.value) != normalized_current
+            ],
             key=lambda e: e.display_text.lower(),
         )
-
-        if has_current and pinned_excluding_current:
-            self._popup.add_separator()
 
         # Add pinned values (excluding current if it's pinned)
         for entry in pinned_excluding_current:
@@ -582,35 +596,37 @@ class PinValuesOption(ButtonOption):
             if len(self._pinned_entries) > self._max_pinned:
                 self._pinned_entries = self._pinned_entries[: self._max_pinned]
 
-            # Update icon to show we have pinned values
-            self._update_button_icon()
-
-            # Save to persistent storage
-            self._save_pinned_values()
-
-            # Emit signal
-            self.value_pinned.emit(True, value)
-
-        # Refresh popup
-        self._populate_popup()
+            self._on_pinned_values_changed(is_pinned=True, value=value)
 
     def _unpin_value(self, value):
         """Unpin a value from the list."""
         entry = self._get_entry_for_value(value)
         if entry is not None:
             self._pinned_entries.remove(entry)
+            self._on_pinned_values_changed(is_pinned=False, value=value)
 
-            # Update icon
-            self._update_button_icon()
+    def _on_pinned_values_changed(self, is_pinned, value):
+        """Common handler for pin/unpin operations.
 
-            # Save to persistent storage
-            self._save_pinned_values()
+        Updates UI, persists changes, emits signals, and refreshes popup.
+        """
+        self._update_button_icon()
+        self._save_pinned_values()
+        self.value_pinned.emit(is_pinned, value)
 
-            # Emit signal
-            self.value_pinned.emit(False, value)
+        # Defer popup refresh to after click event completes
+        # This prevents the menu from hiding when the clicked button is destroyed
+        QtCore.QTimer.singleShot(0, self._refresh_popup_deferred)
 
-        # Refresh popup
-        self._populate_popup()
+    def _refresh_popup_deferred(self):
+        """Refresh the popup content (called via deferred timer).
+
+        This method is called after button click events complete to avoid
+        destroying the clicked button while it's still processing events.
+        """
+        if self._popup and self._popup.menu.isVisible():
+            self._populate_popup()
+            self._popup.adjustSize()
 
     def _restore_value(self, value):
         """Restore a pinned value to the widget."""
@@ -627,18 +643,30 @@ class PinValuesOption(ButtonOption):
         """
         self._save_pinned_values()
 
-    def _update_button_icon(self):
-        """Update the button icon based on whether there are pinned values."""
+    def _update_button_icon(self, *args):
+        """Update the button icon based on whether the current value is pinned.
+
+        Args:
+            *args: Ignored. Accepts arguments from signal connections.
+        """
         if self._widget is None:
             return  # Widget not created yet
 
         from uitk.widgets.mixins.icon_manager import IconManager
 
-        if self._pinned_entries:
-            IconManager.set_icon(self._widget, "pin_active", size=(17, 17))
+        current_value = self._get_widget_value()
+        current_is_pinned = self._get_entry_for_value(current_value) is not None
+
+        if current_is_pinned:
+            IconManager.set_icon(self._widget, "radio", size=(17, 17))
+            self._widget.setToolTip(
+                f"Pinned values ({len(self._pinned_entries)}) - current value is pinned"
+            )
+        elif self._pinned_entries:
+            IconManager.set_icon(self._widget, "radio_empty", size=(17, 17))
             self._widget.setToolTip(f"Pinned values ({len(self._pinned_entries)})")
         else:
-            IconManager.set_icon(self._widget, "pin", size=(17, 17))
+            IconManager.set_icon(self._widget, "radio_empty", size=(17, 17))
             self._widget.setToolTip("Pin values")
 
     def _get_widget_value(self):

@@ -1,9 +1,6 @@
-<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <!-- Font size/typography icon -->
-  <path d="M4 7V4h16v3" stroke="#888888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M9 20h6" stroke="#888888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M12 4v16" stroke="#888888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M8 12h8" stroke="#888888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="19" cy="19" r="2" stroke="#888888" stroke-width="1.5" fill="none"/>
-  <path d="M17.5 17.5l3 3" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/>
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <path d="M2 4V2h8v2" stroke="#888888" stroke-width="1.5"/>
+  <path d="M6 2v10M4 12h4" stroke="#888888" stroke-width="1.5"/>
+  <path d="M10 8V7h5v1" stroke="#888888" stroke-width="1"/>
+  <path d="M12.5 7v7M11 14h3" stroke="#888888" stroke-width="1"/>
 </svg>

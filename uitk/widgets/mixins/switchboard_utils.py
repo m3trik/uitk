@@ -8,7 +8,7 @@ import pythontk as ptk
 
 
 class SwitchboardUtilsMixin:
-    """Mixin for utility methods in the Switchboard."""
+    """Utility methods for widget positioning, centering, and screen geometry."""
 
     @staticmethod
     def get_cursor_offset_from_center(widget):

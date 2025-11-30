@@ -6,7 +6,7 @@ from uitk.widgets.doubleSpinBox import DoubleSpinBox
 
 
 class AttributeWindow(Menu):
-    """Provides a dynamic and interactive user interface for displaying and editing attributes of any object, within a flexible and adaptable UI component. Designed to be application-agnostic, it facilitates the presentation and modification of object attributes across various contexts, supporting a wide range of attribute data types such as booleans, integers, floats, and strings.
+    """Dynamic popup editor for inspecting and modifying object attributes.
 
     Attributes are displayed with corresponding interactive widgets, enabling users to modify values directly. The class allows for customizable widget behavior, including options for making attributes checkable and enforcing single-selection if required. A key design goal is flexibility, allowing the class to adapt to different attribute sets and object types without significant modifications.
 

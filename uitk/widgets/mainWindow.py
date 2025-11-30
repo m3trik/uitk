@@ -15,6 +15,8 @@ from uitk.widgets.mixins.style_sheet import StyleSheet
 
 
 class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
+    """Application main window with state persistence and child widget management."""
+
     on_show = QtCore.Signal()
     on_hide = QtCore.Signal()
     on_close = QtCore.Signal()
@@ -113,12 +115,22 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """Create the size grip or footer if configured."""
         if self.add_footer:
             # Use footer with integrated size grip
+            # Check if footer already exists on MainWindow or in central widget
             existing_footer = getattr(self, "footer", None)
             if existing_footer:
                 return
 
             central = self.centralWidget()
             if not central:
+                return
+
+            # Check for footer defined in .ui file (search by object name only,
+            # since class comparison may fail due to Qt's module path differences)
+            from qtpy.QtWidgets import QWidget
+
+            footer_child = central.findChild(QWidget, "footer")
+            if footer_child:
+                self.footer = footer_child
                 return
 
             self.footer = Footer(add_size_grip=True)

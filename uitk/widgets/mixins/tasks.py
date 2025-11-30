@@ -36,6 +36,8 @@ class WorkIndicator(QtWidgets.QDialog):
 
 
 class TasksMixin(QtCore.QThread):
+    """Background task runner with optional visual work indicator."""
+
     taskCompleted = QtCore.Signal()
 
     def __init__(self, parent=None):

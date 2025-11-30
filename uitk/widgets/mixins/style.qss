@@ -397,7 +397,7 @@ QLabel {
     border: 1px solid {BORDER_COLOR};
     padding: 0px 1px 0px 1px;
 }
-QLabel:hover {
+QLabel[clickable="true"]:hover {
     border: 2px solid {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
@@ -415,7 +415,7 @@ QLineEdit {
     border-radius: 1px;
     padding: 0 8px;
 }
-QLineEdit:hover {
+QLineEdit:hover:!read-only {
     border: 2px solid {BUTTON_HOVER};
 }
 QLineEdit:disabled {

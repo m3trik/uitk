@@ -1,5 +1,37 @@
 # !/usr/bin/python
 # coding=utf-8
+"""Event handling utilities for Qt applications.
+
+This module provides event filters and mouse tracking utilities for
+enhanced widget interaction and event management.
+
+Classes:
+    EventFactoryFilter: Dynamic event filter with lazy handler resolution
+        and scoped widget control. Allows forwarding events to custom handlers.
+    MouseTracking: QObject subclass providing mouse enter/leave events for
+        QWidget child widgets, useful for hover detection.
+
+Example:
+    Using EventFactoryFilter to handle child widget events::
+
+        class MyHandler:
+            def child_mousePressEvent(self, event, widget):
+                print(f"Clicked on {widget.objectName()}")
+
+        handler = MyHandler()
+        filter = EventFactoryFilter(
+            forward_events_to=handler,
+            event_name_prefix="child_",
+            event_types={"MouseButtonPress"}
+        )
+        filter.install(my_widget)
+
+    Using MouseTracking for hover effects::
+
+        tracker = MouseTracking(parent_widget)
+        tracker.enter.connect(lambda w: w.setStyleSheet("background: blue"))
+        tracker.leave.connect(lambda w: w.setStyleSheet(""))
+"""
 import weakref
 from typing import Iterable
 from qtpy import QtWidgets, QtCore, QtGui

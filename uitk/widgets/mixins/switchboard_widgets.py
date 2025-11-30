@@ -6,7 +6,7 @@ import pythontk as ptk
 
 
 class SwitchboardWidgetMixin:
-    """Mixin to handle widget-related logic for Switchboard."""
+    """Widget registration, resolution, and dynamic class loading for Switchboard."""
 
     def resolve_widget_class(
         self, class_name: str
@@ -100,7 +100,7 @@ class SwitchboardWidgetMixin:
             if (not object_names_only or c.objectName())
         }
 
-        return ptk.filter_dict(dct, inc, exc, keys=True, values=True)
+        return ptk.filter_dict(dct, inc=inc, exc=exc, keys=True, values=True)
 
     @staticmethod
     def _get_widget_from_ui(

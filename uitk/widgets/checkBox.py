@@ -7,9 +7,31 @@ from uitk.widgets.mixins.text import RichText, TextOverlay
 
 
 class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOverlay):
-    """ """
+    """Enhanced checkbox with rich text labels, overlays, and context menu.
+
+    Extends QCheckBox with:
+    - Rich text support for labels (HTML formatting)
+    - Text overlay capabilities
+    - Built-in right-click context menu
+    - Simplified tri-state handling with integer values
+
+    Attributes:
+        menu: Context menu accessible via right-click (from MenuMixin).
+
+    Example:
+        checkbox = CheckBox()
+        checkbox.setText("<b>Bold</b> option")
+        checkbox.setTristate(True)
+        checkbox.setCheckState(1)  # Partially checked
+    """
 
     def __init__(self, parent=None, **kwargs):
+        """Initialize the CheckBox.
+
+        Parameters:
+            parent (QWidget, optional): Parent widget.
+            **kwargs: Additional attributes to set via set_attributes().
+        """
         super().__init__(parent)
 
         # Set the initial style for rich text depending on the current state.
@@ -33,7 +55,14 @@ class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOv
         self.set_attributes(**kwargs)
 
     def set_checkbox_rich_text_style(self, state):
-        """ """
+        """Update rich text style based on checkbox state.
+
+        Changes text color to black when checked, white when unchecked,
+        for better visibility against typical checkbox styling.
+
+        Parameters:
+            state (int): The checkbox state (0=unchecked, 1=partial, 2=checked).
+        """
         if self.has_rich_text:
             self.set_rich_text_style(textColor="black" if state > 0 else "white")
 

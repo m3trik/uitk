@@ -6,6 +6,7 @@ from pythontk.core_utils.module_resolver import bootstrap_package
 
 
 DEFAULT_INCLUDE = {
+    "add_items": "*",
     "attributes": "*",
     "convert": "*",
     "docking": "*",

@@ -19,7 +19,6 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._option_box = None
         self._container = None
         self._clear_enabled = False
-        self._action_handler = None
         self._menu = None
         self._option_order = [
             "clear",
@@ -104,19 +103,6 @@ class OptionBoxManager(ptk.LoggingMixin):
         self.clear_option = False
         return self
 
-    def set_action(self, action_handler):
-        """Set action handler (fluent interface)"""
-        self._action_handler = action_handler
-        self._update_option_box()
-        return self
-
-    def set_menu(self, menu):
-        """Set menu (fluent interface)"""
-        self._menu = menu
-        self._action_handler = menu
-        self._update_option_box()
-        return self
-
     def set_order(self, order):
         """Set option order (fluent interface)
 
@@ -128,11 +114,7 @@ class OptionBoxManager(ptk.LoggingMixin):
 
     def clear_first(self):
         """Set clear button to appear first (fluent interface)"""
-        return self.set_order(["clear", "action"])
-
-    def action_first(self):
-        """Set action button to appear first (fluent interface)"""
-        return self.set_order(["action", "clear"])
+        return self.set_order(["clear", "pin", "action"])
 
     @property
     def enabled(self):
@@ -190,9 +172,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         """
         self._menu = value
         # Don't set _action_handler - menu uses plugin system (MenuOption)
-        # which creates its own button. Setting _action_handler would create
-        # a duplicate button.
-        # self._action_handler = value  # REMOVED - causes duplicate buttons
+        # which creates its own button.
         # Don't call _update_option_box() - the menu is managed via plugins
 
     def enable_menu(self, menu=None, **menu_kwargs):
@@ -246,54 +226,19 @@ class OptionBoxManager(ptk.LoggingMixin):
         )
 
         if self._menu is None:
-            # PERFORMANCE OPTIMIZATION: Check for existing menu to avoid duplication
             from uitk.widgets.menu import Menu
 
             _log_step("import_Menu")
 
-            existing_menu = None
-
-            # Priority 1: Check MenuMixin's _menu_instance (most common case)
-            # This is a direct dict access - very fast
-            if "_menu_instance" in self._widget.__dict__:
-                candidate = self._widget.__dict__.get("_menu_instance")
-                if isinstance(candidate, Menu):
-                    existing_menu = candidate
-                    self.logger.debug(
-                        "OptionBoxManager.enable_menu: Found existing menu via _menu_instance"
-                    )
-            _log_step("check_menu_instance")
-
-            # Priority 2: Check if menu was explicitly passed
-            if existing_menu is None and menu is not None:
-                if isinstance(menu, Menu):
-                    existing_menu = menu
-                    self.logger.debug(
-                        "OptionBoxManager.enable_menu: Using explicitly passed menu"
-                    )
-
-            # Priority 3: Try getting menu from widget's menu attribute
-            # (Some widgets like TextEdit set menu directly)
-            if existing_menu is None and hasattr(self._widget, "menu"):
-                try:
-                    # Access __dict__ directly to avoid triggering MenuMixin descriptor
-                    # which could cause unwanted side effects
-                    widget_menu = self._widget.__dict__.get("menu")
-                    if isinstance(widget_menu, Menu):
-                        existing_menu = widget_menu
-                except Exception:
-                    pass
-            _log_step("check_passed_menu")
-
-            # Use existing menu or create new one
-            if existing_menu is not None:
+            # Only use explicitly passed menu - do NOT reuse widget's context menu
+            # The option box menu should be completely separate from the widget's
+            # right-click context menu (which is managed by MenuMixin)
+            if menu is not None and isinstance(menu, Menu):
                 self.logger.debug(
-                    "OptionBoxManager.enable_menu: Reusing existing menu instance"
+                    "OptionBoxManager.enable_menu: Using explicitly passed menu"
                 )
-                self._menu = existing_menu
-                # Update MenuMixin cache to point to this menu for consistency
-                self._widget.__dict__["_menu_instance"] = existing_menu
-                _log_step("reuse_menu")
+                self._menu = menu
+                _log_step("use_passed_menu")
             else:
                 # Create a new Menu with appropriate defaults
                 # Merge defaults with user-provided kwargs
@@ -302,6 +247,7 @@ class OptionBoxManager(ptk.LoggingMixin):
                     "trigger_button": "none",  # OptionBox button handles triggering
                     "match_parent_width": False,  # Don't constrain width to prevent cropping
                     "add_apply_button": True,  # Enable apply button for option box menus
+                    "hide_on_leave": True,  # Auto-hide when mouse leaves
                 }
                 default_kwargs.update(menu_kwargs)
 
@@ -312,13 +258,10 @@ class OptionBoxManager(ptk.LoggingMixin):
                 self._menu = Menu(**default_kwargs)
                 _log_step("Menu_creation")
 
-                # Cache it in MenuMixin for fast access
-                self._widget.__dict__["_menu_instance"] = self._menu
-
                 self.logger.debug(
-                    f"OptionBoxManager.enable_menu: Menu created and cached"
+                    f"OptionBoxManager.enable_menu: Menu created (separate from widget context menu)"
                 )
-                _log_step("cache_menu")
+                _log_step("menu_created")
 
             # Create and add the MenuOption plugin
             # MenuOption is a plugin that creates its own button, so we don't need
@@ -552,18 +495,17 @@ class OptionBoxManager(ptk.LoggingMixin):
         if not self._pending_options:
             return  # Nothing to wrap
 
-        from ._optionBox import OptionBoxWithOrdering
+        from ._optionBox import OptionBox
 
-        _log_step("import_OptionBoxWithOrdering")
+        _log_step("import_OptionBox")
 
         # Create option box with ALL pending options at once
-        self._option_box = OptionBoxWithOrdering(
-            action_handler=None,  # Let plugins create buttons
+        self._option_box = OptionBox(
             show_clear=self._clear_enabled,
             option_order=self._option_order,
-            options=self._pending_options,  # Pass all pending options
+            options=self._pending_options,
         )
-        _log_step("OptionBoxWithOrdering_created")
+        _log_step("OptionBox_created")
 
         # Perform the wrap (expensive operation - but only done once)
         self._container = self._option_box.wrap(self._widget)
@@ -581,18 +523,12 @@ class OptionBoxManager(ptk.LoggingMixin):
             )
 
     def _update_option_box(self):
-        """Update or create option box based on current settings.
-
-        Note: With lazy loading, this won't trigger wrapping immediately.
-        Wrapping only happens when .container is accessed.
-        """
-        from ._optionBox import OptionBox, OptionBoxWithOrdering
+        """Update option box based on current settings."""
+        from ._optionBox import OptionBox
 
         # If we already have an option box, just update it
         if self._option_box:
             self._option_box.set_clear_button_visible(self._clear_enabled)
-            if self._action_handler:
-                self._option_box.set_action_handler(self._action_handler)
             return
 
         # Check if widget already has a menu with an option box
@@ -602,13 +538,11 @@ class OptionBoxManager(ptk.LoggingMixin):
             # Use the existing option box from menu
             self._option_box = existing_option_box
             self._container = existing_option_box.container
-            self._is_wrapped = True  # Mark as wrapped if using existing
-            # Update its settings
+            self._is_wrapped = True
             if self._clear_enabled:
                 self._option_box.set_clear_button_visible(True)
-        elif self._clear_enabled or self._action_handler:
-            # Legacy path: Create and wrap immediately (for backward compatibility)
-            # New code should use add_option() which defers wrapping
+        elif self._clear_enabled:
+            # Create and wrap immediately if clear is enabled
             self._create_option_box()
 
     def _find_existing_option_box(self):
@@ -628,52 +562,40 @@ class OptionBoxManager(ptk.LoggingMixin):
             and hasattr(parent, "objectName")
             and parent.objectName() == "optionBoxContainer"
         ):
-            # Find the option box widget in the container
-            for child in parent.children():
-                if isinstance(child, OptionBox):
-                    return child
+            # Widget is already wrapped - return None, the OptionBoxManager
+            # will handle this case in _update_option_box
+            return None
 
         return None
 
     def _create_option_box(self):
-        """Create and wrap the option box (legacy immediate wrapping).
+        """Create and wrap the option box."""
+        from ._optionBox import OptionBox
 
-        This is kept for backward compatibility with old code paths.
-        New code using add_option() will defer wrapping until container access.
-        """
-        from ._optionBox import OptionBoxWithOrdering
-
-        # When `_menu` was accessed before clear/action settings, we might have
-        # pending plugins queued up. Feed them into the new option box so their
-        # buttons are not dropped when we wrap immediately (common in init).
+        # Include any pending plugins
         pending = self._pending_options or None
 
-        self._option_box = OptionBoxWithOrdering(
-            action_handler=self._action_handler,
+        self._option_box = OptionBox(
             show_clear=self._clear_enabled,
             option_order=self._option_order,
             options=pending,
         )
         self._container = self._option_box.wrap(self._widget)
-        self._is_wrapped = True  # Mark as wrapped
+        self._is_wrapped = True
 
-        # Pending options were consumed above. Clear the list and cancel any
-        # deferred wrap timers that might still be queued from earlier calls.
+        # Clear pending options
         self._pending_options = []
         self._wrap_retry_scheduled = False
 
     def _recreate_option_box(self):
         """Recreate option box with new settings"""
         if self._option_box and self._container:
-            # Store current settings
-            action_handler = self._action_handler
             clear_enabled = self._clear_enabled
 
             # Remove existing
             self.remove()
 
-            # Recreate with new order
-            self._action_handler = action_handler
+            # Recreate
             self._clear_enabled = clear_enabled
             self._create_option_box()
 
@@ -692,10 +614,9 @@ class OptionBoxManager(ptk.LoggingMixin):
             self._option_box = None
             self._container = None
             self._clear_enabled = False
-            self._action_handler = None
             self._menu = None
             self._is_wrapped = False
-            self._pending_options = []  # Clear any pending options
+            self._pending_options = []
 
 
 # -------------------------------------------------------------------------
@@ -703,14 +624,13 @@ class OptionBoxManager(ptk.LoggingMixin):
 # -------------------------------------------------------------------------
 
 
-def add_option_box(widget, action=None, menu=None, show_clear=False, **kwargs):
+def add_option_box(widget, show_clear=False, options=None, **kwargs):
     """Add an option box to any widget with one function call.
 
     Args:
         widget: The widget to wrap
-        action: Action function to call when clicked
-        menu: Menu object to show when clicked
         show_clear: Whether to show clear button for text widgets
+        options: List of option plugins to add
         **kwargs: Additional options
 
     Returns:
@@ -723,7 +643,7 @@ def add_option_box(widget, action=None, menu=None, show_clear=False, **kwargs):
     """
     from ._optionBox import OptionBox
 
-    option_box = OptionBox(action=action, menu=menu, show_clear=show_clear, **kwargs)
+    option_box = OptionBox(show_clear=show_clear, options=options, **kwargs)
     return option_box.wrap(widget)
 
 

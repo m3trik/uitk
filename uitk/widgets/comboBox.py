@@ -11,11 +11,21 @@ from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
 class CustomStyle(QtWidgets.QProxyStyle):
+    """Custom proxy style for ComboBox that handles header text display.
+
+    This style overrides CE_ComboBoxLabel drawing to display custom header
+    text when no item is selected (currentIndex == -1).
+
+    Attributes:
+        combo_box: Reference to the AlignedComboBox using this style.
+    """
+
     def __init__(self, style):
         super().__init__(style)
         self.combo_box = None  # Initialize to None, will be set later
 
     def drawControl(self, element, opt, painter, widget=None):
+        """Override control drawing to handle header text display."""
         if widget is None or isinstance(widget, AlignedComboBox):
             if element == QtWidgets.QStyle.CE_ComboBoxLabel:
                 current_index = self.combo_box.currentIndex()
@@ -32,6 +42,18 @@ class CustomStyle(QtWidgets.QProxyStyle):
 
 
 class AlignedComboBox(QtWidgets.QComboBox):
+    """ComboBox with header text and alignment support.
+
+    Extends QComboBox to support:
+    - Header text displayed when no item is selected
+    - Custom text alignment for headers
+    - Stylesheet-aware padding for proper text positioning
+
+    Attributes:
+        header_text (str): Text displayed when currentIndex is -1.
+        header_alignment (Qt.Alignment): Alignment for header text.
+    """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.header_text = None
@@ -42,10 +64,20 @@ class AlignedComboBox(QtWidgets.QComboBox):
         self.setStyle(self.custom_style)
 
     def setHeaderText(self, text):
+        """Set the header text displayed when no item is selected.
+
+        Parameters:
+            text (str): The header text to display.
+        """
         self.header_text = text
         self.update()
 
     def setHeaderAlignment(self, alignment):
+        """Set the alignment for header text.
+
+        Parameters:
+            alignment (str): One of 'left', 'right', or 'center'.
+        """
         if alignment == "left":
             self.header_alignment = QtCore.Qt.AlignLeft
         elif alignment == "right":
@@ -57,13 +89,22 @@ class AlignedComboBox(QtWidgets.QComboBox):
         self.update()
 
     def get_stylesheet_property(self, property_name):
+        """Extract a numeric property value from the widget's stylesheet.
+
+        Parameters:
+            property_name (str): The CSS property name to extract.
+
+        Returns:
+            int: The property value, or 0 if not found.
+        """
         stylesheet = self.styleSheet()
-        match = re.search(f"{property_name} *: *(\d+)", stylesheet)
+        match = re.search(rf"{property_name} *: *(\d+)", stylesheet)
         if match:
             return int(match.group(1))
         return 0
 
     def paintEvent(self, event):
+        """Custom paint event to draw header text when no selection."""
         # Always call the parent class's paintEvent to ensure all elements are drawn
         super().paintEvent(event)
 

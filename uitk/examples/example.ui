@@ -2,70 +2,47 @@
 <ui version="4.0">
  <class>QtUi</class>
  <widget class="QMainWindow" name="QtUi">
-  <property name="enabled">
-   <bool>true</bool>
-  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>480</width>
-    <height>600</height>
+    <width>600</width>
+    <height>480</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>UITK Comprehensive Example</string>
-  </property>
-  <property name="tabShape">
-   <enum>QTabWidget::Triangular</enum>
-  </property>
-  <property name="dockNestingEnabled">
-   <bool>true</bool>
-  </property>
-  <property name="dockOptions">
-   <set>QMainWindow::AllowNestedDocks|QMainWindow::AllowTabbedDocks|QMainWindow::AnimatedDocks|QMainWindow::ForceTabbedDocks</set>
+   <string>UITK Example</string>
   </property>
   <widget class="QWidget" name="central_widget">
-   <property name="minimumSize">
-    <size>
-     <width>480</width>
-     <height>550</height>
-    </size>
-   </property>
    <layout class="QVBoxLayout" name="main_layout">
     <property name="spacing">
-     <number>2</number>
+     <number>1</number>
     </property>
     <property name="leftMargin">
-     <number>4</number>
+     <number>1</number>
     </property>
     <property name="topMargin">
-     <number>0</number>
+     <number>1</number>
     </property>
     <property name="rightMargin">
-     <number>4</number>
+     <number>1</number>
     </property>
     <property name="bottomMargin">
-     <number>4</number>
+     <number>1</number>
     </property>
+    <!-- HEADER -->
     <item>
      <widget class="Header" name="header">
-      <property name="sizePolicy">
-       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-        <horstretch>0</horstretch>
-        <verstretch>0</verstretch>
-       </sizepolicy>
-      </property>
       <property name="minimumSize">
        <size>
         <width>0</width>
-        <height>24</height>
+        <height>22</height>
        </size>
       </property>
       <property name="maximumSize">
        <size>
         <width>16777215</width>
-        <height>24</height>
+        <height>22</height>
        </size>
       </property>
       <property name="font">
@@ -75,258 +52,281 @@
        </font>
       </property>
       <property name="text">
-       <string>📋 UITK COMPREHENSIVE EXAMPLE</string>
+       <string>EXAMPLE</string>
       </property>
      </widget>
     </item>
+    <!-- INPUT SECTION -->
     <item>
-     <widget class="QGroupBox" name="document_group">
+     <widget class="QGroupBox" name="input_group">
       <property name="title">
-       <string>Document Management</string>
+       <string>Navigation</string>
       </property>
-      <layout class="QVBoxLayout" name="document_layout">
+      <layout class="QVBoxLayout" name="input_layout">
        <property name="spacing">
         <number>4</number>
        </property>
+       <property name="leftMargin">
+        <number>6</number>
+       </property>
+       <property name="topMargin">
+        <number>6</number>
+       </property>
+       <property name="rightMargin">
+        <number>6</number>
+       </property>
+       <property name="bottomMargin">
+        <number>6</number>
+       </property>
+       <!-- LineEdit shows path to uitk root -->
        <item>
-        <layout class="QHBoxLayout" name="filename_layout">
+        <widget class="LineEdit" name="txt_input">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>22</height>
+          </size>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="placeholderText">
+          <string>Path to uitk package</string>
+         </property>
+         <property name="toolTip">
+          <string>File path to the uitk package root</string>
+         </property>
+        </widget>
+       </item>
+       <!-- ComboBoxes row -->
+       <item>
+        <layout class="QHBoxLayout" name="combobox_layout">
+         <property name="spacing">
+          <number>4</number>
+         </property>
          <item>
-          <widget class="QLabel" name="filename_label">
-           <property name="text">
-            <string>Filename:</string>
-           </property>
+          <widget class="ComboBox" name="cmb_options">
            <property name="minimumSize">
             <size>
-             <width>60</width>
-             <height>0</height>
+             <width>0</width>
+             <height>22</height>
             </size>
+           </property>
+           <property name="toolTip">
+            <string>Select package to browse</string>
            </property>
           </widget>
          </item>
          <item>
-          <widget class="LineEdit" name="filename_edit">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
+          <widget class="WidgetComboBox" name="cmb_view">
+           <property name="minimumSize">
+            <size>
+             <width>120</width>
+             <height>22</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>150</width>
+             <height>22</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>View options</string>
            </property>
           </widget>
          </item>
         </layout>
        </item>
-       <item>
-        <widget class="QTextEdit" name="document_edit">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>200</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="document_actions">
-         <item>
-          <widget class="PushButton" name="save_button">
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>28</height>
-            </size>
-           </property>
-           <property name="text">
-            <string>💾 Save Document</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="PushButton" name="analyze_button">
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>28</height>
-            </size>
-           </property>
-           <property name="text">
-            <string>📊 Analyze Text</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="horizontalSpacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="word_count_label">
-         <property name="text">
-          <string>Words: 0 | Characters: 0</string>
-         </property>
-         <property name="styleSheet">
-          <string>color: #666; font-size: 10px;</string>
-         </property>
-        </widget>
-       </item>
       </layout>
      </widget>
     </item>
+    <!-- TREE VIEW SECTION -->
     <item>
-     <widget class="QGroupBox" name="settings_group">
+     <widget class="QGroupBox" name="tree_group">
       <property name="title">
-       <string>Settings &amp; Preferences</string>
+       <string>Package Explorer</string>
       </property>
-      <layout class="QGridLayout" name="settings_layout">
+      <layout class="QVBoxLayout" name="tree_layout">
        <property name="spacing">
-        <number>4</number>
+        <number>1</number>
        </property>
-       <item row="0" column="0">
-        <widget class="QLabel" name="theme_label">
-         <property name="text">
-          <string>Theme:</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="1">
-        <widget class="ComboBox" name="theme_combo">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="2">
-        <widget class="PushButton" name="open_settings_button">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="TreeWidget" name="tree_demo">
          <property name="minimumSize">
           <size>
-           <width>100</width>
-           <height>24</height>
+           <width>0</width>
+           <height>120</height>
           </size>
          </property>
-         <property name="text">
-          <string>⚙️ Preferences</string>
+         <property name="alternatingRowColors">
+          <bool>false</bool>
          </property>
-        </widget>
-       </item>
-       <item row="1" column="0">
-        <widget class="QLabel" name="font_size_label">
-         <property name="text">
-          <string>Font Size:</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="1">
-        <widget class="SpinBox" name="font_size_spin">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="minimum">
-          <number>8</number>
-         </property>
-         <property name="maximum">
-          <number>72</number>
-         </property>
-         <property name="value">
-          <number>12</number>
-         </property>
-         <property name="suffix">
-          <string> pt</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="2">
-        <widget class="QCheckBox" name="autosave_enabled">
-         <property name="text">
-          <string>Enable Auto-save</string>
-         </property>
+         <column>
+          <property name="text">
+           <string>Item</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Value</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Type</string>
+          </property>
+         </column>
         </widget>
        </item>
       </layout>
      </widget>
     </item>
+    <!-- COLLAPSIBLE OUTPUT SECTION -->
     <item>
-     <widget class="QGroupBox" name="legacy_examples_group">
+     <widget class="CollapsableGroup" name="output_group">
       <property name="title">
-       <string>Legacy Examples (Basic Widgets)</string>
+       <string>• • •</string>
       </property>
-      <layout class="QGridLayout" name="legacy_layout">
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
+      </property>
+      <layout class="QVBoxLayout" name="output_layout">
        <property name="spacing">
-        <number>4</number>
+        <number>1</number>
        </property>
-       <item row="0" column="0">
-        <widget class="PushButton" name="button_a">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QTextEdit" name="txt_output">
          <property name="minimumSize">
           <size>
            <width>0</width>
-           <height>24</height>
+           <height>80</height>
           </size>
          </property>
-         <property name="text">
-          <string>Legacy Button</string>
+         <property name="readOnly">
+          <bool>true</bool>
          </property>
-        </widget>
-       </item>
-       <item row="0" column="1">
-        <widget class="PushButton" name="button_b">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>24</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>Menu Button</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="0">
-        <widget class="QCheckBox" name="checkbox">
-         <property name="text">
-          <string>Example Checkbox</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="1">
-        <widget class="DoubleSpinBox" name="spinbox">
-         <property name="maximum">
-          <double>100.000000000000000</double>
-         </property>
-         <property name="value">
-          <double>50.000000000000000</double>
+         <property name="verticalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOff</enum>
          </property>
         </widget>
        </item>
       </layout>
      </widget>
     </item>
+    <!-- TEST WIDGETS - Hidden widgets for unit tests (zero size) -->
     <item>
-     <widget class="QLabel" name="status_label">
-      <property name="text">
-       <string>&lt;b style=&quot;color: green;&quot;&gt;✓&lt;/b&gt; Ready</string>
+     <layout class="QHBoxLayout" name="test_layout">
+      <property name="spacing">
+       <number>0</number>
       </property>
-      <property name="styleSheet">
-       <string>padding: 4px; border: 1px solid #ccc; border-radius: 2px; background-color: #f9f9f9;</string>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QSpinBox" name="spinbox">
+        <property name="maximumSize">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="maximum">
+         <number>100</number>
+        </property>
+        <property name="value">
+         <number>50</number>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="checkbox">
+        <property name="maximumSize">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>Test</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="PushButton" name="button_a">
+        <property name="maximumSize">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>A</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="PushButton" name="button_b">
+        <property name="maximumSize">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>B</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <!-- FOOTER -->
+    <item>
+     <widget class="Footer" name="footer">
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>18</height>
+       </size>
+      </property>
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>18</height>
+       </size>
       </property>
      </widget>
     </item>
@@ -337,51 +337,45 @@
   <customwidget>
    <class>Header</class>
    <extends>QLabel</extends>
-   <header>uitk.widgets.header.Header.h</header>
+   <header>uitk.widgets.header</header>
   </customwidget>
   <customwidget>
-   <class>PushButton</class>
-   <extends>QPushButton</extends>
-   <header>uitk.widgets.pushbutton.PushButton.h</header>
+   <class>Footer</class>
+   <extends>QWidget</extends>
+   <header>uitk.widgets.footer</header>
   </customwidget>
   <customwidget>
    <class>LineEdit</class>
    <extends>QLineEdit</extends>
-   <header>uitk.widgets.lineedit.LineEdit.h</header>
+   <header>uitk.widgets.lineEdit</header>
+  </customwidget>
+  <customwidget>
+   <class>PushButton</class>
+   <extends>QPushButton</extends>
+   <header>uitk.widgets.pushButton</header>
   </customwidget>
   <customwidget>
    <class>ComboBox</class>
    <extends>QComboBox</extends>
-   <header>uitk.widgets.combobox.ComboBox.h</header>
+   <header>uitk.widgets.comboBox</header>
   </customwidget>
   <customwidget>
-   <class>SpinBox</class>
-   <extends>QSpinBox</extends>
-   <header>uitk.widgets.spinbox.SpinBox.h</header>
+   <class>WidgetComboBox</class>
+   <extends>QComboBox</extends>
+   <header>uitk.widgets.widgetComboBox</header>
   </customwidget>
   <customwidget>
-   <class>DoubleSpinBox</class>
-   <extends>QDoubleSpinBox</extends>
-   <header>uitk.widgets.doublespinbox.DoubleSpinBox.h</header>
+   <class>CollapsableGroup</class>
+   <extends>QGroupBox</extends>
+   <header>uitk.widgets.collapsableGroup</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>TreeWidget</class>
+   <extends>QTreeWidget</extends>
+   <header>uitk.widgets.treeWidget</header>
   </customwidget>
  </customwidgets>
  <resources/>
  <connections/>
- <designerdata>
-  <property name="gridDeltaX">
-   <number>5</number>
-  </property>
-  <property name="gridDeltaY">
-   <number>5</number>
-  </property>
-  <property name="gridSnapX">
-   <bool>true</bool>
-  </property>
-  <property name="gridSnapY">
-   <bool>true</bool>
-  </property>
-  <property name="gridVisible">
-   <bool>true</bool>
-  </property>
- </designerdata>
 </ui>

@@ -1,5 +1,30 @@
 # !/usr/bin/python
 # coding=utf-8
+"""Signal utilities and decorators for Qt slot management.
+
+This module provides decorators for annotating slot methods with their
+intended signal connections, used by Switchboard for automatic wiring.
+
+Functions:
+    block_signals: Decorator that blocks widget signals during method execution.
+
+Classes:
+    Signals: Decorator class to specify which signals a slot should connect to.
+
+Example:
+    Using @Signals to override default signal connections::
+
+        class MySlots:
+            @Signals('clicked', 'pressed')
+            def my_button(self, widget=None):
+                print("Button interacted")
+
+    Using @block_signals to prevent signal loops::
+
+        @Signals.blockSignals
+        def update_widget(self):
+            self.spinbox.setValue(10)  # Won't trigger valueChanged
+"""
 from functools import wraps
 
 
