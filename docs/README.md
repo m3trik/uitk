@@ -473,13 +473,12 @@ class EditorSlots:
         widget.addItems(["Arial", "Helvetica", "Courier"])
 
     def cmb_font(self, index):
-        from PySide6.QtGui import QFont
         font_name = self.ui.cmb_font.currentText()
-        self.ui.txt_content.setFont(QFont(font_name))
+        self.ui.txt_content.setFont(self.sb.QtGui.QFont(font_name))
 
     # Checkbox with state parameter
     def chk_wrap(self, state):
-        from PySide6.QtWidgets import QTextEdit
+        QTextEdit = self.sb.QtWidgets.QTextEdit
         mode = QTextEdit.WidgetWidth if state else QTextEdit.NoWrap
         self.ui.txt_content.setLineWrapMode(mode)
 
