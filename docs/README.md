@@ -1,12 +1,24 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
 [![Version](https://img.shields.io/badge/Version-1.0.35-blue.svg)](https://pypi.org/project/uitk/)
-[![Tests](https://img.shields.io/badge/tests-399%20passed-brightgreen.svg)](test/)
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![Qt](https://img.shields.io/badge/Qt-PySide6%20|%20PyQt5-green.svg)](https://doc.qt.io/)
+[![Tests](https://img.shields.io/badge/tests-554%20passed-brightgreen.svg)](test/)
 
 # UITK: UI Toolkit for Dynamic Qt Applications
 
 <!-- short_description_start -->
-UITK is a convention-based Qt UI framework that eliminates manual signal/slot wiring. It dynamically loads `.ui` files, auto-connects widgets to Python methods by name, and provides enhanced widgets with built-in menus, state persistence, and rich text support.
+UITK is a **convention-based Qt UI framework** that eliminates manual signal/slot wiring. It dynamically loads `.ui` files, auto-connects widgets to Python methods by name, and provides enhanced widgets with built-in menus, state persistence, and rich text support.
 <!-- short_description_end -->
+
+## Why UITK?
+
+| Traditional Qt | With UITK |
+|----------------|-----------|
+| Manual `connectSlotsByName()` calls | Automatic connection by naming convention |
+| Boilerplate signal/slot wiring | Just name your method after the widget |
+| Basic widgets | Enhanced widgets with menus, state persistence |
+| Manual state saving/loading | Automatic widget state persistence |
+| Scattered styling code | Centralized theming system |
 
 ## Installation
 
@@ -14,102 +26,236 @@ UITK is a convention-based Qt UI framework that eliminates manual signal/slot wi
 pip install uitk
 ```
 
+**Requirements:** Python 3.8+, PySide6 or PyQt5
+
 ## Quick Start
 
-```python
-from uitk import Switchboard
+### 1. Create Your UI
+Design your UI in Qt Designer and save as `task_manager.ui` with widgets named:
+- `btn_add` (QPushButton)
+- `txt_task` (QLineEdit)  
+- `list_tasks` (QListWidget)
 
-# Create switchboard with UI and slot sources
-sb = Switchboard(
-    ui_source="path/to/ui_files",      # Directory with .ui files
-    slot_source=MySlotClass,            # Class with slot methods
-)
-
-# Access and show a UI (filename: my_window.ui)
-ui = sb.my_window
-ui.show(app_exec=True)
-```
-
-## How It Works
-
-UITK uses **naming conventions** to automatically connect widgets to methods:
-
-| Widget Name | Connected Method | Init Method |
-|-------------|------------------|-------------|
-| `save_button` | `save_button()` | `save_button_init(widget)` |
-| `txt_task` | `txt_task(widget)` | `txt_task_init(widget)` |
-| `cmb_filter` | `cmb_filter(index, widget)` | `cmb_filter_init(widget)` |
-
-### Slot Class Example
+### 2. Create Slot Class
 
 ```python
+# task_slots.py
 from uitk import Signals
 
-class TaskManagerSlots:
+class TaskSlots:
     def __init__(self, **kwargs):
         self.sb = kwargs.get("switchboard")
         self.ui = self.sb.loaded_ui.task_manager
 
-    # Called once during widget initialization
+    # Called once when widget initializes
     def btn_add_init(self, widget):
-        """Set up button with a priority menu."""
-        widget.setText("Add Task")
-        widget.menu.setTitle("PRIORITY")
-        widget.menu.add("QRadioButton", setText="High", setObjectName="high")
-        widget.menu.add("QRadioButton", setText="Normal", setObjectName="normal", setChecked=True)
-    
-    # Called on button click (default signal)
-    def btn_add(self):
-        """Add task with selected priority."""
-        priority = "High" if self.ui.btn_add.menu.high.isChecked() else "Normal"
-        self.ui.list_tasks.addItem(f"[{priority}] {self.ui.txt_task.text()}")
+        widget.setText("➕ Add Task")
+        # Add a priority menu (right-click)
+        widget.menu.add("QRadioButton", setText="🔴 High", setObjectName="high")
+        widget.menu.add("QRadioButton", setText="🟡 Normal", setObjectName="normal", setChecked=True)
+        widget.menu.add("QRadioButton", setText="🟢 Low", setObjectName="low")
 
-    # Override default signal with @Signals decorator
+    # Called on button click
+    def btn_add(self):
+        task = self.ui.txt_task.text().strip()
+        if task:
+            priority = "🔴" if self.ui.btn_add.menu.high.isChecked() else \
+                       "🟢" if self.ui.btn_add.menu.low.isChecked() else "🟡"
+            self.ui.list_tasks.addItem(f"{priority} {task}")
+            self.ui.txt_task.clear()
+
+    # Use custom signal instead of default
     @Signals("returnPressed")
     def txt_task(self, widget):
-        """Add task when Enter is pressed."""
-        self.btn_add()
+        self.btn_add()  # Add task on Enter key
 ```
 
-## Key Features
+### 3. Run Application
 
-### Dynamic UI Loading
-- Auto-discovers `.ui` files from specified directories
-- Lazy-loads UIs on first access via attribute syntax (`sb.my_window`)
-- Registers custom widgets automatically
-
-### Enhanced Widgets
-Extended Qt widgets with additional capabilities:
-
-| Widget | Enhancements |
-|--------|--------------|
-| `PushButton` | Built-in menu system, rich text, option box support |
-| `LineEdit` | Context menus, action colors, show/hide signals |
-| `ComboBox` | Header alignment, enhanced item management |
-| `Menu` | Grid layout, item data, persistent mode, positioning |
-| `MainWindow` | State/settings managers, footer, header integration |
-| `Header/Footer` | Draggable window header, status bar with auto-truncation |
-
-### Built-in Menu System
 ```python
-def my_button_init(self, widget):
-    widget.menu.setTitle("Options")
-    widget.menu.add("QComboBox", addItems=["A", "B"], setObjectName="choice")
-    widget.menu.add("QSpinBox", setValue=10, setObjectName="amount")
+from uitk import Switchboard
+from task_slots import TaskSlots
 
-def my_button(self, widget):
-    choice = widget.menu.choice.currentText()
-    amount = widget.menu.amount.value()
+sb = Switchboard(
+    ui_source="./ui_files",    # Directory with .ui files
+    slot_source=TaskSlots,      # Class with slot methods
+)
+
+ui = sb.task_manager           # Loads task_manager.ui
+ui.show(app_exec=True)         # Show and start event loop
 ```
 
-### State Persistence
-Widget states (values, geometry, visibility) automatically persist across sessions.
+**That's it!** No manual signal connections needed.
 
-### Styling
+## Core Concepts
+
+### Naming Conventions
+
+UITK auto-connects widgets to methods based on naming:
+
+| Widget Name | Slot Method | Init Method | Purpose |
+|-------------|-------------|-------------|---------|
+| `btn_save` | `btn_save()` | `btn_save_init(widget)` | Button clicked |
+| `txt_name` | `txt_name(widget)` | `txt_name_init(widget)` | Text editing finished |
+| `cmb_filter` | `cmb_filter(index, widget)` | `cmb_filter_init(widget)` | Selection changed |
+| `chk_active` | `chk_active(state, widget)` | `chk_active_init(widget)` | State changed |
+| `spn_count` | `spn_count(value, widget)` | `spn_count_init(widget)` | Value changed |
+
+### Default Signal Mappings
+
+| Widget Type | Default Signal | Slot Receives |
+|-------------|----------------|---------------|
+| `QPushButton` | `clicked` | `()` |
+| `QCheckBox` | `stateChanged` | `(state, widget)` |
+| `QComboBox` | `currentIndexChanged` | `(index, widget)` |
+| `QSpinBox/QDoubleSpinBox` | `valueChanged` | `(value, widget)` |
+| `QLineEdit` | `editingFinished` | `(widget)` |
+| `QTextEdit` | `textChanged` | `(widget)` |
+| `QSlider` | `valueChanged` | `(value, widget)` |
+| `QListWidget` | `itemSelectionChanged` | `(widget)` |
+
+### Override Signals with @Signals Decorator
+
 ```python
+from uitk import Signals
+
+@Signals("textChanged")  # Instead of default editingFinished
+def txt_search(self, widget):
+    self.filter_results(widget.text())
+
+@Signals("clicked", "doubleClicked")  # Multiple signals
+def list_items(self, widget):
+    self.handle_selection()
+```
+
+## Enhanced Widgets
+
+UITK provides enhanced versions of standard Qt widgets:
+
+### PushButton
+```python
+def btn_options_init(self, widget):
+    widget.setText("Options")
+    widget.setRichText("<b>Bold</b> Text")  # Rich text support
+    
+    # Built-in menu (right-click by default)
+    widget.menu.setTitle("Settings")
+    widget.menu.add("QCheckBox", setText="Auto-save", setObjectName="chk_autosave")
+    widget.menu.add("QSpinBox", setValue=5, setObjectName="spn_interval")
+    
+    # Option box (expandable panel)
+    widget.option_box.add("QSlider", setObjectName="slider_opacity")
+```
+
+### Menu System
+```python
+# Create standalone menu
+from uitk.widgets.menu import Menu
+
+menu = Menu.create_context_menu()  # Right-click menu
+menu = Menu.create_dropdown_menu() # Dropdown below widget
+
+# Add items
+menu.add("QLabel", setText="Header")
+menu.add("QPushButton", setText="Action", data={"id": 1})
+menu.add(["Option A", "Option B", "Option C"])  # Quick add multiple
+
+# Query items
+items = menu.get_items(types="QPushButton")
+data = menu.get_item_data(button)
+
+# Positioning
+menu.show_as_popup(position="cursorPos")  # At cursor
+menu.show_as_popup(position="bottom")      # Below parent
+```
+
+### LineEdit
+```python
+def txt_email_init(self, widget):
+    # Action colors for validation feedback
+    widget.set_action_color("valid")    # Green indicator
+    widget.set_action_color("invalid")  # Red indicator
+    widget.set_action_color("warning")  # Yellow indicator
+    
+    # Built-in context menu
+    widget.menu.add("QAction", setText="Clear", triggered=widget.clear)
+```
+
+### ComboBox
+```python
+def cmb_font_init(self, widget):
+    widget.setHeaderText("Select Font")
+    widget.setHeaderAlignment("center")
+    widget.addItems(["Arial", "Helvetica", "Times"])
+```
+
+### MainWindow Features
+```python
+# Styling
 ui.set_attributes(WA_TranslucentBackground=True)
 ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
 ui.style.set(theme="dark", style_class="translucentBgWithBorder")
+
+# State persistence (automatic)
+# Widget values, geometry, and visibility persist across sessions
+
+# Window positioning
+ui.show(pos="screen")   # Center on screen
+ui.show(pos="cursor")   # At cursor position
+ui.show(pos=QPoint(100, 100))  # Specific position
+```
+
+## Advanced Features
+
+### Multiple UIs
+```python
+sb = Switchboard(
+    ui_source="./ui_files",
+    slot_source=MySlots,
+)
+
+# Access different UIs
+main_ui = sb.main_window
+settings_ui = sb.settings_dialog
+about_ui = sb.about
+
+# Navigate between them
+settings_ui.show()
+main_ui.hide()
+```
+
+### Button Groups
+```python
+def setup_init(self):
+    # Create exclusive button group
+    self.sb.create_button_groups(
+        self.ui.menu,
+        "chk_option_001-3",  # Range: chk_option_001, 002, 003
+        allow_deselect=False,
+        allow_multiple=False,
+    )
+```
+
+### Custom Widget Registration
+```python
+from uitk.widgets.pushButton import PushButton as UitkPushButton
+
+sb = Switchboard(
+    ui_source="./ui_files",
+    slot_source=MySlots,
+    widget_source=[UitkPushButton],  # Register custom widgets
+)
+```
+
+### Icon Management
+```python
+sb = Switchboard(
+    ui_source="./ui_files",
+    slot_source=MySlots,
+    icon_source="./icons",  # Icon directory
+)
+
+icon = sb.get_icon("save")  # Gets save.svg/png from icons folder
 ```
 
 ## Package Structure
@@ -118,26 +264,25 @@ ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 uitk/
 ├── switchboard.py      # Core UI loader and signal router
 ├── signals.py          # @Signals decorator for custom signal binding
-├── events.py           # Event filtering and mouse tracking
-├── file_manager.py     # Registry for UI files, slots, and widgets
-└── widgets/            # Enhanced Qt widgets
-    ├── mainWindow.py   # Main window with state management
-    ├── menu.py         # Dynamic menu system
-    ├── header.py       # Draggable header with buttons
-    ├── footer.py       # Status footer with truncation
-    ├── pushButton.py   # Button with menu/option box
-    ├── lineEdit.py     # Enhanced line input
-    ├── comboBox.py     # Enhanced combo box
+├── events.py           # Event filtering (EventFactoryFilter, MouseTracking)
+├── file_manager.py     # Registry for UI files, slots, widgets
+└── widgets/
+    ├── mainWindow.py   # Main window with state/settings managers
+    ├── menu.py         # Dynamic menu system with positioning
+    ├── header.py       # Draggable window header
+    ├── footer.py       # Status bar with auto-truncation
+    ├── pushButton.py   # Button with menu + option box
+    ├── lineEdit.py     # Input with action colors
+    ├── comboBox.py     # ComboBox with header alignment
     ├── checkBox.py     # Enhanced checkbox
     ├── label.py        # Rich text label
     ├── textEdit.py     # Enhanced text editor
-    ├── optionBox/      # Collapsible option containers
-    └── mixins/         # Shared widget functionality
+    └── mixins/         # Shared functionality
         ├── menu_mixin.py        # Menu integration
-        ├── state_manager.py     # State persistence
-        ├── settings_manager.py  # Settings storage
-        ├── style_sheet.py       # Theme and styling
-        └── ...
+        ├── state_manager.py     # Widget state persistence
+        ├── settings_manager.py  # Application settings
+        ├── style_sheet.py       # Theming system
+        └── text.py              # Rich text support
 ```
 
 ## Running the Example
@@ -149,50 +294,75 @@ sb = Switchboard(
     ui_source=examples,
     slot_source=examples.ExampleSlots,
 )
+
 ui = sb.example
 ui.show(pos="screen", app_exec=True)
 ```
 
-## Default Signal Mappings
-
-| Widget Type | Default Signal |
-|-------------|----------------|
-| `QPushButton` | `clicked` |
-| `QCheckBox` | `stateChanged` |
-| `QComboBox` | `currentIndexChanged` |
-| `QSpinBox` | `valueChanged` |
-| `QLineEdit` | `editingFinished` |
-| `QTextEdit` | `textChanged` |
-
-Override any default with `@Signals("signal_name")` decorator.
-
-## API Reference
+## API Quick Reference
 
 ### Switchboard
-
 ```python
-Switchboard(
-    parent=None,                    # Parent widget
-    ui_source=None,                 # Path/module for .ui files
-    slot_source=None,               # Class/module with slot methods  
-    widget_source=None,             # Custom widget classes
-    icon_source=None,               # Icon directory
+sb = Switchboard(
+    parent=None,              # Parent widget
+    ui_source=None,           # Path/module for .ui files
+    slot_source=None,         # Class/module with slot methods
+    widget_source=None,       # Custom widget classes to register
+    icon_source=None,         # Icon directory path
 )
+
+# Access UIs
+ui = sb.loaded_ui.my_window   # By loaded_ui property
+ui = sb.my_window             # Direct attribute access
+
+# Utilities
+sb.message_box("Hello!")      # Message dialog
+sb.get_icon("save")           # Get registered icon
+sb.registered_widgets         # Access widget registry
 ```
 
-**Key Methods:**
-- `sb.loaded_ui.<name>` - Access loaded UI by filename
-- `sb.registered_widgets.<WidgetClass>` - Access registered widget classes
-- `sb.message_box(text)` - Show message dialog
-- `sb.get_icon(name)` - Get icon from registered sources
-
 ### MainWindow
-
 ```python
 ui.show(pos="cursor"|"screen"|QPoint, app_exec=False)
-ui.set_attributes(**attrs)          # Set Qt widget attributes
-ui.set_flags(**flags)               # Set Qt window flags
-ui.style.set(theme=..., style_class=...)
+ui.hide()
+ui.close()
+
+ui.set_attributes(WA_TranslucentBackground=True, ...)
+ui.set_flags(FramelessWindowHint=True, ...)
+ui.style.set(theme="dark", style_class="...")
+
+ui.widgets                    # Set of registered widgets
+ui.slots                      # Slots instance
+ui.settings                   # Settings manager
+ui.state                      # State manager
+```
+
+### Menu
+```python
+menu = Menu(parent=widget, trigger_button="right", position="cursorPos")
+menu = Menu.create_context_menu()
+menu = Menu.create_dropdown_menu()
+
+menu.add("QLabel", setText="Item")
+menu.add(["A", "B", "C"])
+menu.add({"Key": "Value"})
+
+menu.get_items(types="QPushButton")
+menu.get_item(0)              # By index
+menu.get_item("Item Text")    # By text
+menu.clear()
+
+menu.show_as_popup()
+menu.hide()
+```
+
+## Contributing
+
+Contributions welcome! Please run tests before submitting:
+
+```bash
+cd uitk
+python -m pytest test/ -v
 ```
 
 ## License
