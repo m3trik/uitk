@@ -37,7 +37,7 @@ class MySlots:
         print("Saved!")
 
 sb = Switchboard(ui_source="./", slot_source=MySlots)
-sb.my_app.show(app_exec=True)
+sb.loaded_ui.my_app.show(app_exec=True)
 ```
 
 That's it. No `connect()` calls. No widget lookups. No manual state management.
@@ -137,27 +137,30 @@ Every widget automatically gains these capabilities:
 
 ```python
 def btn_options_init(self, widget):
-    widget.menu.setTitle("Settings")
-    widget.menu.add("QCheckBox", setText="Auto-save", setObjectName="chk_auto")
-    widget.menu.add("QSpinBox", setPrefix="Interval: ", setObjectName="spn_int")
-    widget.menu.add("QSeparator")
-    widget.menu.add("QPushButton", setText="Apply", setObjectName="btn_apply")
+    menu = widget.menu
+    menu.setTitle("Settings")
+    menu.add("QCheckBox", setText="Auto-save", setObjectName="chk_auto")
+    menu.add("QSpinBox", setPrefix="Interval: ", setObjectName="spn_int")
+    menu.add("QSeparator")
+    menu.add("QPushButton", setText="Apply", setObjectName="btn_apply")
 
 def btn_options(self):
-    auto = self.ui.btn_options.menu.chk_auto.isChecked()
-    interval = self.ui.btn_options.menu.spn_int.value()
+    menu = self.ui.btn_options.menu
+    auto = menu.chk_auto.isChecked()
+    interval = menu.spn_int.value()
 ```
 
 ### `.option_box` — Action Panel
 
 ```python
 def txt_path_init(self, widget):
-    widget.option_box.menu.add(
+    menu = widget.option_box.menu
+    menu.add(
         "QPushButton",
         setText="Browse...",
         setObjectName="btn_browse"
     )
-    widget.option_box.menu.btn_browse.clicked.connect(self.browse)
+    menu.btn_browse.clicked.connect(self.browse)
 ```
 
 ### `menu.add()` Flexibility
@@ -454,8 +457,9 @@ class EditorSlots:
 
     # Button initialization
     def btn_open_init(self, widget):
-        widget.menu.add("QPushButton", setText="Recent...", setObjectName="btn_recent")
-        widget.menu.btn_recent.clicked.connect(self.show_recent)
+        menu = widget.menu
+        menu.add("QPushButton", setText="Recent...", setObjectName="btn_recent")
+        menu.btn_recent.clicked.connect(self.show_recent)
 
     def btn_open(self):
         path = self.sb.file_dialog(file_types="Text (*.txt)")
@@ -482,7 +486,7 @@ class EditorSlots:
         self.sb.message_box("Recent files...")
 
 sb = Switchboard(ui_source="./", slot_source=EditorSlots)
-ui = sb.editor
+ui = sb.loaded_ui.editor
 ui.style.set(theme="dark")
 ui.show(pos="screen", app_exec=True)
 ```
