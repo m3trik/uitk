@@ -870,7 +870,7 @@ Header > QPushButton:hover {
     background-color: {MAIN_BACKGROUND_ALPHA};
     border: none;
 }
-Header > QPushButton#hide_button:hover {
+Header > QPushButton#hdr_hide:hover {
     background-color: red;
     border: none;
 }
