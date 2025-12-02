@@ -78,19 +78,19 @@ class TestHeaderButtons(QtBaseTestCase):
 
     def test_config_buttons_adds_pin_button(self):
         """Should add pin button when configured."""
-        header = self.track_widget(Header(config_buttons=["pin_button"]))
-        self.assertIn("pin_button", header.buttons)
+        header = self.track_widget(Header(config_buttons=["pin"]))
+        self.assertIn("pin", header.buttons)
 
     def test_config_buttons_adds_multiple_buttons(self):
         """Should add multiple buttons when configured."""
-        header = self.track_widget(Header(config_buttons=["pin_button", "hide_button"]))
-        self.assertIn("pin_button", header.buttons)
-        self.assertIn("hide_button", header.buttons)
+        header = self.track_widget(Header(config_buttons=["pin", "hide"]))
+        self.assertIn("pin", header.buttons)
+        self.assertIn("hide", header.buttons)
 
     def test_config_buttons_ignores_unknown(self):
         """Should ignore unknown button names."""
-        header = self.track_widget(Header(config_buttons=["unknown_button"]))
-        self.assertNotIn("unknown_button", header.buttons)
+        header = self.track_widget(Header(config_buttons=["unknown"]))
+        self.assertNotIn("unknown", header.buttons)
 
     def test_has_buttons_returns_false_when_empty(self):
         """Should return False when no buttons exist."""
@@ -99,20 +99,20 @@ class TestHeaderButtons(QtBaseTestCase):
 
     def test_has_buttons_returns_true_when_buttons_exist(self):
         """Should return True when buttons exist."""
-        header = self.track_widget(Header(config_buttons=["pin_button"]))
+        header = self.track_widget(Header(config_buttons=["pin"]))
         self.assertTrue(header.has_buttons())
 
     def test_has_buttons_checks_specific_type(self):
         """Should check for specific button type."""
-        header = self.track_widget(Header(config_buttons=["pin_button"]))
-        self.assertTrue(header.has_buttons("pin_button"))
-        self.assertFalse(header.has_buttons("hide_button"))
+        header = self.track_widget(Header(config_buttons=["pin"]))
+        self.assertTrue(header.has_buttons("pin"))
+        self.assertFalse(header.has_buttons("hide"))
 
     def test_has_buttons_checks_list_of_types(self):
         """Should check for list of button types."""
-        header = self.track_widget(Header(config_buttons=["pin_button"]))
-        self.assertTrue(header.has_buttons(["pin_button", "hide_button"]))
-        self.assertFalse(header.has_buttons(["hide_button", "menu_button"]))
+        header = self.track_widget(Header(config_buttons=["pin"]))
+        self.assertTrue(header.has_buttons(["pin", "hide"]))
+        self.assertFalse(header.has_buttons(["hide", "menu"]))
 
 
 class TestHeaderCreateButton(QtBaseTestCase):
@@ -162,7 +162,7 @@ class TestHeaderPinning(QtBaseTestCase):
         # Create header with a window parent to avoid errors
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
-        header = self.track_widget(Header(parent=window, config_buttons=["pin_button"]))
+        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         initial_state = header.pinned
         header.toggle_pin()
         self.assertNotEqual(header.pinned, initial_state)
@@ -171,7 +171,7 @@ class TestHeaderPinning(QtBaseTestCase):
         """Should emit toggled signal when pin state changes."""
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
-        header = self.track_widget(Header(parent=window, config_buttons=["pin_button"]))
+        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         signal_received = []
         header.toggled.connect(lambda state: signal_received.append(state))
         header.toggle_pin()
@@ -181,7 +181,7 @@ class TestHeaderPinning(QtBaseTestCase):
         """Should reset to unpinned state."""
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
-        header = self.track_widget(Header(parent=window, config_buttons=["pin_button"]))
+        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         header.pinned = True
         header.reset_pin_state()
         self.assertFalse(header.pinned)
@@ -190,7 +190,7 @@ class TestHeaderPinning(QtBaseTestCase):
         """Should emit toggled signal when reset."""
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
-        header = self.track_widget(Header(parent=window, config_buttons=["pin_button"]))
+        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         header.pinned = True
         signal_received = []
         header.toggled.connect(lambda state: signal_received.append(state))
@@ -240,20 +240,20 @@ class TestHeaderButtonDefinitions(QtBaseTestCase):
         self.assertIsInstance(Header.button_definitions, dict)
 
     def test_button_definitions_has_menu_button(self):
-        """Should have menu_button definition."""
-        self.assertIn("menu_button", Header.button_definitions)
+        """Should have menu definition."""
+        self.assertIn("menu", Header.button_definitions)
 
     def test_button_definitions_has_minimize_button(self):
-        """Should have minimize_button definition."""
-        self.assertIn("minimize_button", Header.button_definitions)
+        """Should have minimize definition."""
+        self.assertIn("minimize", Header.button_definitions)
 
     def test_button_definitions_has_hide_button(self):
-        """Should have hide_button definition."""
-        self.assertIn("hide_button", Header.button_definitions)
+        """Should have hide definition."""
+        self.assertIn("hide", Header.button_definitions)
 
     def test_button_definitions_has_pin_button(self):
-        """Should have pin_button definition."""
-        self.assertIn("pin_button", Header.button_definitions)
+        """Should have pin definition."""
+        self.assertIn("pin", Header.button_definitions)
 
     def test_button_definition_contains_icon_and_method(self):
         """Should have (icon, method) tuple for each button."""
@@ -278,7 +278,7 @@ class TestHeaderWindowActions(QtBaseTestCase):
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
         window.show()
-        header = self.track_widget(Header(parent=window, config_buttons=["pin_button"]))
+        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         header.hide_window()
         self.assertFalse(window.isVisible())
 
@@ -333,7 +333,7 @@ class TestHeaderToggledSignal(QtBaseTestCase):
         """Should emit boolean value."""
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
-        header = self.track_widget(Header(parent=window, config_buttons=["pin_button"]))
+        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         received_values = []
         header.toggled.connect(lambda v: received_values.append(v))
         header.toggle_pin()
@@ -346,23 +346,23 @@ class TestHeaderConfigButtonsMethod(QtBaseTestCase):
     def test_config_buttons_accepts_list(self):
         """Should accept list of button names."""
         header = self.track_widget(Header())
-        header.config_buttons(["pin_button", "hide_button"])
-        self.assertIn("pin_button", header.buttons)
-        self.assertIn("hide_button", header.buttons)
+        header.config_buttons(["pin", "hide"])
+        self.assertIn("pin", header.buttons)
+        self.assertIn("hide", header.buttons)
 
     def test_config_buttons_accepts_args(self):
         """Should accept button names as args."""
         header = self.track_widget(Header())
-        header.config_buttons("pin_button", "hide_button")
-        self.assertIn("pin_button", header.buttons)
-        self.assertIn("hide_button", header.buttons)
+        header.config_buttons("pin", "hide")
+        self.assertIn("pin", header.buttons)
+        self.assertIn("hide", header.buttons)
 
     def test_config_buttons_clears_existing(self):
         """Should clear existing buttons before adding new ones."""
-        header = self.track_widget(Header(config_buttons=["pin_button"]))
-        header.config_buttons("hide_button")
-        self.assertNotIn("pin_button", header.buttons)
-        self.assertIn("hide_button", header.buttons)
+        header = self.track_widget(Header(config_buttons=["pin"]))
+        header.config_buttons("hide")
+        self.assertNotIn("pin", header.buttons)
+        self.assertIn("hide", header.buttons)
 
 
 class TestHeaderIconMethods(QtBaseTestCase):

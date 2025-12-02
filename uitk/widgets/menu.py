@@ -739,7 +739,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Ensure the menu has a header to host the hide button
         self._ensure_layout_created()
         if not self.header:
-            self.header = Header(config_buttons=["pin_button"])
+            self.header = Header(config_buttons=["pin"])
             if self.centralWidgetLayout:
                 self.centralWidgetLayout.insertWidget(0, self.header)
 
@@ -1147,7 +1147,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
             # Add header to top area
             if self.add_header:
-                self.header = Header(config_buttons=["pin_button"])
+                self.header = Header(config_buttons=["pin"])
                 frame_layout.addWidget(self.header)
 
             # Create a central widget WITHOUT parent first to avoid tree overhead

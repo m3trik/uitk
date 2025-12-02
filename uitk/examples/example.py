@@ -229,9 +229,7 @@ class ExampleSlots:
 
     def header_init(self, widget):
         """Setup header buttons and menu."""
-        widget.config_buttons(
-            "menu_button", "minimize_button", "maximize_button", "hide_button"
-        )
+        widget.config_buttons("menu", "minimize", "maximize", "hide")
         # Build settings menu - items are accessible as widget.menu.objectName
         widget.menu.setTitle("SETTINGS")
         widget.menu.add(

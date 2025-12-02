@@ -23,11 +23,12 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     # Define button properties with icon paths and callbacks
     button_definitions = {
-        "menu_button": ("menu.svg", "show_menu"),
-        "minimize_button": ("minimize.svg", "minimize_window"),
-        "maximize_button": ("maximize.svg", "toggle_maximize"),
-        "hide_button": ("close.svg", "hide_window"),
-        "pin_button": ("radio_empty.svg", "toggle_pin"),
+        "menu": ("menu.svg", "show_menu"),
+        "collapse": ("chevron_up.svg", "toggle_collapse"),
+        "minimize": ("minimize.svg", "minimize_window"),
+        "maximize": ("maximize.svg", "toggle_maximize"),
+        "hide": ("close.svg", "hide_window"),
+        "pin": ("radio_empty.svg", "toggle_pin"),
     }
 
     def __init__(
@@ -42,8 +43,8 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         Parameters:
             parent (QWidget, optional): The parent widget. Defaults to None.
             config_buttons (list, optional): List of button names to show in order.
-                Example: ['menu_button', 'pin_button']
-                Available buttons: 'menu_button', 'minimize_button', 'hide_button', 'pin_button'
+                Example: ['menu', 'pin']
+                Available buttons: 'menu', 'collapse', 'minimize', 'maximize', 'hide', 'pin'
             hide_on_pin_click (bool, optional): If True, clicking the pin button hides the
                 window instead of toggling pin state. Dragging still pins the window.
                 Defaults to False.
@@ -52,6 +53,10 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         super().__init__(parent)
         self.pinned = False  # unpinned, pinned
         self.hide_on_pin_click = hide_on_pin_click
+        self._collapsed = False
+        self._saved_size = None
+        self._saved_min_size = None
+        self._saved_max_size = None
         self.__mousePressPos = None
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
 
@@ -119,7 +124,9 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         """Create a button with the given icon and callback."""
         button = QtWidgets.QPushButton(self)
         if button_type:
-            button.setObjectName(button_type)
+            # Prefix with 'hdr_' to avoid conflicts with QWidget methods
+            # when MainWindow's __getattr__ searches for widgets by name
+            button.setObjectName(f"hdr_{button_type}")
 
         # Set the icon using IconManager for theme support
         icon_name = icon_filename.replace(".svg", "")
@@ -156,9 +163,9 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         Parameters:
             *button_list: Button names in display order (as args or single list).
                 Examples:
-                    config_buttons('pin_button', 'menu_button')
-                    config_buttons(['pin_button', 'menu_button'])
-                Available: 'menu_button', 'minimize_button', 'hide_button', 'pin_button'
+                    config_buttons('pin', 'menu')
+                    config_buttons(['pin', 'menu'])
+                Available: 'menu', 'collapse', 'minimize', 'maximize', 'hide', 'pin'
         """
         # Support both styles: config_buttons('a', 'b') and config_buttons(['a', 'b'])
         if len(button_list) == 1 and isinstance(button_list[0], (list, tuple)):
@@ -255,17 +262,15 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         if window.isMaximized():
             window.showNormal()
             # Update icon to maximize
-            if "maximize_button" in self.buttons:
+            if "maximize" in self.buttons:
                 IconManager.set_icon(
-                    self.buttons["maximize_button"], "maximize", size=(16, 16)
+                    self.buttons["maximize"], "maximize", size=(16, 16)
                 )
         else:
             window.showMaximized()
             # Update icon to restore (overlapping windows)
-            if "maximize_button" in self.buttons:
-                IconManager.set_icon(
-                    self.buttons["maximize_button"], "restore", size=(16, 16)
-                )
+            if "maximize" in self.buttons:
+                IconManager.set_icon(self.buttons["maximize"], "restore", size=(16, 16))
 
     def hide_window(self):
         """Hide the parent window."""
@@ -282,6 +287,64 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
     def show_menu(self):
         """Show the menu."""
         self.menu.setVisible(True)
+
+    def toggle_collapse(self):
+        """Toggle between collapsed (header only) and expanded window states."""
+        if self._collapsed:
+            self.expand_window()
+        else:
+            self.collapse_window()
+
+    def collapse_window(self):
+        """Collapse the parent window to show only the header."""
+        if self._collapsed:
+            return
+
+        window = self.window()
+
+        # Save current size and size constraints (not position - that can change while collapsed)
+        self._saved_size = window.size()
+        self._saved_min_size = window.minimumSize()
+        self._saved_max_size = window.maximumSize()
+
+        # Calculate collapsed height (header height + small margin for border)
+        collapsed_height = self.height() + 4
+
+        # Collapse the window
+        window.setMinimumHeight(0)
+        window.setMaximumHeight(collapsed_height)
+        window.resize(window.width(), collapsed_height)
+
+        # Update icon to expand (chevron down)
+        if "collapse" in self.buttons:
+            IconManager.set_icon(
+                self.buttons["collapse"], "chevron_down", size=(16, 16)
+            )
+
+        self._collapsed = True
+
+    def expand_window(self):
+        """Expand the window back to its original size."""
+        if not self._collapsed:
+            return
+
+        window = self.window()
+
+        # Restore size constraints first
+        if self._saved_min_size:
+            window.setMinimumSize(self._saved_min_size)
+        if self._saved_max_size:
+            window.setMaximumSize(self._saved_max_size)
+
+        # Restore size at current position (window may have been dragged while collapsed)
+        if self._saved_size:
+            window.resize(self._saved_size)
+
+        # Update icon to collapse (chevron up)
+        if "collapse" in self.buttons:
+            IconManager.set_icon(self.buttons["collapse"], "chevron_up", size=(16, 16))
+
+        self._collapsed = False
 
     def toggle_pin(self, from_drag=False):
         """Toggle pinning of the window.
@@ -304,7 +367,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         # Switch between radio icons based on state (filled = pinned, empty = unpinned)
         icon_name = "radio" if state else "radio_empty"
 
-        pin_button = self.buttons.get("pin_button")
+        pin_button = self.buttons.get("pin")
         if pin_button:
             IconManager.set_icon(pin_button, icon_name, size=(16, 16))
             if not state and not self.hide_on_pin_click:
@@ -322,7 +385,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self.pinned = False
         self.window().prevent_hide = False
 
-        pin_button = self.buttons.get("pin_button")
+        pin_button = self.buttons.get("pin")
         if pin_button:
             IconManager.set_icon(pin_button, "radio_empty", size=(16, 16))
 
@@ -359,11 +422,11 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         QtCore.QTimer.singleShot(0, self._finalize_menu_button_visibility)
 
     def _finalize_menu_button_visibility(self):
-        menu_button = self.buttons.get("menu_button")
+        menu_button = self.buttons.get("menu")
         if menu_button:
             visible = self.menu.contains_items
             # print(
-            #     f"[Header._finalize_menu_button_visibility] setting menu_button visible = {visible}"
+            #     f"[Header._finalize_menu_button_visibility] setting menu visible = {visible}"
             # )
             menu_button.setVisible(visible)
 
@@ -399,7 +462,7 @@ if __name__ == "__main__":
     w = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(w)
     header = Header(
-        config_buttons=["menu_button", "minimize_button", "pin_button", "hide_button"],
+        config_buttons=["menu", "collapse", "minimize", "pin", "hide"],
         setTitle="DRAG ME!",
     )
     header.toggled.connect(lambda state: print(f"Header pinned: {state}!"))
