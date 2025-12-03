@@ -124,6 +124,24 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """Get the status label."""
         return self._status_label
 
+    @property
+    def size_grip(self) -> Optional[QtWidgets.QSizeGrip]:
+        """Get the size grip widget if it exists.
+
+        Returns:
+            QSizeGrip or None: The size grip widget, or None if not created.
+        """
+        return self._size_grip
+
+    @size_grip.setter
+    def size_grip(self, value: Optional[QtWidgets.QSizeGrip]) -> None:
+        """Set the size grip widget (used internally by SizeGripMixin).
+
+        Parameters:
+            value: The size grip widget to set.
+        """
+        self._size_grip = value
+
     def setText(self, text: str) -> None:
         """Set the status text (convenience method matching QLabel API).
 

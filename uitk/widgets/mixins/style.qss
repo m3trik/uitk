@@ -4,7 +4,7 @@ QWidget {
     border: none;
 }
 QWidget::item:selected {
-    background-color: {BUTTON_CHECKED};
+    background-color: {BUTTON_HOVER};
 }
 QWidget.centralWidget {
     background-color: {MAIN_BACKGROUND_ALPHA};

@@ -28,14 +28,14 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         "minimize": ("minimize.svg", "minimize_window"),
         "maximize": ("maximize.svg", "toggle_maximize"),
         "hide": ("close.svg", "hide_window"),
-        "pin": ("radio_empty.svg", "toggle_pin"),
+        "pin": ("close.svg", "toggle_pin"),  # Default: close icon (hide mode)
     }
 
     def __init__(
         self,
         parent=None,
         config_buttons=None,
-        hide_on_pin_click=False,
+        pin_on_drag_only=True,
         **kwargs,
     ):
         """Initialize the Header with buttons and layout.
@@ -45,14 +45,15 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             config_buttons (list, optional): List of button names to show in order.
                 Example: ['menu', 'pin']
                 Available buttons: 'menu', 'collapse', 'minimize', 'maximize', 'hide', 'pin'
-            hide_on_pin_click (bool, optional): If True, clicking the pin button hides the
-                window instead of toggling pin state. Dragging still pins the window.
-                Defaults to False.
+            pin_on_drag_only (bool, optional): If True (default), clicking the pin button hides
+                the window, and only dragging the header pins it. If False, clicking the pin
+                button toggles traditional pin/unpin behavior.
+                Defaults to True.
             **kwargs: Additional attributes for the header (e.g., setTitle="My Title").
         """
         super().__init__(parent)
         self.pinned = False  # unpinned, pinned
-        self.hide_on_pin_click = hide_on_pin_click
+        self.pin_on_drag_only = pin_on_drag_only
         self._collapsed = False
         self._saved_size = None
         self._saved_min_size = None
@@ -196,6 +197,14 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             )
             button.setVisible(True)
 
+            # Set initial hideMode property and stylesheet for pin button
+            if button_name == "pin":
+                # Default icon is close (hide mode) so apply red hover
+                button.setProperty("hideMode", True)
+                button.setStyleSheet(
+                    "QPushButton:hover { background-color: red; border: none; }"
+                )
+
             self.container_layout.addWidget(button)
             self.buttons[button_name] = button
 
@@ -276,6 +285,11 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         """Hide the parent window."""
         if self.pinned:
             self.toggle_pin(from_drag=True)  # Programmatic toggle, not user click
+
+        # Reset collapse state when hiding
+        if self._collapsed:
+            self.expand_window()
+
         self.window().hide()
 
     def unhide_window(self):
@@ -336,9 +350,10 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         if self._saved_max_size:
             window.setMaximumSize(self._saved_max_size)
 
-        # Restore size at current position (window may have been dragged while collapsed)
-        if self._saved_size:
-            window.resize(self._saved_size)
+        # Don't restore size - let the window adjust naturally to its content
+        # This allows groupbox visibility changes to properly resize the window
+        window.setMaximumHeight(16777215)  # Qt's default max height
+        window.adjustSize()
 
         # Update icon to collapse (chevron up)
         if "collapse" in self.buttons:
@@ -351,28 +366,43 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         Parameters:
             from_drag (bool): If True, this was triggered by dragging the header.
-                Used to differentiate between click and drag when hide_on_pin_click is enabled.
+                Used to differentiate between click and drag when pin_on_drag_only is enabled.
         """
-        # If hide_on_pin_click is enabled and this is a button click (not drag),
-        # just hide the window without changing pin state
-        if self.hide_on_pin_click and not from_drag:
+        # Default behavior: clicking hides, dragging pins
+        if self.pin_on_drag_only and not from_drag:
+            if self.pinned:
+                # Unpin without hiding (hiding happens below)
+                self.pinned = False
+                self.window().prevent_hide = False
+                pin_button = self.buttons.get("pin")
+                if pin_button:
+                    IconManager.set_icon(pin_button, "close", size=(16, 16))
+                    pin_button.setProperty("hideMode", True)
+                    self._refresh_button_style(pin_button)
+                self.toggled.emit(False)
+            # Always hide on click regardless of pin state
             self.window().hide()
             return
 
+        # Standard pin button behavior OR drag behavior
         state = not self.pinned
 
         self.pinned = state
         self.window().prevent_hide = state
 
-        # Switch between radio icons based on state (filled = pinned, empty = unpinned)
-        icon_name = "radio" if state else "radio_empty"
+        # Icon: close when unpinned (hide mode), radio when pinned (pinned mode)
+        icon_name = "radio" if state else "close"
 
         pin_button = self.buttons.get("pin")
         if pin_button:
             IconManager.set_icon(pin_button, icon_name, size=(16, 16))
-            if not state and not self.hide_on_pin_click:
-                # When unpinned via the button, immediately hide until user reopens.
-                # Skip this if hide_on_pin_click is enabled (handled above)
+            # Set hideMode property for styling
+            is_hide_mode = icon_name == "close"
+            pin_button.setProperty("hideMode", is_hide_mode)
+            # Force style refresh
+            self._refresh_button_style(pin_button)
+            if not state and not self.pin_on_drag_only:
+                # Standard behavior: when unpinned via button, hide the window
                 self.window().hide()
 
         self.toggled.emit(state)
@@ -387,9 +417,27 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         pin_button = self.buttons.get("pin")
         if pin_button:
-            IconManager.set_icon(pin_button, "radio_empty", size=(16, 16))
+            IconManager.set_icon(pin_button, "close", size=(16, 16))
+            pin_button.setProperty("hideMode", True)
+            self._refresh_button_style(pin_button)
 
         self.toggled.emit(False)
+
+    def _refresh_button_style(self, button):
+        """Force a button to refresh its stylesheet after property changes."""
+        # For the pin button in hide mode, apply red hover background directly
+        if button.property("hideMode") is not None:
+            hide_mode = button.property("hideMode")
+            if hide_mode:
+                # Apply the same red hover style as the hide button
+                button.setStyleSheet(
+                    "QPushButton:hover { background-color: red; border: none; }"
+                )
+            else:
+                # Clear custom stylesheet for normal pin mode
+                button.setStyleSheet("")
+
+        button.update()
 
     def mousePressEvent(self, event):
         """Handle the mouse press event. If the left button is pressed, store the global position of the mouse cursor.
@@ -449,6 +497,12 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         layout.insertWidget(0, self)
         self.setParent(widget)
         setattr(widget, "header", self)
+
+    def hideEvent(self, event):
+        """Reset collapse state when header (and window) is hidden."""
+        if self._collapsed:
+            self.expand_window()
+        super().hideEvent(event)
 
 
 # -----------------------------------------------------------------------------

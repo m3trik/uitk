@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uitk"
+dynamic = ["version", "readme"]
+description = "A comprehensive UI toolkit extending Qt Designer workflows with dynamic loading, custom widgets, and automatic signal-slot management."
+authors = [{name = "Ryan Simpson", email = "m3trik@outlook.com"}]
+license = {text = "LGPL-3.0-or-later"}
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "Operating System :: OS Independent",
+]
+
+# Dependencies - exclude optional system deps (qtpy)
+dependencies = [
+    "pythontk>=0.7.34",
+]
+
+[project.urls]
+Homepage = "https://github.com/m3trik/uitk"
+Repository = "https://github.com/m3trik/uitk"
+
+[tool.setuptools.dynamic]
+version = {attr = "uitk.__version__"}
+readme = {file = "docs/README.md", content-type = "text/markdown"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["uitk*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.ui", "*.json", "*.txt", "*.md"]
