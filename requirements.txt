@@ -1,6 +1,2 @@
 qtpy
-<<<<<<< HEAD
-pythontk==0.7.36
-=======
 pythontk==0.7.38
->>>>>>> dev
