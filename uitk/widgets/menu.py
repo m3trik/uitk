@@ -1222,8 +1222,20 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Also check if cursor is over a child widget (for nested widgets)
         if not cursor_inside:
             widget_at = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-            if widget_at and self.isAncestorOf(widget_at):
-                cursor_inside = True
+            if widget_at:
+                if self.isAncestorOf(widget_at):
+                    cursor_inside = True
+                else:
+                    # Check for ComboBox popups (which are separate windows)
+                    # This prevents the menu from closing when interacting with a dropdown
+                    for combo in self.findChildren(QtWidgets.QComboBox):
+                        if combo.view() and combo.view().isVisible():
+                            # Check if widget_at is the view or part of it (e.g. viewport)
+                            if widget_at == combo.view() or combo.view().isAncestorOf(
+                                widget_at
+                            ):
+                                cursor_inside = True
+                                break
 
         if cursor_inside:
             # Mouse has entered the menu
