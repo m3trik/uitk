@@ -14,6 +14,10 @@ from uitk.widgets.mixins.menu_mixin import MenuMixin
 class HeaderMixin:
     def _init_header_behavior(self):
         self.horizontalHeader().setSectionsClickable(True)
+        self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        self.horizontalHeader().setDefaultAlignment(
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
+        )
         self.header_click_behavior = self.default_header_click_behavior
         self.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._sort_order = {}
@@ -270,8 +274,14 @@ class TableWidget(
         CellFormatMixin.__init__(self)
 
         self._left_click_select_only = bool(left_click_select_only)
+        self._non_selectable_columns = set()
+        self._selection_validator = None
+        self._column_click_actions = {}
         self._menu_action_registry: Dict[str, Dict[str, Any]] = {}
         self._menu_dispatch_connected = False
+        self._stretch_column = None
+
+        self.cellClicked.connect(self._on_cell_clicked)
 
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self.verticalHeader().setVisible(False)
@@ -293,7 +303,16 @@ class TableWidget(
         self.set_attributes(**kwargs)
 
     def selectionCommand(self, index, event=None):
-        """Optionally restrict selection changes to left mouse clicks."""
+        """Optionally restrict selection changes."""
+        if index.isValid():
+            # Check column blacklist
+            if index.column() in self._non_selectable_columns:
+                return QtCore.QItemSelectionModel.NoUpdate
+
+            # Check custom validator
+            if self._selection_validator and not self._selection_validator(index):
+                return QtCore.QItemSelectionModel.NoUpdate
+
         if (
             self._left_click_select_only
             and event
@@ -302,6 +321,35 @@ class TableWidget(
             if event.button() != QtCore.Qt.LeftButton:
                 return QtCore.QItemSelectionModel.NoUpdate
         return super().selectionCommand(index, event)
+
+    def set_column_selectable(self, column: int, selectable: bool):
+        """Set whether a specific column can trigger selection changes."""
+        if selectable:
+            self._non_selectable_columns.discard(column)
+        else:
+            self._non_selectable_columns.add(column)
+
+    def set_selection_validator(self, validator: Callable[[QtCore.QModelIndex], bool]):
+        """Set a function to validate if an index can be selected.
+
+        Args:
+            validator: A function that takes a QModelIndex and returns bool.
+        """
+        self._selection_validator = validator
+
+    def set_column_click_action(self, column: int, action: Callable[[int, int], None]):
+        """Set a callback for when a cell in a specific column is clicked.
+
+        Args:
+            column: The column index.
+            action: Function receiving (row, col).
+        """
+        self._column_click_actions[column] = action
+
+    def _on_cell_clicked(self, row, col):
+        """Handle cell clicks and dispatch to registered actions."""
+        if col in self._column_click_actions:
+            self._column_click_actions[col](row, col)
 
     def set_left_click_select_only(self, enabled: bool):
         """Toggle whether non-left clicks can change selection."""
@@ -478,13 +526,38 @@ class TableWidget(
     def clear_all(self):
         self.setRowCount(0)
 
+    def set_stretch_column(self, col: int):
+        """Set a column to automatically stretch to fill the available space."""
+        self._stretch_column = col
+        self.stretch_column_to_fill(col)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._stretch_column is not None:
+            self.stretch_column_to_fill(self._stretch_column)
+
     def stretch_column_to_fill(self, stretch_col: int):
+        if stretch_col < 0 or stretch_col >= self.columnCount():
+            return
+
         header = self.horizontalHeader()
+        header.setStretchLastSection(False)
+
         for col in range(self.columnCount()):
-            if col == stretch_col:
-                header.setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
-            else:
-                header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(col, QtWidgets.QHeaderView.Interactive)
+
+        # Simulate stretch by setting width manually to allow user resizing
+        total_width = self.viewport().width()
+        if total_width <= 0:
+            return
+
+        other_cols_width = 0
+        for col in range(self.columnCount()):
+            if col != stretch_col:
+                other_cols_width += self.columnWidth(col)
+
+        new_width = max(50, total_width - other_cols_width)
+        self.setColumnWidth(stretch_col, new_width)
 
     def get_selected_data(self, columns=None, include_current=True):
         """

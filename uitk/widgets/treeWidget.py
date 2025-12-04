@@ -366,9 +366,8 @@ class TreeWidget(
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 
         # Customize standalone menu provided by MenuMixin
-        self.menu.trigger_button = "left"
+        # Note: MenuMixin defaults to "right" trigger button
         self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
 
         # Set selection mode
         self._set_selection_mode(selection_mode)
@@ -410,6 +409,14 @@ class TreeWidget(
 
     def mousePressEvent(self, event):
         """Custom mouse press handling for deselection behavior."""
+        # Don't interfere with right-click - let it propagate to menu event filter
+        # Must check BEFORE calling super() to avoid consuming the event
+        if event.button() == QtCore.Qt.RightButton:
+            # Manually trigger menu since event filter might not catch viewport events
+            self.menu.trigger_from_widget(self, button=event.button())
+            super().mousePressEvent(event)
+            return
+
         item = self.itemAt(event.pos())
         modifiers = event.modifiers()
 
@@ -419,10 +426,10 @@ class TreeWidget(
         self._ctrl_pressed = bool(modifiers & QtCore.Qt.ControlModifier)
         self._shift_pressed = bool(modifiers & QtCore.Qt.ShiftModifier)
 
-        # Call parent implementation
+        # Call parent implementation for left-click
         super().mousePressEvent(event)
 
-        # Handle deselection logic after parent processing
+        # Handle deselection logic after parent processing (left-click only)
         if (
             item
             and self._was_selected

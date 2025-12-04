@@ -380,6 +380,7 @@ QComboBox:disabled::drop-down {
     border-left-color: {BORDER_COLOR};
 }
 QComboBox QAbstractItemView {
+    background-color: {WIDGET_BACKGROUND};
     selection-background-color: {BUTTON_HOVER};
 }
 QComboBox QAbstractItemView::item:selected,
