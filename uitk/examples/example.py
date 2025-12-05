@@ -751,10 +751,10 @@ class ExampleSlots:
 # =============================================================================
 
 if __name__ == "__main__":
-    from uitk import examples
+    from uitk.examples import example
 
     # Two lines to load UI and connect all slots automatically
-    sb = Switchboard(ui_source=examples, slot_source=examples.ExampleSlots)
+    sb = Switchboard(ui_source=example, slot_source=example.ExampleSlots)
     ui = sb.loaded_ui.example
 
     # Configure window appearance

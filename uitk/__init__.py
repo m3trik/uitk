@@ -40,28 +40,29 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.0.48"
+__version__ = "1.0.49"
 
 
 DEFAULT_INCLUDE = {
     "signals": "Signals",
-    "events": "*",
-    "file_manager": "*",
-    "switchboard": "*",
+    "events": ["EventFactoryFilter", "MouseTracking"],
+    "file_manager": ["FileContainer", "FileManager"],
+    "switchboard": "Switchboard",
     # Widgets
-    "widgets.attributeWindow": "*",
-    "widgets.checkBox": "*",
-    "widgets.collapsableGroup": "*",
-    "widgets.colorSwatch": "*",
-    "widgets.comboBox": "*",
-    "widgets.doubleSpinBox": "*",
-    "widgets.expandableList": "*",
-    "widgets.header": "*",
-    "widgets.label": "*",
-    "widgets.lineEdit": "*",
-    "widgets.mainWindow": "*",
-    "widgets.menu": "*",
-    "widgets.messageBox": "*",
+    "widgets.attributeWindow": "AttributeWindow",
+    "widgets.checkBox": "CheckBox",
+    "widgets.collapsableGroup": "CollapsableGroup",
+    "widgets.colorSwatch": "ColorSwatch",
+    "widgets.comboBox": "ComboBox",
+    "widgets.doubleSpinBox": "DoubleSpinBox",
+    "widgets.expandableList": "ExpandableList",
+    "widgets.header": "Header",
+    "widgets.footer": "Footer",
+    "widgets.label": "Label",
+    "widgets.lineEdit": "LineEdit",
+    "widgets.mainWindow": "MainWindow",
+    "widgets.menu": "Menu",
+    "widgets.messageBox": "MessageBox",
     "widgets.optionBox": [
         "OptionBox",
         "OptionBoxContainer",
@@ -69,42 +70,42 @@ DEFAULT_INCLUDE = {
         "OptionBoxManager",
         "ClearButton",
     ],
-    "widgets.optionBox.options": "*",
-    "widgets.progressBar": "*",
-    "widgets.pushButton": "*",
-    "widgets.region": "*",
-    "widgets.separator": "*",
-    "widgets.tableWidget": "*",
-    "widgets.textEdit": "*",
-    "widgets.textEditLogHandler": "*",
-    "widgets.treeWidget": "*",
-    "widgets.widgetComboBox": "*",
+    "widgets.optionBox.options": [
+        "OptionAction",
+        "OptionClear",
+        "OptionMenu",
+        "OptionPinValues",
+    ],
+    "widgets.progressBar": "ProgressBar",
+    "widgets.pushButton": "PushButton",
+    "widgets.region": "Region",
+    "widgets.separator": "Separator",
+    "widgets.tableWidget": "TableWidget",
+    "widgets.textEdit": "TextEdit",
+    "widgets.textEditLogHandler": "TextEditLogHandler",
+    "widgets.treeWidget": "TreeWidget",
+    "widgets.widgetComboBox": "WidgetComboBox",
     # Widget mixins
-    "widgets.mixins.attributes": "*",
-    "widgets.mixins.convert": "*",
-    "widgets.mixins.docking": "*",
-    "widgets.mixins.icon_manager": "*",
-    "widgets.mixins.menu_mixin": "*",
-    "widgets.mixins.option_box_mixin": "*",
-    "widgets.mixins.settings_manager": "*",
-    "widgets.mixins.shortcuts": "*",
-    "widgets.mixins.state_manager": "*",
-    "widgets.mixins.style_sheet": "*",
-    "widgets.mixins.switchboard_slots": "*",
-    "widgets.mixins.switchboard_utils": "*",
-    "widgets.mixins.switchboard_widgets": "*",
-    "widgets.mixins.tasks": "*",
-    "widgets.mixins.text": "*",
-    "widgets.mixins.value_manager": "*",
+    "widgets.mixins.attributes": "AttributesMixin",
+    "widgets.mixins.convert": "ConvertMixin",
+    "widgets.mixins.docking": "DockingMixin",
+    "widgets.mixins.icon_manager": "IconManager",
+    "widgets.mixins.menu_mixin": "MenuMixin",
+    "widgets.mixins.option_box_mixin": "OptionBoxMixin",
+    "widgets.mixins.settings_manager": "SettingsManager",
+    "widgets.mixins.shortcuts": ["ShortcutManager", "ShortcutMixin"],
+    "widgets.mixins.state_manager": "StateManager",
+    "widgets.mixins.style_sheet": "StyleSheet",
+    "widgets.mixins.switchboard_slots": ["SlotWrapper", "SwitchboardSlotsMixin"],
+    "widgets.mixins.switchboard_utils": "SwitchboardUtilsMixin",
+    "widgets.mixins.switchboard_widgets": "SwitchboardWidgetMixin",
+    "widgets.mixins.tasks": ["WorkIndicator", "TasksMixin"],
+    "widgets.mixins.text": ["TextTruncation", "RichText", "TextOverlay"],
+    "widgets.mixins.value_manager": "ValueManager",
 }
 
-DEFAULT_FALLBACKS = {
-    "add_option_box": "uitk.widgets.optionBox",
-    "add_clear_option": "uitk.widgets.optionBox",
-    "add_menu_option": "uitk.widgets.optionBox",
-    "patch_widget_class": "uitk.widgets.optionBox",
-    "patch_common_widgets": "uitk.widgets.optionBox",
-}
+# Fallbacks removed - fix imports at source
+# Old fallback mappings are now in DEFAULT_INCLUDE above
 
 
 def _uitk_getattr(name: str):
@@ -122,7 +123,6 @@ def _uitk_getattr(name: str):
 bootstrap_package(
     globals(),
     include=DEFAULT_INCLUDE,
-    fallbacks=DEFAULT_FALLBACKS,
     custom_getattr=_uitk_getattr,
 )
 # Test: 222117
