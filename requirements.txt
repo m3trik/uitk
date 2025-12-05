@@ -1,2 +1,2 @@
 qtpy
-pythontk==0.7.49
+pythontk==0.7.50
