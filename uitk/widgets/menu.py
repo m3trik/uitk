@@ -30,6 +30,21 @@ _WIDGET_TYPE_CACHE: Dict[str, type] = {
     "QSeparator": Separator,  # Alias for consistency with Qt naming
 }
 
+# Widget types that should have item height constraints applied
+# (includes derived classes via isinstance check)
+# Note: QTextEdit is intentionally excluded as it's multi-line and needs variable height
+_HEIGHT_CONSTRAINED_TYPES = (
+    QtWidgets.QPushButton,
+    QtWidgets.QLabel,
+    QtWidgets.QCheckBox,
+    QtWidgets.QRadioButton,
+    QtWidgets.QComboBox,
+    QtWidgets.QLineEdit,
+    QtWidgets.QSpinBox,
+    QtWidgets.QDoubleSpinBox,
+    QtWidgets.QSlider,
+)
+
 
 @dataclass
 class MenuConfig:
@@ -1548,6 +1563,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         This will also uninstall event filters since the menu becomes empty.
         """
+        if self.gridLayout is None:
+            return
+
         item_count = self.gridLayout.count()
         self.logger.debug(f"Menu.clear: Clearing {item_count} items")
 
@@ -1661,6 +1679,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             if colSpan is None:
                 colSpan = self.gridLayout.columnCount() or 1
 
+            # DEBUG: Print row assignment
             # Install event filters when adding the first item
             was_empty = not self.contains_items
 
@@ -1668,12 +1687,28 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.on_item_added.emit(widget)
             self.set_item_data(widget, data)
 
-            if self.min_item_height is not None:
-                widget.setMinimumHeight(self.min_item_height)
-            if self.max_item_height is not None:
-                widget.setMaximumHeight(self.max_item_height)
-            if self.fixed_item_height is not None:
-                widget.setFixedHeight(self.fixed_item_height)
+            # Apply item height constraints only to appropriate widget types
+            if isinstance(widget, _HEIGHT_CONSTRAINED_TYPES):
+                has_height_constraint = (
+                    self.min_item_height is not None
+                    or self.max_item_height is not None
+                    or self.fixed_item_height is not None
+                )
+                # Use Fixed policy when explicit height is set, Preferred otherwise
+                # Both prevent unwanted vertical expansion while respecting natural size
+                vertical_policy = (
+                    QtWidgets.QSizePolicy.Fixed
+                    if has_height_constraint
+                    else QtWidgets.QSizePolicy.Preferred
+                )
+                widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, vertical_policy)
+
+                if self.min_item_height is not None:
+                    widget.setMinimumHeight(self.min_item_height)
+                if self.max_item_height is not None:
+                    widget.setMaximumHeight(self.max_item_height)
+                if self.fixed_item_height is not None:
+                    widget.setFixedHeight(self.fixed_item_height)
 
             self.set_attributes(widget, **kwargs)
             widget.installEventFilter(self)

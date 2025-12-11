@@ -300,7 +300,25 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     def show_menu(self):
         """Show the menu."""
-        self.menu.setVisible(True)
+        menu = self.menu
+        grid = menu.gridLayout
+        print(f"[Header.show_menu] menu id={id(menu)}, gridLayout={grid}")
+        if grid:
+            print(f"[Header.show_menu] Grid has {grid.count()} items:")
+            for i in range(grid.count()):
+                item = grid.itemAt(i)
+                widget = item.widget() if item else None
+                if widget:
+                    row, col, rowSpan, colSpan = grid.getItemPosition(i)
+                    text = (
+                        widget.text()
+                        if hasattr(widget, "text") and callable(widget.text)
+                        else ""
+                    )
+                    print(
+                        f"  [{i}] row={row}, col={col}: {widget.__class__.__name__} '{text}' (name={widget.objectName()})"
+                    )
+        menu.setVisible(True)
 
     def toggle_collapse(self):
         """Toggle between collapsed (header only) and expanded window states."""

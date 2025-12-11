@@ -47,6 +47,7 @@ class CellFormatMixin(ConvertMixin):
         "warning": ("#B49B5C", "#FFF6DC"),
         "info": ("#6D9BAA", "#E2F3F9"),
         "inactive": ("#AAAAAA", None),
+        "current": ("#CC8866", None),  # Desaturated orange
         "reset": (None, None),
     }
 
@@ -128,6 +129,73 @@ class CellFormatMixin(ConvertMixin):
             )
             return None
 
+    def format_item(
+        self,
+        item: QtWidgets.QTableWidgetItem,
+        key: str = None,
+        italic: bool = None,
+        bold: bool = None,
+        fg: Any = None,
+        bg: Any = None,
+    ):
+        """
+        Apply formatting to a table item.
+
+        Args:
+            item: The item to format.
+            key: Semantic color key from ACTION_COLOR_MAP.
+            italic: True/False to set italic, None to ignore.
+            bold: True/False to set bold, None to ignore.
+            fg: Explicit foreground color. Overrides key.
+            bg: Explicit background color. Overrides key.
+        """
+        # Font
+        if italic is not None or bold is not None:
+            font = item.font()
+            if italic is not None:
+                font.setItalic(italic)
+            if bold is not None:
+                font.setBold(bold)
+            item.setFont(font)
+
+        # Colors
+        if key or fg is not None or bg is not None:
+            # Resolve colors from key
+            key_fg, key_bg = (None, None)
+            if key:
+                key_lower = str(key).lower()
+                key_fg, key_bg = self.ACTION_COLOR_MAP.get(key_lower, (None, None))
+
+            # Explicit overrides key
+            final_fg = fg if fg is not None else key_fg
+            final_bg = bg if bg is not None else key_bg
+
+            row, col = item.row(), item.column()
+
+            # Foreground
+            q_fg = self.ensure_valid_color(final_fg, "fg", item, row, col)
+            if q_fg:
+                item.setForeground(q_fg)
+
+            # Background logic
+            should_set_bg = False
+            if bg is not None:
+                should_set_bg = True
+            elif key:
+                key_lower = str(key).lower()
+                if key_lower == "reset":
+                    should_set_bg = True
+                else:
+                    # Check if key has a bg defined
+                    _, map_bg = self.ACTION_COLOR_MAP.get(key_lower, (None, None))
+                    if map_bg is not None:
+                        should_set_bg = True
+
+            if should_set_bg:
+                q_bg = self.ensure_valid_color(final_bg, "bg", item, row, col)
+                if q_bg:
+                    item.setBackground(q_bg)
+
     def set_action_color(
         self,
         item: QtWidgets.QTableWidgetItem,
@@ -137,11 +205,24 @@ class CellFormatMixin(ConvertMixin):
         use_bg: bool = False,
     ):
         """Apply semantic color, but skip reset if nothing defined."""
-        fg_raw, bg_raw = self.ACTION_COLOR_MAP.get(str(key).lower(), (None, None))
+        # Delegate to format_item for consistency, but maintain exact behavior
+        # set_action_color has specific behavior for 'reset' (returns early if no colors)
+        # and use_bg flag.
 
-        # Skip entirely if reset and nothing to restore
+        key_lower = str(key).lower()
+        fg_raw, bg_raw = self.ACTION_COLOR_MAP.get(key_lower, (None, None))
+
+        # Skip entirely if reset and nothing to restore (legacy behavior)
         if key == "reset" and fg_raw is None and bg_raw is None:
             return
+
+        # Use format_item logic but we need to respect use_bg
+        # If use_bg is False, we pass bg=None and ensure key doesn't trigger bg set
+        # But format_item logic for key triggers bg set if key has bg.
+        # So we might need to manually call ensure_valid_color here to preserve exact legacy behavior
+        # or update format_item to support use_bg.
+        # For now, let's keep set_action_color as is to avoid regression,
+        # but maybe update it to use ensure_valid_color which it already does.
 
         fg = self.ensure_valid_color(fg_raw, "fg", item, row, col)
         bg = self.ensure_valid_color(bg_raw, "bg", item, row, col) if use_bg else None

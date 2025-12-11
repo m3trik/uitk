@@ -1052,3 +1052,20 @@ TreeWidget::item:selected {
     color: {TEXT_CHECKED};
 }
 
+/* -- Separator Widget -- */
+Separator {
+    color: transparent;
+    background: transparent;
+    border: none;
+    margin: 0px 0px;
+}
+Separator:hover {
+    border: none;
+}
+Separator > QLabel {
+    color: {TEXT_COLOR};
+    font-size: 11px;
+    background: {MAIN_BACKGROUND};
+    border: none;
+    padding: 0px 0px;
+}
