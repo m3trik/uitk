@@ -302,9 +302,8 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         """Show the menu."""
         menu = self.menu
         grid = menu.gridLayout
-        print(f"[Header.show_menu] menu id={id(menu)}, gridLayout={grid}")
+
         if grid:
-            print(f"[Header.show_menu] Grid has {grid.count()} items:")
             for i in range(grid.count()):
                 item = grid.itemAt(i)
                 widget = item.widget() if item else None
@@ -314,9 +313,6 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
                         widget.text()
                         if hasattr(widget, "text") and callable(widget.text)
                         else ""
-                    )
-                    print(
-                        f"  [{i}] row={row}, col={col}: {widget.__class__.__name__} '{text}' (name={widget.objectName()})"
                     )
         menu.setVisible(True)
 
@@ -491,9 +487,6 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         menu_button = self.buttons.get("menu")
         if menu_button:
             visible = self.menu.contains_items
-            # print(
-            #     f"[Header._finalize_menu_button_visibility] setting menu visible = {visible}"
-            # )
             menu_button.setVisible(visible)
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:

@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Union, Callable, Dict, Any, Tuple
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+
+# From this package:
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.separator import Separator

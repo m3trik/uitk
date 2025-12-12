@@ -47,7 +47,7 @@ class CellFormatMixin(ConvertMixin):
         "warning": ("#B49B5C", "#FFF6DC"),
         "info": ("#6D9BAA", "#E2F3F9"),
         "inactive": ("#AAAAAA", None),
-        "current": ("#CC8866", None),  # Desaturated orange
+        "current": ("#6A8CA8", None),
         "reset": (None, None),
     }
 

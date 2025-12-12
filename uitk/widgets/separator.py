@@ -2,6 +2,8 @@
 # coding=utf-8
 from typing import Optional
 from qtpy import QtWidgets, QtCore
+
+# From this package:
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
