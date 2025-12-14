@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -166,11 +167,20 @@ class CellFormatMixin(ConvertMixin):
                 key_lower = str(key).lower()
                 key_fg, key_bg = self.ACTION_COLOR_MAP.get(key_lower, (None, None))
 
+                # Special handling for reset: clear roles to let stylesheet take over
+                if key_lower == "reset" and fg is None and bg is None:
+                    item.setData(QtCore.Qt.ForegroundRole, None)
+                    item.setData(QtCore.Qt.BackgroundRole, None)
+                    return
+
             # Explicit overrides key
             final_fg = fg if fg is not None else key_fg
             final_bg = bg if bg is not None else key_bg
 
             row, col = item.row(), item.column()
+
+            # Ensure defaults are cached before applying any changes
+            self._get_default_colors(item, row, col)
 
             # Foreground
             q_fg = self.ensure_valid_color(final_fg, "fg", item, row, col)
@@ -749,10 +759,61 @@ class TableWidget(
             data = transform(selections)
 
         handler = payload["handler"]
+
+        def _call_handler_with_compatible_arity(func, argv):
+            """Call handler with as many args as it can accept.
+
+            Supports legacy handlers that take no args (besides bound self),
+            and newer handlers that accept (data) or (data, widget).
+            """
+
+            try:
+                sig = inspect.signature(func)
+            except (TypeError, ValueError):
+                return func(*argv)
+
+            params = list(sig.parameters.values())
+
+            # If this is an unbound method/function, ignore explicit 'self'
+            if params and params[0].name == "self":
+                params = params[1:]
+
+            has_var_positional = any(
+                p.kind == inspect.Parameter.VAR_POSITIONAL for p in params
+            )
+            if has_var_positional:
+                return func(*argv)
+
+            positional = [
+                p
+                for p in params
+                if p.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                )
+            ]
+            max_positional = len(positional)
+
+            # Try to pass as much as possible, but degrade gracefully.
+            if len(argv) >= 2:
+                if max_positional >= 2:
+                    return func(argv[0], argv[1])
+                if max_positional >= 1:
+                    return func(argv[0])
+                return func()
+
+            if len(argv) == 1:
+                if max_positional >= 1:
+                    return func(argv[0])
+                return func()
+
+            return func()
+
         if payload["pass_widget"]:
-            handler(data, widget)
+            _call_handler_with_compatible_arity(handler, (data, widget))
         else:
-            handler(data)
+            _call_handler_with_compatible_arity(handler, (data,))
 
     def _normalize_column_targets(
         self,
