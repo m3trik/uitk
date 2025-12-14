@@ -131,6 +131,7 @@ class Switchboard(
             slot_source,
             fields=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
+            exc_files="*_ui.py",
             base_dir=base_dir,
         )
         self.registry.create(
@@ -138,6 +139,7 @@ class Switchboard(
             widget_source,
             fields=["classname", "classobj", "filename", "filepath"],
             inc_files="*.py",
+            exc_files="*_ui.py",
             base_dir=base_dir,
         )
         self.registry.create(

@@ -36,6 +36,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         log_level: int = "WARNING",
         restore_window_size: bool = True,
         add_footer: bool = True,
+        ensure_on_screen: bool = True,
         default_slot_timeout: Optional[float] = None,
         **kwargs,
     ) -> None:
@@ -51,6 +52,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             log_level: Logging level to use
             restore_window_size: Whether to save and restore window geometry. Defaults to True.
             add_footer: Whether to add a footer with size grip. Defaults to True.
+            ensure_on_screen: Whether to ensure the window is fully on screen when shown. Defaults to True.
             default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
             **kwargs: Additional keyword arguments
         """
@@ -77,6 +79,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.has_tags = lambda tags=None: self.sb.has_tags(self, tags)
         self.is_initialized = False
         self.prevent_hide = False
+        self.ensure_on_screen = ensure_on_screen
         self.restore_window_size = (
             restore_window_size  # Enable/disable window size saving
         )
@@ -496,6 +499,57 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             f"[clear_saved_geometry]: Cleared saved geometry for {self.objectName()}"
         )
 
+    def _ensure_on_screen(self) -> None:
+        """Moves the window to be fully visible on the screen if it is partially off-screen."""
+        # Get the window's frame geometry (including title bar and borders)
+        frame_geo = self.frameGeometry()
+
+        # Find the screen that contains the center of the window
+        screen = None
+        if hasattr(QtWidgets.QApplication, "screenAt"):
+            screen = QtWidgets.QApplication.screenAt(frame_geo.center())
+
+        # If center is off-screen, find the screen with the most overlap
+        if not screen:
+            max_area = 0
+            for s in QtWidgets.QApplication.screens():
+                intersect = frame_geo.intersected(s.geometry())
+                area = intersect.width() * intersect.height()
+                if area > max_area:
+                    max_area = area
+                    screen = s
+
+        if not screen:
+            screen = QtWidgets.QApplication.primaryScreen()
+
+        if not screen:
+            return
+
+        # Get the available geometry of the screen (excluding taskbars, etc.)
+        screen_geo = screen.availableGeometry()
+
+        # Calculate new position
+        x = frame_geo.x()
+        y = frame_geo.y()
+        width = frame_geo.width()
+        height = frame_geo.height()
+
+        # Adjust X
+        if x + width > screen_geo.right():
+            x = screen_geo.right() - width
+        if x < screen_geo.left():
+            x = screen_geo.left()
+
+        # Adjust Y
+        if y + height > screen_geo.bottom():
+            y = screen_geo.bottom() - height
+        if y < screen_geo.top():
+            y = screen_geo.top()
+
+        # Only move if necessary
+        if x != frame_geo.x() or y != frame_geo.y():
+            self.move(x, y)
+
     def setVisible(self, visible) -> None:
         """Reimplement setVisible to prevent window from being hidden when pinned."""
         if self.is_pinned and not visible:
@@ -514,6 +568,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """
         super().show()
         self.sb.center_widget(self, pos)
+
+        if self.ensure_on_screen:
+            # Use a timer to ensure the window geometry is updated before checking
+            QtCore.QTimer.singleShot(0, self._ensure_on_screen)
 
         if app_exec:
             exit_code = self.sb.app.exec_()

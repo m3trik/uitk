@@ -170,8 +170,8 @@ class ComboBox(
         # OptionBox is also available via OptionBoxMixin
         # Users can access: self.option_box.menu, self.option_box.clear_option, etc.
 
-        # Set maximum visible items to 25
-        self.setMaxVisibleItems(25)
+        # Set maximum visible items to 40
+        self.setMaxVisibleItems(40)
 
         self.setProperty("class", self.__class__.__name__)
         self.setSizeAdjustPolicy(

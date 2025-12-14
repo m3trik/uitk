@@ -26,6 +26,25 @@ QStackedWidget {
 QStackedWidget QFrame {
     background-color: {MAIN_BACKGROUND};
 }
+QToolBox {
+    background-color: {MAIN_BACKGROUND};
+    border: 1px solid {BORDER_COLOR};
+}
+QToolBox::tab {
+    background-color: none;
+    color: {TEXT_COLOR};
+    border: none;
+    padding: 0px 0px 0px 0px;
+    height: 11px;
+}
+QToolBox::tab:selected {
+    background-color: {BUTTON_CHECKED};
+    color: {TEXT_CHECKED};
+}
+QToolBox::tab:hover {
+    background-color: none;
+    color: {TEXT_HOVER};
+}
 QMainWindow {
     background-color: {MAIN_BACKGROUND_ALPHA};
     border: 1px solid {BORDER_COLOR};

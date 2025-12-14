@@ -83,6 +83,7 @@ DEFAULT_INCLUDE = {
     "widgets.tableWidget": "TableWidget",
     "widgets.textEdit": "TextEdit",
     "widgets.textEditLogHandler": "TextEditLogHandler",
+    "widgets.toolBox": "ToolBox",
     "widgets.treeWidget": "TreeWidget",
     "widgets.widgetComboBox": "WidgetComboBox",
     # Widget mixins

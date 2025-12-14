@@ -68,6 +68,7 @@ class MenuConfig:
     add_apply_button: bool = False
     hide_on_leave: bool = False
     match_parent_width: bool = True
+    ensure_on_screen: bool = True
     extra_attrs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -428,6 +429,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         add_apply_button: bool = False,
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
+        ensure_on_screen: bool = True,
         log_level: Optional[Union[int, str]] = "WARNING",
         **kwargs,
     ):
@@ -458,6 +460,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             hide_on_leave (bool, optional): Whether to automatically hide the menu when the mouse leaves. Defaults to False.
             match_parent_width (bool, optional): Whether to match the parent widget's width when using positioned menus
                 (e.g., position="bottom"). Defaults to True. Only applies when position is relative to parent (not "cursorPos").
+            ensure_on_screen (bool, optional): Whether to ensure the menu is fully on screen when shown. Defaults to True.
             **kwargs: Additional keyword arguments to set attributes on the menu.
 
         Example:
@@ -537,6 +540,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         self._hide_on_leave = False
         self.hide_on_leave = hide_on_leave
+        self.ensure_on_screen = ensure_on_screen
 
         # Base styling handled via QSS type selectors
         self.setSizePolicy(
@@ -614,6 +618,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             add_apply_button=config.add_apply_button,
             hide_on_leave=config.hide_on_leave,
             match_parent_width=config.match_parent_width,
+            ensure_on_screen=config.ensure_on_screen,
             **config.extra_attrs,
         )
 
@@ -1063,6 +1068,64 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self.logger.debug(
                     f"Menu._setup_as_popup: Could not parent to active window: {e}"
                 )
+
+    def _ensure_on_screen(self) -> None:
+        """Moves the menu to be fully visible on the screen if it is partially off-screen."""
+        # Get the menu's frame geometry (including title bar and borders)
+        frame_geo = self.frameGeometry()
+
+        # Find the screen that contains the center of the menu
+        screen = None
+        if hasattr(QtWidgets.QApplication, "screenAt"):
+            screen = QtWidgets.QApplication.screenAt(frame_geo.center())
+
+        # If center is off-screen, find the screen with the most overlap
+        if not screen:
+            max_area = 0
+            for s in QtWidgets.QApplication.screens():
+                intersect = frame_geo.intersected(s.geometry())
+                area = intersect.width() * intersect.height()
+                if area > max_area:
+                    max_area = area
+                    screen = s
+
+        if not screen:
+            screen = QtWidgets.QApplication.primaryScreen()
+
+        if not screen:
+            return
+
+        # Get the available geometry of the screen (excluding taskbars, etc.)
+        screen_geo = screen.availableGeometry()
+
+        # Calculate new position
+        x = frame_geo.x()
+        y = frame_geo.y()
+        width = frame_geo.width()
+        height = frame_geo.height()
+
+        # Adjust X
+        if x + width > screen_geo.right():
+            x = screen_geo.right() - width
+        if x < screen_geo.left():
+            x = screen_geo.left()
+
+        # Adjust Y
+        if y + height > screen_geo.bottom():
+            y = screen_geo.bottom() - height
+        if y < screen_geo.top():
+            y = screen_geo.top()
+
+        # Only move if necessary
+        if x != frame_geo.x() or y != frame_geo.y():
+            self.move(x, y)
+
+    def show(self) -> None:
+        """Show the menu."""
+        super().show()
+        if self.ensure_on_screen:
+            # Use a timer to ensure the window geometry is updated before checking
+            QtCore.QTimer.singleShot(0, self._ensure_on_screen)
 
     def show_as_popup(
         self,
