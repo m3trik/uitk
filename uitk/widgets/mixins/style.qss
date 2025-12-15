@@ -26,6 +26,25 @@ QStackedWidget {
 QStackedWidget QFrame {
     background-color: {MAIN_BACKGROUND};
 }
+QToolBox {
+    background-color: {MAIN_BACKGROUND};
+    border: 1px solid {BORDER_COLOR};
+}
+QToolBox::tab {
+    background-color: none;
+    color: {TEXT_COLOR};
+    border: none;
+    padding: 0px 0px 0px 0px;
+    height: 11px;
+}
+QToolBox::tab:selected {
+    background-color: {BUTTON_CHECKED};
+    color: {TEXT_CHECKED};
+}
+QToolBox::tab:hover {
+    background-color: none;
+    color: {TEXT_HOVER};
+}
 QMainWindow {
     background-color: {MAIN_BACKGROUND_ALPHA};
     border: 1px solid {BORDER_COLOR};
@@ -1052,3 +1071,20 @@ TreeWidget::item:selected {
     color: {TEXT_CHECKED};
 }
 
+/* -- Separator Widget -- */
+Separator {
+    color: transparent;
+    background: transparent;
+    border: none;
+    margin: 0px 0px;
+}
+Separator:hover {
+    border: none;
+}
+Separator > QLabel {
+    color: {TEXT_COLOR};
+    font-size: 11px;
+    background: {MAIN_BACKGROUND};
+    border: none;
+    padding: 0px 0px;
+}

@@ -300,7 +300,21 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
     def show_menu(self):
         """Show the menu."""
-        self.menu.setVisible(True)
+        menu = self.menu
+        grid = menu.gridLayout
+
+        if grid:
+            for i in range(grid.count()):
+                item = grid.itemAt(i)
+                widget = item.widget() if item else None
+                if widget:
+                    row, col, rowSpan, colSpan = grid.getItemPosition(i)
+                    text = (
+                        widget.text()
+                        if hasattr(widget, "text") and callable(widget.text)
+                        else ""
+                    )
+        menu.setVisible(True)
 
     def toggle_collapse(self):
         """Toggle between collapsed (header only) and expanded window states."""
@@ -473,9 +487,6 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         menu_button = self.buttons.get("menu")
         if menu_button:
             visible = self.menu.contains_items
-            # print(
-            #     f"[Header._finalize_menu_button_visibility] setting menu visible = {visible}"
-            # )
             menu_button.setVisible(visible)
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:

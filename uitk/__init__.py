@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.0.50"
+__version__ = "1.0.51"
 
 
 DEFAULT_INCLUDE = {
@@ -83,6 +83,7 @@ DEFAULT_INCLUDE = {
     "widgets.tableWidget": "TableWidget",
     "widgets.textEdit": "TextEdit",
     "widgets.textEditLogHandler": "TextEditLogHandler",
+    "widgets.toolBox": "ToolBox",
     "widgets.treeWidget": "TreeWidget",
     "widgets.widgetComboBox": "WidgetComboBox",
     # Widget mixins

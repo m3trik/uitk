@@ -597,6 +597,25 @@ class SwitchboardUtilsMixin:
         return directory_path
 
     @staticmethod
+    def input_dialog(
+        title: str = "Input", label: str = "Enter value:", text: str = ""
+    ) -> str:
+        """Open an input dialog to get a string from the user.
+
+        Parameters:
+            title (str): Title of the dialog.
+            label (str): Label text.
+            text (str): Default text.
+
+        Returns:
+            str: The entered text, or None if cancelled.
+        """
+        text, ok = QtWidgets.QInputDialog.getText(None, title, label, text=text)
+        if ok:
+            return text
+        return None
+
+    @staticmethod
     def simulate_key_press(
         ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False
     ):

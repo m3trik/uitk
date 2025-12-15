@@ -1,6 +1,10 @@
 qtpy
 <<<<<<< HEAD
+<<<<<<< HEAD
 pythontk==0.7.50
+=======
+pythontk==0.7.50
+>>>>>>> dev
 =======
 pythontk==0.7.50
 >>>>>>> dev
