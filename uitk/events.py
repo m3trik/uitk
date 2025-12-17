@@ -402,6 +402,13 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             self._release_mouse_owner()
             self._flush_hover_state()
 
+        elif etype in (
+            QtCore.QEvent.Type.WindowActivate,
+            QtCore.QEvent.Type.FocusIn,
+        ):
+            # Reinitialize widget cache when window regains focus
+            self._reinitialize_tracking()
+
         return super().eventFilter(widget, event)
 
     def _flush_hover_state(self):
@@ -419,6 +426,24 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
         self._mouse_over.clear()
         self._prev_mouse_over.clear()
+
+    def _reinitialize_tracking(self):
+        """Reinitialize tracking state when window regains focus.
+
+        This ensures hover events work correctly after the user returns
+        from working in another application or window.
+        """
+        # Refresh the widget cache to pick up any new/removed widgets
+        self.update_child_widgets()
+
+        # Clear stale state from before deactivation
+        self._prev_mouse_over.clear()
+        self._mouse_over.clear()
+
+        # Re-filter viewport widgets in case any were added
+        self._filter_viewport_widgets()
+
+        self.logger.debug("Tracking reinitialized after window activation")
 
 
 # --------------------------------------------------------------------------------------------
