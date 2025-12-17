@@ -1,6 +1,2 @@
 qtpy
-<<<<<<< HEAD
 pythontk==0.7.53
-=======
-pythontk==0.7.52
->>>>>>> origin/main
