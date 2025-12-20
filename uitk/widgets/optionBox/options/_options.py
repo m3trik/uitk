@@ -153,7 +153,7 @@ class ButtonOption(BaseOption):
             button.setCheckable(True)
 
         if self.icon:
-            IconManager.set_icon(button, self.icon, size=(17, 17))
+            IconManager.set_icon(button, self.icon, size=(15, 15))
 
         if self.tooltip:
             button.setToolTip(self.tooltip)
