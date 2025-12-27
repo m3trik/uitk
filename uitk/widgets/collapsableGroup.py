@@ -2,6 +2,7 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtGui, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.settings_manager import SettingsManager
 
 
 class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
@@ -11,6 +12,8 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         super().__init__(title, parent)
         self.setCheckable(True)
         self.setChecked(True)  # Start expanded
+        self.restore_state = True  # Default to restoring state
+        self.settings = SettingsManager()
 
         # Connect the toggle signal
         self.toggled.connect(self.toggle_expand)
@@ -18,14 +21,41 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 
+        # Ensure state is applied after UI loading (fixes uic loading issue)
+        QtCore.QTimer.singleShot(0, self._enforce_state)
+
+    def _enforce_state(self):
+        """Ensure the visibility matches the checked state."""
+        if self.restore_state and self.objectName():
+            key = f"CollapsableGroup/{self.objectName()}/checked"
+            val = self.settings.value(key)
+            if val is not None:
+                self.setChecked(val)
+
+        self.toggle_expand(self.isChecked())
+
     def toggle_expand(self, checked):
         """Toggle the expanded/collapsed state"""
+        # Save state
+        if self.restore_state and self.objectName():
+            key = f"CollapsableGroup/{self.objectName()}/checked"
+            self.settings.setValue(key, checked)
+
         # Store the current window size before toggling
         window = self.window()
         old_size = window.size()
 
         # Simply show/hide all child widgets
         self._set_content_visible(checked)
+
+        if checked:
+            self.setMaximumHeight(16777215)  # Restore max height
+        else:
+            # Calculate collapsed height
+            title_height = self.fontMetrics().height()
+            # Add some padding for the frame/title (tight fit)
+            collapsed_height = title_height
+            self.setMaximumHeight(collapsed_height)
 
         # Let Qt handle the layout automatically
         self.updateGeometry()
@@ -100,32 +130,10 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         # If collapsed, return minimal height
         if not self.isChecked():
             title_height = self.fontMetrics().height()
-            collapsed_height = title_height + 25  # Add padding for frame
+            collapsed_height = title_height + 5  # Add padding for frame
             return QtCore.QSize(hint.width(), collapsed_height)
 
         return hint
-
-    def paintEvent(self, event):
-        """Custom paint event for styling"""
-        painter = QtWidgets.QStylePainter(self)
-        option = QtWidgets.QStyleOptionGroupBox()
-        self.initStyleOption(option)
-
-        # Draw the frame and background
-        painter.drawPrimitive(QtWidgets.QStyle.PE_FrameGroupBox, option)
-
-        # Draw the title text with custom color
-        text_rect = self.style().subControlRect(
-            QtWidgets.QStyle.CC_GroupBox,
-            option,
-            QtWidgets.QStyle.SC_GroupBoxLabel,
-            self,
-        )
-        text_color = (
-            QtGui.QColor("lightblue") if not self.isChecked() else QtGui.QColor("white")
-        )
-        painter.setPen(text_color)
-        painter.drawText(text_rect, self.alignment(), self.title())
 
 
 # -----------------------------------------------------------------------------

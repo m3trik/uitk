@@ -16,7 +16,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         "light": {
             "MAIN_FOREGROUND": "rgb(255,255,255)",
             "MAIN_BACKGROUND": "rgb(70,70,70)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,185)",
+            "MAIN_BACKGROUND_ALPHA": "rgba(50,50,50,185)",
             "HEADER_BACKGROUND": "rgba(127,127,127,200)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",
             "BUTTON_PRESSED": "rgb(120,120,120)",
@@ -36,7 +36,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         "dark": {
             "MAIN_FOREGROUND": "rgb(200,200,200)",
             "MAIN_BACKGROUND": "rgb(90,90,90)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(90,90,90,185)",
+            "MAIN_BACKGROUND_ALPHA": "rgba(70,70,70,185)",
             "HEADER_BACKGROUND": "rgba(90,90,90,200)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
             "BUTTON_PRESSED": "rgb(50,50,50)",
@@ -94,9 +94,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         cache_key = f"{package}:{resource}"
         if cache_key not in self._qss_cache:
             try:
-                with importlib.resources.files(package).joinpath(resource).open(
-                    "r", encoding="utf-8"
-                ) as f:
+                with (
+                    importlib.resources.files(package)
+                    .joinpath(resource)
+                    .open("r", encoding="utf-8") as f
+                ):
                     self._qss_cache[cache_key] = f.read()
                 self.logger.info(f"Loaded QSS from package: {package}/{resource}")
             except Exception as e:

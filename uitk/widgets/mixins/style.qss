@@ -56,13 +56,23 @@ QGroupBox {
     margin: 12px 0px 1px 0px;
     background-color: {MAIN_BACKGROUND_ALPHA};
 }
-QGroupBox:hover {
-    border: 2px solid {BUTTON_HOVER};
-}
+/* QGroupBox:hover {
+    border: 1px solid {BUTTON_HOVER};
+} */
 QGroupBox::title {
-    top: -13px;
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 2px;
+    padding-top: 0px;
     background-color: {MAIN_BACKGROUND_ALPHA};
     color: {TEXT_COLOR};
+}
+QGroupBox[class="CollapsableGroup"]::title:hover {
+    color: {TEXT_HOVER};
+}
+QGroupBox[class="CollapsableGroup"]::indicator {
+    width: 0px;
+    height: 0px;
 }
 QGroupBox:disabled {
     color: {TEXT_DISABLED};
