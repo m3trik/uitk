@@ -335,8 +335,22 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self._saved_min_size = window.minimumSize()
         self._saved_max_size = window.maximumSize()
 
-        # Calculate collapsed height (header height + small margin for border)
-        collapsed_height = self.height() + 4
+        # Calculate collapsed height
+        # We need the height from the top of the window to the bottom of the header
+        # plus any bottom margins the window's layout might have.
+        header_bottom = self.mapTo(window, QtCore.QPoint(0, self.height())).y()
+        collapsed_height = header_bottom
+
+        # Add bottom margin if the window has a layout
+        layout = window.layout()
+        if isinstance(window, QtWidgets.QMainWindow) and window.centralWidget():
+            layout = window.centralWidget().layout()
+
+        if layout:
+            collapsed_height += layout.contentsMargins().bottom()
+
+        # Add a small buffer for borders/frame
+        collapsed_height += 6
 
         # Collapse the window
         window.setMinimumHeight(0)

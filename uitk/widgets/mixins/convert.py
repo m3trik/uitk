@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import re
 from typing import Union, Optional, Type
 from qtpy import QtWidgets, QtCore, QtGui
 
@@ -66,6 +67,31 @@ class ConvertMixin:
         # Handle specific cases based on Qt type
         if qt_type is QtGui.QColor:
             if isinstance(value, str):
+                # Try parsing rgb()/rgba() syntax which QColor(str) doesn't always support
+                rgb_match = re.match(
+                    r"rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)", value
+                )
+                if rgb_match:
+                    r, g, b = (
+                        int(rgb_match.group(1)),
+                        int(rgb_match.group(2)),
+                        int(rgb_match.group(3)),
+                    )
+                    a_str = rgb_match.group(4)
+                    a = (
+                        int(float(a_str) * 255) if a_str else 255
+                    )  # Handle float alpha 0.0-1.0 or int 0-255? CSS alpha is 0-1, QColor is 0-255.
+                    # Assuming CSS standard 0-1 if float-like, or if named alpha? Usually CSS is 0-1.
+                    # QSS often uses ints for rgb but alpha?
+                    # style_sheet.py uses "rgba(80,80,80,180)" -> 180 looks like 0-255. Qt style sheets often use 0-255 for alpha if int.
+                    # Let's assume if it matches int format it's 0-255.
+                    if a_str and "." not in a_str and int(a_str) > 1:
+                        a = int(a_str)
+                    elif a_str:
+                        a = int(float(a_str) * 255)
+
+                    return QtGui.QColor(r, g, b, a)
+
                 return QtGui.QColor(value)
             elif isinstance(value, (tuple, list)):
                 if all(isinstance(v, (int, float)) for v in value):

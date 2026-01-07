@@ -2,6 +2,7 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtCore, QtGui
 import logging
+from pythontk.core_utils.logging_mixin import LoggerExt
 
 
 class TextEditLogHandler(logging.Handler):
@@ -36,7 +37,8 @@ class TextEditLogHandler(logging.Handler):
             else:
                 msg = self.format(record)
                 color = self.get_color(record.levelname)
-                msg = f'<span style="color:{color}">{msg}</span>'
+                # Use pre tag to preserve whitespace alignment
+                msg = f'<pre style="color:{color}; margin:0; font-family:monospace;">{msg}</pre>'
 
             # Check if we're on the main GUI thread
             app = QtWidgets.QApplication.instance()
@@ -62,18 +64,7 @@ class TextEditLogHandler(logging.Handler):
             print(f"QtTextEditHandler error: {e}")
 
     def get_color(self, level: str) -> str:
-        return {
-            "DEBUG": "#AAAAAA",  # Neutral gray
-            "INFO": "#FFFFFF",  # Pure white
-            "WARNING": "#FFF5B7",  # Pastel yellow
-            "ERROR": "#FFCCCC",  # Pastel pink
-            "CRITICAL": "#CC3333",  # Strong red
-            "SUCCESS": "#CCFFCC",  # Pastel green
-            "RESULT": "#CCFFFF",  # Pastel teal
-            "NOTICE": "#E5CCFF",  # Pastel lavender
-        }.get(
-            level, "#FFFFFF"
-        )  # fallback: pure white
+        return LoggerExt.get_color(level)
 
 
 # ----------------------------------------------------------------------------

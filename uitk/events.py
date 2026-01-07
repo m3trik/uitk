@@ -394,6 +394,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             ):
                 self._send_release_event(top_widget, event.button())
 
+            # No need for continued tracking after release when drag-only mode is active
+            if self.track_on_drag_only:
+                self._flush_hover_state()
+
         elif etype in (
             QtCore.QEvent.Type.Hide,
             QtCore.QEvent.Type.FocusOut,

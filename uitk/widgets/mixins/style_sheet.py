@@ -2,8 +2,9 @@
 # coding=utf-8
 import importlib.resources
 from typing import Union
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+from uitk.widgets.mixins.settings_manager import SettingsManager
 
 
 class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
@@ -15,8 +16,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     themes = {
         "light": {
             "MAIN_FOREGROUND": "rgb(255,255,255)",
-            "MAIN_BACKGROUND": "rgb(70,70,70)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(90,90,90,185)",
+            "PANEL_BACKGROUND": "rgb(70,70,70)",
+            "WINDOW_BACKGROUND": "rgba(80,80,80,170)",
             "HEADER_BACKGROUND": "rgba(127,127,127,200)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",
             "BUTTON_PRESSED": "rgb(120,120,120)",
@@ -26,7 +27,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "TEXT_CHECKED": "rgb(255,255,255)",
             "TEXT_DISABLED": "rgba(150,150,150,175)",
             "TEXT_HOVER": "rgb(255,255,255)",
-            "TEXT_BACKGROUND": "rgb(70,70,70)",
+            "TEXT_BACKGROUND": "rgba(70,70,70,100)",
             "BORDER_COLOR": "rgb(40,40,40)",
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
@@ -35,18 +36,18 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         },
         "dark": {
             "MAIN_FOREGROUND": "rgb(200,200,200)",
-            "MAIN_BACKGROUND": "rgb(90,90,90)",
-            "MAIN_BACKGROUND_ALPHA": "rgba(115,115,115,185)",
-            "HEADER_BACKGROUND": "rgba(90,90,90,200)",
+            "PANEL_BACKGROUND": "rgb(80,80,80)",
+            "WINDOW_BACKGROUND": "rgba(90,90,90,170)",
+            "HEADER_BACKGROUND": "rgba(85,85,85,200)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
             "BUTTON_PRESSED": "rgb(50,50,50)",
-            "BUTTON_HOVER": "rgb(100,130,150)",  # Desaturated blue
-            "BUTTON_CHECKED": "rgb(165,135,100)",  # Further desaturated orange
+            "BUTTON_HOVER": "rgba(100,130,150,225)",  # Desaturated blue
+            "BUTTON_CHECKED": "rgba(165,135,100,225)",  # Further desaturated orange
             "TEXT_COLOR": "rgb(220,220,220)",
             "TEXT_CHECKED": "rgb(255,255,255)",
             "TEXT_DISABLED": "rgba(150,150,150,175)",
             "TEXT_HOVER": "rgb(255,255,255)",
-            "TEXT_BACKGROUND": "rgb(30,30,30)",
+            "TEXT_BACKGROUND": "rgba(70,70,70,100)",
             "BORDER_COLOR": "rgb(20,20,20)",
             "HIGHLIGHT_COLOR": "rgb(255,255,190)",
             "DISABLED_BACKGROUND": "rgb(35,35,35)",
@@ -58,10 +59,27 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     _qss_cache: dict[str, str] = {}
     # Track current theme per widget for icon color lookups
     _widget_themes: dict = {}
+    # Track configuration for reloading
+    _widget_configs: dict = {}
+    # Track custom overrides
+    _global_overrides: dict = {}
+    _widget_overrides: dict = {}
+    _settings = SettingsManager(org="uitk", app="GlobalStyle", namespace="overrides")
+    _settings_loaded = False
+
+    @classmethod
+    def _ensure_settings_loaded(cls):
+        """Lazy load settings from persistent storage."""
+        if not cls._settings_loaded:
+            stored_overrides = cls._settings.value("global", {})
+            if stored_overrides and isinstance(stored_overrides, dict):
+                cls._global_overrides.update(stored_overrides)
+            cls._settings_loaded = True
 
     def __init__(
         self, parent: Union[QtWidgets.QWidget, None] = None, log_level: str = "WARNING"
     ):
+        StyleSheet._ensure_settings_loaded()
         super().__init__(parent)
         self.logger.setLevel(log_level)
         self.set = self._set_style
@@ -87,6 +105,158 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
 
         # Default fallback
         return "#888888"
+
+    @classmethod
+    def set_theme(cls, theme: str, widget: QtWidgets.QWidget = None):
+        """Set a new theme for a specific widget or all registered widgets.
+
+        Args:
+            theme: Name of the theme to apply (e.g. "light", "dark")
+            widget: Specific widget to update. If None, updates all registered widgets.
+        """
+        targets = [widget] if widget else list(cls._widget_configs.keys())
+
+        for w in targets:
+            if w in cls._widget_configs:
+                cls._widget_configs[w]["theme"] = theme
+                cls.reload(w)
+
+    @classmethod
+    def reload(cls, widget: QtWidgets.QWidget = None):
+        """Reload the style for a specific widget or all registered widgets.
+
+        Args:
+            widget: Specific widget to reload. If None, reloads all registered widgets.
+        """
+        targets = [widget] if widget else list(cls._widget_configs.keys())
+
+        # Use a temporary instance to apply styles since _set_style is an instance method
+        styler = cls()
+
+        for w in targets:
+            if w in cls._widget_configs:
+                config = cls._widget_configs[w].copy()
+                kwargs = config.pop("kwargs", {})
+                try:
+                    styler.set(w, **config, **kwargs)
+                except RuntimeError:
+                    # Widget likely deleted
+                    if w in cls._widget_configs:
+                        del cls._widget_configs[w]
+
+    @classmethod
+    def set_variable(
+        cls,
+        name: str,
+        value: Union[str, QtGui.QColor, None],
+        widget: QtWidgets.QWidget = None,
+    ):
+        """Set a theme variable override.
+
+        Args:
+            name: The variable name (e.g. "BUTTON_HOVER").
+            value: The value. If None, the override is removed.
+            widget: If provided, override only for this widget. Otherwise global.
+        """
+        cls._ensure_settings_loaded()
+        if value is None:
+            if widget:
+                if (
+                    widget in cls._widget_overrides
+                    and name in cls._widget_overrides[widget]
+                ):
+                    del cls._widget_overrides[widget][name]
+                    cls.reload(widget)
+            else:
+                if name in cls._global_overrides:
+                    del cls._global_overrides[name]
+                    # Update settings
+                    cls._settings.setValue("global", cls._global_overrides)
+                    cls.reload()
+            return
+
+        val_str = value
+        if hasattr(value, "name"):  # Handle QColor
+            if value.alpha() == 255:
+                # Use hex for opaque colors to keep strings short/readable
+                val_str = value.name()
+            else:
+                val_str = f"rgba({value.red()},{value.green()},{value.blue()},{value.alpha()})"
+        elif hasattr(value, "toRgb"):  # Handle other Qt color objects
+            c = value.toRgb()
+            if c.alpha() == 255:
+                val_str = c.name()
+            else:
+                val_str = f"rgba({c.red()},{c.green()},{c.blue()},{c.alpha()})"
+        elif not isinstance(value, str):
+            val_str = str(value)
+
+        if widget:
+            if widget not in cls._widget_overrides:
+                cls._widget_overrides[widget] = {}
+                # Ensure cleanup
+                try:
+                    widget.destroyed.connect(
+                        lambda obj: cls._widget_overrides.pop(obj, None)
+                    )
+                except (AttributeError, RuntimeError):
+                    pass
+            cls._widget_overrides[widget][name] = val_str
+            cls.reload(widget)
+        else:
+            cls._global_overrides[name] = val_str
+            # Update settings
+            cls._settings.setValue("global", cls._global_overrides)
+            cls.reload()
+
+    @classmethod
+    def get_variable(
+        cls, name: str, theme: str = "light", widget: QtWidgets.QWidget = None
+    ) -> str:
+        """Get a theme variable value, resolving overrides.
+
+        Args:
+            name: Variable name.
+            theme: Base theme name.
+            widget: Context widget for checking overrides.
+        """
+        cls._ensure_settings_loaded()
+        # Check widget override
+        if widget and widget in cls._widget_overrides:
+            if name in cls._widget_overrides[widget]:
+                return cls._widget_overrides[widget][name]
+
+        # Check global override
+        if name in cls._global_overrides:
+            return cls._global_overrides[name]
+
+        # Check base theme
+        return cls.themes.get(theme, {}).get(name, "")
+
+    @classmethod
+    def get_variables(cls, theme: str = "light") -> list[str]:
+        """Get list of available theme variables."""
+        return list(cls.themes.get(theme, {}).keys())
+
+    @classmethod
+    def reset_overrides(cls, widget: QtWidgets.QWidget = None):
+        """Clear overrides.
+
+        Args:
+            widget: If provided, clear only this widget's overrides.
+                    If None, clear ALL overrides (global and all widgets).
+        """
+        cls._ensure_settings_loaded()
+        if widget:
+            if widget in cls._widget_overrides:
+                del cls._widget_overrides[widget]
+                cls.reload(widget)
+        else:
+            cls._widget_overrides.clear()
+            cls._global_overrides.clear()
+            # Clear settings
+            cls._settings.clear("global")
+            cls.reload()
 
     def _load_qss_file(
         self, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
@@ -155,8 +325,20 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             )
 
         try:
+            # Prepare theme variables with overrides
+            theme_vars = self.themes.get(theme, {}).copy()
+            # Apply global overrides
+            theme_vars.update(self._global_overrides)
+            # Apply widget-specific overrides
+            if widget in self._widget_overrides:
+                theme_vars.update(self._widget_overrides[widget])
+            # Apply kwargs overrides (if any match theme keys)
+            for k, v in kwargs.items():
+                if k in theme_vars:  # treat kwargs as overrides if they match keys
+                    theme_vars[k] = str(v)
+
             qss = self._load_qss_file(resource, package)
-            qss_final = self._apply_theme_variables(qss, self.themes[theme])
+            qss_final = self._apply_theme_variables(qss, theme_vars)
             self.logger.debug(
                 f"Applying QSS to widget '{widget.objectName()}':\n---BEGIN QSS---\n{qss_final}\n---END QSS---"
             )
@@ -169,15 +351,37 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # Track theme for this widget
             StyleSheet._widget_themes[widget] = theme
 
+            # Track configuration for reloading
+            if widget not in StyleSheet._widget_configs:
+                try:
+                    widget.destroyed.connect(
+                        lambda obj: StyleSheet._widget_themes.pop(obj, None)
+                    )
+                    widget.destroyed.connect(
+                        lambda obj: StyleSheet._widget_configs.pop(obj, None)
+                    )
+                except (AttributeError, RuntimeError):
+                    pass
+
+            StyleSheet._widget_configs[widget] = {
+                "theme": theme,
+                "style_class": style_class,
+                "recursive": recursive,
+                "resource": resource,
+                "package": package,
+                "kwargs": kwargs,
+            }
+
             # Update default icon color and refresh icons for this widget tree
-            icon_color = self.themes[theme].get("ICON_COLOR", "#888888")
+            # Use resolved color from theme_vars to ensure overrides are respected
+            icon_color = theme_vars.get("ICON_COLOR", "#888888")
             from uitk.widgets.mixins.icon_manager import IconManager
 
             IconManager.set_default_color(icon_color)
             IconManager.update_widget_icons(widget, icon_color)
 
             # Emit signal for any custom handlers
-            self.theme_changed.emit(widget, theme, self.themes[theme])
+            self.theme_changed.emit(widget, theme, theme_vars)
 
         except Exception as e:
             self.logger.error(

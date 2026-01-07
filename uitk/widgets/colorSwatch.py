@@ -9,6 +9,7 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
     """Color picker button that displays and stores a selectable color value."""
 
     initializeRequested = QtCore.Signal()
+    colorChanged = QtCore.Signal(QtGui.QColor)
 
     def __init__(self, parent=None, color=None, settings=None, **kwargs):
         super().__init__(parent)
@@ -47,6 +48,7 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
 
         self.updateBackgroundColor()
         self.saveColor()
+        self.colorChanged.emit(self._color)
 
     @property
     def settings(self):
@@ -59,6 +61,9 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
         QtCore.QTimer.singleShot(0, self.initializeRequested.emit)
 
     def saveColor(self):
+        if self.settings is None:
+            return
+
         if not self.objectName():
             warnings.warn(
                 "Attempting to save settings for a ColorSwatch widget without an objectName set.",
@@ -66,12 +71,14 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
             )
             return  # Early return to avoid attempting to save without an objectName
 
-        if self.canSaveLoadColor():
-            self.settings.setValue(
-                f"colorSwatch/{self.objectName()}/color", self._color.name()
-            )
+        self.settings.setValue(
+            f"colorSwatch/{self.objectName()}/color", self._color.name()
+        )
 
     def loadColor(self):
+        if self.settings is None:
+            return
+
         if not self.objectName():
             warnings.warn(
                 "Attempting to load settings for a ColorSwatch widget without an objectName set.",
@@ -79,17 +86,14 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
             )
             return  # Early return to avoid attempting to load without an objectName
 
-        if self.canSaveLoadColor():
-            colorValue = self.settings.value(
-                f"colorSwatch/{self.objectName()}/color", None
-            )
+        colorValue = self.settings.value(f"colorSwatch/{self.objectName()}/color", None)
 
-            # If colorValue is None (indicating no value was previously stored),
-            # use a default QColor object instead of QtCore.Qt.white
-            if colorValue is None:
-                colorValue = QtGui.QColor(QtCore.Qt.white)
+        # If colorValue is None (indicating no value was previously stored),
+        # use a default QColor object instead of QtCore.Qt.white
+        if colorValue is None:
+            colorValue = QtGui.QColor(QtCore.Qt.white)
 
-            self.color = colorValue
+        self.color = colorValue
 
     def canSaveLoadColor(self):
         """Check if the widget is in a state that allows saving or loading the color."""
@@ -98,13 +102,26 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
     def initializeColor(self):
         self.loadColor()
 
-        if not hasattr(self, "_color") or not self._color.isValid():
-            self._color = (
+        if (
+            not hasattr(self, "_color")
+            or not isinstance(self._color, QtGui.QColor)
+            or not self._color.isValid()
+        ):
+            # Resolve the initial color (fallback to white if None)
+            target_color = (
                 self._initialColor
                 if self._initialColor is not None
                 else QtGui.QColor(QtCore.Qt.white)
             )
 
+            # Manually convert to QColor to avoid triggering the property setter's signal emission
+            converted_color = ConvertMixin.to_qobject(target_color, QtGui.QColor)
+            if converted_color and isinstance(converted_color, QtGui.QColor):
+                self._color = converted_color
+            else:
+                self._color = QtGui.QColor(QtCore.Qt.white)
+
+        # Update UI without emitting signal
         self.updateBackgroundColor()
 
     def updateBackgroundColor(self):
@@ -122,9 +139,17 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
             f"}}"
         )
 
-    def mouseDoubleClickEvent(self, event):
-        """Open a color dialog on double click to select a new color."""
+    def mouseReleaseEvent(self, event):
+        """Open a color dialog on single click to select a new color."""
+        super().mouseReleaseEvent(event)
+
+        if event.button() != QtCore.Qt.LeftButton or not self.rect().contains(
+            event.pos()
+        ):
+            return
+
         colorDialog = QtWidgets.QColorDialog(self._color, self)
+        colorDialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
         colorDialog.setStyleSheet(
             """
             QDialog {
@@ -158,11 +183,23 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
             }
         """
         )
+
+        # Store original color for revert on Cancel
+        original_color = self._color
+
+        # Enable live updates
+        def update_live(color):
+            self.color = color
+
+        colorDialog.currentColorChanged.connect(update_live)
+
         if colorDialog.exec_():
-            selectedColor = colorDialog.selectedColor()
-            if selectedColor.isValid():
-                self.color = selectedColor  # Setter handles updating and saving
-        super().mouseDoubleClickEvent(event)
+            self.color = colorDialog.selectedColor()
+        else:
+            # Revert to original color on Cancel (unless we want to keep "Apply" effect?
+            # Standard dialog behavior is Cancel reverts everything.
+            # "Apply" usually commits. but since we only have live update...)
+            self.color = original_color
 
 
 # -----------------------------------------------------------------------------
