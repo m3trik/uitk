@@ -58,6 +58,7 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         self._saved_size = None
         self._saved_min_size = None
         self._saved_max_size = None
+        self._saved_parent_min_heights = {}  # Store min heights of ancestors
         self.__mousePressPos = None
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
 
@@ -323,39 +324,72 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         else:
             self.collapse_window()
 
+    def _set_siblings_visibility(self, visible):
+        """Recursively toggle visibility of all siblings in the parent layout."""
+        parent = self.parent()
+        if not parent or not parent.layout():
+            return
+
+        def recursive_set_vis(layout):
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item.widget():
+                    widget = item.widget()
+                    if widget is not self:
+                        if not visible:
+                            # Only hide if currently visible
+                            if widget.isVisible():
+                                widget.setProperty("header_hidden_state", True)
+                                widget.hide()
+                        else:
+                            # Only show if we hid it
+                            if widget.property("header_hidden_state"):
+                                widget.show()
+                                widget.setProperty("header_hidden_state", None)
+                elif item.layout():
+                    recursive_set_vis(item.layout())
+
+        recursive_set_vis(parent.layout())
+
     def collapse_window(self):
         """Collapse the parent window to show only the header."""
         if self._collapsed:
             return
 
         window = self.window()
+        layout = self.parent().layout()
 
-        # Save current size and size constraints (not position - that can change while collapsed)
+        # Save current size and size constraints
         self._saved_size = window.size()
         self._saved_min_size = window.minimumSize()
         self._saved_max_size = window.maximumSize()
 
-        # Calculate collapsed height
-        # We need the height from the top of the window to the bottom of the header
-        # plus any bottom margins the window's layout might have.
-        header_bottom = self.mapTo(window, QtCore.QPoint(0, self.height())).y()
-        collapsed_height = header_bottom
-
-        # Add bottom margin if the window has a layout
-        layout = window.layout()
-        if isinstance(window, QtWidgets.QMainWindow) and window.centralWidget():
-            layout = window.centralWidget().layout()
-
+        # Hide all visible siblings recursively
+        self._set_siblings_visibility(False)
+        QtWidgets.QApplication.processEvents()
         if layout:
-            collapsed_height += layout.contentsMargins().bottom()
+            layout.activate()
 
-        # Add a small buffer for borders/frame
-        collapsed_height += 6
+        # Walk up hierarchy to window, saving and nuking minimum heights
+        curr = self.parent()
+        self._saved_parent_min_heights = {}
+        while curr and curr is not window:
+            self._saved_parent_min_heights[curr] = curr.minimumHeight()
+            curr.setMinimumHeight(0)
+            curr = curr.parent()
+
+        # Calculate exact required height based on header height + parent margins
+        new_height = self.height()
+        parent = self.parent()
+        if parent and parent.layout():
+            margins = parent.layout().contentsMargins()
+            new_height += margins.top() + margins.bottom()
 
         # Collapse the window
         window.setMinimumHeight(0)
-        window.setMaximumHeight(collapsed_height)
-        window.resize(window.width(), collapsed_height)
+        # Resize height only, preserving current width
+        window.resize(window.width(), new_height)
+        window.setMaximumHeight(new_height)
 
         # Update icon to expand (chevron down)
         if "collapse" in self.buttons:
@@ -372,16 +406,32 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
 
         window = self.window()
 
-        # Restore size constraints first
+        # Restore visibility of siblings
+        self._set_siblings_visibility(True)
+        QtWidgets.QApplication.processEvents()
+
+        # Restore ancestor minimum heights
+        for widget, min_h in self._saved_parent_min_heights.items():
+            if widget:  # check validity
+                try:
+                    widget.setMinimumHeight(min_h)
+                except RuntimeError:
+                    pass  # Widget might be deleted
+        self._saved_parent_min_heights = {}
+
+        # Restore size constraints
         if self._saved_min_size:
             window.setMinimumSize(self._saved_min_size)
         if self._saved_max_size:
             window.setMaximumSize(self._saved_max_size)
+        else:
+            window.setMaximumHeight(16777215)  # Qt's default max height
 
-        # Don't restore size - let the window adjust naturally to its content
-        # This allows groupbox visibility changes to properly resize the window
-        window.setMaximumHeight(16777215)  # Qt's default max height
-        window.adjustSize()
+        # Restore original size
+        if self._saved_size:
+            window.resize(self._saved_size)
+        else:
+            window.adjustSize()
 
         # Update icon to collapse (chevron up)
         if "collapse" in self.buttons:

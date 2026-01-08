@@ -80,9 +80,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.is_initialized = False
         self.prevent_hide = False
         self.ensure_on_screen = ensure_on_screen
-        self.restore_window_size = (
-            restore_window_size  # Enable/disable window size saving
-        )
+        self.restore_window_size = restore_window_size
         self.add_footer = add_footer
         self.default_slot_timeout = default_slot_timeout
         self.footer: Optional[Footer] = None
@@ -105,6 +103,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
 
         self.on_close.connect(self.settings.sync)
+        self.on_hide.connect(self.settings.sync)
         self.on_child_changed.connect(self.sync_widget_values)
 
         # If central widget is provided, set it
@@ -581,6 +580,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     def showEvent(self, event) -> None:
         """Override the show event to initialize untracked widgets and restore their states."""
         if not self.is_initialized:
+            if self.restore_window_size:
+                self.restore_window_geometry()
+
             self.logger.debug(f"[showEvent]: Registering children on first show.")
             try:
                 self.register_children()
@@ -634,6 +636,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
     def hideEvent(self, event) -> None:
         """Reimplement hideEvent to emit custom signal when window is hidden."""
+        # Save window geometry when hidden (covers Tcl toggling)
+        self.save_window_geometry()
+
         # Explicitly return focus to the parent window (e.g. Maya).
         # This is necessary in embedded contexts because the OS window manager
         # may otherwise transfer focus to a different application when a

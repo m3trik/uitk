@@ -16,21 +16,26 @@ class TestStyleSheetOverrides(QtBaseTestCase):
     def test_get_defaults(self):
         """Should retrieve default theme variables."""
         # Check a known variable from the 'light' theme
-        bg_color = StyleSheet.get_variable("MAIN_BACKGROUND", theme="light")
+        bg_color = StyleSheet.get_variable("PANEL_BACKGROUND", theme="light")
         self.assertEqual(bg_color, "rgb(70,70,70)")
 
     def test_global_override(self):
-        """Should respect global variable overrides."""
-        # Set a global override
+        """Should respect theme-specific variable overrides."""
+        # Set a global override (defaults to theme='light')
         StyleSheet.set_variable("BUTTON_HOVER", "#FF0000")
 
-        # Verify it overrides the default
+        # Verify it overrides the default for light theme
         val = StyleSheet.get_variable("BUTTON_HOVER", theme="light")
         self.assertEqual(val, "#FF0000")
 
-        # Verify it applies to dark theme too (since it's a variable override)
+        # Verify it DOES NOT apply to dark theme (overrides are now theme-specific)
         val_dark = StyleSheet.get_variable("BUTTON_HOVER", theme="dark")
-        self.assertEqual(val_dark, "#FF0000")
+        self.assertNotEqual(val_dark, "#FF0000")
+
+        # Set specific override for dark theme
+        StyleSheet.set_variable("BUTTON_HOVER", "#0000FF", theme="dark")
+        val_dark_new = StyleSheet.get_variable("BUTTON_HOVER", theme="dark")
+        self.assertEqual(val_dark_new, "#0000FF")
 
         # Clean up
         StyleSheet.reset_overrides()

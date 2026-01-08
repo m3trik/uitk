@@ -484,12 +484,26 @@ class SwitchboardUtilsMixin:
         # Find all QGroupBox widgets in the UI
         groupboxes = ui.findChildren(QtWidgets.QGroupBox)
 
+        # Get the window
+        window = ui.window() if isinstance(ui, QtWidgets.QWidget) else None
+
+        visibility_changed = False
         # Hide all groupboxes that do not match the unknown tags
         for groupbox in groupboxes:
-            if unknown_tags and groupbox.objectName() not in unknown_tags:
+            should_hide = unknown_tags and groupbox.objectName() not in unknown_tags
+
+            if should_hide and not groupbox.isHidden():
                 groupbox.hide()
-            else:
+                visibility_changed = True
+            elif not should_hide and groupbox.isHidden():
                 groupbox.show()
+                visibility_changed = True
+
+        # Adjust window size
+        if window and visibility_changed:
+            QtCore.QTimer.singleShot(
+                0, lambda: (window.adjustSize(), window.updateGeometry())
+            )
 
     @staticmethod
     def invert_on_modifier(value):

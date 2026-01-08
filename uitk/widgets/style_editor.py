@@ -25,6 +25,16 @@ class StyleEditor(QtWidgets.QWidget):
         info_label.setAlignment(QtCore.Qt.AlignCenter)
         self.main_layout.addWidget(info_label)
 
+        # Theme Selection
+        theme_layout = QtWidgets.QHBoxLayout()
+        theme_label = QtWidgets.QLabel("Theme:")
+        self.cmb_theme = QtWidgets.QComboBox()
+        self.cmb_theme.addItems(list(StyleSheet.themes.keys()))
+        self.cmb_theme.currentTextChanged.connect(self.populate)
+        theme_layout.addWidget(theme_label)
+        theme_layout.addWidget(self.cmb_theme)
+        self.main_layout.addLayout(theme_layout)
+
         # Table
         self.table = QtWidgets.QTableWidget()
         self.table.setColumnCount(3)
@@ -58,9 +68,8 @@ class StyleEditor(QtWidgets.QWidget):
     def populate(self):
         """Populate the table with variables."""
         self.table.setRowCount(0)
-        variables = StyleSheet.get_variables(
-            "light"
-        )  # Get list from light theme (keys are same)
+        current_theme = self.cmb_theme.currentText()
+        variables = StyleSheet.get_variables(current_theme)
         variables.sort()
 
         self.table.setRowCount(len(variables))
@@ -74,8 +83,8 @@ class StyleEditor(QtWidgets.QWidget):
             # Color Swatch
             # Get current resolved value (incorporating overrides)
             current_val = StyleSheet.get_variable(
-                var_name, theme="light"
-            )  # Use 'light' as base but get_variable resolves overrides
+                var_name, theme=current_theme
+            )  # Use current theme to resolve overrides
 
             # Since get_variable returns string (e.g. "rgb(..)" or "#hex"), Swatch handles it?
             # ColorSwatch takes a QColor or valid input. We might need to convert.
@@ -109,13 +118,15 @@ class StyleEditor(QtWidgets.QWidget):
 
     def on_color_changed(self, name, color):
         """Handle color change from swatch."""
-        StyleSheet.set_variable(name, color)
+        theme = self.cmb_theme.currentText()
+        StyleSheet.set_variable(name, color, theme=theme)
         # Note: StyleSheet.reload() is called automatically by set_variable
         # so changes should reflect immediately in the UI (including this editor if it uses StyleSheet)
 
     def reset_variable(self, name):
         """Reset a single variable."""
-        StyleSheet.set_variable(name, None)
+        theme = self.cmb_theme.currentText()
+        StyleSheet.set_variable(name, None, theme=theme)
         # Refresh the specific row's swatch to match the restored default
         self.refresh_row(name)
 
@@ -140,7 +151,8 @@ class StyleEditor(QtWidgets.QWidget):
             container = self.table.cellWidget(row, 1)
             swatch = container.findChild(ColorSwatch)
             if swatch:
-                val = StyleSheet.get_variable(name, theme="light")
+                theme = self.cmb_theme.currentText()
+                val = StyleSheet.get_variable(name, theme=theme)
                 # Block signals to prevent triggering on_color_changed which sets the variable again
                 swatch.blockSignals(True)
                 swatch.color = val

@@ -141,6 +141,7 @@ QAbstractButton {
     border: 1px solid {BORDER_COLOR};
     padding: 0px 1px 0px 1px;
     spacing: 1px;
+    text-align: center;
 }
 QAbstractButton:hover {
     background-color: {BUTTON_HOVER};
@@ -493,12 +494,12 @@ QPlainTextEdit:disabled {
 
 /* -- Item Views -- */
 QAbstractItemView {
-    alternate-background-color: {PANEL_BACKGROUND};
+    alternate-background-color: {WINDOW_FOREGROUND};
     background-attachment: fixed;
     color: {TEXT_COLOR};
 }
 QAbstractItemView::item:alternate {
-    background-color: {PANEL_BACKGROUND};
+    background-color: {WINDOW_FOREGROUND};
 }
 QAbstractItemView::item:selected {
     border: 1px solid {BORDER_COLOR};
@@ -880,11 +881,11 @@ QWidget[class~="withBorder"] {
     font-weight: bold;
 }
 Header {
-    background-color: {HEADER_BACKGROUND};
+    background-color: {PANEL_BACKGROUND};
     border: none;
 }
 Header:hover {
-    background-color: {HEADER_BACKGROUND};
+    background-color: {PANEL_BACKGROUND};
     border: none;
 }
 Header > QLabel {
@@ -928,12 +929,12 @@ QFrame#menuFrame:hover {
 
 /* Footer Styling */
 Footer {
-    background-color: {HEADER_BACKGROUND};
+    background-color: {PANEL_BACKGROUND_BACKGROUND};
     border: none;
     color: {TEXT_COLOR};
 }
 Footer:hover {
-    background-color: {HEADER_BACKGROUND};
+    background-color: {PANEL_BACKGROUND};
     border: none;
 }
 Footer > QLabel {
@@ -956,7 +957,7 @@ QTreeWidget {
     selection-background-color: {BUTTON_HOVER};
     show-decoration-selected: 1;
     gridline-color: transparent;
-    alternate-background-color: {PANEL_BACKGROUND};
+    alternate-background-color: {WINDOW_FOREGROUND};
 }
 
 QTreeWidget::branch {
@@ -1063,7 +1064,7 @@ QTreeWidget::item:hover:!selected {
 }
 
 QTreeWidget::item:alternate {
-    background-color: {PANEL_BACKGROUND};
+    background-color: {WINDOW_FOREGROUND};
 }
 
 /* Custom TreeWidget class support */
