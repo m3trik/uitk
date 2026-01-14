@@ -150,7 +150,8 @@ class ActionButtonManager:
         self.menu = menu_widget
         self._buttons: Dict[str, QtWidgets.QPushButton] = {}
         self._container: Optional[QtWidgets.QWidget] = None
-        self._layout: Optional[QtWidgets.QHBoxLayout] = None
+        self._layout: Optional[QtWidgets.QVBoxLayout] = None
+        self._separator: Optional[Separator] = None
 
     @property
     def container(self) -> QtWidgets.QWidget:
@@ -162,6 +163,11 @@ class ActionButtonManager:
             self._layout = QtWidgets.QVBoxLayout(self._container)
             self._layout.setContentsMargins(0, 0, 0, 0)
             self._layout.setSpacing(1)
+
+            # Add separator with title to organize action buttons
+            self._separator = Separator(title="Actions")
+            self._layout.addWidget(self._separator)
+
         return self._container
 
     def create_button(
@@ -195,8 +201,14 @@ class ActionButtonManager:
         """Add an action button to the container."""
         button = self.create_button(button_id, config)
         _ = self.container  # Ensure container exists
-        if index >= 0:
-            self._layout.insertWidget(index, button)
+
+        # Adjust index to account for separator at top
+        final_index = index
+        if final_index >= 0 and self._separator:
+            final_index += 1
+
+        if final_index >= 0:
+            self._layout.insertWidget(final_index, button)
         else:
             self._layout.addWidget(button)
         return button
@@ -1474,7 +1486,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """Update defaults button visibility based on menu state."""
         if not self.add_defaults_button:
             return
-        
+
         defaults_button = self._button_manager.get_button("defaults")
         if not defaults_button:
             return
