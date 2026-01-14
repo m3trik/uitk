@@ -499,6 +499,40 @@ class TestMouseTrackingEventFilter(QtBaseTestCase):
         result = self.tracker.eventFilter(self.parent_widget, event)
         self.assertFalse(result)
 
+    def test_optimization_update_on_press_not_move(self):
+        """Verify update_child_widgets is called on Press/Enter but not Move."""
+        self.tracker.update_child_widgets = MagicMock()
+
+        # Test MouseMove (Should NOT update)
+        event_move = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseMove,
+            QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+        )
+        self.tracker.eventFilter(self.parent_widget, event_move)
+        self.tracker.update_child_widgets.assert_not_called()
+
+        # Test MouseButtonPress (Should UPDATE)
+        event_press = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+        self.tracker.eventFilter(self.parent_widget, event_press)
+        self.tracker.update_child_widgets.assert_called_once()
+        self.tracker.update_child_widgets.reset_mock()
+
+        # Test Enter (Should UPDATE)
+        event_enter = QtCore.QEvent(QtCore.QEvent.Type.Enter)
+        self.tracker.eventFilter(self.parent_widget, event_enter)
+        self.tracker.update_child_widgets.assert_called_once()
+
 
 class TestMouseTrackingUpdateMethods(QtBaseTestCase):
     """Tests for MouseTracking update methods."""

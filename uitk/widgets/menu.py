@@ -159,7 +159,7 @@ class ActionButtonManager:
             self._container = QtWidgets.QWidget()
             self._container.setObjectName("actionButtonContainer")
             self._container.hide()
-            self._layout = QtWidgets.QHBoxLayout(self._container)
+            self._layout = QtWidgets.QVBoxLayout(self._container)
             self._layout.setContentsMargins(0, 0, 0, 0)
             self._layout.setSpacing(1)
         return self._container
@@ -190,12 +190,15 @@ class ActionButtonManager:
         return button
 
     def add_button(
-        self, button_id: str, config: _ActionButtonConfig
+        self, button_id: str, config: _ActionButtonConfig, index: int = -1
     ) -> QtWidgets.QPushButton:
         """Add an action button to the container."""
         button = self.create_button(button_id, config)
         _ = self.container  # Ensure container exists
-        self._layout.addWidget(button)
+        if index >= 0:
+            self._layout.insertWidget(index, button)
+        else:
+            self._layout.addWidget(button)
         return button
 
     def get_button(self, button_id: str) -> Optional[QtWidgets.QPushButton]:
@@ -1441,7 +1444,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             visible=self.contains_items,
             fixed_height=26,
         )
-        self._button_manager.add_button("defaults", config)
+        self._button_manager.add_button("defaults", config, index=0)
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
 
@@ -1471,10 +1474,35 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """Update defaults button visibility based on menu state."""
         if not self.add_defaults_button:
             return
+        
         defaults_button = self._button_manager.get_button("defaults")
         if not defaults_button:
             return
-        if self.contains_items:
+
+        # Define types that are considered "options" (stateful widgets)
+        # We only show the Restore Defaults button if at least one such widget is present
+        option_types = (
+            QtWidgets.QCheckBox,
+            QtWidgets.QRadioButton,
+            QtWidgets.QLineEdit,
+            QtWidgets.QTextEdit,
+            QtWidgets.QAbstractSpinBox,
+            QtWidgets.QComboBox,
+            QtWidgets.QSlider,
+            QtWidgets.QDial,
+            QtWidgets.QDateEdit,
+            QtWidgets.QTimeEdit,
+            QtWidgets.QDateTimeEdit,
+            QtWidgets.QPlainTextEdit,
+        )
+
+        has_options = False
+        for widget in self.get_items():
+            if widget and isinstance(widget, option_types):
+                has_options = True
+                break
+
+        if has_options:
             self._button_manager.show_button("defaults")
         else:
             self._button_manager.hide_button("defaults")
