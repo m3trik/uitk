@@ -113,6 +113,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         # Always create size grip, even if no layout exists yet
         self._create_size_grip()
 
+    def restore_defaults(self) -> None:
+        """Reset all tracked widgets to their default values."""
+        self.state.reset_all()
+
     def _create_size_grip(self) -> None:
         """Create the size grip or footer if configured."""
         if self.add_footer:

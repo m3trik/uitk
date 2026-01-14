@@ -66,6 +66,7 @@ class MenuConfig:
     add_header: bool = True
     add_footer: bool = True
     add_apply_button: bool = False
+    add_defaults_button: bool = True
     hide_on_leave: bool = False
     match_parent_width: bool = True
     ensure_on_screen: bool = True
@@ -427,6 +428,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         add_header: bool = True,
         add_footer: bool = True,
         add_apply_button: bool = False,
+        add_defaults_button: bool = True,
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
         ensure_on_screen: bool = True,
@@ -457,6 +459,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             add_footer (bool, optional): Whether to add a footer with size grip. Defaults to True.
             add_apply_button (bool, optional): Whether to add an apply button. Defaults to False.
                 The apply button will emit the parent's 'clicked' signal if available.
+            add_defaults_button (bool, optional): Whether to add a 'Restore Defaults' button. Defaults to True.
+                The button resets all menu widgets to their initial values.
             hide_on_leave (bool, optional): Whether to automatically hide the menu when the mouse leaves. Defaults to False.
             match_parent_width (bool, optional): Whether to match the parent widget's width when using positioned menus
                 (e.g., position="bottom"). Defaults to True. Only applies when position is relative to parent (not "cursorPos").
@@ -533,6 +537,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
+        self.add_defaults_button = add_defaults_button
         self.add_header = add_header
         self.add_footer = add_footer
         self.add_apply_button = add_apply_button
@@ -1427,6 +1432,53 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self._button_manager.hide_button("apply")
             self.logger.debug("_update_apply_button_visibility: Hiding apply button")
 
+    def _setup_defaults_button(self):
+        """Set up the restore defaults button."""
+        config = _ActionButtonConfig(
+            text="Restore Defaults",
+            callback=self._restore_menu_defaults,
+            tooltip="Reset all options to their default values",
+            visible=self.contains_items,
+            fixed_height=26,
+        )
+        self._button_manager.add_button("defaults", config)
+        if not self._button_manager.container.parent():
+            self.centralWidgetLayout.addWidget(self._button_manager.container)
+
+    def _restore_menu_defaults(self):
+        """Reset all menu widgets to their default values."""
+        window = self.window()
+        state = getattr(window, "state", None)
+
+        # Fallback: traverse parents if state not found on window()
+        # This handles cases where Menu acts as a Tool/Popup window and window() returns self
+        if not state:
+            curr = self.parent()
+            while curr:
+                if hasattr(curr, "state"):
+                    state = curr.state
+                    break
+                curr = curr.parent()
+
+        if not state:
+            self.logger.debug("_restore_menu_defaults: No state manager found")
+            return
+        for widget in self.get_items():
+            state.reset(widget)
+        self.logger.debug("_restore_menu_defaults: Reset complete")
+
+    def _update_defaults_button_visibility(self):
+        """Update defaults button visibility based on menu state."""
+        if not self.add_defaults_button:
+            return
+        defaults_button = self._button_manager.get_button("defaults")
+        if not defaults_button:
+            return
+        if self.contains_items:
+            self._button_manager.show_button("defaults")
+        else:
+            self._button_manager.hide_button("defaults")
+
     def get_all_children(self):
         children = self.findChildren(QtWidgets.QWidget)
         return children
@@ -1930,7 +1982,14 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             and not (self._event_filters_installed or self._parent_signal_source)
         ):
             self._ensure_trigger_hook()
+        # Setup defaults button
+        if self.add_defaults_button and not self._button_manager.get_button("defaults"):
+            self._setup_defaults_button()
+            self._update_defaults_button_visibility()
+        elif self.add_defaults_button:
+            self._update_defaults_button_visibility()
 
+        #
         # Lazy initialization: ensure style and timer are created on first show
         # These check their own flags internally, so safe to call every time
         self._ensure_style_initialized()
