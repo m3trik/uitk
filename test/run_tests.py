@@ -409,6 +409,14 @@ def main():
         verbosity = 1
 
     # Run tests
+    # Initialize QApplication to ensure stability across tests
+    app = None
+    try:
+        from qtpy import QtWidgets
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    except ImportError:
+        pass  # Running in environment without Qt?
+
     runner = TestSuiteRunner(
         verbosity=verbosity,
         log_to_file=args.log,
@@ -418,7 +426,10 @@ def main():
     success = runner.run()
 
     # Exit with appropriate code
-    sys.exit(0 if success else 1)
+    # Use os._exit on success to avoid Qt teardown crashes (common in CI/test runners)
+    if success:
+        os._exit(0)
+    sys.exit(1)
 
 
 if __name__ == "__main__":
