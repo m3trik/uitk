@@ -1,1 +1,1 @@
-recursive-include = *.ui
+recursive-include uitk *.ui *.svg *.qss *.md

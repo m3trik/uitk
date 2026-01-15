@@ -1,2 +1,0 @@
-qtpy
-pythontk==0.7.54
