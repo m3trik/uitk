@@ -91,7 +91,11 @@ class EventFactoryFilter(QtCore.QObject):
     def uninstall(self, widgets: QtCore.QObject | Iterable[QtCore.QObject]):
         """Uninstall this event filter from one or more widgets."""
         for w in ptk.make_iterable(widgets):
-            w.removeEventFilter(self)
+            try:
+                w.removeEventFilter(self)
+            except RuntimeError:
+                # Object might be already deleted (C++ side)
+                pass
             self._installed_widgets.discard(w)
 
     def is_installed(self, widget: QtCore.QObject) -> bool:
