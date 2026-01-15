@@ -262,7 +262,7 @@ class ExampleSlots:
 
         # Get all subdirectories recursively
         packages = ["uitk"]
-        all_dirs = ptk.file_utils.FileUtils.get_dir_contents(
+        all_dirs = ptk.FileUtils.get_dir_contents(
             str(uitk_path),
             content="dirpath",
             recursive=True,
