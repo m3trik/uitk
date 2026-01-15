@@ -1,5 +1,5 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
-[![Version](https://img.shields.io/badge/Version-1.0.58-blue.svg)](https://pypi.org/project/uitk/)
+[![Version](https://img.shields.io/badge/Version-1.0.59-blue.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide6%20|%20PyQt5-green.svg)](https://doc.qt.io/)
 [![Tests](https://img.shields.io/badge/tests-561%20passed-brightgreen.svg)](test/)
