@@ -165,7 +165,7 @@ class ActionButtonManager:
             self._layout.setSpacing(1)
 
             # Add separator with title to organize action buttons
-            self._separator = Separator(title="Actions")
+            self._separator = Separator(title="Menu Actions")
             self._layout.addWidget(self._separator)
 
         return self._container
@@ -1454,7 +1454,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             callback=self._restore_menu_defaults,
             tooltip="Reset all options to their default values",
             visible=self.contains_items,
-            fixed_height=26,
+            fixed_height=18,
         )
         self._button_manager.add_button("defaults", config, index=0)
         if not self._button_manager.container.parent():
