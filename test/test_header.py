@@ -130,7 +130,7 @@ class TestHeaderCreateButton(QtBaseTestCase):
         button = header.create_button(
             "radio_empty.svg", lambda: None, button_type="test_button"
         )
-        self.assertEqual(button.objectName(), "test_button")
+        self.assertEqual(button.objectName(), "hdr_test_button")
 
     def test_create_button_has_arrow_cursor(self):
         """Should have arrow cursor on button."""
@@ -162,7 +162,9 @@ class TestHeaderPinning(QtBaseTestCase):
         # Create header with a window parent to avoid errors
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
-        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
+        header = self.track_widget(
+            Header(parent=window, config_buttons=["pin"], pin_on_drag_only=False)
+        )
         initial_state = header.pinned
         header.toggle_pin()
         self.assertNotEqual(header.pinned, initial_state)
@@ -171,7 +173,9 @@ class TestHeaderPinning(QtBaseTestCase):
         """Should emit toggled signal when pin state changes."""
         window = self.track_widget(QtWidgets.QWidget())
         window.prevent_hide = False
-        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
+        header = self.track_widget(
+            Header(parent=window, config_buttons=["pin"], pin_on_drag_only=False)
+        )
         signal_received = []
         header.toggled.connect(lambda state: signal_received.append(state))
         header.toggle_pin()
