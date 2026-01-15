@@ -516,7 +516,18 @@ class WidgetComboBox(ComboBox):
         if widget.parent() is not None and widget.parent() is not self.view():
             widget.setParent(None)
 
-        row_item = QtGui.QStandardItem(label)
+        if widget.__class__.__name__ == "Separator":
+            # For separators, pass empty string to the item so text isn't drawn behind the widget
+            row_item = QtGui.QStandardItem("")
+            # Disable selection for separators
+            row_item.setFlags(
+                row_item.flags()
+                & ~QtCore.Qt.ItemIsSelectable
+                & ~QtCore.Qt.ItemIsEnabled
+            )
+        else:
+            row_item = QtGui.QStandardItem(label)
+
         payload = data if data is not None else widget
         row_item.setData(payload, QtCore.Qt.UserRole)
         size_hint = widget.sizeHint()

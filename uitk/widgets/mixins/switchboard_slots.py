@@ -62,6 +62,7 @@ class SlotWrapper:
                 message=msg,
                 logger=self.sb.logger,
                 allow_escape_cancel=True,
+                indicator=True,
             )(self.slot)
 
             try:

@@ -47,6 +47,7 @@ class Label(QtWidgets.QLabel, MenuMixin, AttributesMixin):
 
         self.setTextFormat(QtCore.Qt.RichText)
         self.setProperty("class", self.__class__.__name__)
+        self.setProperty("clickable", True)
         self.set_attributes(**kwargs)
 
     def mousePressEvent(self, event):

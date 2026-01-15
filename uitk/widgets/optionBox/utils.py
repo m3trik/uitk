@@ -93,6 +93,33 @@ class OptionBoxManager(ptk.LoggingMixin):
         self.add_option(pin_option)
         return self
 
+    def set_action(
+        self,
+        callback,
+        icon="option_box",
+        tooltip="Options",
+        text=None,
+    ):
+        """Set the action handler (fluent interface).
+
+        Args:
+            callback: Function or object to call/trigger when clicked
+            icon: Icon name for the button (default: "option_box")
+            tooltip: Tooltip text (default: "Options")
+            text: Optional text to display instead of icon
+        """
+        from ..optionBox.options import ActionOption
+
+        action_option = ActionOption(
+            wrapped_widget=self._widget,
+            callback=callback,
+            icon=icon,
+            tooltip=tooltip,
+            text=text,
+        )
+        self.add_option(action_option)
+        return self
+
     def enable_clear(self):
         """Enable clear option (fluent interface)"""
         self.clear_option = True

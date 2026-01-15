@@ -241,8 +241,6 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         top_widget = QtWidgets.QApplication.widgetAt(cursor_pos)
 
         self._release_mouse_for_widgets(self._mouse_over)
-        if self.auto_update:
-            self.update_child_widgets()
 
         self._mouse_over = {top_widget} if top_widget in self._widgets else set()
 
@@ -379,6 +377,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
     def eventFilter(self, widget, event):
         """Filter mouse move and release events."""
         etype = event.type()
+
+        if etype in (QtCore.QEvent.Type.MouseButtonPress, QtCore.QEvent.Type.Enter):
+            if self.auto_update:
+                self.update_child_widgets()
 
         if etype == QtCore.QEvent.Type.MouseMove:
             if self.track_on_drag_only and not QtWidgets.QApplication.mouseButtons():
