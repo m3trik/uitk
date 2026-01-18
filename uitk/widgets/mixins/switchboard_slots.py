@@ -411,7 +411,7 @@ class SwitchboardSlotsMixin:
             f"[_add_to_placeholder] [{widget.ui.objectName()}.{widget.objectName()}] Added to placeholder '{key}'"
         )
 
-    def init_slot(self, widget: QtWidgets.QWidget) -> None:
+    def init_slot(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None:
         if not isinstance(widget, QtWidgets.QWidget):
             return
 
@@ -426,7 +426,14 @@ class SwitchboardSlotsMixin:
 
         # If it succeeded, process it immediately
         if slots:
-            self._perform_slot_init(ui, widget)
+            if block_signals:
+                was_blocked = widget.blockSignals(True)
+                try:
+                    self._perform_slot_init(ui, widget)
+                finally:
+                    widget.blockSignals(was_blocked)
+            else:
+                self._perform_slot_init(ui, widget)
 
     def call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs):
         """Call a slot method for a widget.
