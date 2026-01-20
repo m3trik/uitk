@@ -1,40 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Dynamic UI loader and event handler for PyQt/PySide applications.
-
-The Switchboard is the core of UITK, providing automatic loading of Qt Designer
-UI files, dynamic signal-slot connections based on naming conventions, and
-integration of custom widget classes.
-
-Classes:
-    Switchboard: Main class for loading UIs and connecting slots.
-
-Key Features:
-    - Load .ui files and access them as attributes (sb.my_ui)
-    - Automatic slot connection via naming convention (widget 'btn_save' -> method 'btn_save')
-    - Support for _init suffix methods for widget initialization
-    - Custom widget class registration and promotion
-    - Theme and style management
-
-Example:
-    Basic usage::
-
-        from uitk import Switchboard
-
-        class MySlots:
-            def __init__(self, switchboard):
-                self.sb = switchboard
-
-            def btn_save(self, widget=None):
-                print("Save clicked")
-
-            def btn_save_init(self, widget):
-                widget.setText("Save File")
-
-        sb = Switchboard(ui_source="app.ui", slot_source=MySlots)
-        ui = sb.app
-        ui.show(app_exec=True)
-"""
 import re
 import sys
 import inspect
@@ -109,6 +74,7 @@ class Switchboard(
         tag_delimiter: str = None,
         ui_name_delimiters: str = None,
         log_level: str = "warning",
+        base_dir=None,
     ) -> None:
         super().__init__(parent)
         """ """
@@ -117,37 +83,23 @@ class Switchboard(
         self.tag_delimiter = tag_delimiter or self.TAG_DELIMITER
         self.ui_name_delimiters = ui_name_delimiters or self.UI_NAME_DELIMITER
         self.registry = FileManager()
-        base_dir = 1 if not __name__ == "__main__" else 0
+        if base_dir is None:
+            base_dir = 1 if not __name__ == "__main__" else 0
 
-        # Initialize registries directly
-        self.registry.create(
-            "ui_registry",
-            ui_source,
-            inc_files="*.ui",
-            base_dir=base_dir,
+        # Define source configuration
+        sources = self._get_registry_config(
+            ui_source, slot_source, widget_source, icon_source
         )
-        self.registry.create(
-            "slot_registry",
-            slot_source,
-            fields=["classname", "classobj", "filename", "filepath"],
-            inc_files="*.py",
-            exc_files="*_ui.py",
-            base_dir=base_dir,
-        )
-        self.registry.create(
-            "widget_registry",
-            widget_source,
-            fields=["classname", "classobj", "filename", "filepath"],
-            inc_files="*.py",
-            exc_files="*_ui.py",
-            base_dir=base_dir,
-        )
-        self.registry.create(
-            "icon_registry",
-            icon_source,
-            inc_files=["*.svg", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.ico"],
-            base_dir=base_dir,
-        )
+
+        # Initialize registries
+        for descriptor, config in sources.items():
+            objects = config.pop("objects")
+            self.registry.create(
+                descriptor,
+                objects,
+                base_dir=base_dir,
+                **config,
+            )
 
         # Include this package's widgets
         self.registry.widget_registry.extend("widgets", base_dir=self)
@@ -298,51 +250,100 @@ class Switchboard(
         finally:
             self._resolving_ui = None
 
+    def _get_registry_config(
+        self, ui_source, slot_source, widget_source, icon_source
+    ) -> dict:
+        """Return the configuration for the Switchboard registries."""
+        return {
+            "ui_registry": {
+                "objects": ui_source,
+                "inc_files": "*.ui",
+            },
+            "slot_registry": {
+                "objects": slot_source,
+                "fields": ["classname", "classobj", "filename", "filepath"],
+                "inc_files": "*.py",
+                "exc_files": "*_ui.py",
+            },
+            "widget_registry": {
+                "objects": widget_source,
+                "fields": ["classname", "classobj", "filename", "filepath"],
+                "inc_files": "*.py",
+                "exc_files": "*_ui.py",
+            },
+            "icon_registry": {
+                "objects": icon_source,
+                "inc_files": ["*.svg", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.ico"],
+            },
+        }
+
     def register(
         self,
         ui_location=None,
         slot_location=None,
         widget_location=None,
+        icon_location=None,
         base_dir=1,
         validate=0,
     ):
-        """Add new locations to the Switchboard."""
-        if ui_location and not self.registry.contains_location(
-            ui_location, "ui_registry"
-        ):
-            if self.registry.resolve_path(
-                ui_location, base_dir=base_dir, validate=validate, path_type="UI"
-            ):
-                self.registry.ui_registry.extend(ui_location, base_dir=base_dir)
-                self.logger.debug(f"[register] UI location added: {ui_location}")
+        """Add new locations to the Switchboard registries.
 
-        if slot_location and not self.registry.contains_location(
-            slot_location, "slot_registry"
-        ):
-            slot_path = (
-                inspect.getfile(slot_location)
-                if inspect.isclass(slot_location)
-                else slot_location
-            )
-            if self.registry.resolve_path(
-                slot_path, base_dir=base_dir, validate=validate, path_type="Slot"
-            ):
-                self.registry.slot_registry.extend(slot_location, base_dir=base_dir)
-                self.logger.debug(f"[register] Slot location added: {slot_path}")
+        Args:
+            ui_location: Path(s) or module(s) containing .ui files.
+            slot_location: Path(s) or module(s) containing slot classes.
+            widget_location: Path(s) or module(s) containing custom widgets.
+            icon_location: Path(s) or module(s) containing icons.
+            base_dir: Base directory for relative paths. Defaults to caller's directory.
+            validate: Validation level for paths (0=None, 1=Warn, 2=Raise).
+        """
+        locations = {
+            "ui_registry": (ui_location, "UI"),
+            "slot_registry": (slot_location, "Slot"),
+            "widget_registry": (widget_location, "Widget"),
+            "icon_registry": (icon_location, "Icon"),
+        }
 
-        if widget_location and not self.registry.contains_location(
-            widget_location, "widget_registry"
-        ):
-            if self.registry.resolve_path(
-                widget_location,
-                base_dir=base_dir,
-                validate=validate,
-                path_type="Widget",
-            ):
-                self.registry.widget_registry.extend(widget_location, base_dir=base_dir)
-                self.logger.debug(
-                    f"[register] Widget location added: {widget_location}"
-                )
+        for registry_name, (location, type_name) in locations.items():
+            if not location:
+                continue
+
+            # Check if we should add this location
+            # Note: FileContainer.extend handles duplicates if configured,
+            # but we can do a quick check here if it's a single path string.
+            # However, since location can be a list or module, simple string check isn't enough.
+            # We rely on FileContainer/FileManager to resolve and handle it.
+
+            # Helper to validate a single path item if validation is requested
+            def _validate_item(item):
+                path_to_check = item
+                if inspect.ismodule(item):
+                    path_to_check = (
+                        os.path.dirname(item.__file__)
+                        if hasattr(item, "__file__")
+                        else None
+                    )
+                elif inspect.isclass(item):
+                    path_to_check = inspect.getfile(item)
+
+                if path_to_check:
+                    self.registry.resolve_path(
+                        path_to_check,
+                        base_dir=base_dir,
+                        validate=validate,
+                        path_type=type_name,
+                    )
+
+            if validate > 0:
+                for item in ptk.make_iterable(location):
+                    _validate_item(item)
+
+            # Perform the extension
+            registry = getattr(self.registry, registry_name, None)
+            if registry is not None:
+                registry.extend(location, base_dir=base_dir)
+                self.logger.debug(f"[register] {type_name} location added: {location}")
+            else:
+                self.logger.warning(f"[register] Registry '{registry_name}' not found.")
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.

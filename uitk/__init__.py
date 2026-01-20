@@ -48,6 +48,7 @@ DEFAULT_INCLUDE = {
     "events": ["EventFactoryFilter", "MouseTracking"],
     "file_manager": ["FileContainer", "FileManager"],
     "switchboard": "Switchboard",
+    "marking_menu._marking_menu": "MarkingMenu",
     # Widgets
     "widgets.attributeWindow": "AttributeWindow",
     "widgets.checkBox": "CheckBox",

@@ -183,6 +183,9 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
                     frame = filtered_stack[frame_index]
                     return os.path.abspath(os.path.dirname(frame.filename))
 
+        elif isinstance(caller_info, str) and os.path.isdir(caller_info):
+            return caller_info
+
         else:  # Handle the case where an object is provided
             # Use get_object_path to derive the path from the object
             return ptk.get_object_path(caller_info)
