@@ -412,6 +412,9 @@ QComboBox:disabled::drop-down {
 QComboBox QAbstractItemView {
     background-color: {WIDGET_BACKGROUND};
     selection-background-color: {BUTTON_HOVER};
+    border: 1px solid {BORDER_COLOR};
+    padding: 1px;
+    margin: 0px;
 }
 QComboBox QAbstractItemView::item:selected,
 QComboBox QAbstractItemView::item:hover {
@@ -656,35 +659,38 @@ QAbstractSlider::add-page {
 }
 /* QSlider: Inherits from QAbstractSlider */
 QScrollBar:vertical {
-    background: transparent;
+    background: none;
     border: none;
-    width: 0px;
+    width: 4px;
     margin: 0px;
 }
 QScrollBar:horizontal {
-    background: transparent;
+    background: none;
     border: none;
-    height: 12px;
+    height: 4px;
     margin: 0px;
 }
 QScrollBar::handle:vertical {
-    background: transparent;
-    min-height: 0px;
-    width: 0px;
+    background: {BUTTON_CHECKED};
+    min-height: 20px;
+    border: none;
+    border-radius: 1px;
+    margin: 0px;
 }
 QScrollBar::handle:horizontal {
-    background: {PANEL_BACKGROUND};
+    background: {BUTTON_CHECKED};
     min-width: 20px;
-    border: 1px solid black;
+    border: none;
     border-radius: 1px;
-    margin: 1px 0px;
+    margin: 0px;
 }
 QScrollBar::handle:vertical:hover {
-    background: transparent;
+    background: {BUTTON_HOVER};
+    border: 1px solid {BUTTON_HOVER};
 }
 QScrollBar::handle:horizontal:hover {
-    background: {PANEL_BACKGROUND};
-    border: 2px solid {BUTTON_HOVER};
+    background: {BUTTON_HOVER};
+    border: 1px solid {BUTTON_HOVER};
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     border: none;

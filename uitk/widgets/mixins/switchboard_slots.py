@@ -171,17 +171,39 @@ class SwitchboardSlotsMixin:
         return signals
 
     def _find_slots_class(self, base_name: str) -> Optional[Type]:
+        # 1. Try resolving by class name (Standard convention)
         try_names = self.get_slot_class_names(base_name)
 
-        self.logger.debug(f"[_find_slots_class] Looking for: {try_names}")
+        self.logger.debug(f"[_find_slots_class] Looking for classes: {try_names}")
 
         for name in try_names:
             cls = self.registry.slot_registry.get(
                 classname=name, return_field="classobj"
             )
             if cls:
-                self.logger.debug(f"[_find_slots_class] Resolved '{name}' to {cls}")
+                self.logger.debug(
+                    f"[_find_slots_class] Resolved class '{name}' to {cls}"
+                )
                 return cls
+
+        # 2. Try resolving by module/file name (Fallback)
+        # Look for files like <name>Slots.py or <name>_slots.py and use the first class found in them
+        try_files = self.get_slot_file_names(base_name)
+        self.logger.debug(f"[_find_slots_class] Looking for files: {try_files}")
+
+        for name in try_files:
+            # Check assuming standard .py extension.
+            # get() returns the first match unless distinct is specified, which works for us
+            # as we want a class from that file.
+            cls = self.registry.slot_registry.get(
+                filename=f"{name}.py", return_field="classobj"
+            )
+            if cls:
+                self.logger.debug(
+                    f"[_find_slots_class] Resolved file '{name}.py' to {cls}"
+                )
+                return cls
+
         return None
 
     def slots_instantiated(self, key: str) -> bool:
@@ -411,7 +433,7 @@ class SwitchboardSlotsMixin:
             f"[_add_to_placeholder] [{widget.ui.objectName()}.{widget.objectName()}] Added to placeholder '{key}'"
         )
 
-    def init_slot(self, widget: QtWidgets.QWidget) -> None:
+    def init_slot(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None:
         if not isinstance(widget, QtWidgets.QWidget):
             return
 
@@ -426,7 +448,14 @@ class SwitchboardSlotsMixin:
 
         # If it succeeded, process it immediately
         if slots:
-            self._perform_slot_init(ui, widget)
+            if block_signals:
+                was_blocked = widget.blockSignals(True)
+                try:
+                    self._perform_slot_init(ui, widget)
+                finally:
+                    widget.blockSignals(was_blocked)
+            else:
+                self._perform_slot_init(ui, widget)
 
     def call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs):
         """Call a slot method for a widget.

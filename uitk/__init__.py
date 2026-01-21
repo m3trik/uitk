@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.0.64"
+__version__ = "1.0.65"
 
 
 DEFAULT_INCLUDE = {
@@ -48,6 +48,8 @@ DEFAULT_INCLUDE = {
     "events": ["EventFactoryFilter", "MouseTracking"],
     "file_manager": ["FileContainer", "FileManager"],
     "switchboard": "Switchboard",
+    "controllers.marking_menu._marking_menu": "MarkingMenu",
+    "controllers.ui_manager": "UiManager",
     # Widgets
     "widgets.attributeWindow": "AttributeWindow",
     "widgets.checkBox": "CheckBox",
@@ -116,7 +118,16 @@ def _uitk_getattr(name: str):
 
     resolver = globals().get("_RESOLVER")
     if resolver is not None:
-        return resolver.resolve(name)
+        try:
+            return resolver.resolve(name)
+        except Exception as e:
+            # Provide a clearer error for ImportErrors during resolution
+            # This helps debug issues in environments like Maya's deferred evaluation
+            raise AttributeError(
+                f"Failed to resolve '{name}' in '{__package__}'.\n"
+                f"  Check '{__package__}.__init__.py' mappings.\n"
+                f"  Original Error: {e}"
+            ) from e
 
     raise AttributeError(f"module {__package__} has no attribute '{name}'")
 
