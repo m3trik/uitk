@@ -239,6 +239,26 @@ class ConvertMixin:
             f"Expected str, QtCore.Qt.MouseButton, tuple, list, or None"
         )
 
+    @staticmethod
+    def to_int(val, default=0) -> int:
+        """Safely convert a value (including Qt Enum/Flag) to an integer.
+
+        Parameters:
+            val: The value to convert. Can be int, float, str, or object with .value
+            default: The default value to return if conversion fails (default: 0)
+
+        Returns:
+            int: The integer representation of the value
+        """
+        if isinstance(val, int):
+            return val
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            if hasattr(val, "value"):
+                return val.value
+            return default
+
 
 # ----------------------------------------------------------------------------
 

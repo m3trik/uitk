@@ -336,6 +336,7 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
             needs_classes = any(
                 item in fields for item in ["classname", "classobj", "module"]
             )
+            recursive = bool(metadata.get("recursive", False))
 
             if os.path.isdir(dir_path) and not needs_classes:
                 files = ptk.get_dir_contents(
@@ -345,18 +346,26 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
                     exc_files=metadata.get("exc_files"),
                     inc_dirs=metadata.get("inc_dirs"),
                     exc_dirs=metadata.get("exc_dirs"),
+                    recursive=recursive,
                 )
                 file_info = ptk.get_file_info(files, fields, force_tuples=True)
             elif needs_classes:
                 inc_files = metadata.get("inc_files")
                 exc_files = metadata.get("exc_files")
 
-                if os.path.isdir(dir_path) and (inc_files or exc_files):
-                    files = [f for f in os.listdir(dir_path) if f.endswith(".py")]
-                    files = ptk.filter_list(files, inc_files, exc_files)
+                if os.path.isdir(dir_path):
+                    recursive = bool(metadata.get("recursive", False))
+                    py_files = ptk.get_dir_contents(
+                        dir_path,
+                        "filepath",
+                        inc_files=inc_files or "*.py",
+                        exc_files=exc_files,
+                        inc_dirs=metadata.get("inc_dirs"),
+                        exc_dirs=metadata.get("exc_dirs"),
+                        recursive=recursive,
+                    )
                     file_info = []
-                    for f in files:
-                        f_path = os.path.join(dir_path, f)
+                    for f_path in py_files:
                         file_info.extend(
                             ptk.get_classes_from_path(
                                 f_path,

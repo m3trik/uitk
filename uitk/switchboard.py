@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
+import os
 import sys
 import inspect
 from typing import List, Union, Optional
@@ -15,6 +16,7 @@ from uitk.widgets.mixins import SwitchboardUtilsMixin
 from uitk.widgets.mixins import SwitchboardNameMixin
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins import ConvertMixin
+from uitk.widgets.mixins.settings_manager import SettingsManager
 
 
 class Switchboard(
@@ -131,6 +133,9 @@ class Switchboard(
             "slot_instances",
             resolver=self.get_slots_instance,
         )  # All slot instances.
+
+        self.settings = SettingsManager(namespace="switchboard")
+        self.configurable = self.settings.branch("configurable")  # Persistent config
 
         self._current_ui = None
         self._ui_history = []  # Ordered ui history.
@@ -284,6 +289,7 @@ class Switchboard(
         widget_location=None,
         icon_location=None,
         base_dir=1,
+        recursive: bool = False,
         validate=0,
     ):
         """Add new locations to the Switchboard registries.
@@ -294,6 +300,7 @@ class Switchboard(
             widget_location: Path(s) or module(s) containing custom widgets.
             icon_location: Path(s) or module(s) containing icons.
             base_dir: Base directory for relative paths. Defaults to caller's directory.
+            recursive: If True, directory locations are scanned recursively.
             validate: Validation level for paths (0=None, 1=Warn, 2=Raise).
         """
         locations = {
@@ -340,7 +347,7 @@ class Switchboard(
             # Perform the extension
             registry = getattr(self.registry, registry_name, None)
             if registry is not None:
-                registry.extend(location, base_dir=base_dir)
+                registry.extend(location, base_dir=base_dir, recursive=recursive)
                 self.logger.debug(f"[register] {type_name} location added: {location}")
             else:
                 self.logger.warning(f"[register] Registry '{registry_name}' not found.")
@@ -442,6 +449,7 @@ class Switchboard(
             tags=tags,
             path=path,
             log_level=self.logger.level,
+            settings=self.settings.branch(name),
             **kwargs,
         )
         self.loaded_ui[name] = main_window

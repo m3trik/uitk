@@ -43,6 +43,29 @@ class SwitchboardNameMixin:
         capitalized = "".join(part.title() for part in legal_name.split("_"))
         return [f"{capitalized}{self.SLOT_SUFFIX}", capitalized]
 
+    def get_slot_file_names(self, base_name: str) -> List[str]:
+        """Generate potential slot file names from a base name.
+
+        Parameters:
+            base_name (str): The base name to generate slot file names from.
+
+        Returns:
+            List[str]: A list of potential slot file names WITHOUT extension.
+        """
+        legal_name = self.convert_to_legal_name(base_name)
+        # Strip leading underscores for variations
+        stripped_name = legal_name.lstrip("_")
+
+        candidates = [
+            f"{legal_name}{self.SLOT_SUFFIX}",  # e.g. nameSlots
+            f"{legal_name}_slots",  # e.g. name_slots
+            legal_name,  # e.g. name (same as UI)
+            f"_{stripped_name}",  # e.g. _name (underscore prefix)
+        ]
+        # Remove duplicates while preserving order
+        seen = set()
+        return [x for x in candidates if not (x in seen or seen.add(x))]
+
     def get_base_name(self, name: str) -> str:
         if not isinstance(name, str):
             raise ValueError(f"Expected a string, got {type(name)}")

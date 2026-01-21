@@ -9,7 +9,6 @@ import pythontk as ptk
 # From this package:
 from uitk.switchboard import Switchboard
 from uitk.events import EventFactoryFilter, MouseTracking
-from uitk.widgets.mixins.convert import ConvertMixin
 from .overlay import Overlay
 
 
@@ -188,11 +187,10 @@ class MarkingMenu(
         """ """
         super().__init__(parent=parent)
         self.logger.setLevel(log_level)
-        self.raw_bindings = bindings or {}
         self._bindings = {}
         self._activation_key = None
         self._activation_key_held = False
-        self._build_bindings()
+        self._initial_bindings = bindings  # Store for after sb is set up
 
         # Resolve paths relative to the subclass module (e.g. TclMaya in tentacle)
         # instead of relative to this base class file in uitk.
@@ -220,6 +218,16 @@ class MarkingMenu(
                 base_dir=base_dir,
             )
 
+        # Initialize bindings: explicit arg > stored > empty
+        if self._initial_bindings:
+            # Only apply initial bindings if no bindings are currently stored (first run)
+            if self.sb.configurable.marking_menu_bindings.get(None) is None:
+                self.sb.configurable.marking_menu_bindings.set(self._initial_bindings)
+
+        # Register callback to rebuild bindings when they change
+        self.sb.configurable.marking_menu_bindings.changed.connect(self._build_bindings)
+        self._build_bindings()
+
         self.child_event_filter = EventFactoryFilter(
             parent=self,
             forward_events_to=self,
@@ -232,9 +240,6 @@ class MarkingMenu(
                 "MouseButtonRelease",
             },
         )
-
-        # Register self with switchboard for access from any slot
-        self.sb.configurable["marking_menu"] = self
 
         self.overlay = Overlay(self, antialiasing=True)
         self.mouse_tracking = MouseTracking(self, auto_update=False)
@@ -266,6 +271,28 @@ class MarkingMenu(
         kwargs.setdefault("switchboard", switchboard)
         kwargs["singleton_key"] = id(switchboard)
         return super().instance(**kwargs)
+
+    @property
+    def bindings(self) -> dict:
+        """Get bindings from persistent storage."""
+        return self.sb.configurable.marking_menu_bindings.get({})
+
+    @bindings.setter
+    def bindings(self, value: dict):
+        """Set bindings (auto-persists and triggers rebuild via callback)."""
+        self.sb.configurable.marking_menu_bindings.set(value)
+
+    def _to_int(self, val) -> int:
+        """Safely convert a Qt Enum or Flag to an integer."""
+        if isinstance(val, int):
+            return val
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            if hasattr(val, "value"):
+                return val.value
+            self.logger.warning(f"Could not convert {val} (type: {type(val)}) to int.")
+            return 0
 
     def _normalize_binding_key(self, parts: list) -> str:
         """Normalize binding parts into a consistent string key.
@@ -313,35 +340,43 @@ class MarkingMenu(
 
         # Add modifiers
         if modifiers:
-            modifiers_int = ConvertMixin.to_int(modifiers)
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.ShiftModifier):
+            modifiers_int = self._to_int(modifiers)
+            if modifiers_int & self._to_int(QtCore.Qt.ShiftModifier):
                 parts.append("ShiftModifier")
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.ControlModifier):
+            if modifiers_int & self._to_int(QtCore.Qt.ControlModifier):
                 parts.append("ControlModifier")
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.AltModifier):
+            if modifiers_int & self._to_int(QtCore.Qt.AltModifier):
                 parts.append("AltModifier")
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.MetaModifier):
+            if modifiers_int & self._to_int(QtCore.Qt.MetaModifier):
                 parts.append("MetaModifier")
 
         # Add buttons
         if buttons:
-            buttons_int = ConvertMixin.to_int(buttons)
-            if buttons_int & ConvertMixin.to_int(QtCore.Qt.LeftButton):
+            buttons_int = self._to_int(buttons)
+            if buttons_int & self._to_int(QtCore.Qt.LeftButton):
                 parts.append("LeftButton")
-            if buttons_int & ConvertMixin.to_int(QtCore.Qt.RightButton):
+            if buttons_int & self._to_int(QtCore.Qt.RightButton):
                 parts.append("RightButton")
-            if buttons_int & ConvertMixin.to_int(QtCore.Qt.MiddleButton):
+            if buttons_int & self._to_int(QtCore.Qt.MiddleButton):
                 parts.append("MiddleButton")
 
         return self._normalize_binding_key(parts)
 
-    def _build_bindings(self):
-        """Parse and organize the input bindings into a unified lookup dict."""
+    def _build_bindings(self, _value=None):
+        """Parse and organize the input bindings into a unified lookup dict.
+
+        Args:
+            _value: Ignored. Accepts callback arg from on_change.
+        """
         self._bindings.clear()
         self._activation_key = None
         self._activation_key_str = None
 
-        for key, ui_in in self.raw_bindings.items():
+        if not hasattr(self, "bindings") or not isinstance(self.bindings, dict):
+            self.logger.warning("Bindings not configured correctly or invalid.")
+            return
+
+        for key, ui_in in self.bindings.items():
             if not isinstance(key, str):
                 continue
 
@@ -355,9 +390,7 @@ class MarkingMenu(
                 if part.startswith("Key_") and self._activation_key_str is None:
                     self._activation_key_str = part
                     if hasattr(QtCore.Qt, part):
-                        self._activation_key = ConvertMixin.to_int(
-                            getattr(QtCore.Qt, part)
-                        )
+                        self._activation_key = self._to_int(getattr(QtCore.Qt, part))
 
             self._bindings[normalized] = ui_in
             self.logger.debug(f"Binding: '{key}' -> '{normalized}' -> '{ui_in}'")
@@ -368,6 +401,11 @@ class MarkingMenu(
         self.logger.debug(f"All bindings: {self._bindings}")
 
         if self._activation_key is None:
+            if not self._bindings and self._initial_bindings:
+                self.logger.warning("No bindings found. reverting to default bindings.")
+                self.bindings = self._initial_bindings
+                return
+
             self.logger.warning(
                 "No activation key found in bindings. Include Key_* in at least one binding."
             )
@@ -800,15 +838,9 @@ class MarkingMenu(
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
 
-            # If there's a valid next UI to transition to, do it regardless of widget position
-            if next_ui is not None:
-                self.show(next_ui, force=True)
-                super().mouseReleaseEvent(event)
-                return
-
             if widget and widget is not self and widget is not current_ui:
+                # When mouse is grabbed, child event filter is bypassed - handle clicks here
                 if current_ui.isAncestorOf(widget):
-                    # When mouse is grabbed, child event filter is bypassed - handle clicks here
                     self._handle_child_click(widget, event)
                     self.releaseMouse()
                     super().mouseReleaseEvent(event)

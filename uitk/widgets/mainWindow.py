@@ -38,6 +38,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         add_footer: bool = True,
         ensure_on_screen: bool = True,
         default_slot_timeout: Optional[float] = None,
+        settings: Optional[SettingsManager] = None,
         **kwargs,
     ) -> None:
         """Initializes the main window and its properties.
@@ -54,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             add_footer: Whether to add a footer with size grip. Defaults to True.
             ensure_on_screen: Whether to ensure the window is fully on screen when shown. Defaults to True.
             default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
+            settings: Optional SettingsManager to use. Defaults to a new instance.
             **kwargs: Additional keyword arguments
         """
         super().__init__(parent)
@@ -71,7 +73,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.legal_name = lambda: self.sb.convert_to_legal_name(name)
         self.base_name = lambda: self.sb.get_base_name(name)
 
-        self.settings = SettingsManager(org=__package__, app=name)
+        if settings:
+            self.settings = settings
+        else:
+            self.settings = SettingsManager(org=__package__, app=name)
+
         self.state = StateManager(self.settings)
 
         self.path = path
