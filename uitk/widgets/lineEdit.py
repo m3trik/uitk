@@ -118,7 +118,7 @@ class LineEdit(
 if __name__ == "__main__":
     import sys
     from uitk.widgets.menu import Menu
-    from uitk.widgets.optionBox import add_clear_option, add_menu_option
+    from uitk.widgets.optionBox.utils import add_clear_option, add_menu_option
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 

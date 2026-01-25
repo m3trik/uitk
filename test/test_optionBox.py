@@ -1,15 +1,13 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for PinValuesOption widget.
+"""Unit tests for optionBox subpackage.
 
-This module tests the PinValuesOption functionality including:
-- Pin option creation and initialization
-- Pinning and unpinning values
-- Signal emission
-- Maximum pinned values enforcement
+This module tests the widgets.optionBox subpackage functionality including:
+- OptionBox styling and layout behavior (Regression tests)
+- PinValuesOption widget functionality
 
-Run standalone: python -m test.test_pin_values
-Run with demo: python -m test.test_pin_values --demo
+Run standalone: python -m test.test_optionBox
+Run with demo: python -m test.test_optionBox --demo
 """
 
 import sys
@@ -22,8 +20,61 @@ from conftest import QtBaseTestCase, setup_qt_application
 app = setup_qt_application()
 
 from qtpy import QtWidgets
-from uitk.widgets.optionBox import OptionBox
+from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
 from uitk.widgets.optionBox.options.pin_values import PinValuesOption
+
+
+class TestOptionBoxStyling(QtBaseTestCase):
+    """Regression tests for OptionBox styling and layout behavior."""
+
+    def test_container_defaults_to_bordered(self):
+        """OptionBoxContainer should have 'withBorder' class by default."""
+        container = self.track_widget(OptionBoxContainer())
+
+        # Verify default property assignment
+        # This ensures standard widgets get borders
+        classes = container.property("class")
+        self.assertIn("withBorder", classes, "Container must default to having borders")
+
+    def test_wrap_respects_frameless_param(self):
+        """OptionBox.wrap(frameless=True) should remove the border class."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        opt = OptionBox(options=[])
+
+        # Case 1: frameless=True (e.g. TableWidget cells)
+        container_frameless = opt.wrap(widget, frameless=True)
+        self.track_widget(container_frameless)
+
+        classes = container_frameless.property("class")
+        if classes:
+            self.assertNotIn(
+                "withBorder", classes, "Frameless wrap should remove border class"
+            )
+
+        # Reset
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        opt = OptionBox(options=[])
+
+        # Case 2: frameless=False (Standard widgets)
+        container_framed = opt.wrap(widget, frameless=False)
+        self.track_widget(container_framed)
+
+        classes = container_framed.property("class")
+        self.assertIn("withBorder", classes, "Standard wrap should keep border class")
+
+    def test_table_cell_logic(self):
+        """Simulate TableWidget logic to ensure it produces frameless containers."""
+        # This mimics the code in uitk.widgets.tableWidget.py
+
+        content_widget = self.track_widget(QtWidgets.QWidget())
+        opt = OptionBox(options=[])
+        # TableWidget explicitly calls frameless=True
+        container = opt.wrap(content_widget, frameless=True)
+        self.track_widget(container)
+
+        # Verify it has NO border class
+        classes = container.property("class") or ""
+        self.assertNotIn("withBorder", classes)
 
 
 class TestPinValuesOptionCreation(QtBaseTestCase):
@@ -161,7 +212,7 @@ class TestPinValuesOptionSignals(QtBaseTestCase):
 
 
 # -----------------------------------------------------------------------------
-# Interactive Demo
+# Interactive Demo (Legacy)
 # -----------------------------------------------------------------------------
 
 

@@ -6,6 +6,11 @@ QWidget {
 QWidget::item:selected {
     background-color: {BUTTON_HOVER};
 }
+QToolTip {
+    background-color: {PANEL_BACKGROUND};
+    color: {TEXT_COLOR};
+    border: 1px solid {BORDER_COLOR};
+}
 QWidget.centralWidget {
     background-color: {WINDOW_BACKGROUND};
     border: 1px solid {BORDER_COLOR};
@@ -543,6 +548,19 @@ QAbstractItemView::indicator:checked:hover {
 /* QListWidget: Inherits from QAbstractItemView */
 /* QListView: Inherits from QAbstractItemView */
 /* QTableView: Inherits from QAbstractItemView */
+
+QHeaderView::section {
+    background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_COLOR};
+    padding: 4px;
+    border: none;
+    font-weight: bold;
+}
+
+QTableCornerButton::section {
+    background-color: {WIDGET_BACKGROUND};
+    border: none;
+}
 
 /* QTableWidget hierarchy support */
 QTableWidget::item {

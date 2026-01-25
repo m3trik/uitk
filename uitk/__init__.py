@@ -65,13 +65,20 @@ DEFAULT_INCLUDE = {
     "widgets.mainWindow": "MainWindow",
     "widgets.menu": "Menu",
     "widgets.messageBox": "MessageBox",
-    "widgets.optionBox": [
+    "widgets.optionBox._optionBox": [
         "OptionBox",
         "OptionBoxContainer",
         "OptionBoxWithOrdering",
-        "OptionBoxManager",
-        "ClearButton",
     ],
+    "widgets.optionBox.utils": [
+        "OptionBoxManager",
+        "add_option_box",
+        "add_clear_option",
+        "add_menu_option",
+        "patch_widget_class",
+        "patch_common_widgets",
+    ],
+    "widgets.optionBox.options.clear": "ClearButton",
     "widgets.optionBox.options": [
         "OptionAction",
         "OptionClear",

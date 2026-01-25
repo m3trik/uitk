@@ -61,7 +61,7 @@ class OptionBoxMixin:
 
         # Fallback: create and cache manager on this instance
         try:
-            from uitk.widgets.optionBox import OptionBoxManager
+            from uitk.widgets.optionBox.utils import OptionBoxManager
 
             mgr = OptionBoxManager(self)  # type: ignore[arg-type]
             setattr(self, "_option_box_manager", mgr)

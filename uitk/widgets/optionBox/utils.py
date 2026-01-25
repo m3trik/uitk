@@ -99,6 +99,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         icon="option_box",
         tooltip="Options",
         text=None,
+        replace=True,
     ):
         """Set the action handler (fluent interface).
 
@@ -107,8 +108,33 @@ class OptionBoxManager(ptk.LoggingMixin):
             icon: Icon name for the button (default: "option_box")
             tooltip: Tooltip text (default: "Options")
             text: Optional text to display instead of icon
+            replace: If True, removes any existing ActionOptions first (default: True)
         """
-        from ..optionBox.options import ActionOption
+        # from ..optionBox.options import ActionOption
+        # Use absolute import to ensure type consistency
+        from uitk.widgets.optionBox.options import ActionOption
+
+        if replace:
+            # Remove existing ActionOption instances
+            # Check pending options
+            self._pending_options = [
+                opt
+                for opt in self._pending_options
+                if not isinstance(opt, ActionOption)
+            ]
+
+            # Check active options
+            if self._option_box:
+                options_to_remove = []
+                for opt in self._option_box.get_options():
+                    if isinstance(opt, ActionOption):
+                        options_to_remove.append(opt)
+                    # Also check via class name string to be robust against reload/import issues
+                    elif opt.__class__.__name__ == "ActionOption":
+                        options_to_remove.append(opt)
+
+                for opt in options_to_remove:
+                    self._option_box.remove_option(opt)
 
         action_option = ActionOption(
             wrapped_widget=self._widget,
@@ -128,6 +154,21 @@ class OptionBoxManager(ptk.LoggingMixin):
     def disable_clear(self):
         """Disable clear option (fluent interface)"""
         self.clear_option = False
+        return self
+
+    def clear_options(self):
+        """Clear all added options."""
+        if self._option_box:
+            # Copy list to avoid modification during iteration
+            for opt in self._option_box.get_options():
+                # Don't remove clear button if managed by property
+                from ..optionBox.options import ClearOption
+
+                if isinstance(opt, ClearOption) and self._clear_enabled:
+                    continue
+                self._option_box.remove_option(opt)
+
+        self._pending_options = []
         return self
 
     def set_order(self, order):
