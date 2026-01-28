@@ -7,9 +7,9 @@ from uitk import Switchboard
 from qtpy import QtWidgets, QtCore, QtGui
 
 
-class WindowManager(ptk.SingletonMixin, ptk.LoggingMixin):
+class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
     """
-    A generic, dynamic UI Manager that supports recursive discovery of UI and Slot files.
+    A generic, dynamic UI Handler that supports recursive discovery of UI and Slot files.
     Allows for a "convention over configuration" approach while supporting overrides.
     """
 
@@ -77,9 +77,8 @@ class WindowManager(ptk.SingletonMixin, ptk.LoggingMixin):
 
     @property
     def config(self):
-        """Access configuration branch for this manager."""
-        # Use a consistent namespace for window manager settings
-        return self.sb.configurable.branch("window")
+        """Access configuration branch for this handler."""
+        return self.sb.configurable.branch("ui")
 
     def _register_manual_overrides(self):
         """Register items explicitly defined in UI_REGISTRY."""
@@ -93,7 +92,7 @@ class WindowManager(ptk.SingletonMixin, ptk.LoggingMixin):
                 self.logger.error(f"Failed to register override '{name}': {e}")
 
     @classmethod
-    def instance(cls, switchboard: Switchboard = None, **kwargs) -> "WindowManager":
+    def instance(cls, switchboard: Switchboard = None, **kwargs) -> "UiHandler":
         kwargs.setdefault("switchboard", switchboard)
         kwargs["singleton_key"] = id(switchboard)
         return super().instance(**kwargs)

@@ -88,10 +88,8 @@ class Switchboard(
         if base_dir is None:
             base_dir = 1 if not __name__ == "__main__" else 0
 
-        # Initialize services namespace
-        self.managers = type("Managers", (), {})()
-        # Backward compatibility alias
-        self.services = self.managers
+        # Initialize handlers namespace
+        self.handlers = type("Handlers", (), {})()
 
         # Define source configuration
         sources = self._get_registry_config(
@@ -148,11 +146,11 @@ class Switchboard(
         self._synced_pairs = set()  # Hashed values representing synced widgets.
         self.convert = ConvertMixin()
 
-    def register_manager(self, name: str, instance, defaults: dict = None):
-        """Register a manager (service) instance and apply defaults to its config."""
-        setattr(self.managers, name, instance)
+    def register_handler(self, name: str, instance, defaults: dict = None):
+        """Register a handler instance and apply defaults to its config."""
+        setattr(self.handlers, name, instance)
         if defaults:
-            # Apply defaults to the configuration branch matching the manager name
+            # Apply defaults to the configuration branch matching the handler name
             self.configurable.branch(name).set_defaults(defaults)
 
     def __new__(cls, *args, **kwargs):

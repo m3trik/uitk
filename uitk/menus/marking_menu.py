@@ -10,7 +10,7 @@ import pythontk as ptk
 from uitk.switchboard import Switchboard
 from uitk.events import EventFactoryFilter, MouseTracking
 from .overlay import Overlay
-from ..managers.window_manager import WindowManager
+from ..handlers.ui_handler import UiHandler
 
 
 class ShortcutHandler(QtCore.QObject):
@@ -182,8 +182,8 @@ class MarkingMenu(
     key_show_press = QtCore.Signal()
     key_show_release = QtCore.Signal()
 
-    # Default Manager Configuration
-    MANAGERS = {"window": WindowManager}
+    # Default Handler Configuration
+    HANDLERS = {"ui": UiHandler}
 
     _in_transition: bool = False
     _instances: dict = {}
@@ -307,23 +307,19 @@ class MarkingMenu(
             ShortcutHandler.create(self, parent)
 
     def _setup_registry(self):
-        """Initialize and register the application's managers."""
-        # 1. Register Self (The Marking Menu Service)
-        self.sb.managers.marking_menu = self
-        self.sb.controller = (
-            self  # Main Entry Point (Legacy Backwards Compat until fully removed)
-        )
+        """Initialize and register the application's handlers."""
+        # 1. Register Self (The Marking Menu)
+        self.sb.handlers.marking_menu = self
 
-        # 2. Register Configured Managers (e.g. Window Manager)
-        managers = getattr(self, "MANAGERS", {})
+        # 2. Register Configured Handlers (e.g. UiHandler)
+        handlers = getattr(self, "HANDLERS", {})
 
-        for name, cls in managers.items():
+        for name, cls in handlers.items():
             # Skip if already registered (allows for manual dependency injection)
-            if getattr(self.sb.managers, name, None):
+            if getattr(self.sb.handlers, name, None):
                 continue
 
-            # Instantiate using singleton pattern if available, e.g. .instance(switchboard=sb)
-            # or constructor(switchboard=sb)
+            # Instantiate using singleton pattern if available
             if hasattr(cls, "instance"):
                 instance = cls.instance(switchboard=self.sb)
             else:
@@ -332,8 +328,8 @@ class MarkingMenu(
             # Extract defaults if present on the class
             defaults = getattr(cls, "DEFAULTS", {})
 
-            self.sb.register_manager(name, instance, defaults)
-            self.logger.debug(f"Registered Manager: {name} -> {instance}")
+            self.sb.register_handler(name, instance, defaults)
+            self.logger.debug(f"Registered Handler: {name} -> {instance}")
 
     @classmethod
     def instance(
@@ -354,14 +350,9 @@ class MarkingMenu(
         self.sb.configurable.marking_menu_bindings.set(value)
 
     @property
-    def window_manager(self):
-        """Accessor for the window manager service."""
-        return self.sb.managers.window
-
-    @property
-    def window_controller(self):
-        """Legacy accessor for the window manager component."""
-        return self.window_manager
+    def ui_handler(self):
+        """Accessor for the UI handler."""
+        return self.sb.handlers.ui
 
     def get(self, name: str, **kwargs) -> QtWidgets.QWidget:
         """Get a UI widget by name.
@@ -380,11 +371,11 @@ class MarkingMenu(
         ui = self.sb.get_ui(name)
         if ui and ui.has_tags(["startmenu", "submenu"]):
             # Ensure proper styling is applied (WindowManager owns the styling logic)
-            self.window_manager.apply_styles(ui)
+            self.ui_handler.apply_styles(ui)
             return ui
 
         # For standalone windows (or if not yet loaded), delegate to WindowManager
-        ui = self.window_manager.get(name, **kwargs)
+        ui = self.ui_handler.get(name, **kwargs)
 
         if ui and not getattr(ui, "is_initialized", False):
             self._init_ui(ui)
@@ -590,7 +581,7 @@ class MarkingMenu(
                 ui.setParent(self.parent(), QtCore.Qt.Window)
 
             # Delegate styling to the window manager
-            self.window_manager.apply_styles(ui)
+            self.ui_handler.apply_styles(ui)
 
             # Ensure lifecycle coupling
             self.key_show_release.connect(ui.hide)
@@ -1122,8 +1113,8 @@ class MarkingMenu(
 
         self.restore_other_windows()
 
-        self.window_manager.apply_styles(widget)
-        self.window_manager.show(widget, pos=pos or "cursor", force=force)
+        self.ui_handler.apply_styles(widget)
+        self.ui_handler.show(widget, pos=pos or "cursor", force=force)
         return widget
 
     def hide(self):
