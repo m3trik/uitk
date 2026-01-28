@@ -73,6 +73,7 @@ class Switchboard(
         slot_source=None,
         widget_source=None,
         icon_source=None,
+        handlers: dict = None,
         tag_delimiter: str = None,
         ui_name_delimiters: str = None,
         log_level: str = "warning",
@@ -87,6 +88,12 @@ class Switchboard(
         self.registry = FileManager()
         if base_dir is None:
             base_dir = 1 if not __name__ == "__main__" else 0
+
+        # Initialize handlers namespace
+        self.handlers = type("Handlers", (), {})()
+
+        # Store handlers for registration after configurable is initialized
+        self._pending_handlers = handlers
 
         # Define source configuration
         sources = self._get_registry_config(
@@ -142,6 +149,31 @@ class Switchboard(
         self._slot_history = []  # Previously called slots.
         self._synced_pairs = set()  # Hashed values representing synced widgets.
         self.convert = ConvertMixin()
+
+        # Register any handlers passed during construction (after configurable is ready)
+        if self._pending_handlers:
+            for name, obj in self._pending_handlers.items():
+                if getattr(self.handlers, name, None):
+                    continue
+                # Instantiate if class, use directly if instance
+                if isinstance(obj, type):
+                    if hasattr(obj, "instance"):
+                        instance = obj.instance(switchboard=self)
+                    else:
+                        instance = obj(switchboard=self)
+                    defaults = getattr(obj, "DEFAULTS", {})
+                else:
+                    instance = obj
+                    defaults = getattr(instance, "DEFAULTS", {})
+                self.register_handler(name, instance, defaults)
+            self._pending_handlers = None
+
+    def register_handler(self, name: str, instance, defaults: dict = None):
+        """Register a handler instance and apply defaults to its config."""
+        setattr(self.handlers, name, instance)
+        if defaults:
+            # Apply defaults to the configuration branch matching the handler name
+            self.configurable.branch(name).set_defaults(defaults)
 
     def __new__(cls, *args, **kwargs):
         instance = super().__new__(cls)
@@ -346,11 +378,16 @@ class Switchboard(
 
             # Perform the extension
             registry = getattr(self.registry, registry_name, None)
-            if registry is not None:
-                registry.extend(location, base_dir=base_dir, recursive=recursive)
-                self.logger.debug(f"[register] {type_name} location added: {location}")
-            else:
-                self.logger.warning(f"[register] Registry '{registry_name}' not found.")
+            if registry is None:
+                # Lazily create the registry if it doesn't exist
+                config = self._get_registry_config(None, None, None, None).get(
+                    registry_name, {}
+                )
+                config.pop("objects", None)
+                registry = self.registry.create(registry_name, None, **config)
+
+            registry.extend(location, base_dir=base_dir, recursive=recursive)
+            self.logger.debug(f"[register] {type_name} location added: {location}")
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.

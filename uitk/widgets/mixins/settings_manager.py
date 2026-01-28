@@ -74,6 +74,8 @@ class SettingsManager:
             "_ns_key",
             "_callbacks",
             "SettingItem",
+            "branch",
+            "set_defaults",
         }
     )
 
@@ -117,6 +119,17 @@ class SettingsManager:
         if self.namespace:
             return f"{self.namespace}/{key}"
         return key
+
+    def branch(self, name: str) -> "SettingsManager":
+        """Create a new SettingsManager instance targeted at a sub-namespace."""
+        new_ns = self._ns_key(name)
+        return SettingsManager(qsettings=self.settings, namespace=new_ns)
+
+    def set_defaults(self, defaults: dict) -> None:
+        """Apply default values for a set of keys if they are not already set."""
+        for key, value in defaults.items():
+            if self.value(key) is None:
+                self.setValue(key, value)
 
     def value(self, key: str, default: Any = None) -> Any:
         value = self.settings.value(self._ns_key(key), default)

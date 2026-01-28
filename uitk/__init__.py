@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.0.66"
+__version__ = "1.0.69"
 
 
 DEFAULT_INCLUDE = {
@@ -48,8 +48,8 @@ DEFAULT_INCLUDE = {
     "events": ["EventFactoryFilter", "MouseTracking"],
     "file_manager": ["FileContainer", "FileManager"],
     "switchboard": "Switchboard",
-    "controllers.marking_menu._marking_menu": "MarkingMenu",
-    "controllers.ui_manager": "UiManager",
+    "widgets.marking_menu": "MarkingMenu",
+    "managers.window_manager": "WindowManager",
     # Widgets
     "widgets.attributeWindow": "AttributeWindow",
     "widgets.checkBox": "CheckBox",
@@ -65,13 +65,20 @@ DEFAULT_INCLUDE = {
     "widgets.mainWindow": "MainWindow",
     "widgets.menu": "Menu",
     "widgets.messageBox": "MessageBox",
-    "widgets.optionBox": [
+    "widgets.optionBox._optionBox": [
         "OptionBox",
         "OptionBoxContainer",
         "OptionBoxWithOrdering",
-        "OptionBoxManager",
-        "ClearButton",
     ],
+    "widgets.optionBox.utils": [
+        "OptionBoxManager",
+        "add_option_box",
+        "add_clear_option",
+        "add_menu_option",
+        "patch_widget_class",
+        "patch_common_widgets",
+    ],
+    "widgets.optionBox.options.clear": "ClearButton",
     "widgets.optionBox.options": [
         "OptionAction",
         "OptionClear",

@@ -487,6 +487,88 @@ class TableWidget(
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
         self.setItem(row, column, item)
 
+    def cell_option_box(self, row: int, col: int):
+        """Get or enable option box for a specific cell.
+
+        Args:
+            row (int): Row index.
+            col (int): Column index.
+
+        Returns:
+            OptionBoxManager: The option box manager for the cell.
+        """
+        from uitk.widgets.optionBox._optionBox import OptionBox
+
+        # content = self.cellWidget(row, col)
+        # Using cellWidget directly sometimes returns the container if it was just set.
+        current = self.cellWidget(row, col)
+        content_widget = None
+
+        if current:
+            if current.objectName() == "optionBoxContainer":
+                # Find the wrapped widget (usually first item in layout)
+                layout = current.layout()
+                if layout and layout.count() > 0:
+                    item = layout.itemAt(0)
+                    if item.widget():
+                        content_widget = item.widget()
+            else:
+                content_widget = current
+
+        if not content_widget:
+            item = self.item(row, col)
+            # Create a transparent spacer widget to fill the cell content area
+            # This allows the underlying QTableWidgetItem text to be visible (if supported by delegate)
+            # and passes mouse interactions through to the item itself.
+            content_widget = QtWidgets.QWidget()
+            content_widget.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            content_widget.setFixedHeight(20)  # Match standard row height/icon size
+            content_widget.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+
+            # Styling: transparent to show container bg (and item text)
+            content_widget.setStyleSheet("background: transparent; border: none;")
+
+            # Reset item text visibility in case it was hidden by previous logic
+            if item:
+                # Restore default brush (remove explicit transparent override)
+                item.setForeground(QtGui.QBrush())
+
+            # Create OptionBox and wrap the widget
+            # frameless=True fixes "box in a box" double borders
+            opt = OptionBox(options=[])
+            container = opt.wrap(content_widget, frameless=True)
+
+            # Ensure container allows mouse events to pass through empty areas
+            # Note: frameless=True in wrap() already applies the necessary inline styles
+
+            # Enable pass-through mode so clicks on the spacer go to the underlying table item
+            if hasattr(container, "setPassThrough"):
+                container.setPassThrough(True)
+
+            self.setCellWidget(row, col, container)
+
+            # Create an OptionBoxManager directly on the INSTANCE (not the class).
+            # IMPORTANT: Do NOT call patch_widget_class(content_widget.__class__) here!
+            # content_widget.__class__ is QWidget, and patching it would break ALL widgets
+            # that inherit from QWidget (PushButton, LineEdit, etc.) by shadowing their
+            # OptionBoxMixin.option_box property in the MRO.
+            from uitk.widgets.optionBox.utils import OptionBoxManager
+
+            mgr = OptionBoxManager(content_widget)
+            mgr._option_box = opt
+            mgr._container = container
+            mgr._is_wrapped = True
+            content_widget._option_box_manager = mgr
+
+        # Return the manager (either existing or newly created)
+        return (
+            content_widget._option_box_manager
+            if hasattr(content_widget, "_option_box_manager")
+            else content_widget.option_box
+        )
+
     def add(self, data, clear: bool = True, headers: list = None, **kwargs):
         self.setUpdatesEnabled(False)
         try:

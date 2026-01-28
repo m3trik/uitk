@@ -2,7 +2,7 @@
 # coding=utf-8
 """OptionBox - Plugin-based container for wrapping widgets with action buttons."""
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 
 
 class OptionBoxContainer(QtWidgets.QWidget):
@@ -14,9 +14,39 @@ class OptionBoxContainer(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self._pass_through = False
         if not self.objectName():
             self.setObjectName("optionBoxContainer")
         self.setProperty("class", "withBorder")
+
+    def setPassThrough(self, enabled: bool):
+        """Enable pass-through mode where only opaque children intercept mouse events."""
+        self._pass_through = enabled
+        self._update_mask()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._pass_through:
+            self._update_mask()
+
+    def _update_mask(self):
+        if not self._pass_through:
+            self.clearMask()
+            return
+
+        region = QtGui.QRegion()
+        layout = self.layout()
+        if layout:
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                w = item.widget()
+                if (
+                    w
+                    and w.isVisible()
+                    and not w.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+                ):
+                    region = region.united(w.geometry())
+        self.setMask(region)
 
 
 class OptionBox:
@@ -226,68 +256,82 @@ class OptionBox:
     # Wrapping
     # ------------------------------------------------------------------
 
-    def wrap(self, wrapped_widget: QtWidgets.QWidget):
+    def wrap(self, wrapped_widget: QtWidgets.QWidget, frameless=False):
         """Wrap target widget with option buttons.
 
         Args:
             wrapped_widget: The widget to wrap
+            frameless: If True, the container will not have a border.
 
         Returns:
             OptionBoxContainer: The container holding the widget and buttons
         """
         self.wrapped_widget = wrapped_widget
-
-        # Create container
         parent = wrapped_widget.parent()
-        container = OptionBoxContainer(parent)
+        prev_updates = parent.updatesEnabled() if parent else True
 
-        # Replace original widget in parent layout
-        if parent and parent.layout():
-            parent.layout().replaceWidget(wrapped_widget, container)
-        else:
-            container.move(wrapped_widget.pos())
+        if parent:
+            parent.setUpdatesEnabled(False)
 
-        # Create layout
-        layout = QtWidgets.QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(wrapped_widget)
+        try:
+            # Create container
+            container = OptionBoxContainer(parent)
+            if frameless:
+                container.setProperty("class", "frameless")
+                # Apply direct inline style for frameless - no selector needed
+                container.setStyleSheet(
+                    "border: none; background: transparent; margin: 0px; padding: 0px;"
+                )
 
-        # Add clear option if needed
-        if self._show_clear_button and self._is_text_widget(wrapped_widget):
-            from .options.clear import ClearOption
+            # Replace original widget in parent layout
+            if parent and parent.layout():
+                parent.layout().replaceWidget(wrapped_widget, container)
+            else:
+                container.move(wrapped_widget.pos())
 
-            self.add_option(ClearOption(wrapped_widget))
+            # Create layout
+            layout = QtWidgets.QHBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            layout.addWidget(wrapped_widget)
 
-        # Sort and add option widgets
-        sorted_options = self._sort_options()
-        option_widgets = []
-        for option in sorted_options:
-            if hasattr(option, "set_wrapped_widget"):
-                option.set_wrapped_widget(wrapped_widget)
+            # Add clear option if needed
+            if self._show_clear_button and self._is_text_widget(wrapped_widget):
+                from .options.clear import ClearOption
 
-            if hasattr(option, "widget"):
-                widget = option.widget
-                widget.setParent(container)
-                self._wire_option_widget(widget, option, container)
-                layout.addWidget(widget)
-                option_widgets.append(widget)
+                self.add_option(ClearOption(wrapped_widget))
 
-        # Apply border styling
-        self._apply_border_styling(wrapped_widget, option_widgets)
+            # Sort and add option widgets
+            sorted_options = self._sort_options()
+            option_widgets = []
+            for option in sorted_options:
+                if hasattr(option, "set_wrapped_widget"):
+                    option.set_wrapped_widget(wrapped_widget)
 
-        # Finalize
-        container.adjustSize()
-        h = wrapped_widget.height() or wrapped_widget.sizeHint().height()
+                if hasattr(option, "widget"):
+                    widget = option.widget
+                    widget.setParent(container)
+                    self._wire_option_widget(widget, option, container)
+                    layout.addWidget(widget)
+                    option_widgets.append(widget)
 
-        for option in self._options:
-            if hasattr(option, "widget"):
-                option.widget.setFixedSize(h, h)
+            # Apply border styling
+            self._apply_border_styling(wrapped_widget, option_widgets)
 
-        wrapped_widget.setMinimumHeight(h)
-        container.adjustSize()
-        self.container = container
-        container.show()
+            # Finalize
+            h = wrapped_widget.height() or wrapped_widget.sizeHint().height()
+
+            for option in self._options:
+                if hasattr(option, "widget"):
+                    option.widget.setFixedSize(h, h)
+
+            wrapped_widget.setMinimumHeight(h)
+            container.adjustSize()
+            self.container = container
+            container.show()
+        finally:
+            if parent:
+                parent.setUpdatesEnabled(prev_updates)
 
         return container
 
@@ -314,7 +358,3 @@ class OptionBox:
                     existing_style
                     + "; border-right-width: 0px; border-right-style: none; border-right-color: transparent;"
                 )
-
-
-# Alias for existing imports
-OptionBoxWithOrdering = OptionBox

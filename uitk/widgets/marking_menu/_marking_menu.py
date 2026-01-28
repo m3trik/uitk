@@ -9,8 +9,8 @@ import pythontk as ptk
 # From this package:
 from uitk.switchboard import Switchboard
 from uitk.events import EventFactoryFilter, MouseTracking
-from uitk.widgets.mixins.convert import ConvertMixin
 from .overlay import Overlay
+from uitk.handlers.ui_handler import UiHandler
 
 
 class ShortcutHandler(QtCore.QObject):
@@ -19,7 +19,9 @@ class ShortcutHandler(QtCore.QObject):
     _instance: Optional["ShortcutHandler"] = None
 
     def __init__(
-        self, owner: "MarkingMenu", shortcut_parent: Optional[QtWidgets.QWidget] = None
+        self,
+        owner: "MarkingMenu",
+        shortcut_parent: Optional[QtWidgets.QWidget] = None,
     ):
         super().__init__(owner)
         self._owner = owner
@@ -34,7 +36,9 @@ class ShortcutHandler(QtCore.QObject):
 
     @classmethod
     def create(
-        cls, owner: "MarkingMenu", shortcut_parent: Optional[QtWidgets.QWidget] = None
+        cls,
+        owner: "MarkingMenu",
+        shortcut_parent: Optional[QtWidgets.QWidget] = None,
     ) -> "ShortcutHandler":
         """Install or update the global shortcut binding."""
         if cls._instance:
@@ -103,32 +107,43 @@ class ShortcutHandler(QtCore.QObject):
     def _on_key_press(self):
         if self._key_is_down:
             return
-        self._key_is_down = True
-        self._owner._activation_key_held = True
-        self._owner.key_show_press.emit()
 
-        # Capture state once
-        buttons = QtWidgets.QApplication.mouseButtons()
+        try:
+            self._key_is_down = True
+            self._owner._activation_key_held = True
+            self._owner.key_show_press.emit()
 
-        # Clean external UIs, passing current state to avoid race/re-query
-        self._owner._dismiss_external_popups(buttons)
+            # Capture state once
+            buttons = QtWidgets.QApplication.mouseButtons()
 
-        # Build lookup string from current state
-        lookup = self._owner._build_lookup_key(buttons)
-        ui_target = self._owner._bindings.get(lookup)
+            # Track buttons held at activation for chord release detection
+            self._owner._chord_buttons_at_press = self._owner._to_int(buttons)
 
-        self._owner.logger.debug(
-            f"_on_key_press: buttons={buttons}, lookup='{lookup}', ui_target={ui_target}"
-        )
+            # Clean external UIs, passing current state to avoid race/re-query
+            self._owner._dismiss_external_popups(buttons)
 
-        self._owner.show(ui_target, force=True)
+            # Build lookup string from current state
+            lookup = self._owner._build_lookup_key(buttons)
+            ui_target = self._owner._bindings.get(lookup)
 
-        # Handover
-        active_btn = self._owner._get_priority_button(buttons)
-        if active_btn != QtCore.Qt.NoButton:
-            self._owner._transfer_mouse_control(active_btn, buttons)
+            self._owner.logger.debug(
+                f"_on_key_press: buttons={buttons}, lookup='{lookup}', ui_target={ui_target}"
+            )
 
-        QtCore.QTimer.singleShot(0, self._owner.dim_other_windows)
+            self._owner.show(ui_target, force=True)
+
+            # Handover
+            active_btn = self._owner._get_priority_button(buttons)
+            if active_btn != QtCore.Qt.NoButton:
+                self._owner._transfer_mouse_control(active_btn, buttons)
+
+            QtCore.QTimer.singleShot(0, self._owner.dim_other_windows)
+
+        except Exception as e:
+            self._owner.logger.error(f"Error in _on_key_press: {e}")
+            # Ensure we reset state if something exploded
+            self._key_is_down = False
+            self._owner._activation_key_held = False
 
     def _on_key_release(self):
         if not self._key_is_down:
@@ -167,6 +182,9 @@ class MarkingMenu(
     key_show_press = QtCore.Signal()
     key_show_release = QtCore.Signal()
 
+    # Default Handler Configuration
+    HANDLERS = {"ui": UiHandler}
+
     _in_transition: bool = False
     _instances: dict = {}
     _submenu_cache: dict = {}
@@ -175,6 +193,13 @@ class MarkingMenu(
     _shortcut_instance: Optional["ShortcutHandler"] = None
     _current_widget: Optional[QtWidgets.QWidget] = None
 
+    # Chord release detection: tracks multi-button states for simultaneous release handling
+    _chord_release_timer: QtCore.QTimer = None
+    _chord_pending_widget: Optional[QtWidgets.QWidget] = None
+    _chord_pending_buttons: Optional[QtCore.Qt.MouseButtons] = None
+    _chord_pending_modifiers: Optional[QtCore.Qt.KeyboardModifiers] = None
+    _chord_buttons_at_press: int = 0  # Buttons held when menu was activated
+
     def __init__(
         self,
         parent=None,
@@ -182,17 +207,25 @@ class MarkingMenu(
         slot_source=None,
         widget_source=None,
         bindings: dict = None,
+        handlers: dict = None,
         switchboard: Optional[Switchboard] = None,
-        log_level: str = "WARNING",
+        log_level: str = "DEBUG",
+        **kwargs,
     ):
         """ """
         super().__init__(parent=parent)
         self.logger.setLevel(log_level)
-        self.raw_bindings = bindings or {}
         self._bindings = {}
         self._activation_key = None
         self._activation_key_held = False
-        self._build_bindings()
+        self._initial_bindings = bindings  # Store for after sb is set up
+
+        # Merge class-level HANDLERS with instance-level handlers param
+        self._handlers_config = getattr(self, "HANDLERS", {}).copy()
+        if handlers:
+            self._handlers_config.update(handlers)
+
+        # ... (path resolution logic) ...
 
         # Resolve paths relative to the subclass module (e.g. TclMaya in tentacle)
         # instead of relative to this base class file in uitk.
@@ -217,8 +250,22 @@ class MarkingMenu(
                 ui_source=ui_source,
                 slot_source=slot_source,
                 widget_source=widget_source,
+                handlers=self._handlers_config,
                 base_dir=base_dir,
             )
+
+        # Initialize the Handler Ecosystem
+        self._setup_registry()
+
+        # Initialize bindings: explicit arg > stored > empty
+        if self._initial_bindings:
+            # Only apply initial bindings if no bindings are currently stored (first run)
+            if self.sb.configurable.marking_menu_bindings.get(None) is None:
+                self.sb.configurable.marking_menu_bindings.set(self._initial_bindings)
+
+        # Register callback to rebuild bindings when they change
+        self.sb.configurable.marking_menu_bindings.changed.connect(self._build_bindings)
+        self._build_bindings()
 
         self.child_event_filter = EventFactoryFilter(
             parent=self,
@@ -232,9 +279,6 @@ class MarkingMenu(
                 "MouseButtonRelease",
             },
         )
-
-        # Register self with switchboard for access from any slot
-        self.sb.configurable["marking_menu"] = self
 
         self.overlay = Overlay(self, antialiasing=True)
         self.mouse_tracking = MouseTracking(self, auto_update=False)
@@ -254,10 +298,50 @@ class MarkingMenu(
         self._pending_show_timer.setSingleShot(True)
         self._pending_show_timer.timeout.connect(self._perform_transition)
         self._setup_complete = True
+        self._pending_ui = None
+
+        # Initialize chord release detection timer
+        self._chord_release_timer = QtCore.QTimer()
+        self._chord_release_timer.setSingleShot(True)
+        self._chord_release_timer.timeout.connect(self._chord_timeout_transition)
+        self._chord_pending_widget = None
+        self._chord_pending_buttons = None
+        self._chord_pending_modifiers = None
+        self._chord_buttons_at_press = 0
 
         # Auto-install shortcut if parent is provided
         if parent:
             ShortcutHandler.create(self, parent)
+
+    def _setup_registry(self):
+        """Initialize and register the application's handlers."""
+        # 1. Register Self (The Marking Menu)
+        self.sb.handlers.marking_menu = self
+
+        # 2. Register Configured Handlers (e.g. UiHandler)
+        # Uses _handlers_config which merges HANDLERS class attr + handlers param
+        handlers = getattr(self, "_handlers_config", {}) or getattr(
+            self, "HANDLERS", {}
+        )
+
+        for name, obj in handlers.items():
+            # Skip if already registered (allows for manual dependency injection)
+            if getattr(self.sb.handlers, name, None):
+                continue
+
+            # Instantiate if class, use directly if instance
+            if isinstance(obj, type):
+                if hasattr(obj, "instance"):
+                    instance = obj.instance(switchboard=self.sb)
+                else:
+                    instance = obj(switchboard=self.sb)
+                defaults = getattr(obj, "DEFAULTS", {})
+            else:
+                instance = obj
+                defaults = getattr(instance, "DEFAULTS", {})
+
+            self.sb.register_handler(name, instance, defaults)
+            self.logger.debug(f"Registered Handler: {name} -> {instance}")
 
     @classmethod
     def instance(
@@ -266,6 +350,61 @@ class MarkingMenu(
         kwargs.setdefault("switchboard", switchboard)
         kwargs["singleton_key"] = id(switchboard)
         return super().instance(**kwargs)
+
+    @property
+    def bindings(self) -> dict:
+        """Get bindings from persistent storage."""
+        return self.sb.configurable.marking_menu_bindings.get({})
+
+    @bindings.setter
+    def bindings(self, value: dict):
+        """Set bindings (auto-persists and triggers rebuild via callback)."""
+        self.sb.configurable.marking_menu_bindings.set(value)
+
+    @property
+    def ui_handler(self):
+        """Accessor for the UI handler."""
+        return self.sb.handlers.ui
+
+    def get(self, name: str, **kwargs) -> QtWidgets.QWidget:
+        """Get a UI widget by name.
+
+        For standalone windows, delegates to the window manager.
+        For stacked menus (startmenu/submenu), retrieves directly from Switchboard but ensures styling is applied.
+
+        Parameters:
+            name: The name of the UI to retrieve.
+            **kwargs: Additional arguments.
+
+        Returns:
+            The UI widget.
+        """
+        # First check if it's a stacked menu
+        ui = self.sb.get_ui(name)
+        if ui and ui.has_tags(["startmenu", "submenu"]):
+            # Ensure proper styling is applied (WindowManager owns the styling logic)
+            self.ui_handler.apply_styles(ui)
+            return ui
+
+        # For standalone windows (or if not yet loaded), delegate to WindowManager
+        ui = self.ui_handler.get(name, **kwargs)
+
+        if ui and not getattr(ui, "is_initialized", False):
+            self._init_ui(ui)
+
+        return ui
+
+    def _to_int(self, val) -> int:
+        """Safely convert a Qt Enum or Flag to an integer."""
+        if isinstance(val, int):
+            return val
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            if hasattr(val, "value"):
+                return val.value
+            self.logger.warning(f"Could not convert {val} (type: {type(val)}) to int.")
+            return 0
 
     def _normalize_binding_key(self, parts: list) -> str:
         """Normalize binding parts into a consistent string key.
@@ -313,35 +452,43 @@ class MarkingMenu(
 
         # Add modifiers
         if modifiers:
-            modifiers_int = ConvertMixin.to_int(modifiers)
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.ShiftModifier):
+            modifiers_int = self._to_int(modifiers)
+            if modifiers_int & self._to_int(QtCore.Qt.ShiftModifier):
                 parts.append("ShiftModifier")
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.ControlModifier):
+            if modifiers_int & self._to_int(QtCore.Qt.ControlModifier):
                 parts.append("ControlModifier")
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.AltModifier):
+            if modifiers_int & self._to_int(QtCore.Qt.AltModifier):
                 parts.append("AltModifier")
-            if modifiers_int & ConvertMixin.to_int(QtCore.Qt.MetaModifier):
+            if modifiers_int & self._to_int(QtCore.Qt.MetaModifier):
                 parts.append("MetaModifier")
 
         # Add buttons
         if buttons:
-            buttons_int = ConvertMixin.to_int(buttons)
-            if buttons_int & ConvertMixin.to_int(QtCore.Qt.LeftButton):
+            buttons_int = self._to_int(buttons)
+            if buttons_int & self._to_int(QtCore.Qt.LeftButton):
                 parts.append("LeftButton")
-            if buttons_int & ConvertMixin.to_int(QtCore.Qt.RightButton):
+            if buttons_int & self._to_int(QtCore.Qt.RightButton):
                 parts.append("RightButton")
-            if buttons_int & ConvertMixin.to_int(QtCore.Qt.MiddleButton):
+            if buttons_int & self._to_int(QtCore.Qt.MiddleButton):
                 parts.append("MiddleButton")
 
         return self._normalize_binding_key(parts)
 
-    def _build_bindings(self):
-        """Parse and organize the input bindings into a unified lookup dict."""
+    def _build_bindings(self, _value=None):
+        """Parse and organize the input bindings into a unified lookup dict.
+
+        Args:
+            _value: Ignored. Accepts callback arg from on_change.
+        """
         self._bindings.clear()
         self._activation_key = None
         self._activation_key_str = None
 
-        for key, ui_in in self.raw_bindings.items():
+        if not isinstance(self.bindings, dict):
+            self.logger.warning("Bindings not configured correctly or invalid.")
+            return
+
+        for key, ui_in in self.bindings.items():
             if not isinstance(key, str):
                 continue
 
@@ -355,9 +502,7 @@ class MarkingMenu(
                 if part.startswith("Key_") and self._activation_key_str is None:
                     self._activation_key_str = part
                     if hasattr(QtCore.Qt, part):
-                        self._activation_key = ConvertMixin.to_int(
-                            getattr(QtCore.Qt, part)
-                        )
+                        self._activation_key = self._to_int(getattr(QtCore.Qt, part))
 
             self._bindings[normalized] = ui_in
             self.logger.debug(f"Binding: '{key}' -> '{normalized}' -> '{ui_in}'")
@@ -368,6 +513,11 @@ class MarkingMenu(
         self.logger.debug(f"All bindings: {self._bindings}")
 
         if self._activation_key is None:
+            if not self._bindings and self._initial_bindings:
+                self.logger.warning("No bindings found. reverting to default bindings.")
+                self.bindings = self._initial_bindings
+                return
+
             self.logger.warning(
                 "No activation key found in bindings. Include Key_* in at least one binding."
             )
@@ -407,8 +557,7 @@ class MarkingMenu(
         widget.move(local_pos - widget.rect().center())
 
         # Update mouse tracking cache for the new widget
-        if hasattr(self, "mouse_tracking"):
-            self.mouse_tracking.update_child_widgets()
+        self.mouse_tracking.update_child_widgets()
 
     def setCurrentIndex(self, index: int) -> None:
         """Set the current widget index (compatibility method).
@@ -437,71 +586,58 @@ class MarkingMenu(
             self.add_child_event_filter(ui.widgets)
             ui.on_child_registered.connect(lambda w: self.add_child_event_filter(w))
 
-        else:  # MainWindow
-            ui.setParent(self)
-            ui.set_flags(Window=True, FramelessWindowHint=True)
-            ui.set_attributes(WA_TranslucentBackground=True)
-            ui.style.set(theme="dark")
-            ui.header.config_buttons("menu", "collapse", "pin")
+        else:  # Standalone MainWindow
+            # Parent normal windows to the MarkingMenu to ensure lifecycle coupling.
+            # EXCEPTION: 'mayatk' windows (wrapped native menus) should remain parented to the host app.
+            if not ui.has_tags(["mayatk", "maya"]):
+                ui.setParent(self.parent(), QtCore.Qt.Window)
+
+            # Delegate styling to the window manager
+            self.ui_handler.apply_styles(ui)
+
+            # Ensure lifecycle coupling
             self.key_show_release.connect(ui.hide)
 
             ui.default_slot_timeout = 360.0
 
     def _prepare_ui(self, ui) -> QtWidgets.QWidget:
-        """Initialize and set the UI without showing it."""
+        """Initialize and set the UI without showing it.
+
+        Stacked menus (startmenu/submenu) are managed directly by MarkingMenu.
+        Standalone windows are delegated to the window manager for styling.
+        """
         if not isinstance(ui, (str, QtWidgets.QWidget)):
             raise ValueError(f"Invalid datatype for ui: {type(ui)}")
 
-        found_ui = self.sb.get_ui(ui)
+        # Resolve UI using the appropriate manager
+        if isinstance(ui, str):
+            # Use our get() which routes stacked vs standalone correctly
+            found_ui = self.get(ui)
+        else:
+            found_ui = ui
 
+        if not found_ui:
+            raise ValueError(f"UI not found: {ui}")
+
+        is_stacked = found_ui.has_tags(["startmenu", "submenu"])
+
+        # Apply appropriate initialization based on UI type
         if not found_ui.is_initialized:
             self._init_ui(found_ui)
 
-        if found_ui.has_tags(["startmenu", "submenu"]):
+        if is_stacked:
+            # Stacked menus: managed by MarkingMenu
             self.setCurrentWidget(found_ui)
         else:
-            self.hide()
+            # Standalone windows: hide the marking menu overlay only if NOT parented to it
+            if found_ui.parent() != self:
+                self.hide()
 
         self.sb.current_ui = found_ui
         return found_ui
 
-    def _show_ui(self) -> None:
-        """Show the current UI appropriately, hiding MarkingMenu if needed."""
-        current = self.sb.current_ui
-
-        is_stacked_ui = current.has_tags(["startmenu", "submenu"])
-
-        if is_stacked_ui:
-            # For stacked UIs (submenus), show with smooth timing
-            super().show()
-
-            self.raise_()
-            self.activateWindow()
-        else:
-            self.restore_other_windows()
-            current.show()
-
-            # Position the widget at the cursor (handling parent coordinates)
-            cursor_pos = QtGui.QCursor.pos()
-            local_pos = self.mapFromGlobal(cursor_pos)
-            offset = QtCore.QPoint(0, int(current.height() * 0.25))
-            current.move(local_pos - current.rect().center() + offset)
-
-            current.raise_()
-            # current.activateWindow()
-
     def _debounce_transition(self, clear_pending: bool = False) -> None:
-        """Cancel any pending transition to allow a new one to take precedence.
-
-        This implements debouncing for submenu transitions: when the user moves
-        quickly between buttons, we cancel the previous pending transition and
-        schedule the new one. This ensures the UI always reflects the user's
-        current hover position rather than a stale intermediate state.
-
-        Parameters:
-            clear_pending: If True, also clears pending transition data. Use this
-                when cancelling a transition entirely (e.g., mouse left the button).
-        """
+        """Cancel any pending transition to allow a new one to take precedence."""
         if self._pending_show_timer.isActive():
             self._pending_show_timer.stop()
         self._in_transition = False
@@ -533,7 +669,6 @@ class MarkingMenu(
             return
 
         # VALIDATION: Abort if user has moved cursor away from the triggering widget
-        # This prevents "phantom" menus and sticky states when moving quickly back to center
         try:
             cursor_pos = QtGui.QCursor.pos()
             w_rect = QtCore.QRect(w.mapToGlobal(QtCore.QPoint(0, 0)), w.size())
@@ -542,7 +677,6 @@ class MarkingMenu(
                 self._clear_transition_flag()
                 return
         except RuntimeError:
-            # Widget might be deleted or invalid
             self._clear_transition_flag()
             return
 
@@ -558,21 +692,19 @@ class MarkingMenu(
             # Position submenu smoothly without forcing immediate updates
             self._position_submenu_smooth(ui, w)
 
-            self._show_ui()
+            # Switch active widget without repositioning (preserving smooth calculations)
+            if self._current_widget and self._current_widget != ui:
+                self._current_widget.hide()
+            self._current_widget = ui
+            ui.show()
+            ui.raise_()
+            self.sb.current_ui = ui
 
             # Optimize history check and overlay cloning
             self._handle_overlay_cloning(ui)
 
             # Update mouse tracking to include newly cloned widgets
-            if hasattr(self, "mouse_tracking"):
-                self.mouse_tracking.update_child_widgets()
-
-            # NOTE: Previously had a "return to start region" check here that would
-            # revert to startmenu if cursor was within 100px of the start position.
-            # This was removed because it incorrectly triggered when buttons near the
-            # center were hovered - the user hovering a button to open a submenu would
-            # immediately have that submenu reverted. The overlay's regular mouse
-            # tracking handles the return-to-start functionality properly.
+            self.mouse_tracking.update_child_widgets()
 
         finally:
             # Clear transition flag after a brief delay to allow smooth completion
@@ -602,8 +734,6 @@ class MarkingMenu(
 
     def _handle_overlay_cloning(self, ui) -> None:
         """Handle overlay cloning with optimized history checking."""
-        # Optimize history check by avoiding expensive slice operations
-        # Only check if this is a different UI than last time
         if ui != self._last_ui_history_check:
             ui_history_slice = self.sb.ui_history(slice(0, -1), allow_duplicates=True)
             if ui not in ui_history_slice:
@@ -612,11 +742,15 @@ class MarkingMenu(
 
     def _delayed_show_ui(self) -> None:
         """Show the UI after smooth positioning delay."""
-        if hasattr(self, "_pending_ui"):
+        if self._pending_ui:
             current_ui = self.sb.current_ui
             if current_ui == self._pending_ui:
-                self._show_ui()
-            delattr(self, "_pending_ui")
+                if self._current_widget and self._current_widget != current_ui:
+                    self._current_widget.hide()
+                self._current_widget = current_ui
+                current_ui.show()
+                current_ui.raise_()
+            self._pending_ui = None
 
     def _clear_transition_flag(self):
         """Clear the transition flag to allow new transitions."""
@@ -637,18 +771,19 @@ class MarkingMenu(
         local_pos = self.mapFromGlobal(start_pos)
         startmenu.move(local_pos - startmenu.rect().center())
 
-        self._show_ui()
+        # Switch active widget
+        if self._current_widget and self._current_widget != startmenu:
+            self._current_widget.hide()
+        self._current_widget = startmenu
+        startmenu.show()
+        startmenu.raise_()
+        self.sb.current_ui = startmenu
 
     # ---------------------------------------------------------------------------------------------
     #   Menu Navigation Helpers:
 
     def _dismiss_external_popups(self, buttons_mask=None) -> None:
-        """Dismiss any active popup widgets that are not children of MarkingMenu.
-
-        This is called before showing MarkingMenu to close external menus (e.g., Maya's
-        native right-click marking menus) that would otherwise conflict with
-        the overlay's event handling.
-        """
+        """Dismiss any active popup widgets that are not children of MarkingMenu."""
         if buttons_mask is None:
             buttons_mask = QtWidgets.QApplication.mouseButtons()
 
@@ -688,7 +823,6 @@ class MarkingMenu(
             attempts += 1
 
         # 3. Additional sweep for any visible QMenu that might not be 'activePopupWidget'
-        # This catches Maya marking menus that persist
         for widget in QtWidgets.QApplication.topLevelWidgets():
             if isinstance(widget, QtWidgets.QMenu) and widget.isVisible():
                 if not self.isAncestorOf(widget):
@@ -705,20 +839,95 @@ class MarkingMenu(
             return QtCore.Qt.LeftButton
         return QtCore.Qt.NoButton
 
+    def _count_buttons(self, buttons_mask) -> int:
+        """Count how many mouse buttons are in the given button mask."""
+        count = 0
+        buttons_int = self._to_int(buttons_mask)
+        if buttons_int & self._to_int(QtCore.Qt.LeftButton):
+            count += 1
+        if buttons_int & self._to_int(QtCore.Qt.RightButton):
+            count += 1
+        if buttons_int & self._to_int(QtCore.Qt.MiddleButton):
+            count += 1
+        return count
+
+    def _was_multi_button_press(self) -> bool:
+        """Check if the menu was activated with multiple buttons held."""
+        return self._count_buttons(self._chord_buttons_at_press) > 1
+
+    def _cancel_chord_timer(self) -> None:
+        """Cancel any pending chord detection."""
+        if self._chord_release_timer.isActive():
+            self._chord_release_timer.stop()
+        self._chord_pending_widget = None
+        self._chord_pending_buttons = None
+        self._chord_pending_modifiers = None
+
+    def _chord_timeout_transition(self) -> None:
+        """Called when chord detection window expires - perform the menu transition."""
+        self.logger.debug("Chord Release: Timer expired - performing transition")
+        if self._chord_pending_buttons is not None:
+            self._transition_to_state(
+                self._chord_pending_buttons, self._chord_pending_modifiers
+            )
+        self._cancel_chord_timer()
+
+    def _transition_to_state(self, buttons, modifiers=None) -> None:
+        """Transition menu to state matching the given button/modifier combination."""
+        lookup = self._build_lookup_key(buttons=buttons, modifiers=modifiers)
+        next_ui = self._bindings.get(lookup)
+
+        # Fallback: if modifiers are held but no specific binding exists, try without modifiers
+        if not next_ui and modifiers and modifiers != QtCore.Qt.NoModifier:
+            base_lookup = self._build_lookup_key(
+                buttons=buttons, modifiers=QtCore.Qt.NoModifier
+            )
+            if base_lookup != lookup:
+                next_ui = self._bindings.get(base_lookup)
+
+        if next_ui:
+            self.show(next_ui, force=True)
+
+    def _handle_widget_action(self, widget) -> bool:
+        """Execute action for a widget (button click or menu navigation).
+
+        Returns:
+            bool: True if action was executed, False if widget is non-interactive.
+        """
+        # Resolve container to actual child widget
+        if hasattr(widget, "derived_type") and widget.derived_type == QtWidgets.QWidget:
+            child = widget.childAt(widget.mapFromGlobal(QtGui.QCursor.pos()))
+            if child:
+                widget = child
+
+        # Handle 'i' button clicks (menu/submenu launchers)
+        if isinstance(widget, QtWidgets.QPushButton):
+            if hasattr(widget, "base_name") and widget.base_name() == "i":
+                menu = self._resolve_button_menu(widget)
+                if menu:
+                    is_standalone = not menu.has_tags(["startmenu", "submenu"])
+                    self.show(menu, force=is_standalone)
+                    return True
+
+        # Emit clicked signal for standard buttons
+        if hasattr(widget, "clicked"):
+            ui = getattr(widget, "ui", None)
+            base_name = getattr(widget, "base_name", lambda: None)()
+            self.hide()
+            if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
+                widget.clicked.emit()
+                return True
+
+        return False
+
     def _transfer_mouse_control(self, button, buttons_mask) -> None:
         """Transfer mouse control to this widget by grabbing and synthesizing a press."""
         self.logger.debug(
             f"_transfer_mouse_control: button={button}, buttons_mask={buttons_mask}"
         )
-        self.logger.debug(
-            f"_transfer_mouse_control: Current grabber BEFORE: {QtWidgets.QWidget.mouseGrabber()}"
-        )
 
         # Force grab mouse to ensure MarkingMenu receives subsequent move events
         self.grabMouse()
-        self.logger.debug(
-            f"_transfer_mouse_control: Current grabber AFTER: {QtWidgets.QWidget.mouseGrabber()}"
-        )
 
         local_pos = self.mapFromGlobal(QtGui.QCursor.pos())
         event = QtGui.QMouseEvent(
@@ -736,22 +945,22 @@ class MarkingMenu(
 
     def mousePressEvent(self, event) -> None:
         """Handle mouse press to switch menus based on full input state."""
+        self.logger.debug(f"mousePressEvent: {event.buttons()} {event.modifiers()}")
         if self.sb.current_ui.has_tags(["startmenu", "submenu"]):
             lookup = self._build_lookup_key(
                 buttons=event.buttons(), modifiers=event.modifiers()
             )
             ui_name = self._bindings.get(lookup)
+            self.logger.debug(f"mousePressEvent lookup: {lookup} -> {ui_name}")
 
             if ui_name:
-                if hasattr(self, "overlay"):
-                    self.overlay.start_gesture(event.globalPos())
+                self.overlay.start_gesture(event.globalPos())
                 self.show(ui_name)
 
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event) -> None:
         """Handle key press for non-activation key bindings."""
-        # Skip if this is the activation key (handled by ShortcutHandler)
         if event.key() == self._activation_key:
             super().keyPressEvent(event)
             return
@@ -760,8 +969,7 @@ class MarkingMenu(
         ui_name = self._bindings.get(lookup)
 
         if ui_name:
-            if hasattr(self, "overlay"):
-                self.overlay.start_gesture(QtGui.QCursor.pos())
+            self.overlay.start_gesture(QtGui.QCursor.pos())
             self.show(ui_name)
         else:
             super().keyPressEvent(event)
@@ -790,74 +998,41 @@ class MarkingMenu(
         """Handle mouse release to transition menus based on remaining buttons."""
         current_ui = self.sb.current_ui
 
-        # Calculate next state from remaining buttons
-        lookup = self._build_lookup_key(
-            buttons=event.buttons(), modifiers=event.modifiers()
-        )
-        next_ui = self._bindings.get(lookup)
-
         # For stacked UIs, check if we're releasing over a widget
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
 
-            # If there's a valid next UI to transition to, do it regardless of widget position
-            if next_ui is not None:
-                self.show(next_ui, force=True)
-                super().mouseReleaseEvent(event)
-                return
-
             if widget and widget is not self and widget is not current_ui:
+                # When mouse is grabbed, child event filter is bypassed - handle clicks here
                 if current_ui.isAncestorOf(widget):
-                    # When mouse is grabbed, child event filter is bypassed - handle clicks here
-                    self._handle_child_click(widget, event)
-                    self.releaseMouse()
-                    super().mouseReleaseEvent(event)
-                    return
+                    if self._handle_widget_action(widget):
+                        self.releaseMouse()
+                        super().mouseReleaseEvent(event)
+                        return
+                    # If not handled (e.g. background/label), fall through to transition logic
                 else:
                     # Widget is outside current_ui - don't transition
                     super().mouseReleaseEvent(event)
                     return
 
         # Transition to the appropriate UI based on remaining state
-        if self.isActiveWindow() and self.rect().contains(event.pos()):
-            self.show(next_ui, force=True)
+        remaining_buttons = event.buttons()
+        chord_tolerance = 75 if self._was_multi_button_press() else 40
+
+        if remaining_buttons == QtCore.Qt.NoButton:
+            # All buttons released - transition immediately
+            self._cancel_chord_timer()
+            self._transition_to_state(remaining_buttons, event.modifiers())
+        else:
+            # Buttons remain - start chord timer to allow simultaneous release
+            self._chord_pending_buttons = remaining_buttons
+            self._chord_pending_modifiers = event.modifiers()
+            self._chord_release_timer.start(chord_tolerance)
 
         super().mouseReleaseEvent(event)
 
-    def _handle_child_click(self, widget, event) -> None:
-        """Handle click on a child widget when mouse is grabbed.
-
-        This is called from mouseReleaseEvent when releasing over a child widget
-        while mouse is grabbed (e.g., during chord releases).
-        """
-        # Resolve container clicks to actual child widget
-        if hasattr(widget, "derived_type") and widget.derived_type == QtWidgets.QWidget:
-            child = widget.childAt(widget.mapFromGlobal(QtGui.QCursor.pos()))
-            if child:
-                widget = child
-
-        # Handle 'i' button clicks (menu/submenu launchers)
-        if isinstance(widget, QtWidgets.QPushButton):
-            if hasattr(widget, "base_name") and widget.base_name() == "i":
-                menu = self._resolve_button_menu(widget)
-                if menu:
-                    is_standalone = not menu.has_tags(["startmenu", "submenu"])
-                    self.show(menu, force=is_standalone)
-                    return  # Menu shown, don't emit clicked
-
-        # Emit clicked signal for standard buttons
-        if hasattr(widget, "clicked"):
-            ui = getattr(widget, "ui", None)
-            base_name = getattr(widget, "base_name", lambda: None)()
-            self.hide()
-            if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
-                widget.clicked.emit()
-
     def _resolve_button_menu(self, widget) -> Optional[QtWidgets.QWidget]:
-        """Resolve menu for an 'i' button, handling cache and tag cleanup.
-
-        Returns the menu widget if found, None otherwise.
-        """
+        """Resolve menu for an 'i' button, handling cache and tag cleanup."""
         menu_name = widget.accessibleName()
         if not menu_name:
             return None
@@ -878,50 +1053,111 @@ class MarkingMenu(
 
         return menu
 
-    def show(self, ui=None, force=False) -> None:
-        """Show the MarkingMenu UI with the specified name.
+    def show(
+        self, ui: Optional[str] = None, pos=None, force: bool = False, **kwargs
+    ) -> QtWidgets.QWidget:
+        """Central hub for showing any UI component.
 
-        Parameters:
-            ui (str/QWidget): The name of the UI to show or a QWidget instance.
-            force (bool): If True, forces the UI to show even if it is already visible.
+        Args:
+            ui (str, optional): The name of the UI to show.
+            pos: Position argument passed to windows.
+            force (bool): Force the UI to show.
+            **kwargs: Additional arguments.
+
+        Returns:
+            QtWidgets.QWidget: The displayed widget.
         """
+        # Cancel any pending chord transitions to avoid race conditions
+        self._cancel_chord_timer()
+
+        # If no UI is specified, show the Main Startup Menu (default behavior)
         if ui is None:
             ui = self._bindings.get(self._activation_key_str)
 
+        # If still None, we can't show anything
         if ui is None:
-            return
+            # If we are just toggling the overlay visibility
+            if not self.isVisible():
+                super().show()
+            return self
 
-        ui = self._prepare_ui(ui)
+        # Resolve the UI object
+        found_ui = self.sb.get_ui(ui)
+        if not found_ui:
+            # Fallback: check submenu cache
+            found_ui = self._submenu_cache.get(ui)
 
-        if not force and (QtWidgets.QApplication.mouseButtons() or self.isVisible()):
-            return
+        if not found_ui:
+            self.logger.error(f"UI '{ui}' not found.")
+            return None
 
-        if ui.has_tags("startmenu") and hasattr(self, "overlay"):
+        # Initialize if needed
+        if not found_ui.is_initialized:
+            self._init_ui(found_ui)
+
+        # Determine Type: Marking Menu or Standalone Window?
+        is_marking_menu = found_ui.has_tags(["startmenu", "submenu"])
+
+        if is_marking_menu:
+            return self._show_marking_menu(found_ui, **kwargs)
+        else:
+            return self._show_window(found_ui, pos=pos, force=force, **kwargs)
+
+    def _show_marking_menu(self, widget, **kwargs):
+        """Internal handler for showing marking menus."""
+        self.setCurrentWidget(widget)
+
+        if widget.has_tags("startmenu"):
             self.overlay.start_gesture(QtGui.QCursor.pos())
 
-        self._show_ui()
+        if self.isHidden():
+            super().show()
+            self.raise_()
+            self.activateWindow()
+
+        self.sb.current_ui = widget
+        return widget
+
+    def _show_window(self, widget, pos=None, force=False, **kwargs):
+        """Internal handler for showing standalone windows."""
+        if widget.parent() != self:
+            self.hide()
+
+        self.restore_other_windows()
+
+        self.ui_handler.apply_styles(widget)
+        self.ui_handler.show(widget, pos=pos or "cursor", force=force)
+        return widget
 
     def hide(self):
         """Override hide to properly reset stacked widget state."""
-        # Reset the current widget index to -1 to ensure proper hide behavior
+        self._cancel_chord_timer()
+        self._chord_buttons_at_press = 0
+
         if self.currentWidget():
             self.setCurrentIndex(-1)
 
-        # Reset pinned state for all stacked UIs to ensure they can be hidden next time
         current_ui = self.sb.current_ui
-        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
-            header = getattr(current_ui, "header", None)
-            if header:
-                if hasattr(header, "reset_pin_state"):
-                    header.reset_pin_state()
-                elif getattr(header, "pinned", False):
-                    header.pinned = False
-                    if hasattr(current_ui, "prevent_hide"):
-                        current_ui.prevent_hide = False
+        if current_ui:
+            try:
+                if current_ui.has_tags(["startmenu", "submenu"]):
+                    header = current_ui.header
+                    if header:
+                        try:
+                            header.reset_pin_state()
+                        except AttributeError:
+                            try:
+                                if header.pinned:
+                                    header.pinned = False
+                                    if current_ui.prevent_hide:
+                                        current_ui.prevent_hide = False
+                            except AttributeError:
+                                pass
+            except AttributeError:
+                pass
 
         super().hide()
 
-        # Reactivate parent window to prevent it from falling behind other apps
         parent = self.parentWidget()
         if parent:
             parent.raise_()
@@ -929,25 +1165,19 @@ class MarkingMenu(
 
     def hideEvent(self, event):
         """ """
-        # Clear optimization caches on hide to prevent memory leaks
         self._clear_optimization_caches()
-
         super().hideEvent(event)
 
     def _clear_optimization_caches(self):
         """Clear optimization caches to prevent memory accumulation."""
-        # Cancel any pending show operations
         if self._pending_show_timer and self._pending_show_timer.isActive():
             self._pending_show_timer.stop()
 
-        # Ensure transition flag is reset to prevent lockups if hide() interrupts a pending transition
+        self._cancel_chord_timer()
         self._in_transition = False
+        self._pending_ui = None
 
-        if hasattr(self, "_pending_ui"):
-            delattr(self, "_pending_ui")
-
-        # Periodically clear the submenu cache to prevent excessive memory usage
-        if len(self._submenu_cache) > 50:  # Reasonable threshold
+        if len(self._submenu_cache) > 50:
             self._submenu_cache.clear()
         self._last_ui_history_check = None
 
@@ -984,7 +1214,6 @@ class MarkingMenu(
         Parameters:
             widgets (str/list): The widget(s) to initialize.
         """
-        # Only Install the event filter for the following widget types.
         filtered_types = [
             QtWidgets.QMainWindow,
             QtWidgets.QWidget,
@@ -996,12 +1225,12 @@ class MarkingMenu(
         ]
 
         for w in ptk.make_iterable(widgets):
-            try:  # If not correct type, skip it.
+            try:
                 if (w.derived_type not in filtered_types) or (
                     not w.ui.has_tags(["startmenu", "submenu"])
                 ):
                     continue
-            except AttributeError:  # Or not initialized yet.
+            except AttributeError:
                 continue
 
             if w.derived_type in (
@@ -1029,7 +1258,6 @@ class MarkingMenu(
 
                 submenu_name = f"{acc_name}#submenu"
                 if submenu_name != w.ui.objectName():
-                    # Cache submenu lookups to avoid repeated sb.get_ui() calls
                     submenu = self._submenu_cache.get(submenu_name)
                     if submenu is None:
                         submenu = self.sb.get_ui(submenu_name)
@@ -1040,91 +1268,48 @@ class MarkingMenu(
                         self._set_submenu(submenu, w)
 
         if w.base_name() == "chk" and w.ui.has_tags("submenu") and self.isVisible():
-            if hasattr(w, "toggle"):
+            if isinstance(w, QtWidgets.QAbstractButton):
                 w.toggle()
 
-        # Safe default: call original enterEvent
-        if hasattr(w, "enterEvent"):
-            super_event = getattr(super(type(w), w), "enterEvent", None)
-            if callable(super_event):
-                super_event(event)
+        super_event = getattr(super(type(w), w), "enterEvent", None)
+        if callable(super_event):
+            super_event(event)
 
     def child_leaveEvent(self, w, event) -> None:
         """Handle the leave event for child widgets."""
         if w.derived_type == QtWidgets.QPushButton:
             self._debounce_transition(clear_pending=True)
 
-        # Safe default: call original leaveEvent
-        if hasattr(w, "leaveEvent"):
-            super_event = getattr(super(type(w), w), "leaveEvent", None)
-            if callable(super_event):
-                super_event(event)
+        super_event = getattr(super(type(w), w), "leaveEvent", None)
+        if callable(super_event):
+            super_event(event)
 
     def child_mouseButtonReleaseEvent(self, w, event) -> bool:
-        """Handle mouse button release events on child widgets.
-
-        Note: Uses clicked.emit() instead of click() because Qt's click() method
-        doesn't emit signals when widgets are hidden, and this menu hides itself
-        before triggering widget callbacks.
-        """
+        """Handle mouse button release events on child widgets."""
         if not w.underMouse():
             w.mouseReleaseEvent(event)
             return False
 
-        # Resolve container clicks to actual child widget (fixes OptionBox button clicks)
-        target_widget = w
-        if w.derived_type == QtWidgets.QWidget:
-            child = w.childAt(event.pos())
-            if child:
-                target_widget = child
+        remaining_buttons = event.buttons()
+        all_released = remaining_buttons == QtCore.Qt.NoButton
 
-        # Handle 'i' button clicks (menu/submenu launchers) - prioritize over state transitions
-        if isinstance(target_widget, QtWidgets.QPushButton):
-            if hasattr(target_widget, "base_name") and target_widget.base_name() == "i":
-                menu = self._resolve_button_menu(target_widget)
-                if menu:
-                    is_standalone = not menu.has_tags(["startmenu", "submenu"])
-                    self.show(menu, force=is_standalone)
-                    if is_standalone:
-                        target_widget.mouseReleaseEvent(event)
-                        return True
+        # Chord release detected: all buttons released while timer was active
+        if self._chord_release_timer.isActive() and all_released:
+            pending = self._chord_pending_widget
+            self._cancel_chord_timer()
 
-        # Check if we need to transition to a different UI based on remaining buttons
-        # Only do this if we're not clicking an interactive button
-        lookup = self._build_lookup_key(
-            buttons=event.buttons(), modifiers=event.modifiers()
-        )
-        next_ui = self._bindings.get(lookup)
+            # Execute pending widget action, or transition to base state
+            if pending and self._handle_widget_action(pending):
+                return True
 
-        # If there's a bound UI for the remaining state, transition to it
-        # But only if we're not over a clickable button (non-'i' buttons should still work)
-        is_clickable_button = isinstance(
-            target_widget, QtWidgets.QPushButton
-        ) and hasattr(target_widget, "clicked")
-        if next_ui is not None and not is_clickable_button:
-            self.show(next_ui, force=True)
+            self._transition_to_state(QtCore.Qt.NoButton, event.modifiers())
             return True
 
-        # Emit clicked signal directly (bypasses Qt visibility checks)
-        if hasattr(target_widget, "clicked"):
-            self.hide()
-            if (
-                target_widget.ui.has_tags(["startmenu", "submenu"])
-                and target_widget.base_name() != "chk"
-            ):
-                target_widget.clicked.emit()
+        # Timer still running and buttons still held - wait for more releases
+        if self._chord_release_timer.isActive():
+            self.logger.debug(
+                f"Chord logic: Waiting for more releases on {w.objectName()}"
+            )
+            return True
 
-        target_widget.mouseReleaseEvent(event)
-        return True
-
-
-# --------------------------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    mm = MarkingMenu(slot_source="slots/maya")
-    mm.show("screen", app_exec=True)
-
-
-# --------------------------------------------------------------------------------------------
-# Notes
-# --------------------------------------------------------------------------------------------
+        return False

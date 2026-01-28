@@ -313,6 +313,7 @@ class ComboBox(
         restore_index=False,
         ascending=False,
         _recursion=False,
+        prefix=None,
         **kwargs,
     ):
         self.restore_previous_index = restore_index
@@ -329,6 +330,22 @@ class ComboBox(
         else:
             self.has_header = False
 
+        def process_and_add(label, item_data):
+            """Helper to process item before adding."""
+            display_text = str(label)
+            stored_data = item_data
+
+            if prefix:
+                # When prefix is active, we auto-format the label and ensure data is stored
+                formatted_label = display_text.replace("_", " ").title()
+                display_text = f"{prefix}\t{formatted_label}"
+
+                # If no specific data was provided, use the original label as data
+                if stored_data is None:
+                    stored_data = label
+
+            self.add_single(display_text, stored_data, ascending)
+
         # Handle list of (label, data) tuples
         if (
             isinstance(x, (list, tuple))
@@ -337,15 +354,15 @@ class ComboBox(
             and len(x[0]) == 2
         ):
             for label, value in x:
-                self.add_single(label, value, ascending)
+                process_and_add(label, value)
         elif isinstance(x, dict):
-            [self.add_single(k, v, ascending) for k, v in x.items()]
+            [process_and_add(k, v) for k, v in x.items()]
         elif isinstance(x, (list, tuple, set)):
-            [self.add_single(item, data, ascending) for item in x]
+            [process_and_add(item, data) for item in x]
         elif isinstance(x, (zip, map)):
-            [self.add_single(i, d, ascending) for i, d in x]
+            [process_and_add(i, d) for i, d in x]
         elif isinstance(x, str):
-            self.add_single(x, data, ascending)
+            process_and_add(x, data)
         else:
             raise TypeError(
                 f"Unsupported item type: '{type(x)}'. Expected str, list, tuple, set, map, zip, or dict."
