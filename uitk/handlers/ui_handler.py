@@ -161,7 +161,6 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
             return
 
         # Ensure layout is processed so geometry is accurate
-        ui.adjustSize()
         QtWidgets.QApplication.processEvents()
 
         target_global = None

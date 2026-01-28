@@ -1,7 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
 import inspect
-import time
 import warnings
 from dataclasses import dataclass, field
 from typing import Optional, Union, Callable, Dict, Any, Tuple
