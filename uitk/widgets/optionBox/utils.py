@@ -319,6 +319,14 @@ class OptionBoxManager(ptk.LoggingMixin):
                 }
                 default_kwargs.update(menu_kwargs)
 
+                # Auto-name the menu based on the parent widget if not provided
+                if (
+                    "name" not in default_kwargs
+                    and self._widget
+                    and self._widget.objectName()
+                ):
+                    default_kwargs["name"] = f"{self._widget.objectName()}_option_menu"
+
                 self.logger.debug(
                     f"OptionBoxManager.enable_menu: Creating NEW menu with kwargs={list(default_kwargs.keys())}"
                 )

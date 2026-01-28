@@ -1455,11 +1455,21 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             visible=self.contains_items,
             fixed_height=18,
         )
-        self._button_manager.add_button("defaults", config, index=0)
+        btn = self._button_manager.add_button("defaults", config, index=0)
+
+        # Rename button to allow finding it from other instances for synchronization
+        if self.objectName():
+            try:
+                # Handle switchboard suffixes if present
+                clean_name = self.objectName().split("#")[0]
+                btn.setObjectName(f"actionButton_defaults_{clean_name}")
+            except Exception:
+                pass
+
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
 
-    def _restore_menu_defaults(self):
+    def _restore_menu_defaults(self, from_sync: bool = False):
         """Reset all menu widgets to their default values."""
         window = self.window()
         state = getattr(window, "state", None)
@@ -1480,6 +1490,37 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         for widget in self.get_items():
             state.reset(widget)
         self.logger.debug("_restore_menu_defaults: Reset complete")
+
+        if not from_sync:
+            self._sync_restore_defaults()
+
+    def _sync_restore_defaults(self):
+        """Synchronize defaults reset across other instances of this menu."""
+        if not self.objectName():
+            return
+
+        try:
+            clean_name = self.objectName().split("#")[0]
+            target_btn_name = f"actionButton_defaults_{clean_name}"
+        except Exception:
+            return
+
+        app = QtWidgets.QApplication.instance()
+        if not app:
+            return
+
+        current_btn = self._button_manager.get_button("defaults")
+
+        # Find match buttons in other menus
+        for widget in app.allWidgets():
+            if widget.objectName() == target_btn_name and widget is not current_btn:
+                # Traverse up to find the menu
+                parent = widget.parent()
+                while parent:
+                    if hasattr(parent, "_restore_menu_defaults"):
+                        parent._restore_menu_defaults(from_sync=True)
+                        break
+                    parent = parent.parent()
 
     def _update_defaults_button_visibility(self):
         """Update defaults button visibility based on menu state."""
