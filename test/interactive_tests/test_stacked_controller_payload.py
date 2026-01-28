@@ -6,7 +6,7 @@ from qtpy import QtWidgets, QtCore, QtGui
 if r"O:\Cloud\Code\_scripts" not in sys.path:
     sys.path.append(r"O:\Cloud\Code\_scripts")
 
-from uitk.menus.marking_menu import MarkingMenu as StackedController
+from uitk.widgets.marking_menu import MarkingMenu as StackedController
 from uitk.switchboard import Switchboard
 
 

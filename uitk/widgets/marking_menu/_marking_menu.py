@@ -10,7 +10,7 @@ import pythontk as ptk
 from uitk.switchboard import Switchboard
 from uitk.events import EventFactoryFilter, MouseTracking
 from .overlay import Overlay
-from ..handlers.ui_handler import UiHandler
+from uitk.handlers.ui_handler import UiHandler
 
 
 class ShortcutHandler(QtCore.QObject):
@@ -207,6 +207,7 @@ class MarkingMenu(
         slot_source=None,
         widget_source=None,
         bindings: dict = None,
+        handlers: dict = None,
         switchboard: Optional[Switchboard] = None,
         log_level: str = "DEBUG",
         **kwargs,
@@ -218,6 +219,11 @@ class MarkingMenu(
         self._activation_key = None
         self._activation_key_held = False
         self._initial_bindings = bindings  # Store for after sb is set up
+
+        # Merge class-level HANDLERS with instance-level handlers param
+        self._handlers_config = getattr(self, "HANDLERS", {}).copy()
+        if handlers:
+            self._handlers_config.update(handlers)
 
         # ... (path resolution logic) ...
 
@@ -244,10 +250,11 @@ class MarkingMenu(
                 ui_source=ui_source,
                 slot_source=slot_source,
                 widget_source=widget_source,
+                handlers=self._handlers_config,
                 base_dir=base_dir,
             )
 
-        # Initialize the Manager Ecosystem
+        # Initialize the Handler Ecosystem
         self._setup_registry()
 
         # Initialize bindings: explicit arg > stored > empty
@@ -312,21 +319,26 @@ class MarkingMenu(
         self.sb.handlers.marking_menu = self
 
         # 2. Register Configured Handlers (e.g. UiHandler)
-        handlers = getattr(self, "HANDLERS", {})
+        # Uses _handlers_config which merges HANDLERS class attr + handlers param
+        handlers = getattr(self, "_handlers_config", {}) or getattr(
+            self, "HANDLERS", {}
+        )
 
-        for name, cls in handlers.items():
+        for name, obj in handlers.items():
             # Skip if already registered (allows for manual dependency injection)
             if getattr(self.sb.handlers, name, None):
                 continue
 
-            # Instantiate using singleton pattern if available
-            if hasattr(cls, "instance"):
-                instance = cls.instance(switchboard=self.sb)
+            # Instantiate if class, use directly if instance
+            if isinstance(obj, type):
+                if hasattr(obj, "instance"):
+                    instance = obj.instance(switchboard=self.sb)
+                else:
+                    instance = obj(switchboard=self.sb)
+                defaults = getattr(obj, "DEFAULTS", {})
             else:
-                instance = cls(switchboard=self.sb)
-
-            # Extract defaults if present on the class
-            defaults = getattr(cls, "DEFAULTS", {})
+                instance = obj
+                defaults = getattr(instance, "DEFAULTS", {})
 
             self.sb.register_handler(name, instance, defaults)
             self.logger.debug(f"Registered Handler: {name} -> {instance}")

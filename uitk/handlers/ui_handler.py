@@ -36,33 +36,37 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
 
     def __init__(
         self,
+        switchboard: Switchboard,
         ui_root: Union[str, List[str]] = None,
         slot_root: Union[str, List[str]] = None,
-        switchboard: Optional[Switchboard] = None,
         discover_slots: bool = False,
         recursive: bool = True,
         log_level: str = "WARNING",
         **kwargs,
     ):
         """
-        Initialize the WindowManager.
+        Initialize the UiHandler.
 
         Args:
+            switchboard: The Switchboard instance this handler belongs to. Required.
             ui_root: Root directory or directories to scan for .ui files.
             slot_root: Root directory or directories to scan for slot classes.
                        If None, defaults to ui_root.
-            switchboard: Existing Switchboard instance to use.
             discover_slots: If True, also scans for slots recursively (can be slow).
             recursive: Whether to scan directories recursively.
             log_level: Logging level.
-            **kwargs: Additional arguments passed to Switchboard.
+            **kwargs: Additional arguments.
         """
         self.logger.setLevel(log_level)
         self.recursive = recursive
 
-        # Initialize or use existing Switchboard
-        sb_kwargs = {k: v for k, v in kwargs.items() if k != "singleton_key"}
-        self.sb = switchboard or Switchboard(**sb_kwargs)
+        # Handlers always receive an existing Switchboard - never create one
+        if switchboard is None:
+            raise ValueError(
+                f"{self.__class__.__name__} requires a Switchboard instance. "
+                "Handlers must be registered to an existing Switchboard."
+            )
+        self.sb = switchboard
 
         # 1. Register properties from the manual registry (Overrides)
         self._register_manual_overrides()
