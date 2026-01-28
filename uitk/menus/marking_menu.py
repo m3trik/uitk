@@ -864,17 +864,58 @@ class MarkingMenu(
         """Called when chord detection window expires - perform the menu transition."""
         self.logger.debug("Chord Release: Timer expired - performing transition")
         if self._chord_pending_buttons is not None:
-            lookup = self._build_lookup_key(
-                buttons=self._chord_pending_buttons,
-                modifiers=self._chord_pending_modifiers,
+            self._transition_to_state(
+                self._chord_pending_buttons, self._chord_pending_modifiers
             )
-            next_ui = self._bindings.get(lookup)
-            if next_ui:
-                self.show(next_ui, force=True)
+        self._cancel_chord_timer()
 
-        self._chord_pending_widget = None
-        self._chord_pending_buttons = None
-        self._chord_pending_modifiers = None
+    def _transition_to_state(self, buttons, modifiers=None) -> None:
+        """Transition menu to state matching the given button/modifier combination."""
+        lookup = self._build_lookup_key(buttons=buttons, modifiers=modifiers)
+        next_ui = self._bindings.get(lookup)
+
+        # Fallback: if modifiers are held but no specific binding exists, try without modifiers
+        if not next_ui and modifiers and modifiers != QtCore.Qt.NoModifier:
+            base_lookup = self._build_lookup_key(
+                buttons=buttons, modifiers=QtCore.Qt.NoModifier
+            )
+            if base_lookup != lookup:
+                next_ui = self._bindings.get(base_lookup)
+
+        if next_ui:
+            self.show(next_ui, force=True)
+
+    def _handle_widget_action(self, widget) -> bool:
+        """Execute action for a widget (button click or menu navigation).
+
+        Returns:
+            bool: True if action was executed, False if widget is non-interactive.
+        """
+        # Resolve container to actual child widget
+        if hasattr(widget, "derived_type") and widget.derived_type == QtWidgets.QWidget:
+            child = widget.childAt(widget.mapFromGlobal(QtGui.QCursor.pos()))
+            if child:
+                widget = child
+
+        # Handle 'i' button clicks (menu/submenu launchers)
+        if isinstance(widget, QtWidgets.QPushButton):
+            if hasattr(widget, "base_name") and widget.base_name() == "i":
+                menu = self._resolve_button_menu(widget)
+                if menu:
+                    is_standalone = not menu.has_tags(["startmenu", "submenu"])
+                    self.show(menu, force=is_standalone)
+                    return True
+
+        # Emit clicked signal for standard buttons
+        if hasattr(widget, "clicked"):
+            ui = getattr(widget, "ui", None)
+            base_name = getattr(widget, "base_name", lambda: None)()
+            self.hide()
+            if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
+                widget.clicked.emit()
+                return True
+
+        return False
 
     def _transfer_mouse_control(self, button, buttons_mask) -> None:
         """Transfer mouse control to this widget by grabbing and synthesizing a press."""
@@ -961,8 +1002,7 @@ class MarkingMenu(
             if widget and widget is not self and widget is not current_ui:
                 # When mouse is grabbed, child event filter is bypassed - handle clicks here
                 if current_ui.isAncestorOf(widget):
-                    handled = self._handle_child_click(widget, event)
-                    if handled:
+                    if self._handle_widget_action(widget):
                         self.releaseMouse()
                         super().mouseReleaseEvent(event)
                         return
@@ -973,74 +1013,20 @@ class MarkingMenu(
                     return
 
         # Transition to the appropriate UI based on remaining state
-        # (We remove isActiveWindow/rect checks to ensure state consistency even if cursor drifted)
         remaining_buttons = event.buttons()
-        is_multi_release = self._was_multi_button_press()
-        chord_tolerance = 75 if is_multi_release else 40
+        chord_tolerance = 75 if self._was_multi_button_press() else 40
 
-        # If no buttons remain, we are returning to key_show state (or default)
         if remaining_buttons == QtCore.Qt.NoButton:
+            # All buttons released - transition immediately
             self._cancel_chord_timer()
-
-            # 1. Try exact lookup (Buttons + Modifiers)
-            lookup = self._build_lookup_key(
-                buttons=remaining_buttons, modifiers=event.modifiers()
-            )
-            next_ui = self._bindings.get(lookup)
-
-            # 2. Fallback: Try base lookup (Buttons only, no modifiers)
-            # This handles cases where modifiers are held but no specific menu is defined for them
-            if not next_ui and (event.modifiers() != QtCore.Qt.NoModifier):
-                base_lookup = self._build_lookup_key(
-                    buttons=remaining_buttons, modifiers=QtCore.Qt.NoModifier
-                )
-                # Only use fallback if it's different (to avoid redundancy) and valid
-                if base_lookup != lookup:
-                    next_ui = self._bindings.get(base_lookup)
-
-            self.show(next_ui, force=True)
-
-        # If buttons remain, delay slightly to see if they are also released (chord)
+            self._transition_to_state(remaining_buttons, event.modifiers())
         else:
+            # Buttons remain - start chord timer to allow simultaneous release
             self._chord_pending_buttons = remaining_buttons
             self._chord_pending_modifiers = event.modifiers()
-
-            # Restart timer (extending wait if already running)
             self._chord_release_timer.start(chord_tolerance)
 
         super().mouseReleaseEvent(event)
-
-    def _handle_child_click(self, widget, event) -> bool:
-        """Handle click on a child widget when mouse is grabbed.
-
-        Returns:
-            bool: True if the event was handled/consumed, False otherwise.
-        """
-        # Resolve container clicks to actual child widget
-        if hasattr(widget, "derived_type") and widget.derived_type == QtWidgets.QWidget:
-            child = widget.childAt(widget.mapFromGlobal(QtGui.QCursor.pos()))
-            if child:
-                widget = child
-
-        # Handle 'i' button clicks (menu/submenu launchers)
-        if isinstance(widget, QtWidgets.QPushButton):
-            if hasattr(widget, "base_name") and widget.base_name() == "i":
-                menu = self._resolve_button_menu(widget)
-                if menu:
-                    is_standalone = not menu.has_tags(["startmenu", "submenu"])
-                    self.show(menu, force=is_standalone)
-                    return True  # Menu shown, don't emit clicked
-
-        # Emit clicked signal for standard buttons
-        if hasattr(widget, "clicked"):
-            ui = getattr(widget, "ui", None)
-            base_name = getattr(widget, "base_name", lambda: None)()
-            self.hide()
-            if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
-                widget.clicked.emit()
-                return True
-
-        return False
 
     def _resolve_button_menu(self, widget) -> Optional[QtWidgets.QWidget]:
         """Resolve menu for an 'i' button, handling cache and tag cleanup."""
@@ -1301,54 +1287,26 @@ class MarkingMenu(
             w.mouseReleaseEvent(event)
             return False
 
-        target_widget = w
-        if w.derived_type == QtWidgets.QWidget:
-            child = w.childAt(event.pos())
-            if child:
-                target_widget = child
-
         remaining_buttons = event.buttons()
-        buttons_still_held = remaining_buttons != QtCore.Qt.NoButton
+        all_released = remaining_buttons == QtCore.Qt.NoButton
 
         # Chord release detected: all buttons released while timer was active
-        if self._chord_release_timer.isActive() and not buttons_still_held:
+        if self._chord_release_timer.isActive() and all_released:
             pending = self._chord_pending_widget
             self._cancel_chord_timer()
 
-            # If there was a pending widget action, execute it
-            if pending:
-                if isinstance(pending, QtWidgets.QPushButton):
-                    if hasattr(pending, "base_name") and pending.base_name() == "i":
-                        menu = self._resolve_button_menu(pending)
-                        if menu:
-                            is_standalone = not menu.has_tags(["startmenu", "submenu"])
-                            self.show(menu, force=is_standalone)
-                            return True
+            # Execute pending widget action, or transition to base state
+            if pending and self._handle_widget_action(pending):
+                return True
 
-                if hasattr(pending, "clicked"):
-                    self.hide()
-                    if (
-                        pending.ui.has_tags(["startmenu", "submenu"])
-                        and pending.base_name() != "chk"
-                    ):
-                        pending.clicked.emit()
-                    return True
-
-            # No pending widget action - transition to base state (key_show menu)
-            lookup = self._build_lookup_key(
-                buttons=QtCore.Qt.NoButton, modifiers=event.modifiers()
-            )
-            next_ui = self._bindings.get(lookup)
-            self.show(next_ui, force=True)
+            self._transition_to_state(QtCore.Qt.NoButton, event.modifiers())
             return True
 
         # Timer still running and buttons still held - wait for more releases
         if self._chord_release_timer.isActive():
             self.logger.debug(
-                f"Chord logic: Ignoring event propagation to {w.objectName()}"
+                f"Chord logic: Waiting for more releases on {w.objectName()}"
             )
             return True
 
-        # Standard processing if no chord logic active...
-        # ... (simplified for this update, but robust logic remains)
         return False
