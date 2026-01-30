@@ -343,13 +343,6 @@ class SwitchboardSlotsMixin:
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] No init method found"
             )
 
-        try:  # Restore widget state
-            widget.perform_restore_state()
-        except Exception as e:
-            self.logger.error(
-                f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error restoring state: {e}"
-            )
-
         try:  # Connect widget signals to slots
             widget.connect_slot()
         except Exception as e:
@@ -377,6 +370,46 @@ class SwitchboardSlotsMixin:
             f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Slot initialization complete"
         )
 
+    def _perform_state_init(
+        self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget
+    ) -> None:
+        """Initialize widget state: capture default value then restore persistent state.
+
+        This is separated from _perform_slot_init to allow batch processing:
+        all widgets complete their slot initialization (including configuration
+        in slots class __init__) before any state operations occur.
+
+        Parameters:
+            ui: The parent UI widget.
+            widget: The widget to initialize state for.
+        """
+        # Skip if widget doesn't support state restoration
+        if not getattr(widget, "restore_state", False):
+            return
+
+        # Capture widget default AFTER init (which may populate/configure widget)
+        # but BEFORE restoring persistent state
+        try:
+            ui.state.capture_default(widget)
+            self.logger.debug(
+                f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Default captured"
+            )
+        except Exception as e:
+            self.logger.debug(
+                f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Error capturing default: {e}"
+            )
+
+        # Restore widget state from persistent storage
+        try:
+            widget.perform_restore_state()
+            self.logger.debug(
+                f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] State restored"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Error restoring state: {e}"
+            )
+
     def _process_deferred_widgets(
         self, ui: QtWidgets.QWidget, deferred_widgets: list
     ) -> None:
@@ -391,13 +424,25 @@ class SwitchboardSlotsMixin:
             f"[_process_deferred_widgets] [{ui.objectName()}] Processing deferred widgets: {[w.objectName() for w in deferred_widgets]}"
         )
 
-        # Process all deferred widgets
+        # Phase 1: Run slot initialization for ALL deferred widgets first
+        # This allows slots class __init__ to complete all widget configuration
+        # before any state operations occur
         for widget in deferred_widgets:
             try:
                 self._perform_slot_init(ui, widget)
             except Exception as e:
                 self.logger.error(
-                    f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed to initialize deferred widget: {e}"
+                    f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed slot init: {e}"
+                )
+
+        # Phase 2: Run state initialization for ALL widgets
+        # Now that all widgets are configured, capture defaults and restore state
+        for widget in deferred_widgets:
+            try:
+                self._perform_state_init(ui, widget)
+            except Exception as e:
+                self.logger.error(
+                    f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed state init: {e}"
                 )
 
         # Clear the deferred widgets from the placeholder
@@ -446,16 +491,18 @@ class SwitchboardSlotsMixin:
         # Then try to get or create the slots instance
         slots = self.get_slots_instance(ui)
 
-        # If it succeeded, process it immediately
+        # If slots instance exists, process immediately (not deferred)
         if slots:
             if block_signals:
                 was_blocked = widget.blockSignals(True)
                 try:
                     self._perform_slot_init(ui, widget)
+                    self._perform_state_init(ui, widget)
                 finally:
                     widget.blockSignals(was_blocked)
             else:
                 self._perform_slot_init(ui, widget)
+                self._perform_state_init(ui, widget)
 
     def call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs):
         """Call a slot method for a widget.

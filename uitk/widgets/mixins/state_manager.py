@@ -84,6 +84,9 @@ class StateManager(ptk.LoggingMixin):
                 # Fallback to direct value setting
                 ValueManager.set_value(widget, value, block_signals=block_signals)
 
+            # Force visual update since signals may be blocked
+            widget.update()
+
         except Exception as e:
             self.logger.debug(
                 f"Could not apply value '{value}' to widget {widget}: {e}"
@@ -140,10 +143,29 @@ class StateManager(ptk.LoggingMixin):
         except EOFError:
             self.logger.debug(f"EOFError reading state for {key}")
 
-    def reset_all(self) -> None:
-        """Reset all widgets with stored defaults to their original values."""
+    def reset_all(self, block_signals: bool = False) -> None:
+        """Reset all widgets with stored defaults to their original values.
+
+        Parameters:
+            block_signals: If True, block signals during reset. If False (default),
+                signals will fire which ensures proper UI updates.
+
+        Note:
+            Widgets with `exclude_from_reset=True` attribute will be skipped.
+        """
         for widget, default_value in self._defaults.items():
+            # Skip widgets explicitly excluded from reset
+            if getattr(widget, "exclude_from_reset", False):
+                self.logger.debug(
+                    f"Skipping reset for {widget.objectName()} (exclude_from_reset=True)"
+                )
+                continue
+
+            # Temporarily override block_signals_on_restore if specified
+            original_block = getattr(widget, "block_signals_on_restore", True)
+            widget.block_signals_on_restore = block_signals
             self.apply(widget, default_value)
+            widget.block_signals_on_restore = original_block
 
     def reset(self, widget: QtWidgets.QWidget) -> None:
         """Reset a widget to its default value."""
@@ -160,6 +182,36 @@ class StateManager(ptk.LoggingMixin):
     def has_default(self, widget: QtWidgets.QWidget) -> bool:
         """Check if a widget has a stored default value."""
         return widget in self._defaults
+
+    def capture_default(self, widget: QtWidgets.QWidget) -> None:
+        """Capture the current widget value as its default.
+
+        This should be called early during widget registration, before any
+        init methods or state restoration that might modify the value.
+        Only captures for widgets with restore_state=True.
+        """
+        if not getattr(widget, "restore_state", False):
+            return
+        if widget not in self._defaults:
+            value = self._get_current_value(widget)
+            if value is not None:
+                self._defaults[widget] = value
+                self.logger.debug(
+                    f"Captured default for {widget.objectName()}: {value}"
+                )
+
+    def set_default(self, widget: QtWidgets.QWidget, value: Any) -> None:
+        """Explicitly set a widget's default value.
+
+        Use this in init methods to override the .ui file default with a
+        post-initialization default value.
+
+        Parameters:
+            widget: The widget to set the default for.
+            value: The value to use as the default.
+        """
+        self._defaults[widget] = value
+        self.logger.debug(f"Set explicit default for {widget.objectName()}: {value}")
 
 
 # -----------------------------------------------------------------------------
