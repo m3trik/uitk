@@ -40,11 +40,11 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.0.73"
+__version__ = "1.0.76"
 
 
 DEFAULT_INCLUDE = {
-    "signals": "Signals",
+    "widgets.mixins.shortcuts": "Shortcut",
     "events": ["EventFactoryFilter", "MouseTracking"],
     "file_manager": ["FileContainer", "FileManager"],
     "switchboard": "Switchboard",
@@ -106,9 +106,7 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.shortcuts": ["ShortcutManager", "ShortcutMixin"],
     "widgets.mixins.state_manager": "StateManager",
     "widgets.mixins.style_sheet": "StyleSheet",
-    "widgets.mixins.switchboard_slots": ["SlotWrapper", "SwitchboardSlotsMixin"],
-    "widgets.mixins.switchboard_utils": "SwitchboardUtilsMixin",
-    "widgets.mixins.switchboard_widgets": "SwitchboardWidgetMixin",
+    "widgets.mixins.switchboard_slots": "Signals",
     "widgets.mixins.tasks": ["WorkIndicator", "TasksMixin"],
     "widgets.mixins.text": ["TextTruncation", "RichText", "TextOverlay"],
     "widgets.mixins.value_manager": "ValueManager",

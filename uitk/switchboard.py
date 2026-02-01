@@ -11,6 +11,7 @@ import pythontk as ptk
 
 # From this package:
 from uitk.widgets.mixins import SwitchboardSlotsMixin
+from uitk.widgets.mixins import SwitchboardShortcutMixin
 from uitk.widgets.mixins import SwitchboardWidgetMixin
 from uitk.widgets.mixins import SwitchboardUtilsMixin
 from uitk.widgets.mixins import SwitchboardNameMixin
@@ -24,6 +25,7 @@ class Switchboard(
     ptk.HelpMixin,
     ptk.LoggingMixin,
     SwitchboardSlotsMixin,
+    SwitchboardShortcutMixin,
     SwitchboardWidgetMixin,
     SwitchboardUtilsMixin,
     SwitchboardNameMixin,

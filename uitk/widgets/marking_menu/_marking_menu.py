@@ -11,148 +11,7 @@ from uitk.switchboard import Switchboard
 from uitk.events import EventFactoryFilter, MouseTracking
 from .overlay import Overlay
 from uitk.handlers.ui_handler import UiHandler
-
-
-class ShortcutHandler(QtCore.QObject):
-    """Application-wide shortcut that toggles the MarkingMenu overlay."""
-
-    _instance: Optional["ShortcutHandler"] = None
-
-    def __init__(
-        self,
-        owner: "MarkingMenu",
-        shortcut_parent: Optional[QtWidgets.QWidget] = None,
-    ):
-        super().__init__(owner)
-        self._owner = owner
-        self._target = self._resolve_target(shortcut_parent)
-        sequence = self._build_sequence(owner.key_show)
-        self._shortcut = QtWidgets.QShortcut(sequence, self._target)
-        self._shortcut.setContext(QtCore.Qt.ApplicationShortcut)
-        self._shortcut.setAutoRepeat(False)
-        self._shortcut.activated.connect(self._on_key_press)
-        self._key_is_down = False
-        self._event_source = self._install_release_filter()
-
-    @classmethod
-    def create(
-        cls,
-        owner: "MarkingMenu",
-        shortcut_parent: Optional[QtWidgets.QWidget] = None,
-    ) -> "ShortcutHandler":
-        """Install or update the global shortcut binding."""
-        if cls._instance:
-            cls._instance.deleteLater()
-        cls._instance = cls(owner, shortcut_parent)
-        return cls._instance
-
-    def _install_release_filter(self):
-        app = QtWidgets.QApplication.instance()
-        source = app if app else self._target
-        if source:
-            source.installEventFilter(self)
-        return source
-
-    def _resolve_target(self, explicit_parent):
-        if isinstance(explicit_parent, QtWidgets.QWidget):
-            return explicit_parent
-
-        app = getattr(self._owner.sb, "app", None) or QtWidgets.QApplication.instance()
-        if app:
-            active = app.activeWindow()
-            if isinstance(active, QtWidgets.QWidget):
-                return active
-
-            for widget in app.topLevelWidgets():
-                if (
-                    isinstance(widget, QtWidgets.QWidget)
-                    and widget.objectName() == "MayaWindow"
-                ):
-                    return widget
-
-        parent_widget = self._owner.parentWidget()
-        if isinstance(parent_widget, QtWidgets.QWidget):
-            return parent_widget
-
-        logical_parent = self._owner.parent()
-        if isinstance(logical_parent, QtWidgets.QWidget):
-            return logical_parent
-
-        return self._owner
-
-    def _build_sequence(self, key_value):
-        if key_value is None:
-            self._owner.logger.warning(
-                "key_show is invalid; defaulting to F12 shortcut"
-            )
-            key_value = QtCore.Qt.Key_F12
-            self._owner.key_show = key_value
-
-        if isinstance(key_value, QtGui.QKeySequence):
-            return key_value
-
-        return QtGui.QKeySequence(key_value)
-
-    def eventFilter(self, obj, event):
-        if (
-            self._key_is_down
-            and event.type() == QtCore.QEvent.KeyRelease
-            and event.key() == self._owner.key_show
-            and not event.isAutoRepeat()
-        ):
-            self._on_key_release()
-            return True
-        return super().eventFilter(obj, event)
-
-    def _on_key_press(self):
-        if self._key_is_down:
-            return
-
-        try:
-            self._key_is_down = True
-            self._owner._activation_key_held = True
-            self._owner.key_show_press.emit()
-
-            # Capture state once
-            buttons = QtWidgets.QApplication.mouseButtons()
-
-            # Track buttons held at activation for chord release detection
-            self._owner._chord_buttons_at_press = self._owner._to_int(buttons)
-
-            # Clean external UIs, passing current state to avoid race/re-query
-            self._owner._dismiss_external_popups(buttons)
-
-            # Build lookup string from current state
-            lookup = self._owner._build_lookup_key(buttons)
-            ui_target = self._owner._bindings.get(lookup)
-
-            self._owner.logger.debug(
-                f"_on_key_press: buttons={buttons}, lookup='{lookup}', ui_target={ui_target}"
-            )
-
-            self._owner.show(ui_target, force=True)
-
-            # Handover
-            active_btn = self._owner._get_priority_button(buttons)
-            if active_btn != QtCore.Qt.NoButton:
-                self._owner._transfer_mouse_control(active_btn, buttons)
-
-            QtCore.QTimer.singleShot(0, self._owner.dim_other_windows)
-
-        except Exception as e:
-            self._owner.logger.error(f"Error in _on_key_press: {e}")
-            # Ensure we reset state if something exploded
-            self._key_is_down = False
-            self._owner._activation_key_held = False
-
-    def _on_key_release(self):
-        if not self._key_is_down:
-            return
-        self._key_is_down = False
-        self._owner._activation_key_held = False
-        self._owner.key_show_release.emit()
-        self._owner.hide()
-        QtCore.QTimer.singleShot(0, self._owner.restore_other_windows)
+from uitk.widgets.mixins.shortcuts import GlobalShortcut
 
 
 class MarkingMenu(
@@ -190,7 +49,7 @@ class MarkingMenu(
     _submenu_cache: dict = {}
     _last_ui_history_check: QtWidgets.QWidget = None
     _pending_show_timer: QtCore.QTimer = None
-    _shortcut_instance: Optional["ShortcutHandler"] = None
+    _shortcut_instance: Optional["GlobalShortcut"] = None
     _current_widget: Optional[QtWidgets.QWidget] = None
 
     # Chord release detection: tracks multi-button states for simultaneous release handling
@@ -311,7 +170,58 @@ class MarkingMenu(
 
         # Auto-install shortcut if parent is provided
         if parent:
-            ShortcutHandler.create(self, parent)
+            if not self.key_show:
+                self.logger.warning("key_show is invalid; defaulting to F12 shortcut")
+                self.key_show = QtCore.Qt.Key_F12
+
+            self._shortcut_instance = GlobalShortcut(
+                self.key_show, parent, context=QtCore.Qt.ApplicationShortcut
+            )
+            self._shortcut_instance.pressed.connect(self._on_activation_press)
+            self._shortcut_instance.released.connect(self._on_activation_release)
+
+    def _on_activation_press(self):
+        """Handle the global shortcut press event."""
+        try:
+            self._activation_key_held = True
+            self.key_show_press.emit()
+
+            # Capture state once
+            buttons = QtWidgets.QApplication.mouseButtons()
+
+            # Track buttons held at activation for chord release detection
+            self._chord_buttons_at_press = self._to_int(buttons)
+
+            # Clean external UIs, passing current state to avoid race/re-query
+            self._dismiss_external_popups(buttons)
+
+            # Build lookup string from current state
+            lookup = self._build_lookup_key(buttons)
+            ui_target = self._bindings.get(lookup)
+
+            self.logger.debug(
+                f"_on_activation_press: buttons={buttons}, lookup='{lookup}', ui_target={ui_target}"
+            )
+
+            self.show(ui_target, force=True)
+
+            # Handover
+            active_btn = self._get_priority_button(buttons)
+            if active_btn != QtCore.Qt.NoButton:
+                self._transfer_mouse_control(active_btn, buttons)
+
+            QtCore.QTimer.singleShot(0, self.dim_other_windows)
+
+        except Exception as e:
+            self.logger.error(f"Error in _on_activation_press: {e}")
+            self._activation_key_held = False
+
+    def _on_activation_release(self):
+        """Handle the global shortcut release event."""
+        self._activation_key_held = False
+        self.key_show_release.emit()
+        self.hide()
+        QtCore.QTimer.singleShot(0, self.restore_other_windows)
 
     def _setup_registry(self):
         """Initialize and register the application's handlers."""

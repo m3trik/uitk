@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import Any, Optional, Union
 
 from qtpy import QtWidgets, QtGui, QtCore
-from uitk.signals import Signals
+from uitk.widgets.mixins.switchboard_slots import Signals
 from uitk.widgets.comboBox import ComboBox
 
 
