@@ -3,7 +3,7 @@
 import re
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
-from uitk.signals import Signals
+from uitk.widgets.mixins.switchboard_slots import Signals
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.menu_mixin import MenuMixin

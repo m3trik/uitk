@@ -2,9 +2,61 @@
 # coding=utf-8
 import inspect
 import traceback
+from functools import wraps
 from typing import Optional, Union, Type, Callable, Any
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
+
+
+class Signals:
+    """Decorator to specify which signals a slot should connect to.
+
+    This class takes one or more signal names as strings during initialization
+    and assigns them as attributes to the decorated function. The signals can be
+    later retrieved for connecting the slot method to the respective signals.
+
+    Attributes:
+        signals (tuple of str): Signal names as strings.
+
+    Example:
+        @Signals("clicked", "pressed")
+        def my_button(self, widget=None):
+            print("Button interacted")
+
+        @Signals.blockSignals
+        def update_widget(self):
+            self.spinbox.setValue(10)  # Won't trigger valueChanged
+    """
+
+    def __init__(self, *signals):
+        if len(signals) == 0:
+            raise ValueError("At least one signal must be specified")
+        for signal in signals:
+            if not isinstance(signal, str):
+                raise TypeError(f"Signal must be a string, not {type(signal)}")
+        self.signals = signals
+
+    def __call__(self, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        wrapper.signals = self.signals
+        return wrapper
+
+    @classmethod
+    def blockSignals(cls, func):
+        """Decorator that blocks widget signals during method execution."""
+
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            self.blockSignals(True)
+            try:
+                return func(self, *args, **kwargs)
+            finally:
+                self.blockSignals(False)
+
+        return wrapper
 
 
 class SlotWrapper:
@@ -275,6 +327,9 @@ class SwitchboardSlotsMixin:
             deferred_widgets = self._get_deferred_widgets(key)
 
             instance = slots_cls(switchboard=self)
+
+            # Register shortcuts
+            self.register_slots_shortcuts(ui, instance)
 
             # Update storage
             self.slot_instances[key] = instance
