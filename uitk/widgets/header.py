@@ -1,13 +1,16 @@
 # !/usr/bin/python
 # coding=utf-8
 import os
+import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.icon_manager import IconManager
 
 
-class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
+class Header(
+    QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin
+):
     """Header is a QLabel that can be dragged around the screen and can be pinned/unpinned. It provides a customizable
     header bar with buttons for common window actions such as minimizing, hiding, and pinning.
 
@@ -446,60 +449,60 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
             from_drag (bool): If True, this was triggered by dragging the header.
                 Used to differentiate between click and drag when pin_on_drag_only is enabled.
         """
+        window = self.window()
+
         # Default behavior: clicking hides, dragging pins
         if self.pin_on_drag_only and not from_drag:
             if self.pinned:
-                # Unpin without hiding (hiding happens below)
-                self.pinned = False
-                self.window().prevent_hide = False
-                pin_button = self.buttons.get("pin")
-                if pin_button:
-                    IconManager.set_icon(pin_button, "close", size=(16, 16))
-                    pin_button.setProperty("hideMode", True)
-                    self._refresh_button_style(pin_button)
-                self.toggled.emit(False)
-            # Always hide on click regardless of pin state
-            self.window().hide()
+                # Unpin first
+                self._set_pin_state(False)
+            # Always hide on click regardless of previous pin state
+            window.hide()
             return
 
         # Standard pin button behavior OR drag behavior
-        state = not self.pinned
+        new_state = not self.pinned
+        self._set_pin_state(new_state)
 
-        self.pinned = state
-        self.window().prevent_hide = state
+        if not new_state and not self.pin_on_drag_only:
+            # Standard behavior: when unpinned via button, hide the window
+            window.hide()
 
-        # Icon: close when unpinned (hide mode), radio when pinned (pinned mode)
-        icon_name = "radio" if state else "close"
+    def _on_window_pinned_changed(self, pinned: bool):
+        """Slot to handle pin state changes from the window."""
+        if self.pinned != pinned:
+            self._set_pin_state(pinned)
 
+    def _set_pin_state(self, pinned: bool):
+        """Internal method to update pin state and sync with window.
+
+        Parameters:
+            pinned: The new pin state
+        """
+        self.pinned = pinned
+
+        # Notify the window of pin state change (if it supports set_pinned)
+        window = self.window()
+        if hasattr(window, "set_pinned"):
+            # Avoid infinite loops / re-triggering
+            if hasattr(window, "pinned") and window.pinned != pinned:
+                window.set_pinned(pinned)
+
+        # Update button icon
+        icon_name = "radio" if pinned else "close"
         pin_button = self.buttons.get("pin")
         if pin_button:
             IconManager.set_icon(pin_button, icon_name, size=(16, 16))
-            # Set hideMode property for styling
-            is_hide_mode = icon_name == "close"
-            pin_button.setProperty("hideMode", is_hide_mode)
-            # Force style refresh
+            pin_button.setProperty("hideMode", not pinned)
             self._refresh_button_style(pin_button)
-            if not state and not self.pin_on_drag_only:
-                # Standard behavior: when unpinned via button, hide the window
-                self.window().hide()
 
-        self.toggled.emit(state)
+        self.toggled.emit(pinned)
 
     def reset_pin_state(self):
         """Force the header into an unpinned state without hiding the window."""
         if not self.pinned:
             return
-
-        self.pinned = False
-        self.window().prevent_hide = False
-
-        pin_button = self.buttons.get("pin")
-        if pin_button:
-            IconManager.set_icon(pin_button, "close", size=(16, 16))
-            pin_button.setProperty("hideMode", True)
-            self._refresh_button_style(pin_button)
-
-        self.toggled.emit(False)
+        self._set_pin_state(False)
 
     def _refresh_button_style(self, button):
         """Force a button to refresh its stylesheet after property changes."""
@@ -572,6 +575,19 @@ class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay):
         layout.insertWidget(0, self)
         self.setParent(widget)
         setattr(widget, "header", self)
+
+        # Connect to window signals if available
+        window = self.window()
+        if hasattr(window, "on_pinned_changed"):
+            try:
+                window.on_pinned_changed.disconnect(self._on_window_pinned_changed)
+            except (TypeError, RuntimeError):
+                pass
+            window.on_pinned_changed.connect(self._on_window_pinned_changed)
+
+            # Sync initial state from window to header
+            if hasattr(window, "pinned") and window.pinned != self.pinned:
+                self._set_pin_state(window.pinned)
 
     def hideEvent(self, event):
         """Reset collapse state when header (and window) is hidden."""

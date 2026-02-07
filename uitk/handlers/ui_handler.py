@@ -198,6 +198,19 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
             else:
                 ui.move(target_global)
 
+    def setup_lifecycle(self, ui, hide_signal=None):
+        """Connect a window to a hide signal, respecting its pin state.
+
+        Parameters:
+            ui: The MainWindow to configure
+            hide_signal: Signal to connect for auto-hide (e.g., marking_menu.key_show_release)
+        """
+        if hide_signal is not None and hasattr(ui, "request_hide"):
+            hide_signal.connect(ui.request_hide)
+            self.logger.debug(
+                f"[{ui.objectName()}] Connected hide_signal -> request_hide"
+            )
+
     def apply_styles(self, ui, style: Dict = None):
         """
         Apply default styles to the UI instance.

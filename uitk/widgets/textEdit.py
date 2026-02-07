@@ -11,16 +11,13 @@ class TextEdit(QtWidgets.QTextEdit, MenuMixin, AttributesMixin):
     shown = QtCore.Signal()
     hidden = QtCore.Signal()
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True}
+
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QTextEdit.__init__(self, parent)
 
         self.viewport().setAutoFillBackground(False)
-
-        # Customize standalone menu provided by MenuMixin
-        self.menu.trigger_button = "right"
-        self.menu.position = "cursorPos"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
 
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)

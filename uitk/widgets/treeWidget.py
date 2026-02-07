@@ -365,10 +365,6 @@ class TreeWidget(
         self.setIndentation(16)  # Match icon width for proper alignment
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 
-        # Customize standalone menu provided by MenuMixin
-        # Note: MenuMixin defaults to "right" trigger button
-        self.menu.fixed_item_height = 20
-
         # Set selection mode
         self._set_selection_mode(selection_mode)
 
@@ -412,8 +408,9 @@ class TreeWidget(
         # Don't interfere with right-click - let it propagate to menu event filter
         # Must check BEFORE calling super() to avoid consuming the event
         if event.button() == QtCore.Qt.RightButton:
-            # Manually trigger menu since event filter might not catch viewport events
-            self.menu.trigger_from_widget(self, button=event.button())
+            # Only trigger menu if one exists (avoid creating empty menu)
+            if self.has_menu:
+                self.menu.trigger_from_widget(self, button=event.button())
             super().mousePressEvent(event)
             return
 

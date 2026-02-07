@@ -24,6 +24,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     on_focus_out = QtCore.Signal()
     on_child_registered = QtCore.Signal(object)
     on_child_changed = QtCore.Signal(object, object)
+    on_pinned_changed = QtCore.Signal(bool)
 
     def __init__(
         self,
@@ -84,7 +85,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.tags = set(tags or [])
         self.has_tags = lambda tags=None: self.sb.has_tags(self, tags)
         self.is_initialized = False
-        self.prevent_hide = False
         self.ensure_on_screen = ensure_on_screen
         self.restore_window_size = restore_window_size
         self.add_footer = add_footer
@@ -96,6 +96,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self._deferred = {}
         self.lock_style = False
         self.original_style = ""
+
+        # Pin state - when True, window resists hide requests
+        self._pinned = False
 
         self.connected_slots = ptk.NamespaceHandler(
             self,
@@ -230,26 +233,39 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             f"{self.__class__.__name__} has no attribute `{attr_name}`"
         )
 
+    # -------------------------------------------------------------------------
+    # Pin State
+    # -------------------------------------------------------------------------
+
+    @property
+    def pinned(self) -> bool:
+        """Whether the window is pinned (resists hide requests)."""
+        return self._pinned
+
+    @pinned.setter
+    def pinned(self, value: bool) -> None:
+        self._pinned = bool(value)
+        self.on_pinned_changed.emit(self._pinned)
+
+    def set_pinned(self, value: bool) -> None:
+        """Set pin state (method form for signal connections)."""
+        self.pinned = value
+
     @property
     def is_pinned(self) -> bool:
-        """Check if the window is pinned (should not auto-hide).
+        """Alias for pinned property."""
+        return self._pinned
 
-        This is the single source of truth for pin state checking.
-        Checks both the prevent_hide flag and the header's pin button state.
+    def request_hide(self) -> bool:
+        """Request to hide, respecting pin state.
 
         Returns:
-            bool: True if window should stay visible (pinned), False otherwise
+            bool: True if hidden, False if blocked by pin
         """
-        # Check prevent_hide flag
-        if self.prevent_hide:
-            return True
-
-        # Check header pin button state (if header exists and has pin functionality)
-        header = getattr(self, "header", None)
-        if header and hasattr(header, "pinned"):
-            return header.pinned
-
-        return False
+        if self._pinned:
+            return False
+        self.hide()
+        return True
 
     @property
     def slots(self) -> list:
@@ -555,9 +571,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if x != frame_geo.x() or y != frame_geo.y():
             self.move(x, y)
 
-    def setVisible(self, visible) -> None:
-        """Reimplement setVisible to prevent window from being hidden when pinned."""
-        if self.is_pinned and not visible:
+    def setVisible(self, visible: bool) -> None:
+        """Override setVisible to respect pin state when hiding."""
+        if not visible and self._pinned:
             return
         super().setVisible(visible)
 
@@ -652,8 +668,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if self.parent():
             parent_window = self.parent().window()
             if parent_window and parent_window.isVisible():
-                parent_window.activateWindow()
+                # Order matters: raise_() first brings window to front of Z-order,
+                # then activateWindow() gives it keyboard focus. Reversing this
+                # can cause the parent to go behind other applications.
                 parent_window.raise_()
+                parent_window.activateWindow()
 
         super().hideEvent(event)
         self.on_hide.emit()

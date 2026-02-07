@@ -75,6 +75,9 @@ class LineEdit(
     shown = QtCore.Signal()
     hidden = QtCore.Signal()
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True}
+
     def __init__(self, parent=None, **kwargs):
         """Initialize LineEdit with Menu and OptionBox mixins.
 
@@ -85,12 +88,6 @@ class LineEdit(
         super().__init__(parent)
         self.setProperty("class", self.__class__.__name__)
 
-        # Customize standalone context menu (provided by MenuMixin)
-        self.menu.trigger_button = "right"
-        self.menu.position = "cursorPos"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
-
         # OptionBox is also available via OptionBoxMixin
         # Users can access: self.option_box.menu, self.option_box.clear_option, etc.
 
@@ -99,7 +96,7 @@ class LineEdit(
 
     def contextMenuEvent(self, event):
         """Override the standard context menu if there is a custom one."""
-        if self.menu.contains_items:
+        if self.has_menu and self.menu.contains_items:
             self.menu.show()
         else:
             super().contextMenuEvent(event)

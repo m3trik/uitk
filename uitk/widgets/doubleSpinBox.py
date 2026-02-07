@@ -11,13 +11,12 @@ class DoubleSpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin):
     Includes handling for Alt, Ctrl, and Ctrl+Alt modifiers for dynamic step size adjustment.
     """
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True}
+
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QDoubleSpinBox.__init__(self, parent)
 
-        # Customize standalone menu provided by MenuMixin
-        self.menu.trigger_button = "right"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
         self.msgBox = MessageBox(self, timeout=1)
 
         self.setProperty("class", self.__class__.__name__)

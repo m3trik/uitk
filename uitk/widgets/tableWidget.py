@@ -341,6 +341,9 @@ class TableWidget(
 ):
     """Enhanced QTableWidget with cell formatting, sorting, and context menu support."""
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True}
+
     def __init__(
         self,
         parent=None,
@@ -382,11 +385,6 @@ class TableWidget(
         self.setWordWrap(False)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
-
-        # Customize standalone menu provided by MenuMixin
-        self.menu.trigger_button = "right"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
 
         # Set selection mode
         self._set_selection_mode(selection_mode)
@@ -467,7 +465,8 @@ class TableWidget(
 
     def _show_context_menu(self, position):
         """Show the context menu at the given position."""
-        if self.menu.contains_items:
+        # Only show if menu exists and has items (avoid creating empty menu)
+        if self.has_menu and self.menu.contains_items:
             # Set the position before showing
             global_pos = self.mapToGlobal(position)
             self.menu.position = global_pos

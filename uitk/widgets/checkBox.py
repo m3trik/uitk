@@ -25,6 +25,9 @@ class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOv
         checkbox.setCheckState(1)  # Partially checked
     """
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True}
+
     def __init__(self, parent=None, **kwargs):
         """Initialize the CheckBox.
 
@@ -45,11 +48,6 @@ class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOv
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-
-        # Customize standalone menu provided by MenuMixin
-        self.menu.trigger_button = "right"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
 
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)

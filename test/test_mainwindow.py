@@ -355,12 +355,12 @@ class TestMainWindowPinned(QtBaseTestCase):
         window = self.track_widget(MainWindow("TestWindow", self.sb))
         self.assertFalse(window.is_pinned)
 
-    def test_is_pinned_true_when_prevent_hide(self):
-        """Should be pinned when prevent_hide is True."""
+    def test_is_pinned_true_when_set_pinned(self):
+        """Should be pinned when set_pinned(True) is called."""
         from uitk.widgets.mainWindow import MainWindow
 
         window = self.track_widget(MainWindow("TestWindow", self.sb))
-        window.prevent_hide = True
+        window.set_pinned(True)
         self.assertTrue(window.is_pinned)
 
     def test_set_visible_respects_pinned(self):
@@ -369,7 +369,7 @@ class TestMainWindowPinned(QtBaseTestCase):
 
         window = self.track_widget(MainWindow("TestWindow", self.sb))
         window.show()
-        window.prevent_hide = True
+        window.set_pinned(True)
         window.setVisible(False)
         # Should still be visible when pinned
         self.assertTrue(window.isVisible())

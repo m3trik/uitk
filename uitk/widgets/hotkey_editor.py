@@ -170,7 +170,10 @@ class HotkeyEditor(QtWidgets.QWidget):
 
         # Extract unique base names (e.g., "preferences.ui" -> "Preferences")
         all_names = sorted(
-            set(self.sb.get_base_name(name.replace(".ui", "")) for name in filenames)
+            set(
+                self.sb.convert_to_legal_name(name.rsplit(".", 1)[0])
+                for name in filenames
+            )
         )
 
         # Filter to only UIs with assignable slots if requested

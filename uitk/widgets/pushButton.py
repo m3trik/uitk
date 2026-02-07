@@ -33,6 +33,9 @@ class PushButton(
         button.option_box.add_pin()  # Add pin functionality
     """
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True, "add_apply_button": True}
+
     def __init__(self, parent=None, **kwargs):
         """Initialize the PushButton.
 
@@ -46,12 +49,6 @@ class PushButton(
         self.text = self.richText
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
-
-        # Customize standalone menu (provided by MenuMixin)
-        self.menu.trigger_button = "right"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
-        self.menu.add_apply_button = True  # Enable apply button for pushbutton menus
 
         # OptionBox is also available via OptionBoxMixin
         # Users can access: self.option_box.menu, self.option_box.clear_option, etc.

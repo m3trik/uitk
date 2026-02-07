@@ -1,23 +1,28 @@
 #!/usr/bin/env python
 """MenuMixin - provides automatic Menu integration for widgets.
 
-This mixin provides a `menu` property that automatically creates and manages
-a Menu instance. It's designed to be a simple drop-in that works seamlessly
-with both standalone widgets and the OptionBox system.
+This mixin provides a `menu` property that lazily creates and manages
+a Menu instance. The menu is NOT created until first accessed, ensuring
+widgets without menu usage have no overhead.
+
+Key features:
+- `menu`: Property that creates menu on first access
+- `has_menu`: Check if menu exists without triggering creation
+- `configure_menu()`: Set properties without triggering creation (instance-level)
+- `_menu_defaults`: Class-level dict for widget-type defaults (preferred)
 
 Usage:
     class MyWidget(QtWidgets.QWidget, MenuMixin):
-        def __init__(self):
-            super().__init__()
-            # Menu is automatically available
+        # Class-level defaults (preferred - no per-instance overhead)
+        _menu_defaults = {"hide_on_leave": True, "add_apply_button": True}
+
+        def add_items(self):
+            # Menu is created here on first access, with _menu_defaults applied
             self.menu.add("Label A")
 
-    # Or customize in constructor:
-    class MyButton(QtWidgets.QPushButton, MenuMixin):
-        def __init__(self):
-            super().__init__()
-            self.menu.trigger_button = "left"
-            self.menu.hide_on_leave = True
+        def cleanup(self):
+            if self.has_menu:
+                self.menu.clear()
 """
 from typing import Any, Optional, Type
 
@@ -45,16 +50,15 @@ def _get_menu_class():
 class _MenuDescriptor:
     """Descriptor that provides a uitk Menu object with lazy initialization.
 
+    The menu is ONLY created when first accessed via the `.menu` property.
+    Use `has_menu` to check if a menu exists without triggering creation.
+
     Resolution order (optimized for performance):
     1. Existing instance menu (cached) - FAST PATH
-    2. Create new menu - SLOW PATH
+    2. Create new menu on first access - SLOW PATH (applies deferred config)
     """
 
     def __get__(self, instance: Any, owner: type):
-        import time
-
-        get_start = time.perf_counter()
-
         if instance is None:
             return self
 
@@ -62,47 +66,66 @@ class _MenuDescriptor:
         # This is the most common case (99% of calls) - extremely fast
         inst_menu = instance.__dict__.get("_menu_instance")
         if inst_menu is not None:
-            MenuCls = _get_menu_class()
-            if MenuCls is not None and isinstance(inst_menu, MenuCls):
-                duration_ms = (time.perf_counter() - get_start) * 1000
-                if hasattr(instance, "logger"):
-                    instance.logger.debug(
-                        f"_MenuDescriptor.__get__: FAST PATH (cached) in {duration_ms:.3f}ms"
-                    )
-                return inst_menu
+            return inst_menu
 
-        # SLOW PATH: Create standalone menu (option_box doesn't exist or has no menu)
+        # SLOW PATH: Create standalone menu on first access
         menu = self._create_menu(instance)
         if menu is not None:
             instance.__dict__["_menu_instance"] = menu
-        duration_ms = (time.perf_counter() - get_start) * 1000
-        if hasattr(instance, "logger"):
-            instance.logger.debug(
-                f"_MenuDescriptor.__get__: SLOW PATH (created new) in {duration_ms:.3f}ms"
-            )
+            # Apply any deferred configuration
+            self._apply_deferred_config(instance, menu)
         return menu
 
+    def _apply_deferred_config(self, instance: Any, menu: Any) -> None:
+        """Apply deferred menu configuration stored on the instance.
+
+        Note: Config is now applied during creation in _create_menu.
+        This method handles any edge cases where menu was assigned externally.
+        """
+        config = instance.__dict__.pop("_menu_config", None)
+        if config:
+            for attr, value in config.items():
+                setattr(menu, attr, value)
+
     def _create_menu(self, instance: Any):
-        """Create a standalone Menu for widgets not using OptionBox."""
+        """Create a standalone Menu for widgets not using OptionBox.
+
+        Merges configuration from multiple sources (in priority order):
+        1. Base defaults (trigger_button="right", etc.)
+        2. Class-level _menu_defaults dict (for widget-specific defaults)
+        3. Deferred configure_menu() calls (for instance-specific config)
+        """
         MenuCls = _get_menu_class()
         if MenuCls is None:
             return None
 
-        # Use factory method for consistent defaults
-        # Widgets can customize after creation via self.menu.property = value
-        if hasattr(MenuCls, "create_context_menu"):
-            return MenuCls.create_context_menu(parent=instance)
+        # Base defaults
+        defaults = {
+            "parent": instance,
+            "trigger_button": "right",
+            "position": "cursorPos",
+            "fixed_item_height": 20,
+            "add_header": True,
+            "match_parent_width": False,
+        }
 
-        # Fallback for older Menu class without factory methods
-        menu = MenuCls(
-            parent=instance,
-            trigger_button="right",
-            position="cursorPos",
-            fixed_item_height=20,
-            add_header=True,
-            match_parent_width=False,
-        )
-        return menu
+        # Check for class-level menu defaults (avoids per-instance config)
+        for cls in type(instance).__mro__:
+            if "_menu_defaults" in cls.__dict__:
+                defaults.update(cls._menu_defaults)
+                break
+
+        # Apply any deferred config from configure_menu() calls
+        deferred = instance.__dict__.pop("_menu_config", None)
+        if deferred:
+            defaults.update(deferred)
+
+        # Use factory method if available, otherwise direct instantiation
+        if hasattr(MenuCls, "create_context_menu"):
+            parent = defaults.pop("parent")
+            return MenuCls.create_context_menu(parent=parent, **defaults)
+
+        return MenuCls(**defaults)
 
     def __set__(self, instance: Any, value: Any) -> None:  # type: ignore[override]
         """Allow explicit menu assignment."""
@@ -123,17 +146,59 @@ class MenuMixin:
     """Simple drop-in mixin that provides automatic Menu integration.
 
     Just inherit from this mixin and `self.menu` will be automatically available.
+    The menu is lazily created on first access to `self.menu`.
+
+    Use `self.has_menu` to check if a menu has been created without triggering
+    creation (useful for cleanup, iteration, or conditional logic).
+
+    Use `self.configure_menu()` to set menu properties without triggering creation.
 
     Example:
         class MyWidget(QtWidgets.QWidget, MenuMixin):
             def __init__(self):
                 super().__init__()
-                # Customize menu if needed
-                self.menu.trigger_button = "left"
-                self.menu.hide_on_leave = True
-                # Add items
+                # Configure without creating (deferred until first access)
+                self.configure_menu(trigger_button="right", hide_on_leave=True)
+
+            def add_menu_items(self):
+                # Menu is created here on first access
                 self.menu.add("Item 1")
+
+            def cleanup(self):
+                # Check without creating
+                if self.has_menu:
+                    self.menu.clear()
     """
 
     # Descriptor provides smart menu access
     menu = _MenuDescriptor()
+
+    def configure_menu(self, **config) -> None:
+        """Configure menu properties without triggering creation.
+
+        If the menu already exists, applies config immediately.
+        Otherwise, stores config to be applied when menu is first accessed.
+
+        Args:
+            **config: Menu properties to set (e.g., trigger_button="right").
+        """
+        if self.has_menu:
+            # Menu exists, apply immediately
+            for attr, value in config.items():
+                setattr(self.menu, attr, value)
+        else:
+            # Store for deferred application
+            existing = self.__dict__.setdefault("_menu_config", {})
+            existing.update(config)
+
+    @property
+    def has_menu(self) -> bool:
+        """Check if a menu has been created without triggering creation.
+
+        Returns:
+            True if a menu instance exists, False otherwise.
+        """
+        return (
+            "_menu_instance" in self.__dict__
+            and self.__dict__["_menu_instance"] is not None
+        )
