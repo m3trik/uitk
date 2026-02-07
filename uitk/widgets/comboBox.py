@@ -151,6 +151,9 @@ class ComboBox(
     on_editing_finished = QtCore.Signal(str)
     on_item_deleted = QtCore.Signal(str)
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True}
+
     def __init__(self, parent=None, editable=False, **kwargs):
         super().__init__(parent)
         self.restore_previous_index = False
@@ -161,11 +164,6 @@ class ComboBox(
         self.editable = editable
 
         self.currentIndexChanged.connect(self.check_index)
-
-        # Customize standalone menu (provided by MenuMixin)
-        self.menu.trigger_button = "right"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
 
         # OptionBox is also available via OptionBoxMixin
         # Users can access: self.option_box.menu, self.option_box.clear_option, etc.

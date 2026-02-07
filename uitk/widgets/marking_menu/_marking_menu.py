@@ -218,6 +218,7 @@ class MarkingMenu(
 
     def _on_activation_release(self):
         """Handle the global shortcut release event."""
+        self.logger.debug("_on_activation_release: Emitting key_show_release signal")
         self._activation_key_held = False
         self.key_show_release.emit()
         self.hide()
@@ -488,6 +489,12 @@ class MarkingMenu(
         if not isinstance(ui, QtWidgets.QWidget):
             raise ValueError(f"Invalid datatype: {type(ui)}, expected QWidget.")
 
+        ui_name = ui.objectName()
+        self.logger.debug(
+            f"[{ui_name}] _init_ui called, tags={getattr(ui, 'tags', None)}, "
+            f"has_header={hasattr(ui, 'header')}"
+        )
+
         if ui.has_tags(["startmenu", "submenu"]):  # StackedWidget
             ui.style.set(theme="dark", style_class="translucentBgNoBorder")
             ui.resize(600, 600)
@@ -495,6 +502,7 @@ class MarkingMenu(
             self.addWidget(ui)  # add the UI to the stackedLayout.
             self.add_child_event_filter(ui.widgets)
             ui.on_child_registered.connect(lambda w: self.add_child_event_filter(w))
+            # Stacked menus: No explicit lifecycle setup needed (they hide with parent)
 
         else:  # Standalone MainWindow
             # Parent normal windows to the MarkingMenu to ensure lifecycle coupling.
@@ -502,11 +510,9 @@ class MarkingMenu(
             if not ui.has_tags(["mayatk", "maya"]):
                 ui.setParent(self.parent(), QtCore.Qt.Window)
 
-            # Delegate styling to the window manager
+            # Delegate all window setup to UiHandler (styling + lifecycle)
             self.ui_handler.apply_styles(ui)
-
-            # Ensure lifecycle coupling
-            self.key_show_release.connect(ui.hide)
+            self.ui_handler.setup_lifecycle(ui, hide_signal=self.key_show_release)
 
             ui.default_slot_timeout = 360.0
 
@@ -1041,6 +1047,7 @@ class MarkingMenu(
 
     def hide(self):
         """Override hide to properly reset stacked widget state."""
+        self.logger.debug("MarkingMenu.hide() called")
         self._cancel_chord_timer()
         self._chord_buttons_at_press = 0
 
@@ -1049,6 +1056,10 @@ class MarkingMenu(
 
         current_ui = self.sb.current_ui
         if current_ui:
+            self.logger.debug(
+                f"MarkingMenu.hide(): current_ui={current_ui.objectName()}, "
+                f"tags={getattr(current_ui, 'tags', None)}"
+            )
             try:
                 if current_ui.has_tags(["startmenu", "submenu"]):
                     header = current_ui.header
@@ -1056,25 +1067,37 @@ class MarkingMenu(
                         try:
                             header.reset_pin_state()
                         except AttributeError:
-                            try:
-                                if header.pinned:
-                                    header.pinned = False
-                                    if current_ui.prevent_hide:
-                                        current_ui.prevent_hide = False
-                            except AttributeError:
-                                pass
+                            # Fallback for widgets without reset_pin_state
+                            if getattr(header, "pinned", False):
+                                header.pinned = False
+                            # Menu uses prevent_hide; MainWindow uses set_pinned
+                            if hasattr(current_ui, "set_pinned"):
+                                current_ui.set_pinned(False)
+                            elif hasattr(current_ui, "prevent_hide"):
+                                current_ui.prevent_hide = False
             except AttributeError:
                 pass
+
+        # CRITICAL: Release mouse grab before hiding to prevent zombie grabs.
+        # If the MarkingMenu grabbed the mouse (see _transfer_mouse_control) and we
+        # hide without releasing, the OS may leave mouse input in a broken state.
+        if self.mouseGrabber() is self:
+            self.releaseMouse()
 
         super().hide()
 
         parent = self.parentWidget()
         if parent:
+            # Order matters: raise_() first brings window to front, then activateWindow()
+            # gives it focus. Reversing this can cause the parent to go behind other apps.
             parent.raise_()
             parent.activateWindow()
 
     def hideEvent(self, event):
-        """ """
+        """Clean up on hide - ensures mouse grab is released even if hide() was bypassed."""
+        # Safety net: release mouse grab if we still have it
+        if self.mouseGrabber() is self:
+            self.releaseMouse()
         self._clear_optimization_caches()
         super().hideEvent(event)
 

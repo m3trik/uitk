@@ -30,6 +30,9 @@ class Label(QtWidgets.QLabel, MenuMixin, AttributesMixin):
     clicked = QtCore.Signal()
     released = QtCore.Signal()
 
+    # Class-level menu defaults (applied when menu is first accessed)
+    _menu_defaults = {"hide_on_leave": True}
+
     def __init__(self, parent=None, **kwargs):
         """Initialize the Label.
 
@@ -38,12 +41,6 @@ class Label(QtWidgets.QLabel, MenuMixin, AttributesMixin):
             **kwargs: Additional attributes to set via set_attributes().
         """
         QtWidgets.QLabel.__init__(self, parent)
-
-        # Customize standalone menu provided by MenuMixin
-        self.menu.trigger_button = "right"
-        self.menu.position = "cursorPos"
-        self.menu.fixed_item_height = 20
-        self.menu.hide_on_leave = True
 
         self.setTextFormat(QtCore.Qt.RichText)
         self.setProperty("class", self.__class__.__name__)

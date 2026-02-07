@@ -161,7 +161,6 @@ class TestHeaderPinning(QtBaseTestCase):
         """Should toggle pinned state."""
         # Create header with a window parent to avoid errors
         window = self.track_widget(QtWidgets.QWidget())
-        window.prevent_hide = False
         header = self.track_widget(
             Header(parent=window, config_buttons=["pin"], pin_on_drag_only=False)
         )
@@ -172,7 +171,6 @@ class TestHeaderPinning(QtBaseTestCase):
     def test_toggle_pin_emits_signal(self):
         """Should emit toggled signal when pin state changes."""
         window = self.track_widget(QtWidgets.QWidget())
-        window.prevent_hide = False
         header = self.track_widget(
             Header(parent=window, config_buttons=["pin"], pin_on_drag_only=False)
         )
@@ -184,7 +182,6 @@ class TestHeaderPinning(QtBaseTestCase):
     def test_reset_pin_state_unpins(self):
         """Should reset to unpinned state."""
         window = self.track_widget(QtWidgets.QWidget())
-        window.prevent_hide = False
         header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         header.pinned = True
         header.reset_pin_state()
@@ -193,7 +190,6 @@ class TestHeaderPinning(QtBaseTestCase):
     def test_reset_pin_state_emits_signal(self):
         """Should emit toggled signal when reset."""
         window = self.track_widget(QtWidgets.QWidget())
-        window.prevent_hide = False
         header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         header.pinned = True
         signal_received = []
@@ -280,7 +276,6 @@ class TestHeaderWindowActions(QtBaseTestCase):
     def test_hide_window_hides_parent(self):
         """Should hide parent window."""
         window = self.track_widget(QtWidgets.QWidget())
-        window.prevent_hide = False
         window.show()
         header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         header.hide_window()
@@ -336,7 +331,6 @@ class TestHeaderToggledSignal(QtBaseTestCase):
     def test_toggled_signal_emits_bool(self):
         """Should emit boolean value."""
         window = self.track_widget(QtWidgets.QWidget())
-        window.prevent_hide = False
         header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
         received_values = []
         header.toggled.connect(lambda v: received_values.append(v))

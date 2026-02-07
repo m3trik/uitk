@@ -1568,12 +1568,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """Check if the menu is pinned (should not auto-hide).
 
         This is the single source of truth for pin state checking.
-        Checks both the legacy prevent_hide flag and the header's pin button state.
+        Checks both the prevent_hide flag and the header's pin button state.
 
         Returns:
             bool: True if menu should stay visible (pinned), False otherwise
         """
-        # Check legacy prevent_hide flag
+        # Check prevent_hide flag
         if self.prevent_hide:
             return True
 
