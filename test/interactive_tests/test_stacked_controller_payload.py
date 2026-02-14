@@ -1,10 +1,14 @@
 import sys
 import unittest
+import os
 from qtpy import QtWidgets, QtCore, QtGui
 
 # Ensure script root is in path
 if r"O:\Cloud\Code\_scripts" not in sys.path:
     sys.path.append(r"O:\Cloud\Code\_scripts")
+
+# Check for interactive environment
+_INTERACTIVE = os.environ.get("INTERACTIVE_TESTS") == "1"
 
 from uitk.widgets.marking_menu import MarkingMenu as StackedController
 from uitk.switchboard import Switchboard
@@ -58,6 +62,7 @@ class TestStackedControllerInteractions(unittest.TestCase):
         # Mock underMouse to always be true for these tests
         self.btn.underMouse = lambda: True
 
+    @unittest.skipUnless(_INTERACTIVE, "Requires interactive display/events")
     def test_loose_chord_release(self):
         """
         Verify that releasing one button while holding another triggers the click
@@ -86,6 +91,7 @@ class TestStackedControllerInteractions(unittest.TestCase):
             self.btn.clicked_signal_received, "Loose chord release should trigger click"
         )
 
+    @unittest.skipUnless(_INTERACTIVE, "Requires interactive display/events")
     def test_standard_release(self):
         """Verify standard single click works."""
         print("\nTEST: Standard Release")
