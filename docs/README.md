@@ -2,7 +2,7 @@
 [![Version](https://img.shields.io/badge/Version-1.0.79-blue.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide6%20|%20PyQt5-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/tests-570%20passed-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/tests-582%20passed-brightgreen.svg)](test/)
 
 # UITK
 

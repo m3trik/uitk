@@ -568,20 +568,16 @@ QTableWidget::item {
     border: none;
 }
 QTableWidget::item:selected {
-    background-color: {BUTTON_CHECKED};
-    color: {TEXT_CHECKED};
+    background-color: {TABLE_ITEM_SELECTED};
 }
 QTableWidget::item:checked {
     background-color: {BUTTON_CHECKED};
-    color: {TEXT_CHECKED};
 }
 QTableWidget::item:checked:selected {
-    background-color: {BUTTON_CHECKED};
-    color: {TEXT_CHECKED};
+    background-color: {TABLE_ITEM_SELECTED};
 }
 QTableWidget::item:hover {
-    background-color: {BUTTON_HOVER};
-    color: {TEXT_HOVER};
+    background-color: {TABLE_ITEM_HOVER};
 }
 
 QTreeView::branch {

@@ -23,6 +23,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore
 from uitk.switchboard import Switchboard
+from uitk.examples.example import ExampleSlots
 
 
 # =============================================================================
@@ -44,7 +45,7 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -101,7 +102,7 @@ class TestSwitchboardWidgetState(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -155,7 +156,7 @@ class TestSwitchboardButtonGroups(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -249,7 +250,7 @@ class TestSwitchboardNameConversion(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_convert_to_legal_name_replaces_special_chars(self):
@@ -292,7 +293,7 @@ class TestSwitchboardTagManagement(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_get_tags_from_name_extracts_tags(self):
@@ -347,7 +348,7 @@ class TestSwitchboardHasTags(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -387,7 +388,7 @@ class TestSwitchboardDefaultSignals(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_get_default_signals_for_pushbutton(self):
@@ -429,7 +430,7 @@ class TestSwitchboardAvailableSignals(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_get_available_signals_returns_set(self):
@@ -463,7 +464,7 @@ class TestSwitchboardSlotHistory(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_slot_history_returns_list(self):
@@ -600,7 +601,7 @@ class TestSwitchboardGetWidgetsFromUI(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -634,7 +635,7 @@ class TestSwitchboardGetWidgetFromUI(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -674,7 +675,7 @@ class TestSwitchboardIsWidget(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_is_widget_returns_true_for_widget_class(self):
@@ -756,7 +757,7 @@ class TestSlotWrapper(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -849,7 +850,7 @@ class TestSwitchboardEdgeCasesTagManagement(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_get_tags_from_name_with_empty_string(self):
@@ -926,7 +927,7 @@ class TestSwitchboardEdgeCasesSignals(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_get_default_signals_for_base_widget(self):
@@ -958,7 +959,7 @@ class TestSwitchboardEdgeCasesSlotHistory(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
 
     def test_slot_history_index_out_of_range(self):
@@ -1008,7 +1009,7 @@ class TestSwitchboardEdgeCasesWidgetResolution(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 
@@ -1054,7 +1055,7 @@ class TestSlotWrapperEdgeCases(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
 

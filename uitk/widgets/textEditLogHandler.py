@@ -37,8 +37,8 @@ class TextEditLogHandler(logging.Handler):
             else:
                 msg = self.format(record)
                 color = self.get_color(record.levelname)
-                # Use pre tag to preserve whitespace alignment
-                msg = f'<pre style="color:{color}; margin:0; font-family:monospace;">{msg}</pre>'
+                # Use span tag to preserve whitespace alignment without extra block spacing
+                msg = f'<span style="color:{color}; font-family:monospace; white-space:pre-wrap;">{msg}</span>'
 
             # Check if we're on the main GUI thread
             app = QtWidgets.QApplication.instance()

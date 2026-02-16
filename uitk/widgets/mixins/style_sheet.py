@@ -32,6 +32,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
             "ICON_COLOR": "rgb(220,220,220)",
+            "TABLE_ITEM_HOVER": "rgba(100,130,150,225)",
+            "TABLE_ITEM_SELECTED": "rgba(127,127,127,50)",
         },
         "dark": {
             "PANEL_BACKGROUND": "rgb(115,115,115)",
@@ -51,6 +53,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
             "ICON_COLOR": "rgb(220,220,220)",
+            "TABLE_ITEM_HOVER": "rgba(100,130,150,225)",
+            "TABLE_ITEM_SELECTED": "rgba(127,127,127,50)",
         },
     }
 

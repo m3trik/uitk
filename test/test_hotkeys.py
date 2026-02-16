@@ -18,6 +18,7 @@ from conftest import QtBaseTestCase
 from uitk.switchboard import Switchboard
 from uitk.widgets.hotkey_editor import HotkeyEditor
 from uitk.widgets.mixins.shortcuts import Shortcut
+from uitk.examples.example import ExampleSlots
 
 
 # -----------------------------------------------------------------------------
@@ -39,7 +40,7 @@ class TestShortcutRegistry(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
@@ -128,7 +129,7 @@ class TestShortcutAssignment(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
@@ -205,7 +206,7 @@ class TestHotkeyEditor(QtBaseTestCase):
         super().setUp()
         self.sb = Switchboard(
             ui_source=self.example_module,
-            slot_source=self.example_module.ExampleSlots,
+            slot_source=ExampleSlots,
         )
         self.ui = self.sb.loaded_ui.example
         self.ui.show()

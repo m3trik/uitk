@@ -44,6 +44,11 @@ class WidgetComboBox(ComboBox):
         # Track embedded widgets
         self._widget_items: dict[int, QtWidgets.QWidget] = {}
         self._row_containers: dict[int, QtWidgets.QWidget] = {}
+        # Deferred widget embedding: PySide6 can crash (ACCESS_VIOLATION) in
+        # setIndexWidget when the view's viewport hasn't been fully realized
+        # (e.g. during headless testing or before the first show).  Pending
+        # (row, container) pairs are flushed in showPopup().
+        self._pending_index_widgets: list[tuple[int, QtWidgets.QWidget]] = []
 
         # Create overflow indicator (initialized lazily on first popup)
         self._overflow_indicator = None
@@ -52,6 +57,38 @@ class WidgetComboBox(ComboBox):
         list_view.viewport().installEventFilter(self)
 
         self.currentIndexChanged.connect(self._on_index_changed)
+
+    # ------------------------------------------------------------------
+    # Deferred index-widget helpers
+    # ------------------------------------------------------------------
+    def _set_index_widget(self, row: int, container: QtWidgets.QWidget) -> None:
+        """Embed *container* on *row*, deferring if the viewport isn't ready.
+
+        PySide6 crashes with ACCESS_VIOLATION when ``setIndexWidget`` is called
+        before the view's C++ viewport backing store has been realized (e.g.
+        during headless test execution or before the widget hierarchy has been
+        shown).  This helper queues the call instead; ``showPopup`` flushes
+        the queue before the dropdown opens.
+        """
+        view = self.view()
+        # Only set directly if the view is actually visible (and thus realized).
+        # Checking width() > 0 is insufficient as layout can assign size before realization.
+        if view.isVisible():
+            index = self._model.index(row, 0)
+            view.setIndexWidget(index, container)
+        else:
+            self._pending_index_widgets.append((row, container))
+
+    def _flush_pending_index_widgets(self) -> None:
+        """Install any deferred index widgets now that the viewport is ready."""
+        if not self._pending_index_widgets:
+            return
+        view = self.view()
+        pending = list(self._pending_index_widgets)
+        self._pending_index_widgets.clear()
+        for row, container in pending:
+            index = self._model.index(row, 0)
+            view.setIndexWidget(index, container)
 
     # ------------------------------------------------------------------
     # Override properties to work with QStandardItemModel
@@ -98,10 +135,9 @@ class WidgetComboBox(ComboBox):
 
         self._model.appendRow(row_item)
         row = self._model.rowCount() - 1
-        index = self._model.index(row, 0)
 
         container = self._wrap_widget(widget)
-        self.view().setIndexWidget(index, container)
+        self._set_index_widget(row, container)
 
         self._widget_items[row] = widget
         self._row_containers[row] = container
@@ -259,6 +295,7 @@ class WidgetComboBox(ComboBox):
 
     def showPopup(self) -> None:
         """Override to update overflow indicator when popup is shown."""
+        self._flush_pending_index_widgets()
         super().showPopup()
         # Use a longer delay to ensure the view is fully laid out
         QtCore.QTimer.singleShot(50, self._update_overflow_indicator)
@@ -544,7 +581,7 @@ class WidgetComboBox(ComboBox):
         index = self._model.index(row, 0)
 
         container = self._wrap_widget(widget)
-        self.view().setIndexWidget(index, container)
+        self._set_index_widget(row, container)
 
         self._widget_items[row] = widget
         self._row_containers[row] = container
