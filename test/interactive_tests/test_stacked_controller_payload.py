@@ -10,7 +10,7 @@ if r"O:\Cloud\Code\_scripts" not in sys.path:
 # Check for interactive environment
 _INTERACTIVE = os.environ.get("INTERACTIVE_TESTS") == "1"
 
-from uitk.widgets.marking_menu import MarkingMenu as StackedController
+from uitk.widgets.marking_menu._marking_menu import MarkingMenu as StackedController
 from uitk.switchboard import Switchboard
 
 

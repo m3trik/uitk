@@ -10,13 +10,13 @@ from qtpy import QtWidgets, QtCore, QtGui, QtUiTools
 import pythontk as ptk
 
 # From this package:
-from uitk.widgets.mixins import SwitchboardSlotsMixin
-from uitk.widgets.mixins import SwitchboardShortcutMixin
-from uitk.widgets.mixins import SwitchboardWidgetMixin
-from uitk.widgets.mixins import SwitchboardUtilsMixin
-from uitk.widgets.mixins import SwitchboardNameMixin
+from uitk.widgets.mixins.switchboard_slots import SwitchboardSlotsMixin
+from uitk.widgets.mixins.shortcuts import SwitchboardShortcutMixin
+from uitk.widgets.mixins.switchboard_widgets import SwitchboardWidgetMixin
+from uitk.widgets.mixins.switchboard_utils import SwitchboardUtilsMixin
+from uitk.widgets.mixins.switchboard_names import SwitchboardNameMixin
 from uitk.file_manager import FileManager
-from uitk.widgets.mixins import ConvertMixin
+from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.settings_manager import SettingsManager
 
 

@@ -49,7 +49,7 @@ class CellFormatMixin(ConvertMixin):
         "warning": ("#B49B5C", "#FFF6DC"),
         "info": ("#6D9BAA", "#E2F3F9"),
         "inactive": ("#AAAAAA", None),
-        "current": ("#6A8CA8", None),
+        "current": ("#C4A44A", None),
         "reset": (None, None),
     }
 
@@ -377,6 +377,16 @@ class TableWidget(
         self._menu_dispatch_connected = False
         self._stretch_column = None
 
+        # Drag state (shared by editable-cell and action-column paths)
+        self._drag_start_pos = None
+        self._drag_occurred = False
+        self._drag_has_modifier = False
+        self._drag_column = None  # column where the drag started
+        self._drag_rows = []  # rows traversed during drag
+        self._drag_is_action = False  # True when dragging over an action column
+        self._drag_selected_indexes = None
+        self._drag_edit_column = None
+
         self.cellClicked.connect(self._on_cell_clicked)
 
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
@@ -392,6 +402,135 @@ class TableWidget(
         self._set_selection_mode(selection_mode)
 
         self.set_attributes(**kwargs)
+
+    # ------------------------------------------------------------------
+    # Drag-select: edit or action (Maya channel-box style)
+    # ------------------------------------------------------------------
+
+    def _reset_drag_state(self):
+        """Clear all drag-tracking fields."""
+        self._drag_start_pos = None
+        self._drag_occurred = False
+        self._drag_has_modifier = False
+        self._drag_column = None
+        self._drag_rows = []
+        self._drag_is_action = False
+
+    def mousePressEvent(self, event):
+        pos = event.pos()
+        self._drag_start_pos = pos
+        self._drag_has_modifier = bool(
+            event.modifiers() & (QtCore.Qt.ShiftModifier | QtCore.Qt.ControlModifier)
+        )
+        self._drag_occurred = False
+
+        index = self.indexAt(pos)
+        if (
+            index.isValid()
+            and event.button() == QtCore.Qt.LeftButton
+            and not self._drag_has_modifier
+        ):
+            self._drag_column = index.column()
+            self._drag_rows = [index.row()]
+            self._drag_is_action = index.column() in self.actions._columns
+        else:
+            self._drag_column = None
+            self._drag_rows = []
+            self._drag_is_action = False
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (
+            not self._drag_occurred
+            and self._drag_start_pos is not None
+            and (event.pos() - self._drag_start_pos).manhattanLength()
+            > QtWidgets.QApplication.startDragDistance()
+        ):
+            self._drag_occurred = True
+
+        # Track rows traversed while dragging in the same column
+        if self._drag_column is not None and self._drag_occurred:
+            index = self.indexAt(event.pos())
+            if (
+                index.isValid()
+                and index.column() == self._drag_column
+                and index.row() not in self._drag_rows
+            ):
+                self._drag_rows.append(index.row())
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        was_drag = self._drag_occurred
+        had_modifier = self._drag_has_modifier
+        is_action = self._drag_is_action
+        drag_col = self._drag_column
+        drag_rows = list(self._drag_rows)
+
+        self._reset_drag_state()
+        super().mouseReleaseEvent(event)
+
+        if not (
+            was_drag and not had_modifier and event.button() == QtCore.Qt.LeftButton
+        ):
+            return
+
+        if is_action and drag_col is not None and drag_rows:
+            # Action column — fire click handler for every traversed row
+            for row in drag_rows:
+                self.actions._on_click(row, drag_col)
+        else:
+            # Editable column — open editor on release cell, propagate on commit
+            index = self.indexAt(event.pos())
+            if index.isValid():
+                col = index.column()
+                self._drag_edit_column = col
+                self._drag_selected_indexes = [
+                    idx for idx in self.selectedIndexes() if idx.column() == col
+                ]
+                item = self.item(index.row(), col)
+                if item and (item.flags() & QtCore.Qt.ItemIsEditable):
+                    self.editItem(item)
+
+    def closeEditor(self, editor, hint):
+        """Propagate committed value to all drag-selected cells."""
+        super().closeEditor(editor, hint)
+
+        if (
+            self._drag_selected_indexes is not None
+            and hint != QtWidgets.QAbstractItemDelegate.EndEditHint.RevertModelCache
+        ):
+            self._propagate_drag_edit()
+
+        # Always clear drag-edit state when editor closes
+        self._drag_selected_indexes = None
+        self._drag_edit_column = None
+
+    def _propagate_drag_edit(self):
+        """Copy the just-edited cell's value to every other drag-selected
+        cell in the same column."""
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+
+        edited_item = self.item(current.row(), current.column())
+        if not edited_item:
+            return
+
+        new_text = edited_item.text()
+        new_data = edited_item.data(QtCore.Qt.UserRole)
+
+        for index in self._drag_selected_indexes:
+            if index.row() == current.row():
+                continue
+            target = self.item(index.row(), index.column())
+            if target:
+                target.setText(new_text)
+                if new_data is not None:
+                    target.setData(QtCore.Qt.UserRole, new_data)
+
+        self.apply_formatting()
 
     def selectionCommand(self, index, event=None):
         """Optionally restrict selection changes."""

@@ -1,3 +1,2 @@
-from ._marking_menu import MarkingMenu
-
-__all__ = ["MarkingMenu"]
+# coding=utf-8
+"""Subpackage — see root ``uitk.__init__`` for public API."""

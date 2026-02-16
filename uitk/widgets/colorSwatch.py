@@ -2,7 +2,8 @@
 # coding=utf-8
 import warnings
 from qtpy import QtWidgets, QtGui, QtCore
-from uitk.widgets.mixins import AttributesMixin, ConvertMixin
+from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.convert import ConvertMixin
 
 
 class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):

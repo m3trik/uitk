@@ -81,7 +81,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             double_click_to_edit: Require double click to edit pinned value
             single_click_restore: Restore value on single click
         """
-        from ..optionBox.options import PinValuesOption
+        from ..optionBox.options.pin_values import PinValuesOption
 
         # Create pin option
         pin_option = PinValuesOption(
@@ -112,7 +112,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         """
         # from ..optionBox.options import ActionOption
         # Use absolute import to ensure type consistency
-        from uitk.widgets.optionBox.options import ActionOption
+        from uitk.widgets.optionBox.options.action import ActionOption
 
         if replace:
             # Remove existing ActionOption instances
@@ -162,7 +162,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             # Copy list to avoid modification during iteration
             for opt in self._option_box.get_options():
                 # Don't remove clear button if managed by property
-                from ..optionBox.options import ClearOption
+                from ..optionBox.options.clear import ClearOption
 
                 if isinstance(opt, ClearOption) and self._clear_enabled:
                     continue
@@ -342,7 +342,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             # Create and add the MenuOption plugin
             # MenuOption is a plugin that creates its own button, so we don't need
             # to set _action_handler - that would create a duplicate button
-            from ..optionBox.options import MenuOption
+            from ..optionBox.options.action import MenuOption
 
             _log_step("import_MenuOption")
 
