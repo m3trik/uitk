@@ -98,7 +98,12 @@ class Header(
         except AttributeError:
             from uitk.widgets.menu import Menu
 
-            self._menu = Menu(self, fixed_item_height=20, hide_on_leave=True)
+            self._menu = Menu(
+                self,
+                fixed_item_height=20,
+                hide_on_leave=True,
+                add_defaults_button=False,
+            )
             return self._menu
 
     def get_icon_path(self, icon_filename):

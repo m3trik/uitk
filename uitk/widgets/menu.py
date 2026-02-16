@@ -222,6 +222,8 @@ class ActionButtonManager:
         if button:
             button.show()
             button.setVisible(True)
+            if self._separator:
+                self._separator.show()
             if self._container and not self._container.isVisible():
                 self._container.show()
                 self._container.setVisible(True)
@@ -236,17 +238,39 @@ class ActionButtonManager:
         button = self.get_button(button_id)
         if button:
             button.hide()
-            # Auto-hide container if no buttons are visible
-            if self._container and not any(
-                btn.isVisible() for btn in self._buttons.values()
-            ):
-                self._container.hide()
+            self._update_container_visibility()
+            return True
+        return False
+
+    def remove_button(self, button_id: str) -> bool:
+        """Remove an action button entirely."""
+        button = self._buttons.pop(button_id, None)
+        if button:
+            if self._layout:
+                self._layout.removeWidget(button)
+            button.setParent(None)
+            button.deleteLater()
+            self._update_container_visibility()
             return True
         return False
 
     def has_visible_buttons(self) -> bool:
         """Check if any buttons are currently visible."""
         return any(btn.isVisible() for btn in self._buttons.values())
+
+    def _update_container_visibility(self):
+        """Hide container and separator when no buttons are visible."""
+        if not self._container:
+            return
+        has_visible = self.has_visible_buttons()
+        if has_visible:
+            if self._separator:
+                self._separator.show()
+            self._container.show()
+        else:
+            if self._separator:
+                self._separator.hide()
+            self._container.hide()
 
 
 class MenuPositioner:
@@ -551,7 +575,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
-        self.add_defaults_button = add_defaults_button
+        self._add_defaults_button = add_defaults_button
         self.add_header = add_header
         self.add_footer = add_footer
         self.add_apply_button = add_apply_button
@@ -1521,6 +1545,21 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                         parent._restore_menu_defaults(from_sync=True)
                         break
                     parent = parent.parent()
+
+    @property
+    def add_defaults_button(self) -> bool:
+        """Whether the 'Restore Defaults' button is enabled.
+
+        Setting to ``False`` at runtime removes the button and hides
+        the action-button container if no other buttons remain.
+        """
+        return self._add_defaults_button
+
+    @add_defaults_button.setter
+    def add_defaults_button(self, value: bool) -> None:
+        self._add_defaults_button = value
+        if not value:
+            self._button_manager.remove_button("defaults")
 
     def _update_defaults_button_visibility(self):
         """Update defaults button visibility based on menu state."""
