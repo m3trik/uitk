@@ -289,6 +289,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             self._presets = PresetManager(self, self.state)
         return self._presets
 
+    @presets.setter
+    def presets(self, _):
+        """No-op setter so the switchboard can harmlessly reassign."""
+        pass
+
     @property
     def is_stacked_widget(self) -> bool:
         """Checks if the parent of the widget is a QStackedWidget."""
