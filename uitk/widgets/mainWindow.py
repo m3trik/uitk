@@ -277,6 +277,24 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         return self.sb.get_slots_instance(self)
 
     @property
+    def presets(self):
+        """Lazy-initialized PresetManager for saving/loading named presets.
+
+        Returns:
+            PresetManager: The preset manager bound to this window.
+        """
+        if not hasattr(self, "_presets"):
+            from uitk.widgets.mixins.preset_manager import PresetManager
+
+            self._presets = PresetManager(self, self.state)
+        return self._presets
+
+    @presets.setter
+    def presets(self, _):
+        """No-op setter so the switchboard can harmlessly reassign."""
+        pass
+
+    @property
     def is_stacked_widget(self) -> bool:
         """Checks if the parent of the widget is a QStackedWidget."""
         return isinstance(self.parent(), QtWidgets.QStackedWidget)
@@ -441,6 +459,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """Sync a widget's state value across related UIs and apply the value using StateManager."""
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(f"[sync_widget_values] Invalid widget: {widget}")
+            return
+
+        # Skip syncing when save is suppressed (e.g. during preset load)
+        if self.state._save_suppressed:
             return
 
         # Skip syncing None values to prevent clearing valid widget states

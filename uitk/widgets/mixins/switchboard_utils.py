@@ -612,21 +612,93 @@ class SwitchboardUtilsMixin:
 
     @staticmethod
     def input_dialog(
-        title: str = "Input", label: str = "Enter value:", text: str = ""
+        title: str = "Input",
+        label: str = "Enter value:",
+        text: str = "",
+        parent: QtWidgets.QWidget = None,
+        placeholder: str = "",
+        validate: callable = None,
+        error_text: str = "Invalid input.",
     ) -> str:
-        """Open an input dialog to get a string from the user.
+        """Show a modal text-input dialog and return the entered string.
+
+        Builds a small custom ``QDialog`` so it can be properly parented,
+        styled to match the host application, and extended with inline
+        validation feedback.  Falls back gracefully when no parent is
+        supplied.
 
         Parameters:
-            title (str): Title of the dialog.
-            label (str): Label text.
-            text (str): Default text.
+            title: Window title.
+            label: Descriptive label above the text field.
+            text: Pre-filled text (e.g. the current value for rename).
+            parent: Optional parent widget for correct modality and
+                positioning.  Accepts any ``QWidget``.
+            placeholder: Greyed-out hint shown when the field is empty.
+            validate: Optional ``callable(text) -> bool``.  While it
+                returns ``False`` the OK button stays disabled and a
+                brief *error_text* is shown beneath the field.
+            error_text: Message displayed when *validate* returns
+                ``False``.
 
         Returns:
-            str: The entered text, or None if cancelled.
+            str: The stripped text the user entered, or ``None`` if the
+            dialog was cancelled or closed.
         """
-        text, ok = QtWidgets.QInputDialog.getText(None, title, label, text=text)
-        if ok:
-            return text
+        dlg = QtWidgets.QDialog(parent)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumWidth(280)
+
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setContentsMargins(12, 12, 12, 8)
+        layout.setSpacing(6)
+
+        lbl = QtWidgets.QLabel(label)
+        layout.addWidget(lbl)
+
+        line = QtWidgets.QLineEdit(text)
+        if placeholder:
+            line.setPlaceholderText(placeholder)
+        line.selectAll()
+        layout.addWidget(line)
+
+        err_lbl = QtWidgets.QLabel("")
+        err_lbl.setStyleSheet("color: #e05555; font-size: 11px;")
+        err_lbl.setVisible(False)
+        layout.addWidget(err_lbl)
+
+        btn_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        layout.addWidget(btn_box)
+
+        ok_btn = btn_box.button(QtWidgets.QDialogButtonBox.Ok)
+
+        def _validate_text(t=None):
+            if t is None:
+                t = line.text()
+            if validate is not None:
+                valid = validate(t)
+                ok_btn.setEnabled(valid)
+                err_lbl.setText("" if valid else error_text)
+                err_lbl.setVisible(not valid)
+            else:
+                ok_btn.setEnabled(bool(t.strip()))
+
+        line.textChanged.connect(_validate_text)
+        _validate_text(text)
+
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+
+        # Inherit parent stylesheet so the dialog matches the host theme.
+        if parent is not None:
+            ss = parent.styleSheet()
+            if ss:
+                dlg.setStyleSheet(ss)
+
+        if dlg.exec_() == QtWidgets.QDialog.Accepted:
+            result = line.text().strip()
+            return result if result else None
         return None
 
     @staticmethod

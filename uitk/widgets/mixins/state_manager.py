@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import json
+from contextlib import contextmanager
 from typing import Any, Optional
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
@@ -31,6 +32,7 @@ class StateManager(ptk.LoggingMixin):
         self.logger.setLevel("WARNING")
         self.qsettings = qsettings
         self._defaults = {}
+        self._save_suppressed = False
 
     def _get_settings(self, widget: QtWidgets.QWidget) -> QtCore.QSettings:
         return self.qsettings
@@ -92,16 +94,39 @@ class StateManager(ptk.LoggingMixin):
                 f"Could not apply value '{value}' to widget {widget}: {e}"
             )
 
+    @contextmanager
+    def suppress_save(self):
+        """Context manager that temporarily suppresses QSettings writes.
+
+        Use this when applying values to widgets (e.g. loading a preset)
+        without overwriting the user's session state in QSettings.
+
+        Example::
+
+            with state_manager.suppress_save():
+                state_manager.apply(widget, preset_value)
+        """
+        self._save_suppressed = True
+        try:
+            yield
+        finally:
+            self._save_suppressed = False
+
     def save(self, widget: QtWidgets.QWidget, value: Any = None) -> None:
         """Save the current value of the widget to QSettings.
 
         If no value is provided, it attempts to retrieve it automatically
         using the widget's default signal mapping.
 
+        Writes are silently skipped when ``suppress_save`` is active.
+
         Parameters:
             widget (QtWidgets.QWidget): The widget whose state should be saved.
             value (Any, optional): The value to save. If None, it will be derived.
         """
+        if self._save_suppressed:
+            return
+
         if value is None:
             value = self._get_current_value(widget)
 

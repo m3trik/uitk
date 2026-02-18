@@ -11,6 +11,110 @@ from uitk.widgets.mixins.switchboard_slots import Signals
 from uitk.widgets.comboBox import ComboBox
 
 
+class _ActionsNamespace:
+    """Lightweight helper surfaced as ``WidgetComboBox.actions``.
+
+    Provides a concise API for managing persistent action buttons that
+    appear below a separator at the bottom of the dropdown.
+
+    Usage::
+
+        combo.actions.add("✏ Rename…", on_rename)
+        combo.actions.add("＋ Add…", on_add)
+        # Or batch via dict / list of tuples:
+        combo.actions.add({
+            "✏ Rename…": on_rename,
+            "＋ Add…": on_add,
+        })
+
+        combo.actions.remove("＋ Add…")
+        combo.actions.clear()
+    """
+
+    __slots__ = ("_combo", "_actions")
+
+    def __init__(self, combo: "WidgetComboBox") -> None:
+        self._combo = combo
+        self._actions: list[QtWidgets.QAction] = []
+
+    # --- Public API ---
+
+    def add(self, label_or_items, callback=None):
+        """Add one or more persistent actions.
+
+        Accepts flexible input forms:
+            add("Label", callback)              — single action
+            add({"Label": callback, ...})       — dict of label→callback
+            add([("Label", callback), ...])     — list of (label, callback) pairs
+
+        Parameters:
+            label_or_items: A string label, a dict mapping labels to callables,
+                or a sequence of (label, callable) pairs.
+            callback: Callable triggered when the action is clicked.
+                Required when *label_or_items* is a string; ignored otherwise.
+
+        Returns:
+            The created QAction (single form) or list of QActions (batch form).
+        """
+        if isinstance(label_or_items, str):
+            action = self._make_action(label_or_items, callback)
+            self._actions.append(action)
+            self._combo._rebuild_actions_section()
+            return action
+
+        pairs = (
+            label_or_items.items()
+            if isinstance(label_or_items, dict)
+            else label_or_items
+        )
+        created = []
+        for label, cb in pairs:
+            action = self._make_action(label, cb)
+            self._actions.append(action)
+            created.append(action)
+        self._combo._rebuild_actions_section()
+        return created
+
+    def remove(self, label: str) -> bool:
+        """Remove the first action matching *label*.
+
+        Returns True if an action was removed, False otherwise.
+        """
+        for i, action in enumerate(self._actions):
+            if action.text() == label:
+                self._actions.pop(i)
+                self._combo._rebuild_actions_section()
+                return True
+        return False
+
+    def clear(self) -> None:
+        """Remove all persistent actions and the separator."""
+        self._actions.clear()
+        self._combo._strip_actions_section()
+
+    # --- Dunder helpers ---
+
+    def __len__(self) -> int:
+        return len(self._actions)
+
+    def __bool__(self) -> bool:
+        return bool(self._actions)
+
+    def __iter__(self):
+        return iter(self._actions)
+
+    def __contains__(self, label: str) -> bool:
+        return any(a.text() == label for a in self._actions)
+
+    # --- Internals ---
+
+    def _make_action(self, label: str, callback) -> QtWidgets.QAction:
+        action = QtWidgets.QAction(label, self._combo)
+        if callback is not None:
+            action.triggered.connect(callback)
+        return action
+
+
 class WidgetComboBox(ComboBox):
     """ComboBox extended with widget embedding support.
 
@@ -50,6 +154,10 @@ class WidgetComboBox(ComboBox):
         # (row, container) pairs are flushed in showPopup().
         self._pending_index_widgets: list[tuple[int, QtWidgets.QWidget]] = []
 
+        # Persistent actions section (separator + action buttons at bottom of dropdown)
+        self._actions_ns = _ActionsNamespace(self)
+        self._action_row_count: int = 0
+
         # Create overflow indicator (initialized lazily on first popup)
         self._overflow_indicator = None
 
@@ -87,8 +195,11 @@ class WidgetComboBox(ComboBox):
         pending = list(self._pending_index_widgets)
         self._pending_index_widgets.clear()
         for row, container in pending:
-            index = self._model.index(row, 0)
-            view.setIndexWidget(index, container)
+            try:
+                index = self._model.index(row, 0)
+                view.setIndexWidget(index, container)
+            except RuntimeError:
+                pass  # C++ object already deleted
 
     # ------------------------------------------------------------------
     # Override properties to work with QStandardItemModel
@@ -100,6 +211,20 @@ class WidgetComboBox(ComboBox):
             item = self._model.item(index)
             if item:
                 item.setText(text)
+
+    def _setText(self, text, index=0):
+        """Override to set text via the model, bypassing the
+        ``ComboBox.setItemText -> setRichText -> _setText`` recursion.
+
+        The base ``RichText._setText`` resolves ``self.__class__.__base__``
+        to ``ComboBox``, whose ``setItemText`` calls ``setRichText`` which
+        calls ``_setText`` again — infinite loop.  Going through the model
+        item directly breaks the cycle.
+        """
+        if 0 <= index < self._model.rowCount():
+            item = self._model.item(index)
+            if item:
+                item.setText(str(text) if text is not None else "")
 
     # ------------------------------------------------------------------
     # Widget-specific methods
@@ -245,6 +370,95 @@ class WidgetComboBox(ComboBox):
         if widget and widget.focusPolicy() != QtCore.Qt.NoFocus:
             widget.setFocus(QtCore.Qt.OtherFocusReason)
 
+    # ------------------------------------------------------------------
+    # Persistent actions section
+    # ------------------------------------------------------------------
+    @property
+    def actions(self) -> _ActionsNamespace:
+        """Namespace for managing persistent action buttons at the bottom of
+        the dropdown.
+
+        Usage::
+
+            combo.actions.add("✏ Rename…", on_rename)
+            combo.actions.add("＋ Add…", on_add)
+            combo.actions.clear()
+        """
+        return self._actions_ns
+
+    def _strip_actions_section(self) -> None:
+        """Remove existing action rows (separator + buttons) from the bottom."""
+        if self._action_row_count == 0:
+            return
+
+        total = self._model.rowCount()
+        for row in range(total - 1, total - self._action_row_count - 1, -1):
+            if row < 0:
+                break
+            container = self._row_containers.pop(row, None)
+            self._widget_items.pop(row, None)
+            if container is not None:
+                container.deleteLater()
+            self._model.removeRow(row)
+
+        remaining = self._model.rowCount()
+        self._pending_index_widgets = [
+            (r, c) for r, c in self._pending_index_widgets if r < remaining
+        ]
+        self._action_row_count = 0
+
+    def _rebuild_actions_section(self) -> None:
+        """Rebuild the separator + action buttons at the bottom.
+
+        All action buttons are grouped inside a single container widget
+        with zero margins and left alignment, added as one model row
+        beneath the separator.
+        """
+        self._strip_actions_section()
+        if not self._actions_ns._actions:
+            return
+
+        from uitk.widgets.separator import Separator
+
+        sep = Separator()
+        self._add_widget_item(sep, "", None, ascending=False)
+
+        # Build a single container holding all action buttons vertically.
+        container = QtWidgets.QWidget(self.view())
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        max_btn_width = 0
+        for action in self._actions_ns._actions:
+            btn = QtWidgets.QPushButton(container)
+            btn.setText(action.text())
+            if action.icon() and not action.icon().isNull():
+                btn.setIcon(action.icon())
+            btn.setDefault(False)
+            btn.setAutoDefault(False)
+            btn.setProperty("class", "combobox-action")
+            btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.clicked.connect(action.trigger)
+            btn.clicked.connect(self.hidePopup)
+            btn.setStyleSheet("text-align: left; padding-left: 4px;")
+            layout.addWidget(btn)
+            # Track widest button via sizeHint (reliable for QPushButton).
+            w = btn.sizeHint().width()
+            if w > max_btn_width:
+                max_btn_width = w
+
+        # Force the container to adopt a valid size before it's embedded.
+        container.setMinimumWidth(max_btn_width)
+        container.adjustSize()
+
+        row = self._add_widget_item(container, "", None, ascending=False)
+        item = self._model.item(row)
+        if item:
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
+
+        self._action_row_count = 2  # separator + 1 container row
+
     def _create_overflow_indicator(self) -> QtWidgets.QLabel:
         """Create a minimal triangle arrow indicator for overflow."""
         view = self.view()
@@ -294,9 +508,40 @@ class WidgetComboBox(ComboBox):
                 self._overflow_indicator.hide()
 
     def showPopup(self) -> None:
-        """Override to update overflow indicator when popup is shown."""
+        """Override to expand popup to widest widget and update overflow."""
         self._flush_pending_index_widgets()
+
+        # Let the base chain run first (ComboBox.showPopup sets
+        # view.minimumWidth from sizeHintForColumn, then QComboBox.showPopup
+        # creates/positions the popup frame).
         super().showPopup()
+
+        # Now compute the real minimum width from embedded widgets and
+        # override; the parent class only considers text-based items.
+        view = self.view()
+        min_w = max(view.sizeHintForColumn(0), self.width())
+        for container in self._row_containers.values():
+            if container is not None:
+                container.adjustSize()
+                for w in (
+                    container.sizeHint().width(),
+                    container.minimumWidth(),
+                ):
+                    if w > min_w:
+                        min_w = w
+
+        if min_w > view.minimumWidth():
+            view.setMinimumWidth(min_w + 4)  # Add buffer for borders
+            # The popup frame (a QFrame parenting the view) was already
+            # sized by QComboBox.showPopup. Resize it to honour the new
+            # minimum width.
+            popup = view.window()
+            if popup is not self.window():
+                geo = popup.geometry()
+                if geo.width() < (min_w + 4):
+                    geo.setWidth(min_w + 4)
+                    popup.setGeometry(geo)
+
         # Use a longer delay to ensure the view is fully laid out
         QtCore.QTimer.singleShot(50, self._update_overflow_indicator)
         # Also update again after scrollbar adjustments
@@ -376,6 +621,9 @@ class WidgetComboBox(ComboBox):
 
         if not _recursion and clear:
             self.clear()
+
+        if not _recursion:
+            self._strip_actions_section()
 
         if header:
             self.setHeaderText(header)
@@ -543,6 +791,8 @@ class WidgetComboBox(ComboBox):
                 final_index = -1
             self.currentIndexChanged.emit(final_index)
 
+            self._rebuild_actions_section()
+
         # Return single item or list matching ComboBox behavior
         if len(added_items) == 1:
             return added_items[0]
@@ -665,6 +915,8 @@ class WidgetComboBox(ComboBox):
                 container.deleteLater()
         self._row_containers.clear()
         self._widget_items.clear()
+        self._pending_index_widgets.clear()
+        self._action_row_count = 0
         super().clear()
 
 

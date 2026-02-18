@@ -148,6 +148,7 @@ class ActionButtonManager:
         """
         self.menu = menu_widget
         self._buttons: Dict[str, QtWidgets.QPushButton] = {}
+        self._widgets: Dict[str, QtWidgets.QWidget] = {}
         self._container: Optional[QtWidgets.QWidget] = None
         self._layout: Optional[QtWidgets.QVBoxLayout] = None
         self._separator: Optional[Separator] = None
@@ -212,6 +213,43 @@ class ActionButtonManager:
             self._layout.addWidget(button)
         return button
 
+    def add_widget(
+        self, widget_id: str, widget: QtWidgets.QWidget, index: int = -1
+    ) -> QtWidgets.QWidget:
+        """Add an arbitrary widget to the action container.
+
+        Unlike ``add_button``, this accepts any pre-configured QWidget
+        (e.g. a WidgetComboBox) and places it into the container layout.
+        """
+        _ = self.container  # Ensure container exists
+        self._widgets[widget_id] = widget
+
+        final_index = index
+        if final_index >= 0 and self._separator:
+            final_index += 1
+
+        if final_index >= 0:
+            self._layout.insertWidget(final_index, widget)
+        else:
+            self._layout.addWidget(widget)
+        return widget
+
+    def get_widget(self, widget_id: str) -> Optional[QtWidgets.QWidget]:
+        """Get a managed widget by ID."""
+        return self._widgets.get(widget_id)
+
+    def remove_widget(self, widget_id: str) -> bool:
+        """Remove a managed widget entirely."""
+        widget = self._widgets.pop(widget_id, None)
+        if widget:
+            if self._layout:
+                self._layout.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+            self._update_container_visibility()
+            return True
+        return False
+
     def get_button(self, button_id: str) -> Optional[QtWidgets.QPushButton]:
         """Get an action button by ID."""
         return self._buttons.get(button_id)
@@ -254,15 +292,20 @@ class ActionButtonManager:
             return True
         return False
 
-    def has_visible_buttons(self) -> bool:
-        """Check if any buttons are currently visible."""
-        return any(btn.isVisible() for btn in self._buttons.values())
+    def has_visible_items(self) -> bool:
+        """Check if any buttons or widgets are currently visible."""
+        return any(btn.isVisible() for btn in self._buttons.values()) or any(
+            w.isVisible() for w in self._widgets.values()
+        )
+
+    # Keep old name as alias for backwards compatibility
+    has_visible_buttons = has_visible_items
 
     def _update_container_visibility(self):
-        """Hide container and separator when no buttons are visible."""
+        """Hide container and separator when no items are visible."""
         if not self._container:
             return
-        has_visible = self.has_visible_buttons()
+        has_visible = self.has_visible_items()
         if has_visible:
             if self._separator:
                 self._separator.show()
@@ -576,6 +619,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
         self._add_defaults_button = add_defaults_button
+        self._add_presets = False
         self.add_header = add_header
         self.add_footer = add_footer
         self.add_apply_button = add_apply_button
@@ -741,6 +785,33 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self._event_filters_installed or self._parent_signal_source
             ):
                 self._ensure_trigger_hook()
+
+    @property
+    def presets(self):
+        """Lazy-initialized PresetManager namespace for saving/loading named presets.
+
+        The simplest way to enable presets is via :attr:`add_presets`::
+
+            widget.menu.add_presets = True
+            widget.menu.presets.preset_dir = "~/.myapp/presets"  # optional
+
+        For advanced use, call ``setup()`` directly::
+
+            widget.menu.presets.setup(preset_dir="~/.myapp/presets")
+
+        Returns:
+            PresetManager: The preset manager bound to this menu.
+        """
+        if not hasattr(self, "_preset_manager"):
+            from uitk.widgets.mixins.preset_manager import PresetManager
+
+            self._preset_manager = PresetManager(parent=self)
+        return self._preset_manager
+
+    @presets.setter
+    def presets(self, _):
+        """No-op setter so the switchboard can harmlessly reassign."""
+        pass
 
     @property
     def hide_on_leave(self) -> bool:
@@ -1561,6 +1632,71 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if not value:
             self._button_manager.remove_button("defaults")
 
+    # ------------------------------------------------------------------
+    # Presets
+    # ------------------------------------------------------------------
+
+    @property
+    def add_presets(self) -> bool:
+        """Whether the presets combo is enabled.
+
+        When ``True``, a ``WidgetComboBox`` preset selector is placed
+        in the *Menu Actions* container at the bottom of the menu
+        (alongside the *Restore Defaults* and *Apply* buttons).  The
+        actual setup is deferred to the first ``showEvent``.
+
+        Set the preset directory separately::
+
+            widget.menu.add_presets = True
+            widget.menu.presets.preset_dir = "~/.myapp/presets"
+
+        Setting to ``False`` at runtime removes the combo and hides
+        the action container if no other items remain.
+        """
+        return self._add_presets
+
+    @add_presets.setter
+    def add_presets(self, value: bool) -> None:
+        self._add_presets = value
+        if not value:
+            self._button_manager.remove_widget("presets")
+
+    def _setup_presets(self):
+        """Create the preset combo inside the menu-actions container.
+
+        Called lazily from ``showEvent`` the first time the menu is
+        shown while :attr:`add_presets` is ``True``.
+        """
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        # Ensure layout exists (may not if add_presets is set before add())
+        self._ensure_layout_created()
+
+        # Create combo directly and place it into the action container
+        combo = WidgetComboBox()
+        combo.setObjectName("cmb_presets")
+        combo.setToolTip("Load a saved configuration preset.")
+        combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+
+        self._button_manager.add_widget("presets", combo)
+
+        # Ensure the container is parented into the central layout
+        if not self._button_manager.container.parent():
+            self.centralWidgetLayout.addWidget(self._button_manager.container)
+
+        # Wire combo with save/rename/delete/open-folder actions
+        self.presets.wire_combo(combo)
+
+        # Make the combo accessible as self.cmb_presets (mirrors self.add() behaviour)
+        setattr(self, "cmb_presets", combo)
+
+        # Show the container
+        self._button_manager.container.show()
+        if self._button_manager._separator:
+            self._button_manager._separator.show()
+
     def _update_defaults_button_visibility(self):
         """Update defaults button visibility based on menu state."""
         if not self.add_defaults_button:
@@ -2126,6 +2262,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # Reset to False when cursor is outside - menu must wait for cursor to enter
             self._mouse_has_entered = False
             self.logger.debug("showEvent: Cursor outside menu, waiting for entry")
+
+        # Setup presets combo on first show if requested and not already created
+        if self.add_presets and not self._button_manager.get_widget("presets"):
+            self._setup_presets()
 
         # Setup apply button on first show if requested and not already created
         # Deferred to showEvent because parent's signal connections may not exist during add()
