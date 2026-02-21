@@ -66,6 +66,10 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._status_label = QtWidgets.QLabel()
         self._status_label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self._status_label.setIndent(8)
+        # Prevent the label's text from dictating the widget's minimum width
+        self._status_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred
+        )
         self._stacked_widget.addWidget(self._status_label)
 
         # Progress bar (page 1)
@@ -86,6 +90,12 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         if add_size_grip:
             self._setup_size_grip()
+
+        # Debounce timer: re-evaluate text only after resize settles
+        self._resize_timer = QtCore.QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(150)
+        self._resize_timer.timeout.connect(self._on_resize_settled)
 
         self.set_attributes(**kwargs)
 
@@ -165,8 +175,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             text (str): The new status text.
         """
         self._status_text = text or ""
-        resolved_text = self._status_text or self._default_status_text
-        self._status_label.setText(resolved_text)
+        self._elide_status_text()
 
         # Switch to status view if not showing progress
         if self._stacked_widget.currentIndex() != 1:
@@ -176,7 +185,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """Set fallback text shown when no explicit status is provided."""
         self._default_status_text = text or ""
         if not self._status_text:
-            self._status_label.setText(self._default_status_text)
+            self._elide_status_text()
             # Ensure we're showing the status view
             if self._stacked_widget.currentIndex() != 1:
                 self._stacked_widget.setCurrentIndex(0)
@@ -268,17 +277,51 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._progress_bar.reset()
 
     def resizeEvent(self, event):
-        """Handle resize events to update font size."""
-        self._update_font_size()
+        """Debounce resize: restart timer on each event so we only
+        recalculate font + elision once the user finishes resizing."""
+        self._resize_timer.start()
         super().resizeEvent(event)
+
+    def showEvent(self, event):
+        """Ensure text is properly sized and elided on first show."""
+        super().showEvent(event)
+        self._update_font_size()
+        self._elide_status_text()
+
+    def _on_resize_settled(self):
+        """Called once after resize events stop (debounced)."""
+        self._update_font_size()
+        self._elide_status_text()
 
     def _update_font_size(self):
         """Calculate font size for the label relative to widget's height."""
-        label_font_size = self.height() * 0.4
+        label_font_size = self.height() * 0.35
         font = self._status_label.font()
         font.setPointSizeF(label_font_size)
         font.setBold(False)
         self._status_label.setFont(font)
+
+    def _elide_status_text(self):
+        """Elide the displayed status text to fit available label width."""
+        text = self._status_text or self._default_status_text
+        if not text:
+            self._status_label.setText("")
+            return
+
+        fm = QtGui.QFontMetrics(self._status_label.font())
+        indent = self._status_label.indent()
+        margin = (indent if indent > 0 else 8) * 2
+        if self._size_grip:
+            margin += self._size_grip.width()
+        available = self._stacked_widget.width() - margin
+
+        if available <= 0:
+            # Widget not laid out yet; show full text (will be elided on show)
+            self._status_label.setText(text)
+            return
+
+        elided = fm.elidedText(text, QtCore.Qt.ElideMiddle, available)
+        self._status_label.setText(elided)
 
     def _apply_transparent_style(self):
         """Style stacked widget and children to blend seamlessly with footer."""

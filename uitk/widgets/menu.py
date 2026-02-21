@@ -65,7 +65,7 @@ class MenuConfig:
     add_header: bool = True
     add_footer: bool = True
     add_apply_button: bool = False
-    add_defaults_button: bool = True
+    add_defaults_button: bool = False
     hide_on_leave: bool = False
     match_parent_width: bool = True
     ensure_on_screen: bool = True
@@ -509,7 +509,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         add_header: bool = True,
         add_footer: bool = True,
         add_apply_button: bool = False,
-        add_defaults_button: bool = True,
+        add_defaults_button: bool = False,
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
         ensure_on_screen: bool = True,
@@ -540,8 +540,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             add_footer (bool, optional): Whether to add a footer with size grip. Defaults to True.
             add_apply_button (bool, optional): Whether to add an apply button. Defaults to False.
                 The apply button will emit the parent's 'clicked' signal if available.
-            add_defaults_button (bool, optional): Whether to add a 'Restore Defaults' button. Defaults to True.
-                The button resets all menu widgets to their initial values.
+            add_defaults_button (bool, optional): Whether to add a 'Restore Defaults' button. Defaults to False.
+                The button is only shown when the menu contains stateful option widgets
+                (checkboxes, spinboxes, combos, etc.).
             hide_on_leave (bool, optional): Whether to automatically hide the menu when the mouse leaves. Defaults to False.
             match_parent_width (bool, optional): Whether to match the parent widget's width when using positioned menus
                 (e.g., position="bottom"). Defaults to True. Only applies when position is relative to parent (not "cursorPos").
@@ -703,6 +704,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             add_header=config.add_header,
             add_footer=config.add_footer,
             add_apply_button=config.add_apply_button,
+            add_defaults_button=config.add_defaults_button,
             hide_on_leave=config.hide_on_leave,
             match_parent_width=config.match_parent_width,
             ensure_on_screen=config.ensure_on_screen,
@@ -1365,6 +1367,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
             # Add grid layout to the central widget layout
             self.centralWidgetLayout.addLayout(self.gridLayout)
+
+            # Push items to the top so extra vertical space stays at the bottom
+            self.centralWidgetLayout.addStretch(1)
 
             # Add central widget to frame layout
             frame_layout.addWidget(self._central_widget)

@@ -254,6 +254,34 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         return list(cls.themes.get(theme, {}).keys())
 
     @classmethod
+    def export_overrides(cls) -> dict:
+        """Export the current global overrides as a plain dict.
+
+        Returns a deep copy of ``{theme_name: {var: value, ...}, ...}``
+        suitable for JSON serialization.
+        """
+        cls._ensure_settings_loaded()
+        import copy
+
+        return copy.deepcopy(cls._global_overrides)
+
+    @classmethod
+    def import_overrides(cls, data: dict) -> None:
+        """Bulk-replace global overrides from a dict and reload once.
+
+        Args:
+            data: A ``{theme_name: {var: value, ...}, ...}`` dict.
+                  Keys not present in *data* are cleared.
+        """
+        cls._ensure_settings_loaded()
+        cls._global_overrides.clear()
+        for theme_name, overrides in data.items():
+            if isinstance(overrides, dict):
+                cls._global_overrides[theme_name] = dict(overrides)
+        cls._settings.setValue("global", cls._global_overrides)
+        cls.reload()
+
+    @classmethod
     def reset_overrides(cls, widget: QtWidgets.QWidget = None):
         """Clear overrides.
 

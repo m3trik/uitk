@@ -315,6 +315,7 @@ class OptionBoxManager(ptk.LoggingMixin):
                     "trigger_button": "none",  # OptionBox button handles triggering
                     "match_parent_width": False,  # Don't constrain width to prevent cropping
                     "add_apply_button": True,  # Enable apply button for option box menus
+                    "add_defaults_button": True,  # Show restore defaults for option box menus
                     "hide_on_leave": True,  # Auto-hide when mouse leaves
                 }
                 default_kwargs.update(menu_kwargs)
