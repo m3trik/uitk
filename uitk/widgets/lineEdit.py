@@ -1,6 +1,8 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtCore, QtWidgets
+
+# From this package:
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin

@@ -862,7 +862,8 @@ class MarkingMenu(
     def mousePressEvent(self, event) -> None:
         """Handle mouse press to switch menus based on full input state."""
         self.logger.debug(f"mousePressEvent: {event.buttons()} {event.modifiers()}")
-        if self.sb.current_ui.has_tags(["startmenu", "submenu"]):
+        current_ui = self.sb.current_ui
+        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             lookup = self._build_lookup_key(
                 buttons=event.buttons(), modifiers=event.modifiers()
             )
@@ -892,7 +893,8 @@ class MarkingMenu(
 
     def mouseDoubleClickEvent(self, event) -> None:
         """ """
-        if self.sb.current_ui.has_tags(["startmenu", "submenu"]):
+        current_ui = self.sb.current_ui
+        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             if event.button() == QtCore.Qt.LeftButton:
                 if event.modifiers() == QtCore.Qt.ControlModifier:
                     self.left_mouse_double_click_ctrl.emit()
