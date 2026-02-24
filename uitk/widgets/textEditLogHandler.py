@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import time
 from qtpy import QtWidgets, QtCore, QtGui
 import logging
 from pythontk.core_utils.logging_mixin import LoggerExt
@@ -34,6 +35,7 @@ class TextEditLogHandler(logging.Handler):
         try:
             if getattr(record, "raw", False):
                 msg = record.getMessage()
+                msg = f'<span style="font-family:monospace; white-space:pre-wrap;">{msg}</span>'
             else:
                 msg = self.format(record)
                 color = self.get_color(record.levelname)
@@ -56,8 +58,15 @@ class TextEditLogHandler(logging.Handler):
         try:
             if hasattr(self.widget, "append"):
                 self.widget.append(formatted_msg)
-                self.widget.repaint()  # Force immediate update
-                QtWidgets.QApplication.processEvents()  # Process UI events
+                # Auto-scroll to the latest entry
+                scrollbar = self.widget.verticalScrollBar()
+                if scrollbar:
+                    scrollbar.setValue(scrollbar.maximum())
+                now = time.monotonic()
+                if now - getattr(self, "_last_repaint", 0) > 0.05:
+                    self._last_repaint = now
+                    self.widget.repaint()
+                    QtWidgets.QApplication.processEvents()
             else:
                 print(f"Logging error: widget does not support append.")
         except Exception as e:

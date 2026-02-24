@@ -34,6 +34,10 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
 
         self.toggle_expand(self.isChecked())
 
+    def _collapsed_height(self):
+        """Return the height to use when collapsed (title bar only)."""
+        return self.fontMetrics().height()
+
     def toggle_expand(self, checked):
         """Toggle the expanded/collapsed state"""
         # Save state
@@ -41,46 +45,46 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             key = f"CollapsableGroup/{self.objectName()}/checked"
             self.settings.setValue(key, checked)
 
-        # Store the current window size before toggling
+        # Capture the actual heights BEFORE making changes
         window = self.window()
-        old_size = window.size()
+        old_window_height = window.height() if window else 0
+        old_group_height = self.height()
 
-        # Simply show/hide all child widgets
+        # Show/hide all child widgets
         self._set_content_visible(checked)
 
         if checked:
             self.setMaximumHeight(16777215)  # Restore max height
+            # Expanded target: query the base QGroupBox sizeHint now that
+            # content is visible and maxHeight is restored.
+            new_group_height = super(CollapsableGroup, self).sizeHint().height()
         else:
-            # Calculate collapsed height
-            title_height = self.fontMetrics().height()
-            # Add some padding for the frame/title (tight fit)
-            collapsed_height = title_height
-            self.setMaximumHeight(collapsed_height)
+            collapsed = self._collapsed_height()
+            self.setMaximumHeight(collapsed)
+            new_group_height = collapsed
 
-        # Let Qt handle the layout automatically
+        # Let Qt handle the layout
         self.updateGeometry()
-
-        # Notify parent that our size changed
         if self.parent():
             self.parent().updateGeometry()
 
-        # Adjust window size based on the size change
-        QtCore.QTimer.singleShot(0, lambda: self._adjust_window_size(old_size))
+        # Defer resize so the layout minimum sizes fully settle
+        delta = new_group_height - old_group_height
+        if window and delta != 0:
+            QtCore.QTimer.singleShot(
+                0,
+                lambda wh=old_window_height, d=delta: (
+                    self._apply_window_resize(wh, d)
+                ),
+            )
 
-    def _adjust_window_size(self, old_size):
-        """Adjust the window size after collapse/expand"""
+    def _apply_window_resize(self, old_window_height, delta):
+        """Apply the computed delta to the window after the layout settles."""
         window = self.window()
-
-        # Get the new size hint
-        new_hint = window.sizeHint()
-
-        # Calculate the height difference
-        height_diff = new_hint.height() - old_size.height()
-
-        # Only resize if there's a significant change
-        if abs(height_diff) > 5:  # Threshold to avoid tiny adjustments
-            new_height = max(old_size.height() + height_diff, window.minimumHeight())
-            window.resize(old_size.width(), new_height)
+        if not window:
+            return
+        new_height = max(old_window_height + delta, window.minimumHeight())
+        window.resize(window.width(), new_height)
 
     def _set_content_visible(self, visible):
         """Show or hide all child widgets"""
@@ -94,15 +98,10 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
                 item.widget().setVisible(visible)
 
     def setLayout(self, layout):
-        """Override to ensure proper margins for title"""
+        """Override setLayout. The stylesheet handles title positioning
+        via ``margin`` and ``subcontrol-origin``, so we do **not** force
+        extra top margin here."""
         super().setLayout(layout)
-        if layout:
-            # Ensure we have enough top margin for the title
-            margins = layout.contentsMargins()
-            if margins.top() < 15:
-                layout.setContentsMargins(
-                    margins.left(), 20, margins.right(), margins.bottom()
-                )
 
     def addWidget(self, widget):
         """Add a widget to the collapsible content area"""
@@ -124,15 +123,10 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         self.layout().addLayout(layout)
 
     def sizeHint(self):
-        """Return appropriate size hint based on current state"""
+        """Return appropriate size hint based on current state."""
         hint = super().sizeHint()
-
-        # If collapsed, return minimal height
         if not self.isChecked():
-            title_height = self.fontMetrics().height()
-            collapsed_height = title_height + 5  # Add padding for frame
-            return QtCore.QSize(hint.width(), collapsed_height)
-
+            return QtCore.QSize(hint.width(), self._collapsed_height())
         return hint
 
 

@@ -2,7 +2,7 @@
 # coding=utf-8
 import re
 import traceback
-from typing import List, Union
+from typing import List, Optional, Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
@@ -609,6 +609,43 @@ class SwitchboardUtilsMixin:
         )
 
         return directory_path
+
+    @staticmethod
+    def save_file_dialog(
+        file_types: Union[str, List[str]] = ["*.*"],
+        title: str = "Save file",
+        start_dir: str = "/home",
+        filter_description: str = "All Files",
+    ) -> Optional[str]:
+        """Open a save-file dialog to choose a destination path.
+
+        Parameters:
+            file_types: Extensions to include (e.g. ``["*.wav"]``).
+                Default is ``["*.*"]``.
+            title: Dialog window title.
+            start_dir: Initial directory / suggested file path.
+            filter_description: Label for the file-type filter.
+
+        Returns:
+            The chosen file path, or *None* if the dialog was cancelled.
+
+        Example:
+            path = save_file_dialog(
+                file_types=["*.wav"],
+                title="Export audio",
+                filter_description="WAV Files",
+            )
+        """
+        if isinstance(file_types, str):
+            file_types = [file_types]
+
+        file_types_string = f"{filter_description} ({' '.join(file_types)})"
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            None, title, start_dir, file_types_string
+        )
+
+        return path or None
 
     @staticmethod
     def input_dialog(
