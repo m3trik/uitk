@@ -613,8 +613,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.sb.center_widget(self, pos)
 
         if self.ensure_on_screen:
-            # Use a timer to ensure the window geometry is updated before checking
-            QtCore.QTimer.singleShot(0, self._ensure_on_screen)
+            self._ensure_on_screen()
 
         if app_exec:
             exit_code = self.sb.app.exec_()
@@ -626,6 +625,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if not self.is_initialized:
             if self.restore_window_size:
                 self.restore_window_geometry()
+
+            if self.ensure_on_screen:
+                self._ensure_on_screen()
 
             self.logger.debug(f"[showEvent]: Registering children on first show.")
             try:

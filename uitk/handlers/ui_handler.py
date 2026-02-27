@@ -198,6 +198,12 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
             else:
                 ui.move(target_global)
 
+            # Clamp to screen after final positioning
+            if getattr(ui, "ensure_on_screen", False) and hasattr(
+                ui, "_ensure_on_screen"
+            ):
+                ui._ensure_on_screen()
+
     def setup_lifecycle(self, ui, hide_signal=None):
         """Connect a window to a hide signal, respecting its pin state.
 

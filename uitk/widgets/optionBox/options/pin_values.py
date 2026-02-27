@@ -669,49 +669,6 @@ class PinValuesOption(ButtonOption):
             IconManager.set_icon(self._widget, "radio_empty", size=(17, 17))
             self._widget.setToolTip("Pin values")
 
-    def _get_widget_value(self):
-        """Get the current value from the wrapped widget."""
-        if not self.wrapped_widget:
-            return None
-
-        widget = self.wrapped_widget
-
-        # Try different value getters
-        if hasattr(widget, "text"):
-            return widget.text()
-        elif hasattr(widget, "value"):
-            return widget.value()
-        elif hasattr(widget, "currentText"):
-            return widget.currentText()
-        elif hasattr(widget, "toPlainText"):
-            return widget.toPlainText()
-        elif hasattr(widget, "isChecked"):
-            return widget.isChecked()
-
-        return None
-
-    def _set_widget_value(self, value):
-        """Set the value on the wrapped widget."""
-        if not self.wrapped_widget or value is None:
-            return
-
-        widget = self.wrapped_widget
-
-        # Try different value setters
-        try:
-            if hasattr(widget, "setText"):
-                widget.setText(str(value))
-            elif hasattr(widget, "setValue"):
-                widget.setValue(value)
-            elif hasattr(widget, "setCurrentText"):
-                widget.setCurrentText(str(value))
-            elif hasattr(widget, "setPlainText"):
-                widget.setPlainText(str(value))
-            elif hasattr(widget, "setChecked"):
-                widget.setChecked(bool(value))
-        except Exception as e:
-            print(f"PinValuesOption: Error setting value: {e}")
-
     @property
     def pinned_values(self):
         """Get the list of pinned values (raw values, not entries)."""

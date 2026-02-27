@@ -622,9 +622,28 @@ class SwitchboardShortcutMixin:
             f"[register_slots_shortcuts] Scanning {slots_cls_name} for shortcuts..."
         )
 
-        for name, method in inspect.getmembers(
-            slots_instance, predicate=inspect.ismethod
-        ):
+        # Collect property names from the MRO so we can skip them.
+        # inspect.getmembers calls getattr() on every attribute, which
+        # triggers @property getters.  If a getter has side-effects (e.g.
+        # lazy init that validates external state) it can raise and crash
+        # the entire registration.  Skipping properties is safe here
+        # because shortcut metadata lives on regular methods, never on
+        # properties.
+        _property_names: set = set()
+        for _cls in type(slots_instance).__mro__:
+            for _k, _v in vars(_cls).items():
+                if isinstance(_v, property):
+                    _property_names.add(_k)
+
+        for name in sorted(dir(slots_instance)):
+            if name in _property_names:
+                continue
+            try:
+                method = getattr(slots_instance, name)
+            except Exception:
+                continue
+            if not inspect.ismethod(method):
+                continue
             # 1. Check for metadata from decorator
             meta = getattr(method, "_shortcut_meta", {})
 

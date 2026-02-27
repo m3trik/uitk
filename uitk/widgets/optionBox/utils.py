@@ -22,9 +22,10 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._menu = None
         self._option_order = [
             "clear",
+            "recent",
             "pin",
             "action",
-        ]  # Default order: clear button first, then pin, then action button
+        ]  # Default order: clear, recent, pin, then action button
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -56,7 +57,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         if not isinstance(order, (list, tuple)):
             raise ValueError("Option order must be a list or tuple")
 
-        valid_options = {"clear", "pin", "action"}
+        valid_options = {"clear", "recent", "pin", "action"}
         if not all(opt in valid_options for opt in order):
             raise ValueError(
                 f"Invalid options in order. Valid options: {valid_options}"
@@ -91,6 +92,28 @@ class OptionBoxManager(ptk.LoggingMixin):
             single_click_restore=single_click_restore,
         )
         self.add_option(pin_option)
+        return self
+
+    def recent(
+        self,
+        settings_key: Optional[str] = None,
+        *,
+        max_recent: int = 10,
+    ):
+        """Enable recent values option (fluent interface).
+
+        Args:
+            settings_key: Key for persistent settings.
+            max_recent: Maximum number of recent values to keep.
+        """
+        from ..optionBox.options.recent_values import RecentValuesOption
+
+        recent_option = RecentValuesOption(
+            wrapped_widget=self._widget,
+            settings_key=settings_key,
+            max_recent=max_recent,
+        )
+        self.add_option(recent_option)
         return self
 
     def set_action(

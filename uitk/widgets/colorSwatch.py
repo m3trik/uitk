@@ -140,14 +140,15 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
             f"}}"
         )
 
-    def mouseReleaseEvent(self, event):
-        """Open a color dialog on single click to select a new color."""
-        super().mouseReleaseEvent(event)
-
-        if event.button() != QtCore.Qt.LeftButton or not self.rect().contains(
-            event.pos()
-        ):
+    def mouseDoubleClickEvent(self, event):
+        """Open a color dialog on double click to select a new color."""
+        if event.button() != QtCore.Qt.LeftButton:
+            super().mouseDoubleClickEvent(event)
             return
+
+        # Don't call super — it internally calls mousePressEvent which
+        # would toggle the checked state a second time on double-click.
+        event.accept()
 
         colorDialog = QtWidgets.QColorDialog(self._color, self)
         colorDialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
