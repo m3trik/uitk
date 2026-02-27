@@ -67,7 +67,7 @@ class OptionBox:
     ):
         self._show_clear_button = show_clear
         self._options = []
-        self._option_order = option_order or ["clear", "pin", "action"]
+        self._option_order = option_order or ["clear", "recent", "pin", "action"]
         self.wrapped_widget = None
         self.container = None
 
@@ -131,25 +131,28 @@ class OptionBox:
         from .options.action import MenuOption, ActionOption
         from .options.clear import ClearOption
         from .options.pin_values import PinValuesOption
+        from .options.recent_values import RecentValuesOption
+
+        _type_to_key = {
+            ClearOption: "clear",
+            RecentValuesOption: "recent",
+            PinValuesOption: "pin",
+        }
+        _fallback = len(self._option_order)
 
         def get_priority(option):
-            if isinstance(option, ClearOption):
-                try:
-                    return self._option_order.index("clear")
-                except ValueError:
-                    return 0
-            elif isinstance(option, PinValuesOption):
-                try:
-                    return self._option_order.index("pin")
-                except ValueError:
-                    return 1
-            elif isinstance(option, (MenuOption, ActionOption)):
+            for cls, key in _type_to_key.items():
+                if isinstance(option, cls):
+                    try:
+                        return self._option_order.index(key)
+                    except ValueError:
+                        return _fallback
+            if isinstance(option, (MenuOption, ActionOption)):
                 try:
                     return self._option_order.index("action")
                 except ValueError:
-                    return 2
-            else:
-                return 999
+                    return _fallback
+            return _fallback + 1
 
         return sorted(self._options, key=get_priority)
 

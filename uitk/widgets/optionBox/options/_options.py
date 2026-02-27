@@ -196,3 +196,43 @@ class ButtonOption(BaseOption):
         """Set the checked state of the button."""
         if self._widget and self._checkable:
             self._widget.setChecked(checked)
+
+    # ------------------------------------------------------------------
+    # Widget value helpers (shared by PinValuesOption, RecentValuesOption)
+    # ------------------------------------------------------------------
+
+    def _get_widget_value(self):
+        """Read the current value from the wrapped widget."""
+        widget = self.wrapped_widget
+        if not widget:
+            return None
+        if hasattr(widget, "text"):
+            return widget.text()
+        if hasattr(widget, "value"):
+            return widget.value()
+        if hasattr(widget, "currentText"):
+            return widget.currentText()
+        if hasattr(widget, "toPlainText"):
+            return widget.toPlainText()
+        if hasattr(widget, "isChecked"):
+            return widget.isChecked()
+        return None
+
+    def _set_widget_value(self, value):
+        """Write *value* to the wrapped widget."""
+        widget = self.wrapped_widget
+        if not widget or value is None:
+            return
+        try:
+            if hasattr(widget, "setText"):
+                widget.setText(str(value))
+            elif hasattr(widget, "setValue"):
+                widget.setValue(value)
+            elif hasattr(widget, "setCurrentText"):
+                widget.setCurrentText(str(value))
+            elif hasattr(widget, "setPlainText"):
+                widget.setPlainText(str(value))
+            elif hasattr(widget, "setChecked"):
+                widget.setChecked(bool(value))
+        except Exception as e:
+            print(f"{type(self).__name__}: Error setting value: {e}")
