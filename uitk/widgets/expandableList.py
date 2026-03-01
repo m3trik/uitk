@@ -44,6 +44,42 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     VALID_POSITIONS = {"right", "left", "top", "bottom", "center"}
     DEFAULT_LAYOUT_SPACING = 0.5
 
+    # Preset configurations for common layout patterns.
+    # Each preset defines:
+    #   root_position:      Direction the first sublist expands from the root widget.
+    #   root_offset:        (x, y) offset for the first sublist relative to the root.
+    #   child_position:     Direction deeper sublists expand from their parent.
+    #   child_offset:       (x, y) offset for deeper sublists.
+    #   use_item_height:    If True, auto-calculates root y-offset from fixed_item_height
+    #                       so the first sublist covers the root button.
+    PRESETS = {
+        "expand_right": {
+            "root_position": "right",
+            "root_offset": (0, 0),
+            "child_position": "right",
+            "child_offset": (-1, 0),
+        },
+        "expand_left": {
+            "root_position": "left",
+            "root_offset": (0, 0),
+            "child_position": "left",
+            "child_offset": (1, 0),
+        },
+        "expand_up": {
+            "root_position": "top",
+            "root_offset": (0, 0),
+            "child_position": "right",
+            "child_offset": (-1, 0),
+            "use_item_height": True,
+        },
+        "expand_down": {
+            "root_position": "bottom",
+            "root_offset": (0, 0),
+            "child_position": "right",
+            "child_offset": (-1, 0),
+        },
+    }
+
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
 
@@ -93,6 +129,49 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.installEventFilter(self)
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**self.kwargs)
+
+    def apply_preset(self, preset_name):
+        """Apply a named preset to configure expansion behavior.
+
+        Presets configure how the root widget's first sublist expands, and
+        how deeper sublists expand from there. Call this before adding items.
+
+        The preset sets ``position`` and offset properties on this widget
+        (controlling the first expansion), and stores the child direction so
+        that sublists created by :meth:`add` automatically inherit it.
+
+        Parameters:
+            preset_name (str): One of the keys in :attr:`PRESETS`.
+
+        Raises:
+            ValueError: If the preset name is not recognized.
+
+        Example:
+            >>> widget.apply_preset("expand_up")
+            >>> root = widget.add("Menu")
+            >>> root.sublist.add(["Option A", "Option B"])
+        """
+        preset = self.PRESETS.get(preset_name)
+        if preset is None:
+            raise ValueError(
+                f"Unknown preset '{preset_name}'. "
+                f"Available: {', '.join(self.PRESETS)}"
+            )
+
+        self.position = preset["root_position"]
+        rx, ry = preset["root_offset"]
+        self.sublist_x_offset = rx
+
+        if preset.get("use_item_height") and self.fixed_item_height:
+            # Auto-offset so the first sublist covers the root button.
+            self.sublist_y_offset = self.fixed_item_height + ry
+        else:
+            self.sublist_y_offset = ry
+
+        # Store child config so _create_sublist_config can propagate it
+        # to sublists created by root items.
+        self._preset_child_position = preset["child_position"]
+        self._preset_child_offset = preset["child_offset"]
 
     def get_items(self):
         """Get all items in the list and its sublists.
@@ -319,18 +398,32 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     def _create_sublist_config(self):
         """Create configuration dictionary for sublists.
 
+        When a preset has been applied via ``apply_preset()``, child sublists
+        inherit the preset's ``child_position`` and ``child_offset`` instead of
+        blindly copying the parent's values.
+
         Returns:
             dict: Configuration parameters for creating sublists.
         """
-        return {
-            "position": self.position,
+        child_pos = getattr(self, "_preset_child_position", None)
+        child_off = getattr(self, "_preset_child_offset", None)
+
+        config = {
+            "position": child_pos if child_pos is not None else self.position,
             "min_item_height": self.min_item_height,
             "max_item_height": self.max_item_height,
             "fixed_item_height": self.fixed_item_height,
-            "sublist_x_offset": self.sublist_x_offset,
-            "sublist_y_offset": self.sublist_y_offset,
             **self.kwargs,
         }
+
+        if child_off is not None:
+            config["sublist_x_offset"] = child_off[0]
+            config["sublist_y_offset"] = child_off[1]
+        else:
+            config["sublist_x_offset"] = self.sublist_x_offset
+            config["sublist_y_offset"] = self.sublist_y_offset
+
+        return config
 
     def _setup_sublist_relationships(self, widget, sublist):
         """Setup parent-child relationships for sublists.
@@ -366,6 +459,84 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         self._setup_sublist_relationships(widget, sublist)
         return sublist
+
+    def _has_any_visible_sublist(self):
+        """Check if any direct child widget's sublist is currently visible.
+
+        Returns:
+            bool: True if any child's sublist is visible.
+        """
+        for i in range(self.layout.count()):
+            widget = self.layout.itemAt(i).widget()
+            if widget and hasattr(widget, "sublist") and widget.sublist.isVisible():
+                return True
+        return False
+
+    def hide(self):
+        """Hide this list, but only if no child sublist is still visible.
+
+        This chains naturally: the deepest list hides first, which
+        allows its parent to hide on the next check, and so on.
+        """
+        if self._has_any_visible_sublist():
+            return
+        super().hide()
+
+    def _is_cursor_in_hierarchy(self, cursor_pos):
+        """Check if cursor is within this list or any visible child sublist.
+
+        Parameters:
+            cursor_pos (QtCore.QPoint): Global cursor position.
+
+        Returns:
+            bool: True if cursor is inside any visible part of the hierarchy.
+        """
+        if self.isVisible() and self.rect().contains(
+            self.mapFromGlobal(cursor_pos)
+        ):
+            return True
+        for i in range(self.layout.count()):
+            w = self.layout.itemAt(i).widget()
+            if w and hasattr(w, "sublist") and w.sublist.isVisible():
+                if w.sublist._is_cursor_in_hierarchy(cursor_pos):
+                    return True
+        return False
+
+    def _force_hide_all(self):
+        """Force-hide all visible sublists in this hierarchy, bypassing
+        the chained ``hide()`` override.
+        """
+        for i in range(self.layout.count()):
+            w = self.layout.itemAt(i).widget()
+            if w and hasattr(w, "sublist"):
+                w.sublist._force_hide_all()
+                if w.sublist.isVisible():
+                    super(ExpandableList, w.sublist).hide()
+
+    def _start_hide_watchdog(self):
+        """Start a periodic check that hides everything once the cursor
+        leaves the entire expandable-list hierarchy.  Runs on the root
+        list only.
+        """
+        if not hasattr(self, "_watchdog"):
+            self._watchdog = QtCore.QTimer(self)
+            self._watchdog.setInterval(200)
+            self._watchdog.timeout.connect(self._watchdog_check)
+        if not self._watchdog.isActive():
+            self._watchdog.start()
+
+    def _stop_hide_watchdog(self):
+        """Stop the watchdog timer."""
+        if hasattr(self, "_watchdog") and self._watchdog.isActive():
+            self._watchdog.stop()
+
+    def _watchdog_check(self):
+        """Periodic poll: if cursor is outside every visible list in the
+        hierarchy, force-hide everything.
+        """
+        if not self._is_cursor_in_hierarchy(QtGui.QCursor.pos()):
+            self._force_hide_all()
+            self._stop_hide_watchdog()
 
     def _hide_sublists(self, sublist, force=False):
         """Hide the given list and all previous lists in its hierarchy.
@@ -494,7 +665,13 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             return
 
         widget.sublist.show()
+        widget.sublist.raise_()
         widget.updateGeometry()
+
+        # Ensure the root list's watchdog is running so that
+        # sublists are reliably hidden when the cursor exits.
+        root = getattr(self, "root_list", self)
+        root._start_hide_watchdog()
 
         # Get dimensions
         parent_list_width = self.width()
@@ -565,13 +742,22 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     def leaveEvent(self, event):
         """Handle the event when the cursor leaves the ExpandableList.
 
-        This method hides all sublists when the cursor leaves the ExpandableList.
+        Hides child sublists unless the cursor moved into one of them.
 
         Parameters:
             event (obj): The event that occurred.
         """
+        cursor_pos = QtGui.QCursor.pos()
+        in_child = False
+        for i in range(self.layout.count()):
+            w = self.layout.itemAt(i).widget()
+            if w and hasattr(w, "sublist") and w.sublist.isVisible():
+                if w.sublist._is_cursor_in_hierarchy(cursor_pos):
+                    in_child = True
+                    break
+        if not in_child:
+            self._force_hide_all()
         self._hide_sublists(self)
-
         super().leaveEvent(event)
 
 
