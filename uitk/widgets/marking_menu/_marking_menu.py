@@ -804,6 +804,33 @@ class MarkingMenu(
         if next_ui:
             self.show(next_ui, force=True)
 
+    def _is_logical_descendant(self, ancestor_widget, widget) -> bool:
+        """Check if *widget* is a logical descendant of *ancestor_widget*.
+
+        Top-level ToolTip windows (e.g. ExpandableList sublists) set a
+        ``_logical_ancestor`` attribute pointing to the root widget that
+        lives inside the normal widget hierarchy.  This method walks up
+        the widget's parent chain looking for that marker.
+
+        Parameters:
+            ancestor_widget: The prospective ancestor (e.g. ``current_ui``).
+            widget: The widget found under the cursor.
+
+        Returns:
+            bool: True if *widget* (or one of its Qt parents) has a
+            ``_logical_ancestor`` that *ancestor_widget* is an ancestor of.
+        """
+        w = widget
+        while w is not None:
+            logical_root = getattr(w, "_logical_ancestor", None)
+            if logical_root is not None:
+                return (
+                    ancestor_widget.isAncestorOf(logical_root)
+                    or logical_root is ancestor_widget
+                )
+            w = w.parent()
+        return False
+
     def _handle_widget_action(self, widget) -> bool:
         """Execute action for a widget (button click or menu navigation).
 
@@ -832,7 +859,7 @@ class MarkingMenu(
             self.hide()
             if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
                 widget.clicked.emit()
-                return True
+            return True
 
         return False
 
@@ -922,7 +949,9 @@ class MarkingMenu(
 
             if widget and widget is not self and widget is not current_ui:
                 # When mouse is grabbed, child event filter is bypassed - handle clicks here
-                if current_ui.isAncestorOf(widget):
+                if current_ui.isAncestorOf(widget) or self._is_logical_descendant(
+                    current_ui, widget
+                ):
                     if self._handle_widget_action(widget):
                         self.releaseMouse()
                         super().mouseReleaseEvent(event)

@@ -201,6 +201,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._prev_mouse_over: set[QtWidgets.QWidget] = set()
         self._mouse_over: set[QtWidgets.QWidget] = set()
         self._filtered_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
+        self._extra_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
         self._mouse_owner: QtWidgets.QWidget | None = None
 
         parent.installEventFilter(self)
@@ -221,6 +222,19 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                 return False
         return True
 
+    def register_external_widgets(self, widgets):
+        """Register widgets that should receive synthesized Enter/Leave events
+        even though they are not children of the tracked parent.
+
+        This is used for top-level ToolTip windows (e.g. ExpandableList sublists)
+        that need to participate in mouse-grab drag tracking.
+
+        Parameters:
+            widgets: Iterable of QWidget instances to register.
+        """
+        for w in widgets:
+            self._extra_widgets.add(w)
+
     def _update_widgets_under_cursor(self, top_widget: QtWidgets.QWidget):
         """Updates the list of widgets currently under the cursor."""
         self.update_child_widgets()
@@ -237,7 +251,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             widgets = current.findChildren(QtWidgets.QWidget) if current else []
         else:
             widgets = parent.findChildren(QtWidgets.QWidget)
-        self._widgets: set[QtWidgets.QWidget] = set(widgets)
+        self._widgets: set[QtWidgets.QWidget] = set(widgets) | set(self._extra_widgets)
 
     def track(self):
         """Efficiently updates tracking data and sends enter and leave events to widgets."""
