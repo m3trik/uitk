@@ -5,6 +5,7 @@
 This module tests the widgets.optionBox subpackage functionality including:
 - OptionBox styling and layout behavior (Regression tests)
 - PinValuesOption widget functionality
+- RecentValuesOption display_format feature
 
 Run standalone: python -m test.test_optionBox
 Run with demo: python -m test.test_optionBox --demo
@@ -19,9 +20,18 @@ from conftest import QtBaseTestCase, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets
+from qtpy import QtWidgets, QtCore
+from pathlib import Path
+
 from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
+from uitk.widgets.optionBox.options._options import ButtonOption
 from uitk.widgets.optionBox.options.pin_values import PinValuesOption
+from uitk.widgets.optionBox.options.recent_values import (
+    RecentValuesOption,
+    RecentValuesPopup,
+    _is_filesystem_path,
+    _build_display_map_smart_path,
+)
 
 
 class TestOptionBoxStyling(QtBaseTestCase):
@@ -75,6 +85,66 @@ class TestOptionBoxStyling(QtBaseTestCase):
         # Verify it has NO border class
         classes = container.property("class") or ""
         self.assertNotIn("withBorder", classes)
+
+
+class TestOptionBoxWrappingVisibility(QtBaseTestCase):
+    """Regression tests for wrapping widgets inside collapsed groups."""
+
+    def test_wrap_does_not_alter_widget_visibility(self):
+        """wrap() must not change the widget's explicit visibility state.
+
+        It should always call container.show() and leave the wrapped widget
+        as-is.  Visibility control belongs to the parent (e.g. CollapsableGroup).
+        """
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        btn = QtWidgets.QPushButton("Test")
+        layout.addWidget(btn)
+
+        # Explicitly hide the button (simulates collapsed group)
+        btn.setVisible(False)
+        self.assertTrue(btn.isHidden())
+
+        opt = OptionBox(options=[])
+        container = opt.wrap(btn)
+        self.track_widget(container)
+
+        # wrap() must NOT un-hide the widget — that's the group's job
+        self.assertTrue(btn.isHidden(), "wrap() should not alter widget visibility")
+        # Container itself is always shown by wrap()
+        self.assertFalse(container.isHidden(), "Container should be shown by wrap()")
+
+    def test_collapsed_group_expand_shows_wrapped_buttons(self):
+        """End-to-end: buttons wrapped while group is collapsed must appear on expand.
+
+        Bug: _set_content_visible(True) only showed direct layout children
+        (OptionBoxContainers), not the wrapped PushButtons inside them.
+        Fixed: 2026-03-04
+        """
+        from uitk.widgets.collapsableGroup import CollapsableGroup
+
+        group = self.track_widget(CollapsableGroup("Test Group"))
+        group.restore_state = False
+        group.setLayout(QtWidgets.QVBoxLayout())
+        btn = QtWidgets.QPushButton("Action")
+        group.layout().addWidget(btn)
+
+        # Collapse: hides the button
+        group.toggle_expand(False)
+        self.assertTrue(btn.isHidden())
+
+        # Wrap the hidden button in an OptionBoxContainer
+        opt = OptionBox(options=[])
+        container = opt.wrap(btn)
+        self.track_widget(container)
+
+        # Expand: _set_content_visible(True) must show containers AND their children
+        group.toggle_expand(True)
+
+        self.assertFalse(
+            container.isHidden(), "Container should not be hidden after expand"
+        )
+        self.assertFalse(btn.isHidden(), "Button should not be hidden after expand")
 
 
 class TestPinValuesOptionCreation(QtBaseTestCase):
@@ -209,6 +279,271 @@ class TestPinValuesOptionSignals(QtBaseTestCase):
         # Note: This test verifies signal connection works.
         # Actual restoration behavior depends on UI interaction.
         self.assertTrue(hasattr(self.pin_option, "value_restored"))
+
+
+class TestRecentValuesDisplayHelpers(QtBaseTestCase):
+    """Tests for display-format helper functions."""
+
+    def test_is_filesystem_path_windows_drive(self):
+        self.assertTrue(_is_filesystem_path("C:/Users/test"))
+        self.assertTrue(_is_filesystem_path("D:\\Projects"))
+
+    def test_is_filesystem_path_unc(self):
+        self.assertTrue(_is_filesystem_path("\\\\server\\share"))
+        self.assertTrue(_is_filesystem_path("//server/share"))
+
+    def test_is_filesystem_path_unix(self):
+        self.assertTrue(_is_filesystem_path("/home/user/file"))
+
+    def test_is_filesystem_path_plain_string(self):
+        self.assertFalse(_is_filesystem_path("hello world"))
+        self.assertFalse(_is_filesystem_path("some_value"))
+
+    def test_smart_path_strips_common_prefix(self):
+        values = [
+            "C:/Projects/PRODUCTION/AF/C-5M/Exports/C5_FCS",
+            "C:/Projects/PRODUCTION/AF/C-17A/Exports/SFCS",
+            "C:/Projects/PRODUCTION/AF/C-130/Exports/Flap",
+        ]
+        dm = _build_display_map_smart_path(values)
+        self.assertIsNotNone(dm)
+        for v in values:
+            self.assertTrue(dm[v].startswith("\u2026/"))
+        self.assertIn("C-5M", dm[values[0]])
+        self.assertIn("C-17A", dm[values[1]])
+        self.assertIn("C-130", dm[values[2]])
+
+    def test_smart_path_single_returns_none(self):
+        self.assertIsNone(_build_display_map_smart_path(["C:/only/one"]))
+
+    def test_smart_path_non_paths_returns_none(self):
+        self.assertIsNone(_build_display_map_smart_path(["hello", "world"]))
+
+    def test_smart_path_mixed_returns_none(self):
+        self.assertIsNone(_build_display_map_smart_path(["C:/a/b", "plain"]))
+
+
+class TestRecentValuesDisplayFormat(QtBaseTestCase):
+    """Tests for the display_format parameter on RecentValuesOption.
+
+    Verifies that display formatting only affects popup presentation
+    and never alters stored values or widget restoration.
+    Added: 2026-03-05
+    """
+
+    def _make_option(self, display_format="auto"):
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        return RecentValuesOption(
+            wrapped_widget=widget,
+            display_format=display_format,
+        )
+
+    def test_auto_with_paths_produces_display_map(self):
+        option = self._make_option(display_format="auto")
+        paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
+        dm = option._resolve_display_map(paths)
+        self.assertTrue(len(dm) > 0)
+        self.assertIn("DirA", dm[paths[0]])
+        self.assertIn("DirB", dm[paths[1]])
+
+    def test_auto_with_non_paths_falls_back(self):
+        option = self._make_option(display_format="auto")
+        self.assertEqual(option._resolve_display_map(["foo", "bar"]), {})
+
+    def test_truncate_returns_empty(self):
+        option = self._make_option(display_format="truncate")
+        paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
+        self.assertEqual(option._resolve_display_map(paths), {})
+
+    def test_basename_mode(self):
+        option = self._make_option(display_format="basename")
+        paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
+        dm = option._resolve_display_map(paths)
+        self.assertEqual(dm[paths[0]], "file.txt")
+        self.assertEqual(dm[paths[1]], "other.txt")
+
+    def test_callable_format(self):
+        option = self._make_option(
+            display_format=lambda v: f"[{Path(v).stem}]",
+        )
+        paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
+        dm = option._resolve_display_map(paths)
+        self.assertEqual(dm[paths[0]], "[file]")
+        self.assertEqual(dm[paths[1]], "[other]")
+
+    def test_storage_unchanged_by_display_format(self):
+        """display_format must never alter stored values."""
+        option = self._make_option(display_format="basename")
+        raw = "C:/Very/Long/Path/To/Some/File.txt"
+        option.add_recent_value(raw)
+        self.assertEqual(option.recent_values, [raw])
+
+    def test_restore_uses_raw_value(self):
+        """Selecting a formatted entry must restore the original raw value."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        option = RecentValuesOption(wrapped_widget=widget, display_format="basename")
+        raw = "C:/Very/Long/Path/To/Some/File.txt"
+        option.add_recent_value(raw)
+        option._restore_value(raw)
+        self.assertEqual(widget.text(), raw)
+
+
+class TestRecentValuesRowPadding(QtBaseTestCase):
+    """Tests for right padding in recent value popup rows.
+
+    Bug: Remove buttons crowded the value text, making it unreadable.
+    Fixed: 2026-03-06
+    """
+
+    def test_row_has_right_padding(self):
+        """Recent value rows must have >=8px right margin for button clearance."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        popup = RecentValuesPopup(parent=parent)
+        self.track_widget(popup.menu)
+        popup.add_recent_value("test_value")
+
+        # Find the row container
+        rows = popup.menu.findChildren(QtWidgets.QWidget, "recentValueRow")
+        self.assertTrue(len(rows) > 0, "Should have at least one row")
+        layout = rows[0].layout()
+        margins = layout.contentsMargins()
+        self.assertGreaterEqual(margins.right(), 8, "Right margin must be >= 8px")
+        self.assertGreaterEqual(layout.spacing(), 4, "Spacing must be >= 4px")
+
+
+class TestRecentValuesCenterTruncation(QtBaseTestCase):
+    """Tests for center (middle) truncation of long values.
+
+    Bug: Values were truncated from the left (mode='start'), hiding
+    the beginning of the text. Center truncation preserves both ends.
+    Fixed: 2026-03-06
+    """
+
+    def test_long_value_truncated_from_middle(self):
+        """Long values should be truncated from the center, keeping both ends visible."""
+        import pythontk as ptk
+
+        long_value = "A" * 30 + "B" * 30 + "C" * 30  # 90 chars
+        parent = self.track_widget(QtWidgets.QWidget())
+        popup = RecentValuesPopup(parent=parent)
+        self.track_widget(popup.menu)
+        popup.add_recent_value(long_value)
+
+        # Find the value button text
+        buttons = popup.menu.findChildren(QtWidgets.QPushButton, "recentValueButton")
+        self.assertTrue(len(buttons) > 0)
+        display = buttons[0].text()
+
+        # Middle truncation: both start and end of original should be present
+        self.assertTrue(display.startswith("A"), "Start of value should be preserved")
+        self.assertTrue(display.endswith("C"), "End of value should be preserved")
+        self.assertIn("..", display, "Should contain truncation marker")
+        self.assertLess(
+            len(display), len(long_value), "Should be shorter than original"
+        )
+
+    def test_short_value_not_truncated(self):
+        """Short values should not be truncated."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        popup = RecentValuesPopup(parent=parent)
+        self.track_widget(popup.menu)
+        popup.add_recent_value("short")
+
+        buttons = popup.menu.findChildren(QtWidgets.QPushButton, "recentValueButton")
+        self.assertTrue(len(buttons) > 0)
+        self.assertEqual(buttons[0].text(), "short")
+
+
+class TestPopupAlignParameter(QtBaseTestCase):
+    """Tests for popup_align parameter on RecentValuesOption and PinValuesOption.
+
+    Feature: Popups default to right-aligned to the parent window edge,
+    with an option for left alignment.
+    Added: 2026-03-06
+    """
+
+    def test_recent_default_popup_align_is_right(self):
+        """RecentValuesOption should default to popup_align='right'."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        option = RecentValuesOption(wrapped_widget=widget)
+        self.assertEqual(option._popup_align, "right")
+
+    def test_recent_popup_align_left(self):
+        """RecentValuesOption should accept popup_align='left'."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        option = RecentValuesOption(wrapped_widget=widget, popup_align="left")
+        self.assertEqual(option._popup_align, "left")
+
+    def test_pin_default_popup_align_is_right(self):
+        """PinValuesOption should default to popup_align='right'."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        option = PinValuesOption(wrapped_widget=widget)
+        self.assertEqual(option._popup_align, "right")
+
+    def test_pin_popup_align_left(self):
+        """PinValuesOption should accept popup_align='left'."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        option = PinValuesOption(wrapped_widget=widget, popup_align="left")
+        self.assertEqual(option._popup_align, "left")
+
+
+class TestFindParentWindow(QtBaseTestCase):
+    """Tests for _find_parent_window helper on ButtonOption.
+
+    Feature: Popup width is capped to the parent window width.
+    Added: 2026-03-06
+    """
+
+    def test_finds_top_level_window(self):
+        """Should find a top-level QWidget as the parent window."""
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window)
+        window.resize(500, 300)
+
+        child = QtWidgets.QWidget(window)
+        line_edit = QtWidgets.QLineEdit(child)
+
+        option = RecentValuesOption(wrapped_widget=line_edit)
+        found = option._find_parent_window()
+        self.assertIs(found, window)
+
+    def test_returns_none_for_orphan_widget(self):
+        """Should return the widget itself when it has no parent (it is the window)."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        option = RecentValuesOption(wrapped_widget=widget)
+        found = option._find_parent_window()
+        # A top-level QLineEdit is itself a window
+        self.assertIsNotNone(found)
+
+    def test_no_widget_returns_none(self):
+        """Should return None when there is no wrapped widget."""
+        option = RecentValuesOption(wrapped_widget=None)
+        found = option._find_parent_window()
+        self.assertIsNone(found)
+
+
+class TestPinnedValuesRowPadding(QtBaseTestCase):
+    """Tests for right padding in pinned value popup rows.
+
+    Bug: Pin/unpin buttons crowded the value text, making it unreadable.
+    Fixed: 2026-03-06
+    """
+
+    def test_pinned_row_has_right_padding(self):
+        """Pinned value rows must have >=8px right margin for button clearance."""
+        from uitk.widgets.optionBox.options.pin_values import PinnedValuesPopup
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        popup = PinnedValuesPopup(parent=parent)
+        self.track_widget(popup.menu)
+        popup.add_current_value("test_value", is_pinned=False)
+
+        rows = popup.menu.findChildren(QtWidgets.QWidget, "pinnedValueRow_current")
+        self.assertTrue(len(rows) > 0, "Should have at least one row")
+        layout = rows[0].layout()
+        margins = layout.contentsMargins()
+        self.assertGreaterEqual(margins.right(), 8, "Right margin must be >= 8px")
+        self.assertGreaterEqual(layout.spacing(), 4, "Spacing must be >= 4px")
 
 
 # -----------------------------------------------------------------------------

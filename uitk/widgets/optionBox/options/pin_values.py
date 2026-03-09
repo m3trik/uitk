@@ -183,8 +183,8 @@ class PinnedValuesPopup(QtCore.QObject):
             "pinnedValueRow_current" if is_current else "pinnedValueRow"
         )
         layout = QtWidgets.QHBoxLayout(container)
-        layout.setContentsMargins(2, 0, 2, 0)
-        layout.setSpacing(1)
+        layout.setContentsMargins(2, 0, 8, 0)
+        layout.setSpacing(4)
 
         # Stacked widget to switch between button and edit mode
         stack = QtWidgets.QStackedWidget()
@@ -371,6 +371,7 @@ class PinValuesOption(ButtonOption):
         max_pinned=10,
         double_click_to_edit=False,
         single_click_restore=False,
+        popup_align="right",
     ):
         """Initialize the pin values option.
 
@@ -381,6 +382,10 @@ class PinValuesOption(ButtonOption):
             max_pinned: Maximum number of pinned values to keep
             double_click_to_edit: Require double click to edit pinned value
             single_click_restore: Restore value on single click instead of double
+            popup_align: Horizontal alignment of the popup.
+                ``"right"`` — align popup's right edge to the parent
+                window's right edge (default).
+                ``"left"`` — align popup's left edge to the wrapped widget.
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -394,6 +399,7 @@ class PinValuesOption(ButtonOption):
         self._max_pinned = max_pinned
         self._double_click_to_edit = double_click_to_edit
         self._single_click_restore = single_click_restore
+        self._popup_align = popup_align
         self._popup = None
         self._settings = None
 
@@ -517,6 +523,13 @@ class PinValuesOption(ButtonOption):
 
         # Populate and size the popup first
         self._populate_popup()
+
+        # Cap popup width to parent window width (still content-sensitive)
+        window = self._find_parent_window()
+        if window:
+            max_w = window.width() - 16  # small margin
+            self._popup.menu.setMaximumWidth(max_w)
+
         self._popup.adjustSize()
 
         # Position and show the popup
@@ -524,9 +537,20 @@ class PinValuesOption(ButtonOption):
             # Get the wrapped widget (the actual input widget, not the pin button)
             wrapped = self.wrapped_widget
             if wrapped:
-                # Position below the wrapped widget, aligned to left edge
                 widget_rect = wrapped.rect()
-                global_pos = wrapped.mapToGlobal(QtCore.QPoint(0, widget_rect.height()))
+                if self._popup_align == "right" and window:
+                    # Align popup's right edge to the window's right edge
+                    win_right = window.mapToGlobal(QtCore.QPoint(window.width(), 0)).x()
+                    popup_x = win_right - self._popup.width() - 8
+                    popup_y = wrapped.mapToGlobal(
+                        QtCore.QPoint(0, widget_rect.height())
+                    ).y()
+                    global_pos = QtCore.QPoint(popup_x, popup_y)
+                else:
+                    # Position below the wrapped widget, aligned to left edge
+                    global_pos = wrapped.mapToGlobal(
+                        QtCore.QPoint(0, widget_rect.height())
+                    )
             else:
                 # Fallback: position below the button
                 button_rect = self._widget.rect()

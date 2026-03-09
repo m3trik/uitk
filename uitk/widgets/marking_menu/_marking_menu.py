@@ -497,7 +497,9 @@ class MarkingMenu(
 
         if ui.has_tags(["startmenu", "submenu"]):  # StackedWidget
             ui.style.set(theme="dark", style_class="translucentBgNoBorder")
-            ui.resize(600, 600)
+            w = max(ui.width(), 600)
+            h = max(ui.height(), 600)
+            ui.resize(w, h)
             ui.ensure_on_screen = False
             self.addWidget(ui)  # add the UI to the stackedLayout.
             self.add_child_event_filter(ui.widgets)

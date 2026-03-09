@@ -685,6 +685,14 @@ class TableWidget(
                     text_str = str(text) if text is not None else ""
                     item = QtWidgets.QTableWidgetItem(text_str)
 
+                    # Action columns are non-editable/non-selectable
+                    if col_idx in self.actions._columns:
+                        item.setFlags(
+                            item.flags()
+                            & ~QtCore.Qt.ItemIsEditable
+                            & ~QtCore.Qt.ItemIsSelectable
+                        )
+
                     # Set tooltip to text content by default
                     if text_str:
                         item.setToolTip(text_str)

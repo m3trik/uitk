@@ -62,15 +62,24 @@ class Signals:
 class SlotWrapper:
     """Wrapper class for slots to handle argument injection, history tracking, and timeout monitoring."""
 
+    # Class-level cache: slot function id -> (param_names frozenset, wants_widget bool)
+    _sig_cache: dict = {}
+
     def __init__(self, slot, widget, switchboard):
         self.slot = slot
         self.widget = widget
         self.sb = switchboard
 
-        # Pre-calculate signature info
-        self.sig = inspect.signature(slot)
-        self.param_names = set(self.sig.parameters.keys())
-        self.wants_widget = "widget" in self.param_names
+        # Cache inspect.signature per slot function to avoid repeated introspection
+        slot_id = id(slot)
+        cached = SlotWrapper._sig_cache.get(slot_id)
+        if cached is not None:
+            self.param_names, self.wants_widget = cached
+        else:
+            sig = inspect.signature(slot)
+            self.param_names = frozenset(sig.parameters.keys())
+            self.wants_widget = "widget" in self.param_names
+            SlotWrapper._sig_cache[slot_id] = (self.param_names, self.wants_widget)
 
     def _get_timeout(self):
         """Resolve the timeout value dynamically."""
@@ -540,11 +549,14 @@ class SwitchboardSlotsMixin:
         ui = widget.ui
         key = self.get_base_name(ui.objectName())
 
-        # Always add to placeholder first, in case slot isn't ready
-        self._add_to_placeholder(key, widget)
-
-        # Then try to get or create the slots instance
-        slots = self.get_slots_instance(ui)
+        # Fast path: if slots are already instantiated, skip placeholder/find entirely
+        if self.slots_instantiated(key):
+            slots = self.slot_instances[key]
+        else:
+            # Add to placeholder first, in case slot isn't ready
+            self._add_to_placeholder(key, widget)
+            # Then try to get or create the slots instance
+            slots = self.get_slots_instance(ui)
 
         # If slots instance exists, process immediately (not deferred)
         if slots:

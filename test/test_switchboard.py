@@ -1119,6 +1119,421 @@ class TestSlotWrapperEdgeCases(QtBaseTestCase):
         self.assertTrue(callable(wrapper))
 
 
+class TestSlotMismatchLogging(QtBaseTestCase):
+    """Tests for slot-mismatch logging behavior.
+
+    Verifies that get_slot and connect_slot log at DEBUG level when a widget
+    has no matching slot method. DEBUG is intentional — most widgets
+    (size_grip, menuFrame, hdr_pin, etc.) have no slot by design.
+    WARNING would flood the console with false positives.
+    Verified: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_get_slot_logs_debug_on_missing_slot(self):
+        """get_slot should log at DEBUG (not WARNING) when no matching slot exists.
+
+        Uses mock.patch because uitk's LoggingMixin creates unregistered Logger
+        instances (not via getLogger), making assertLogs unreliable.
+        """
+        from unittest.mock import patch
+
+        slots_instance = self.sb.get_slots_instance(self.ui)
+        logger = self.sb.logger
+
+        with (
+            patch.object(logger, "debug", wraps=logger.debug) as mock_debug,
+            patch.object(logger, "warning", wraps=logger.warning) as mock_warning,
+        ):
+            result = self.sb.get_slot(slots_instance, "nonexistent_widget_xyz")
+
+        self.assertIsNone(result)
+        # Should have logged at DEBUG
+        debug_calls = [
+            str(c) for c in mock_debug.call_args_list if "Slot not found" in str(c)
+        ]
+        self.assertTrue(
+            len(debug_calls) > 0,
+            "Expected 'Slot not found' at DEBUG level",
+        )
+        # Must NOT have logged at WARNING (would flood console)
+        warning_calls = [
+            str(c) for c in mock_warning.call_args_list if "Slot not found" in str(c)
+        ]
+        self.assertEqual(
+            len(warning_calls),
+            0,
+            f"Slot-not-found must be DEBUG, not WARNING (floods console): {warning_calls}",
+        )
+
+    def test_connect_slot_logs_debug_on_missing_slot(self):
+        """connect_slot should log at DEBUG (not WARNING) when widget has no slot.
+
+        Uses mock.patch because uitk's LoggingMixin creates unregistered Logger
+        instances (not via getLogger), making assertLogs unreliable.
+        """
+        from unittest.mock import patch
+
+        orphan = QtWidgets.QPushButton("Orphan")
+        orphan.setObjectName("nonexistent_widget_xyz")
+        orphan.setParent(self.ui.centralWidget())
+        self.ui.register_widget(orphan)
+
+        logger = self.sb.logger
+
+        with (
+            patch.object(logger, "debug", wraps=logger.debug) as mock_debug,
+            patch.object(logger, "warning", wraps=logger.warning) as mock_warning,
+        ):
+            self.sb.connect_slot(orphan)
+
+        debug_calls = [
+            str(c)
+            for c in mock_debug.call_args_list
+            if "No slot found" in str(c) or "Slot not found" in str(c)
+        ]
+        self.assertTrue(
+            len(debug_calls) > 0,
+            "Expected slot-mismatch message at DEBUG level",
+        )
+        warning_calls = [
+            str(c)
+            for c in mock_warning.call_args_list
+            if "No slot found" in str(c) or "Slot not found" in str(c)
+        ]
+        self.assertEqual(
+            len(warning_calls),
+            0,
+            f"Slot-not-found must be DEBUG, not WARNING (floods console): {warning_calls}",
+        )
+
+
+# =============================================================================
+# Performance Regression Tests
+# =============================================================================
+
+
+class TestLoggerHandlerSyncPerformance(unittest.TestCase):
+    """Regression: LoggingMixin.logger must NOT sync handler levels on every access.
+
+    Bug: The logger ClassProperty iterated all handlers calling setLevel() on
+    every property access. With hundreds of logger accesses per widget during
+    init, this was a significant bottleneck.
+    Fix: Handler levels are now synced only in _set_level (called via setLevel).
+    Fixed: 2026-03-01
+    """
+
+    def test_handler_setLevel_not_called_on_access(self):
+        """Accessing .logger repeatedly should not call handler.setLevel each time."""
+        from unittest.mock import patch, MagicMock
+
+        sb = Switchboard(ui_source=None)
+        logger = sb.logger
+        # Force a level so we have a known state
+        logger.setLevel("WARNING")
+
+        # Now patch handler.setLevel and access the logger many times
+        handler = logger.handlers[0]
+        with patch.object(handler, "setLevel", wraps=handler.setLevel) as mock_set:
+            for _ in range(100):
+                _ = sb.logger  # Repeated property access
+            # Should NOT have been called 100 times (was the old behavior)
+            self.assertEqual(
+                mock_set.call_count,
+                0,
+                f"handler.setLevel called {mock_set.call_count} times on 100 logger accesses (should be 0)",
+            )
+
+    def test_setLevel_syncs_handlers(self):
+        """Calling setLevel should still propagate to handlers."""
+        import logging
+
+        sb = Switchboard(ui_source=None)
+        logger = sb.logger
+        logger.setLevel("DEBUG")
+        for handler in logger.handlers:
+            self.assertEqual(
+                handler.level,
+                logging.DEBUG,
+                "Handler level should match after setLevel('DEBUG')",
+            )
+        logger.setLevel("ERROR")
+        for handler in logger.handlers:
+            self.assertEqual(
+                handler.level,
+                logging.ERROR,
+                "Handler level should match after setLevel('ERROR')",
+            )
+
+
+class TestSlotWrapperSignatureCache(QtBaseTestCase):
+    """Regression: SlotWrapper must cache inspect.signature per slot function.
+
+    Bug: inspect.signature() was called in every SlotWrapper.__init__, which
+    runs for every widget×signal connection. For the same slot function connected
+    to multiple widgets, the signature is identical.
+    Fix: Cache by slot function id in a class-level dict.
+    Fixed: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+
+        SlotWrapper._sig_cache.clear()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_signature_cached_across_wrappers(self):
+        """Creating two SlotWrappers for the same slot should call inspect.signature only once."""
+        from unittest.mock import patch
+        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        import inspect
+
+        def dummy_slot(self, widget=None):
+            pass
+
+        btn1 = QtWidgets.QPushButton("A")
+        btn1.setObjectName("test_btn_a")
+        btn2 = QtWidgets.QPushButton("B")
+        btn2.setObjectName("test_btn_b")
+
+        SlotWrapper._sig_cache.clear()
+        with patch(
+            "uitk.widgets.mixins.switchboard_slots.inspect.signature",
+            wraps=inspect.signature,
+        ) as mock_sig:
+            w1 = SlotWrapper(dummy_slot, btn1, self.sb)
+            w2 = SlotWrapper(dummy_slot, btn2, self.sb)
+
+        self.assertEqual(
+            mock_sig.call_count,
+            1,
+            f"inspect.signature called {mock_sig.call_count} times for same slot (should be 1)",
+        )
+        # Both wrappers should have identical param info
+        self.assertEqual(w1.param_names, w2.param_names)
+        self.assertEqual(w1.wants_widget, w2.wants_widget)
+        self.assertTrue(w1.wants_widget)
+
+    def test_different_slots_cached_independently(self):
+        """Different slot functions should each get their own cache entry."""
+        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+
+        def slot_a(self, widget=None):
+            pass
+
+        def slot_b(self, value=0):
+            pass
+
+        btn = QtWidgets.QPushButton("X")
+        btn.setObjectName("test_btn_x")
+
+        SlotWrapper._sig_cache.clear()
+        w1 = SlotWrapper(slot_a, btn, self.sb)
+        w2 = SlotWrapper(slot_b, btn, self.sb)
+
+        self.assertTrue(w1.wants_widget)
+        self.assertFalse(w2.wants_widget)
+        self.assertEqual(len(SlotWrapper._sig_cache), 2)
+
+
+class TestInitSlotShortCircuit(QtBaseTestCase):
+    """Regression: init_slot must short-circuit when slots are already instantiated.
+
+    Bug: init_slot always called _add_to_placeholder (which may call
+    _find_slots_class) even when the slot instance already exists. This caused
+    redundant registry lookups for every widget after the first.
+    Fix: Check slots_instantiated(key) first and skip placeholder path.
+    Fixed: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_no_placeholder_call_when_slots_exist(self):
+        """After slots are instantiated, init_slot should not call _add_to_placeholder."""
+        from unittest.mock import patch
+
+        # Ensure slots exist
+        self.sb.get_slots_instance(self.ui)
+        key = self.sb.get_base_name(self.ui.objectName())
+        self.assertTrue(self.sb.slots_instantiated(key))
+
+        # Now register a new widget
+        btn = QtWidgets.QPushButton("NewBtn")
+        btn.setObjectName("new_test_button")
+        btn.setParent(self.ui.centralWidget())
+        self.ui.register_widget(btn)
+
+        with patch.object(self.sb, "_add_to_placeholder") as mock_placeholder:
+            self.sb.init_slot(btn)
+
+        self.assertEqual(
+            mock_placeholder.call_count,
+            0,
+            "_add_to_placeholder should not be called when slots are already instantiated",
+        )
+
+
+class TestDerivedTypeCache(QtBaseTestCase):
+    """Regression: get_derived_type must cache results by widget type.
+
+    Bug: get_derived_type walked the full MRO for every widget, even though
+    the result is deterministic per type+parameters.
+    Fix: Class-level cache dict keyed by (type, return_name, module, ...).
+    Fixed: 2026-03-01
+    """
+
+    def test_cache_hit_on_same_type(self):
+        """Two QPushButtons should produce only one MRO traversal."""
+        import pythontk as ptk
+
+        ptk.CoreUtils._derived_type_cache.clear()
+
+        btn1 = QtWidgets.QPushButton("A")
+        btn2 = QtWidgets.QPushButton("B")
+
+        r1 = ptk.get_derived_type(btn1, module="QtWidgets")
+        r2 = ptk.get_derived_type(btn2, module="QtWidgets")
+
+        self.assertIs(r1, r2, "Same type should return identical cached result")
+        # Cache should have exactly one entry for this parameter combination
+        matching = [
+            k
+            for k in ptk.CoreUtils._derived_type_cache
+            if k[0] is QtWidgets.QPushButton and k[2] == "QtWidgets"
+        ]
+        self.assertEqual(
+            len(matching), 1, "Should have one cache entry for QPushButton+QtWidgets"
+        )
+
+    def test_different_types_cached_separately(self):
+        """Different widget types should be cached independently."""
+        import pythontk as ptk
+
+        ptk.CoreUtils._derived_type_cache.clear()
+
+        btn = QtWidgets.QPushButton("A")
+        chk = QtWidgets.QCheckBox("B")
+
+        r1 = ptk.get_derived_type(btn, module="QtWidgets")
+        r2 = ptk.get_derived_type(chk, module="QtWidgets")
+
+        self.assertIsNot(r1, r2)
+        self.assertEqual(len(ptk.CoreUtils._derived_type_cache), 2)
+
+
+class TestDefaultSignalsLookupEfficiency(QtBaseTestCase):
+    """Regression: widget.default_signals() should use direct dict lookup, not isinstance loop.
+
+    The lambda assigned in register_widget should do a dict.get by derived_type,
+    not iterate all 27 entries with isinstance checks.
+    Fixed: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_pushbutton_default_signal_is_clicked(self):
+        """A registered QPushButton should report 'clicked' as its default signal."""
+        btn = QtWidgets.QPushButton("Test")
+        btn.setObjectName("test_default_sig_btn")
+        btn.setParent(self.ui.centralWidget())
+        self.ui.register_widget(btn)
+
+        result = btn.default_signals()
+        self.assertEqual(result, "clicked")
+
+    def test_checkbox_default_signal_is_toggled(self):
+        """A registered QCheckBox should report 'toggled' as its default signal."""
+        chk = QtWidgets.QCheckBox("Test")
+        chk.setObjectName("test_default_sig_chk")
+        chk.setParent(self.ui.centralWidget())
+        self.ui.register_widget(chk)
+
+        result = chk.default_signals()
+        self.assertEqual(result, "toggled")
+
+    def test_widget_without_default_signal(self):
+        """A widget type not in default_signals should return None."""
+        frame = QtWidgets.QFrame()
+        frame.setObjectName("test_default_sig_frame")
+        frame.setParent(self.ui.centralWidget())
+        self.ui.register_widget(frame)
+
+        result = frame.default_signals()
+        self.assertIsNone(result)
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

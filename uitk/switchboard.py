@@ -528,18 +528,26 @@ class Switchboard(
     def get_ui_relatives(
         self, ui, upstream=False, exact=False, downstream=False, reverse=False
     ):
-        """Get UIs related to the given UI, based on hierarchical name matching.
+        """Get UIs related to the given UI via shared base name.
+
+        Two UIs are "related" when they share the same base name (the portion
+        before the first tag delimiter ``#``).  Direction filters control which
+        relatives are returned based on tag depth:
+
+        * **upstream** – relatives with *fewer* tag segments (ancestors).
+        * **downstream** – relatives with *more* tag segments (children/submenus).
+        * **exact** – relatives with the *same number* of tag segments.
 
         Parameters:
             ui (str or QWidget): Target UI name or object.
             upstream (bool): Include higher-level ancestors.
-            exact (bool): Include only exact matches.
+            exact (bool): Include only exact-depth matches.
             downstream (bool): Include children/submenus.
             reverse (bool): Reverse order of matches.
 
         Returns:
-            list[str] or list[QWidget]: Matching UI names or loaded QWidget objects,
-                                        depending on input type.
+            list[str] or list[QWidget]: Matching UI names or loaded QWidget
+                objects, depending on input type.
         """
         # --- Step 1: Resolve target name ---
         if isinstance(ui, QtWidgets.QWidget):
@@ -554,21 +562,31 @@ class Switchboard(
         if not target_name:
             return []
 
-        # --- Step 2: Normalize all UI filenames into canonical names ---
+        # --- Step 2: Find all UIs sharing the same base name ---
+        target_base = self.get_base_name(target_name)
         ui_filenames = self.registry.ui_registry.get("filename") or []
 
-        # --- Step 3: Match based on hierarchy ---
-        matched_names = ptk.get_matching_hierarchy_items(
-            hierarchy_items=ui_filenames,
-            target=target_name,
-            upstream=upstream,
-            exact=exact,
-            downstream=downstream,
-            reverse=reverse,
-            delimiters=[self.ui_name_delimiters, self.tag_delimiter],
-        )
+        target_depth = target_name.count(self.tag_delimiter)
+        matched_names = []
 
-        # --- Step 4: Return matching names or UI instances ---
+        for fn in ui_filenames:
+            if fn == target_name:
+                continue  # Skip self
+            if self.get_base_name(fn) != target_base:
+                continue  # Different base name
+
+            depth = fn.count(self.tag_delimiter)
+            if upstream and depth < target_depth:
+                matched_names.append(fn)
+            elif downstream and depth > target_depth:
+                matched_names.append(fn)
+            elif exact and depth == target_depth:
+                matched_names.append(fn)
+
+        # Sort by depth (ascending) then reverse if requested
+        matched_names.sort(key=lambda x: x.count(self.tag_delimiter), reverse=reverse)
+
+        # --- Step 3: Return matching names or UI instances ---
         if return_type == "string":
             return matched_names
         return self.get_ui(matched_names)

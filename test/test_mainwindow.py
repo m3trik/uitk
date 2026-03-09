@@ -853,6 +853,267 @@ class TestMainWindowDeferredEdgeCases(QtBaseTestCase):
             pass  # Expected behavior - exception propagates
 
 
+class TestEventFilterNoDuplicate(QtBaseTestCase):
+    """Regression tests for MainWindow.eventFilter.
+
+    Bug: Two identical eventFilter definitions existed in MainWindow.
+    The first (correct) version guards with `watched is self`; the second
+    (shadowing) version omitted this guard. The second was removed.
+    Fixed: 2026-03-01
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_event_filter_only_defined_once(self):
+        """MainWindow should have exactly one eventFilter definition (no shadowing)."""
+        import inspect
+        from uitk.widgets.mainWindow import MainWindow
+
+        source = inspect.getsource(MainWindow)
+        count = source.count("def eventFilter(")
+        self.assertEqual(
+            count,
+            1,
+            f"Expected exactly 1 eventFilter definition, found {count} (duplicate shadowing bug).",
+        )
+
+    def test_event_filter_guards_watched_is_self(self):
+        """eventFilter should only handle ChildPolished when watched is self."""
+        import inspect
+        from uitk.widgets.mainWindow import MainWindow
+
+        source = inspect.getsource(MainWindow.eventFilter)
+        self.assertIn(
+            "watched is self",
+            source,
+            "eventFilter must guard with 'watched is self' to avoid processing events from other objects.",
+        )
+
+    def test_event_filter_registers_child_on_polish(self):
+        """eventFilter should register a new child widget when ChildPolished fires."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+
+        child = QtWidgets.QPushButton("Dynamic")
+        child.setObjectName("dynamicBtn")
+        child.setParent(central)
+
+        # Simulate ChildPolished event with watched=window (self)
+        event = QtCore.QChildEvent(QtCore.QEvent.ChildPolished, child)
+        window.eventFilter(window, event)
+        self.assertIn(child, window.widgets)
+
+    def test_event_filter_ignores_other_watched_objects(self):
+        """eventFilter should NOT register children when watched is not self."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+
+        child = QtWidgets.QPushButton("Other")
+        child.setObjectName("otherBtn")
+        child.setParent(central)
+
+        other_widget = QtWidgets.QWidget()
+        event = QtCore.QChildEvent(QtCore.QEvent.ChildPolished, child)
+        window.eventFilter(other_widget, event)
+        self.assertNotIn(child, window.widgets)
+
+
+class TestSettingsManagerBranch(QtBaseTestCase):
+    """Regression tests for SettingsManager.branch.
+
+    Bug: Two identical branch() definitions existed in SettingsManager.
+    The first uses _ns_key() (DRY), the second inlined the same logic.
+    The second was removed.
+    Fixed: 2026-03-01
+    """
+
+    def test_branch_only_defined_once(self):
+        """SettingsManager should have exactly one branch definition."""
+        import inspect
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        source = inspect.getsource(SettingsManager)
+        count = source.count("def branch(")
+        self.assertEqual(
+            count,
+            1,
+            f"Expected exactly 1 branch definition, found {count} (duplicate shadowing bug).",
+        )
+
+    def test_branch_returns_settings_manager(self):
+        """branch() should return a new SettingsManager instance."""
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        parent = SettingsManager(org="test_org", app="test_app")
+        child = parent.branch("child_ns")
+        self.assertIsInstance(child, SettingsManager)
+
+    def test_branch_uses_sub_namespace(self):
+        """branch() should create a sub-namespace under the parent."""
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        parent = SettingsManager(org="test_org", app="test_app", namespace="root")
+        child = parent.branch("sub")
+        self.assertEqual(child.namespace, "root/sub")
+
+    def test_branch_from_no_namespace(self):
+        """branch() from a manager with no namespace should use the branch name directly."""
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        parent = SettingsManager(org="test_org", app="test_app")
+        child = parent.branch("top")
+        self.assertEqual(child.namespace, "top")
+
+    def test_branch_shares_qsettings(self):
+        """branch() should share the same QSettings backend."""
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        parent = SettingsManager(org="test_org", app="test_app")
+        child = parent.branch("child_ns")
+        self.assertIs(child.settings, parent.settings)
+
+
+class TestSyncWidgetValues(QtBaseTestCase):
+    """Regression tests for MainWindow.sync_widget_values via get_ui_relatives.
+
+    Bug: UIs sharing the same base name but with divergent tag paths
+    (e.g. 'main#startmenu' and 'main#lower#submenu') were not found as
+    relatives because get_ui_relatives relied on strict hierarchical
+    prefix-matching.  Changed to base-name + tag-depth matching.
+    Fixed: 2026-03-01
+    """
+
+    def setUp(self):
+        super().setUp()
+        from collections import namedtuple
+        from uitk.switchboard import Switchboard
+        from uitk.widgets.mainWindow import MainWindow
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        self.SettingsManager = SettingsManager
+
+        self.sb = Switchboard(ui_source=None)
+        UiEntry = namedtuple("Ui", ["filename", "filepath"])
+
+        self.sb.registry.ui_registry.named_tuples.extend(
+            [
+                UiEntry("sync_test", "/fake/sync_test.ui"),
+                UiEntry("sync_test#submenu", "/fake/sync_test#submenu.ui"),
+                UiEntry("sync_test#startmenu", "/fake/sync_test#startmenu.ui"),
+                UiEntry("sync_test#lower#submenu", "/fake/sync_test#lower#submenu.ui"),
+            ]
+        )
+
+        # Simple pair: sync_test <-> sync_test#submenu
+        self.ui_base = self.track_widget(
+            MainWindow(
+                "sync_test",
+                self.sb,
+                settings=SettingsManager(org="test_sync_mw", app="base"),
+            )
+        )
+        self.ui_sub = self.track_widget(
+            MainWindow(
+                "sync_test#submenu",
+                self.sb,
+                settings=SettingsManager(org="test_sync_mw", app="sub"),
+            )
+        )
+        # Divergent pair: sync_test#startmenu <-> sync_test#lower#submenu
+        self.ui_start = self.track_widget(
+            MainWindow(
+                "sync_test#startmenu",
+                self.sb,
+                settings=SettingsManager(org="test_sync_mw", app="start"),
+            )
+        )
+        self.ui_lower = self.track_widget(
+            MainWindow(
+                "sync_test#lower#submenu",
+                self.sb,
+                settings=SettingsManager(org="test_sync_mw", app="lower"),
+            )
+        )
+
+        self.sb.loaded_ui["sync_test"] = self.ui_base
+        self.sb.loaded_ui["sync_test#submenu"] = self.ui_sub
+        self.sb.loaded_ui["sync_test#startmenu"] = self.ui_start
+        self.sb.loaded_ui["sync_test#lower#submenu"] = self.ui_lower
+
+        # Create matching checkboxes on every UI
+        for ui in (self.ui_base, self.ui_sub, self.ui_start, self.ui_lower):
+            c = QtWidgets.QWidget()
+            ui.setCentralWidget(c)
+            chk = QtWidgets.QCheckBox("toggle")
+            chk.setObjectName("chk_sync")
+            chk.setParent(c)
+            ui.register_widget(chk)
+
+    def tearDown(self):
+        for ui in (self.ui_base, self.ui_sub, self.ui_start, self.ui_lower):
+            ui.close()
+        for app_name in ("base", "sub", "start", "lower"):
+            self.SettingsManager(org="test_sync_mw", app=app_name).clear()
+        super().tearDown()
+
+    # --- simple pair ---
+    def test_sync_base_to_submenu(self):
+        """Value change on base UI should propagate to #submenu."""
+        self.ui_base.chk_sync.setChecked(True)
+        self.assertTrue(self.ui_sub.chk_sync.isChecked())
+
+    def test_sync_submenu_to_base(self):
+        """Value change on #submenu should propagate to base UI."""
+        self.ui_sub.chk_sync.setChecked(True)
+        self.assertTrue(self.ui_base.chk_sync.isChecked())
+
+    # --- divergent pair ---
+    def test_sync_startmenu_to_lower_submenu(self):
+        """Value change on #startmenu should propagate to #lower#submenu."""
+        self.ui_start.chk_sync.setChecked(True)
+        self.assertTrue(
+            self.ui_lower.chk_sync.isChecked(),
+            "Divergent-path UIs sharing same base name must sync",
+        )
+
+    def test_sync_lower_submenu_to_startmenu(self):
+        """Value change on #lower#submenu should propagate to #startmenu."""
+        self.ui_lower.chk_sync.setChecked(True)
+        self.assertTrue(
+            self.ui_start.chk_sync.isChecked(),
+            "Divergent-path UIs sharing same base name must sync",
+        )
+
+    # --- relatives API ---
+    def test_get_relatives_finds_divergent_paths(self):
+        """get_ui_relatives must find UIs with divergent tags but same base."""
+        relatives = self.sb.get_ui_relatives(
+            self.ui_start, upstream=True, downstream=True
+        )
+        names = {r.objectName() for r in relatives}
+        self.assertIn(
+            "sync_test#lower#submenu",
+            names,
+            "Divergent-path relative not found",
+        )
+
+    def test_get_relatives_excludes_self(self):
+        """get_ui_relatives must not include the target UI itself."""
+        relatives = self.sb.get_ui_relatives(
+            self.ui_start, upstream=True, downstream=True
+        )
+        names = {r.objectName() for r in relatives}
+        self.assertNotIn("sync_test#startmenu", names)
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

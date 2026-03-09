@@ -99,12 +99,15 @@ class OptionBoxManager(ptk.LoggingMixin):
         settings_key: Optional[str] = None,
         *,
         max_recent: int = 10,
+        **kwargs,
     ):
         """Enable recent values option (fluent interface).
 
         Args:
             settings_key: Key for persistent settings.
             max_recent: Maximum number of recent values to keep.
+            **kwargs: Forwarded to ``RecentValuesOption``
+                (e.g. ``display_format``).
         """
         from ..optionBox.options.recent_values import RecentValuesOption
 
@@ -112,17 +115,19 @@ class OptionBoxManager(ptk.LoggingMixin):
             wrapped_widget=self._widget,
             settings_key=settings_key,
             max_recent=max_recent,
+            **kwargs,
         )
         self.add_option(recent_option)
         return self
 
     def set_action(
         self,
-        callback,
+        callback=None,
         icon="option_box",
         tooltip="Options",
         text=None,
         replace=True,
+        states=None,
     ):
         """Set the action handler (fluent interface).
 
@@ -132,6 +137,9 @@ class OptionBoxManager(ptk.LoggingMixin):
             tooltip: Tooltip text (default: "Options")
             text: Optional text to display instead of icon
             replace: If True, removes any existing ActionOptions first (default: True)
+            states: Optional list of state dicts for multi-state cycling.
+                Each dict may have 'icon', 'tooltip', and 'callback' keys.
+                When provided, clicking cycles through the states.
         """
         # from ..optionBox.options import ActionOption
         # Use absolute import to ensure type consistency
@@ -165,6 +173,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             icon=icon,
             tooltip=tooltip,
             text=text,
+            states=states,
         )
         self.add_option(action_option)
         return self

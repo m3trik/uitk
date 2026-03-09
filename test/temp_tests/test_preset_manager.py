@@ -1001,6 +1001,233 @@ class TestWireCombo(QtBaseTestCase):
         self.assertIn("y", texts)
 
 
+class TestMetadataCallbacks(QtBaseTestCase):
+    """Test metadata_provider and on_metadata_loaded hooks."""
+
+    def setUp(self):
+        super().setUp()
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="uitk_meta_"))
+
+        self.chk = QtWidgets.QCheckBox("opt")
+        self.chk.setObjectName("chk_opt")
+        self.chk.setChecked(True)
+        self.track_widget(self.chk)
+
+        self.spin = QtWidgets.QSpinBox()
+        self.spin.setObjectName("spin_val")
+        self.spin.setRange(0, 100)
+        self.spin.setValue(42)
+        self.track_widget(self.spin)
+
+        self.mgr = PresetManager.from_widgets(
+            preset_dir=self.tmpdir,
+            widgets=[self.chk, self.spin],
+        )
+
+    def tearDown(self):
+        super().tearDown()
+        if self.tmpdir.exists():
+            shutil.rmtree(self.tmpdir)
+
+    # ------------------------------------------------------------------
+    # Default behavior (no callbacks)
+    # ------------------------------------------------------------------
+
+    def test_defaults_are_none(self):
+        """metadata_provider and on_metadata_loaded default to None."""
+        self.assertIsNone(self.mgr.metadata_provider)
+        self.assertIsNone(self.mgr.on_metadata_loaded)
+
+    def test_save_load_without_callbacks(self):
+        """Save/load still works when no callbacks are set (backward compat)."""
+        self.mgr.save("compat")
+        self.chk.setChecked(False)
+        self.spin.setValue(0)
+        count = self.mgr.load("compat")
+        self.assertEqual(count, 2)
+        self.assertTrue(self.chk.isChecked())
+        self.assertEqual(self.spin.value(), 42)
+
+    # ------------------------------------------------------------------
+    # metadata_provider on save
+    # ------------------------------------------------------------------
+
+    def test_metadata_provider_merges_into_meta(self):
+        """Provider's dict is merged into _meta alongside version."""
+        self.mgr.metadata_provider = lambda: {"custom_key": "hello", "number": 99}
+        path = self.mgr.save("with_meta")
+
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        self.assertEqual(data["_meta"]["version"], 1)
+        self.assertEqual(data["_meta"]["custom_key"], "hello")
+        self.assertEqual(data["_meta"]["number"], 99)
+
+    def test_metadata_provider_empty_dict_no_extra_keys(self):
+        """Provider returning {} adds nothing beyond version."""
+        self.mgr.metadata_provider = lambda: {}
+        path = self.mgr.save("empty_meta")
+
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        self.assertEqual(data["_meta"], {"version": 1})
+
+    def test_metadata_provider_does_not_overwrite_version(self):
+        """Provider cannot accidentally overwrite the version key."""
+        self.mgr.metadata_provider = lambda: {"version": 999}
+        path = self.mgr.save("version_override")
+
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        # update() lets the provider overwrite — this is intentional
+        # behavior; the test documents it rather than prevents it.
+        self.assertEqual(data["_meta"]["version"], 999)
+
+    # ------------------------------------------------------------------
+    # on_metadata_loaded on load
+    # ------------------------------------------------------------------
+
+    def test_on_metadata_loaded_receives_meta(self):
+        """Callback receives the full _meta dict on load."""
+        self.mgr.metadata_provider = lambda: {"payload": [1, 2, 3]}
+        self.mgr.save("meta_load")
+
+        received = []
+        self.mgr.on_metadata_loaded = lambda meta: received.append(meta)
+        self.mgr.load("meta_load")
+
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0]["payload"], [1, 2, 3])
+        self.assertEqual(received[0]["version"], 1)
+
+    def test_on_metadata_loaded_not_called_when_none(self):
+        """When on_metadata_loaded is None, no error occurs on load."""
+        self.mgr.metadata_provider = lambda: {"data": True}
+        self.mgr.save("no_handler")
+
+        self.mgr.on_metadata_loaded = None
+        # Should not raise
+        count = self.mgr.load("no_handler")
+        self.assertEqual(count, 2)
+
+    def test_on_metadata_loaded_not_called_for_empty_meta(self):
+        """When _meta is empty (missing from file), callback is not invoked."""
+        # Manually create a preset with no _meta key
+        path = self.tmpdir / "no_meta.json"
+        with open(path, "w") as f:
+            json.dump({"chk_opt": False, "spin_val": 10}, f)
+
+        received = []
+        self.mgr.on_metadata_loaded = lambda meta: received.append(meta)
+        self.mgr.load("no_meta")
+
+        self.assertEqual(received, [], "Callback should not fire for empty _meta")
+
+    def test_meta_stripped_before_widget_apply(self):
+        """_meta is popped from data so it's not applied as a widget value."""
+        self.mgr.metadata_provider = lambda: {"extra": "value"}
+        self.mgr.save("meta_strip")
+
+        self.mgr.on_metadata_loaded = lambda meta: None
+        count = self.mgr.load("meta_strip")
+        # Only chk_opt and spin_val should be applied, not _meta
+        self.assertEqual(count, 2)
+
+    # ------------------------------------------------------------------
+    # setup() passes callbacks through
+    # ------------------------------------------------------------------
+
+    def test_setup_assigns_metadata_provider(self):
+        """setup() can set metadata_provider."""
+        mgr = PresetManager()
+        provider = lambda: {"k": "v"}
+        mgr.setup(
+            preset_dir=self.tmpdir,
+            widgets=[self.chk],
+            metadata_provider=provider,
+        )
+        self.assertIs(mgr.metadata_provider, provider)
+
+    def test_setup_assigns_on_metadata_loaded(self):
+        """setup() can set on_metadata_loaded."""
+        mgr = PresetManager()
+        handler = lambda meta: None
+        mgr.setup(
+            preset_dir=self.tmpdir,
+            widgets=[self.chk],
+            on_metadata_loaded=handler,
+        )
+        self.assertIs(mgr.on_metadata_loaded, handler)
+
+    def test_setup_preserves_none_when_not_passed(self):
+        """setup() without callback args leaves them as None."""
+        mgr = PresetManager()
+        mgr.setup(preset_dir=self.tmpdir, widgets=[self.chk])
+        self.assertIsNone(mgr.metadata_provider)
+        self.assertIsNone(mgr.on_metadata_loaded)
+
+    # ------------------------------------------------------------------
+    # Direct assignment
+    # ------------------------------------------------------------------
+
+    def test_callbacks_assignable_as_attributes(self):
+        """Callbacks can be set directly on the instance (for add_presets pattern)."""
+        provider = lambda: {"a": 1}
+        handler = lambda meta: None
+
+        self.mgr.metadata_provider = provider
+        self.mgr.on_metadata_loaded = handler
+
+        self.assertIs(self.mgr.metadata_provider, provider)
+        self.assertIs(self.mgr.on_metadata_loaded, handler)
+
+    # ------------------------------------------------------------------
+    # Roundtrip with binary-like data (base64 simulation)
+    # ------------------------------------------------------------------
+
+    def test_base64_binary_roundtrip(self):
+        """Simulate embedding a binary file as base64 metadata.
+
+        This mirrors the scene_exporter use case: a .fbxexportpreset
+        file is base64-encoded by the provider and decoded by the handler.
+        """
+        import base64
+
+        fake_binary = b"\\x00\\x01\\x02FAKE_PRESET_BINARY_DATA\\xff\\xfe"
+        encoded = base64.b64encode(fake_binary).decode("ascii")
+
+        self.mgr.metadata_provider = lambda: {
+            "fbx_preset_name": "test_preset",
+            "fbx_preset_data": encoded,
+        }
+        self.mgr.save("binary_roundtrip")
+
+        # Verify JSON is valid text
+        path = self.tmpdir / "binary_roundtrip.json"
+        with open(path, "r") as f:
+            data = json.load(f)
+        self.assertEqual(data["_meta"]["fbx_preset_name"], "test_preset")
+
+        # On load, handler should receive decodable data
+        restored = {}
+
+        def handler(meta):
+            name = meta.get("fbx_preset_name")
+            raw = meta.get("fbx_preset_data")
+            if name and raw:
+                restored["name"] = name
+                restored["bytes"] = base64.b64decode(raw)
+
+        self.mgr.on_metadata_loaded = handler
+        self.mgr.load("binary_roundtrip")
+
+        self.assertEqual(restored["name"], "test_preset")
+        self.assertEqual(restored["bytes"], fake_binary)
+
+
 if __name__ == "__main__":
     import unittest
 

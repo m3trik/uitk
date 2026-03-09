@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
@@ -87,6 +87,9 @@ class PresetManager(ptk.LoggingMixin):
         else:
             self._preset_dir = None
 
+        self.metadata_provider: Optional[Callable[[], dict]] = None
+        self.on_metadata_loaded: Optional[Callable[[dict], None]] = None
+
         self._on_change_callbacks = []
 
     @staticmethod
@@ -139,6 +142,8 @@ class PresetManager(ptk.LoggingMixin):
         preset_dir=None,
         widgets: Optional[List[QtWidgets.QWidget]] = None,
         on_loaded=None,
+        metadata_provider: Optional[Callable[[], dict]] = None,
+        on_metadata_loaded: Optional[Callable[[dict], None]] = None,
     ) -> "PresetManager":
         """Configure and optionally auto-wire a preset combo.
 
@@ -173,6 +178,10 @@ class PresetManager(ptk.LoggingMixin):
             self._preset_dir = self._resolve_preset_dir(preset_dir)
         if widgets is not None:
             self._explicit_widgets = list(widgets)
+        if metadata_provider is not None:
+            self.metadata_provider = metadata_provider
+        if on_metadata_loaded is not None:
+            self.on_metadata_loaded = on_metadata_loaded
 
         # Auto-create and wire a preset combo when parent is a Menu
         if hasattr(self.parent, "add") and hasattr(self.parent, "get_items"):
@@ -268,6 +277,9 @@ class PresetManager(ptk.LoggingMixin):
         widgets = self._get_widgets(scope)
         data: Dict[str, Any] = {"_meta": {"version": self.PRESET_VERSION}}
 
+        if self.metadata_provider is not None:
+            data["_meta"].update(self.metadata_provider())
+
         for widget in widgets:
             obj_name = widget.objectName()
             if not obj_name:
@@ -327,8 +339,10 @@ class PresetManager(ptk.LoggingMixin):
                 self.logger.warning(f"Invalid preset file '{name}': {e}")
                 return 0
 
-        # Strip metadata
-        data.pop("_meta", None)
+        # Extract and dispatch metadata
+        meta = data.pop("_meta", {})
+        if self.on_metadata_loaded is not None and meta:
+            self.on_metadata_loaded(meta)
 
         widgets = self._get_widgets(scope)
         widget_map = {w.objectName(): w for w in widgets if w.objectName()}

@@ -218,6 +218,15 @@ class ButtonOption(BaseOption):
             return widget.isChecked()
         return None
 
+    def _find_parent_window(self):
+        """Walk up the widget tree and return the first QMainWindow, QDialog, or top-level widget."""
+        widget = self.wrapped_widget or self._widget
+        while widget is not None:
+            if widget.isWindow():
+                return widget
+            widget = widget.parentWidget()
+        return None
+
     def _set_widget_value(self, value):
         """Write *value* to the wrapped widget."""
         widget = self.wrapped_widget
