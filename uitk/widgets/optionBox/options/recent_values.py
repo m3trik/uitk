@@ -2,9 +2,50 @@
 # coding=utf-8
 """Recent Values option for OptionBox — shows a selectable history list."""
 
+import os
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 from ._options import ButtonOption
+
+
+def _is_filesystem_path(value):
+    """Return True if *value* looks like a filesystem path."""
+    s = str(value)
+    # Drive letter (C:/) or UNC (\\server) or absolute unix (/home)
+    if len(s) >= 2 and s[1] == ":":
+        return True
+    if s.startswith("//") or s.startswith("\\\\"):
+        return True
+    if s.startswith("/"):
+        return True
+    return False
+
+
+def _build_display_map_smart_path(values):
+    """Build a display map by stripping the common directory prefix.
+
+    Only engages when *all* values look like filesystem paths and there
+    are at least two of them.  Falls back to ``None`` (use default
+    truncation) otherwise.
+    """
+    str_values = [str(v) for v in values]
+    if len(str_values) < 2 or not all(_is_filesystem_path(v) for v in str_values):
+        return None
+
+    normalized = [ptk.format_path(v) for v in str_values]
+    try:
+        prefix = os.path.commonpath(normalized)
+    except ValueError:
+        return None
+
+    if not prefix:
+        return None
+
+    display_map = {}
+    for raw, norm in zip(values, normalized):
+        tail = norm[len(prefix) :].lstrip("/")
+        display_map[raw] = f"\u2026/{tail}" if tail else str(raw)
+    return display_map
 
 
 def _normalize_value(value):
@@ -28,11 +69,12 @@ class RecentValuesPopup(QtCore.QObject):
 
     _MAX_DISPLAY_LENGTH = 60
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, text_align="center"):
         super().__init__(parent)
         from uitk.widgets.menu import Menu
 
         self._parent_widget = parent
+        self._text_align = text_align
 
         self._menu = Menu(
             parent=parent,
@@ -104,9 +146,18 @@ class RecentValuesPopup(QtCore.QObject):
     def width(self):
         return self._menu.width()
 
-    def add_recent_value(self, value, is_current=False):
-        """Add a recent-value row."""
-        row = self._create_value_row(value, is_current=is_current)
+    def add_recent_value(self, value, is_current=False, display_text=None):
+        """Add a recent-value row.
+
+        Args:
+            value: The raw value to store/restore.
+            is_current: Whether this is the current widget value.
+            display_text: Override text shown on the button.
+                If ``None``, falls back to default truncation.
+        """
+        row = self._create_value_row(
+            value, is_current=is_current, display_text=display_text
+        )
         self._menu.add(row)
 
     def add_separator(self):
@@ -123,11 +174,14 @@ class RecentValuesPopup(QtCore.QObject):
         label.setAlignment(QtCore.Qt.AlignCenter)
         self._menu.add(label)
 
-    def _create_value_row(self, value, is_current=False):
+    def _create_value_row(self, value, is_current=False, display_text=None):
         from uitk.widgets.mixins.icon_manager import IconManager
 
         full_text = str(value)
-        display_text = ptk.truncate(full_text, self._MAX_DISPLAY_LENGTH, mode="start")
+        if display_text is None:
+            display_text = ptk.truncate(
+                full_text, self._MAX_DISPLAY_LENGTH, mode="middle"
+            )
 
         container = QtWidgets.QWidget()
         container.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
@@ -135,8 +189,8 @@ class RecentValuesPopup(QtCore.QObject):
             "recentValueRow_current" if is_current else "recentValueRow"
         )
         layout = QtWidgets.QHBoxLayout(container)
-        layout.setContentsMargins(1, 0, 1, 0)
-        layout.setSpacing(1)
+        layout.setContentsMargins(1, 0, 8, 0)
+        layout.setSpacing(4)
 
         # Value button — click to restore
         value_btn = QtWidgets.QPushButton(display_text)
@@ -145,6 +199,10 @@ class RecentValuesPopup(QtCore.QObject):
         value_btn.setCursor(QtCore.Qt.PointingHandCursor)
         value_btn.clicked.connect(lambda: self._on_value_clicked(value))
         value_btn.setToolTip(full_text)
+        if self._text_align == "left":
+            value_btn.setStyleSheet("text-align: left; padding-left: 4px;")
+        elif self._text_align == "right":
+            value_btn.setStyleSheet("text-align: right; padding-right: 4px;")
         layout.addWidget(value_btn, 1)
 
         # Remove button
@@ -199,6 +257,9 @@ class RecentValuesOption(ButtonOption):
         wrapped_widget=None,
         settings_key=None,
         max_recent=10,
+        display_format="auto",
+        popup_align="right",
+        text_align="center",
     ):
         """Initialize the recent values option.
 
@@ -207,6 +268,19 @@ class RecentValuesOption(ButtonOption):
             settings_key: Key for persistent storage.  If provided,
                 recent values survive across sessions.
             max_recent: Maximum number of entries to keep.
+            display_format: Controls how values appear in the popup.
+                ``"auto"`` — strip common directory prefix when all
+                values are filesystem paths; otherwise truncate.
+                ``"truncate"`` — always use simple start-truncation
+                (previous default behaviour).
+                ``"basename"`` — show only the last path component.
+                A callable ``(value) -> str`` for arbitrary formatting.
+            popup_align: Horizontal alignment of the popup.
+                ``"right"`` — align popup's right edge to the parent
+                window's right edge (default).
+                ``"left"`` — align popup's left edge to the wrapped widget.
+            text_align: Text alignment for value labels in the popup.
+                ``"center"`` (default), ``"left"``, or ``"right"``.
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -218,6 +292,9 @@ class RecentValuesOption(ButtonOption):
         self._recent_values: list = []
         self._settings_key = settings_key
         self._max_recent = max_recent
+        self._display_format = display_format
+        self._popup_align = popup_align
+        self._text_align = text_align
         self._popup = None
         self._settings = None
 
@@ -294,7 +371,9 @@ class RecentValuesOption(ButtonOption):
                 self._popup = None
             return
 
-        self._popup = RecentValuesPopup(parent=self.wrapped_widget)
+        self._popup = RecentValuesPopup(
+            parent=self.wrapped_widget, text_align=self._text_align
+        )
         self._popup.menu.on_hidden.connect(self._on_popup_hidden)
         self._popup.connect_signals(
             on_value_selected=self._restore_value,
@@ -302,13 +381,43 @@ class RecentValuesOption(ButtonOption):
         )
 
         self._populate_popup()
+
+        # Size popup to fit content, capped to parent window width
+        window = self._find_parent_window()
+        self._popup.adjustSize()
+        # Ensure minimum width accommodates the longest display text
+        fm = self._popup.menu.fontMetrics()
+        display_map = self._resolve_display_map(list(self._recent_values))
+        max_text_w = 0
+        for v in self._recent_values:
+            dt = display_map.get(v, str(v))
+            max_text_w = max(max_text_w, fm.horizontalAdvance(dt))
+        # Account for remove button (18px), spacing, margins
+        content_w = max_text_w + 18 + 4 + 1 + 8 + 24  # btn + spacing + margins + pad
+        if window:
+            max_w = window.width() - 16
+            self._popup.menu.setMinimumWidth(min(content_w, max_w))
+            self._popup.menu.setMaximumWidth(max_w)
+        else:
+            self._popup.menu.setMinimumWidth(content_w)
         self._popup.adjustSize()
 
         if self._widget:
             wrapped = self.wrapped_widget
             if wrapped:
                 widget_rect = wrapped.rect()
-                global_pos = wrapped.mapToGlobal(QtCore.QPoint(0, widget_rect.height()))
+                if self._popup_align == "right" and window:
+                    # Align popup's right edge to the window's right edge
+                    win_right = window.mapToGlobal(QtCore.QPoint(window.width(), 0)).x()
+                    popup_x = win_right - self._popup.width() - 8
+                    popup_y = wrapped.mapToGlobal(
+                        QtCore.QPoint(0, widget_rect.height())
+                    ).y()
+                    global_pos = QtCore.QPoint(popup_x, popup_y)
+                else:
+                    global_pos = wrapped.mapToGlobal(
+                        QtCore.QPoint(0, widget_rect.height())
+                    )
             else:
                 button_rect = self._widget.rect()
                 global_pos = self._widget.mapToGlobal(
@@ -330,21 +439,48 @@ class RecentValuesOption(ButtonOption):
         normalized_current = _normalize_value(current_value)
         has_current = current_value is not None and str(current_value).strip()
 
-        # Show current value at the top if not empty
-        if has_current:
-            self._popup.add_recent_value(current_value, is_current=True)
-            self._popup.add_separator()
-
         # Recent values excluding the current one
         others = [
             v for v in self._recent_values if _normalize_value(v) != normalized_current
         ]
 
+        # Build a display map for all visible values
+        all_values = ([current_value] if has_current else []) + others
+        display_map = self._resolve_display_map(all_values)
+
+        # Show current value at the top if not empty
+        if has_current:
+            self._popup.add_recent_value(
+                current_value,
+                is_current=True,
+                display_text=display_map.get(current_value),
+            )
+            self._popup.add_separator()
+
         for v in others:
-            self._popup.add_recent_value(v)
+            self._popup.add_recent_value(v, display_text=display_map.get(v))
 
         if not has_current and not others:
             self._popup.add_empty_message()
+
+    def _resolve_display_map(self, values):
+        """Return ``{raw_value: display_string}`` or empty dict."""
+        fmt = self._display_format
+
+        if callable(fmt):
+            return {v: fmt(v) for v in values}
+
+        if fmt == "basename":
+            return {v: os.path.basename(str(v)) for v in values}
+
+        if fmt == "auto":
+            dm = _build_display_map_smart_path(values)
+            if dm is not None:
+                return dm
+            # Fall through to default truncation (display_text=None)
+
+        # "truncate" or auto-fallback — let the popup use its default
+        return {}
 
     # ------------------------------------------------------------------
     # Actions

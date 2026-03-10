@@ -187,11 +187,6 @@ class SettingsManager:
         """Set a QByteArray value directly without JSON serialization."""
         self.settings.setValue(self._ns_key(key), value)
 
-    def branch(self, name: str) -> "SettingsManager":
-        """Create a new SettingsManager instance using the same QSettings object but with a sub-namespace."""
-        new_namespace = f"{self.namespace}/{name}" if self.namespace else name
-        return SettingsManager(namespace=new_namespace, qsettings=self.settings)
-
     def getByteArray(
         self, key: str, default: QtCore.QByteArray = None
     ) -> QtCore.QByteArray:

@@ -181,12 +181,14 @@ class OptionBoxMixin:
             settings_key: Optional[str] = None,
             *,
             max_recent: int = 10,
+            **kwargs,
         ) -> "OptionBoxMixin._OptionsWrapper":
             mgr = self._mgr
             if mgr is not None:
                 mgr.recent(
                     settings_key=settings_key,
                     max_recent=max_recent,
+                    **kwargs,
                 )
             return self
 

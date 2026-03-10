@@ -209,21 +209,28 @@ class ShortcutManager:
         """Add multiple shortcuts from a configuration list
 
         Parameters:
-            shortcuts_config: List of tuples (key_sequence, action, description)
+            shortcuts_config: List of tuples.  Each tuple may be:
+                - ``(key_sequence, action)``
+                - ``(key_sequence, action, description)``
+                - ``(key_sequence, action, description, context)``
 
         Returns:
             List of created QShortcut objects
         """
         created_shortcuts = []
         for config in shortcuts_config:
-            if len(config) == 3:
+            if len(config) == 4:
+                key_seq, action, description, context = config
+                shortcut = self.add_shortcut(key_seq, action, description, context)
+            elif len(config) == 3:
                 key_seq, action, description = config
                 shortcut = self.add_shortcut(key_seq, action, description)
-                created_shortcuts.append(shortcut)
             elif len(config) == 2:
                 key_seq, action = config
                 shortcut = self.add_shortcut(key_seq, action)
-                created_shortcuts.append(shortcut)
+            else:
+                continue
+            created_shortcuts.append(shortcut)
         return created_shortcuts
 
     def add_global_shortcut(

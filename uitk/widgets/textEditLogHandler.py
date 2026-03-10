@@ -35,7 +35,10 @@ class TextEditLogHandler(logging.Handler):
         try:
             if getattr(record, "raw", False):
                 msg = record.getMessage()
-                msg = f'<span style="font-family:monospace; white-space:pre-wrap;">{msg}</span>'
+                # Use white-space:pre (not pre-wrap) so box-drawing lines
+                # are never broken by word-wrap — clipping is preferable
+                # to misaligned box characters.
+                msg = f'<span style="font-family:monospace; white-space:pre;">{msg}</span>'
             else:
                 msg = self.format(record)
                 color = self.get_color(record.levelname)

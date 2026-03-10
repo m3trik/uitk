@@ -336,8 +336,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         widget.legal_name = lambda: self.sb.convert_to_legal_name(widget.objectName())
         widget.type = type(widget)
         widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
-        widget.default_signals = lambda: self.sb.default_signals.get(
-            widget.derived_type, None
+        # Use cached derived_type lookup instead of per-call isinstance loop
+        widget.default_signals = lambda w=widget: self.sb.default_signals.get(
+            w.derived_type, None
         )
 
         widget.get_slot = lambda w=widget: getattr(
@@ -643,15 +644,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.on_show.emit()
 
         self.is_initialized = True
-
-    def eventFilter(self, watched, event) -> bool:
-        """Override the event filter to register widgets when they are polished."""
-        if event.type() == QtCore.QEvent.ChildPolished:
-            child = event.child()
-            if isinstance(child, QtWidgets.QWidget):
-                if child.objectName() and child not in self.widgets:
-                    self.register_widget(child)
-        return super().eventFilter(watched, event)
 
     def register_children(
         self, root_widget: Optional[QtWidgets.QWidget] = None

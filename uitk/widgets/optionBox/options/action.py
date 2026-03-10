@@ -28,6 +28,7 @@ class ActionOption(ButtonOption):
         icon="option_box",
         tooltip="Options",
         text=None,
+        states=None,
     ):
         """Initialize the action option.
 
@@ -37,6 +38,10 @@ class ActionOption(ButtonOption):
             icon: Icon name for the button (default: "option_box")
             tooltip: Tooltip text (default: "Options")
             text: Optional text to display instead of icon
+            states: Optional list of state dicts for multi-state cycling.
+                Each dict may contain 'icon', 'tooltip', and 'callback' keys.
+                When provided, clicking cycles through the states.
+                Per-state callbacks override the top-level callback.
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -46,6 +51,10 @@ class ActionOption(ButtonOption):
         )
         self._action_handler = callback
         self._text = text
+        self._states = None
+        self._current_state = 0
+        if states:
+            self.set_states(states)
 
     def create_widget(self):
         """Create the action button widget."""
@@ -58,6 +67,13 @@ class ActionOption(ButtonOption):
             button.setText(self._text)
 
         button.setProperty("class", "ActionButton")
+
+        # Apply state 0 visuals immediately so the correct icon/tooltip
+        # appear on first render instead of the constructor defaults.
+        if self._states:
+            self._widget = button  # Temporarily set so _apply_state can use it
+            self._apply_state()
+
         return button
 
     def set_action_handler(self, handler):
@@ -68,30 +84,74 @@ class ActionOption(ButtonOption):
         """
         self._action_handler = handler
 
+    @property
+    def current_state(self):
+        """The current state index (0-based). Only meaningful when states are set."""
+        return self._current_state
+
+    @current_state.setter
+    def current_state(self, index):
+        if not self._states:
+            return
+        self._current_state = index % len(self._states)
+        self._apply_state()
+
+    def set_states(self, states):
+        """Set multiple cycling states.
+
+        Args:
+            states: list of dicts, each with optional keys: icon, tooltip, callback.
+                e.g. [{"icon": "play", "tooltip": "Run", "callback": run_fn},
+                      {"icon": "pause", "tooltip": "Pause", "callback": pause_fn},
+                      {"icon": "stop",  "tooltip": "Stop",  "callback": stop_fn}]
+        """
+        self._states = list(states)
+        self._current_state = 0
+        if self._widget:
+            self._apply_state()
+
+    def _apply_state(self):
+        """Apply the visual properties (icon, tooltip) for the current state."""
+        from uitk.widgets.mixins.icon_manager import IconManager
+
+        state = self._states[self._current_state]
+        if "icon" in state:
+            IconManager.set_icon(self._widget, state["icon"], size=(15, 15))
+        if "tooltip" in state:
+            self._widget.setToolTip(state["tooltip"])
+
+    def _resolve_handler(self):
+        """Resolve the current handler, checking per-state callback first."""
+        if self._states:
+            state = self._states[self._current_state]
+            if "callback" in state and state["callback"] is not None:
+                return state["callback"]
+        return self._action_handler
+
     def _handle_action(self):
-        """Handle the action click."""
-        h = self._action_handler
-        if h is None:
-            return
+        """Handle the action click, cycling state if multi-state is active."""
+        h = self._resolve_handler()
+        if h is not None:
+            if callable(h):
+                try:
+                    h()
+                except Exception as e:  # pragma: no cover - defensive
+                    print(f"ActionOption handler error: {e}")
+            else:
+                # Heuristic method lookup order
+                for attr in ("show", "execute", "run", "trigger"):
+                    if hasattr(h, attr) and callable(getattr(h, attr)):
+                        getattr(h, attr)()
+                        break
+                else:
+                    try:
+                        h()
+                    except Exception:  # pragma: no cover
+                        print(f"Warning: ActionOption handler {h} not invokable")
 
-        if callable(h):  # direct callable
-            try:
-                h()
-            except Exception as e:  # pragma: no cover - defensive
-                print(f"ActionOption handler error: {e}")
-            return
-
-        # Heuristic method lookup order
-        for attr in ("show", "execute", "run", "trigger"):
-            if hasattr(h, attr) and callable(getattr(h, attr)):
-                getattr(h, attr)()
-                return
-
-        # Fallback attempt
-        try:
-            h()
-        except Exception:  # pragma: no cover
-            print(f"Warning: ActionOption handler {h} not invokable")
+        # Cycle to next state after executing
+        if self._states and len(self._states) > 1:
+            self.current_state = self._current_state + 1
 
 
 class MenuOption(ActionOption):

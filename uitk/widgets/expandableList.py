@@ -450,7 +450,10 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             obj: The added ExpandableList object.
         """
-        sublist = ExpandableList(self.parent(), **self._create_sublist_config())
+        # Parent to the nearest QMainWindow ancestor so sublists aren't clipped
+        # by intermediate native widgets (e.g. staticWindow in marking menus).
+        parent = self.window() or self.parent()
+        sublist = ExpandableList(parent, **self._create_sublist_config())
         sublist.setVisible(False)
 
         # Connect the signals of the sublist to the signals of the parent list
@@ -482,6 +485,17 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             return
         super().hide()
 
+    def hideEvent(self, event):
+        """Ensure all sublists are closed when this list is hidden.
+
+        Triggered by any hide mechanism (parent window hiding, explicit
+        hide, stacked-widget page change, etc.), so stale sublists never
+        persist across show/hide cycles.
+        """
+        self._force_hide_all()
+        self._stop_hide_watchdog()
+        super().hideEvent(event)
+
     def _is_cursor_in_hierarchy(self, cursor_pos):
         """Check if cursor is within this list or any visible child sublist.
 
@@ -491,9 +505,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             bool: True if cursor is inside any visible part of the hierarchy.
         """
-        if self.isVisible() and self.rect().contains(
-            self.mapFromGlobal(cursor_pos)
-        ):
+        if self.isVisible() and self.rect().contains(self.mapFromGlobal(cursor_pos)):
             return True
         for i in range(self.layout.count()):
             w = self.layout.itemAt(i).widget()

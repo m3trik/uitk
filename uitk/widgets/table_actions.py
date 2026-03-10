@@ -138,10 +138,12 @@ class TableActions:
         item = self._table.item(row, col)
         if item is None:
             item = QtWidgets.QTableWidgetItem()
-            item.setFlags(
-                item.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable
-            )
             self._table.setItem(row, col, item)
+
+        # Always ensure action items are non-editable and non-selectable
+        item.setFlags(
+            item.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable
+        )
 
         # Icon
         color = state.get("color")

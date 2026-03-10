@@ -14,6 +14,7 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         self.setChecked(True)  # Start expanded
         self.restore_state = True  # Default to restoring state
         self.settings = SettingsManager()
+        self._expanded_height = None  # Saved height before collapse
 
         # Connect the toggle signal
         self.toggled.connect(self.toggle_expand)
@@ -55,10 +56,19 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
 
         if checked:
             self.setMaximumHeight(16777215)  # Restore max height
-            # Expanded target: query the base QGroupBox sizeHint now that
-            # content is visible and maxHeight is restored.
-            new_group_height = super(CollapsableGroup, self).sizeHint().height()
+            # Use the saved pre-collapse height if available, otherwise
+            # fall back to sizeHint.  This prevents drift when sizeHint
+            # is larger than the actual rendered height (e.g. window was
+            # smaller than the ideal size).
+            if self._expanded_height is not None:
+                new_group_height = self._expanded_height
+                self._expanded_height = None
+            else:
+                new_group_height = super(CollapsableGroup, self).sizeHint().height()
         else:
+            # Remember the actual height before collapsing so expand can
+            # restore to exactly the same value.
+            self._expanded_height = old_group_height
             collapsed = self._collapsed_height()
             self.setMaximumHeight(collapsed)
             new_group_height = collapsed
@@ -87,15 +97,31 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         window.resize(window.width(), new_height)
 
     def _set_content_visible(self, visible):
-        """Show or hide all child widgets"""
-        # Only process if we have a layout
+        """Show or hide all child widgets.
+
+        When showing, also ensures immediate children of each layout item
+        are visible.  This handles OptionBoxContainer wrappers whose inner
+        widgets were hidden during a previous collapse and never un-hidden
+        because toggle only touches direct layout children.
+        """
         if not self.layout():
             return
 
         for i in range(self.layout().count()):
             item = self.layout().itemAt(i)
-            if item and item.widget():
-                item.widget().setVisible(visible)
+            w = item.widget() if item else None
+            if not w:
+                continue
+            w.setVisible(visible)
+            # When expanding, ensure children inside wrapper containers
+            # (e.g. OptionBoxContainer) are also made visible so that
+            # widgets wrapped after a collapse aren't left hidden.
+            if visible and w.layout():
+                for j in range(w.layout().count()):
+                    child_item = w.layout().itemAt(j)
+                    child = child_item.widget() if child_item else None
+                    if child and child.isHidden():
+                        child.setVisible(True)
 
     def setLayout(self, layout):
         """Override setLayout. The stylesheet handles title positioning
