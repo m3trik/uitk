@@ -94,6 +94,7 @@ DEFAULT_INCLUDE = {
     "widgets.toolBox": "ToolBox",
     "widgets.treeWidget": "TreeWidget",
     "widgets.widgetComboBox": "WidgetComboBox",
+    "widgets.sequencer._sequencer": ["SequencerWidget", "ClipData", "TrackData"],
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",
     "widgets.mixins.convert": "ConvertMixin",
