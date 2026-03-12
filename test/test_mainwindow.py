@@ -416,6 +416,72 @@ class TestMainWindowGeometry(QtBaseTestCase):
         # Should not raise
         window.clear_saved_geometry()
 
+    def test_adjust_size_when_no_stored_geometry(self):
+        """Should call adjustSize when no stored geometry exists.
+
+        Bug: Window would show at a default/degenerate size when no geometry
+        was stored, rather than auto-sizing to fit content.
+        Fixed: adjustSize() fallback added to restore_window_geometry().
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        # Create a window with some content
+        central = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(central)
+        label = QtWidgets.QLabel("Hello World - test content")
+        layout.addWidget(label)
+
+        window = self.track_widget(
+            MainWindow("TestGeomClear", self.sb, central_widget=central)
+        )
+        # Clear any previously stored geometry
+        window.clear_saved_geometry()
+
+        # Show window — restore_window_geometry runs on first show
+        window.show()
+        QtWidgets.QApplication.processEvents()
+
+        # Window should have a non-degenerate size from adjustSize
+        self.assertGreater(window.width(), 0)
+        self.assertGreater(window.height(), 0)
+
+    def test_geometry_persists_across_sessions(self):
+        """Should save geometry on hide and restore on next show.
+
+        Simulates two sessions: first session saves geometry, second restores it.
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        # Use a unique name so QSettings don't collide with other tests
+        name = "TestGeomPersist"
+
+        # --- Session 1: show, resize, hide (saves geometry) ---
+        window1 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=QtWidgets.QWidget())
+        )
+        window1.clear_saved_geometry()
+        window1.show()
+        QtWidgets.QApplication.processEvents()
+
+        window1.resize(400, 300)
+        QtWidgets.QApplication.processEvents()
+
+        window1.hide()  # triggers save_window_geometry
+        QtWidgets.QApplication.processEvents()
+
+        # --- Session 2: new window with same name should restore ---
+        window2 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=QtWidgets.QWidget())
+        )
+        window2.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertEqual(window2.width(), 400)
+        self.assertEqual(window2.height(), 300)
+
+        # Cleanup stored settings
+        window2.clear_saved_geometry()
+
 
 class TestMainWindowStyleSheet(QtBaseTestCase):
     """Tests for MainWindow stylesheet locking."""

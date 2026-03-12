@@ -194,9 +194,11 @@ class SettingsManager:
         return self.settings.value(self._ns_key(key), default)
 
     def clear(self, key: Optional[str] = None) -> None:
-        """Clears a specific key or all if key is None."""
+        """Clears a specific key, or all keys in the current namespace."""
         if key:
             self.settings.remove(self._ns_key(key))
+        elif self.namespace:
+            self.settings.remove(self.namespace)
         else:
             self.settings.clear()
 

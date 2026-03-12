@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from qtpy import QtWidgets, QtGui, QtCore
 
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.shortcuts import ShortcutManager
 
 
@@ -36,6 +37,8 @@ class ClipData:
     duration: float
     label: str = ""
     color: Optional[str] = None
+    locked: bool = False
+    sub_row: str = ""  # empty = main track row, non-empty = expanded sub-row name
     data: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -66,6 +69,7 @@ class MarkerData:
 #  Constants
 # ---------------------------------------------------------------------------
 _TRACK_HEIGHT = 28
+_SUB_ROW_HEIGHT = 14  # default height for expanded attribute sub-rows
 _TRACK_PADDING = 2
 _RULER_HEIGHT = 24
 _HANDLE_WIDTH = 6  # pixels from edge that activates resize cursor
@@ -82,6 +86,33 @@ _DEFAULT_CLIP_COLORS = [
     "#8EB05B",
 ]
 
+# Attribute color configuration
+_COMMON_ATTRIBUTES = [
+    "translateX",
+    "translateY",
+    "translateZ",
+    "rotateX",
+    "rotateY",
+    "rotateZ",
+    "scaleX",
+    "scaleY",
+    "scaleZ",
+    "visibility",
+]
+
+_DEFAULT_ATTRIBUTE_COLORS = {
+    "translateX": "#E06666",
+    "translateY": "#6AA84F",
+    "translateZ": "#6FA8DC",
+    "rotateX": "#CC4125",
+    "rotateY": "#38761D",
+    "rotateZ": "#3D85C6",
+    "scaleX": "#F6B26B",
+    "scaleY": "#93C47D",
+    "scaleZ": "#76A5AF",
+    "visibility": "#FFD966",
+}
+
 
 # ---------------------------------------------------------------------------
 #  ClipItem
@@ -97,6 +128,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         self._drag_origin_x = 0.0
         self._drag_origin_start = 0.0
         self._drag_origin_duration = 0.0
+        self._drag_peers: list = []  # [(ClipItem, original_start), ...]
         self._waveform_pixmap: Optional[QtGui.QPixmap] = None
         self._waveform_pixmap_size: Optional[tuple] = None
         self.setAcceptHoverEvents(True)
@@ -104,10 +136,19 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             QtWidgets.QGraphicsItem.ItemIsSelectable
             | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
         )
+        # Sub-row clips show label as tooltip instead of inline text
+        if clip_data.sub_row and clip_data.label:
+            self.setToolTip(clip_data.label)
         self._sync_geometry()
 
     def _snap(self, value: float) -> float:
-        """Snap *value* to the nearest grid interval if snapping is enabled."""
+        """Snap *value* to the nearest grid interval if snapping is enabled.
+
+        Holding **Ctrl** while dragging forces the interval to 1 (per-frame).
+        """
+        modifiers = QtWidgets.QApplication.keyboardModifiers()
+        if modifiers & QtCore.Qt.ControlModifier:
+            return round(value)
         interval = self._timeline.parent_sequencer.snap_interval
         if interval > 0:
             return round(value / interval) * interval
@@ -124,12 +165,13 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         tl = self._timeline
         x = tl.time_to_x(self._data.start)
         w = tl.time_to_x(self._data.start + self._data.duration) - x
-        track_y = _RULER_HEIGHT + self._track_index() * (_TRACK_HEIGHT + _TRACK_PADDING)
+        widget = tl.parent_sequencer
+        track_y, row_h = widget._row_position(self._data.track_id, self._data.sub_row)
         # Zero-duration (point) clips get a minimum visual width, centered
         if w < _MIN_POINT_CLIP_WIDTH:
             x -= (_MIN_POINT_CLIP_WIDTH - w) / 2.0
             w = _MIN_POINT_CLIP_WIDTH
-        new_rect = QtCore.QRectF(x, track_y, max(w, 1), _TRACK_HEIGHT)
+        new_rect = QtCore.QRectF(x, track_y, max(w, 1), row_h)
         # Invalidate waveform cache when width changes (zoom/resize)
         if self.rect().width() != new_rect.width():
             self._waveform_pixmap = None
@@ -142,17 +184,40 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                 return i
         return 0
 
+    def _resolve_color(self) -> QtGui.QColor:
+        """Resolve clip color from attributes.
+
+        Uses the attribute color map only when every attribute on the clip
+        resolves to the *same* color (e.g. a single-attribute clip or a
+        group where all attrs share a color).  Mixed-attribute clips stay
+        neutral so the color scheme remains meaningful.
+        """
+        attrs = self._data.data.get("attributes")
+        if attrs:
+            color_map = self._timeline.parent_sequencer.attribute_colors
+            matched = {color_map[a] for a in attrs if a in color_map}
+            if len(matched) == 1:
+                return QtGui.QColor(matched.pop())
+        return QtGui.QColor(self._data.color or "#CCCCCC")
+
+    @staticmethod
+    def _foreground_for(color: QtGui.QColor) -> QtGui.QColor:
+        """Return black or white depending on the background luminance."""
+        lum = 0.299 * color.redF() + 0.587 * color.greenF() + 0.114 * color.blueF()
+        return QtGui.QColor("#1E1E1E") if lum > 0.55 else QtGui.QColor("#FFFFFF")
+
     # -- painting -----------------------------------------------------------
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         rect = self.rect()
-        color = QtGui.QColor(self._data.color or "#5B8BD4")
+        color = self._resolve_color()
         if self.isSelected():
             color = color.lighter(130)
 
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        fg = self._foreground_for(color)
+
         painter.setBrush(color)
         painter.setPen(QtCore.Qt.NoPen)
-        painter.drawRoundedRect(rect, 4, 4)
+        painter.drawRect(rect)
 
         # Waveform overlay (if envelope data is present)
         waveform = self._data.data.get("waveform")
@@ -161,7 +226,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
 
         # Label
         if rect.width() > 30:
-            painter.setPen(QtGui.QColor("#FFFFFF"))
+            painter.setPen(fg)
             font = painter.font()
             font.setPointSize(8)
             painter.setFont(font)
@@ -171,6 +236,33 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                 QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft,
                 self._data.label,
             )
+
+        # Lock indicator
+        if self._data.locked and rect.width() > 14 and rect.height() > 10:
+            self._paint_lock_icon(painter, rect, fg)
+
+    def _paint_lock_icon(self, painter, rect, fg=None):
+        """Draw a small lock glyph at the right edge of the clip."""
+        if fg is None:
+            fg = QtGui.QColor("#FFFFFF")
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        # Position at top-right
+        ix = rect.right() - 12
+        iy = rect.top() + 3
+        painter.setPen(QtGui.QPen(fg, 1.2))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        # Shackle arc
+        painter.drawArc(
+            QtCore.QRectF(ix + 1, iy, 6, 6),
+            0 * 16,
+            180 * 16,
+        )
+        # Body rectangle
+        painter.setBrush(fg)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawRect(QtCore.QRectF(ix, iy + 4, 8, 6))
+        painter.restore()
 
     def _paint_waveform(self, painter, rect, waveform, base_color):
         """Render a waveform envelope inside the clip rectangle.
@@ -226,6 +318,10 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
 
     # -- hover cursor -------------------------------------------------------
     def hoverMoveEvent(self, event):
+        if self._data.locked:
+            self.setCursor(QtCore.Qt.ArrowCursor)
+            super().hoverMoveEvent(event)
+            return
         zone = self._hit_zone(event.pos())
         if zone in ("resize_left", "resize_right"):
             self.setCursor(QtCore.Qt.SizeHorCursor)
@@ -240,10 +336,24 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
     # -- drag interaction ---------------------------------------------------
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
+            if self._data.locked:
+                # Allow selection but prevent drag
+                super().mousePressEvent(event)
+                return
             self._drag_mode = self._hit_zone(event.pos())
             self._drag_origin_x = event.scenePos().x()
             self._drag_origin_start = self._data.start
             self._drag_origin_duration = self._data.duration
+            # Capture peer clips for group move
+            self._drag_peers = []
+            if self._drag_mode == "move" and self.isSelected():
+                for item in self._timeline._scene.selectedItems():
+                    if (
+                        isinstance(item, ClipItem)
+                        and item is not self
+                        and not item._data.locked
+                    ):
+                        self._drag_peers.append((item, item._data.start))
             # Capture pre-drag snapshot for undo
             self._timeline.parent_sequencer._capture_undo()
             self.setCursor(QtCore.Qt.ClosedHandCursor)
@@ -261,6 +371,12 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         if self._drag_mode == "move":
             new_start = self._snap(max(0.0, self._drag_origin_start + dx_time))
             self._data.start = new_start
+            # Move peer clips by the same snapped delta
+            snapped_delta = new_start - self._drag_origin_start
+            for peer, origin_start in self._drag_peers:
+                peer._data.start = max(0.0, origin_start + snapped_delta)
+                peer._sync_geometry()
+                peer.update()
 
         elif self._drag_mode == "resize_left":
             new_start = min(
@@ -287,11 +403,19 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._drag_mode:
             mode = self._drag_mode
+            peers = self._drag_peers
             self._drag_mode = None
+            self._drag_peers = []
             self.unsetCursor()
             widget = self._timeline.parent_sequencer
             if mode == "move":
-                widget.clip_moved.emit(self._data.clip_id, self._data.start)
+                if peers:
+                    moves = [(self._data.clip_id, self._data.start)]
+                    for peer, _ in peers:
+                        moves.append((peer._data.clip_id, peer._data.start))
+                    widget.clips_batch_moved.emit(moves)
+                else:
+                    widget.clip_moved.emit(self._data.clip_id, self._data.start)
             else:
                 widget.clip_resized.emit(
                     self._data.clip_id, self._data.start, self._data.duration
@@ -300,13 +424,85 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         else:
             super().mouseReleaseEvent(event)
 
+    # -- context menu -------------------------------------------------------
+    def contextMenuEvent(self, event):
+        menu = QtWidgets.QMenu()
+        menu.setStyleSheet(
+            "QMenu { background:#333; color:#CCC; }"
+            "QMenu::item:selected { background:#555; }"
+        )
+
+        # Lock / Unlock
+        if self._data.locked:
+            action_lock = menu.addAction("Unlock")
+        else:
+            action_lock = menu.addAction("Lock")
+
+        # Rename
+        action_rename = menu.addAction("Rename")
+        if self._data.locked:
+            action_rename.setEnabled(False)
+
+        chosen = menu.exec_(
+            event.screenPos() if hasattr(event, "screenPos") else QtGui.QCursor.pos()
+        )
+        if chosen == action_lock:
+            self._data.locked = not self._data.locked
+            self.update()
+            widget = self._timeline.parent_sequencer
+            widget.clip_locked.emit(self._data.clip_id, self._data.locked)
+        elif chosen == action_rename:
+            self._start_inline_rename()
+
+    # -- double-click to rename --------------------------------------------
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            if self._data.locked:
+                return
+            self._start_inline_rename()
+            event.accept()
+        else:
+            super().mouseDoubleClickEvent(event)
+
+    def _start_inline_rename(self):
+        """Spawn a QLineEdit proxy widget over the clip for inline renaming."""
+        rect = self.rect()
+        edit = QtWidgets.QLineEdit()
+        edit.setText(self._data.label)
+        edit.selectAll()
+        edit.setFrame(False)
+        edit.setStyleSheet(
+            "background:#333; color:#FFF; padding:0 4px; font-size:10px;"
+        )
+        edit.setFixedHeight(int(rect.height()))
+
+        proxy = self.scene().addWidget(edit)
+        proxy.setPos(rect.x(), rect.y())
+        proxy.setZValue(100)
+        edit.setFixedWidth(max(int(rect.width()), 60))
+        edit.setFocus()
+
+        finished = [False]
+
+        def _finish():
+            if finished[0]:
+                return
+            finished[0] = True
+            new_label = edit.text()
+            self._data.label = new_label
+            self.update()
+            widget = self._timeline.parent_sequencer
+            widget.clip_renamed.emit(self._data.clip_id, new_label)
+            if proxy.scene():
+                proxy.scene().removeItem(proxy)
+
+        edit.editingFinished.connect(_finish)
+
     # -- utilities ----------------------------------------------------------
     def _hit_zone(self, pos) -> str:
         rect = self.rect()
         local_x = pos.x() - rect.x()
-        if local_x <= _HANDLE_WIDTH and self._data.data.get(
-            "resizable_left", True
-        ):
+        if local_x <= _HANDLE_WIDTH and self._data.data.get("resizable_left", True):
             return "resize_left"
         elif local_x >= rect.width() - _HANDLE_WIDTH and self._data.data.get(
             "resizable_right", True
@@ -389,16 +585,21 @@ class RulerItem(QtWidgets.QGraphicsItem):
 # ---------------------------------------------------------------------------
 #  PlayheadItem
 # ---------------------------------------------------------------------------
-class PlayheadItem(QtWidgets.QGraphicsLineItem):
-    """A vertical line representing the current time / playhead."""
+class PlayheadItem(QtWidgets.QGraphicsItem):
+    """A vertical line with a frame-number badge at the ruler."""
+
+    _COLOR = QtGui.QColor("#E8E84A")
+    _BADGE_HEIGHT = 18
+    _BADGE_RADIUS = 4
+    _POINTER_SIZE = 6  # triangle pointer below badge
 
     def __init__(self, timeline: "TimelineView"):
         super().__init__()
         self._timeline = timeline
         self._time = 0.0
-        self.setPen(QtGui.QPen(QtGui.QColor("#E8E84A"), 1.5))
+        self._label = "0"
+        self._badge_width = 30.0
         self.setZValue(20)
-        # sync() is deferred until the scene/view wiring is complete
 
     @property
     def time(self) -> float:
@@ -407,12 +608,77 @@ class PlayheadItem(QtWidgets.QGraphicsLineItem):
     @time.setter
     def time(self, value: float):
         self._time = max(0.0, value)
+        t = self._time
+        self._label = str(int(t)) if t == int(t) else f"{t:.1f}"
+        self._update_badge_width()
         self.sync()
 
-    def sync(self):
+    def _update_badge_width(self):
+        fm = QtGui.QFontMetrics(QtGui.QFont("", 8))
+        text_w = (
+            fm.horizontalAdvance(self._label)
+            if hasattr(fm, "horizontalAdvance")
+            else fm.width(self._label)
+        )
+        self._badge_width = max(text_w + 12, 24)
+
+    def boundingRect(self) -> QtCore.QRectF:
         x = self._timeline.time_to_x(self._time)
+        hw = self._badge_width / 2.0 + 2
+        return QtCore.QRectF(x - hw, 0, hw * 2, 10000)
+
+    def sync(self):
+        self.prepareGeometryChange()
+        self.update()
+
+    def paint(self, painter: QtGui.QPainter, option, widget=None):
+        x = self._timeline.time_to_x(self._time)
+        color = self._COLOR
+        bh = self._BADGE_HEIGHT
+        bw = self._badge_width
+        ptr = self._POINTER_SIZE
+        br = self._BADGE_RADIUS
+
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        # Badge (rounded rect centered on x, anchored at ruler top)
+        badge_y = (_RULER_HEIGHT - bh - ptr) / 2.0
+        badge_rect = QtCore.QRectF(x - bw / 2, badge_y, bw, bh)
+        painter.setBrush(color)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawRoundedRect(badge_rect, br, br)
+
+        # Pointer triangle below badge
+        tri_top = badge_y + bh
+        tri = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(x - ptr / 2, tri_top),
+                QtCore.QPointF(x + ptr / 2, tri_top),
+                QtCore.QPointF(x, tri_top + ptr),
+            ]
+        )
+        painter.drawPolygon(tri)
+
+        # Frame number text (dark on yellow)
+        painter.setPen(QtGui.QColor("#1E1E1E"))
+        font = painter.font()
+        font.setPointSize(8)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(
+            badge_rect,
+            QtCore.Qt.AlignCenter,
+            self._label,
+        )
+
+        # Vertical line from pointer tip to bottom
+        line_top = tri_top + ptr
         scene_h = self._timeline._scene.height() if self._timeline._scene else 2000
-        self.setLine(x, 0, x, scene_h)
+        painter.setPen(QtGui.QPen(color, 1.5))
+        painter.drawLine(
+            QtCore.QPointF(x, line_top),
+            QtCore.QPointF(x, scene_h),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -424,9 +690,7 @@ _MARKER_TRI_SIZE = 8  # size of the triangle pennant in pixels
 class MarkerItem(QtWidgets.QGraphicsItem):
     """A named marker on the timeline: triangle at the ruler + dashed line."""
 
-    def __init__(
-        self, marker_data: MarkerData, timeline: "TimelineView"
-    ):
+    def __init__(self, marker_data: MarkerData, timeline: "TimelineView"):
         super().__init__()
         self._data = marker_data
         self._timeline = timeline
@@ -470,8 +734,12 @@ class MarkerItem(QtWidgets.QGraphicsItem):
         tri = QtGui.QPolygonF(
             [
                 QtCore.QPointF(x, _RULER_HEIGHT),
-                QtCore.QPointF(x - _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE),
-                QtCore.QPointF(x + _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE),
+                QtCore.QPointF(
+                    x - _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE
+                ),
+                QtCore.QPointF(
+                    x + _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE
+                ),
             ]
         )
         painter.setBrush(color)
@@ -525,13 +793,15 @@ class MarkerItem(QtWidgets.QGraphicsItem):
         if not self._drag_active:
             return super().mouseMoveEvent(event)
         tl = self._timeline
-        dx_time = tl.x_to_time(event.scenePos().x()) - tl.x_to_time(
-            self._drag_origin_x
-        )
+        dx_time = tl.x_to_time(event.scenePos().x()) - tl.x_to_time(self._drag_origin_x)
         new_time = max(0.0, self._drag_origin_time + dx_time)
-        interval = tl.parent_sequencer.snap_interval
-        if interval > 0:
-            new_time = round(new_time / interval) * interval
+        modifiers = event.modifiers()
+        if modifiers & QtCore.Qt.ControlModifier:
+            new_time = round(new_time)
+        else:
+            interval = tl.parent_sequencer.snap_interval
+            if interval > 0:
+                new_time = round(new_time / interval) * interval
         self._data.time = new_time
         self.sync()
         self.update()
@@ -609,12 +879,18 @@ class TrackHeaderWidget(QtWidgets.QWidget):
     track_hide_requested = QtCore.Signal(list)  # [track_name, ...]
     track_show_requested = QtCore.Signal(str)  # track_name to un-hide
     track_selected = QtCore.Signal(list)  # [track_name, ...] clicked
+    track_expand_requested = QtCore.Signal(int)  # label index double-clicked
+    track_menu_requested = QtCore.Signal(object, list)  # (QMenu, [track_name, ...])
 
     _STYLE_NORMAL = (
         "padding-left:6px; color:#CCCCCC; background:#333333; border-radius:3px;"
     )
     _STYLE_SELECTED = (
         "padding-left:6px; color:#FFFFFF; background:#505050; border-radius:3px;"
+    )
+    _STYLE_SUB_ROW = (
+        "padding-left:16px; color:#999999; background:#2D2D2D; "
+        "border-radius:2px; font-size:10px;"
     )
 
     def __init__(self, parent=None):
@@ -623,6 +899,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._names: List[str] = []  # parallel to _labels
         self._selected: List[int] = []  # indices of selected labels
         self._hidden_track_names: List[str] = []  # set by SequencerWidget
+        self._sub_labels: Dict[int, List[QtWidgets.QLabel]] = {}  # idx → sub-row labels
         self._layout = QtWidgets.QVBoxLayout(self)
         self._layout.setContentsMargins(0, _RULER_HEIGHT, 0, 0)
         self._layout.setSpacing(_TRACK_PADDING)
@@ -642,9 +919,42 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._labels.append(lbl)
         self._names.append(name)
 
+    # -- sub-row expansion -------------------------------------------------
+
+    def set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int):
+        """Show sub-row labels beneath the track at *track_idx*."""
+        self.set_track_collapsed(track_idx)
+        main_lbl = self._labels[track_idx]
+        name = self._names[track_idx]
+        main_lbl.setText(f"\u25bc {name}")
+        insert_at = self._layout.indexOf(main_lbl) + 1
+        sub_lbls: List[QtWidgets.QLabel] = []
+        for sr_name in sub_names:
+            lbl = QtWidgets.QLabel(sr_name)
+            lbl.setFixedHeight(sub_height)
+            lbl.setStyleSheet(self._STYLE_SUB_ROW)
+            self._layout.insertWidget(insert_at, lbl)
+            insert_at += 1
+            sub_lbls.append(lbl)
+        self._sub_labels[track_idx] = sub_lbls
+
+    def set_track_collapsed(self, track_idx: int):
+        """Remove sub-row labels for the track at *track_idx*."""
+        name = self._names[track_idx]
+        self._labels[track_idx].setText(name)
+        for lbl in self._sub_labels.pop(track_idx, []):
+            self._layout.removeWidget(lbl)
+            lbl.deleteLater()
+
     # -- selection ---------------------------------------------------------
 
     def eventFilter(self, obj, event):
+        if obj not in self._labels:
+            return super().eventFilter(obj, event)
+        if event.type() == QtCore.QEvent.MouseButtonDblClick and obj in self._labels:
+            idx = self._labels.index(obj)
+            self.track_expand_requested.emit(idx)
+            return True
         if event.type() == QtCore.QEvent.MouseButtonPress and obj in self._labels:
             idx = self._labels.index(obj)
             mods = event.modifiers()
@@ -692,6 +1002,9 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         hide_label = f"Hide {count} Tracks" if count > 1 else "Hide Track"
         menu.addAction(hide_label, lambda: self.track_hide_requested.emit(names))
 
+        # Let consumers add custom actions
+        self.track_menu_requested.emit(menu, names)
+
         # "Show Hidden" submenu — only when hidden tracks exist
         hidden = self._hidden_track_names
         if hidden:
@@ -702,6 +1015,9 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         menu.exec_(widget.mapToGlobal(pos))
 
     def clear_tracks(self):
+        # Remove sub-row labels first
+        for idx in list(self._sub_labels):
+            self.set_track_collapsed(idx)
         for lbl in self._labels:
             lbl.removeEventFilter(self)
             self._layout.removeWidget(lbl)
@@ -774,6 +1090,11 @@ class TimelineView(QtWidgets.QGraphicsView):
                     return True
         return super().event(event)
 
+    def enterEvent(self, event):
+        """Grab focus on mouse-enter so shortcut keys are captured here."""
+        self.setFocus(QtCore.Qt.MouseFocusReason)
+        super().enterEvent(event)
+
     # -- mapper -------------------------------------------------------------
     @property
     def pixels_per_unit(self) -> float:
@@ -826,7 +1147,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         if event.button() == QtCore.Qt.LeftButton and event.pos().y() <= _RULER_HEIGHT:
             self._ruler_drag = True
             scene_pos = self.mapToScene(event.pos())
-            t = self.x_to_time(scene_pos.x())
+            t = round(self.x_to_time(scene_pos.x()))
             self._scene.playhead.time = t
             self.parent_sequencer.playhead_moved.emit(t)
             event.accept()
@@ -844,7 +1165,7 @@ class TimelineView(QtWidgets.QGraphicsView):
             event.accept()
         elif self._ruler_drag:
             scene_pos = self.mapToScene(event.pos())
-            t = self.x_to_time(scene_pos.x())
+            t = round(self.x_to_time(scene_pos.x()))
             self._scene.playhead.time = t
             self.parent_sequencer.playhead_moved.emit(t)
             event.accept()
@@ -934,21 +1255,174 @@ class TimelineView(QtWidgets.QGraphicsView):
             max_end = max(max_end, cd.end)
         for md in sq._markers.values():
             max_end = max(max_end, md.time)
-        track_count = max(1, len(sq._tracks))
         w = self.time_to_x(max_end) + 200
-        h = _RULER_HEIGHT + track_count * (_TRACK_HEIGHT + _TRACK_PADDING) + 40
+        h = _RULER_HEIGHT + sq._total_row_height() + 40
         self._scene.setSceneRect(0, 0, w, h)
 
     def drawBackground(self, painter: QtGui.QPainter, rect: QtCore.QRectF):
         """Draw alternating track row backgrounds."""
         painter.fillRect(rect, QtGui.QColor("#1E1E1E"))
         sq = self.parent_sequencer
-        for i in range(len(sq._tracks)):
-            y = _RULER_HEIGHT + i * (_TRACK_HEIGHT + _TRACK_PADDING)
-            bg = QtGui.QColor("#262626") if i % 2 == 0 else QtGui.QColor("#2A2A2A")
-            painter.fillRect(
-                QtCore.QRectF(rect.left(), y, rect.width(), _TRACK_HEIGHT), bg
+        _BG_MAIN = (QtGui.QColor("#262626"), QtGui.QColor("#2A2A2A"))
+        _BG_SUB = (QtGui.QColor("#222222"), QtGui.QColor("#252525"))
+        for i, (y, h, is_sub) in enumerate(sq._visual_rows()):
+            palette = _BG_SUB if is_sub else _BG_MAIN
+            bg = palette[i % 2]
+            painter.fillRect(QtCore.QRectF(rect.left(), y, rect.width(), h), bg)
+
+
+# ---------------------------------------------------------------------------
+#  AttributeColorDialog
+# ---------------------------------------------------------------------------
+class AttributeColorDialog(QtWidgets.QDialog):
+    """A dialog for configuring attribute-type color mappings.
+
+    Parameters
+    ----------
+    defaults : dict
+        Factory-default ``{attr_name: hex_color}`` mapping.
+    common_attrs : list
+        Attribute names always displayed regardless of scene content.
+    active_attrs : list, optional
+        Additional attribute names currently keyed in the scene.
+    settings : SettingsManager, optional
+        Pre-configured settings manager for persistence.
+    parent : QWidget, optional
+        Parent widget.
+    """
+
+    colors_changed = QtCore.Signal(dict)
+
+    _SETTINGS_NS = "sequencer/attribute_colors"
+    _SWATCH_SIZE = 22
+
+    def __init__(
+        self,
+        defaults: Optional[Dict[str, str]] = None,
+        common_attrs: Optional[List[str]] = None,
+        active_attrs: Optional[List[str]] = None,
+        settings: Optional["SettingsManager"] = None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Attribute Colors")
+        self.setMinimumWidth(280)
+
+        self._defaults = defaults or dict(_DEFAULT_ATTRIBUTE_COLORS)
+        self._common = common_attrs or list(_COMMON_ATTRIBUTES)
+        self._active = active_attrs or []
+        self._settings = settings or SettingsManager(namespace=self._SETTINGS_NS)
+        self._swatches: Dict[str, QtWidgets.QPushButton] = {}
+
+        self._build_ui()
+        self._load_from_settings()
+
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        # Scrollable attribute list
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        container = QtWidgets.QWidget()
+        self._grid = QtWidgets.QGridLayout(container)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(3)
+
+        # Common attributes section
+        row = 0
+        header = QtWidgets.QLabel("Common")
+        header.setStyleSheet("color:#999; font-size:10px; font-weight:bold;")
+        self._grid.addWidget(header, row, 0, 1, 2)
+        row += 1
+
+        for attr in self._common:
+            row = self._add_color_row(attr, row)
+
+        # Active-only attributes (keyed in scene but not in common list)
+        extra = sorted(set(self._active) - set(self._common))
+        if extra:
+            sep = QtWidgets.QLabel("Scene Attributes")
+            sep.setStyleSheet("color:#999; font-size:10px; font-weight:bold;")
+            self._grid.addWidget(sep, row, 0, 1, 2)
+            row += 1
+            for attr in extra:
+                row = self._add_color_row(attr, row)
+
+        self._grid.setRowStretch(row, 1)
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
+
+        # Bottom buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_defaults = QtWidgets.QPushButton("Restore Defaults")
+        btn_defaults.clicked.connect(self._restore_defaults)
+        btn_row.addWidget(btn_defaults)
+        btn_row.addStretch()
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(self.accept)
+        btn_row.addWidget(btn_close)
+        layout.addLayout(btn_row)
+
+    def _add_color_row(self, attr: str, row: int) -> int:
+        label = QtWidgets.QLabel(attr)
+        label.setStyleSheet("color:#CCC; font-size:11px;")
+
+        swatch = QtWidgets.QPushButton()
+        swatch.setFixedSize(self._SWATCH_SIZE, self._SWATCH_SIZE)
+        swatch.setCursor(QtCore.Qt.PointingHandCursor)
+        swatch.clicked.connect(lambda checked=False, a=attr: self._pick_color(a))
+        self._swatches[attr] = swatch
+
+        self._grid.addWidget(label, row, 0)
+        self._grid.addWidget(swatch, row, 1, QtCore.Qt.AlignRight)
+        return row + 1
+
+    def _update_swatch(self, attr: str, hex_color: str):
+        btn = self._swatches.get(attr)
+        if btn:
+            btn.setStyleSheet(
+                f"background-color:{hex_color}; border:1px solid #555; "
+                f"border-radius:3px;"
             )
+
+    def _pick_color(self, attr: str):
+        current = self._current_color(attr)
+        color = QtWidgets.QColorDialog.getColor(
+            QtGui.QColor(current),
+            self,
+            f"Color for {attr}",
+        )
+        if color.isValid():
+            hex_val = color.name()
+            self._settings.setValue(attr, hex_val)
+            self._update_swatch(attr, hex_val)
+            self.colors_changed.emit(self.color_map())
+
+    def _current_color(self, attr: str) -> str:
+        val = self._settings.value(attr)
+        return val if val else self._defaults.get(attr, "#5B8BD4")
+
+    def _load_from_settings(self):
+        for attr in self._swatches:
+            self._update_swatch(attr, self._current_color(attr))
+
+    def _restore_defaults(self):
+        for attr in self._swatches:
+            self._settings.clear(attr)
+        self._load_from_settings()
+        self.colors_changed.emit(self.color_map())
+
+    def color_map(self) -> Dict[str, str]:
+        """Return the full attribute → hex-color mapping."""
+        result = dict(self._defaults)
+        for key in self._settings.keys():
+            val = self._settings.value(key)
+            if val:
+                result[key] = val
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -960,7 +1434,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     Signals
     -------
     clip_moved(int, float)
-        Emitted when a clip is repositioned.  Args: ``(clip_id, new_start)``.
+        Emitted when a single clip is repositioned.  Args: ``(clip_id, new_start)``.
+    clips_batch_moved(list)
+        Emitted when multiple clips are moved together.  Args: ``[(clip_id, new_start), ...]``.
     clip_resized(int, float, float)
         Emitted when a clip edge is dragged.  Args: ``(clip_id, new_start, new_duration)``.
     clip_selected(int)
@@ -970,15 +1446,21 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     """
 
     clip_moved = QtCore.Signal(int, float)
+    clips_batch_moved = QtCore.Signal(list)  # [(clip_id, new_start), ...]
     clip_resized = QtCore.Signal(int, float, float)
     clip_selected = QtCore.Signal(int)
+    clip_renamed = QtCore.Signal(int, str)  # (clip_id, new_label)
+    clip_locked = QtCore.Signal(int, bool)  # (clip_id, is_locked)
     selection_changed = QtCore.Signal(list)
     playhead_moved = QtCore.Signal(float)
     track_hidden = QtCore.Signal(list)  # [track_name, ...] hidden via context menu
     track_shown = QtCore.Signal(str)  # track_name un-hidden via menu
     track_selected = QtCore.Signal(list)  # [track_name, ...] clicked in header
+    track_menu_requested = QtCore.Signal(object, list)  # (QMenu, [track_name, ...])
     undo_requested = QtCore.Signal()
     redo_requested = QtCore.Signal()
+    track_expanded = QtCore.Signal(int)  # (track_id) after expansion complete
+    track_collapsed = QtCore.Signal(int)  # (track_id) after collapse complete
     marker_added = QtCore.Signal(int, float)  # (marker_id, time)
     marker_moved = QtCore.Signal(int, float)  # (marker_id, new_time)
     marker_changed = QtCore.Signal(int)  # (marker_id) after note/color edit
@@ -994,12 +1476,17 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._next_track_id = 0
         self._next_clip_id = 0
         self._snap_interval: float = 0.0  # 0 = disabled
+        self._gap_threshold: float = 10.0  # flat keys to constitute a gap
         self._undo_stack: List[Dict[int, tuple]] = []  # (start, duration) per clip_id
         self._redo_stack: List[Dict[int, tuple]] = []
         self._max_undo = 50
         self._markers: Dict[int, MarkerData] = {}
         self._marker_items: Dict[int, MarkerItem] = {}
         self._next_marker_id = 0
+        self._attribute_colors: Dict[str, str] = dict(_DEFAULT_ATTRIBUTE_COLORS)
+        self._expanded_tracks: Dict[int, List[str]] = {}  # track_id → sub-row names
+        self._sub_row_height: int = _SUB_ROW_HEIGHT
+        self._sub_row_provider = None  # callable(track_id, track_name) → [(sub_name, [(start,dur,label,color), ...]), ...]
 
         # -- sub-widgets ----------------------------------------------------
         self._header = TrackHeaderWidget()
@@ -1027,6 +1514,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._header.track_hide_requested.connect(self.track_hidden.emit)
         self._header.track_show_requested.connect(self.track_shown.emit)
         self._header.track_selected.connect(self.track_selected.emit)
+        self._header.track_menu_requested.connect(self.track_menu_requested.emit)
+        self._header.track_expand_requested.connect(self._on_header_expand)
 
         # -- right-click on header background: show hidden tracks -----------
         self._hidden_tracks: List[str] = []
@@ -1045,6 +1534,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             ("Home", self.go_to_start, "Jump playhead to start"),
             ("End", self.go_to_end, "Jump playhead to last clip end"),
             ("M", self.add_marker_at_playhead, "Add marker at playhead"),
+            ("F", self.frame_all, "Frame all clips in timeline"),
         ]
         self._shortcut_mgr = ShortcutManager(self)
         _ctx = QtCore.Qt.WidgetWithChildrenShortcut
@@ -1078,13 +1568,21 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         duration: float,
         label: str = "",
         color: Optional[str] = None,
+        sub_row: str = "",
         **data,
     ) -> int:
-        """Add a clip to an existing track.  Returns the ``clip_id``."""
+        """Add a clip to an existing track.  Returns the ``clip_id``.
+
+        Parameters
+        ----------
+        sub_row : str
+            When non-empty, places the clip on the named sub-row of an
+            expanded track instead of the main track row.
+        """
         cid = self._next_clip_id
         self._next_clip_id += 1
         if color is None:
-            color = _DEFAULT_CLIP_COLORS[cid % len(_DEFAULT_CLIP_COLORS)]
+            color = "#CCCCCC"
         cd = ClipData(
             clip_id=cid,
             track_id=track_id,
@@ -1092,6 +1590,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             duration=duration,
             label=label,
             color=color,
+            sub_row=sub_row,
             data=data,
         )
         self._clips[cid] = cd
@@ -1121,6 +1620,26 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             if cd.clip_id in td.clips:
                 td.clips.remove(cd.clip_id)
 
+    def set_clip_label(self, clip_id: int, label: str):
+        """Set the display label for a clip."""
+        cd = self._clips.get(clip_id)
+        if cd is None:
+            return
+        cd.label = label
+        item = self._clip_items.get(clip_id)
+        if item:
+            item.update()
+
+    def set_clip_locked(self, clip_id: int, locked: bool):
+        """Lock or unlock a clip, preventing drag/resize/rename."""
+        cd = self._clips.get(clip_id)
+        if cd is None:
+            return
+        cd.locked = locked
+        item = self._clip_items.get(clip_id)
+        if item:
+            item.update()
+
     def remove_track(self, track_id: int):
         """Remove a track and all its clips."""
         td = None
@@ -1131,7 +1650,16 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 break
         if td is None:
             return
+        self._expanded_tracks.pop(track_id, None)
         for cid in list(td.clips):
+            self.remove_clip(cid)
+        # Also remove sub-row clips
+        sub_cids = [
+            cid
+            for cid, cd in self._clips.items()
+            if cd.track_id == track_id and cd.sub_row
+        ]
+        for cid in sub_cids:
             self.remove_clip(cid)
         self._header.clear_tracks()
         for t in self._tracks:
@@ -1171,6 +1699,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 item.scene().removeItem(item)
         self._clips.clear()
         self._tracks.clear()
+        self._expanded_tracks.clear()
         self._header.clear_tracks()
         self._next_track_id = 0
         self._next_clip_id = 0
@@ -1272,6 +1801,24 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         mid = self.add_marker(t)
         self.marker_added.emit(mid, t)
 
+    def frame_all(self):
+        """Zoom and scroll the timeline so all clips are visible."""
+        if not self._clips:
+            return
+        t_min = min(cd.start for cd in self._clips.values())
+        t_max = max(cd.end for cd in self._clips.values())
+        span = t_max - t_min
+        if span < 1.0:
+            span = 1.0
+        vp_w = self._timeline.viewport().width()
+        padding = 40  # pixels of margin on each side
+        usable = max(vp_w - padding * 2, 1)
+        self._timeline._pixels_per_unit = usable / span
+        self._timeline._refresh_all()
+        self._timeline.horizontalScrollBar().setValue(
+            int(self._timeline.time_to_x(t_min) - padding)
+        )
+
     # -- undo / redo -------------------------------------------------------
     def _snapshot(self) -> Dict[int, tuple]:
         """Return a snapshot of all clip positions: ``{clip_id: (start, duration)}``."""
@@ -1326,6 +1873,194 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     @snap_interval.setter
     def snap_interval(self, value: float):
         self._snap_interval = max(0.0, value)
+
+    # -- gap threshold ------------------------------------------------------
+    @property
+    def gap_threshold(self) -> float:
+        """Number of flat keys that constitute a gap between sequences."""
+        return self._gap_threshold
+
+    @gap_threshold.setter
+    def gap_threshold(self, value: float):
+        self._gap_threshold = max(1.0, value)
+
+    # -- attribute colors ---------------------------------------------------
+    @property
+    def attribute_colors(self) -> Dict[str, str]:
+        """Mapping of attribute name to hex color string."""
+        return self._attribute_colors
+
+    @attribute_colors.setter
+    def attribute_colors(self, value: Dict[str, str]):
+        self._attribute_colors = dict(value)
+        self._timeline._scene.update()
+
+    # -- sub-row expansion --------------------------------------------------
+    @property
+    def sub_row_height(self) -> int:
+        """Pixel height of expanded attribute sub-rows (default half track height)."""
+        return self._sub_row_height
+
+    @sub_row_height.setter
+    def sub_row_height(self, value: int):
+        self._sub_row_height = max(8, value)
+        self._timeline._refresh_all()
+
+    @property
+    def sub_row_provider(self):
+        """Callable providing sub-row data for track expansion.
+
+        Signature: ``(track_id, track_name) -> [(sub_name, [(start, dur, label, color), ...]), ...]``
+
+        When set, double-clicking (or toggling) a track header calls this
+        function, creates the sub-rows and their clips automatically, and
+        emits ``track_expanded``.  Set to ``None`` to disable expansion.
+        """
+        return self._sub_row_provider
+
+    @sub_row_provider.setter
+    def sub_row_provider(self, fn):
+        self._sub_row_provider = fn
+
+    def expand_track(self, track_id: int, sub_row_data=None):
+        """Expand *track_id* to show sub-rows beneath it.
+
+        Parameters
+        ----------
+        sub_row_data : list, optional
+            ``[(sub_name, [(start, dur, label, color), ...]), ...]``.
+            If omitted, the ``sub_row_provider`` callback is used.
+            If neither is available, does nothing.
+        """
+        if sub_row_data is None and self._sub_row_provider:
+            td = self.get_track(track_id)
+            if td is None:
+                return
+            sub_row_data = self._sub_row_provider(track_id, td.name)
+        if not sub_row_data:
+            return
+
+        sub_names = [name for name, _ in sub_row_data]
+        self._expanded_tracks[track_id] = sub_names
+
+        # Remove stale sub-row clips for this track
+        stale = [
+            cid
+            for cid, cd in self._clips.items()
+            if cd.track_id == track_id and cd.sub_row
+        ]
+        for cid in stale:
+            self.remove_clip(cid)
+
+        # Create clips for each sub-row
+        for sub_name, segments in sub_row_data:
+            for seg in segments:
+                start, dur = seg[0], seg[1]
+                label = seg[2] if len(seg) > 2 else sub_name
+                color = seg[3] if len(seg) > 3 else None
+                extra = seg[4] if len(seg) > 4 else {}
+                # Single-key (zero-duration) sub-row clips are fixed
+                is_point = dur < 1e-6
+                if is_point:
+                    extra.setdefault("locked", True)
+                    extra.setdefault("resizable_left", False)
+                    extra.setdefault("resizable_right", False)
+                self.add_clip(
+                    track_id,
+                    start,
+                    dur,
+                    label=label,
+                    color=color,
+                    sub_row=sub_name,
+                    **extra,
+                )
+
+        idx = self._track_index(track_id)
+        if idx is not None:
+            self._header.set_track_expanded(idx, sub_names, self._sub_row_height)
+        self._timeline._refresh_all()
+        self.track_expanded.emit(track_id)
+
+    def collapse_track(self, track_id: int):
+        """Collapse a previously expanded track, removing its sub-row clips."""
+        if track_id not in self._expanded_tracks:
+            return
+        self._expanded_tracks.pop(track_id)
+        # Remove sub-row clips
+        to_remove = [
+            cid
+            for cid, cd in self._clips.items()
+            if cd.track_id == track_id and cd.sub_row
+        ]
+        for cid in to_remove:
+            self.remove_clip(cid)
+        idx = self._track_index(track_id)
+        if idx is not None:
+            self._header.set_track_collapsed(idx)
+        self._timeline._refresh_all()
+        self.track_collapsed.emit(track_id)
+
+    def is_track_expanded(self, track_id: int) -> bool:
+        """Return True if the track is currently expanded."""
+        return track_id in self._expanded_tracks
+
+    def toggle_track_expanded(self, track_id: int):
+        """Toggle expansion state.  Uses ``sub_row_provider`` when expanding."""
+        if self.is_track_expanded(track_id):
+            self.collapse_track(track_id)
+        else:
+            self.expand_track(track_id)
+
+    def _row_position(self, track_id: int, sub_row: str = "") -> tuple:
+        """Return ``(y, height)`` for a given track and optional sub-row."""
+        y = _RULER_HEIGHT
+        for td in self._tracks:
+            if td.track_id == track_id:
+                if not sub_row:
+                    return y, _TRACK_HEIGHT
+                y += _TRACK_HEIGHT + _TRACK_PADDING
+                for sr in self._expanded_tracks.get(td.track_id, []):
+                    if sr == sub_row:
+                        return y, self._sub_row_height
+                    y += self._sub_row_height + _TRACK_PADDING
+                return y, self._sub_row_height
+            y += _TRACK_HEIGHT + _TRACK_PADDING
+            sub_rows = self._expanded_tracks.get(td.track_id, [])
+            y += len(sub_rows) * (self._sub_row_height + _TRACK_PADDING)
+        return y, _TRACK_HEIGHT
+
+    def _total_row_height(self) -> float:
+        """Total pixel height of all tracks including expanded sub-rows."""
+        h = 0.0
+        for td in self._tracks:
+            h += _TRACK_HEIGHT + _TRACK_PADDING
+            sub_rows = self._expanded_tracks.get(td.track_id, [])
+            h += len(sub_rows) * (self._sub_row_height + _TRACK_PADDING)
+        return h
+
+    def _visual_rows(self) -> List[tuple]:
+        """Return ``[(y, height, is_sub_row), ...]`` for background painting."""
+        rows = []
+        y = _RULER_HEIGHT
+        for td in self._tracks:
+            rows.append((y, _TRACK_HEIGHT, False))
+            y += _TRACK_HEIGHT + _TRACK_PADDING
+            for sr in self._expanded_tracks.get(td.track_id, []):
+                rows.append((y, self._sub_row_height, True))
+                y += self._sub_row_height + _TRACK_PADDING
+        return rows
+
+    def _track_index(self, track_id: int) -> Optional[int]:
+        """Return the list index for *track_id*, or None."""
+        for i, td in enumerate(self._tracks):
+            if td.track_id == track_id:
+                return i
+        return None
+
+    def _on_header_expand(self, label_idx: int):
+        """Handle double-click on a header label to toggle expansion."""
+        if label_idx < len(self._tracks):
+            self.toggle_track_expanded(self._tracks[label_idx].track_id)
 
     # -- selection ----------------------------------------------------------
     def selected_clips(self) -> List[int]:

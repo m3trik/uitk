@@ -499,7 +499,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
     def save_window_geometry(self) -> None:
         """Save the current window geometry (size and position) to settings."""
-        if not self.restore_window_size:
+        if not self.restore_window_size or not self.is_initialized:
+            return
+
+        # Don't save degenerate geometry (e.g. during reparenting)
+        if self.width() <= 0 or self.height() <= 0:
             return
 
         geometry = self.saveGeometry()
@@ -520,9 +524,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if geometry and isinstance(geometry, QtCore.QByteArray):
             try:
                 if self.restoreGeometry(geometry):
-                    self.logger.debug(
-                        f"[restore_window_geometry]: Restored window geometry for {self.objectName()}"
-                    )
+                    # Reject restored geometry if it resulted in a degenerate size
+                    if self.width() <= 0 or self.height() <= 0:
+                        self.logger.debug(
+                            f"[restore_window_geometry]: Rejected 0-size geometry for {self.objectName()}, using adjustSize"
+                        )
+                        self.adjustSize()
+                    else:
+                        self.logger.debug(
+                            f"[restore_window_geometry]: Restored window geometry for {self.objectName()}"
+                        )
                 else:
                     self.logger.debug(
                         f"[restore_window_geometry]: Failed to restore window geometry for {self.objectName()}"
@@ -533,8 +544,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
                 )
         else:
             self.logger.debug(
-                f"[restore_window_geometry]: No valid geometry data found for {self.objectName()}"
+                f"[restore_window_geometry]: No valid geometry data found for {self.objectName()}, using adjustSize"
             )
+            self.adjustSize()
 
     def clear_saved_geometry(self) -> None:
         """Clear any saved window geometry from settings."""

@@ -18,9 +18,12 @@ from uitk.widgets.sequencer._sequencer import (
     ClipData,
     TrackData,
     ClipItem,
+    AttributeColorDialog,
     _TRACK_HEIGHT,
     _RULER_HEIGHT,
     _MIN_CLIP_DURATION,
+    _DEFAULT_ATTRIBUTE_COLORS,
+    _COMMON_ATTRIBUTES,
 )
 
 
@@ -283,6 +286,94 @@ class TestClipData(BaseTestCase):
         cd = ClipData(clip_id=0, track_id=0, start=0, duration=1)
         self.assertIsInstance(cd.data, dict)
         self.assertEqual(len(cd.data), 0)
+
+
+class TestAttributeColors(BaseTestCase):
+    """Tests for the attribute color configuration system."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_default_attribute_colors(self):
+        """Widget starts with default attribute color map."""
+        colors = self.w.attribute_colors
+        self.assertIn("translateX", colors)
+        self.assertIn("rotateZ", colors)
+        self.assertEqual(colors["translateX"], _DEFAULT_ATTRIBUTE_COLORS["translateX"])
+
+    def test_set_attribute_colors(self):
+        """Setting attribute_colors replaces the map."""
+        custom = {"translateX": "#FF0000", "custom_attr": "#00FF00"}
+        self.w.attribute_colors = custom
+        self.assertEqual(self.w.attribute_colors["translateX"], "#FF0000")
+        self.assertEqual(self.w.attribute_colors["custom_attr"], "#00FF00")
+
+    def test_clip_resolves_attribute_color(self):
+        """Clip with attributes data resolves color from the widget map."""
+        self.w.attribute_colors = {"rotateY": "#123456"}
+        tid = self.w.add_track("Obj")
+        cid = self.w.add_clip(tid, 0, 10, attributes=["rotateY", "translateX"])
+        item = self.w._clip_items[cid]
+        resolved = item._resolve_color()
+        self.assertEqual(resolved.name(), "#123456")
+
+    def test_clip_falls_back_to_default_color(self):
+        """Clip without attributes falls back to ClipData.color."""
+        tid = self.w.add_track("Obj")
+        cid = self.w.add_clip(tid, 0, 10, color="#AABBCC")
+        item = self.w._clip_items[cid]
+        resolved = item._resolve_color()
+        self.assertEqual(resolved.name(), "#aabbcc")
+
+    def test_clip_no_matching_attr_uses_clip_color(self):
+        """Clip with attributes that aren't in the color map uses clip color."""
+        self.w.attribute_colors = {}
+        tid = self.w.add_track("Obj")
+        cid = self.w.add_clip(tid, 0, 10, color="#DDEEFF", attributes=["unknown"])
+        item = self.w._clip_items[cid]
+        resolved = item._resolve_color()
+        self.assertEqual(resolved.name(), "#ddeeff")
+
+
+class TestAttributeColorDialog(BaseTestCase):
+    """Tests for the AttributeColorDialog UI."""
+
+    def test_dialog_creates_common_swatches(self):
+        dlg = AttributeColorDialog()
+        for attr in _COMMON_ATTRIBUTES:
+            self.assertIn(attr, dlg._swatches)
+        dlg.close()
+
+    def test_dialog_shows_active_extras(self):
+        dlg = AttributeColorDialog(active_attrs=["blendWeight", "envelope"])
+        self.assertIn("blendWeight", dlg._swatches)
+        self.assertIn("envelope", dlg._swatches)
+        dlg.close()
+
+    def test_color_map_returns_defaults(self):
+        dlg = AttributeColorDialog()
+        cmap = dlg.color_map()
+        self.assertEqual(cmap["translateX"], _DEFAULT_ATTRIBUTE_COLORS["translateX"])
+        dlg.close()
+
+    def test_restore_defaults_resets(self):
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        settings = SettingsManager(namespace="test_attr_colors_restore")
+        settings.setValue("translateX", "#000000")
+        dlg = AttributeColorDialog(settings=settings)
+        dlg._restore_defaults()
+        # After restore, color reverts to default
+        self.assertEqual(
+            dlg._current_color("translateX"),
+            _DEFAULT_ATTRIBUTE_COLORS["translateX"],
+        )
+        dlg.close()
+        settings.clear()
 
 
 if __name__ == "__main__":
