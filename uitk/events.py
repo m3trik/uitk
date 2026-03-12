@@ -260,7 +260,8 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
         self._release_mouse_for_widgets(self._mouse_over)
 
-        self._mouse_over = {top_widget} if top_widget in self._widgets else set()
+        is_tracked = top_widget in self._widgets
+        self._mouse_over = {top_widget} if is_tracked else set()
 
         for widget in self._prev_mouse_over - self._mouse_over:
             if self.is_widget_valid(widget):
@@ -270,7 +271,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             if self.is_widget_valid(widget):
                 self._send_enter_event(widget)
 
-        if self.is_widget_valid(top_widget):
+        # Only grab/release the mouse for tracked widgets to prevent
+        # unrelated widgets (e.g. ExpandableList sublists reparented to the
+        # window) from stealing the grab from the parent's drag tracking.
+        if is_tracked and self.is_widget_valid(top_widget):
             self._handle_mouse_grab(top_widget)
 
         self._prev_mouse_over = set(self._mouse_over)

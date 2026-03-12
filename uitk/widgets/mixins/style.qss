@@ -1095,6 +1095,7 @@ TreeWidget {
     selection-background-color: {BUTTON_HOVER};
     show-decoration-selected: 1;
     gridline-color: transparent;
+    qproperty-childRowColor: rgba(255, 255, 255, 0.04);
 }
 
 TreeWidget::item:selected {

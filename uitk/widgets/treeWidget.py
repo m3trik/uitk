@@ -328,6 +328,19 @@ class TreeFormatMixin(ConvertMixin):
         return formatters
 
 
+class _ChildRowDelegate(QtWidgets.QStyledItemDelegate):
+    """Paints a custom background on child rows (items with a parent)."""
+
+    def paint(self, painter, option, index):
+        tree = self.parent()
+        item = tree.itemFromIndex(index)
+        if item and item.parent() is not None:
+            color = getattr(tree, "_child_row_color", None)
+            if color and color.isValid():
+                painter.fillRect(option.rect, color)
+        super().paint(painter, option, index)
+
+
 class TreeWidget(
     QtWidgets.QTreeWidget,
     MenuMixin,
@@ -374,10 +387,32 @@ class TreeWidget(
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self._handle_delayed_click)
 
+        # Column stretch support
+        self._stretch_column = None
+
+        # Child-row background delegate
+        self._child_row_color = QtGui.QColor()
+        self.setItemDelegate(_ChildRowDelegate(self))
+
         # Connect signals
         self.itemSelectionChanged.connect(self._on_selection_changed)
 
         self.set_attributes(**kwargs)
+
+    # -- child-row background (styleable via qproperty-childRowColor) ----
+
+    def _get_child_row_color(self):
+        return self._child_row_color
+
+    def _set_child_row_color(self, color):
+        self._child_row_color = (
+            QtGui.QColor(color) if not isinstance(color, QtGui.QColor) else color
+        )
+        self.viewport().update()
+
+    childRowColor = QtCore.Property(
+        QtGui.QColor, _get_child_row_color, _set_child_row_color
+    )
 
     def _set_selection_mode(self, mode_str):
         """Set the selection mode from a string."""
@@ -637,6 +672,35 @@ class TreeWidget(
             item = self.find_item_by_text(text, column)
             if item:
                 item.setSelected(True)
+
+    def set_stretch_column(self, col: int):
+        """Set a column to automatically stretch to fill available space."""
+        self._stretch_column = col
+        self.stretch_column_to_fill(col)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._stretch_column is not None:
+            self.stretch_column_to_fill(self._stretch_column)
+
+    def stretch_column_to_fill(self, stretch_col: int):
+        """Resize one column to fill remaining horizontal space."""
+        header = self.header()
+        if stretch_col < 0 or stretch_col >= self.columnCount():
+            return
+
+        header.setStretchLastSection(False)
+        for col in range(self.columnCount()):
+            header.setSectionResizeMode(col, QtWidgets.QHeaderView.Interactive)
+
+        total_width = self.viewport().width()
+        if total_width <= 0:
+            return
+
+        other_cols_width = sum(
+            self.columnWidth(c) for c in range(self.columnCount()) if c != stretch_col
+        )
+        self.setColumnWidth(stretch_col, max(50, total_width - other_cols_width))
 
     def expand_all_items(self):
         """Expand all items in the tree."""

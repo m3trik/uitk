@@ -441,6 +441,29 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         while hasattr(sublist.root_list, "parent_list"):
             sublist.root_list = sublist.root_list.parent_list
 
+        # Set logical ancestor so parent windows (e.g. MarkingMenu) can
+        # recognize sublist items as belonging to the original UI hierarchy.
+        sublist._logical_ancestor = sublist.root_list
+
+    def _get_inherited_stylesheet(self):
+        """Walk the ancestor chain to find the nearest non-empty stylesheet.
+
+        Sublists are reparented to the top-level window to avoid clipping,
+        which breaks Qt's stylesheet inheritance.  This method retrieves the
+        stylesheet that *would* have been inherited so it can be explicitly
+        applied to the sublist.
+
+        Returns:
+            str: The stylesheet string, or empty string if none found.
+        """
+        w = self
+        while w:
+            ss = w.styleSheet()
+            if ss:
+                return ss
+            w = w.parent()
+        return ""
+
     def _add_sublist(self, widget):
         """Add an expanding list to the given widget.
 
@@ -455,6 +478,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         parent = self.window() or self.parent()
         sublist = ExpandableList(parent, **self._create_sublist_config())
         sublist.setVisible(False)
+
+        # Propagate stylesheet so sublist items are styled consistently
+        # (reparenting to the window breaks normal CSS inheritance).
+        ss = self._get_inherited_stylesheet()
+        if ss:
+            sublist.setStyleSheet(ss)
 
         # Connect the signals of the sublist to the signals of the parent list
         sublist.on_item_interacted.connect(self.on_item_interacted.emit)
@@ -676,8 +705,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         if not (hasattr(widget, "sublist") and widget.sublist.get_items()):
             return
 
-        widget.sublist.show()
-        widget.sublist.raise_()
+        # Ensure correct size before positioning
+        widget.sublist.resize(widget.sublist.sizeHint())
         widget.updateGeometry()
 
         # Ensure the root list's watchdog is running so that
@@ -714,6 +743,10 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         pos = base_point + QtCore.QPoint(x, y)
         widget.sublist.move(pos)
+
+        # Show AFTER positioning to prevent a flash at the wrong location
+        widget.sublist.show()
+        widget.sublist.raise_()
 
     def eventFilter(self, widget, event):
         """Filter events for the ExpandableList.

@@ -78,6 +78,7 @@ class MarkingMenu(
         self._activation_key = None
         self._activation_key_held = False
         self._initial_bindings = bindings  # Store for after sb is set up
+        self._default_bindings = bindings  # Public-facing copy of the original defaults
 
         # Merge class-level HANDLERS with instance-level handlers param
         self._handlers_config = getattr(self, "HANDLERS", {}).copy()
@@ -263,6 +264,11 @@ class MarkingMenu(
         return super().instance(**kwargs)
 
     @property
+    def default_bindings(self) -> dict:
+        """The original bindings passed at construction time."""
+        return dict(self._default_bindings or {})
+
+    @property
     def bindings(self) -> dict:
         """Get bindings from persistent storage."""
         return self.sb.configurable.marking_menu_bindings.get({})
@@ -414,6 +420,16 @@ class MarkingMenu(
                     self._activation_key_str = part
                     if hasattr(QtCore.Qt, part):
                         self._activation_key = self._to_int(getattr(QtCore.Qt, part))
+                # Fallback: bare key name like "F12" without Key_ prefix
+                elif self._activation_key_str is None and not part.endswith(
+                    ("Button", "Modifier")
+                ):
+                    prefixed = f"Key_{part}"
+                    if hasattr(QtCore.Qt, prefixed):
+                        self._activation_key_str = prefixed
+                        self._activation_key = self._to_int(
+                            getattr(QtCore.Qt, prefixed)
+                        )
 
             self._bindings[normalized] = ui_in
             self.logger.debug(f"Binding: '{key}' -> '{normalized}' -> '{ui_in}'")
@@ -462,6 +478,15 @@ class MarkingMenu(
         widget.show()
         widget.raise_()
 
+        # QMainWindow may collapse to 0x0 when reparented as a child widget;
+        # use central widget size as a fallback.
+        if widget.width() <= 0 or widget.height() <= 0:
+            cw = widget.centralWidget() if hasattr(widget, "centralWidget") else None
+            if cw and (cw.width() > 0 or cw.height() > 0):
+                widget.resize(cw.size())
+            else:
+                widget.resize(600, 600)
+
         # Position the widget at the cursor
         cursor_pos = QtGui.QCursor.pos()
         local_pos = self.mapFromGlobal(cursor_pos)
@@ -497,11 +522,12 @@ class MarkingMenu(
 
         if ui.has_tags(["startmenu", "submenu"]):  # StackedWidget
             ui.style.set(theme="dark", style_class="translucentBgNoBorder")
+            ui.ensure_on_screen = False
+            self.addWidget(ui)  # add the UI to the stackedLayout.
+            # Resize after addWidget (setParent can reset geometry)
             w = max(ui.width(), 600)
             h = max(ui.height(), 600)
             ui.resize(w, h)
-            ui.ensure_on_screen = False
-            self.addWidget(ui)  # add the UI to the stackedLayout.
             self.add_child_event_filter(ui.widgets)
             ui.on_child_registered.connect(lambda w: self.add_child_event_filter(w))
             # Stacked menus: No explicit lifecycle setup needed (they hide with parent)
@@ -861,7 +887,17 @@ class MarkingMenu(
             self.hide()
             if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
                 widget.clicked.emit()
-            return True
+                return True
+
+        # Handle ExpandableList items (widgets with item_text set by ExpandableList)
+        if hasattr(widget, "item_text"):
+            parent = widget.parent()
+            while parent:
+                if hasattr(parent, "on_item_interacted"):
+                    self.hide()
+                    parent.on_item_interacted.emit(widget)
+                    return True
+                parent = parent.parent()
 
         return False
 
@@ -958,7 +994,9 @@ class MarkingMenu(
                         self.releaseMouse()
                         super().mouseReleaseEvent(event)
                         return
-                    # If not handled (e.g. background/label), fall through to transition logic
+                    # Non-interactive widget (background, label, etc.) —
+                    # fall through to normal transition logic so the
+                    # mouse grab is preserved for continued drag tracking.
                 else:
                     # Widget is outside current_ui - don't transition
                     super().mouseReleaseEvent(event)
@@ -1060,9 +1098,10 @@ class MarkingMenu(
             self.overlay.start_gesture(QtGui.QCursor.pos())
 
         if self.isHidden():
-            super().show()
-            self.raise_()
-            self.activateWindow()
+            self.showFullScreen()
+
+        self.raise_()
+        self.activateWindow()
 
         self.sb.current_ui = widget
         return widget

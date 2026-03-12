@@ -167,6 +167,9 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
 
         if pos == "cursor":
             cursor_pos = QtGui.QCursor.pos()
+            # Ensure the window has a valid size before positioning
+            if ui.width() <= 0 or ui.height() <= 0:
+                ui.adjustSize()
             # Calculate window center offset
             half_width = ui.width() // 2
             half_height = ui.height() // 2
