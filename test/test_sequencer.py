@@ -18,6 +18,8 @@ from uitk.widgets.sequencer._sequencer import (
     ClipData,
     TrackData,
     ClipItem,
+    MarkerData,
+    RangeHighlightItem,
     AttributeColorDialog,
     _TRACK_HEIGHT,
     _RULER_HEIGHT,
@@ -120,8 +122,8 @@ class TestSequencerWidget(BaseTestCase):
         self.assertAlmostEqual(ph.time, 42.0)
 
     # -- snapping -----------------------------------------------------------
-    def test_snap_interval_default_off(self):
-        self.assertEqual(self.w.snap_interval, 0.0)
+    def test_snap_interval_default_one(self):
+        self.assertEqual(self.w.snap_interval, 1.0)
 
     def test_snap_interval_setter(self):
         self.w.snap_interval = 5.0
@@ -133,6 +135,7 @@ class TestSequencerWidget(BaseTestCase):
         cid = self.w.add_clip(tid, start=0, duration=100)
         item = self.w._clip_items[cid]
         # With snapping off, arbitrary value passes through
+        self.w.snap_interval = 0.0
         self.assertAlmostEqual(item._snap(12.3), 12.3)
         # With snapping on, value rounds to nearest interval
         self.w.snap_interval = 5.0
@@ -274,6 +277,63 @@ class TestSequencerWidget(BaseTestCase):
         self.w.redo()
         self.assertAlmostEqual(self.w.get_clip(cid).start, 100)
 
+    # -- range overlay API --------------------------------------------------
+
+    def test_add_range_overlay(self):
+        """add_range_overlay creates a scene item and tracks it."""
+        self.w.add_range_overlay(10, 90)
+        self.assertEqual(len(self.w._range_overlays), 1)
+
+    def test_clear_range_overlays(self):
+        """clear_range_overlays removes all overlays."""
+        self.w.add_range_overlay(0, 50)
+        self.w.add_range_overlay(60, 120)
+        self.assertEqual(len(self.w._range_overlays), 2)
+        self.w.clear_range_overlays()
+        self.assertEqual(len(self.w._range_overlays), 0)
+
+    def test_clear_removes_overlays(self):
+        """widget.clear() also clears range overlays."""
+        tid = self.w.add_track("T")
+        self.w.add_range_overlay(0, 50)
+        self.w.clear()
+        self.assertEqual(len(self.w._range_overlays), 0)
+
+    # -- locked / read-only clips ------------------------------------------
+
+    def test_add_clip_locked(self):
+        """add_clip accepts locked=True and sets ClipData.locked."""
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50, locked=True)
+        cd = self.w.get_clip(cid)
+        self.assertTrue(cd.locked)
+
+    def test_add_clip_locked_default_false(self):
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50)
+        cd = self.w.get_clip(cid)
+        self.assertFalse(cd.locked)
+
+    def test_read_only_clip_skips_lock_icon(self):
+        """read_only clips suppress the lock icon even when locked."""
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50, locked=True, read_only=True)
+        cd = self.w.get_clip(cid)
+        self.assertTrue(cd.locked)
+        self.assertTrue(cd.data.get("read_only"))
+
+    def test_add_track_dimmed(self):
+        """add_track(dimmed=True) sets the header label to the dimmed style."""
+        tid = self.w.add_track("Active")
+        tid2 = self.w.add_track("Inactive", dimmed=True)
+        header = self.w._header
+        self.assertFalse(header._dimmed[0])
+        self.assertTrue(header._dimmed[1])
+
+    def test_add_track_dimmed_default_false(self):
+        tid = self.w.add_track("T")
+        self.assertFalse(self.w._header._dimmed[0])
+
 
 class TestClipData(BaseTestCase):
     """Unit tests for the ClipData dataclass."""
@@ -374,6 +434,168 @@ class TestAttributeColorDialog(BaseTestCase):
         )
         dlg.close()
         settings.clear()
+
+
+class TestMarkerSystem(BaseTestCase):
+    """Tests for the enhanced marker system."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    # -- MarkerData fields -------------------------------------------------
+
+    def test_marker_data_defaults(self):
+        md = MarkerData(marker_id=0, time=10.0)
+        self.assertTrue(md.draggable)
+        self.assertEqual(md.style, "triangle")
+        self.assertEqual(md.line_style, "dashed")
+        self.assertAlmostEqual(md.opacity, 1.0)
+
+    def test_marker_data_custom_fields(self):
+        md = MarkerData(
+            marker_id=0,
+            time=5.0,
+            style="diamond",
+            line_style="solid",
+            draggable=False,
+            opacity=0.5,
+        )
+        self.assertFalse(md.draggable)
+        self.assertEqual(md.style, "diamond")
+        self.assertEqual(md.line_style, "solid")
+        self.assertAlmostEqual(md.opacity, 0.5)
+
+    # -- add_marker with new params -----------------------------------------
+
+    def test_add_marker_default_style(self):
+        mid = self.w.add_marker(time=10.0, note="test")
+        md = self.w.get_marker(mid)
+        self.assertEqual(md.style, "triangle")
+        self.assertTrue(md.draggable)
+
+    def test_add_marker_custom_style(self):
+        mid = self.w.add_marker(
+            time=20.0,
+            note="boundary",
+            color="#FF0000",
+            draggable=False,
+            style="bracket",
+            line_style="solid",
+            opacity=0.85,
+        )
+        md = self.w.get_marker(mid)
+        self.assertEqual(md.style, "bracket")
+        self.assertEqual(md.line_style, "solid")
+        self.assertFalse(md.draggable)
+        self.assertAlmostEqual(md.opacity, 0.85)
+        self.assertEqual(md.color, "#FF0000")
+
+    def test_add_marker_all_styles(self):
+        """Verify all four marker styles can be instantiated."""
+        for style in ("triangle", "diamond", "line", "bracket"):
+            mid = self.w.add_marker(time=0.0, style=style)
+            md = self.w.get_marker(mid)
+            self.assertEqual(md.style, style)
+
+    def test_add_marker_all_line_styles(self):
+        """Verify all four line styles can be instantiated."""
+        for ls in ("dashed", "solid", "dotted", "none"):
+            mid = self.w.add_marker(time=0.0, line_style=ls)
+            md = self.w.get_marker(mid)
+            self.assertEqual(md.line_style, ls)
+
+    # -- marker list / clear ------------------------------------------------
+
+    def test_markers_returns_all(self):
+        self.w.add_marker(10.0)
+        self.w.add_marker(20.0, style="diamond")
+        self.w.add_marker(30.0, draggable=False)
+        self.assertEqual(len(self.w.markers()), 3)
+
+    def test_clear_markers(self):
+        self.w.add_marker(10.0, style="bracket")
+        self.w.add_marker(20.0, style="line")
+        self.w.clear_markers()
+        self.assertEqual(len(self.w.markers()), 0)
+
+    # -- remove_marker ------------------------------------------------------
+
+    def test_remove_marker(self):
+        mid = self.w.add_marker(10.0, style="diamond")
+        self.w.remove_marker(mid)
+        self.assertIsNone(self.w.get_marker(mid))
+
+    # -- opacity is applied to item ----------------------------------------
+
+    def test_marker_item_opacity(self):
+        mid = self.w.add_marker(time=5.0, opacity=0.5)
+        item = self.w._marker_items[mid]
+        self.assertAlmostEqual(item.opacity(), 0.5, places=2)
+
+    # -- range highlight ----------------------------------------------------
+
+    def test_set_range_highlight(self):
+        self.w.set_range_highlight(10, 50)
+        rng = self.w.range_highlight()
+        self.assertIsNotNone(rng)
+        self.assertEqual(rng, (10, 50))
+
+    def test_set_range_highlight_updates_existing(self):
+        self.w.set_range_highlight(10, 50)
+        self.w.set_range_highlight(20, 80)
+        rng = self.w.range_highlight()
+        self.assertEqual(rng, (20, 80))
+        # Should reuse the same item, not create a second
+        highlights = [
+            i
+            for i in self.w._timeline._scene.items()
+            if isinstance(i, RangeHighlightItem)
+        ]
+        self.assertEqual(len(highlights), 1)
+
+    def test_clear_range_highlight(self):
+        self.w.set_range_highlight(0, 100)
+        self.w.clear_range_highlight()
+        self.assertIsNone(self.w.range_highlight())
+        highlights = [
+            i
+            for i in self.w._timeline._scene.items()
+            if isinstance(i, RangeHighlightItem)
+        ]
+        self.assertEqual(len(highlights), 0)
+
+    def test_clear_removes_range_highlight(self):
+        """widget.clear() should also remove the range highlight."""
+        self.w.add_track("T")
+        self.w.set_range_highlight(0, 50)
+        self.w.clear()
+        self.assertIsNone(self.w.range_highlight())
+
+    def test_range_highlight_custom_color(self):
+        self.w.set_range_highlight(0, 100, color="#FF0000", alpha=60)
+        item = self.w._range_highlight
+        self.assertEqual(item.color.red(), 255)
+        self.assertEqual(item.color.alpha(), 60)
+
+    def test_range_highlight_changed_signal(self):
+        """Dragging the range emits range_highlight_changed(start, end)."""
+        received = []
+        self.w.range_highlight_changed.connect(lambda s, e: received.append((s, e)))
+        self.w.set_range_highlight(10, 50)
+        item = self.w._range_highlight
+        # Simulate a programmatic drag (move by changing start/end and emitting)
+        item._start = 20
+        item._end = 60
+        self.w.range_highlight_changed.emit(20, 60)
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0], (20, 60))
+
+    def test_range_highlight_none_by_default(self):
+        self.assertIsNone(self.w.range_highlight())
 
 
 if __name__ == "__main__":

@@ -24,6 +24,11 @@ class Header(
 
     toggled = QtCore.Signal(bool)
 
+    MINIMIZE_WIDTH = 200  # Fixed width when minimized to corner
+    MINIMIZE_STACK = "horizontal"  # "horizontal" or "vertical"
+    MINIMIZE_MARGIN = 8  # Margin from screen edges and between stacked windows
+    _minimized_headers = []  # Class-level registry for stacking
+
     # Define button properties with icon paths and callbacks
     button_definitions = {
         "menu": ("menu.svg", "show_menu"),
@@ -58,10 +63,15 @@ class Header(
         self.pinned = False  # unpinned, pinned
         self.pin_on_drag_only = pin_on_drag_only
         self._collapsed = False
+        self._minimized = False
         self._saved_size = None
         self._saved_min_size = None
         self._saved_max_size = None
+        self._saved_pos = None
         self._saved_parent_min_heights = {}  # Store min heights of ancestors
+        self._collapse_saved_pos = (
+            None  # Position before collapse (for right-edge anchoring)
+        )
         self.__mousePressPos = None
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
 
@@ -103,6 +113,7 @@ class Header(
                 fixed_item_height=20,
                 hide_on_leave=True,
                 add_defaults_button=False,
+                match_parent_width=False,
             )
             return self._menu
 
@@ -271,8 +282,125 @@ class Header(
         return self.text()
 
     def minimize_window(self):
-        """Minimize the parent window."""
-        self.window().showMinimized()
+        """Minimize the window: collapse to header-only, narrow to a fixed width,
+        and reposition to the lower-left corner of the screen.
+
+        The minimized geometry is never persisted to session settings.
+        Calling again restores the original size and position.
+        """
+        if self._minimized:
+            self.restore_window()
+        else:
+            self._do_minimize()
+
+    def _do_minimize(self):
+        """Internal: collapse + narrow + reposition to lower-left."""
+        window = self.window()
+
+        # Save position before collapse (collapse_window saves size)
+        self._saved_pos = window.pos()
+
+        # Collapse first (hides siblings, shrinks height)
+        w = self.MINIMIZE_WIDTH
+        if not self._collapsed:
+            self.collapse_window(fixed_width=w)
+        elif self._saved_size:
+            # Already collapsed but not yet narrowed — apply fixed width
+            window.setMinimumWidth(0)
+            window.setMaximumWidth(w)
+            window.resize(w, window.height())
+
+        # Suppress geometry saves while minimized
+        window.setProperty("_header_minimized", True)
+
+        # Register for stacking and compute slot position
+        if self not in Header._minimized_headers:
+            Header._minimized_headers.append(self)
+        slot = Header._minimized_headers.index(self)
+
+        screen = QtWidgets.QApplication.screenAt(window.geometry().center())
+        if screen is None:
+            screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        target = self._compute_minimize_position(window, avail, slot)
+
+        parent = window.parentWidget()
+        if parent:
+            target = parent.mapFromGlobal(target)
+        window.move(target)
+
+        # Update icon
+        if "minimize" in self.buttons:
+            IconManager.set_icon(self.buttons["minimize"], "maximize", size=(16, 16))
+
+        self._minimized = True
+
+    def restore_window(self):
+        """Restore a minimized window to its original size and position."""
+        if not self._minimized:
+            return
+
+        window = self.window()
+
+        # Expand (restores siblings, height, width constraints)
+        if self._collapsed:
+            self.expand_window()
+
+        # Restore position
+        if self._saved_pos is not None:
+            window.move(self._saved_pos)
+            self._saved_pos = None
+
+        # Clear the suppression flag
+        window.setProperty("_header_minimized", False)
+
+        # Update icon
+        if "minimize" in self.buttons:
+            IconManager.set_icon(self.buttons["minimize"], "minimize", size=(16, 16))
+
+        self._minimized = False
+
+        # Unregister and reflow remaining minimized windows
+        if self in Header._minimized_headers:
+            Header._minimized_headers.remove(self)
+            Header._reflow_minimized()
+
+    def _compute_minimize_position(self, window, avail, slot):
+        """Compute the screen position for a minimized window at the given slot.
+
+        Parameters:
+            window: The window being minimized.
+            avail (QRect): Available screen geometry.
+            slot (int): Zero-based stacking index.
+
+        Returns:
+            QPoint: Target position in global coordinates.
+        """
+        m = self.MINIMIZE_MARGIN
+        if self.MINIMIZE_STACK == "vertical":
+            x = avail.left() + m
+            y = avail.bottom() - (window.height() + m) * (slot + 1)
+        else:  # horizontal
+            x = avail.left() + m + (self.MINIMIZE_WIDTH + m) * slot
+            y = avail.bottom() - window.height() - m
+        return QtCore.QPoint(x, y)
+
+    @classmethod
+    def _reflow_minimized(cls):
+        """Reposition remaining minimized windows to close gaps after a restore."""
+        # Prune stale references (deleted widgets)
+        cls._minimized_headers = [h for h in cls._minimized_headers if h._minimized]
+        for i, header in enumerate(cls._minimized_headers):
+            window = header.window()
+            screen = QtWidgets.QApplication.screenAt(window.geometry().center())
+            if screen is None:
+                screen = QtWidgets.QApplication.primaryScreen()
+            avail = screen.availableGeometry()
+            target = header._compute_minimize_position(window, avail, i)
+            parent = window.parentWidget()
+            if parent:
+                target = parent.mapFromGlobal(target)
+            window.move(target)
 
     def toggle_maximize(self):
         """Toggle between maximized and normal window state."""
@@ -295,8 +423,10 @@ class Header(
         if self.pinned:
             self.toggle_pin(from_drag=True)  # Programmatic toggle, not user click
 
-        # Reset collapse state when hiding
-        if self._collapsed:
+        # Reset minimize/collapse state when hiding
+        if self._minimized:
+            self.restore_window()
+        elif self._collapsed:
             self.expand_window()
 
         self.window().hide()
@@ -323,14 +453,14 @@ class Header(
                         if hasattr(widget, "text") and callable(widget.text)
                         else ""
                     )
-        menu.setVisible(True)
+        menu.show_as_popup(position="cursorPos")
 
     def toggle_collapse(self):
         """Toggle between collapsed (header only) and expanded window states."""
         if self._collapsed:
             self.expand_window()
         else:
-            self.collapse_window()
+            self.collapse_window(fixed_width=self.MINIMIZE_WIDTH)
 
     def _set_siblings_visibility(self, visible):
         """Recursively toggle visibility of all siblings in the parent layout."""
@@ -359,8 +489,13 @@ class Header(
 
         recursive_set_vis(parent.layout())
 
-    def collapse_window(self):
-        """Collapse the parent window to show only the header."""
+    def collapse_window(self, fixed_width=None):
+        """Collapse the parent window to show only the header.
+
+        Parameters:
+            fixed_width (int, optional): If given, also narrow the window to
+                this width while collapsed.
+        """
         if self._collapsed:
             return
 
@@ -393,11 +528,26 @@ class Header(
             margins = parent.layout().contentsMargins()
             new_height += margins.top() + margins.bottom()
 
+        # Anchor right edge when narrowing so buttons stay under the mouse
+        if fixed_width is not None and fixed_width < window.width():
+            original_right = window.x() + window.width()
+            self._collapse_saved_pos = window.pos()
+
         # Collapse the window
         window.setMinimumHeight(0)
-        # Resize height only, preserving current width
-        window.resize(window.width(), new_height)
+        if fixed_width is not None:
+            window.setMinimumWidth(0)
+            window.setMaximumWidth(fixed_width)
+            window.resize(fixed_width, new_height)
+        else:
+            # Resize height only, preserving current width
+            window.resize(window.width(), new_height)
         window.setMaximumHeight(new_height)
+
+        # Move window so the right edge stays in place
+        if fixed_width is not None and self._collapse_saved_pos is not None:
+            original_right = self._collapse_saved_pos.x() + self._saved_size.width()
+            window.move(original_right - fixed_width, window.y())
 
         # Update icon to expand (chevron down)
         if "collapse" in self.buttons:
@@ -433,13 +583,18 @@ class Header(
         if self._saved_max_size:
             window.setMaximumSize(self._saved_max_size)
         else:
-            window.setMaximumHeight(16777215)  # Qt's default max height
+            window.setMaximumSize(16777215, 16777215)  # Qt's QWIDGETSIZE_MAX
 
         # Restore original size
         if self._saved_size:
             window.resize(self._saved_size)
         else:
             window.adjustSize()
+
+        # Restore position if right-edge anchoring moved the window
+        if self._collapse_saved_pos is not None:
+            window.move(self._collapse_saved_pos)
+            self._collapse_saved_pos = None
 
         # Update icon to collapse (chevron up)
         if "collapse" in self.buttons:
@@ -595,8 +750,10 @@ class Header(
                 self._set_pin_state(window.pinned)
 
     def hideEvent(self, event):
-        """Reset collapse state when header (and window) is hidden."""
-        if self._collapsed:
+        """Reset minimize/collapse state when header (and window) is hidden."""
+        if self._minimized:
+            self.restore_window()
+        elif self._collapsed:
             self.expand_window()
         super().hideEvent(event)
 

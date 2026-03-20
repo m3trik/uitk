@@ -15,6 +15,8 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         self.restore_state = True  # Default to restoring state
         self.settings = SettingsManager()
         self._expanded_height = None  # Saved height before collapse
+        self._state_enforced = False  # Guards against double _enforce_state
+        self._suppress_window_resize = False  # Skip window resize during restore
 
         # Connect the toggle signal
         self.toggled.connect(self.toggle_expand)
@@ -25,15 +27,33 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         # Ensure state is applied after UI loading (fixes uic loading issue)
         QtCore.QTimer.singleShot(0, self._enforce_state)
 
-    def _enforce_state(self):
-        """Ensure the visibility matches the checked state."""
+    def _enforce_state(self, suppress_resize=False):
+        """Ensure the visibility matches the checked state.
+
+        Parameters:
+            suppress_resize: If True, skip window resize during state
+                enforcement.  Used by MainWindow to settle group states
+                before restoring saved window geometry.
+        """
+        if self._state_enforced:
+            return
+        self._state_enforced = True
+
         if self.restore_state and self.objectName():
             key = f"CollapsableGroup/{self.objectName()}/checked"
             val = self.settings.value(key)
             if val is not None:
+                # Block signals so setChecked doesn't trigger toggle_expand
+                # via toggled signal (we call it explicitly below).
+                self.blockSignals(True)
                 self.setChecked(val)
+                self.blockSignals(False)
 
-        self.toggle_expand(self.isChecked())
+        self._suppress_window_resize = suppress_resize
+        try:
+            self.toggle_expand(self.isChecked())
+        finally:
+            self._suppress_window_resize = False
 
     def _collapsed_height(self):
         """Return the height to use when collapsed (title bar only)."""
@@ -78,18 +98,17 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         if self.parent():
             self.parent().updateGeometry()
 
-        # Defer resize so the layout minimum sizes fully settle
+        # Force layout to recalculate minimum sizes before resizing
         delta = new_group_height - old_group_height
         if window and delta != 0:
-            QtCore.QTimer.singleShot(
-                0,
-                lambda wh=old_window_height, d=delta: (
-                    self._apply_window_resize(wh, d)
-                ),
-            )
+            if window.layout():
+                window.layout().activate()
+            self._apply_window_resize(old_window_height, delta)
 
     def _apply_window_resize(self, old_window_height, delta):
         """Apply the computed delta to the window after the layout settles."""
+        if self._suppress_window_resize:
+            return
         window = self.window()
         if not window:
             return

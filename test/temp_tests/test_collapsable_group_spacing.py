@@ -49,9 +49,9 @@ class TestCollapsableGroupSpacing(unittest.TestCase):
         self._process()
 
     def _process(self):
-        """Let Qt fully process layout updates including timers."""
-        for _ in range(10):
-            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        """Let Qt fully process layout updates."""
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents)
 
     def test_setLayout_does_not_force_excessive_top_margin(self):
         """Verify setLayout doesn't override user-specified top margin to 20px.

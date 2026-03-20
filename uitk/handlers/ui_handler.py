@@ -23,7 +23,7 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         "flags": {"FramelessWindowHint": True},
         "theme": "dark",
         "style_class": "translucentBgWithBorder",
-        "header_buttons": ("menu", "collapse", "hide"),
+        "header_buttons": ("menu", "collapse", "minimize", "hide"),
     }
 
     # Configuration defaults exposed to Switchboard
@@ -160,8 +160,13 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         if pos is None:
             return
 
-        # Ensure layout is processed so geometry is accurate
-        QtWidgets.QApplication.processEvents()
+        # Activate layout so geometry is accurate without flushing the
+        # full event queue (which would fire deferred CollapsableGroup
+        # timers and fight with restored window geometry).
+        cw = ui.centralWidget() if hasattr(ui, "centralWidget") else None
+        layout = (cw or ui).layout() if (cw or ui) else None
+        if layout:
+            layout.activate()
 
         target_global = None
 
@@ -234,7 +239,7 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         # Tag-based overrides
         try:
             if ui.has_tags(["mayatk", "maya"]):
-                style["header_buttons"] = ("menu", "collapse", "pin")
+                style["header_buttons"] = ("menu", "collapse", "minimize", "pin")
 
             if ui.has_tags(["startmenu", "submenu"]):
                 style["style_class"] = "translucentBgNoBorder"
@@ -264,8 +269,19 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
             pass
 
         if "header_buttons" in style:
-            try:
-                if ui.header and ui.header.config_buttons:
-                    ui.header.config_buttons(*style["header_buttons"])
-            except AttributeError:
-                pass
+            # ui.header may not be registered yet (register_children runs
+            # later in showEvent), so fall back to findChild by objectName.
+            # NOTE: QUiLoader creates widgets via dynamic subclasses, so
+            # isinstance / findChild-by-type won't match the imported class.
+            header = getattr(ui, "header", None)
+            if not hasattr(header, "config_buttons"):
+                header = (
+                    ui.findChild(QtWidgets.QWidget, "header")
+                    if hasattr(ui, "findChild")
+                    else None
+                )
+            if header is not None and hasattr(header, "config_buttons"):
+                desired = tuple(style["header_buttons"])
+                current = tuple(getattr(header, "buttons", {}).keys())
+                if current != desired:
+                    header.config_buttons(*desired)

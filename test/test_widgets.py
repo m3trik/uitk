@@ -310,8 +310,9 @@ class TestLineEditActionColors(QtBaseTestCase):
         """Should have expected action color keys."""
         from uitk.widgets.lineEdit import LineEdit
 
+        line_edit = self.track_widget(LineEdit())
         expected_keys = {"valid", "invalid", "warning", "info", "inactive"}
-        self.assertTrue(expected_keys.issubset(LineEdit.ACTION_COLOR_MAP.keys()))
+        self.assertTrue(expected_keys.issubset(line_edit.ACTION_COLOR_MAP.keys()))
 
 
 class TestLineEditSignals(QtBaseTestCase):

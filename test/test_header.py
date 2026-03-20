@@ -265,19 +265,224 @@ class TestHeaderButtonDefinitions(QtBaseTestCase):
 class TestHeaderWindowActions(QtBaseTestCase):
     """Tests for Header window action methods."""
 
-    def test_minimize_window_minimizes_parent(self):
-        """Should minimize parent window."""
+    def _make_header_window(self, buttons=("collapse", "minimize", "hide")):
+        """Create a window with a header inside a layout, shown and sized."""
         window = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(window)
+        layout.setContentsMargins(0, 0, 0, 0)
+        header = Header(parent=window, config_buttons=list(buttons))
+        layout.addWidget(header)
+        # Add a body sibling so collapse has something to hide
+        body = QtWidgets.QLabel("body", parent=window)
+        layout.addWidget(body)
         window.show()
-        header = self.track_widget(Header(parent=window))
-        # Should not raise
+        window.resize(400, 300)
+        window.move(500, 300)
+        app.processEvents()
+        return window, header, body
+
+    def tearDown(self):
+        """Clear the class-level stacking registry between tests."""
+        Header._minimized_headers.clear()
+        # Reset class defaults that individual tests may have changed
+        Header.MINIMIZE_STACK = "horizontal"
+        super().tearDown()
+
+    # ---- minimize basics ----
+
+    def test_minimize_window_collapses_and_narrows(self):
+        """Should collapse to header height and narrow to MINIMIZE_WIDTH."""
+        window, header, _ = self._make_header_window()
         header.minimize_window()
+        app.processEvents()
+        self.assertTrue(header._minimized)
+        self.assertTrue(header._collapsed)
+        self.assertEqual(window.width(), Header.MINIMIZE_WIDTH)
+
+    def test_minimize_window_sets_suppression_property(self):
+        """Should set _header_minimized property on window."""
+        window, header, _ = self._make_header_window()
+        header.minimize_window()
+        app.processEvents()
+        self.assertTrue(window.property("_header_minimized"))
+
+    def test_minimize_toggle_restores(self):
+        """Calling minimize_window again should restore original size/pos."""
+        window, header, _ = self._make_header_window()
+        orig_pos = window.pos()
+        orig_size = window.size()
+        header.minimize_window()
+        app.processEvents()
+        header.minimize_window()  # toggle
+        app.processEvents()
+        self.assertFalse(header._minimized)
+        self.assertFalse(header._collapsed)
+        self.assertEqual(window.size(), orig_size)
+        self.assertEqual(window.pos(), orig_pos)
+        self.assertFalse(window.property("_header_minimized"))
+
+    def test_restore_clears_registry(self):
+        """Restoring should remove header from _minimized_headers."""
+        _, header, _ = self._make_header_window()
+        header.minimize_window()
+        app.processEvents()
+        self.assertIn(header, Header._minimized_headers)
+        header.restore_window()
+        app.processEvents()
+        self.assertNotIn(header, Header._minimized_headers)
+        self.assertEqual(len(Header._minimized_headers), 0)
+
+    # ---- horizontal stacking ----
+
+    def test_horizontal_stacking_positions(self):
+        """Multiple minimized windows should stack left-to-right.
+
+        Bug: Before stacking, all minimized windows overlapped at the same
+        lower-left corner position.
+        Fixed: 2026-03-14
+        """
+        Header.MINIMIZE_STACK = "horizontal"
+        pairs = [self._make_header_window() for _ in range(3)]
+        for _, h, _ in pairs:
+            h.minimize_window()
+            app.processEvents()
+
+        # Verify all three registered in the stacking list
+        self.assertEqual(len(Header._minimized_headers), 3)
+
+        # Test computed positions (deterministic) rather than actual window
+        # coordinates which are platform/WM-dependent and can be flaky.
+        screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        xs = [
+            h._compute_minimize_position(h.window(), avail, i).x()
+            for i, (_, h, _) in enumerate(pairs)
+        ]
+        # Each window should be further right than the previous
+        for i in range(1, len(xs)):
+            self.assertGreater(xs[i], xs[i - 1], f"win{i} not to the right of win{i-1}")
+
+    def test_horizontal_stacking_same_y(self):
+        """Horizontally stacked windows should share the same y coordinate."""
+        Header.MINIMIZE_STACK = "horizontal"
+        pairs = [self._make_header_window() for _ in range(3)]
+        for _, h, _ in pairs:
+            h.minimize_window()
+            app.processEvents()
+
+        screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        ys = [
+            h._compute_minimize_position(h.window(), avail, i).y()
+            for i, (_, h, _) in enumerate(pairs)
+        ]
+        for i in range(1, len(ys)):
+            self.assertAlmostEqual(
+                ys[i], ys[0], delta=4, msg=f"win{i} y differs too much from win0"
+            )
+
+    def test_horizontal_stacking_reflow_on_restore(self):
+        """Restoring a middle window should close the gap in horizontal stack.
+
+        Bug: If you minimized 3 windows (slots 0,1,2) then restored slot 1,
+        slot 2 kept its old position, leaving a gap.
+        Fixed: 2026-03-14
+        """
+        Header.MINIMIZE_STACK = "horizontal"
+        pairs = [self._make_header_window() for _ in range(3)]
+        for _, h, _ in pairs:
+            h.minimize_window()
+            app.processEvents()
+
+        # Restore the middle one
+        pairs[1][1].restore_window()
+        app.processEvents()
+
+        remaining = [(w, h) for w, h, _ in pairs if h._minimized]
+        self.assertEqual(len(remaining), 2)
+        # Verify computed reflow positions close the gap
+        screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        xs = [
+            h._compute_minimize_position(h.window(), avail, i).x()
+            for i, (_, h) in enumerate(remaining)
+        ]
+        self.assertGreater(xs[1], xs[0], "reflow didn't close gap")
+
+    # ---- vertical stacking ----
+
+    def test_vertical_stacking_positions(self):
+        """Multiple minimized windows should stack bottom-to-top when vertical."""
+        Header.MINIMIZE_STACK = "vertical"
+        pairs = [self._make_header_window() for _ in range(3)]
+        for _, h, _ in pairs:
+            h.minimize_window()
+            app.processEvents()
+
+        screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        ys = [
+            h._compute_minimize_position(h.window(), avail, i).y()
+            for i, (_, h, _) in enumerate(pairs)
+        ]
+        # Each window should be higher (smaller y) than the previous
+        for i in range(1, len(ys)):
+            self.assertLess(ys[i], ys[i - 1], f"win{i} not above win{i-1}")
+
+    def test_vertical_stacking_same_x(self):
+        """Vertically stacked windows should share the same x coordinate."""
+        Header.MINIMIZE_STACK = "vertical"
+        pairs = [self._make_header_window() for _ in range(3)]
+        for _, h, _ in pairs:
+            h.minimize_window()
+            app.processEvents()
+
+        screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        xs = [
+            h._compute_minimize_position(h.window(), avail, i).x()
+            for i, (_, h, _) in enumerate(pairs)
+        ]
+        for i in range(1, len(xs)):
+            self.assertAlmostEqual(
+                xs[i], xs[0], delta=4, msg=f"win{i} x differs too much from win0"
+            )
+
+    # ---- collapse / expand ----
+
+    def test_collapse_hides_siblings(self):
+        """Should hide body sibling and shrink to header height."""
+        window, header, body = self._make_header_window()
+        header.collapse_window()
+        app.processEvents()
+        self.assertTrue(header._collapsed)
+        self.assertFalse(body.isVisible())
+
+    def test_expand_restores_siblings(self):
+        """Should restore body sibling and original size."""
+        window, header, body = self._make_header_window()
+        orig_size = window.size()
+        header.collapse_window()
+        app.processEvents()
+        header.expand_window()
+        app.processEvents()
+        self.assertFalse(header._collapsed)
+        self.assertTrue(body.isVisible())
+        self.assertEqual(window.size(), orig_size)
+
+    def test_collapse_with_fixed_width(self):
+        """Should narrow the window when fixed_width is given."""
+        window, header, _ = self._make_header_window()
+        header.collapse_window(fixed_width=200)
+        app.processEvents()
+        self.assertEqual(window.width(), 200)
+        self.assertTrue(header._collapsed)
+
+    # ---- basic window actions ----
 
     def test_hide_window_hides_parent(self):
         """Should hide parent window."""
-        window = self.track_widget(QtWidgets.QWidget())
-        window.show()
-        header = self.track_widget(Header(parent=window, config_buttons=["pin"]))
+        window, header, _ = self._make_header_window(buttons=("pin", "hide"))
         header.hide_window()
         self.assertFalse(window.isVisible())
 

@@ -9,6 +9,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.widgets.mixins.switchboard_slots import Signals
+from uitk.widgets.mixins.settings_manager import SettingsManager
 
 
 class HierarchyIconMixin:
@@ -283,13 +284,15 @@ class TreeFormatMixin(ConvertMixin):
 
         def _fmt(item, value, col, *_):
             key = str(value).lower()
-            fg, bg = color_map.get(key, (None, None))
-            fg = self.ensure_valid_color(fg, "fg", item, col)
-            bg = self.ensure_valid_color(bg, "bg", item, col)
-            if fg:
-                item.setForeground(col, fg)
-            if bg:
-                item.setBackground(col, bg)
+            fg_raw, bg_raw = color_map.get(key, (None, None))
+            if fg_raw is not None:
+                fg = self.ensure_valid_color(fg_raw, "fg", item, col)
+                if fg:
+                    item.setForeground(col, fg)
+            if bg_raw is not None:
+                bg = self.ensure_valid_color(bg_raw, "bg", item, col)
+                if bg:
+                    item.setBackground(col, bg)
 
         return _fmt
 
@@ -328,16 +331,81 @@ class TreeFormatMixin(ConvertMixin):
         return formatters
 
 
-class _ChildRowDelegate(QtWidgets.QStyledItemDelegate):
-    """Paints a custom background on child rows (items with a parent)."""
+def _alpha_over(base, overlay):
+    """Alpha-composite *overlay* onto an opaque *base*, return opaque QColor.
+
+    Both arguments are ``QColor``.  The result always has alpha 255.
+    """
+    a = overlay.alphaF()
+    r = min(int(base.red() * (1 - a) + overlay.red() * a + 0.5), 255)
+    g = min(int(base.green() * (1 - a) + overlay.green() * a + 0.5), 255)
+    b = min(int(base.blue() * (1 - a) + overlay.blue() * a + 0.5), 255)
+    return QtGui.QColor(r, g, b)
+
+
+class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
+    """Composites column tints, row tints, and per-item colors into a single
+    solid opaque background that is immune to Maya's QSS overrides.
+
+    Compositing order (each layer alpha-blends onto the previous):
+
+      1. Base        — widget viewport background (``#393939``)
+      2. Column tint — ``tree._column_tints[col]``
+      3. Row tint    — ``tree._parent_row_color`` or ``tree._child_row_color``
+      4. Item bg     — per-item ``BackgroundRole`` (assessment / status colors)
+
+    The result is an opaque color painted via ``fillRect`` **and** injected into
+    ``option.backgroundBrush`` so that ``super().paint()`` cannot override it
+    with a QSS-resolved background.
+    """
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # Inject per-item ForegroundRole into the palette so the style engine
+        # uses it for text drawing, bypassing QSS ``color:`` rules.
+        fg = index.data(QtCore.Qt.ForegroundRole)
+        if isinstance(fg, QtGui.QBrush) and fg.color().isValid():
+            option.palette.setColor(QtGui.QPalette.Text, fg.color())
 
     def paint(self, painter, option, index):
         tree = self.parent()
-        item = tree.itemFromIndex(index)
-        if item and item.parent() is not None:
-            color = getattr(tree, "_child_row_color", None)
-            if color and color.isValid():
-                painter.fillRect(option.rect, color)
+        item = tree.itemFromIndex(index) if tree else None
+        col = index.column()
+
+        # Resolve the viewport base color (opaque starting point)
+        base = tree.palette().color(QtGui.QPalette.Base)
+        if not base.isValid() or base.alpha() == 0:
+            base = QtGui.QColor(57, 57, 57)  # #393939 fallback
+        bg = QtGui.QColor(base.red(), base.green(), base.blue())
+
+        # Layer 1 — column tint
+        tint = tree._column_tints.get(col)
+        if tint and tint.isValid() and tint.alpha() > 0:
+            bg = _alpha_over(bg, tint)
+
+        # Layer 2 — row tint (parent vs child)
+        if item is not None:
+            if item.parent() is not None:
+                row_color = tree._child_row_color
+            else:
+                row_color = tree._parent_row_color
+            if row_color and row_color.isValid() and row_color.alpha() > 0:
+                bg = _alpha_over(bg, row_color)
+
+        # Layer 3 — per-item background (assessment / status)
+        item_bg = index.data(QtCore.Qt.BackgroundRole)
+        if isinstance(item_bg, QtGui.QBrush) and item_bg.color().isValid():
+            c = item_bg.color()
+            if c.alpha() == 255:
+                bg = QtGui.QColor(c)
+            elif c.alpha() > 0:
+                bg = _alpha_over(bg, c)
+
+        # Paint the single solid composite and inject it into the option
+        # so super().paint() uses it instead of the QSS-resolved background.
+        painter.fillRect(option.rect, bg)
+        option.backgroundBrush = QtGui.QBrush(bg)
+
         super().paint(painter, option, index)
 
 
@@ -390,9 +458,14 @@ class TreeWidget(
         # Column stretch support
         self._stretch_column = None
 
-        # Child-row background delegate
+        # Column configuration persistence
+        self._column_settings = None  # SettingsManager, set via enable_column_config()
+
+        # Row and column tinting (composited by _RowTintDelegate)
         self._child_row_color = QtGui.QColor()
-        self.setItemDelegate(_ChildRowDelegate(self))
+        self._parent_row_color = QtGui.QColor()
+        self._column_tints = {}  # {col_index: QColor}
+        self.setItemDelegate(_RowTintDelegate(self))
 
         # Connect signals
         self.itemSelectionChanged.connect(self._on_selection_changed)
@@ -413,6 +486,43 @@ class TreeWidget(
     childRowColor = QtCore.Property(
         QtGui.QColor, _get_child_row_color, _set_child_row_color
     )
+
+    # -- parent-row background (styleable via qproperty-parentRowColor) --
+
+    def _get_parent_row_color(self):
+        return self._parent_row_color
+
+    def _set_parent_row_color(self, color):
+        self._parent_row_color = (
+            QtGui.QColor(color) if not isinstance(color, QtGui.QColor) else color
+        )
+        self.viewport().update()
+
+    parentRowColor = QtCore.Property(
+        QtGui.QColor, _get_parent_row_color, _set_parent_row_color
+    )
+
+    # -- column tinting ---------------------------------------------------
+
+    def set_column_tint(self, column: int, color) -> None:
+        """Apply a tint overlay to every cell in *column*.
+
+        *color* can be a ``QColor``, hex string, or ``None`` to remove.
+        """
+        if color is None:
+            self._column_tints.pop(column, None)
+        else:
+            c = QtGui.QColor(color) if not isinstance(color, QtGui.QColor) else color
+            if c.isValid():
+                self._column_tints[column] = c
+            else:
+                self._column_tints.pop(column, None)
+        self.viewport().update()
+
+    def clear_column_tints(self) -> None:
+        """Remove all column tint overlays."""
+        self._column_tints.clear()
+        self.viewport().update()
 
     def _set_selection_mode(self, mode_str):
         """Set the selection mode from a string."""
@@ -678,6 +788,95 @@ class TreeWidget(
         self._stretch_column = col
         self.stretch_column_to_fill(col)
 
+    # -- Column configuration (visibility, reorder, persistence) ----------
+
+    def enable_column_config(self, settings=None, settings_key=None):
+        """Enable header right-click menu for column visibility and drag reorder.
+
+        Parameters:
+            settings: A SettingsManager instance (or any object with
+                ``value(key, default)`` / ``setValue(key, value)`` /
+                ``sync()``).  If *None*, a module-level SettingsManager
+                is created automatically.
+            settings_key: Namespace prefix for stored keys.  Defaults to
+                the widget's ``objectName()`` or ``"TreeWidget"``.
+        """
+        key = settings_key or self.objectName() or "TreeWidget"
+        if settings is None:
+            settings = SettingsManager(org="uitk", app="TreeWidget")
+        self._column_settings = settings.branch(key)
+
+        # Enable drag-to-reorder on the header
+        header = self.header()
+        header.setSectionsMovable(True)
+        header.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_column_menu)
+        header.sectionMoved.connect(self._on_column_moved)
+
+    def _show_column_menu(self, pos):
+        """Show a context menu on the header to toggle column visibility."""
+        header = self.header()
+        menu = QtWidgets.QMenu(header)
+        col_count = self.columnCount()
+        header_item = self.headerItem()
+
+        for logical in range(col_count):
+            label = header_item.text(logical) if header_item else f"Column {logical}"
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(not header.isSectionHidden(logical))
+            # Prevent hiding the last visible column
+            visible = sum(1 for c in range(col_count) if not header.isSectionHidden(c))
+            if visible <= 1 and not header.isSectionHidden(logical):
+                action.setEnabled(False)
+            action.setData(logical)
+
+        chosen = menu.exec_(header.mapToGlobal(pos))
+        if chosen is not None:
+            col = chosen.data()
+            hidden = not chosen.isChecked()
+            header.setSectionHidden(col, hidden)
+            self._save_column_state()
+
+    def _on_column_moved(self, _logical, _old_visual, _new_visual):
+        """Persist column order after the user drags a header section."""
+        self._save_column_state()
+
+    def _save_column_state(self):
+        """Write current visibility and visual order to settings."""
+        s = self._column_settings
+        if s is None:
+            return
+        header = self.header()
+        col_count = self.columnCount()
+
+        hidden = [c for c in range(col_count) if header.isSectionHidden(c)]
+        order = [header.logicalIndex(v) for v in range(col_count)]
+
+        s.setValue("hidden_columns", hidden)
+        s.setValue("column_order", order)
+        s.sync()
+
+    def restore_column_state(self):
+        """Apply persisted visibility and order.  Call after headers are set."""
+        s = self._column_settings
+        if s is None:
+            return
+        header = self.header()
+        col_count = self.columnCount()
+
+        hidden = s.value("hidden_columns", [])
+        if hidden:
+            for c in range(col_count):
+                header.setSectionHidden(c, c in hidden)
+
+        order = s.value("column_order", [])
+        if order and len(order) == col_count:
+            for visual_target, logical in enumerate(order):
+                current_visual = header.visualIndex(logical)
+                if current_visual != visual_target:
+                    header.moveSection(current_visual, visual_target)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self._stretch_column is not None:
@@ -730,18 +929,29 @@ class TreeWidget(
                 if index >= 0:
                     self.takeTopLevelItem(index)
 
-    def set_item_icon(self, item: QtWidgets.QTreeWidgetItem, icon_name: str):
+    def set_item_icon(
+        self,
+        item: QtWidgets.QTreeWidgetItem,
+        icon_name: str,
+        color: str = None,
+    ):
         """Set a custom icon for a specific item."""
         if item and icon_name:
-            icon = IconManager.get(icon_name, size=(16, 16))
+            icon = IconManager.get(icon_name, size=(16, 16), color=color)
             item.setIcon(0, icon)
             # Store icon info for theme updates
             item.setData(
-                0, QtCore.Qt.UserRole + 100, {"icon_name": icon_name, "column": 0}
+                0,
+                QtCore.Qt.UserRole + 100,
+                {"icon_name": icon_name, "column": 0, "color": color},
             )
 
     def set_item_type_icon(
-        self, item: QtWidgets.QTreeWidgetItem, icon_name: str, column: int = 0
+        self,
+        item: QtWidgets.QTreeWidgetItem,
+        icon_name: str,
+        column: int = 0,
+        color: str = None,
     ):
         """Set a custom type icon for a specific item (separate from hierarchy indicators).
 
@@ -752,15 +962,16 @@ class TreeWidget(
             item: The tree widget item
             icon_name: Name of the icon (from IconManager)
             column: Column to set the icon in (default 0)
+            color: Optional hex color for the icon (e.g. ``"#6EA8DC"``)
         """
         if item and icon_name:
-            icon = IconManager.get(icon_name, size=(16, 16))
+            icon = IconManager.get(icon_name, size=(16, 16), color=color)
             item.setIcon(column, icon)
             # Store icon info for theme updates
             item.setData(
                 column,
                 QtCore.Qt.UserRole + 100,
-                {"icon_name": icon_name, "column": column},
+                {"icon_name": icon_name, "column": column, "color": color},
             )
 
     def refresh_item_icons(self, color: str = None):
@@ -778,7 +989,10 @@ class TreeWidget(
                 if icon_data and isinstance(icon_data, dict):
                     icon_name = icon_data.get("icon_name")
                     if icon_name:
-                        icon = IconManager.get(icon_name, size=(16, 16), color=color)
+                        icon_color = icon_data.get("color") or color
+                        icon = IconManager.get(
+                            icon_name, size=(16, 16), color=icon_color
+                        )
                         item.setIcon(col, icon)
             # Recurse to children
             for i in range(item.childCount()):

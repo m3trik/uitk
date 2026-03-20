@@ -63,6 +63,10 @@ class MarkerData:
     time: float
     note: str = ""
     color: str = "#E8A84A"
+    draggable: bool = True
+    style: str = "triangle"  # triangle | diamond | line | bracket
+    line_style: str = "dashed"  # dashed | solid | dotted | none
+    opacity: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +76,9 @@ _TRACK_HEIGHT = 28
 _SUB_ROW_HEIGHT = 14  # default height for expanded attribute sub-rows
 _TRACK_PADDING = 2
 _RULER_HEIGHT = 24
-_HANDLE_WIDTH = 6  # pixels from edge that activates resize cursor
+_HANDLE_WIDTH = 5  # pixels from edge that activates resize cursor
 _MIN_CLIP_DURATION = 1.0
-_MIN_POINT_CLIP_WIDTH = 8  # minimum pixel width for zero-duration clips
+_MIN_POINT_CLIP_WIDTH = 4  # minimum pixel width for zero-duration clips
 _DEFAULT_CLIP_COLORS = [
     "#5B8BD4",
     "#6EBF6E",
@@ -136,6 +140,9 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             QtWidgets.QGraphicsItem.ItemIsSelectable
             | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
         )
+        # Dimmed (non-active shot) clips sit behind active clips
+        if clip_data.data.get("dimmed"):
+            self.setZValue(-0.5)
         # Sub-row clips show label as tooltip instead of inline text
         if clip_data.sub_row and clip_data.label:
             self.setToolTip(clip_data.label)
@@ -210,6 +217,8 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         rect = self.rect()
         color = self._resolve_color()
+        if self._data.data.get("dimmed"):
+            color = color.darker(250)
         if self.isSelected():
             color = color.lighter(130)
 
@@ -237,8 +246,13 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                 self._data.label,
             )
 
-        # Lock indicator
-        if self._data.locked and rect.width() > 14 and rect.height() > 10:
+        # Lock indicator (skip for read-only clips from non-active shots)
+        if (
+            self._data.locked
+            and not self._data.data.get("read_only")
+            and rect.width() > 14
+            and rect.height() > 10
+        ):
             self._paint_lock_icon(painter, rect, fg)
 
     def _paint_lock_icon(self, painter, rect, fg=None):
@@ -344,6 +358,8 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             self._drag_origin_x = event.scenePos().x()
             self._drag_origin_start = self._data.start
             self._drag_origin_duration = self._data.duration
+            sq = self._timeline.parent_sequencer
+            sq._shift_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
             # Capture peer clips for group move
             self._drag_peers = []
             if self._drag_mode == "move" and self.isSelected():
@@ -426,6 +442,9 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
 
     # -- context menu -------------------------------------------------------
     def contextMenuEvent(self, event):
+        if self._data.data.get("read_only"):
+            event.ignore()
+            return
         menu = QtWidgets.QMenu()
         menu.setStyleSheet(
             "QMenu { background:#333; color:#CCC; }"
@@ -509,6 +528,432 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         ):
             return "resize_right"
         return "move"
+
+
+# ---------------------------------------------------------------------------
+#  RangeHighlightItem
+# ---------------------------------------------------------------------------
+_RANGE_HANDLE_WIDTH = 4  # pixels from edge that activates resize cursor
+
+
+class _StaticRangeOverlay(QtWidgets.QGraphicsItem):
+    """Non-interactive range overlay for non-active shots."""
+
+    def __init__(self, timeline, start: float, end: float, color: str, alpha: int):
+        super().__init__()
+        self._timeline = timeline
+        self._start = start
+        self._end = end
+        self._color = QtGui.QColor(color)
+        self._color.setAlpha(alpha)
+        self.setZValue(-2)
+        self.setAcceptedMouseButtons(QtCore.Qt.NoButton)
+
+    def _rect(self) -> QtCore.QRectF:
+        tl = self._timeline
+        x0 = tl.time_to_x(self._start)
+        x1 = tl.time_to_x(self._end)
+        h = tl.parent_sequencer._total_row_height()
+        return QtCore.QRectF(x0, _RULER_HEIGHT, x1 - x0, h)
+
+    def boundingRect(self) -> QtCore.QRectF:
+        return self._rect()
+
+    def paint(self, painter: QtGui.QPainter, option, widget=None):
+        r = self._rect()
+        if r.width() < 1:
+            return
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        painter.fillRect(r, self._color)
+
+
+class _GapOverlayItem(QtWidgets.QGraphicsItem):
+    """Diagonal-hatch overlay for gaps between shots.
+
+    Displays the gap duration as centered text and a tooltip on hover.
+    Supports right-edge dragging to resize the gap (shifts the next shot).
+    """
+
+    _EDGE_WIDTH = 6  # px from right edge that triggers resize cursor
+
+    def __init__(self, timeline, start: float, end: float, color: str, alpha: int):
+        super().__init__()
+        self._timeline = timeline
+        self._start = start
+        self._end = end
+        self._base_alpha = alpha
+        self._color = QtGui.QColor(color)
+        self._color.setAlpha(alpha)
+        self._line_color = QtGui.QColor(color)
+        self._line_color.setAlpha(min(255, alpha + 40))
+        self._hovered = False
+        self._drag_mode: Optional[str] = None  # "right" or None
+        self._drag_origin_x: float = 0.0
+        self._drag_origin_end: float = 0.0
+        self.setZValue(-3)
+        self.setAcceptHoverEvents(True)
+        self._gap_frames = int(round(end - start))
+        self._update_tooltip()
+
+    def _update_tooltip(self):
+        self._gap_frames = max(0, int(round(self._end - self._start)))
+        self.setToolTip(
+            f"Gap: {self._gap_frames} frame{'s' if self._gap_frames != 1 else ''}"
+            "\nDrag right edge to resize"
+        )
+
+    def _rect(self) -> QtCore.QRectF:
+        tl = self._timeline
+        x0 = tl.time_to_x(self._start)
+        x1 = tl.time_to_x(self._end)
+        h = tl.parent_sequencer._total_row_height()
+        return QtCore.QRectF(x0, _RULER_HEIGHT, x1 - x0, h)
+
+    def boundingRect(self) -> QtCore.QRectF:
+        r = self._rect()
+        return r.adjusted(0, 0, self._EDGE_WIDTH, 0)
+
+    def _hit_zone(self, pos: QtCore.QPointF) -> str:
+        r = self._rect()
+        local_x = pos.x() - r.left()
+        if local_x >= r.width() - self._EDGE_WIDTH:
+            return "right"
+        return "body"
+
+    def _snap(self, value: float) -> float:
+        modifiers = QtWidgets.QApplication.keyboardModifiers()
+        if modifiers & QtCore.Qt.ControlModifier:
+            return round(value)
+        interval = self._timeline.parent_sequencer.snap_interval
+        if interval > 0:
+            return round(value / interval) * interval
+        return value
+
+    def hoverEnterEvent(self, event):
+        self._hovered = True
+        self._color.setAlpha(min(255, self._base_alpha + 50))
+        self._line_color.setAlpha(min(255, self._base_alpha + 90))
+        self.update()
+
+    def hoverLeaveEvent(self, event):
+        self._hovered = False
+        self._color.setAlpha(self._base_alpha)
+        self._line_color.setAlpha(min(255, self._base_alpha + 40))
+        self.setCursor(QtCore.Qt.ArrowCursor)
+        self.update()
+
+    def hoverMoveEvent(self, event):
+        zone = self._hit_zone(event.pos())
+        if zone == "right":
+            self.setCursor(QtCore.Qt.SizeHorCursor)
+        else:
+            self.setCursor(QtCore.Qt.ArrowCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() != QtCore.Qt.LeftButton:
+            event.ignore()
+            return
+        zone = self._hit_zone(event.pos())
+        if zone != "right":
+            event.ignore()
+            return
+        self._drag_mode = "right"
+        self._drag_origin_x = event.scenePos().x()
+        self._drag_origin_end = self._end
+        # Capture undo snapshot before drag
+        sq = self._timeline.parent_sequencer
+        sq._capture_undo()
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_mode is None:
+            event.ignore()
+            return
+        dx = event.scenePos().x() - self._drag_origin_x
+        ppu = self._timeline._pixels_per_unit
+        dt = dx / ppu if ppu else 0
+        new_end = self._snap(self._drag_origin_end + dt)
+        # Don't allow gap smaller than 0 frames
+        if new_end > self._start:
+            self.prepareGeometryChange()
+            self._end = new_end
+            self._update_tooltip()
+            self.update()
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if self._drag_mode is not None:
+            original_end = self._drag_origin_end
+            new_end = self._end
+            if abs(new_end - original_end) > 0.01:
+                sq = self._timeline.parent_sequencer
+                sq.gap_resized.emit(original_end, new_end)
+            self._drag_mode = None
+        event.accept()
+
+    def paint(self, painter: QtGui.QPainter, option, widget=None):
+        r = self._rect()
+        if r.width() < 1:
+            return
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        painter.save()
+        painter.setClipRect(r)
+        painter.fillRect(r, self._color)
+        pen = QtGui.QPen(self._line_color, 1)
+        painter.setPen(pen)
+        spacing = 12
+        x0, y0, w, h = r.x(), r.y(), r.width(), r.height()
+        # Diagonal lines from bottom-left to top-right
+        d = int(w + h)
+        for i in range(-int(h), d, spacing):
+            painter.drawLine(
+                QtCore.QPointF(x0 + i, y0 + h),
+                QtCore.QPointF(x0 + i + h, y0),
+            )
+        # Right edge handle highlight
+        hw = min(self._EDGE_WIDTH, w / 2)
+        handle_alpha = self._base_alpha + 80 if self._hovered else self._base_alpha + 50
+        handle_color = QtGui.QColor(self._line_color)
+        handle_color.setAlpha(min(255, handle_alpha))
+        painter.fillRect(
+            QtCore.QRectF(r.right() - hw, r.top(), hw, r.height()), handle_color
+        )
+        # Draw gap frame count label if wide enough
+        if w > 30:
+            label = str(self._gap_frames)
+            font = painter.font()
+            font.setPixelSize(10)
+            painter.setFont(font)
+            text_color = QtGui.QColor("#dddddd" if self._hovered else "#aaaaaa")
+            painter.setPen(text_color)
+            painter.drawText(r, QtCore.Qt.AlignCenter, label)
+        painter.restore()
+
+
+class RangeHighlightItem(QtWidgets.QGraphicsItem):
+    """A semi-transparent rectangle highlighting a time range on the timeline.
+
+    Supports dragging (move) and edge-handle resizing.  Sits behind clips
+    (``zValue = -1``) so it acts as a tinted background region.
+    """
+
+    def __init__(self, timeline: "TimelineView"):
+        super().__init__()
+        self._timeline = timeline
+        self._start: float = 0.0
+        self._end: float = 100.0
+        self._color = QtGui.QColor(90, 140, 220, 30)  # semi-transparent blue
+        self._handle_color = QtGui.QColor(90, 140, 220, 80)
+        self._drag_mode: Optional[str] = None  # "move" | "left" | "right"
+        self._drag_origin_x: float = 0.0
+        self._drag_origin_start: float = 0.0
+        self._drag_origin_end: float = 0.0
+        self._locked: bool = False
+        self.setZValue(-1)
+        self.setAcceptHoverEvents(True)
+
+    @property
+    def locked(self) -> bool:
+        return self._locked
+
+    @locked.setter
+    def locked(self, value: bool):
+        self._locked = value
+        if value:
+            self.unsetCursor()
+
+    # -- properties ---------------------------------------------------------
+    @property
+    def start(self) -> float:
+        return self._start
+
+    @start.setter
+    def start(self, value: float):
+        self._start = value
+        self.sync()
+
+    @property
+    def end(self) -> float:
+        return self._end
+
+    @end.setter
+    def end(self, value: float):
+        self._end = value
+        self.sync()
+
+    def set_range(self, start: float, end: float):
+        self._start = start
+        self._end = end
+        self.sync()
+
+    @property
+    def color(self) -> QtGui.QColor:
+        return self._color
+
+    @color.setter
+    def color(self, value):
+        if isinstance(value, str):
+            c = QtGui.QColor(value)
+            c.setAlpha(self._color.alpha())
+            self._color = c
+            self._handle_color = QtGui.QColor(c)
+            self._handle_color.setAlpha(min(255, c.alpha() * 3))
+        else:
+            self._color = QtGui.QColor(value)
+            self._handle_color = QtGui.QColor(value)
+            self._handle_color.setAlpha(min(255, value.alpha() * 3))
+        self.update()
+
+    @property
+    def opacity_value(self) -> int:
+        return self._color.alpha()
+
+    @opacity_value.setter
+    def opacity_value(self, alpha: int):
+        self._color.setAlpha(max(0, min(255, alpha)))
+        self._handle_color.setAlpha(max(0, min(255, alpha * 3)))
+        self.update()
+
+    # -- geometry -----------------------------------------------------------
+    def sync(self):
+        self.prepareGeometryChange()
+        self.update()
+
+    def _rect(self) -> QtCore.QRectF:
+        """Compute the painted rectangle from current range and track layout."""
+        tl = self._timeline
+        x0 = tl.time_to_x(self._start)
+        x1 = tl.time_to_x(self._end)
+        h = tl.parent_sequencer._total_row_height()
+        return QtCore.QRectF(x0, _RULER_HEIGHT, x1 - x0, h)
+
+    def boundingRect(self) -> QtCore.QRectF:
+        r = self._rect()
+        return r.adjusted(-_RANGE_HANDLE_WIDTH, 0, _RANGE_HANDLE_WIDTH, 0)
+
+    def paint(self, painter: QtGui.QPainter, option, widget=None):
+        r = self._rect()
+        if r.width() < 1:
+            return
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        # Fill
+        painter.fillRect(r, self._color)
+        # Left/right edge handles
+        hw = min(_RANGE_HANDLE_WIDTH, r.width() / 2)
+        painter.fillRect(
+            QtCore.QRectF(r.left(), r.top(), hw, r.height()), self._handle_color
+        )
+        painter.fillRect(
+            QtCore.QRectF(r.right() - hw, r.top(), hw, r.height()), self._handle_color
+        )
+
+    # -- snapping helper ----------------------------------------------------
+    def _snap(self, value: float) -> float:
+        modifiers = QtWidgets.QApplication.keyboardModifiers()
+        if modifiers & QtCore.Qt.ControlModifier:
+            return round(value)
+        interval = self._timeline.parent_sequencer.snap_interval
+        if interval > 0:
+            return round(value / interval) * interval
+        return value
+
+    # -- hit zone -----------------------------------------------------------
+    def _hit_zone(self, pos: QtCore.QPointF) -> str:
+        r = self._rect()
+        local_x = pos.x() - r.left()
+        if local_x <= _RANGE_HANDLE_WIDTH:
+            return "left"
+        elif local_x >= r.width() - _RANGE_HANDLE_WIDTH:
+            return "right"
+        return "move"
+
+    # -- hover cursor -------------------------------------------------------
+    def hoverMoveEvent(self, event):
+        if self._locked:
+            event.ignore()
+            return
+        zone = self._hit_zone(event.pos())
+        if zone in ("left", "right"):
+            self.setCursor(QtCore.Qt.SizeHorCursor)
+        elif event.modifiers() & QtCore.Qt.ShiftModifier:
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+        else:
+            self.unsetCursor()
+
+    # -- mouse interaction --------------------------------------------------
+    def mousePressEvent(self, event):
+        if self._locked:
+            event.ignore()
+            return
+        if event.button() != QtCore.Qt.LeftButton:
+            event.ignore()
+            return
+        zone = self._hit_zone(event.pos())
+        # Body clicks without Shift pass through for rubber-band selection;
+        # Shift+click on the body activates move mode.
+        if zone == "move":
+            if not (event.modifiers() & QtCore.Qt.ShiftModifier):
+                event.ignore()
+                return
+        # If a clip item exists under the cursor, defer to it instead of
+        # capturing the press on the range highlight.  This ensures clip
+        # handles are always preferred over the range-highlight handles
+        # when they overlap at the same screen position.
+        for item in self._timeline._scene.items(event.scenePos()):
+            if isinstance(item, ClipItem) and item is not self:
+                event.ignore()
+                return
+        self._drag_mode = zone
+        self._drag_origin_x = event.scenePos().x()
+        self._drag_origin_start = self._start
+        self._drag_origin_end = self._end
+        sq = self._timeline.parent_sequencer
+        sq._shift_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+        # Capture widget-level undo snapshot before drag begins
+        sq._capture_undo()
+        if self._drag_mode == "move":
+            self.setCursor(QtCore.Qt.ClosedHandCursor)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._locked or self._drag_mode is None:
+            event.ignore()
+            return
+        dx = event.scenePos().x() - self._drag_origin_x
+        dt = (
+            dx / self._timeline._pixels_per_unit
+            if self._timeline._pixels_per_unit
+            else 0
+        )
+
+        if self._drag_mode == "move":
+            span = self._drag_origin_end - self._drag_origin_start
+            new_start = self._snap(self._drag_origin_start + dt)
+            self._start = new_start
+            self._end = new_start + span
+        elif self._drag_mode == "left":
+            new_start = self._snap(self._drag_origin_start + dt)
+            if new_start < self._end:
+                self._start = new_start
+        elif self._drag_mode == "right":
+            new_end = self._snap(self._drag_origin_end + dt)
+            if new_end > self._start:
+                self._end = new_end
+
+        self.sync()
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if self._locked:
+            event.ignore()
+            return
+        if self._drag_mode is not None:
+            sq = self._timeline.parent_sequencer
+            sq.range_highlight_changed.emit(self._start, self._end)
+        if self._drag_mode == "move":
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+        self._drag_mode = None
+        event.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -663,7 +1108,6 @@ class PlayheadItem(QtWidgets.QGraphicsItem):
         painter.setPen(QtGui.QColor("#1E1E1E"))
         font = painter.font()
         font.setPointSize(8)
-        font.setBold(True)
         painter.setFont(font)
         painter.drawText(
             badge_rect,
@@ -697,9 +1141,11 @@ class MarkerItem(QtWidgets.QGraphicsItem):
         self._drag_active = False
         self._drag_origin_x = 0.0
         self._drag_origin_time = 0.0
+        self._drag_tooltip: Optional[QtWidgets.QGraphicsSimpleTextItem] = None
         self.setZValue(15)
         self.setAcceptHoverEvents(True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
+        self.setOpacity(marker_data.opacity)
         if marker_data.note:
             self.setToolTip(marker_data.note)
         self.sync()
@@ -725,37 +1171,87 @@ class MarkerItem(QtWidgets.QGraphicsItem):
 
     # -- painting -----------------------------------------------------------
 
+    # -- line-style mapping -------------------------------------------------
+
+    _LINE_STYLES = {
+        "dashed": QtCore.Qt.DashLine,
+        "solid": QtCore.Qt.SolidLine,
+        "dotted": QtCore.Qt.DotLine,
+    }
+
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         color = QtGui.QColor(self._data.color)
         x = self._timeline.time_to_x(self._data.time)
+        style = self._data.style
 
-        # Triangle at the ruler
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        tri = QtGui.QPolygonF(
-            [
+
+        # Head glyph at the ruler
+        if style == "diamond":
+            half = _MARKER_TRI_SIZE / 2
+            cy = _RULER_HEIGHT - _MARKER_TRI_SIZE / 2
+            diamond = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(x, cy - half),
+                    QtCore.QPointF(x + half, cy),
+                    QtCore.QPointF(x, cy + half),
+                    QtCore.QPointF(x - half, cy),
+                ]
+            )
+            painter.setBrush(color)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.drawPolygon(diamond)
+        elif style == "line":
+            painter.setPen(QtGui.QPen(color, 2))
+            painter.drawLine(
+                QtCore.QPointF(x, _RULER_HEIGHT - _MARKER_TRI_SIZE),
                 QtCore.QPointF(x, _RULER_HEIGHT),
-                QtCore.QPointF(
-                    x - _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE
-                ),
-                QtCore.QPointF(
-                    x + _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE
-                ),
-            ]
-        )
-        painter.setBrush(color)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.drawPolygon(tri)
+            )
+        elif style == "bracket":
+            bh = _MARKER_TRI_SIZE
+            bw = 4
+            painter.setPen(QtGui.QPen(color, 1.5))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawLine(
+                QtCore.QPointF(x - bw, _RULER_HEIGHT - bh),
+                QtCore.QPointF(x - bw, _RULER_HEIGHT),
+            )
+            painter.drawLine(
+                QtCore.QPointF(x - bw, _RULER_HEIGHT),
+                QtCore.QPointF(x + bw, _RULER_HEIGHT),
+            )
+            painter.drawLine(
+                QtCore.QPointF(x + bw, _RULER_HEIGHT),
+                QtCore.QPointF(x + bw, _RULER_HEIGHT - bh),
+            )
+        else:  # triangle (default)
+            tri = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(x, _RULER_HEIGHT),
+                    QtCore.QPointF(
+                        x - _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE
+                    ),
+                    QtCore.QPointF(
+                        x + _MARKER_TRI_SIZE / 2, _RULER_HEIGHT - _MARKER_TRI_SIZE
+                    ),
+                ]
+            )
+            painter.setBrush(color)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.drawPolygon(tri)
 
-        # Dashed vertical line below ruler
-        pen = QtGui.QPen(color, 1, QtCore.Qt.DashLine)
-        painter.setPen(pen)
-        scene_h = self._timeline._scene.height() if self._timeline._scene else 2000
-        painter.drawLine(
-            QtCore.QPointF(x, _RULER_HEIGHT),
-            QtCore.QPointF(x, scene_h),
-        )
+        # Vertical line below ruler
+        qt_line = self._LINE_STYLES.get(self._data.line_style)
+        if qt_line is not None:
+            pen = QtGui.QPen(color, 1, qt_line)
+            painter.setPen(pen)
+            scene_h = self._timeline._scene.height() if self._timeline._scene else 2000
+            painter.drawLine(
+                QtCore.QPointF(x, _RULER_HEIGHT),
+                QtCore.QPointF(x, scene_h),
+            )
 
-        # Optional note label beside the triangle
+        # Optional note label beside the head
         if self._data.note:
             painter.setPen(color)
             font = painter.font()
@@ -770,7 +1266,8 @@ class MarkerItem(QtWidgets.QGraphicsItem):
     # -- hover --------------------------------------------------------------
 
     def hoverEnterEvent(self, event):
-        self.setCursor(QtCore.Qt.OpenHandCursor)
+        if self._data.draggable:
+            self.setCursor(QtCore.Qt.OpenHandCursor)
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
@@ -780,11 +1277,12 @@ class MarkerItem(QtWidgets.QGraphicsItem):
     # -- drag (horizontal only) ---------------------------------------------
 
     def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.LeftButton:
+        if event.button() == QtCore.Qt.LeftButton and self._data.draggable:
             self._drag_active = True
             self._drag_origin_x = event.scenePos().x()
             self._drag_origin_time = self._data.time
             self.setCursor(QtCore.Qt.ClosedHandCursor)
+            self._show_drag_tooltip(event.scenePos())
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -805,23 +1303,60 @@ class MarkerItem(QtWidgets.QGraphicsItem):
         self._data.time = new_time
         self.sync()
         self.update()
+        self._update_drag_tooltip(event.scenePos())
         event.accept()
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._drag_active:
             self._drag_active = False
             self.unsetCursor()
+            self._hide_drag_tooltip()
             widget = self._timeline.parent_sequencer
             widget.marker_moved.emit(self._data.marker_id, self._data.time)
             event.accept()
         else:
             super().mouseReleaseEvent(event)
 
+    # -- drag tooltip -------------------------------------------------------
+
+    def _show_drag_tooltip(self, scene_pos):
+        """Show a small text badge near the cursor with the current time."""
+        self._drag_tooltip = QtWidgets.QGraphicsSimpleTextItem()
+        self._drag_tooltip.setZValue(100)
+        font = self._drag_tooltip.font()
+        font.setPointSize(8)
+        font.setBold(True)
+        self._drag_tooltip.setFont(font)
+        self._drag_tooltip.setBrush(QtGui.QColor(self._data.color))
+        if self.scene():
+            self.scene().addItem(self._drag_tooltip)
+        self._update_drag_tooltip(scene_pos)
+
+    def _update_drag_tooltip(self, scene_pos):
+        """Reposition the drag tooltip and update its text."""
+        if self._drag_tooltip is None:
+            return
+        t = self._data.time
+        label = str(int(t)) if t == int(t) else f"{t:.1f}"
+        self._drag_tooltip.setText(label)
+        self._drag_tooltip.setPos(scene_pos.x() + 10, scene_pos.y() - 18)
+
+    def _hide_drag_tooltip(self):
+        """Remove the drag tooltip from the scene."""
+        if self._drag_tooltip is not None:
+            if self._drag_tooltip.scene():
+                self._drag_tooltip.scene().removeItem(self._drag_tooltip)
+            self._drag_tooltip = None
+
     # -- context menu -------------------------------------------------------
 
     def contextMenuEvent(self, event):
         widget = self._timeline.parent_sequencer
         menu = QtWidgets.QMenu()
+        menu.setStyleSheet(
+            "QMenu { background:#333; color:#CCC; }"
+            "QMenu::item:selected { background:#555; }"
+        )
 
         # Inline note editor
         note_edit = QtWidgets.QLineEdit(self._data.note)
@@ -838,6 +1373,32 @@ class MarkerItem(QtWidgets.QGraphicsItem):
         time_action = QtWidgets.QWidgetAction(menu)
         time_action.setDefaultWidget(time_edit)
         menu.addAction(time_action)
+
+        menu.addSeparator()
+
+        # Color picker
+        color_action = menu.addAction(f"Color: {self._data.color}")
+
+        # Style submenu
+        style_menu = menu.addMenu("Style")
+        for s in ("triangle", "diamond", "line", "bracket"):
+            a = style_menu.addAction(s.capitalize())
+            a.setCheckable(True)
+            a.setChecked(s == self._data.style)
+            a.setData(s)
+
+        # Line style submenu
+        ls_menu = menu.addMenu("Line")
+        for ls in ("dashed", "solid", "dotted", "none"):
+            a = ls_menu.addAction(ls.capitalize())
+            a.setCheckable(True)
+            a.setChecked(ls == self._data.line_style)
+            a.setData(ls)
+
+        # Draggable toggle
+        drag_action = menu.addAction("Draggable")
+        drag_action.setCheckable(True)
+        drag_action.setChecked(self._data.draggable)
 
         menu.addSeparator()
         remove_action = menu.addAction("Remove Marker")
@@ -868,6 +1429,55 @@ class MarkerItem(QtWidgets.QGraphicsItem):
 
         if chosen == remove_action:
             widget.remove_marker(self._data.marker_id)
+        elif chosen == color_action:
+            c = QtWidgets.QColorDialog.getColor(
+                QtGui.QColor(self._data.color), None, "Marker Color"
+            )
+            if c.isValid():
+                self._data.color = c.name()
+                self.update()
+                widget.marker_changed.emit(self._data.marker_id)
+        elif chosen == drag_action:
+            self._data.draggable = drag_action.isChecked()
+            widget.marker_changed.emit(self._data.marker_id)
+        elif chosen is not None and chosen.parent() == style_menu:
+            self._data.style = chosen.data()
+            self.sync()
+            self.update()
+            widget.marker_changed.emit(self._data.marker_id)
+        elif chosen is not None and chosen.parent() == ls_menu:
+            self._data.line_style = chosen.data()
+            self.update()
+            widget.marker_changed.emit(self._data.marker_id)
+
+
+# ---------------------------------------------------------------------------
+#  _ElidingLabel
+# ---------------------------------------------------------------------------
+class _ElidingLabel(QtWidgets.QLabel):
+    """QLabel that elides text with ``\u2026`` when space is tight."""
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._full_text = text
+
+    def setText(self, text):
+        self._full_text = text
+        super().setText(text)
+        self.update()
+
+    def paintEvent(self, event):
+        from qtpy.QtWidgets import QStyle
+
+        painter = QtGui.QPainter(self)
+        metrics = painter.fontMetrics()
+        available = self.width() - 2  # small margin
+        elided = metrics.elidedText(self._full_text, QtCore.Qt.ElideRight, available)
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(
+            self.rect(), QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, elided
+        )
+        painter.end()
 
 
 # ---------------------------------------------------------------------------
@@ -885,6 +1495,9 @@ class TrackHeaderWidget(QtWidgets.QWidget):
     _STYLE_NORMAL = (
         "padding-left:6px; color:#CCCCCC; background:#333333; border-radius:3px;"
     )
+    _STYLE_DIMMED = (
+        "padding-left:6px; color:#777777; background:#2A2A2A; border-radius:3px;"
+    )
     _STYLE_SELECTED = (
         "padding-left:6px; color:#FFFFFF; background:#505050; border-radius:3px;"
     )
@@ -895,8 +1508,10 @@ class TrackHeaderWidget(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setFocusPolicy(QtCore.Qt.ClickFocus)
         self._labels: List[QtWidgets.QLabel] = []
         self._names: List[str] = []  # parallel to _labels
+        self._dimmed: List[bool] = []  # parallel to _labels
         self._selected: List[int] = []  # indices of selected labels
         self._hidden_track_names: List[str] = []  # set by SequencerWidget
         self._sub_labels: Dict[int, List[QtWidgets.QLabel]] = {}  # idx → sub-row labels
@@ -905,10 +1520,55 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._layout.setSpacing(_TRACK_PADDING)
         self._layout.addStretch()
 
-    def add_track_label(self, name: str):
+    def add_track_label(
+        self, name: str, icon=None, dimmed: bool = False, italic: bool = False
+    ):
+        base_style = self._STYLE_DIMMED if dimmed else self._STYLE_NORMAL
+        if italic:
+            base_style += " font-style:italic;"
         lbl = QtWidgets.QLabel(name)
         lbl.setFixedHeight(_TRACK_HEIGHT)
-        lbl.setStyleSheet(self._STYLE_NORMAL)
+        lbl.setStyleSheet(base_style)
+        if icon is not None and not icon.isNull():
+            px = icon.pixmap(16, 16)
+            if px.width() > 16 or px.height() > 16:
+                px = px.scaled(
+                    16, 16, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+                )
+            lbl.setPixmap(QtGui.QPixmap())  # ensure no stale pixmap
+            # Use a small horizontal layout: icon + text
+            container = QtWidgets.QWidget()
+            container.setFixedHeight(_TRACK_HEIGHT)
+            container.setStyleSheet(base_style)
+            h = QtWidgets.QHBoxLayout(container)
+            h.setContentsMargins(4, 0, 2, 0)
+            h.setSpacing(4)
+            ico_lbl = QtWidgets.QLabel()
+            ico_lbl.setPixmap(px)
+            ico_lbl.setFixedSize(22, _TRACK_HEIGHT)
+            ico_lbl.setAlignment(QtCore.Qt.AlignCenter)
+            ico_lbl.setStyleSheet("background:transparent; border:none; padding:0;")
+            txt_color = "#777777" if dimmed else "#CCCCCC"
+            if italic:
+                txt_color = "#999977" if not dimmed else "#777766"
+            txt_lbl = _ElidingLabel(name)
+            txt_lbl.setStyleSheet(
+                f"padding:0; color:{txt_color}; background:transparent; border:none;"
+                + (" font-style:italic;" if italic else "")
+            )
+            h.addWidget(ico_lbl)
+            h.addWidget(txt_lbl, 1)  # stretch so text fills available space
+            container.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            container.customContextMenuRequested.connect(
+                lambda pos, w=container: self._show_label_menu(w, pos)
+            )
+            container.installEventFilter(self)
+            idx = self._layout.count() - 1
+            self._layout.insertWidget(idx, container)
+            self._labels.append(container)
+            self._names.append(name)
+            self._dimmed.append(dimmed)
+            return
         lbl.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         lbl.customContextMenuRequested.connect(
             lambda pos, w=lbl: self._show_label_menu(w, pos)
@@ -918,15 +1578,32 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._layout.insertWidget(idx, lbl)
         self._labels.append(lbl)
         self._names.append(name)
+        self._dimmed.append(dimmed)
 
     # -- sub-row expansion -------------------------------------------------
+
+    @staticmethod
+    def _label_text_widget(lbl) -> QtWidgets.QLabel:
+        """Return the QLabel that holds the visible text.
+
+        For plain QLabel entries this is *lbl* itself.  For icon-container
+        widgets the text label is the second child QLabel.
+        """
+        if isinstance(lbl, QtWidgets.QLabel):
+            return lbl
+        # Container with HBoxLayout: [icon_lbl, text_lbl, stretch]
+        for child in lbl.findChildren(QtWidgets.QLabel):
+            if child.pixmap() is None or child.pixmap().isNull():
+                return child
+        # Fallback — shouldn't happen
+        return lbl
 
     def set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int):
         """Show sub-row labels beneath the track at *track_idx*."""
         self.set_track_collapsed(track_idx)
         main_lbl = self._labels[track_idx]
         name = self._names[track_idx]
-        main_lbl.setText(f"\u25bc {name}")
+        self._label_text_widget(main_lbl).setText(f"\u25bc {name}")
         insert_at = self._layout.indexOf(main_lbl) + 1
         sub_lbls: List[QtWidgets.QLabel] = []
         for sr_name in sub_names:
@@ -941,7 +1618,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
     def set_track_collapsed(self, track_idx: int):
         """Remove sub-row labels for the track at *track_idx*."""
         name = self._names[track_idx]
-        self._labels[track_idx].setText(name)
+        self._label_text_widget(self._labels[track_idx]).setText(name)
         for lbl in self._sub_labels.pop(track_idx, []):
             self._layout.removeWidget(lbl)
             lbl.deleteLater()
@@ -984,9 +1661,13 @@ class TrackHeaderWidget(QtWidgets.QWidget):
 
     def _refresh_styles(self):
         for i, lbl in enumerate(self._labels):
-            lbl.setStyleSheet(
-                self._STYLE_SELECTED if i in self._selected else self._STYLE_NORMAL
-            )
+            if i in self._selected:
+                style = self._STYLE_SELECTED
+            elif i < len(self._dimmed) and self._dimmed[i]:
+                style = self._STYLE_DIMMED
+            else:
+                style = self._STYLE_NORMAL
+            lbl.setStyleSheet(style)
 
     # -- context menu ------------------------------------------------------
 
@@ -1024,6 +1705,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             lbl.deleteLater()
         self._labels.clear()
         self._names.clear()
+        self._dimmed.clear()
         self._selected.clear()
 
 
@@ -1073,6 +1755,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         self._pan_start = QtCore.QPoint()
         self._ruler_drag = False
         self._shortcut_sequences: List[QtGui.QKeySequence] = []
+        self._ctrl_subtract_snapshot: Optional[set] = None  # for Ctrl+marquee subtract
         # Now that the scene/view wiring is complete, sync deferred items
         self._scene.playhead.sync()
         # Keep ruler pinned to the viewport top during vertical scroll
@@ -1089,6 +1772,27 @@ class TimelineView(QtWidgets.QGraphicsView):
                     event.accept()
                     return True
         return super().event(event)
+
+    def keyPressEvent(self, event):
+        """Dispatch registered shortcut keys directly.
+
+        After ShortcutOverride accepts a key, Qt delivers it as a normal
+        KeyPress instead of activating QShortcuts.  We must handle it
+        here so it doesn't propagate to the host app (e.g. Maya).
+        """
+        mods = event.modifiers()
+        mod_int = mods.value if hasattr(mods, "value") else int(mods)
+        key_seq = QtGui.QKeySequence(event.key() | mod_int)
+        for seq in self._shortcut_sequences:
+            if key_seq.matches(seq) == QtGui.QKeySequence.ExactMatch:
+                seq_str = seq.toString()
+                mgr = self.parent_sequencer._shortcut_mgr
+                entry = mgr.shortcuts.get(seq_str)
+                if entry:
+                    entry["action"]()
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def enterEvent(self, event):
         """Grab focus on mouse-enter so shortcut keys are captured here."""
@@ -1152,6 +1856,18 @@ class TimelineView(QtWidgets.QGraphicsView):
             self.parent_sequencer.playhead_moved.emit(t)
             event.accept()
         else:
+            # Ctrl+drag = subtract from selection (rubber band to deselect)
+            if (
+                event.button() == QtCore.Qt.LeftButton
+                and event.modifiers() & QtCore.Qt.ControlModifier
+            ):
+                self._ctrl_subtract_snapshot = {
+                    item
+                    for item in self._scene.selectedItems()
+                    if isinstance(item, ClipItem)
+                }
+            else:
+                self._ctrl_subtract_snapshot = None
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -1162,6 +1878,10 @@ class TimelineView(QtWidgets.QGraphicsView):
             vs = self.verticalScrollBar()
             hs.setValue(hs.value() - delta.x())
             vs.setValue(vs.value() - delta.y())
+            # Grow the scene when panning toward the right edge so the
+            # user can always scroll further into the future.
+            if hs.value() >= hs.maximum() - 10:
+                self._update_scene_rect()
             event.accept()
         elif self._ruler_drag:
             scene_pos = self.mapToScene(event.pos())
@@ -1181,7 +1901,24 @@ class TimelineView(QtWidgets.QGraphicsView):
             self._ruler_drag = False
             event.accept()
         else:
+            snapshot = self._ctrl_subtract_snapshot
             super().mouseReleaseEvent(event)
+            # Ctrl+marquee: subtract newly-banded items from pre-drag selection
+            if snapshot is not None:
+                newly_selected = {
+                    item
+                    for item in self._scene.selectedItems()
+                    if isinstance(item, ClipItem)
+                }
+                keep = snapshot - newly_selected
+                self._scene.blockSignals(True)
+                for item in self._scene.selectedItems():
+                    item.setSelected(False)
+                for item in keep:
+                    item.setSelected(True)
+                self._scene.blockSignals(False)
+                self.parent_sequencer._on_scene_selection()
+                self._ctrl_subtract_snapshot = None
 
     def mouseDoubleClickEvent(self, event):
         """Double-click on the ruler area to add a marker."""
@@ -1198,34 +1935,60 @@ class TimelineView(QtWidgets.QGraphicsView):
             super().mouseDoubleClickEvent(event)
 
     def contextMenuEvent(self, event):
-        """Right-click on the timeline background to add a marker with a note."""
-        # Only show on the background — not when clicking a clip or marker
+        """Right-click on the timeline background."""
+        # Defer to clip/marker context menus
         item = self.itemAt(event.pos())
         if isinstance(item, (ClipItem, MarkerItem)):
             super().contextMenuEvent(event)
             return
 
+        sq = self.parent_sequencer
         scene_pos = self.mapToScene(event.pos())
         t = self.x_to_time(scene_pos.x())
-        interval = self.parent_sequencer.snap_interval
+        interval = sq.snap_interval
         if interval > 0:
             t = round(t / interval) * interval
 
         menu = QtWidgets.QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background:#333; color:#CCC; }"
+            "QMenu::item:selected { background:#555; }"
+        )
         add_action = menu.addAction(f"Add Marker at {int(t)}\u2026")
+
+        menu.addSeparator()
+
+        act_ranges = menu.addAction("Show Shot Ranges")
+        act_ranges.setCheckable(True)
+        act_ranges.setChecked(sq.show_range_overlays)
+
+        act_highlight = menu.addAction("Show Active Range")
+        act_highlight.setCheckable(True)
+        act_highlight.setChecked(sq.show_range_highlight)
+
+        act_gaps = menu.addAction("Show Gap Overlays")
+        act_gaps.setCheckable(True)
+        act_gaps.setChecked(sq.show_gap_overlays)
+
         chosen = menu.exec_(event.globalPos())
 
         if chosen == add_action:
             note, ok = QtWidgets.QInputDialog.getText(
-                self.parent_sequencer,
+                sq,
                 "Marker Note",
                 "Note:",
                 QtWidgets.QLineEdit.Normal,
                 "",
             )
             if ok:
-                mid = self.parent_sequencer.add_marker(t, note=note)
-                self.parent_sequencer.marker_added.emit(mid, t)
+                mid = sq.add_marker(t, note=note)
+                sq.marker_added.emit(mid, t)
+        elif chosen == act_ranges:
+            sq.show_range_overlays = act_ranges.isChecked()
+        elif chosen == act_highlight:
+            sq.show_range_highlight = act_highlight.isChecked()
+        elif chosen == act_gaps:
+            sq.show_gap_overlays = act_gaps.isChecked()
 
     # -- ruler pinning ------------------------------------------------------
     def _sync_ruler_pos(self):
@@ -1242,20 +2005,39 @@ class TimelineView(QtWidgets.QGraphicsView):
                 item._sync_geometry()
             elif isinstance(item, MarkerItem):
                 item.sync()
+            elif isinstance(item, RangeHighlightItem):
+                item.sync()
+            elif isinstance(item, (_StaticRangeOverlay, _GapOverlayItem)):
+                item.prepareGeometryChange()
+                item.update()
         self._sync_ruler_pos()
         self._scene.playhead.sync()
         self._update_scene_rect()
         self.viewport().update()
 
     def _update_scene_rect(self):
-        """Ensure the scene is large enough to contain all clips and markers."""
+        """Ensure the scene is large enough to contain all clips and markers.
+
+        Also extends the right edge beyond the visible viewport so the
+        user can always middle-mouse pan further into the future.
+        """
         sq = self.parent_sequencer
         max_end = 100.0
         for cd in sq._clips.values():
             max_end = max(max_end, cd.end)
         for md in sq._markers.values():
             max_end = max(max_end, md.time)
-        w = self.time_to_x(max_end) + 200
+        if sq._range_highlight is not None:
+            max_end = max(max_end, sq._range_highlight.end)
+        for gap in sq._gap_overlays:
+            max_end = max(max_end, gap._end)
+        # Include the visible viewport right edge so users can scroll
+        # forward beyond existing content.
+        visible_right = self.x_to_time(
+            self.horizontalScrollBar().value() + self.viewport().width()
+        )
+        max_end = max(max_end, visible_right)
+        w = self.time_to_x(max_end) + self.viewport().width()
         h = _RULER_HEIGHT + sq._total_row_height() + 40
         self._scene.setSceneRect(0, 0, w, h)
 
@@ -1447,6 +2229,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
     clip_moved = QtCore.Signal(int, float)
     clips_batch_moved = QtCore.Signal(list)  # [(clip_id, new_start), ...]
+    clips_reordered = QtCore.Signal(int, int)  # (clip_id_a, clip_id_b) swap request
     clip_resized = QtCore.Signal(int, float, float)
     clip_selected = QtCore.Signal(int)
     clip_renamed = QtCore.Signal(int, str)  # (clip_id, new_label)
@@ -1465,6 +2248,14 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     marker_moved = QtCore.Signal(int, float)  # (marker_id, new_time)
     marker_changed = QtCore.Signal(int)  # (marker_id) after note/color edit
     marker_removed = QtCore.Signal(int)  # (marker_id)
+    shots_changed = QtCore.Signal()  # shot definitions added/removed/modified
+    app_event = QtCore.Signal(str, object)  # (event_name, payload) generic bridge
+    range_highlight_changed = QtCore.Signal(
+        float, float
+    )  # (start, end) after move/resize
+    gap_resized = QtCore.Signal(
+        float, float
+    )  # (original_next_shot_start, new_next_shot_start)
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
@@ -1475,7 +2266,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._clip_items: Dict[int, ClipItem] = {}
         self._next_track_id = 0
         self._next_clip_id = 0
-        self._snap_interval: float = 0.0  # 0 = disabled
+        self._snap_interval: float = 1.0  # 1 = per-frame snap (default)
         self._gap_threshold: float = 10.0  # flat keys to constitute a gap
         self._undo_stack: List[Dict[int, tuple]] = []  # (start, duration) per clip_id
         self._redo_stack: List[Dict[int, tuple]] = []
@@ -1487,6 +2278,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._expanded_tracks: Dict[int, List[str]] = {}  # track_id → sub-row names
         self._sub_row_height: int = _SUB_ROW_HEIGHT
         self._sub_row_provider = None  # callable(track_id, track_name) → [(sub_name, [(start,dur,label,color), ...]), ...]
+        self._range_highlight: Optional[RangeHighlightItem] = None
+        self._range_overlays: List[QtWidgets.QGraphicsItem] = []
+        self._gap_overlays: List[QtWidgets.QGraphicsItem] = []
+        self._shift_at_press: bool = False  # Shift held when last drag started
+        self._show_range_overlays: bool = True  # toggle for shot range overlays
+        self._show_gap_overlays: bool = True  # toggle for gap overlays
+        self._show_range_highlight: bool = True  # toggle for active shot highlight
 
         # -- sub-widgets ----------------------------------------------------
         self._header = TrackHeaderWidget()
@@ -1496,7 +2294,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._header_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self._header_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self._header_scroll.setStyleSheet("background:#2B2B2B; border:none;")
-        self._header_scroll.setFixedWidth(140)
+        self._header_scroll.setMinimumWidth(0)
 
         self._timeline = TimelineView(self)
 
@@ -1504,6 +2302,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self.addWidget(self._timeline)
         self.setSizes([140, 600])
         self.setHandleWidth(2)
+        self.setCollapsible(0, True)
+        self.setCollapsible(1, False)
+
+        # Snap-close: collapse the header pane when dragged below threshold
+        self._header_snap_width = 140  # default / open width
+        self._header_snap_threshold = 60  # collapse if narrower
+        self.splitterMoved.connect(self._on_splitter_moved)
 
         # -- sync vertical scroll -------------------------------------------
         self._timeline.verticalScrollBar().valueChanged.connect(
@@ -1534,7 +2339,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             ("Home", self.go_to_start, "Jump playhead to start"),
             ("End", self.go_to_end, "Jump playhead to last clip end"),
             ("M", self.add_marker_at_playhead, "Add marker at playhead"),
-            ("F", self.frame_all, "Frame all clips in timeline"),
+            ("F", self.frame_shot, "Frame the active shot range"),
         ]
         self._shortcut_mgr = ShortcutManager(self)
         _ctx = QtCore.Qt.WidgetWithChildrenShortcut
@@ -1550,14 +2355,38 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         if kwargs:
             self.set_attributes(self, **kwargs)
 
+    # -- consume assigned hotkeys so they don't leak to the host app --------
+    def event(self, event: QtCore.QEvent) -> bool:
+        if event.type() == QtCore.QEvent.ShortcutOverride:
+            mods = event.modifiers()
+            mod_int = mods.value if hasattr(mods, "value") else int(mods)
+            key = QtGui.QKeySequence(event.key() | mod_int)
+            for seq in self._timeline._shortcut_sequences:
+                if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
+                    event.accept()
+                    return True
+        return super().event(event)
+
     # -- public API ---------------------------------------------------------
-    def add_track(self, name: str) -> int:
-        """Add a new track row.  Returns the ``track_id``."""
+    def add_track(
+        self, name: str, icon=None, dimmed: bool = False, italic: bool = False
+    ) -> int:
+        """Add a new track row.  Returns the ``track_id``.
+
+        Parameters
+        ----------
+        icon : QIcon, optional
+            Icon shown to the left of the track label.
+        dimmed : bool
+            If True the track label is rendered with reduced contrast.
+        italic : bool
+            If True the track label text is italicised (e.g. missing objects).
+        """
         tid = self._next_track_id
         self._next_track_id += 1
         td = TrackData(track_id=tid, name=name)
         self._tracks.append(td)
-        self._header.add_track_label(name)
+        self._header.add_track_label(name, icon=icon, dimmed=dimmed, italic=italic)
         self._timeline._update_scene_rect()
         return tid
 
@@ -1569,6 +2398,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         label: str = "",
         color: Optional[str] = None,
         sub_row: str = "",
+        locked: bool = False,
         **data,
     ) -> int:
         """Add a clip to an existing track.  Returns the ``clip_id``.
@@ -1578,6 +2408,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         sub_row : str
             When non-empty, places the clip on the named sub-row of an
             expanded track instead of the main track row.
+        locked : bool
+            If True the clip cannot be dragged or resized.
         """
         cid = self._next_clip_id
         self._next_clip_id += 1
@@ -1590,6 +2422,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             duration=duration,
             label=label,
             color=color,
+            locked=locked,
             sub_row=sub_row,
             data=data,
         )
@@ -1687,6 +2520,43 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             return list(self._clips.values())
         return [cd for cd in self._clips.values() if cd.track_id == track_id]
 
+    def swap_clips(self, clip_id_a: int, clip_id_b: int) -> None:
+        """Swap the timeline positions of two clips and emit ``clips_reordered``.
+
+        Each clip adopts the other's ``start``, preserving its own
+        duration.  The gap between them is maintained: the shorter clip
+        gains trailing space, shifted so the layout stays contiguous.
+
+        This is a visual-only operation; the controller should listen
+        to ``clips_reordered`` to perform the actual keyframe swap in
+        the backend.
+        """
+        a = self._clips.get(clip_id_a)
+        b = self._clips.get(clip_id_b)
+        if a is None or b is None or clip_id_a == clip_id_b:
+            return
+
+        # Identify earlier / later by start
+        if a.start > b.start:
+            a, b = b, a
+
+        gap = b.start - (a.start + a.duration)
+        new_b_start = a.start
+        new_a_start = a.start + b.duration + gap
+
+        a.start = new_a_start
+        b.start = new_b_start
+
+        # Refresh visual items
+        for cid in (a.clip_id, b.clip_id):
+            item = self._clip_items.get(cid)
+            if item:
+                item._sync_geometry()
+                item.update()
+
+        self._capture_undo()
+        self.clips_reordered.emit(clip_id_a, clip_id_b)
+
     def set_playhead(self, time: float):
         """Move the playhead to a specific time."""
         self._timeline._scene.playhead.time = time
@@ -1706,6 +2576,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._undo_stack.clear()
         self._redo_stack.clear()
         self.clear_markers()
+        self.clear_range_highlight()
+        self.clear_range_overlays()
+        self.clear_gap_overlays()
         self._timeline._refresh_all()
 
     # -- marker API ---------------------------------------------------------
@@ -1715,6 +2588,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         time: float,
         note: str = "",
         color: Optional[str] = None,
+        draggable: bool = True,
+        style: str = "triangle",
+        line_style: str = "dashed",
+        opacity: float = 1.0,
     ) -> int:
         """Add a marker at *time*. Returns the ``marker_id``."""
         mid = self._next_marker_id
@@ -1724,6 +2601,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             time=time,
             note=note,
             color=color or "#E8A84A",
+            draggable=draggable,
+            style=style,
+            line_style=line_style,
+            opacity=opacity,
         )
         self._markers[mid] = md
         item = MarkerItem(md, self._timeline)
@@ -1755,6 +2636,91 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 item.scene().removeItem(item)
         self._markers.clear()
         self._next_marker_id = 0
+
+    # -- range highlight API ------------------------------------------------
+
+    def set_range_highlight(
+        self,
+        start: float,
+        end: float,
+        color: Optional[str] = None,
+        alpha: int = 30,
+    ):
+        """Show or update a translucent highlight over a time range.
+
+        Parameters
+        ----------
+        start, end : float
+            Time boundaries of the highlighted region.
+        color : str, optional
+            Hex color string (e.g. ``"#5A8CDC"``).  Default blue.
+        alpha : int
+            Opacity 0-255 for the fill (default 30).
+        """
+        if self._range_highlight is None:
+            self._range_highlight = RangeHighlightItem(self._timeline)
+            self._timeline._scene.addItem(self._range_highlight)
+        self._range_highlight.set_range(start, end)
+        self._range_highlight.setVisible(self._show_range_highlight)
+        if color is not None:
+            c = QtGui.QColor(color)
+            c.setAlpha(alpha)
+            self._range_highlight.color = c
+        elif alpha != self._range_highlight.opacity_value:
+            self._range_highlight.opacity_value = alpha
+
+    def clear_range_highlight(self):
+        """Remove the range highlight from the timeline."""
+        if self._range_highlight is not None:
+            if self._range_highlight.scene():
+                self._range_highlight.scene().removeItem(self._range_highlight)
+            self._range_highlight = None
+
+    def add_range_overlay(
+        self,
+        start: float,
+        end: float,
+        color: str = "#888888",
+        alpha: int = 15,
+    ):
+        """Add a non-interactive range overlay (e.g. for non-active shots)."""
+        item = _StaticRangeOverlay(self._timeline, start, end, color, alpha)
+        item.setVisible(self._show_range_overlays)
+        self._timeline._scene.addItem(item)
+        self._range_overlays.append(item)
+
+    def clear_range_overlays(self):
+        """Remove all non-interactive range overlays."""
+        for item in self._range_overlays:
+            if item.scene():
+                item.scene().removeItem(item)
+        self._range_overlays.clear()
+
+    def add_gap_overlay(
+        self,
+        start: float,
+        end: float,
+        color: str = "#555555",
+        alpha: int = 120,
+    ):
+        """Add a diagonal-hatch overlay for a gap between shots."""
+        item = _GapOverlayItem(self._timeline, start, end, color, alpha)
+        item.setVisible(self._show_gap_overlays)
+        self._timeline._scene.addItem(item)
+        self._gap_overlays.append(item)
+
+    def clear_gap_overlays(self):
+        """Remove all gap overlays."""
+        for item in self._gap_overlays:
+            if item.scene():
+                item.scene().removeItem(item)
+        self._gap_overlays.clear()
+
+    def range_highlight(self) -> Optional[tuple]:
+        """Return ``(start, end)`` of the active highlight, or ``None``."""
+        if self._range_highlight is None:
+            return None
+        return (self._range_highlight.start, self._range_highlight.end)
 
     def set_hidden_tracks(self, names: List[str]):
         """Store a list of hidden track names for the 'show hidden' menu."""
@@ -1801,12 +2767,20 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         mid = self.add_marker(t)
         self.marker_added.emit(mid, t)
 
-    def frame_all(self):
-        """Zoom and scroll the timeline so all clips are visible."""
-        if not self._clips:
+    def frame_shot(self):
+        """Zoom and scroll the timeline to frame the active shot range.
+
+        If a range highlight is set, frames that range.  Otherwise falls
+        back to framing all clips.
+        """
+        rh = self.range_highlight()
+        if rh is not None:
+            t_min, t_max = rh
+        elif self._clips:
+            t_min = min(cd.start for cd in self._clips.values())
+            t_max = max(cd.end for cd in self._clips.values())
+        else:
             return
-        t_min = min(cd.start for cd in self._clips.values())
-        t_max = max(cd.end for cd in self._clips.values())
         span = t_max - t_min
         if span < 1.0:
             span = 1.0
@@ -1818,6 +2792,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._timeline.horizontalScrollBar().setValue(
             int(self._timeline.time_to_x(t_min) - padding)
         )
+
+    # Keep legacy alias so external callers aren't broken
+    frame_all = frame_shot
 
     # -- undo / redo -------------------------------------------------------
     def _snapshot(self) -> Dict[int, tuple]:
@@ -1883,6 +2860,37 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     @gap_threshold.setter
     def gap_threshold(self, value: float):
         self._gap_threshold = max(1.0, value)
+
+    # -- overlay visibility -------------------------------------------------
+    @property
+    def show_range_overlays(self) -> bool:
+        return self._show_range_overlays
+
+    @show_range_overlays.setter
+    def show_range_overlays(self, value: bool):
+        self._show_range_overlays = value
+        for item in self._range_overlays:
+            item.setVisible(value)
+
+    @property
+    def show_gap_overlays(self) -> bool:
+        return self._show_gap_overlays
+
+    @show_gap_overlays.setter
+    def show_gap_overlays(self, value: bool):
+        self._show_gap_overlays = value
+        for item in self._gap_overlays:
+            item.setVisible(value)
+
+    @property
+    def show_range_highlight(self) -> bool:
+        return self._show_range_highlight
+
+    @show_range_highlight.setter
+    def show_range_highlight(self, value: bool):
+        self._show_range_highlight = value
+        if self._range_highlight is not None:
+            self._range_highlight.setVisible(value)
 
     # -- attribute colors ---------------------------------------------------
     @property
@@ -2078,3 +3086,15 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # Backwards-compat: also emit clip_selected for the first item
         if sel:
             self.clip_selected.emit(sel[0])
+
+    def _on_splitter_moved(self, pos: int, index: int):
+        """Snap-close the header pane when dragged below threshold."""
+        if index != 1:  # only respond to the first handle
+            return
+        if pos < self._header_snap_threshold:
+            self.setSizes([0, self.width()])
+        elif pos > 0 and self.sizes()[0] == 0:
+            # Re-opening from collapsed: restore default width
+            self.setSizes(
+                [self._header_snap_width, self.width() - self._header_snap_width]
+            )
