@@ -9,18 +9,41 @@ from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
 class LineEditFormatMixin:
-    """Lazily formats QLineEdit with reversible visual state feedback."""
+    """Lazily formats QLineEdit with reversible visual state feedback.
 
-    ACTION_COLOR_MAP = {
+    Provides ``set_action_color(key)`` / ``reset_action_color()`` for
+    signaling validation state.  Colors adapt automatically to light or
+    dark backgrounds.
+    """
+
+    _LIGHT_COLORS = {
         "valid": ("#3C8D3C", "#E6F4EA"),
         "invalid": ("#B97A7A", "#FBEAEA"),
         "warning": ("#B49B5C", "#FFF6DC"),
         "info": ("#6D9BAA", "#E2F3F9"),
         "inactive": ("#AAAAAA", None),
     }
+    _DARK_COLORS = {
+        "valid": ("#A8D5A2", "#1E2E1E"),
+        "invalid": ("#E8A5A3", "#33201F"),
+        "warning": ("#E0C97F", "#332E20"),
+        "info": ("#A3CBE0", "#1E2E33"),
+        "inactive": ("#777777", None),
+    }
 
     _original_fg = None
     _original_bg = None
+
+    @property
+    def ACTION_COLOR_MAP(self):
+        """Return the color map matching the current palette brightness."""
+        self._cache_original_colors()
+        if self._original_bg:
+            from qtpy.QtGui import QColor
+
+            if QColor(self._original_bg).lightnessF() < 0.5:
+                return self._DARK_COLORS
+        return self._LIGHT_COLORS
 
     def set_action_color(self, key: str) -> None:
         self._cache_original_colors()

@@ -672,39 +672,42 @@ QAbstractSlider::add-page {
     background-color: {WIDGET_BACKGROUND};
 }
 /* QSlider: Inherits from QAbstractSlider */
+/* Scrollbar: 10px track (invisible), thin handle via margin, expands on hover */
 QScrollBar:vertical {
-    background: none;
+    background: transparent;
     border: none;
-    width: 4px;
+    width: 10px;
     margin: 0px;
 }
 QScrollBar:horizontal {
-    background: none;
+    background: transparent;
     border: none;
-    height: 4px;
+    height: 10px;
     margin: 0px;
 }
 QScrollBar::handle:vertical {
     background: {BUTTON_CHECKED};
     min-height: 20px;
     border: none;
-    border-radius: 1px;
-    margin: 0px;
+    border-radius: 2px;
+    margin: 0px 3px;
 }
 QScrollBar::handle:horizontal {
     background: {BUTTON_CHECKED};
     min-width: 20px;
     border: none;
-    border-radius: 1px;
-    margin: 0px;
+    border-radius: 2px;
+    margin: 3px 0px;
 }
 QScrollBar::handle:vertical:hover {
     background: {BUTTON_HOVER};
-    border: 1px solid {BUTTON_HOVER};
+    border-radius: 4px;
+    margin: 0px;
 }
 QScrollBar::handle:horizontal:hover {
     background: {BUTTON_HOVER};
-    border: 1px solid {BUTTON_HOVER};
+    border-radius: 4px;
+    margin: 0px;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     border: none;
@@ -714,25 +717,15 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     border: none;
-    background: none;
+    background: transparent;
     height: 0px;
     width: 0px;
-    subcontrol-position: top left;
-    subcontrol-origin: margin;
-}
-QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {
-    background: transparent;
-}
-QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover {
-    background: none;
 }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: transparent;
 }
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-    height: 0px;
-    width: 0px;
-    background: none;
+    background: transparent;
 }
 
 /* -- Progress Bar -- */

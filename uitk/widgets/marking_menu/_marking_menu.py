@@ -79,6 +79,9 @@ class MarkingMenu(
         self._activation_key_held = False
         self._initial_bindings = bindings  # Store for after sb is set up
         self._default_bindings = bindings  # Public-facing copy of the original defaults
+        self._standalone_suppress = (
+            False  # Prevents reshow after standalone window opened
+        )
 
         # Merge class-level HANDLERS with instance-level handlers param
         self._handlers_config = getattr(self, "HANDLERS", {}).copy()
@@ -184,6 +187,11 @@ class MarkingMenu(
     def _on_activation_press(self):
         """Handle the global shortcut press event."""
         try:
+            # If a standalone window was opened during this key-hold cycle,
+            # ignore re-press until the key is genuinely released and pressed again.
+            if self._standalone_suppress:
+                return
+
             self._activation_key_held = True
             self.key_show_press.emit()
 
@@ -221,6 +229,7 @@ class MarkingMenu(
         """Handle the global shortcut release event."""
         self.logger.debug("_on_activation_release: Emitting key_show_release signal")
         self._activation_key_held = False
+        self._standalone_suppress = False
         self.key_show_release.emit()
         self.hide()
         QtCore.QTimer.singleShot(0, self.restore_other_windows)
@@ -818,6 +827,9 @@ class MarkingMenu(
 
     def _transition_to_state(self, buttons, modifiers=None) -> None:
         """Transition menu to state matching the given button/modifier combination."""
+        if self.isHidden():
+            return
+
         lookup = self._build_lookup_key(buttons=buttons, modifiers=modifiers)
         next_ui = self._bindings.get(lookup)
 
@@ -1108,8 +1120,15 @@ class MarkingMenu(
 
     def _show_window(self, widget, pos=None, force=False, **kwargs):
         """Internal handler for showing standalone windows."""
-        if widget.parent() != self:
-            self.hide()
+        # Ensure the widget won't be hidden alongside the MarkingMenu.
+        if widget.parent() is self:
+            widget.setParent(self.parent(), QtCore.Qt.Window)
+
+        # Clear activation state so _transition_to_state won't build a
+        # lookup containing the activation key (e.g. "Key_F12" → startmenu).
+        self._activation_key_held = False
+        self._standalone_suppress = True
+        self.hide()
 
         self.restore_other_windows()
 

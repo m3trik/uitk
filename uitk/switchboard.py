@@ -112,8 +112,8 @@ class Switchboard(
                 **config,
             )
 
-        # Include this package's widgets
-        self.registry.widget_registry.extend("widgets", base_dir=self)
+        # Include this package's widgets (and subpackages like sequencer/)
+        self.registry.widget_registry.extend("widgets", base_dir=self, recursive=True)
 
         # Include this package's default icons
         self.registry.icon_registry.extend("icons", base_dir=self)

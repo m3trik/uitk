@@ -411,16 +411,23 @@ class MenuPositioner:
         # Use whichever is larger: anchor width or content width
         # This ensures we don't clip content when it's wider than the anchor
         # Compute total horizontal padding introduced by layout margins and borders
+        def _get_layout(widget):
+            """Return the widget's layout, handling shadowed .layout attributes."""
+            attr = getattr(widget, "layout", None)
+            if attr is None:
+                return None
+            return attr if not callable(attr) else attr()
+
         horizontal_padding = 0
 
-        layout = menu.layout()
+        layout = _get_layout(menu)
         if layout:
             margins = layout.contentsMargins()
             horizontal_padding += margins.left() + margins.right()
 
         frame = getattr(menu, "_frame", None)
         if frame:
-            frame_layout = frame.layout()
+            frame_layout = _get_layout(frame)
             if frame_layout:
                 margins = frame_layout.contentsMargins()
                 horizontal_padding += margins.left() + margins.right()
@@ -1160,15 +1167,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         # Store current parent before changing window flags
         parent_widget = self.parentWidget()
+        flags = QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint
 
-        # Set window flags to make this a tool window
-        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
-
-        # Re-apply parent with the new window flags so Qt treats this as a tool window
+        # Use a single setParent(parent, flags) call to avoid double native
+        # window recreation (setWindowFlags alone recreates the handle, then
+        # setParent with flags would recreate it again).
         if parent_widget is not None:
-            self.setParent(parent_widget, self.windowFlags())
+            self.setParent(parent_widget, flags)
         else:
             # If no parent, try to parent to the active window
             try:
@@ -1176,14 +1181,21 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 if app:
                     active_window = app.activeWindow()
                     if active_window and active_window != self:
-                        self.setParent(active_window, self.windowFlags())
+                        self.setParent(active_window, flags)
                         self.logger.debug(
                             f"Menu._setup_as_popup: Parented to active window {active_window}"
                         )
+                    else:
+                        self.setWindowFlags(flags)
             except Exception as e:
+                self.setWindowFlags(flags)
                 self.logger.debug(
                     f"Menu._setup_as_popup: Could not parent to active window: {e}"
                 )
+
+        # Set attributes after reparenting so they survive window handle recreation
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
 
     def _ensure_on_screen(self) -> None:
         """Moves the menu to be fully visible on the screen if it is partially off-screen."""
@@ -1568,6 +1580,22 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
+
+    def _register_with_main_window(self, widget: QtWidgets.QWidget) -> None:
+        """Walk up the parent chain to find a MainWindow and register *widget*.
+
+        This enables signal wiring, slot discovery, and QSettings-based
+        state persistence for widgets added dynamically via :meth:`add`.
+        """
+        curr = self.parent()
+        while curr is not None:
+            if hasattr(curr, "register_widget") and hasattr(curr, "widgets"):
+                try:
+                    curr.register_widget(widget)
+                except Exception:
+                    pass
+                return
+            curr = curr.parent()
 
     def _restore_menu_defaults(self, from_sync: bool = False):
         """Reset all menu widgets to their default values."""
@@ -2091,6 +2119,17 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             widget.installEventFilter(self)
             setattr(self, widget.objectName(), widget)
 
+            # Defer registration to the next event-loop tick so it happens
+            # AFTER add() finishes (updates re-enabled, signals unblocked).
+            # Calling register_widget synchronously here triggers init_slot()
+            # which can create nested menus / option-box wraps while add()
+            # is still running — causing flashes and layout corruption.
+            if widget.objectName():
+                QtCore.QTimer.singleShot(
+                    0,
+                    lambda w=widget: self._register_with_main_window(w),
+                )
+
             # Only resize if menu is visible (prevents flash during lazy initialization)
             if self.isVisible():
                 self.resize(self.sizeHint())
@@ -2296,9 +2335,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Ensure the geometry reflects the current item count before positioning.
         self._resize_height_to_content()
 
-        # Only auto-position if we have a position setting
-        # _apply_position now caches calculations for performance
-        if self.position:
+        # Only auto-position if we have a position setting AND show_as_popup
+        # didn't already handle positioning. _current_anchor_widget is set during
+        # show_as_popup's show() call and cleared after, so its presence means
+        # show_as_popup already positioned us — don't override with self.position.
+        if self.position and not self._current_anchor_widget:
             self._apply_position()
 
         # Start leave timer if enabled

@@ -96,15 +96,18 @@ class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
         """Update wrapped widget and reparent menu if needed."""
         super().set_wrapped_widget(widget)
         if self._menu and widget:
-            # Reparent menu to wrapped widget for proper anchoring
-            self._menu.setParent(widget)
+            # Reparent menu to wrapped widget while preserving popup window flags
+            # (Qt.Tool | Qt.FramelessWindowHint set by _setup_as_popup).
+            # Calling setParent(widget) without flags resets the menu to a
+            # plain child widget, preventing it from appearing as a popup.
+            self._menu.setParent(widget, self._menu.windowFlags())
 
     def _show_menu(self):
         """Show the menu at the button position."""
         if self._menu and self._widget:
-            # Use wrapped_widget as anchor if available (for proper width matching)
-            anchor = self.wrapped_widget if self.wrapped_widget else self._widget
-            self._menu.show_as_popup(anchor_widget=anchor, position=self._menu.position)
+            self._menu.show_as_popup(
+                anchor_widget=self._widget, position=self._menu.position
+            )
 
     @property
     def menu(self):
@@ -184,5 +187,6 @@ class ContextMenuOption(OptionMenuOption):
 
         # Show the menu
         if self._menu and self._widget:
-            anchor = self.wrapped_widget if self.wrapped_widget else self._widget
-            self._menu.show_as_popup(anchor_widget=anchor, position=self._menu.position)
+            self._menu.show_as_popup(
+                anchor_widget=self._widget, position=self._menu.position
+            )

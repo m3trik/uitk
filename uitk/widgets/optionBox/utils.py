@@ -64,6 +64,9 @@ class OptionBoxManager(ptk.LoggingMixin):
             )
 
         self._option_order = list(order)
+        # Clear pending options so a fresh set_order + add_option sequence
+        # doesn't accumulate duplicates from a previous setup pass.
+        self._pending_options = []
         if self._option_box:
             # Recreate with new order
             self._recreate_option_box()

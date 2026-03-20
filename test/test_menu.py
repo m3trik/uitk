@@ -961,6 +961,402 @@ class TestMenuTitleEdgeCases(QtBaseTestCase):
         self.assertIsNotNone(menu.title())
 
 
+class TestMenuInitializationVisibility(QtBaseTestCase):
+    """Regression tests for Menu show/hide flash during initialization.
+
+    Bug: Menus flash (show/hide rapidly) multiple times during init because
+    _setup_as_popup() triggers visibility events via setParent/setWindowFlags,
+    and showEvent() does expensive layout work while the menu is already visible.
+    Fixed: 2026-03-18
+    """
+
+    def test_menu_not_visible_after_construction(self):
+        """Menu must remain hidden after __init__ completes."""
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        self.assertFalse(
+            menu.isVisible(),
+            "Menu should not be visible immediately after construction",
+        )
+
+    def test_menu_not_visible_after_adding_items(self):
+        """Menu must remain hidden after items are added (before explicit show)."""
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.add("QPushButton", setText="Button A")
+        menu.add("QLabel", setText="Label A")
+        menu.add("QCheckBox", setText="Check A")
+        self.assertFalse(
+            menu.isVisible(),
+            "Menu should not be visible after adding items",
+        )
+
+    def test_no_show_events_during_construction(self):
+        """Menu __init__ must not trigger any showEvent calls."""
+        show_count = []
+        original_showEvent = Menu.showEvent
+
+        def counting_showEvent(self_menu, event):
+            show_count.append(1)
+            original_showEvent(self_menu, event)
+
+        with patch.object(Menu, "showEvent", counting_showEvent):
+            menu = self.track_widget(Menu(hide_on_leave=True))
+
+        self.assertEqual(
+            len(show_count),
+            0,
+            f"showEvent fired {len(show_count)} time(s) during construction",
+        )
+
+    def test_no_show_events_during_item_addition(self):
+        """Adding items must not trigger any showEvent calls."""
+        menu = self.track_widget(Menu(hide_on_leave=True))
+
+        show_count = []
+        original_showEvent = Menu.showEvent
+
+        def counting_showEvent(self_menu, event):
+            show_count.append(1)
+            original_showEvent(self_menu, event)
+
+        with patch.object(Menu, "showEvent", counting_showEvent):
+            menu.add("QPushButton", setText="Button A")
+            menu.add("QLabel", setText="Label A")
+
+        self.assertEqual(
+            len(show_count),
+            0,
+            f"showEvent fired {len(show_count)} time(s) during item addition",
+        )
+
+    def test_show_as_popup_shows_exactly_once(self):
+        """show_as_popup must result in exactly one show() call."""
+        parent = self.track_widget(QtWidgets.QPushButton("Anchor"))
+        parent.setGeometry(100, 100, 200, 30)
+        parent.show()
+
+        menu = self.track_widget(Menu(parent=parent, hide_on_leave=True))
+        menu.add("QPushButton", setText="Item")
+
+        show_count = []
+        original_show = Menu.show
+
+        def counting_show(self_menu):
+            show_count.append(1)
+            original_show(self_menu)
+
+        with patch.object(Menu, "show", counting_show):
+            menu.show_as_popup(anchor_widget=parent, position="bottom")
+
+        self.assertEqual(
+            len(show_count),
+            1,
+            f"show() called {len(show_count)} time(s) during show_as_popup",
+        )
+        menu.hide(force=True)
+
+    def test_showEvent_does_not_reposition_after_show_as_popup(self):
+        """showEvent must NOT call _apply_position when show_as_popup positioned already.
+
+        Bug: show_as_popup() positions menu correctly, but showEvent() calls
+        _apply_position() which overrides the anchor-based position with
+        self.position (e.g. "cursorPos"), causing the menu to jump visibly.
+        Fixed: 2026-03-18
+        """
+        parent = self.track_widget(QtWidgets.QPushButton("Anchor"))
+        parent.setGeometry(200, 200, 200, 30)
+        parent.show()
+
+        menu = self.track_widget(Menu(parent=parent, hide_on_leave=True))
+        menu.add("QPushButton", setText="Item")
+
+        reposition_calls = []
+        original_apply_position = Menu._apply_position
+
+        def tracking_apply_position(self_menu):
+            reposition_calls.append(1)
+            original_apply_position(self_menu)
+
+        with patch.object(Menu, "_apply_position", tracking_apply_position):
+            menu.show_as_popup(anchor_widget=parent, position="bottom")
+
+        self.assertEqual(
+            len(reposition_calls),
+            0,
+            f"_apply_position called {len(reposition_calls)} time(s) during "
+            f"show_as_popup (should be 0 - positioning handled by show_as_popup)",
+        )
+        menu.hide(force=True)
+
+    def test_no_show_events_during_option_box_wrapping(self):
+        """OptionBox wrapping must not trigger any Menu show events.
+
+        Bug: When OptionBoxManager wraps a PushButton that has been added
+        to a header menu, the lazy deferred wrapping could trigger show
+        events on the option_box menu during layout replacement.
+        Fixed: 2026-03-18
+        """
+        from uitk.widgets.header import Header
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        header = self.track_widget(Header())
+        header.setGeometry(100, 100, 300, 20)
+
+        # Add a button to the header menu (simulates tentacle header_init)
+        button = header.menu.add("QPushButton", setText="Tool Button")
+
+        # Track show events on ALL Menu instances
+        show_events = []
+        original_showEvent = Menu.showEvent
+
+        def counting_showEvent(self_menu, event):
+            show_events.append(self_menu.objectName() or id(self_menu))
+            original_showEvent(self_menu, event)
+
+        with patch.object(Menu, "showEvent", counting_showEvent):
+            # Access option_box.menu (simulates tb000_init)
+            mgr = OptionBoxManager(button)
+            mgr.enable_menu()
+            mgr.menu.add("QSpinBox", setObjectName="s000")
+            mgr.menu.add("QCheckBox", setText="Option A")
+
+            # Force wrapping synchronously (normally deferred via QTimer)
+            if mgr._pending_options and not mgr._is_wrapped:
+                mgr._perform_wrap()
+
+        self.assertEqual(
+            len(show_events),
+            0,
+            f"Menu showEvent fired {len(show_events)} time(s) during option box wrapping",
+        )
+
+    def test_register_with_main_window_deferred_not_synchronous(self):
+        """_register_with_main_window must NOT run synchronously inside add().
+
+        Bug: add() called _register_with_main_window synchronously which called
+        mainWindow.register_widget → init_slot → tb###_init, creating nested
+        option-box menus and wrapping layout while add() was still running.
+        This caused menus to flash on init and option menus to break.
+        Fixed: 2026-03-18
+        """
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        menu = self.track_widget(Menu(parent=parent))
+
+        # Track whether _register_with_main_window is called during add()
+        register_calls_during_add = []
+        original_register = menu._register_with_main_window
+
+        def tracking_register(widget, _orig=original_register):
+            register_calls_during_add.append(widget.objectName())
+            _orig(widget)
+
+        menu._register_with_main_window = tracking_register
+
+        menu.add("QPushButton", setText="Tool", setObjectName="tb018")
+
+        # Should NOT have been called synchronously during add()
+        self.assertEqual(
+            len(register_calls_during_add),
+            0,
+            f"_register_with_main_window called {len(register_calls_during_add)} "
+            f"time(s) synchronously during add() — should be deferred",
+        )
+
+
+class TestHeaderMenuPopup(QtBaseTestCase):
+    """Tests for Header menu display as proper popup.
+
+    Bug: Header.show_menu() used setVisible(True) instead of show_as_popup(),
+    causing the menu to appear at (0,0) or wrong position instead of anchored
+    to the header widget.
+    Fixed: 2026-03-18
+    """
+
+    def test_header_menu_uses_popup(self):
+        """Header.show_menu() must position the menu as a popup, not raw setVisible."""
+        from uitk.widgets.header import Header
+
+        header = self.track_widget(Header())
+        header.setGeometry(100, 100, 300, 20)
+        header.show()
+
+        # Populate the menu
+        header.menu.add("QPushButton", setText="Action 1")
+        header.menu.add("QPushButton", setText="Action 2")
+
+        # Show the menu
+        header.show_menu()
+
+        self.assertTrue(
+            header.menu.isVisible(),
+            "Menu should be visible after show_menu()",
+        )
+
+        # Verify the menu has popup window flags (Tool | FramelessWindowHint)
+        flags = header.menu.windowFlags()
+        self.assertTrue(
+            flags & QtCore.Qt.Tool,
+            "Menu must have Qt.Tool flag to display as popup",
+        )
+
+        header.menu.hide(force=True)
+
+    def test_header_menu_positioned_near_header(self):
+        """Header menu should appear near the header widget, not at (0,0)."""
+        from uitk.widgets.header import Header
+
+        header = self.track_widget(Header())
+        header.setGeometry(200, 200, 300, 20)
+        header.show()
+
+        header.menu.add("QPushButton", setText="Action 1")
+
+        header.show_menu()
+
+        # Menu position should be near the header, not at origin
+        menu_pos = header.menu.pos()
+        # The menu should be positioned somewhere near the header's screen position
+        # At minimum, it shouldn't be at (0,0) which is the default unpositioned location
+        header_global = header.mapToGlobal(header.rect().bottomLeft())
+
+        # Allow generous margin for positioning differences, but not at (0,0)
+        self.assertFalse(
+            menu_pos.x() == 0 and menu_pos.y() == 0,
+            "Menu should not be positioned at origin (0,0)",
+        )
+
+        header.menu.hide(force=True)
+
+
+class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
+    """Tests for OptionBox menu retaining popup flags after reparenting.
+
+    Bug: MenuOption.set_wrapped_widget() called setParent(widget) without
+    preserving window flags, stripping Qt.Tool | Qt.FramelessWindowHint
+    set by _setup_as_popup(). The menu then rendered as a clipped child
+    instead of a floating popup.
+    Fixed: 2026-03-18
+    """
+
+    def test_option_box_menu_retains_popup_flags(self):
+        """OptionBox menu must retain Tool window flags after wrapping."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton("Test")
+        layout.addWidget(button)
+        parent.show()
+
+        mgr = OptionBoxManager(button)
+        mgr.enable_menu()
+        menu = mgr.menu
+
+        # Menu should have popup flags right after enable_menu
+        flags_before = menu.windowFlags()
+        self.assertTrue(
+            flags_before & QtCore.Qt.Tool,
+            "Menu must have Qt.Tool flag after enable_menu()",
+        )
+
+        # Trigger wrapping (which calls set_wrapped_widget internally)
+        container = mgr.container
+        self.track_widget(container)
+
+        # Menu must STILL have popup flags after wrapping
+        flags_after = menu.windowFlags()
+        self.assertTrue(
+            flags_after & QtCore.Qt.Tool,
+            "Menu must retain Qt.Tool flag after OptionBox wrapping",
+        )
+
+    def test_option_box_menu_shows_as_popup(self):
+        """OptionBox menu must display as a floating popup, not clipped child."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.setGeometry(100, 100, 300, 40)
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton("Test")
+        layout.addWidget(button)
+        parent.show()
+
+        mgr = OptionBoxManager(button)
+        mgr.menu.add("QLabel", setText="Option 1")
+        mgr.menu.add("QCheckBox", setText="Option 2")
+
+        # Force wrap
+        container = mgr.container
+        self.track_widget(container)
+
+        # Show the menu
+        mgr.menu.show_as_popup(anchor_widget=button, position="bottom")
+
+        self.assertTrue(
+            mgr.menu.isVisible(),
+            "OptionBox menu should be visible after show_as_popup",
+        )
+
+        # Menu height should be greater than the button height (proves it's not clipped)
+        self.assertGreater(
+            mgr.menu.height(),
+            button.height(),
+            "Menu should be taller than button (not clipped as child widget)",
+        )
+
+        mgr.menu.hide(force=True)
+
+    def test_nested_option_menu_in_header_menu(self):
+        """Option box menus on buttons inside header.menu must open as popups.
+
+        This replicates the exact tentacle animation slots pattern:
+        header_init adds PushButton items to header.menu, then tb###_init
+        adds items to widget.option_box.menu for each tool button.
+        Fixed: 2026-03-18
+        """
+        from uitk.widgets.header import Header
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        # Setup: header with menu containing buttons (simulates header_init)
+        header = self.track_widget(Header())
+        header.setGeometry(100, 100, 300, 20)
+        header.show()
+
+        tool_button = header.menu.add("QPushButton", setText="Smart Bake")
+
+        # Setup option box on the tool button (simulates tb018_init)
+        mgr = OptionBoxManager(tool_button)
+        mgr.enable_menu()
+        mgr.menu.add("QCheckBox", setText="Bake Constraints")
+        mgr.menu.add("QCheckBox", setText="Bake Expressions")
+
+        # Force wrapping synchronously
+        if mgr._pending_options and not mgr._is_wrapped:
+            mgr._perform_wrap()
+
+        # Show the header menu first
+        header.show_menu()
+        self.assertTrue(header.menu.isVisible(), "Header menu should be visible")
+
+        # Now show the option box menu (simulates clicking the option_box button)
+        mgr.menu.show_as_popup(anchor_widget=tool_button, position="bottom")
+
+        self.assertTrue(
+            mgr.menu.isVisible(),
+            "Option box menu inside header menu must be visible after show_as_popup",
+        )
+
+        # Verify popup flags are intact
+        flags = mgr.menu.windowFlags()
+        self.assertTrue(
+            flags & QtCore.Qt.Tool,
+            "Nested option box menu must have Qt.Tool flag",
+        )
+
+        mgr.menu.hide(force=True)
+        header.menu.hide(force=True)
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

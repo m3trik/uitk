@@ -27,9 +27,9 @@ class StateManager(ptk.LoggingMixin):
     - Handles non-stateful signals (like 'clicked') by not triggering state sync
     """
 
-    def __init__(self, qsettings: QtCore.QSettings):
+    def __init__(self, qsettings: QtCore.QSettings, log_level="WARNING"):
         super().__init__()
-        self.logger.setLevel("WARNING")
+        self.set_log_level(log_level)
         self.qsettings = qsettings
         self._defaults = {}
         self._save_suppressed = False

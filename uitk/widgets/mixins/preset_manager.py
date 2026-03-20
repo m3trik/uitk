@@ -74,9 +74,10 @@ class PresetManager(ptk.LoggingMixin):
         state: Optional["StateManager"] = None,
         preset_dir: Optional[Path] = None,
         widgets: Optional[List[QtWidgets.QWidget]] = None,
+        log_level: str = "WARNING",
     ):
         super().__init__()
-        self.logger.setLevel("WARNING")
+        self.set_log_level(log_level)
         self.parent = parent
         self.state = state
         self._explicit_widgets = list(widgets) if widgets is not None else None

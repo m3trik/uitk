@@ -506,6 +506,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         if self.width() <= 0 or self.height() <= 0:
             return
 
+        # Don't persist geometry while the header has minimized the window
+        if self.property("_header_minimized"):
+            return
+
         geometry = self.saveGeometry()
         # Store QByteArray directly using the clean API
         self.settings.setByteArray("window_geometry", geometry)
@@ -636,6 +640,18 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     def showEvent(self, event) -> None:
         """Override the show event to initialize untracked widgets and restore their states."""
         if not self.is_initialized:
+            # Settle CollapsableGroup states BEFORE restoring window geometry.
+            # Groups are created with checked=True (expanded) and defer their
+            # persisted state via QTimer.singleShot(0).  If we restore geometry
+            # first, those timers fire later and re-apply collapse deltas to an
+            # already-correct window size, causing it to shrink.  By flushing
+            # them here with suppress_resize=True we let groups reach their
+            # correct visual state without fighting the geometry restore.
+            for group in self.findChildren(QtWidgets.QGroupBox):
+                enforce = getattr(group, "_enforce_state", None)
+                if callable(enforce):
+                    enforce(suppress_resize=True)
+
             if self.restore_window_size:
                 self.restore_window_geometry()
 
