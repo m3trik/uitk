@@ -238,6 +238,45 @@ class StateManager(ptk.LoggingMixin):
         self._defaults[widget] = value
         self.logger.debug(f"Set explicit default for {widget.objectName()}: {value}")
 
+    # ---- custom key/value persistence ------------------------------------
+
+    def save_custom(self, key: str, value: Any) -> None:
+        """Persist an arbitrary key/value pair through QSettings.
+
+        Use this for non-widget data that needs to survive between sessions
+        (e.g. splitter sizes, column widths, last-used paths).
+
+        Values are JSON-encoded when they are lists, dicts, or tuples.
+        Primitive types (int, float, str, bool) are stored directly.
+        """
+        if self._save_suppressed:
+            return
+        if isinstance(value, (dict, list, tuple)):
+            value = json.dumps(value)
+        elif not isinstance(value, (int, float, str, bool)):
+            self.logger.debug(f"Unsupported type for custom key {key}: {type(value)}")
+            return
+        self.qsettings.setValue(f"custom/{key}", value)
+
+    def load_custom(self, key: str, default: Any = None) -> Any:
+        """Retrieve a previously stored custom key/value pair.
+
+        Returns *default* if the key has never been set.
+        """
+        value = self.qsettings.value(f"custom/{key}", default)
+        if value == "None":
+            return default
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                return value
+        return value
+
+    def clear_custom(self, key: str) -> None:
+        """Remove a single custom key from storage."""
+        self.qsettings.remove(f"custom/{key}")
+
 
 # -----------------------------------------------------------------------------
 

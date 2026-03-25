@@ -231,7 +231,6 @@ class ExampleSlots:
         """Setup header buttons and menu."""
         widget.config_buttons("menu", "minimize", "maximize", "hide")
         # Build settings menu - items are accessible as widget.menu.objectName
-        widget.menu.setTitle("SETTINGS")
         widget.menu.add(
             "QComboBox", setObjectName="cmb_theme", addItems=["Dark", "Light"]
         )
@@ -357,7 +356,6 @@ class ExampleSlots:
 
         # Add right-click context menu using MenuMixin
         widget.menu.trigger_button = "right"
-        widget.menu.setTitle("TREE ACTIONS")
         widget.menu.add("QPushButton", setText="Expand All", setObjectName="btn_expand")
         widget.menu.add(
             "QPushButton", setText="Collapse All", setObjectName="btn_collapse"
@@ -724,13 +722,12 @@ class ExampleSlots:
     # =========================================================================
 
     def button_a_init(self, widget):
-        widget.menu.setTitle("OPTIONS")
+        pass
 
     def button_a(self):
         pass
 
     def button_b_init(self, widget):
-        widget.menu.setTitle("OPTIONS")
         widget.menu.add(
             "QRadioButton", setText="Option 1", setObjectName="opt1", setChecked=True
         )

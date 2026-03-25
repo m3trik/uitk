@@ -39,21 +39,29 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             return
         self._state_enforced = True
 
+        target_checked = self.isChecked()
+
         if self.restore_state and self.objectName():
             key = f"CollapsableGroup/{self.objectName()}/checked"
             val = self.settings.value(key)
             if val is not None:
+                target_checked = val
                 # Block signals so setChecked doesn't trigger toggle_expand
                 # via toggled signal (we call it explicitly below).
                 self.blockSignals(True)
                 self.setChecked(val)
                 self.blockSignals(False)
 
-        self._suppress_window_resize = suppress_resize
-        try:
-            self.toggle_expand(self.isChecked())
-        finally:
-            self._suppress_window_resize = False
+        # Only toggle if state needs to change from the default (expanded).
+        # Groups start expanded with content visible; re-applying expand
+        # is wasteful and causes sizeHint-driven growth because sizeHint
+        # can overpredict the actual rendered height.
+        if not target_checked:
+            self._suppress_window_resize = suppress_resize
+            try:
+                self.toggle_expand(False)
+            finally:
+                self._suppress_window_resize = False
 
     def _collapsed_height(self):
         """Return the height to use when collapsed (title bar only)."""
@@ -77,18 +85,21 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         if checked:
             self.setMaximumHeight(16777215)  # Restore max height
             # Use the saved pre-collapse height if available, otherwise
-            # fall back to sizeHint.  This prevents drift when sizeHint
-            # is larger than the actual rendered height (e.g. window was
-            # smaller than the ideal size).
+            # fall back to sizeHint.  _expanded_height is kept (not
+            # consumed) so repeated toggle cycles reuse the same value,
+            # preventing progressive drift from sizeHint fallback.
             if self._expanded_height is not None:
                 new_group_height = self._expanded_height
-                self._expanded_height = None
             else:
                 new_group_height = super(CollapsableGroup, self).sizeHint().height()
         else:
-            # Remember the actual height before collapsing so expand can
-            # restore to exactly the same value.
-            self._expanded_height = old_group_height
+            # Remember the actual rendered height before collapsing so
+            # expand can restore to exactly the same value.  Skip saving
+            # during suppress_resize (first-show enforcement) because the
+            # widget hasn't been laid out yet and self.height() would be
+            # 0 or a default, corrupting the cached value.
+            if not self._suppress_window_resize:
+                self._expanded_height = old_group_height
             collapsed = self._collapsed_height()
             self.setMaximumHeight(collapsed)
             new_group_height = collapsed
@@ -98,11 +109,18 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         if self.parent():
             self.parent().updateGeometry()
 
-        # Force layout to recalculate minimum sizes before resizing
+        # Activate every layout from this widget up to the window so that
+        # minimum-size constraints propagate before we attempt to resize.
         delta = new_group_height - old_group_height
         if window and delta != 0:
-            if window.layout():
-                window.layout().activate()
+            w = self.parentWidget()
+            while w is not None:
+                wl = w.layout()
+                if wl:
+                    wl.activate()
+                if w is window:
+                    break
+                w = w.parentWidget()
             self._apply_window_resize(old_window_height, delta)
 
     def _apply_window_resize(self, old_window_height, delta):
@@ -112,7 +130,12 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         window = self.window()
         if not window:
             return
-        new_height = max(old_window_height + delta, window.minimumHeight())
+        new_height = old_window_height + delta
+        # Use minimumSizeHint (reflects the just-activated layout) rather
+        # than minimumHeight() which may still hold the stale pre-collapse
+        # constraint and would clamp the shrink to zero.
+        min_h = window.minimumSizeHint().height()
+        new_height = max(new_height, min_h)
         window.resize(window.width(), new_height)
 
     def _set_content_visible(self, visible):

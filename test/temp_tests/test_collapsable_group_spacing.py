@@ -26,6 +26,10 @@ class TestCollapsableGroupSpacing(unittest.TestCase):
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
     def setUp(self):
+        # Flush stale events from prior tests (shared QApplication).
+        for _ in range(10):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents)
+
         self.window = QtWidgets.QMainWindow()
         central = QtWidgets.QWidget()
         self.window.setCentralWidget(central)
@@ -113,6 +117,11 @@ class TestCollapsableGroupSpacing(unittest.TestCase):
         Bug: Each collapse/expand cycle could add extra pixels of space.
         Fixed: 2026-02-20
         """
+        # Settle the window with one full cycle first to absorb any
+        # initial layout jitter (style application, font metrics, etc.).
+        self.group.setChecked(False)
+        self._process()
+        self.group.setChecked(True)
         self._process()
         initial_height = self.window.height()
 

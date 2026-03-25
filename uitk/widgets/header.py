@@ -112,6 +112,8 @@ class Header(
                 self,
                 fixed_item_height=20,
                 hide_on_leave=True,
+                add_header=False,
+                add_footer=False,
                 add_defaults_button=False,
                 match_parent_width=False,
             )
@@ -300,6 +302,9 @@ class Header(
         # Save position before collapse (collapse_window saves size)
         self._saved_pos = window.pos()
 
+        # Save current pin state so we can restore it on un-minimize
+        self._pin_before_minimize = self.pinned
+
         # Collapse first (hides siblings, shrinks height)
         w = self.MINIMIZE_WIDTH
         if not self._collapsed:
@@ -309,6 +314,9 @@ class Header(
             window.setMinimumWidth(0)
             window.setMaximumWidth(w)
             window.resize(w, window.height())
+
+        # Pin the window so it resists hide requests (e.g. key_show_release)
+        self._set_pin_state(True)
 
         # Suppress geometry saves while minimized
         window.setProperty("_header_minimized", True)
@@ -323,10 +331,6 @@ class Header(
             screen = QtWidgets.QApplication.primaryScreen()
         avail = screen.availableGeometry()
         target = self._compute_minimize_position(window, avail, slot)
-
-        parent = window.parentWidget()
-        if parent:
-            target = parent.mapFromGlobal(target)
         window.move(target)
 
         # Update icon
@@ -341,6 +345,11 @@ class Header(
             return
 
         window = self.window()
+
+        # Restore pin state from before minimize
+        pin_before = getattr(self, "_pin_before_minimize", False)
+        self._set_pin_state(pin_before)
+        self._pin_before_minimize = False
 
         # Expand (restores siblings, height, width constraints)
         if self._collapsed:
@@ -377,12 +386,21 @@ class Header(
             QPoint: Target position in global coordinates.
         """
         m = self.MINIMIZE_MARGIN
+        # Use the known collapsed height rather than querying window.height(),
+        # which may not yet reflect the collapse if layout hasn't settled.
+        header_h = max(self.height(), self.sizeHint().height(), 20)
+        collapsed_h = header_h
+        parent = self.parent()
+        if parent and parent.layout():
+            margins = parent.layout().contentsMargins()
+            collapsed_h += margins.top() + margins.bottom()
+
         if self.MINIMIZE_STACK == "vertical":
             x = avail.left() + m
-            y = avail.bottom() - (window.height() + m) * (slot + 1)
+            y = avail.y() + avail.height() - collapsed_h * (slot + 1)
         else:  # horizontal
             x = avail.left() + m + (self.MINIMIZE_WIDTH + m) * slot
-            y = avail.bottom() - window.height() - m
+            y = avail.y() + avail.height() - collapsed_h
         return QtCore.QPoint(x, y)
 
     @classmethod
@@ -397,9 +415,6 @@ class Header(
                 screen = QtWidgets.QApplication.primaryScreen()
             avail = screen.availableGeometry()
             target = header._compute_minimize_position(window, avail, i)
-            parent = window.parentWidget()
-            if parent:
-                target = parent.mapFromGlobal(target)
             window.move(target)
 
     def toggle_maximize(self):
@@ -500,7 +515,6 @@ class Header(
             return
 
         window = self.window()
-        layout = self.parent().layout()
 
         # Save current size and size constraints
         self._saved_size = window.size()
@@ -509,9 +523,6 @@ class Header(
 
         # Hide all visible siblings recursively
         self._set_siblings_visibility(False)
-        QtWidgets.QApplication.processEvents()
-        if layout:
-            layout.activate()
 
         # Walk up hierarchy to window, saving and nuking minimum heights
         curr = self.parent()
@@ -522,27 +533,26 @@ class Header(
             curr = curr.parent()
 
         # Calculate exact required height based on header height + parent margins
-        new_height = self.height()
+        header_h = max(self.height(), self.sizeHint().height(), 20)
+        new_height = header_h
         parent = self.parent()
         if parent and parent.layout():
             margins = parent.layout().contentsMargins()
             new_height += margins.top() + margins.bottom()
 
-        # Anchor right edge when narrowing so buttons stay under the mouse
+        # Save position for right-edge anchoring
         if fixed_width is not None and fixed_width < window.width():
-            original_right = window.x() + window.width()
             self._collapse_saved_pos = window.pos()
 
-        # Collapse the window
-        window.setMinimumHeight(0)
+        # Use setFixedHeight to force the exact collapsed height.
+        # This overrides any layout size hints that might resist the resize.
+        w = fixed_width if fixed_width is not None else window.width()
+        window.setMinimumSize(0, 0)
+        window.setMaximumSize(16777215, 16777215)
+        window.setFixedHeight(new_height)
         if fixed_width is not None:
-            window.setMinimumWidth(0)
             window.setMaximumWidth(fixed_width)
             window.resize(fixed_width, new_height)
-        else:
-            # Resize height only, preserving current width
-            window.resize(window.width(), new_height)
-        window.setMaximumHeight(new_height)
 
         # Move window so the right edge stays in place
         if fixed_width is not None and self._collapse_saved_pos is not None:
@@ -566,7 +576,6 @@ class Header(
 
         # Restore visibility of siblings
         self._set_siblings_visibility(True)
-        QtWidgets.QApplication.processEvents()
 
         # Restore ancestor minimum heights
         for widget, min_h in self._saved_parent_min_heights.items():
@@ -577,9 +586,11 @@ class Header(
                     pass  # Widget might be deleted
         self._saved_parent_min_heights = {}
 
-        # Restore size constraints
+        # Restore size constraints (this also undoes setFixedHeight)
         if self._saved_min_size:
             window.setMinimumSize(self._saved_min_size)
+        else:
+            window.setMinimumSize(0, 0)
         if self._saved_max_size:
             window.setMaximumSize(self._saved_max_size)
         else:

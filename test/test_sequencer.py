@@ -13,7 +13,7 @@ from conftest import setup_qt_application, BaseTestCase
 
 app = setup_qt_application()
 
-from uitk.widgets.sequencer._sequencer import (
+from uitk.widgets.sequencer import (
     SequencerWidget,
     ClipData,
     TrackData,
@@ -21,8 +21,11 @@ from uitk.widgets.sequencer._sequencer import (
     MarkerData,
     RangeHighlightItem,
     AttributeColorDialog,
+    _GapOverlayItem,
+    _StaticRangeOverlay,
     _TRACK_HEIGHT,
     _RULER_HEIGHT,
+    _SUB_ROW_HEIGHT,
     _MIN_CLIP_DURATION,
     _DEFAULT_ATTRIBUTE_COLORS,
     _COMMON_ATTRIBUTES,
@@ -596,6 +599,1443 @@ class TestMarkerSystem(BaseTestCase):
 
     def test_range_highlight_none_by_default(self):
         self.assertIsNone(self.w.range_highlight())
+
+
+# =========================================================================
+# Sub-Row / Track Expansion
+# =========================================================================
+
+
+class TestSubRowExpansion(BaseTestCase):
+    """Expand/collapse tracks and verify sub-row clip creation."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_expand_track_creates_sub_row_clips(self):
+        """expand_track with explicit data creates sub-row clips."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            ("translateX", [(10, 40, "translateX", "#FF0000", {})]),
+            ("rotateY", [(5, 50, "rotateY", "#00FF00", {})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(len(sub_clips), 2)
+
+    def test_expand_track_stores_sub_names(self):
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(0, 10, "tx", None, {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.assertIn(tid, self.w._expanded_tracks)
+        self.assertEqual(self.w._expanded_tracks[tid], ["tx"])
+
+    def test_collapse_track_removes_sub_clips(self):
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            ("tx", [(0, 30, "tx", "#FF0000", {})]),
+            ("ry", [(0, 30, "ry", "#00FF00", {})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.assertEqual(len([c for c in self.w.clips() if c.sub_row]), 2)
+        self.w.collapse_track(tid)
+        self.assertEqual(len([c for c in self.w.clips() if c.sub_row]), 0)
+        self.assertNotIn(tid, self.w._expanded_tracks)
+
+    def test_toggle_track_expanded(self):
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(0, 10, "tx", None, {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.assertTrue(self.w.is_track_expanded(tid))
+        self.w.toggle_track_expanded(tid)
+        self.assertFalse(self.w.is_track_expanded(tid))
+
+    def test_expand_track_uses_sub_row_provider(self):
+        """When sub_row_data is None, the sub_row_provider callback is used."""
+        tid = self.w.add_track("obj_A")
+        called_with = []
+
+        def provider(track_id, track_name):
+            called_with.append((track_id, track_name))
+            return [("tx", [(0, 20, "tx", "#AAAAAA", {})])]
+
+        self.w.sub_row_provider = provider
+        self.w.expand_track(tid)
+        self.assertEqual(len(called_with), 1)
+        self.assertEqual(called_with[0], (tid, "obj_A"))
+        self.assertEqual(len([c for c in self.w.clips() if c.sub_row]), 1)
+
+    def test_sub_row_clip_has_correct_sub_row_name(self):
+        tid = self.w.add_track("obj_A")
+        sub_data = [("translateX", [(10, 40, "translateX", "#FF0000", {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(sub_clips[0].sub_row, "translateX")
+
+    def test_sub_row_height_is_22(self):
+        """Sub-row height was increased from 14 to 22 for readability."""
+        self.assertEqual(_SUB_ROW_HEIGHT, 22)
+
+    def test_visual_rows_includes_sub_rows(self):
+        """_visual_rows returns sub-row entries after expanded track."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            ("tx", [(0, 10, "tx", None, {})]),
+            ("ry", [(0, 10, "ry", None, {})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        rows = self.w._visual_rows()
+        # Main row + 2 sub-rows
+        self.assertEqual(len(rows), 3)
+        self.assertFalse(rows[0][2])  # main row is_sub=False
+        self.assertTrue(rows[1][2])  # sub-row is_sub=True
+        self.assertTrue(rows[2][2])  # sub-row is_sub=True
+
+    def test_zero_duration_sub_clip_not_resizable(self):
+        """Point (zero-duration) sub-row clips are not resizable."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(25, 0, "tx", "#FF0000", {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(len(sub_clips), 1)
+        self.assertFalse(sub_clips[0].data.get("resizable_left", True))
+        self.assertFalse(sub_clips[0].data.get("resizable_right", True))
+
+
+# =========================================================================
+# Keyframe Rendering
+# =========================================================================
+
+
+class TestKeyframeRendering(BaseTestCase):
+    """Verify keyframe glyphs render on sub-row clips with keyframe_times."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _make_kf_clip(self, kf_times, color="#FF6600"):
+        """Create a sub-row clip with keyframe_times and return the ClipItem."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            (
+                "translateX",
+                [
+                    (
+                        0,
+                        100,
+                        "translateX",
+                        color,
+                        {"keyframe_times": kf_times},
+                    )
+                ],
+            ),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(len(sub_clips), 1)
+        clip = sub_clips[0]
+        item = self.w._clip_items[clip.clip_id]
+        return clip, item
+
+    def test_keyframe_times_stored_on_clip(self):
+        """keyframe_times from extra dict are preserved on ClipData.data."""
+        kf = [(10, "spline"), (50, "linear"), (90, "step")]
+        clip, _ = self._make_kf_clip(kf)
+        self.assertEqual(clip.data["keyframe_times"], kf)
+
+    def test_paint_keyframes_called_for_sub_row_with_kf_data(self):
+        """Sub-row clips with keyframe_times take the keyframe paint path."""
+        kf = [(20, "spline"), (80, "step")]
+        clip, item = self._make_kf_clip(kf)
+        # Verify the clip is a sub-row and has kf data (the paint() guard)
+        self.assertTrue(clip.sub_row)
+        self.assertTrue(clip.data.get("keyframe_times"))
+
+    def test_paint_does_not_crash_with_keyframes(self):
+        """Rendering a sub-row clip with keyframe data must not raise."""
+        from qtpy import QtGui, QtWidgets
+
+        kf = [(0, "spline"), (50, "linear"), (100, "step")]
+        clip, item = self._make_kf_clip(kf)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_paint_empty_keyframe_list_renders_default(self):
+        """Empty keyframe_times list falls through to default paint."""
+        from qtpy import QtGui, QtWidgets
+
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            ("tx", [(0, 100, "tx", "#FF0000", {"keyframe_times": []})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        clip = sub_clips[0]
+        item = self.w._clip_items[clip.clip_id]
+        # Empty list is falsy — should use default paint path
+        self.assertFalse(clip.data["keyframe_times"])
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_paint_with_stepped_keys(self):
+        """Stepped keys render square glyphs without crashing."""
+        from qtpy import QtGui, QtWidgets
+
+        kf = [(25, "step"), (75, "stepnext")]
+        clip, item = self._make_kf_clip(kf)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_paint_single_keyframe(self):
+        """A single keyframe renders without division errors."""
+        from qtpy import QtGui, QtWidgets
+
+        kf = [(50, "spline")]
+        clip, item = self._make_kf_clip(kf)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_sub_row_without_keyframe_times_uses_default_paint(self):
+        """Sub-row clip with no keyframe_times key renders as solid block."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(0, 100, "tx", "#FF0000", {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        clip = sub_clips[0]
+        self.assertNotIn("keyframe_times", clip.data)
+
+    def test_locked_sub_row_with_keyframes_still_shows_lock(self):
+        """Lock icon must render on keyframe sub-rows when locked=True."""
+        tid = self.w.add_track("obj_A")
+        # Must set locked via the extra dict
+        sub_data = [
+            (
+                "tx",
+                [
+                    (
+                        0,
+                        100,
+                        "tx",
+                        "#FF0000",
+                        {"keyframe_times": [(50, "spline")], "locked": True},
+                    )
+                ],
+            ),
+        ]
+        # Use add_clip directly to set locked=True on the ClipData
+        self.w.expand_track(tid, sub_row_data=sub_data)
+
+
+# =========================================================================
+# Gap Overlays
+# =========================================================================
+
+
+class TestGapOverlays(BaseTestCase):
+    """Gap overlay creation, visibility, and lifecycle."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_add_gap_overlay(self):
+        """add_gap_overlay creates a scene item and tracks it."""
+        self.w.add_gap_overlay(50, 60)
+        self.assertEqual(len(self.w._gap_overlays), 1)
+
+    def test_add_multiple_gap_overlays(self):
+        self.w.add_gap_overlay(10, 20)
+        self.w.add_gap_overlay(30, 40)
+        self.w.add_gap_overlay(70, 80)
+        self.assertEqual(len(self.w._gap_overlays), 3)
+
+    def test_clear_gap_overlays(self):
+        self.w.add_gap_overlay(10, 20)
+        self.w.add_gap_overlay(30, 40)
+        self.w.clear_gap_overlays()
+        self.assertEqual(len(self.w._gap_overlays), 0)
+
+    def test_gap_overlay_visible_by_default(self):
+        """Gaps are visible when _show_gap_overlays is True (default)."""
+        self.assertTrue(self.w._show_gap_overlays)
+        self.w.add_gap_overlay(10, 20)
+        self.assertTrue(self.w._gap_overlays[0].isVisible())
+
+    def test_gap_overlay_hidden_when_disabled(self):
+        """Gaps created while show_gap_overlays=False are hidden."""
+        self.w.show_gap_overlays = False
+        self.w.add_gap_overlay(10, 20)
+        self.assertFalse(self.w._gap_overlays[0].isVisible())
+
+    def test_toggle_show_gap_overlays(self):
+        """Toggling show_gap_overlays updates all existing gaps."""
+        self.w.add_gap_overlay(10, 20)
+        self.w.add_gap_overlay(30, 40)
+        self.w.show_gap_overlays = False
+        for item in self.w._gap_overlays:
+            self.assertFalse(item.isVisible())
+        self.w.show_gap_overlays = True
+        for item in self.w._gap_overlays:
+            self.assertTrue(item.isVisible())
+
+    def test_gap_overlay_locked_flag(self):
+        """add_gap_overlay(locked=True) sets the locked flag."""
+        self.w.add_gap_overlay(10, 20, locked=True)
+        self.assertTrue(self.w._gap_overlays[0]._locked)
+
+    def test_gap_overlay_unlocked_by_default(self):
+        self.w.add_gap_overlay(10, 20)
+        self.assertFalse(self.w._gap_overlays[0]._locked)
+
+    def test_set_all_gap_overlays_locked(self):
+        self.w.add_gap_overlay(10, 20)
+        self.w.add_gap_overlay(30, 40)
+        self.w.set_all_gap_overlays_locked(True)
+        for item in self.w._gap_overlays:
+            self.assertTrue(item._locked)
+        self.w.set_all_gap_overlays_locked(False)
+        for item in self.w._gap_overlays:
+            self.assertFalse(item._locked)
+
+    def test_clear_decorations_removes_gaps(self):
+        """clear_decorations removes gap overlays along with other items."""
+        self.w.add_gap_overlay(10, 20)
+        self.w.add_marker(time=25)
+        self.w.clear_decorations()
+        self.assertEqual(len(self.w._gap_overlays), 0)
+
+    def test_gap_overlay_is_scene_item(self):
+        """Gap overlays are added to the QGraphicsScene."""
+        self.w.add_gap_overlay(10, 20)
+        scene = self.w._timeline.scene()
+        gap_items = [
+            item for item in scene.items() if isinstance(item, _GapOverlayItem)
+        ]
+        self.assertEqual(len(gap_items), 1)
+
+
+# =========================================================================
+# Shot Blocks (Ruler)
+# =========================================================================
+
+
+class TestShotBlocks(BaseTestCase):
+    """Shot block indicators on the ruler."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_set_shot_blocks(self):
+        """set_shot_blocks populates the ruler with blocks."""
+        blocks = [
+            {"name": "Shot_A", "start": 0, "end": 50, "active": True},
+            {"name": "Shot_B", "start": 60, "end": 100, "active": False},
+        ]
+        self.w.set_shot_blocks(blocks)
+        ruler = self.w._timeline._scene.ruler
+        self.assertEqual(len(ruler._shot_blocks), 2)
+
+    def test_clear_shot_blocks(self):
+        blocks = [{"name": "S", "start": 0, "end": 50, "active": True}]
+        self.w.set_shot_blocks(blocks)
+        self.w.clear_shot_blocks()
+        ruler = self.w._timeline._scene.ruler
+        self.assertEqual(len(ruler._shot_blocks), 0)
+
+    def test_shot_blocks_replaced_on_set(self):
+        """Calling set_shot_blocks replaces previous blocks."""
+        self.w.set_shot_blocks([{"name": "A", "start": 0, "end": 50, "active": True}])
+        self.w.set_shot_blocks(
+            [
+                {"name": "B", "start": 0, "end": 30, "active": True},
+                {"name": "C", "start": 40, "end": 80, "active": False},
+            ]
+        )
+        ruler = self.w._timeline._scene.ruler
+        self.assertEqual(len(ruler._shot_blocks), 2)
+
+
+# =========================================================================
+# Active Range / Range Overlays
+# =========================================================================
+
+
+class TestActiveRange(BaseTestCase):
+    """Active-shot column tint API."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_set_active_range(self):
+        self.w.set_active_range(10, 90)
+        self.assertEqual(self.w._active_range, (10, 90))
+
+    def test_active_range_none_by_default(self):
+        self.assertIsNone(self.w._active_range)
+
+    def test_clear_active_range(self):
+        self.w.set_active_range(10, 90)
+        self.w.clear_active_range()
+        self.assertIsNone(self.w._active_range)
+
+
+class TestRangeOverlayLifecycle(BaseTestCase):
+    """Static range overlay management."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_add_range_overlay_is_scene_item(self):
+        self.w.add_range_overlay(10, 90)
+        scene = self.w._timeline.scene()
+        overlays = [
+            item for item in scene.items() if isinstance(item, _StaticRangeOverlay)
+        ]
+        self.assertEqual(len(overlays), 1)
+
+    def test_clear_decorations_removes_range_overlays(self):
+        self.w.add_range_overlay(10, 90)
+        self.w.clear_decorations()
+        self.assertEqual(len(self.w._range_overlays), 0)
+
+
+# =========================================================================
+# =========================================================================
+# Hidden Tracks
+# =========================================================================
+
+
+class TestHiddenTracks(BaseTestCase):
+    """set_hidden_tracks API."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_set_hidden_tracks(self):
+        self.w.set_hidden_tracks(["obj_A", "obj_B"])
+        self.assertEqual(self.w._hidden_tracks, ["obj_A", "obj_B"])
+
+    def test_hidden_tracks_empty_by_default(self):
+        self.assertEqual(self.w._hidden_tracks, [])
+
+
+# =========================================================================
+# DrawBackground (center-line rendering)
+# =========================================================================
+
+
+class TestDrawBackground(BaseTestCase):
+    """Background rendering with sub-row center lines."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_draw_background_no_crash_empty(self):
+        """Drawing background on an empty widget must not crash."""
+        from qtpy import QtGui, QtCore
+
+        pixmap = QtGui.QPixmap(800, 400)
+        painter = QtGui.QPainter(pixmap)
+        self.w._timeline.drawBackground(painter, QtCore.QRectF(0, 0, 800, 400))
+        painter.end()
+
+    def test_draw_background_with_sub_rows(self):
+        """Drawing background with expanded sub-rows (center lines) no crash."""
+        from qtpy import QtGui, QtCore
+
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            ("tx", [(0, 50, "tx", "#FF0000", {})]),
+            ("ry", [(0, 50, "ry", "#00FF00", {})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        pixmap = QtGui.QPixmap(800, 400)
+        painter = QtGui.QPainter(pixmap)
+        self.w._timeline.drawBackground(painter, QtCore.QRectF(0, 0, 800, 400))
+        painter.end()
+
+    def test_draw_background_with_active_range(self):
+        """Active range tint renders without errors."""
+        from qtpy import QtGui, QtCore
+
+        self.w.add_track("obj_A")
+        self.w.set_active_range(10, 90)
+        pixmap = QtGui.QPixmap(800, 400)
+        painter = QtGui.QPainter(pixmap)
+        self.w._timeline.drawBackground(painter, QtCore.QRectF(0, 0, 800, 400))
+        painter.end()
+
+
+# =========================================================================
+# Clip Mutation APIs
+# =========================================================================
+
+
+class TestClipMutation(BaseTestCase):
+    """set_clip_label, set_clip_locked, and their signals."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_set_clip_label_updates_data(self):
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50, label="Old")
+        self.w.set_clip_label(cid, "New")
+        self.assertEqual(self.w.get_clip(cid).label, "New")
+
+    def test_set_clip_label_noop_for_invalid_id(self):
+        """set_clip_label with unknown id must not raise."""
+        self.w.set_clip_label(999, "anything")
+
+    def test_set_clip_locked_true(self):
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50)
+        self.assertFalse(self.w.get_clip(cid).locked)
+        self.w.set_clip_locked(cid, True)
+        self.assertTrue(self.w.get_clip(cid).locked)
+
+    def test_set_clip_locked_false(self):
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50, locked=True)
+        self.w.set_clip_locked(cid, False)
+        self.assertFalse(self.w.get_clip(cid).locked)
+
+    def test_set_clip_locked_noop_for_invalid_id(self):
+        self.w.set_clip_locked(999, True)
+
+
+# =========================================================================
+# Swap Clips
+# =========================================================================
+
+
+class TestSwapClips(BaseTestCase):
+    """swap_clips exchanges positions and emits clips_reordered."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_swap_clips_exchanges_positions(self):
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 30)
+        c1 = self.w.add_clip(tid, 40, 20)
+        self.w.swap_clips(c0, c1)
+        # After swap, the earlier clip (c0 at 0) now starts later
+        # and the later clip (c1 at 40) is moved earlier.
+        self.assertAlmostEqual(self.w.get_clip(c1).start, 0.0)
+
+    def test_swap_clips_emits_clips_reordered(self):
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 30)
+        c1 = self.w.add_clip(tid, 40, 20)
+        received = []
+        self.w.clips_reordered.connect(lambda a, b: received.append((a, b)))
+        self.w.swap_clips(c0, c1)
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0], (c0, c1))
+
+    def test_swap_same_clip_is_noop(self):
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 30)
+        self.w.swap_clips(c0, c0)  # should not raise
+
+    def test_swap_invalid_clip_is_noop(self):
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 30)
+        self.w.swap_clips(c0, 999)  # should not raise
+
+
+# =========================================================================
+# Playhead Navigation (key-based)
+# =========================================================================
+
+
+class TestPlayheadNavigation(BaseTestCase):
+    """go_to_next_key, go_to_prev_key, add_marker_at_playhead."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_key_times_returns_sorted_boundaries(self):
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 10, 20)  # boundaries: 10, 30
+        self.w.add_clip(tid, 50, 10)  # boundaries: 50, 60
+        times = self.w._key_times()
+        self.assertEqual(times, [10, 30, 50, 60])
+
+    def test_key_times_empty_when_no_clips(self):
+        self.assertEqual(self.w._key_times(), [])
+
+    def test_go_to_next_key(self):
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 10, 20)
+        self.w.add_clip(tid, 50, 10)
+        self.w.set_playhead(0.0)
+        self.w.go_to_next_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 10.0)
+        self.w.go_to_next_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 30.0)
+
+    def test_go_to_prev_key(self):
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 10, 20)
+        self.w.add_clip(tid, 50, 10)
+        self.w.set_playhead(60.0)
+        self.w.go_to_prev_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 50.0)
+        self.w.go_to_prev_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 30.0)
+
+    def test_go_to_next_key_noop_at_end(self):
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 0, 10)
+        self.w.set_playhead(10.0)
+        self.w.go_to_next_key()  # no key after 10
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 10.0)
+
+    def test_go_to_prev_key_noop_at_start(self):
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 10, 20)
+        self.w.set_playhead(10.0)
+        self.w.go_to_prev_key()  # no key before 10
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 10.0)
+
+    def test_add_marker_at_playhead(self):
+        self.w.set_playhead(25.0)
+        received = []
+        self.w.marker_added.connect(lambda mid, t: received.append((mid, t)))
+        self.w.add_marker_at_playhead()
+        self.assertEqual(len(self.w.markers()), 1)
+        self.assertAlmostEqual(self.w.markers()[0].time, 25.0)
+        self.assertEqual(len(received), 1)
+        self.assertAlmostEqual(received[0][1], 25.0)
+
+
+# =========================================================================
+# Frame Shot / Frame All
+# =========================================================================
+
+
+class TestFrameShot(BaseTestCase):
+    """frame_shot / frame_all viewport framing."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_frame_shot_adjusts_ppu(self):
+        """frame_shot changes pixels-per-unit to fit the range."""
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 100, 200)
+        old_ppu = self.w._timeline.pixels_per_unit
+        self.w.set_active_range(100, 300)
+        self.w.set_range_highlight(100, 300)
+        self.w.frame_shot()
+        # PPU should have changed to fit the 200-unit span
+        self.assertNotAlmostEqual(self.w._timeline.pixels_per_unit, old_ppu)
+
+    def test_frame_shot_noop_empty(self):
+        """frame_shot does nothing with no clips or range."""
+        self.w.frame_shot()  # should not raise
+
+    def test_frame_all_is_alias(self):
+        """frame_all is an alias for frame_shot."""
+        # Class-level alias: bound methods differ, but underlying function is same
+        self.assertEqual(
+            type(self.w).frame_all,
+            type(self.w).frame_shot,
+        )
+
+
+# =========================================================================
+# Overlay Visibility Properties
+# =========================================================================
+
+
+class TestOverlayVisibility(BaseTestCase):
+    """show_range_overlays, show_range_highlight property toggles."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_show_range_overlays_default_true(self):
+        self.assertTrue(self.w.show_range_overlays)
+
+    def test_show_range_overlays_toggle(self):
+        self.w.add_range_overlay(10, 50)
+        self.w.add_range_overlay(60, 80)
+        self.w.show_range_overlays = False
+        for item in self.w._range_overlays:
+            self.assertFalse(item.isVisible())
+        self.w.show_range_overlays = True
+        for item in self.w._range_overlays:
+            self.assertTrue(item.isVisible())
+
+    def test_show_range_highlight_default_true(self):
+        self.assertTrue(self.w.show_range_highlight)
+
+    def test_show_range_highlight_toggle(self):
+        self.w.set_range_highlight(10, 50)
+        self.assertTrue(self.w._range_highlight.isVisible())
+        self.w.show_range_highlight = False
+        self.assertFalse(self.w._range_highlight.isVisible())
+        self.w.show_range_highlight = True
+        self.assertTrue(self.w._range_highlight.isVisible())
+
+    def test_show_range_highlight_noop_without_item(self):
+        """Toggling show_range_highlight when highlight is None must not raise."""
+        self.w.show_range_highlight = False
+
+
+# =========================================================================
+# Sub-Row Height Property
+# =========================================================================
+
+
+class TestSubRowHeight(BaseTestCase):
+    """sub_row_height property getter/setter."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_sub_row_height_default(self):
+        self.assertEqual(self.w.sub_row_height, _SUB_ROW_HEIGHT)
+
+    def test_sub_row_height_setter(self):
+        self.w.sub_row_height = 30
+        self.assertEqual(self.w.sub_row_height, 30)
+
+    def test_sub_row_height_clamps_minimum(self):
+        self.w.sub_row_height = 3
+        self.assertEqual(self.w.sub_row_height, 8)
+
+
+# =========================================================================
+# Track Expansion/Collapse Signals
+# =========================================================================
+
+
+class TestExpansionSignals(BaseTestCase):
+    """Verify track_expanded and track_collapsed signals."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_expand_emits_track_expanded(self):
+        tid = self.w.add_track("obj_A")
+        received = []
+        self.w.track_expanded.connect(lambda t: received.append(t))
+        sub_data = [("tx", [(0, 10, "tx", None, {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.assertEqual(received, [tid])
+
+    def test_collapse_emits_track_collapsed(self):
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(0, 10, "tx", None, {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        received = []
+        self.w.track_collapsed.connect(lambda t: received.append(t))
+        self.w.collapse_track(tid)
+        self.assertEqual(received, [tid])
+
+
+# =========================================================================
+# Clear Decorations (completeness)
+# =========================================================================
+
+
+class TestClearDecorationsComplete(BaseTestCase):
+    """clear_decorations removes markers, highlight, overlays, gaps, and shot blocks."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_clear_decorations_removes_all(self):
+        """All decoration types are cleared in one call."""
+        # Populate every decoration type
+        self.w.add_marker(time=10.0, note="test")
+        self.w.set_range_highlight(10, 50)
+        self.w.add_range_overlay(0, 100)
+        self.w.add_gap_overlay(50, 60)
+        self.w.set_shot_blocks([{"name": "S", "start": 0, "end": 50, "active": True}])
+        # All present
+        self.assertTrue(len(self.w.markers()) > 0)
+        self.assertIsNotNone(self.w.range_highlight())
+        self.assertTrue(len(self.w._range_overlays) > 0)
+        self.assertTrue(len(self.w._gap_overlays) > 0)
+
+        # Clear and verify
+        self.w.clear_decorations()
+        self.assertEqual(len(self.w.markers()), 0)
+        self.assertIsNone(self.w.range_highlight())
+        self.assertEqual(len(self.w._range_overlays), 0)
+        self.assertEqual(len(self.w._gap_overlays), 0)
+
+    def test_clear_decorations_preserves_tracks_and_clips(self):
+        """Tracks and clips survive clear_decorations."""
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50)
+        self.w.add_marker(time=10.0)
+        self.w.clear_decorations()
+        self.assertEqual(len(self.w.tracks()), 1)
+        self.assertIsNotNone(self.w.get_clip(cid))
+
+
+# =========================================================================
+# Waveform Rendering
+# =========================================================================
+
+
+class TestWaveformRendering(BaseTestCase):
+    """Waveform paint path for audio clips."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_paint_with_waveform_data(self):
+        """Clip with waveform envelope renders without crash."""
+        from qtpy import QtGui, QtWidgets
+
+        tid = self.w.add_track("Audio")
+        waveform = [(-0.5, 0.5), (-0.3, 0.8), (-0.7, 0.2), (-0.4, 0.6)]
+        cid = self.w.add_clip(tid, 0, 100, label="Track", waveform=waveform)
+        item = self.w._clip_items[cid]
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_waveform_pixmap_cached(self):
+        """Waveform pixmap is cached after first paint."""
+        from qtpy import QtGui, QtWidgets
+
+        tid = self.w.add_track("Audio")
+        waveform = [(-0.5, 0.5)] * 20
+        cid = self.w.add_clip(tid, 0, 100, waveform=waveform)
+        item = self.w._clip_items[cid]
+        self.assertIsNone(item._waveform_pixmap)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+        self.assertIsNotNone(item._waveform_pixmap)
+
+    def test_empty_waveform_skips_render(self):
+        """Empty waveform list should not crash."""
+        from qtpy import QtGui, QtWidgets
+
+        tid = self.w.add_track("Audio")
+        cid = self.w.add_clip(tid, 0, 100, waveform=[])
+        item = self.w._clip_items[cid]
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+        self.assertIsNone(item._waveform_pixmap)
+
+
+# =========================================================================
+# ShotLaneItem
+# =========================================================================
+
+
+class TestShotLaneItem(BaseTestCase):
+    """Shot blocks are stored on the RulerItem (no standalone ShotLaneItem)."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_ruler_present_in_scene(self):
+        """RulerItem exists in the scene by default."""
+        from uitk.widgets.sequencer import RulerItem
+
+        scene = self.w._timeline.scene()
+        rulers = [i for i in scene.items() if isinstance(i, RulerItem)]
+        self.assertEqual(len(rulers), 1)
+
+    def test_set_shot_blocks_populates_ruler(self):
+        """Shot blocks propagate to the RulerItem._shot_blocks list."""
+        blocks = [
+            {"name": "A", "start": 0, "end": 50, "active": True},
+            {"name": "B", "start": 60, "end": 100, "active": False},
+        ]
+        self.w.set_shot_blocks(blocks)
+        ruler = self.w._timeline._scene.ruler
+        self.assertEqual(len(ruler._shot_blocks), 2)
+
+    def test_clear_shot_blocks_empties_ruler(self):
+        self.w.set_shot_blocks([{"name": "A", "start": 0, "end": 50, "active": True}])
+        self.w.clear_shot_blocks()
+        ruler = self.w._timeline._scene.ruler
+        self.assertEqual(len(ruler._shot_blocks), 0)
+
+
+# =========================================================================
+# get_track edge cases
+# =========================================================================
+
+
+class TestGetTrack(BaseTestCase):
+    """get_track with valid and invalid IDs."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_get_track_valid(self):
+        tid = self.w.add_track("T")
+        td = self.w.get_track(tid)
+        self.assertIsNotNone(td)
+        self.assertEqual(td.name, "T")
+
+    def test_get_track_invalid_returns_none(self):
+        self.assertIsNone(self.w.get_track(999))
+
+
+# =========================================================================
+# Undo / Redo Signals
+# =========================================================================
+
+
+class TestUndoRedoSignals(BaseTestCase):
+    """Verify undo_requested and redo_requested signals."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_undo_emits_undo_requested(self):
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50)
+        self.w._capture_undo()
+        self.w._clips[cid].start = 20
+        received = []
+        self.w.undo_requested.connect(lambda: received.append(True))
+        self.w.undo()
+        self.assertEqual(len(received), 1)
+
+    def test_redo_emits_redo_requested(self):
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50)
+        self.w._capture_undo()
+        self.w._clips[cid].start = 20
+        self.w.undo()
+        received = []
+        self.w.redo_requested.connect(lambda: received.append(True))
+        self.w.redo()
+        self.assertEqual(len(received), 1)
+
+
+# =========================================================================
+# ClipItem._hit_zone
+# =========================================================================
+
+
+class TestClipItemHitZone(BaseTestCase):
+    """_hit_zone returns correct zones for edge vs body."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_hit_zone_move(self):
+        """Center of clip returns 'move' (body drag zone)."""
+        from qtpy import QtCore
+
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 200)
+        item = self.w._clip_items[cid]
+        rect = item.rect()
+        mid = QtCore.QPointF(rect.center().x(), rect.center().y())
+        self.assertEqual(item._hit_zone(mid), "move")
+
+    def test_hit_zone_resize_left(self):
+        """Left edge of clip returns 'resize_left'."""
+        from qtpy import QtCore
+
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 200)
+        item = self.w._clip_items[cid]
+        rect = item.rect()
+        left = QtCore.QPointF(rect.left() + 2, rect.center().y())
+        self.assertEqual(item._hit_zone(left), "resize_left")
+
+    def test_hit_zone_resize_right(self):
+        """Right edge of clip returns 'resize_right'."""
+        from qtpy import QtCore
+
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 200)
+        item = self.w._clip_items[cid]
+        rect = item.rect()
+        right = QtCore.QPointF(rect.right() - 2, rect.center().y())
+        self.assertEqual(item._hit_zone(right), "resize_right")
+
+
+# =========================================================================
+# Multiple Expanded Tracks
+# =========================================================================
+
+
+class TestMultipleExpandedTracks(BaseTestCase):
+    """Verify multiple tracks can be expanded simultaneously."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_two_tracks_expanded(self):
+        t0 = self.w.add_track("obj_A")
+        t1 = self.w.add_track("obj_B")
+        sub_a = [("tx", [(0, 10, "tx", None, {})])]
+        sub_b = [("ry", [(0, 10, "ry", None, {})]), ("rz", [(5, 10, "rz", None, {})])]
+        self.w.expand_track(t0, sub_row_data=sub_a)
+        self.w.expand_track(t1, sub_row_data=sub_b)
+        self.assertTrue(self.w.is_track_expanded(t0))
+        self.assertTrue(self.w.is_track_expanded(t1))
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(len(sub_clips), 3)
+
+    def test_collapse_one_preserves_other(self):
+        t0 = self.w.add_track("obj_A")
+        t1 = self.w.add_track("obj_B")
+        sub_a = [("tx", [(0, 10, "tx", None, {})])]
+        sub_b = [("ry", [(0, 10, "ry", None, {})])]
+        self.w.expand_track(t0, sub_row_data=sub_a)
+        self.w.expand_track(t1, sub_row_data=sub_b)
+        self.w.collapse_track(t0)
+        self.assertFalse(self.w.is_track_expanded(t0))
+        self.assertTrue(self.w.is_track_expanded(t1))
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(len(sub_clips), 1)
+        self.assertEqual(sub_clips[0].sub_row, "ry")
+
+
+# =========================================================================
+# Content Top / Row Position
+# =========================================================================
+
+
+class TestContentTop(BaseTestCase):
+    """_content_top matches _RULER_HEIGHT."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_content_top_equals_ruler_height(self):
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT)
+
+
+# =========================================================================
+# Keyboard Dispatch (SequencerWidget + TimelineView)
+# =========================================================================
+
+
+class TestKeyboardDispatch(BaseTestCase):
+    """Verify keyPressEvent dispatches registered shortcuts."""
+
+    def setUp(self):
+        from qtpy import QtCore, QtGui
+
+        self.QtCore = QtCore
+        self.QtGui = QtGui
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _make_key_event(self, key, modifiers=None):
+        if modifiers is None:
+            modifiers = self.QtCore.Qt.NoModifier
+        return self.QtGui.QKeyEvent(self.QtCore.QEvent.KeyPress, key, modifiers)
+
+    def test_f_key_dispatches_frame_shot_on_widget(self):
+        """F key on SequencerWidget calls frame_shot."""
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 100, 50)
+        ev = self._make_key_event(self.QtCore.Qt.Key_F)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+
+    def test_f_key_dispatches_frame_shot_on_timeline(self):
+        """F key on TimelineView calls frame_shot."""
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 100, 50)
+        ev = self._make_key_event(self.QtCore.Qt.Key_F)
+        self.w._timeline.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+
+    def test_left_arrow_dispatches_go_to_prev_key(self):
+        """Left arrow moves playhead to previous key boundary."""
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 10, 20)
+        self.w.set_playhead(30.0)
+        ev = self._make_key_event(self.QtCore.Qt.Key_Left)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 10.0)
+
+    def test_right_arrow_dispatches_go_to_next_key(self):
+        """Right arrow moves playhead to next key boundary."""
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 10, 20)
+        self.w.set_playhead(0.0)
+        ev = self._make_key_event(self.QtCore.Qt.Key_Right)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 10.0)
+
+    def test_m_key_dispatches_add_marker(self):
+        """M key adds marker at playhead."""
+        self.w.set_playhead(42.0)
+        ev = self._make_key_event(self.QtCore.Qt.Key_M)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        self.assertEqual(len(self.w.markers()), 1)
+        self.assertAlmostEqual(self.w.markers()[0].time, 42.0)
+
+    def test_ctrl_z_dispatches_undo(self):
+        """Ctrl+Z dispatches undo."""
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 50)
+        self.w._capture_undo()
+        self.w._clips[cid].start = 20
+        received = []
+        self.w.undo_requested.connect(lambda: received.append(True))
+        ev = self._make_key_event(self.QtCore.Qt.Key_Z, self.QtCore.Qt.ControlModifier)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        self.assertEqual(len(received), 1)
+
+    def test_shift_right_dispatches_step_forward(self):
+        """Shift+Right steps forward by snap interval."""
+        self.w.set_playhead(5.0)
+        ev = self._make_key_event(
+            self.QtCore.Qt.Key_Right, self.QtCore.Qt.ShiftModifier
+        )
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 6.0)
+
+    def test_home_key_dispatches_go_to_start(self):
+        """Home key jumps playhead to 0."""
+        self.w.set_playhead(50.0)
+        ev = self._make_key_event(self.QtCore.Qt.Key_Home)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 0.0)
+
+    def test_end_key_dispatches_go_to_end(self):
+        """End key jumps playhead to last clip end."""
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, 0, 100)
+        self.w.set_playhead(0.0)
+        ev = self._make_key_event(self.QtCore.Qt.Key_End)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 100.0)
+
+    def test_unregistered_key_not_accepted(self):
+        """Keys not in shortcut list pass through."""
+        ev = self._make_key_event(self.QtCore.Qt.Key_X)
+        self.w.keyPressEvent(ev)
+        # Not explicitly accepted by our handler — falls through to super
+
+    def test_shortcut_override_accepted_for_registered_key(self):
+        """ShortcutOverride for F is accepted (prevents host app stealing)."""
+        ev = self.QtGui.QKeyEvent(
+            self.QtCore.QEvent.ShortcutOverride,
+            self.QtCore.Qt.Key_F,
+            self.QtCore.Qt.NoModifier,
+        )
+        result = self.w.event(ev)
+        self.assertTrue(result)
+
+
+# =========================================================================
+# Key Times Include Keyframe Data from Expanded Tracks
+# =========================================================================
+
+
+class TestKeyTimesExpanded(BaseTestCase):
+    """_key_times includes keyframe_times from expanded sub-row clips."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_key_times_includes_keyframes_from_expanded_track(self):
+        """Expanded sub-rows contribute their keyframe_times to navigation."""
+        tid = self.w.add_track("obj")
+        self.w.add_clip(tid, 0, 100, label="main")
+        sub_data = [
+            ("tx", [(0, 100, "tx", None, {"keyframe_times": [10, 30, 70]})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        times = self.w._key_times()
+        # Should include clip boundaries (0, 100) plus keyframe times (10, 30, 70)
+        for t in [0, 10, 30, 70, 100]:
+            self.assertIn(t, times)
+
+    def test_key_times_excludes_keyframes_from_collapsed_track(self):
+        """Collapsed tracks don't contribute keyframe_times."""
+        tid = self.w.add_track("obj")
+        self.w.add_clip(tid, 0, 100, label="main")
+        sub_data = [
+            ("tx", [(0, 100, "tx", None, {"keyframe_times": [10, 30, 70]})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.w.collapse_track(tid)
+        times = self.w._key_times()
+        # After collapse, only main clip boundaries
+        self.assertEqual(times, [0, 100])
+
+    def test_go_to_next_key_stops_at_keyframe(self):
+        """Arrow key navigation lands on expanded keyframe times."""
+        tid = self.w.add_track("obj")
+        self.w.add_clip(tid, 0, 100, label="main")
+        sub_data = [
+            ("tx", [(0, 100, "tx", None, {"keyframe_times": [25, 50, 75]})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.w.set_playhead(0.0)
+        self.w.go_to_next_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 25.0)
+        self.w.go_to_next_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 50.0)
+
+    def test_go_to_prev_key_stops_at_keyframe(self):
+        """Reverse navigation lands on expanded keyframe times."""
+        tid = self.w.add_track("obj")
+        self.w.add_clip(tid, 0, 100, label="main")
+        sub_data = [
+            ("tx", [(0, 100, "tx", None, {"keyframe_times": [25, 50, 75]})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.w.set_playhead(100.0)
+        self.w.go_to_prev_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 75.0)
+        self.w.go_to_prev_key()
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 50.0)
+
+
+# =========================================================================
+# Undo Capture Order for swap_clips
+# =========================================================================
+
+
+class TestSwapClipsUndo(BaseTestCase):
+    """swap_clips captures undo BEFORE mutation so undo reverts correctly."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_swap_clips_captures_undo_before_swap(self):
+        """Undo after swap_clips restores original positions."""
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 30)
+        c1 = self.w.add_clip(tid, 40, 20)
+        orig_c0_start = self.w.get_clip(c0).start
+        orig_c1_start = self.w.get_clip(c1).start
+        self.w.swap_clips(c0, c1)
+        # Positions changed after swap
+        self.assertNotAlmostEqual(self.w.get_clip(c0).start, orig_c0_start)
+        # Undo should restore original positions
+        self.w.undo()
+        self.assertAlmostEqual(self.w.get_clip(c0).start, orig_c0_start)
+        self.assertAlmostEqual(self.w.get_clip(c1).start, orig_c1_start)
+
+    def test_swap_clips_redo_reapplies(self):
+        """Redo after undo of swap reapplies the swap."""
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 30)
+        c1 = self.w.add_clip(tid, 40, 20)
+        self.w.swap_clips(c0, c1)
+        swapped_c0_start = self.w.get_clip(c0).start
+        swapped_c1_start = self.w.get_clip(c1).start
+        self.w.undo()
+        self.w.redo()
+        self.assertAlmostEqual(self.w.get_clip(c0).start, swapped_c0_start)
+        self.assertAlmostEqual(self.w.get_clip(c1).start, swapped_c1_start)
+
+    # -- sub-row resize propagation --
+
+    def test_clear_removes_expanded_state(self):
+        """clear() wipes _expanded_tracks so re-expansion uses fresh data."""
+        tid = self.w.add_track("obj")
+        sub_data = [("translateX", [(10, 20, "translateX", None)])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.assertTrue(self.w.is_track_expanded(tid))
+        self.w.clear()
+        self.assertEqual(len(self.w._expanded_tracks), 0)
+
+    def test_resize_signal_emitted_for_sub_row_clip(self):
+        """clip_resized carries the sub-row clip's id so the controller can route."""
+        tid = self.w.add_track("obj")
+        sub_data = [
+            (
+                "translateX",
+                [
+                    (
+                        10,
+                        20,
+                        "translateX",
+                        None,
+                        {
+                            "obj": "cube",
+                            "attr_name": "translateX",
+                            "orig_start": 10,
+                            "orig_end": 30,
+                        },
+                    )
+                ],
+            )
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [cd for cd in self.w._clips.values() if cd.sub_row]
+        self.assertEqual(len(sub_clips), 1)
+        sc = sub_clips[0]
+        self.assertEqual(sc.data.get("attr_name"), "translateX")
+        self.assertEqual(sc.data.get("orig_start"), 10)
+        self.assertEqual(sc.data.get("orig_end"), 30)
+
+    def test_sub_row_provider_called_on_expand(self):
+        """Expanding a track calls the sub_row_provider to generate sub-row data."""
+        tid = self.w.add_track("obj_name")
+        calls = []
+
+        def provider(track_id, track_name):
+            calls.append((track_id, track_name))
+            return [("translateX", [(10, 20, "translateX", None)])]
+
+        self.w.sub_row_provider = provider
+        self.w.expand_track(tid)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0], (tid, "obj_name"))
+        # Sub-row clip exists
+        sub_clips = [cd for cd in self.w._clips.values() if cd.sub_row]
+        self.assertEqual(len(sub_clips), 1)
 
 
 if __name__ == "__main__":

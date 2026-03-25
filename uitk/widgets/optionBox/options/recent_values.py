@@ -67,7 +67,7 @@ class RecentValuesPopup(QtCore.QObject):
     Shows a list of previously used values that can be clicked to restore.
     """
 
-    _MAX_DISPLAY_LENGTH = 60
+    _MAX_DISPLAY_LENGTH = 120
 
     def __init__(self, parent=None, text_align="center"):
         super().__init__(parent)
@@ -87,6 +87,9 @@ class RecentValuesPopup(QtCore.QObject):
             match_parent_width=False,
         )
         self._menu.setMinimumWidth(150)
+        menu_layout = self._menu.layout
+        if menu_layout:
+            menu_layout.setContentsMargins(1, 1, 1, 1)
 
         self._install_visibility_filters()
 

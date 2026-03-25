@@ -21,14 +21,19 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
         widget: The UI widget that will be displayed in the OptionBox container
     """
 
-    def __init__(self, wrapped_widget=None):
+    def __init__(self, wrapped_widget=None, order=None):
         """Initialize the option.
 
         Args:
             wrapped_widget: The widget this option will interact with (optional)
+            order: Explicit sort position (int). When set, overrides the
+                default type-based ordering used by OptionBox._sort_options.
+                Lower values appear first. Options without an explicit order
+                fall back to type-based grouping.
         """
         QtCore.QObject.__init__(self)
         self.wrapped_widget = wrapped_widget
+        self.order = order
         self._widget = None
 
     @property
@@ -100,6 +105,7 @@ class ButtonOption(BaseOption):
         tooltip=None,
         callback=None,
         checkable=False,
+        order=None,
     ):
         """Initialize the button option.
 
@@ -109,8 +115,9 @@ class ButtonOption(BaseOption):
             tooltip: Tooltip text for the button
             callback: Function to call when button is clicked
             checkable: If True, button toggles checked state (for popup menus)
+            order: Explicit sort position (int). See BaseOption.
         """
-        super().__init__(wrapped_widget)
+        super().__init__(wrapped_widget, order=order)
         self.icon = icon
         self.tooltip = tooltip
         self.callback = callback

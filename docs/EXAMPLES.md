@@ -529,7 +529,6 @@ The example demonstrates several key UITK features:
 ```python
 # Widget initialization
 def button_b_init(self, widget):
-    widget.menu.setTitle("OPTION MENU")
     widget.menu.add("QRadioButton", setObjectName="radio_a", setText="Option A", setChecked=True)
 
 # Signal override  

@@ -105,7 +105,8 @@ class _MenuDescriptor:
             "trigger_button": "right",
             "position": "cursorPos",
             "fixed_item_height": 20,
-            "add_header": True,
+            "add_header": False,
+            "add_footer": False,
             "match_parent_width": False,
         }
 

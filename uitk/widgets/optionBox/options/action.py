@@ -29,6 +29,7 @@ class ActionOption(ButtonOption):
         tooltip="Options",
         text=None,
         states=None,
+        order=None,
     ):
         """Initialize the action option.
 
@@ -42,12 +43,14 @@ class ActionOption(ButtonOption):
                 Each dict may contain 'icon', 'tooltip', and 'callback' keys.
                 When provided, clicking cycles through the states.
                 Per-state callbacks override the top-level callback.
+            order: Explicit sort position (int). See BaseOption.
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
             icon=icon,
             tooltip=tooltip,
             callback=lambda: self._handle_action(),
+            order=order,
         )
         self._action_handler = callback
         self._text = text

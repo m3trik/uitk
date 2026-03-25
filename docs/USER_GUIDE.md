@@ -278,7 +278,6 @@ Some UITK widgets support integrated menus:
 ```python
 def export_button_init(self, widget):
     """Setup button with menu options"""
-    widget.menu.setTitle("Export Options")
     widget.menu.add("QAction", setText="Export PDF", triggered=self.export_pdf)
     widget.menu.add("QAction", setText="Export Excel", triggered=self.export_excel)
 
