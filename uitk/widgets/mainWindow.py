@@ -18,6 +18,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     """Application main window with state persistence and child widget management."""
 
     on_show = QtCore.Signal()
+    on_first_show = QtCore.Signal()
     on_hide = QtCore.Signal()
     on_close = QtCore.Signal()
     on_focus_in = QtCore.Signal()
@@ -422,15 +423,18 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
             )
 
     def _add_child_refresh_on_show_signal(self, widget) -> None:
-        def refresh_if_not_first_show():
-            # Only refresh if initialized AND we've already shown at least once
+        def refresh_on_subsequent_show():
             if getattr(widget, "refresh_on_show", False):
-                if getattr(widget, "_is_not_first_show", False):
-                    widget.init_slot()
-                else:  # Mark as shown for the next time
-                    widget._is_not_first_show = True
+                widget.init_slot()
 
-        self.on_show.connect(refresh_if_not_first_show)
+        def enable_refresh():
+            self.on_show.connect(refresh_on_subsequent_show)
+
+        # Start refreshing only after the first show has completed.
+        if self.is_initialized:
+            self.on_show.connect(refresh_on_subsequent_show)
+        else:
+            self.on_first_show.connect(enable_refresh)
 
     def trigger_deferred(self) -> None:
         """Executes all deferred methods, in priority order. Any arguments passed to the deferred functions
@@ -669,6 +673,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         self.activateWindow()
 
         super().showEvent(event)
+        if not self.is_initialized:
+            self.on_first_show.emit()
         self.on_show.emit()
 
         self.is_initialized = True
@@ -709,7 +715,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         # This is necessary in embedded contexts because the OS window manager
         # may otherwise transfer focus to a different application when a
         # top-level tool window is hidden.
-        if self.parent():
+        # Skip parent raise when this hide was triggered by an auto-hide
+        # mechanism (e.g. mouse-leave timer) to prevent stealing z-order
+        # from sibling tool windows.
+        if self.parent() and not getattr(self, "_auto_hiding", False):
             parent_window = self.parent().window()
             if parent_window and parent_window.isVisible():
                 # Order matters: raise_() first brings window to front of Z-order,

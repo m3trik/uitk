@@ -24,6 +24,31 @@ class OptionBoxContainer(QtWidgets.QWidget):
         self._pass_through = enabled
         self._update_mask()
 
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QtCore.QEvent.EnabledChange:
+            self._sync_option_buttons_enabled()
+
+    def eventFilter(self, obj, event):
+        """Watch the wrapped widget for enabled-state changes."""
+        if event.type() == QtCore.QEvent.EnabledChange:
+            self._sync_option_buttons_enabled()
+        return super().eventFilter(obj, event)
+
+    def _sync_option_buttons_enabled(self):
+        """Sync option button enabled state with the wrapped widget."""
+        layout = self.layout()
+        if not layout or layout.count() < 2:
+            return
+        wrapped = layout.itemAt(0).widget()
+        if not wrapped:
+            return
+        enabled = wrapped.isEnabled() and self.isEnabled()
+        for i in range(1, layout.count()):
+            btn = layout.itemAt(i).widget()
+            if btn:
+                btn.setEnabled(enabled)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self._pass_through:
@@ -125,9 +150,16 @@ class OptionBox:
                 layout.addWidget(widget)
 
         self._update_sizing()
+        self.container._sync_option_buttons_enabled()
 
     def _sort_options(self):
-        """Sort options based on option_order."""
+        """Sort options based on explicit order or type-based option_order.
+
+        Options with an explicit ``order`` attribute (int) are sorted by that
+        value first.  Options without one fall back to the type-based grouping
+        defined by ``_option_order``.  Stable sort preserves insertion order
+        among options that share the same priority.
+        """
         from .options.action import MenuOption, ActionOption
         from .options.clear import ClearOption
         from .options.pin_values import PinValuesOption
@@ -140,7 +172,7 @@ class OptionBox:
         }
         _fallback = len(self._option_order)
 
-        def get_priority(option):
+        def _type_priority(option):
             for cls, key in _type_to_key.items():
                 if isinstance(option, cls):
                     try:
@@ -153,6 +185,12 @@ class OptionBox:
                 except ValueError:
                     return _fallback
             return _fallback + 1
+
+        def get_priority(option):
+            explicit = getattr(option, "order", None)
+            if explicit is not None:
+                return (0, explicit)
+            return (1, _type_priority(option))
 
         return sorted(self._options, key=get_priority)
 
@@ -331,6 +369,9 @@ class OptionBox:
             wrapped_widget.setMinimumHeight(h)
             container.adjustSize()
             self.container = container
+            # Propagate wrapped widget disabled state to option buttons
+            wrapped_widget.installEventFilter(container)
+            container._sync_option_buttons_enabled()
             container.show()
         finally:
             if parent:

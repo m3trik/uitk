@@ -126,6 +126,20 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
         self.mm._show_window(child)
         self.assertIsNot(child.parent(), self.mm)
 
+    def test_show_window_does_not_auto_pin(self):
+        """Standalone windows must NOT be auto-pinned on open.
+
+        Windows should hide when the activation key is released (unless
+        the user has explicitly pinned or minimized them).
+        Updated: 2025-07-17
+        """
+        child = QtWidgets.QMainWindow()
+        child._pinned = False
+        child.set_pinned = lambda v: setattr(child, "_pinned", v)
+        self.track_widget(child)
+        self.mm._show_window(child)
+        self.assertFalse(child._pinned)
+
     # ----- _transition_to_state guards -----
 
     def test_transition_blocked_when_hidden(self):
@@ -189,6 +203,30 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
         # Genuine re-press
         self.mm._on_activation_press()
         self.assertTrue(self.mm._activation_key_held)
+
+    def test_key_show_release_always_emitted(self):
+        """key_show_release is always emitted on activation release, even
+        after a standalone window open. This allows request_hide to close
+        unpinned standalone windows when the key is released.
+        Updated: 2025-07-17
+        """
+        received = []
+        self.mm.key_show_release.connect(lambda: received.append(True))
+
+        # After standalone window open
+        self.mm._standalone_suppress = True
+        self.mm._on_activation_release()
+        self.assertEqual(received, [True], "key_show_release should always fire")
+
+    def test_key_show_release_emitted_on_normal_release(self):
+        """key_show_release must still fire on a normal (non-standalone)
+        activation release."""
+        received = []
+        self.mm.key_show_release.connect(lambda: received.append(True))
+
+        self.mm._standalone_suppress = False
+        self.mm._on_activation_release()
+        self.assertEqual(received, [True])
 
 
 if __name__ == "__main__":

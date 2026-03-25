@@ -227,10 +227,21 @@ class MarkingMenu(
 
     def _on_activation_release(self):
         """Handle the global shortcut release event."""
-        self.logger.debug("_on_activation_release: Emitting key_show_release signal")
         self._activation_key_held = False
         self._standalone_suppress = False
+
+        self.logger.debug("_on_activation_release: Emitting key_show_release signal")
         self.key_show_release.emit()
+
+        # Direct backup: hide any visible standalone windows that aren't pinned.
+        # The signal connection (setup_lifecycle) should handle this, but we also
+        # iterate explicitly to cover cases where the connection wasn't established
+        # (e.g. widget recreated, signal disconnected, etc.).
+        for win in list(self.sb.visible_windows):
+            if win is not self and not win.has_tags(["startmenu", "submenu"]):
+                if hasattr(win, "request_hide"):
+                    win.request_hide()
+
         self.hide()
         QtCore.QTimer.singleShot(0, self.restore_other_windows)
 
@@ -1124,16 +1135,40 @@ class MarkingMenu(
         if widget.parent() is self:
             widget.setParent(self.parent(), QtCore.Qt.Window)
 
+        # When launched from another visible standalone window, reparent the
+        # target to it so Qt window-group management keeps the new window
+        # above the launching window.  Without this they are siblings and the
+        # OS can freely reorder them.
+        invoker = self.sb.current_ui
+        if (
+            invoker is not None
+            and invoker is not self
+            and invoker is not widget
+            and invoker.isVisible()
+            and not invoker.has_tags(["startmenu", "submenu"])
+            and widget.parent() is not invoker
+        ):
+            widget.setParent(invoker, QtCore.Qt.Window)
+
         # Clear activation state so _transition_to_state won't build a
         # lookup containing the activation key (e.g. "Key_F12" → startmenu).
         self._activation_key_held = False
         self._standalone_suppress = True
+        self._transitioning_to_window = True
         self.hide()
+        self._transitioning_to_window = False
 
         self.restore_other_windows()
 
         self.ui_handler.apply_styles(widget)
         self.ui_handler.show(widget, pos=pos or "cursor", force=force)
+
+        # Deferred raise: when super().hide() fires on the MarkingMenu, the
+        # OS implicitly gives focus back to the parent (sequencer) before
+        # ui_handler.show() can activate the target.  A zero-delay timer runs
+        # after all pending events settle, ensuring the target ends up on top.
+        QtCore.QTimer.singleShot(0, lambda w=widget: (w.raise_(), w.activateWindow()))
+
         return widget
 
     def hide(self):
@@ -1178,9 +1213,12 @@ class MarkingMenu(
         super().hide()
 
         parent = self.parentWidget()
-        if parent:
+        if parent and not getattr(self, "_transitioning_to_window", False):
             # Order matters: raise_() first brings window to front, then activateWindow()
             # gives it focus. Reversing this can cause the parent to go behind other apps.
+            # Skip when transitioning to a standalone window — the target window
+            # will raise itself via ui_handler.show(), and raising the parent here
+            # would steal z-order from it.
             parent.raise_()
             parent.activateWindow()
 

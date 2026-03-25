@@ -12,61 +12,19 @@ class LineEditFormatMixin:
     """Lazily formats QLineEdit with reversible visual state feedback.
 
     Provides ``set_action_color(key)`` / ``reset_action_color()`` for
-    signaling validation state.  Colors adapt automatically to light or
-    dark backgrounds.
+    signaling validation state.  Styling is driven by a ``actionState``
+    dynamic property and defined in style.qss.
     """
 
-    _LIGHT_COLORS = {
-        "valid": ("#3C8D3C", "#E6F4EA"),
-        "invalid": ("#B97A7A", "#FBEAEA"),
-        "warning": ("#B49B5C", "#FFF6DC"),
-        "info": ("#6D9BAA", "#E2F3F9"),
-        "inactive": ("#AAAAAA", None),
-    }
-    _DARK_COLORS = {
-        "valid": ("#A8D5A2", "#1E2E1E"),
-        "invalid": ("#E8A5A3", "#33201F"),
-        "warning": ("#E0C97F", "#332E20"),
-        "info": ("#A3CBE0", "#1E2E33"),
-        "inactive": ("#777777", None),
-    }
-
-    _original_fg = None
-    _original_bg = None
-
-    @property
-    def ACTION_COLOR_MAP(self):
-        """Return the color map matching the current palette brightness."""
-        self._cache_original_colors()
-        if self._original_bg:
-            from qtpy.QtGui import QColor
-
-            if QColor(self._original_bg).lightnessF() < 0.5:
-                return self._DARK_COLORS
-        return self._LIGHT_COLORS
-
     def set_action_color(self, key: str) -> None:
-        self._cache_original_colors()
-        fg, bg = self.ACTION_COLOR_MAP.get(key, (self._original_fg, self._original_bg))
-        fg = fg or self._original_fg
-        bg = bg or self._original_bg
-        self.setStyleSheet(f"QLineEdit {{ background-color: {bg}; color: {fg}; }}")
+        self.setProperty("actionState", key)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def reset_action_color(self) -> None:
-        self._cache_original_colors()
-        self.setStyleSheet(
-            f"QLineEdit {{ background-color: {self._original_bg}; color: {self._original_fg}; }}"
-        )
-
-    def _cache_original_colors(self) -> None:
-        if (
-            (self._original_fg is None or self._original_bg is None)
-            and self.isVisible()
-            and self.testAttribute(QtCore.Qt.WA_WState_Polished)
-        ):
-            pal = self.palette()
-            self._original_fg = pal.color(self.foregroundRole()).name()
-            self._original_bg = pal.color(self.backgroundRole()).name()
+        self.setProperty("actionState", None)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 class LineEdit(

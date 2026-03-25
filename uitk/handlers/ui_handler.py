@@ -200,10 +200,12 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
 
         if target_global:
             parent = ui.parentWidget()
-            if parent:
+            if parent and not ui.isWindow():
+                # Non-window child: move() uses parent-relative coords
                 target_local = parent.mapFromGlobal(target_global)
                 ui.move(target_local)
             else:
+                # Top-level or Qt.Window child: move() uses screen coords
                 ui.move(target_global)
 
             # Clamp to screen after final positioning

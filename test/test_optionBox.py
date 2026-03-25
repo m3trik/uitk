@@ -546,6 +546,74 @@ class TestPinnedValuesRowPadding(QtBaseTestCase):
         self.assertGreaterEqual(layout.spacing(), 4, "Spacing must be >= 4px")
 
 
+class TestOptionBoxDisabledState(QtBaseTestCase):
+    """Tests for disabled-state propagation to option buttons.
+
+    Feature: Option buttons should automatically disable when their
+    wrapped widget or container is disabled.
+    Added: 2026-03-23
+    """
+
+    def _make_wrapped(self):
+        """Create a LineEdit wrapped with a pin option button."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        pin = PinValuesOption(widget)
+        ob = OptionBox(options=[pin])
+        container = self.track_widget(ob.wrap(widget))
+        buttons = [
+            container.layout().itemAt(i).widget()
+            for i in range(1, container.layout().count())
+        ]
+        return widget, container, buttons
+
+    def test_buttons_enabled_by_default(self):
+        """Option buttons should be enabled when wrapped widget is enabled."""
+        widget, container, buttons = self._make_wrapped()
+        self.assertTrue(widget.isEnabled())
+        for btn in buttons:
+            self.assertTrue(btn.isEnabled(), "Button should be enabled by default")
+
+    def test_disable_wrapped_widget_disables_buttons(self):
+        """Disabling the wrapped widget should disable option buttons."""
+        widget, container, buttons = self._make_wrapped()
+        widget.setEnabled(False)
+        app.processEvents()
+        for btn in buttons:
+            self.assertFalse(btn.isEnabled(), "Button should be disabled")
+
+    def test_reenable_wrapped_widget_reenables_buttons(self):
+        """Re-enabling the wrapped widget should re-enable option buttons."""
+        widget, container, buttons = self._make_wrapped()
+        widget.setEnabled(False)
+        app.processEvents()
+        widget.setEnabled(True)
+        app.processEvents()
+        for btn in buttons:
+            self.assertTrue(btn.isEnabled(), "Button should be re-enabled")
+
+    def test_disable_container_disables_buttons(self):
+        """Disabling the container should disable option buttons."""
+        widget, container, buttons = self._make_wrapped()
+        container.setEnabled(False)
+        app.processEvents()
+        for btn in buttons:
+            self.assertFalse(btn.isEnabled(), "Button should be disabled")
+
+    def test_widget_disabled_at_wrap_time(self):
+        """Option buttons should be disabled if widget is already disabled before wrapping."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        widget.setEnabled(False)
+        pin = PinValuesOption(widget)
+        ob = OptionBox(options=[pin])
+        container = self.track_widget(ob.wrap(widget))
+        buttons = [
+            container.layout().itemAt(i).widget()
+            for i in range(1, container.layout().count())
+        ]
+        for btn in buttons:
+            self.assertFalse(btn.isEnabled(), "Button should be disabled at wrap time")
+
+
 # -----------------------------------------------------------------------------
 # Interactive Demo (Legacy)
 # -----------------------------------------------------------------------------

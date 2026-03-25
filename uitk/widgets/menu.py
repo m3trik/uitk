@@ -81,7 +81,8 @@ class MenuConfig:
             "trigger_button": "right",
             "position": "cursorPos",
             "fixed_item_height": 20,
-            "add_header": True,
+            "add_header": False,
+            "add_footer": False,
             "match_parent_width": False,
             "hide_on_leave": False,
         }
@@ -137,7 +138,8 @@ class _ActionButtonConfig:
 class ActionButtonManager:
     """Manages action buttons for Menu widgets.
 
-    Encapsulates all action button creation, configuration, and visibility management.
+    Uses a CollapsableGroup as the container so the actions section
+    can be collapsed/expanded by the user.
     """
 
     def __init__(self, menu_widget: QtWidgets.QWidget):
@@ -149,26 +151,30 @@ class ActionButtonManager:
         self.menu = menu_widget
         self._buttons: Dict[str, QtWidgets.QPushButton] = {}
         self._widgets: Dict[str, QtWidgets.QWidget] = {}
-        self._container: Optional[QtWidgets.QWidget] = None
+        self._container: Optional["CollapsableGroup"] = None
         self._layout: Optional[QtWidgets.QVBoxLayout] = None
-        self._separator: Optional[Separator] = None
 
     @property
     def container(self) -> QtWidgets.QWidget:
-        """Get or create the action button container widget."""
+        """Get or create the collapsible action button container."""
         if self._container is None:
-            self._container = QtWidgets.QWidget()
+            from uitk.widgets.collapsableGroup import CollapsableGroup
+
+            self._container = CollapsableGroup("Menu Actions")
             self._container.setObjectName("actionButtonContainer")
-            self._container.hide()
-            self._layout = QtWidgets.QVBoxLayout(self._container)
+            self._container.restore_state = False
+            self._layout = QtWidgets.QVBoxLayout()
             self._layout.setContentsMargins(0, 0, 0, 0)
             self._layout.setSpacing(1)
-
-            # Add separator with title to organize action buttons
-            self._separator = Separator(title="Menu Actions")
-            self._layout.addWidget(self._separator)
+            self._container.setLayout(self._layout)
 
         return self._container
+
+    # Backwards-compatible alias — old code that checked ``_separator``
+    # still works (always falsy, but won't AttributeError).
+    @property
+    def _separator(self):
+        return None
 
     def create_button(
         self, button_id: str, config: _ActionButtonConfig
@@ -202,13 +208,8 @@ class ActionButtonManager:
         button = self.create_button(button_id, config)
         _ = self.container  # Ensure container exists
 
-        # Adjust index to account for separator at top
-        final_index = index
-        if final_index >= 0 and self._separator:
-            final_index += 1
-
-        if final_index >= 0:
-            self._layout.insertWidget(final_index, button)
+        if index >= 0:
+            self._layout.insertWidget(index, button)
         else:
             self._layout.addWidget(button)
         return button
@@ -224,12 +225,8 @@ class ActionButtonManager:
         _ = self.container  # Ensure container exists
         self._widgets[widget_id] = widget
 
-        final_index = index
-        if final_index >= 0 and self._separator:
-            final_index += 1
-
-        if final_index >= 0:
-            self._layout.insertWidget(final_index, widget)
+        if index >= 0:
+            self._layout.insertWidget(index, widget)
         else:
             self._layout.addWidget(widget)
         return widget
@@ -260,8 +257,6 @@ class ActionButtonManager:
         if button:
             button.show()
             button.setVisible(True)
-            if self._separator:
-                self._separator.show()
             if self._container and not self._container.isVisible():
                 self._container.show()
                 self._container.setVisible(True)
@@ -302,17 +297,12 @@ class ActionButtonManager:
     has_visible_buttons = has_visible_items
 
     def _update_container_visibility(self):
-        """Hide container and separator when no items are visible."""
+        """Hide container when no items are visible."""
         if not self._container:
             return
-        has_visible = self.has_visible_items()
-        if has_visible:
-            if self._separator:
-                self._separator.show()
+        if self.has_visible_items():
             self._container.show()
         else:
-            if self._separator:
-                self._separator.hide()
             self._container.hide()
 
 
@@ -717,6 +707,181 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             ensure_on_screen=config.ensure_on_screen,
             **config.extra_attrs,
         )
+
+    @staticmethod
+    def run_modal(
+        content_fn,
+        parent=None,
+        title="",
+        buttons=None,
+        size=None,
+        min_size=None,
+        center=True,
+        **menu_kwargs,
+    ):
+        """Show a themed modal Menu popup, block until dismissed.
+
+        Handles all boilerplate: Menu creation with header/footer, button
+        wiring, ``QEventLoop`` blocking, and screen centering.  The caller
+        supplies a *content_fn* callback to populate the menu and a *buttons*
+        spec to define the action bar.
+
+        Parameters:
+            content_fn (callable): ``content_fn(menu, state)`` — called after
+                the Menu is constructed so the caller can add widgets via
+                ``menu.add()`` and store result data in *state*.
+            parent (QWidget, optional): Parent widget.  The menu is parented
+                to ``parent.window()`` to avoid layout side-effects.
+            title (str): Header title text.
+            buttons (dict or list, optional): Action buttons.  Accepts:
+
+                * **dict** ``{text: action}`` — ordered by insertion.
+                * **list of dicts** ``[{"text": ..., "action": ...,
+                  "callback": ..., "tooltip": ...}]`` for full control.
+
+                *action* may be ``"accept"`` (set accepted, close),
+                ``"reject"`` (close), or a ``callable(menu, state)`` for
+                fully custom behaviour (the callable decides whether to
+                close).  Defaults to ``{"OK": "accept", "Cancel": "reject"}``.
+
+                When *action* is ``"accept"`` or ``"reject"``, an optional
+                *callback* ``(menu, state) -> bool | None`` runs before
+                the default behaviour.  Returning ``False`` vetoes the
+                default (e.g. prevents closing on validation failure).
+            size (tuple[int, int], optional): Initial ``(width, height)``.
+            min_size (tuple[int, int], optional): Minimum ``(width, height)``.
+            center (bool): Centre the popup on the screen at the cursor.
+                Default ``True``.
+            **menu_kwargs: Extra keyword arguments forwarded to :class:`Menu`.
+
+        Returns:
+            dict or None: The *state* dict (with ``"accepted": True``) when
+            the user accepts, or ``None`` on rejection / dismissal.
+
+        Example::
+
+            def build(menu, state):
+                tree = QtWidgets.QTreeWidget()
+                menu.add(tree)
+                state["tree"] = tree
+
+            result = Menu.run_modal(
+                build,
+                parent=widget,
+                title="Pick Items",
+                buttons={"Import": "accept", "Cancel": "reject"},
+                size=(460, 440),
+            )
+            if result:
+                print(result["tree"].topLevelItemCount())
+        """
+        state: Dict[str, Any] = {"accepted": False}
+        loop = QtCore.QEventLoop()
+
+        top_parent = parent.window() if parent else None
+
+        defaults: Dict[str, Any] = dict(
+            trigger_button="none",
+            position="cursorPos",
+            add_header=True,
+            add_footer=True,
+            add_apply_button=False,
+            match_parent_width=False,
+            fixed_item_height=None,
+        )
+        defaults.update(menu_kwargs)
+
+        menu = Menu(parent=top_parent, name=title, **defaults)
+
+        if min_size:
+            menu.setMinimumSize(*min_size)
+        if size:
+            menu.resize(*size)
+
+        if menu.header:
+            menu.header.config_buttons("hide")
+            if title:
+                menu.header.setTitle(title)
+
+        # Let the caller populate the menu and configure state.
+        content_fn(menu, state)
+
+        # -- action buttons ------------------------------------------------
+        if buttons is None:
+            buttons = {"OK": "accept", "Cancel": "reject"}
+
+        if isinstance(buttons, dict):
+            button_list = [{"text": t, "action": a} for t, a in buttons.items()]
+        else:
+            button_list = list(buttons)
+
+        def _make_callback(act, m, s, custom_cb=None):
+            """Build a zero-arg callback compatible with Qt signal slots.
+
+            When *custom_cb* is provided alongside a standard action
+            (``"accept"`` / ``"reject"``), it runs first.  If it returns
+            ``False``, the default behaviour is skipped.
+            """
+            if act == "accept":
+
+                def _cb():
+                    if custom_cb is not None and custom_cb(m, s) is False:
+                        return
+                    s["accepted"] = True
+                    m.hide(force=True)
+
+            elif act == "reject":
+
+                def _cb():
+                    if custom_cb is not None and custom_cb(m, s) is False:
+                        return
+                    m.hide(force=True)
+
+            elif callable(act):
+
+                def _cb():
+                    act(m, s)
+
+            else:
+                raise ValueError(f"Invalid button action: {act!r}")
+            return _cb
+
+        for btn_spec in button_list:
+            text = btn_spec["text"]
+            action = btn_spec["action"]
+            tooltip = btn_spec.get("tooltip", "")
+            custom_cb = btn_spec.get("callback")
+
+            menu._button_manager.add_button(
+                text.lower().replace(" ", "_"),
+                _ActionButtonConfig(
+                    text=text,
+                    callback=_make_callback(action, menu, state, custom_cb),
+                    tooltip=tooltip,
+                    fixed_height=26,
+                ),
+            )
+
+        menu.centralWidgetLayout.addWidget(menu._button_manager.container)
+
+        # -- modal blocking ------------------------------------------------
+        menu.on_hidden.connect(loop.quit)
+        menu.show()
+
+        if center:
+            screen = QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+            if screen:
+                geo = screen.availableGeometry()
+                menu.move(
+                    geo.center().x() - menu.width() // 2,
+                    geo.center().y() - menu.height() // 2,
+                )
+
+        loop.exec_()
+
+        if not state["accepted"]:
+            return None
+        return state
 
     def _should_trigger(self, button: QtCore.Qt.MouseButton) -> bool:
         """Check if the given button should trigger the menu.
@@ -1727,8 +1892,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         # Show the container
         self._button_manager.container.show()
-        if self._button_manager._separator:
-            self._button_manager._separator.show()
 
     def _update_defaults_button_visibility(self):
         """Update defaults button visibility based on menu state."""

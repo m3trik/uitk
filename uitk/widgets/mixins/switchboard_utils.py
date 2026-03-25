@@ -529,8 +529,25 @@ class SwitchboardUtilsMixin:
 
         return result
 
-    def message_box(self, string, *buttons, location="topMiddle", timeout=3):
-        """Spawns a message box with the given text and optionally sets buttons."""
+    def message_box(
+        self,
+        string,
+        *buttons,
+        location="topMiddle",
+        timeout=3,
+        background_color="",
+    ):
+        """Spawns a message box with the given text and optionally sets buttons.
+
+        Parameters:
+            string: HTML text to display.
+            *buttons: Optional standard-button flags.  When provided the
+                box is modal (``exec_``); otherwise a passive popup.
+            location: Placement hint (default ``"topMiddle"``).
+            timeout: Auto-dismiss seconds (default 3).
+            background_color: Override the text background colour
+                (default uses the MessageBox's built-in dark grey).
+        """
         # Log text without HTML tags
         self.logger.info(f"# {re.sub('<.*?>', '', string)}")
 
@@ -540,7 +557,10 @@ class SwitchboardUtilsMixin:
             msg_box.location = location
             msg_box.timeout = timeout
             msg_box.setStandardButtons(*buttons)
-            msg_box.setText(string)
+            if background_color:
+                msg_box.setText(string, backgroundColor=background_color)
+            else:
+                msg_box.setText(string)
             return msg_box.exec_()
         else:
             # Safe to reuse for passive popups
@@ -549,7 +569,10 @@ class SwitchboardUtilsMixin:
 
             self._messageBox.location = location
             self._messageBox.timeout = timeout
-            self._messageBox.setText(string)
+            if background_color:
+                self._messageBox.setText(string, backgroundColor=background_color)
+            else:
+                self._messageBox.setText(string)
             self._messageBox.show()
             return None
 
@@ -833,6 +856,27 @@ class SwitchboardUtilsMixin:
                 )
 
         return self._gc_protect
+
+    @staticmethod
+    def modal_menu(content_fn, parent=None, **kwargs):
+        """Show a themed modal Menu popup, block until dismissed.
+
+        Convenience wrapper around :meth:`Menu.run_modal`.  See that method
+        for full parameter documentation.
+
+        Parameters:
+            content_fn (callable): ``content_fn(menu, state)`` — populate the
+                menu with widgets and store result data in *state*.
+            parent (QWidget, optional): Parent widget.
+            **kwargs: Forwarded to :meth:`Menu.run_modal` (``title``,
+                ``buttons``, ``size``, ``min_size``, ``center``, etc.).
+
+        Returns:
+            dict or None: The *state* dict on accept, ``None`` on reject.
+        """
+        from uitk.widgets.menu import Menu
+
+        return Menu.run_modal(content_fn, parent=parent, **kwargs)
 
 
 # --------------------------------------------------------------------------------------------

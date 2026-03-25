@@ -161,6 +161,8 @@ QAbstractButton:enabled {
 }
 QAbstractButton:disabled {
     color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 QAbstractButton:checked {
     background-color: {BUTTON_CHECKED};
@@ -333,6 +335,8 @@ QAbstractSpinBox {
 }
 QAbstractSpinBox:disabled {
     color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 QAbstractSpinBox:hover {
     border: 2px solid {BUTTON_HOVER};
@@ -376,9 +380,9 @@ QComboBox {
     min-width: 0em;
 }
 QComboBox:disabled {
-    background-color: {WIDGET_BACKGROUND};
     color: {TEXT_DISABLED};
-    border: 1px solid {BORDER_COLOR};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 QComboBox:hover {
     border: 2px solid {BUTTON_HOVER};
@@ -412,7 +416,7 @@ QComboBox::drop-down {
     border-bottom-right-radius: 1px;
 }
 QComboBox:disabled::drop-down {
-    border-left-color: {BORDER_COLOR};
+    border-left-color: {DISABLED_BACKGROUND};
 }
 QComboBox QAbstractItemView {
     background-color: {WIDGET_BACKGROUND};
@@ -434,7 +438,14 @@ QLabel {
     border-style: none;
     border-radius: 0px;
     border: 1px solid {BORDER_COLOR};
-    padding: 0px 0px 0px 0px;
+    padding: 0px 0px 0px 2px;
+}
+QLabel:hover {
+    background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_COLOR};
+    border-style: none;
+    border-radius: 0px;
+    border: 1px solid {BORDER_COLOR};
 }
 QLabel[clickable="true"]:hover {
     background-color: {BUTTON_HOVER};
@@ -445,26 +456,60 @@ QLabel:enabled {
 }
 QLabel:disabled {
     color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 QLineEdit {
     background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_COLOR};
     border: 1px solid {BORDER_COLOR};
     selection-background-color: {BUTTON_HOVER};
     selection-color: {TEXT_COLOR};
     border-radius: 1px;
     padding: 0 8px;
 }
-QLineEdit:hover:!read-only {
+QLineEdit:hover {
     border: 2px solid {BUTTON_HOVER};
+    color: {TEXT_HOVER};
 }
 QLineEdit:disabled {
     color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
-QLineEdit:enabled {
+QLineEdit:read-only:enabled {
+    color: {TEXT_COLOR};
+    background-color: {WIDGET_BACKGROUND};
+    border: 1px solid {BORDER_COLOR};
+}
+QLineEdit:read-only:hover {
+    border: 1px solid {BORDER_COLOR};
     color: {TEXT_COLOR};
 }
-QLineEdit:read-only {
-    background-color: {PANEL_BACKGROUND};
+QLineEdit:read-only:disabled {
+    color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
+}
+/* Action state feedback (set via dynamic property) */
+QLineEdit[actionState="valid"] {
+    color: {ACTION_VALID_FG};
+    background-color: {ACTION_VALID_BG};
+}
+QLineEdit[actionState="invalid"] {
+    color: {ACTION_INVALID_FG};
+    background-color: {ACTION_INVALID_BG};
+}
+QLineEdit[actionState="warning"] {
+    color: {ACTION_WARNING_FG};
+    background-color: {ACTION_WARNING_BG};
+}
+QLineEdit[actionState="info"] {
+    color: {ACTION_INFO_FG};
+    background-color: {ACTION_INFO_BG};
+}
+QLineEdit[actionState="inactive"] {
+    color: {ACTION_INACTIVE_FG};
 }
 QTextEdit {
     color: {TEXT_COLOR};
@@ -477,6 +522,8 @@ QTextEdit:hover {
 }
 QTextEdit:disabled {
     color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 QTextEdit QWidget#qt_scrollarea_viewport {
     background-color: {WIDGET_BACKGROUND};
@@ -498,16 +545,18 @@ QPlainTextEdit:hover {
 }
 QPlainTextEdit:disabled {
     color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 
 /* -- Item Views -- */
 QAbstractItemView {
-    alternate-background-color: {WINDOW_FOREGROUND};
+    alternate-background-color: {ALTERNATE_BACKGROUND};
     background-attachment: fixed;
     color: {TEXT_COLOR};
 }
 QAbstractItemView::item:alternate {
-    background-color: {WINDOW_FOREGROUND};
+    background-color: {ALTERNATE_BACKGROUND};
 }
 QAbstractItemView::item:selected {
     border: 1px solid {BORDER_COLOR};
@@ -527,6 +576,10 @@ QAbstractItemView::item:checked:selected {
 QAbstractItemView::item:hover {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
+}
+QAbstractItemView:disabled {
+    color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
 }
 
 QAbstractItemView::indicator {
@@ -637,6 +690,11 @@ QAbstractScrollArea {
 QAbstractScrollArea:hover {
     border: 2px solid {BUTTON_HOVER};
 }
+QAbstractScrollArea:disabled {
+    color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
+}
 /* QScrollArea: Inherits from QAbstractScrollArea */
 /* QGraphicsView: Inherits from QAbstractScrollArea */
 /* QMdiArea: Inherits from QAbstractScrollArea */
@@ -648,6 +706,19 @@ QAbstractSlider {
 }
 QAbstractSlider:hover {
     border: 2px solid {BUTTON_HOVER};
+}
+QAbstractSlider:disabled {
+    color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
+}
+QAbstractSlider::handle:disabled {
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
+}
+QAbstractSlider::groove:disabled {
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 QAbstractSlider::handle {
     width: 10px;
@@ -736,6 +807,14 @@ QProgressBar {
 QProgressBar:hover {
     border: 2px solid {BUTTON_HOVER};
 }
+QProgressBar:disabled {
+    color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
+}
+QProgressBar::chunk:disabled {
+    background-color: {TEXT_DISABLED};
+}
 QProgressBar[orientation="Qt::Horizontal"] {
     padding-right: 10000px;
     text-align: right;
@@ -811,6 +890,8 @@ QSizeGrip[class~="SizeGrip"] {
 }
 .default:disabled {
     color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: 1px solid {DISABLED_BACKGROUND};
 }
 .transparentBgNoBorder {
     background-color: transparent;
@@ -970,7 +1051,7 @@ QTreeWidget {
     selection-background-color: {BUTTON_HOVER};
     show-decoration-selected: 1;
     gridline-color: transparent;
-    alternate-background-color: {WINDOW_FOREGROUND};
+    alternate-background-color: {ALTERNATE_BACKGROUND};
 }
 
 QTreeWidget::branch {
