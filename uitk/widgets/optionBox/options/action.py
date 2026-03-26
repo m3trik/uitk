@@ -30,6 +30,7 @@ class ActionOption(ButtonOption):
         text=None,
         states=None,
         order=None,
+        settings_key=None,
     ):
         """Initialize the action option.
 
@@ -44,6 +45,10 @@ class ActionOption(ButtonOption):
                 When provided, clicking cycles through the states.
                 Per-state callbacks override the top-level callback.
             order: Explicit sort position (int). See BaseOption.
+            settings_key: Optional explicit key for persistent storage.
+                When omitted, the key is auto-derived from the wrapped
+                widget's objectName (if available). Pass ``False`` to
+                disable persistence entirely.
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -56,8 +61,12 @@ class ActionOption(ButtonOption):
         self._text = text
         self._states = None
         self._current_state = 0
+        self._settings_key = settings_key
+        self._settings = None
         if states:
             self.set_states(states)
+        self._init_settings()
+        self._load_state()
 
     def create_widget(self):
         """Create the action button widget."""
@@ -98,6 +107,7 @@ class ActionOption(ButtonOption):
             return
         self._current_state = index % len(self._states)
         self._apply_state()
+        self._save_state()
 
     def set_states(self, states):
         """Set multiple cycling states.
@@ -110,6 +120,9 @@ class ActionOption(ButtonOption):
         """
         self._states = list(states)
         self._current_state = 0
+        # Restore persisted index if available and still in-bounds
+        if self._settings:
+            self._load_state()
         if self._widget:
             self._apply_state()
 
@@ -129,6 +142,58 @@ class ActionOption(ButtonOption):
             )
         if "tooltip" in state:
             self._widget.setToolTip(state["tooltip"])
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def _resolve_settings_key(self):
+        """Derive the persistence key.
+
+        Priority:
+          1. Explicit ``settings_key`` string passed at construction.
+          2. Auto-derived from ``wrapped_widget.objectName()``.
+          3. ``None`` (no persistence) — when the widget has no name
+             or ``settings_key=False`` was passed.
+        """
+        if self._settings_key is False:
+            return None
+        if self._settings_key:
+            return self._settings_key
+        # Auto-derive from the wrapped widget's objectName
+        w = self.wrapped_widget
+        if w and hasattr(w, "objectName") and w.objectName():
+            return w.objectName()
+        return None
+
+    def _init_settings(self):
+        if self._settings is not None:
+            return
+        key = self._resolve_settings_key()
+        if not key:
+            return
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        self._settings = SettingsManager(org="uitk", app="ActionOption", namespace=key)
+
+    def _save_state(self):
+        if not self._settings:
+            return
+        self._settings.setValue("current_state", self._current_state)
+        self._settings.sync()
+
+    def _load_state(self):
+        if not self._settings:
+            return
+        saved = self._settings.value("current_state")
+        if saved is not None and self._states:
+            try:
+                index = int(saved) % len(self._states)
+            except (ValueError, TypeError):
+                return
+            self._current_state = index
+            if self._widget:
+                self._apply_state()
 
     def _resolve_handler(self):
         """Resolve the current handler, checking per-state callback first."""

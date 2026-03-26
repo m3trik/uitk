@@ -1,13 +1,15 @@
 # !/usr/bin/python
 # coding=utf-8
+import math
 from typing import Dict, Union, Optional
 from qtpy import QtWidgets, QtGui, QtCore
 from uitk.widgets.messageBox import MessageBox
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
-class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin):
+class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin):
     """Unified SpinBox that supports both integer and float behavior, plus custom display values.
 
     Features:
@@ -106,6 +108,34 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin):
             self.decreaseValueWithSmallStep(event)
         else:
             super().wheelEvent(event)
+
+    def stepBy(self, steps: int) -> None:
+        """Step by the given number of steps, snapping to the step-size grid.
+
+        When the current value is off-grid (e.g. after being clamped to a
+        min/max that isn't a multiple of the step size), the first step snaps
+        to the nearest grid-aligned value in the stepping direction instead of
+        blindly adding the step size to the off-grid value.
+        """
+        step = self.singleStep()
+        if step <= 0:
+            return super().stepBy(steps)
+
+        value = QtWidgets.QDoubleSpinBox.value(self)
+        grid_pos = value / step
+        rounded_grid_pos = round(grid_pos)
+        on_grid = abs(grid_pos - rounded_grid_pos) < 1e-9
+
+        if on_grid:
+            new_value = (rounded_grid_pos + steps) * step
+        elif steps > 0:
+            new_value = (math.ceil(grid_pos) + steps - 1) * step
+        else:
+            new_value = (math.floor(grid_pos) + steps + 1) * step
+
+        new_value = round(new_value, self.decimals())
+        new_value = max(self.minimum(), min(self.maximum(), new_value))
+        self.setValue(new_value)
 
     def adjustStepSize(self, event: QtGui.QWheelEvent) -> None:
         """Adjust the step size dynamically based on the Alt modifier key."""

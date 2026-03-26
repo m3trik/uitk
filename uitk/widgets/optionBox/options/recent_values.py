@@ -87,7 +87,7 @@ class RecentValuesPopup(QtCore.QObject):
             match_parent_width=False,
         )
         self._menu.setMinimumWidth(150)
-        menu_layout = self._menu.layout
+        menu_layout = self._menu._layout
         if menu_layout:
             menu_layout.setContentsMargins(1, 1, 1, 1)
 

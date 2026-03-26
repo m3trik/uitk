@@ -116,10 +116,10 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
     def _setup_layout(self):
         """Initialize the widget's layout with appropriate settings."""
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(self.DEFAULT_LAYOUT_SPACING)
-        self.setLayout(self.layout)
+        self._layout = QtWidgets.QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(self.DEFAULT_LAYOUT_SPACING)
+        self.setLayout(self._layout)
 
     def _setup_widget_properties(self):
         """Configure widget properties and event handling."""
@@ -181,7 +181,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             list: A list of all QWidget items in the list and its sublists.
         """
-        items = [self.layout.itemAt(i).widget() for i in range(self.layout.count())]
+        items = [self._layout.itemAt(i).widget() for i in range(self._layout.count())]
         for item in items:
             if hasattr(item, "sublist"):
                 items.extend(item.sublist.get_items())
@@ -272,15 +272,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         This method recursively removes all items from the list, including items from all nested sublists.
         """
         # Process widgets in reverse order to avoid index errors
-        for i in reversed(range(self.layout.count())):
-            widget = self.layout.itemAt(i).widget()
+        for i in reversed(range(self._layout.count())):
+            widget = self._layout.itemAt(i).widget()
             if widget:
                 # Recursively clear sublist if it exists
                 if hasattr(widget, "sublist"):
                     widget.sublist.clear()
 
                 # Remove and clean up the widget
-                self.layout.removeWidget(widget)
+                self._layout.removeWidget(widget)
                 widget.setParent(None)
                 widget.deleteLater()
 
@@ -351,7 +351,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             data: Data to associate with the widget.
             **kwargs: Additional attributes to set.
         """
-        self.layout.addWidget(widget)
+        self._layout.addWidget(widget)
         self.on_item_added.emit(widget)
 
         self.set_item_data(widget, data)
@@ -361,7 +361,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         widget.installEventFilter(self)
 
         self.resize(self.sizeHint())
-        self.layout.invalidate()
+        self._layout.invalidate()
 
     def add(self, x, data=None, **kwargs):
         """Add an item or multiple items to the list or its sublists.
@@ -498,8 +498,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             bool: True if any child's sublist is visible.
         """
-        for i in range(self.layout.count()):
-            widget = self.layout.itemAt(i).widget()
+        for i in range(self._layout.count()):
+            widget = self._layout.itemAt(i).widget()
             if widget and hasattr(widget, "sublist") and widget.sublist.isVisible():
                 return True
         return False
@@ -536,8 +536,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         """
         if self.isVisible() and self.rect().contains(self.mapFromGlobal(cursor_pos)):
             return True
-        for i in range(self.layout.count()):
-            w = self.layout.itemAt(i).widget()
+        for i in range(self._layout.count()):
+            w = self._layout.itemAt(i).widget()
             if w and hasattr(w, "sublist") and w.sublist.isVisible():
                 if w.sublist._is_cursor_in_hierarchy(cursor_pos):
                     return True
@@ -547,8 +547,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         """Force-hide all visible sublists in this hierarchy, bypassing
         the chained ``hide()`` override.
         """
-        for i in range(self.layout.count()):
-            w = self.layout.itemAt(i).widget()
+        for i in range(self._layout.count()):
+            w = self._layout.itemAt(i).widget()
             if w and hasattr(w, "sublist"):
                 w.sublist._force_hide_all()
                 if w.sublist.isVisible():
@@ -627,20 +627,22 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         total_height = 0
         total_width = 0
 
-        for i in range(self.layout.count()):
-            widget = self.layout.itemAt(i).widget()
+        for i in range(self._layout.count()):
+            widget = self._layout.itemAt(i).widget()
             if widget:
-                total_height += widget.sizeHint().height() + self.layout.spacing()
+                total_height += widget.sizeHint().height() + self._layout.spacing()
                 total_width = max(total_width, widget.sizeHint().width())
 
         # Adjust for layout's top and bottom margins
         total_height += (
-            self.layout.contentsMargins().top() + self.layout.contentsMargins().bottom()
+            self._layout.contentsMargins().top()
+            + self._layout.contentsMargins().bottom()
         )
 
         # Adjust for layout's left and right margins for width
         total_width += (
-            self.layout.contentsMargins().left() + self.layout.contentsMargins().right()
+            self._layout.contentsMargins().left()
+            + self._layout.contentsMargins().right()
         )
 
         return QtCore.QSize(total_width, total_height)
@@ -767,6 +769,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             # Check if widget is a child of this ExpandableList
             if widget in self.get_items():
                 self.on_item_interacted.emit(widget)
+                return True  # Consume event to prevent double-firing
 
         elif event_type == QtCore.QEvent.MouseMove:
             # Check if the mouse left the list widget
@@ -794,8 +797,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         """
         cursor_pos = QtGui.QCursor.pos()
         in_child = False
-        for i in range(self.layout.count()):
-            w = self.layout.itemAt(i).widget()
+        for i in range(self._layout.count()):
+            w = self._layout.itemAt(i).widget()
             if w and hasattr(w, "sublist") and w.sublist.isVisible():
                 if w.sublist._is_cursor_in_hierarchy(cursor_pos):
                     in_child = True

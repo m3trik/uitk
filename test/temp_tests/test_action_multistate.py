@@ -233,6 +233,101 @@ class TestActionMultiState(unittest.TestCase):
         opt._handle_action()  # should not raise
         self.assertEqual(opt.current_state, 1)
 
+    # ------------------------------------------------------------------
+    # Persistence across sessions
+    # ------------------------------------------------------------------
+    def test_state_auto_persists_via_object_name(self):
+        """State auto-persists when wrapped widget has an objectName.
+
+        Bug: ActionOption multi-state buttons always reset to state 0 on
+        session restart because current_state was never persisted.
+        Root cause: option box buttons are ephemeral and never registered
+        with MainWindow's StateManager, so they bypassed the standard
+        auto-persistence that regular widgets get for free.
+        Fixed: 2026-03-26
+        """
+        states = [
+            {"icon": "play", "tooltip": "Play"},
+            {"icon": "pause", "tooltip": "Pause"},
+            {"icon": "stop", "tooltip": "Stop"},
+        ]
+
+        # Create a named widget — simulates a widget from a .ui file
+        host = QtWidgets.QComboBox()
+        host.setObjectName("_test_auto_persist_combo")
+
+        # First instance: cycle to state 2
+        opt1 = ActionOption(wrapped_widget=host, states=states)
+        _ = opt1.widget
+        opt1.current_state = 2
+        self.assertEqual(opt1.current_state, 2)
+
+        # Second instance with same wrapped widget — should restore state 2
+        opt2 = ActionOption(wrapped_widget=host, states=states)
+        btn2 = opt2.widget
+        self.assertEqual(opt2.current_state, 2)
+        self.assertEqual(btn2.toolTip(), "Stop")
+
+        # Clean up
+        opt2._settings.clear()
+
+    def test_explicit_settings_key_overrides_auto(self):
+        """An explicit settings_key takes precedence over objectName."""
+        key = "_test_explicit_key"
+        states = [
+            {"icon": "play", "tooltip": "Play"},
+            {"icon": "pause", "tooltip": "Pause"},
+        ]
+        host = QtWidgets.QComboBox()
+        host.setObjectName("should_not_use_this_name")
+
+        opt = ActionOption(wrapped_widget=host, states=states, settings_key=key)
+        self.assertIsNotNone(opt._settings)
+        self.assertEqual(opt._settings.namespace, key)
+        opt._settings.clear()
+
+    def test_no_object_name_no_persistence(self):
+        """Without objectName or settings_key, state doesn't persist."""
+        states = [
+            {"icon": "play", "tooltip": "Play"},
+            {"icon": "pause", "tooltip": "Pause"},
+        ]
+        # Widget with no objectName
+        opt = ActionOption(states=states)
+        _ = opt.widget
+        self.assertIsNone(opt._settings)
+
+    def test_settings_key_false_disables_persistence(self):
+        """Passing settings_key=False disables auto-persistence."""
+        states = [
+            {"icon": "play", "tooltip": "Play"},
+            {"icon": "pause", "tooltip": "Pause"},
+        ]
+        host = QtWidgets.QComboBox()
+        host.setObjectName("_test_should_not_persist")
+
+        opt = ActionOption(wrapped_widget=host, states=states, settings_key=False)
+        self.assertIsNone(opt._settings)
+
+    def test_manager_auto_persists_named_widget(self):
+        """OptionBoxManager.set_action auto-persists for named widgets."""
+        combo = QtWidgets.QComboBox()
+        combo.setObjectName("_test_mgr_auto")
+        combo.addItems(["A", "B", "C"])
+        combo.option_box = OptionBoxManager(combo)
+        combo.option_box.set_action(
+            states=[
+                {"icon": "play", "tooltip": "Play"},
+                {"icon": "pause", "tooltip": "Pause"},
+            ],
+        )
+        action_opts = [
+            o for o in combo.option_box._pending_options if isinstance(o, ActionOption)
+        ]
+        self.assertEqual(len(action_opts), 1)
+        self.assertIsNotNone(action_opts[0]._settings)
+        action_opts[0]._settings.clear()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -707,12 +707,196 @@ class TestSubRowExpansion(BaseTestCase):
 
 
 # =========================================================================
-# Keyframe Rendering
+# Curve Preview Rendering
+# =========================================================================
+
+
+class TestCurvePreviewRendering(BaseTestCase):
+    """Verify curve-preview mini graph renders on sub-row clips."""
+
+    SAMPLE_PREVIEW = {
+        "keys": [(0, 0.0), (50, 1.0), (100, 0.5)],
+        "segments": [
+            {
+                "t0": 0,
+                "v0": 0.0,
+                "t1": 50,
+                "v1": 1.0,
+                "out_type": "spline",
+                "cp1": (16.67, 0.33),
+                "cp2": (33.33, 0.67),
+            },
+            {
+                "t0": 50,
+                "v0": 1.0,
+                "t1": 100,
+                "v1": 0.5,
+                "out_type": "linear",
+                "cp1": None,
+                "cp2": None,
+            },
+        ],
+        "val_min": 0.0,
+        "val_max": 1.0,
+    }
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _make_preview_clip(self, preview, color="#FF6600"):
+        """Create a sub-row clip with curve_preview and return the ClipItem."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            (
+                "translateX",
+                [(0, 100, "translateX", color, {"curve_preview": preview})],
+            ),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(len(sub_clips), 1)
+        clip = sub_clips[0]
+        item = self.w._clip_items[clip.clip_id]
+        return clip, item
+
+    def test_curve_preview_stored_on_clip(self):
+        """curve_preview from extra dict is preserved on ClipData.data."""
+        clip, _ = self._make_preview_clip(self.SAMPLE_PREVIEW)
+        self.assertIn("curve_preview", clip.data)
+        self.assertEqual(len(clip.data["curve_preview"]["keys"]), 3)
+
+    def test_paint_curve_preview_does_not_crash(self):
+        """Rendering a sub-row clip with curve_preview must not raise."""
+        from qtpy import QtGui, QtWidgets
+
+        clip, item = self._make_preview_clip(self.SAMPLE_PREVIEW)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_paint_with_stepped_segment(self):
+        """Stepped segments render step shape without crashing."""
+        from qtpy import QtGui, QtWidgets
+
+        preview = {
+            "keys": [(0, 1.0), (50, 0.0)],
+            "segments": [
+                {
+                    "t0": 0,
+                    "v0": 1.0,
+                    "t1": 50,
+                    "v1": 0.0,
+                    "out_type": "step",
+                    "cp1": None,
+                    "cp2": None,
+                }
+            ],
+            "val_min": 0.0,
+            "val_max": 1.0,
+        }
+        clip, item = self._make_preview_clip(preview)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_paint_flat_value_range(self):
+        """Flat keys (val_min == val_max) render a centred line."""
+        from qtpy import QtGui, QtWidgets
+
+        preview = {
+            "keys": [(0, 5.0), (50, 5.0)],
+            "segments": [
+                {
+                    "t0": 0,
+                    "v0": 5.0,
+                    "t1": 50,
+                    "v1": 5.0,
+                    "out_type": "linear",
+                    "cp1": None,
+                    "cp2": None,
+                }
+            ],
+            "val_min": 5.0,
+            "val_max": 5.0,
+        }
+        clip, item = self._make_preview_clip(preview)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_paint_single_key_no_segments(self):
+        """A single key with no segments renders dots only."""
+        from qtpy import QtGui, QtWidgets
+
+        preview = {
+            "keys": [(50, 1.0)],
+            "segments": [],
+            "val_min": 1.0,
+            "val_max": 1.0,
+        }
+        clip, item = self._make_preview_clip(preview)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_sub_row_without_curve_preview_uses_default_paint(self):
+        """Sub-row clip with no curve_preview renders as solid block."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(0, 100, "tx", "#FF0000", {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        clip = sub_clips[0]
+        self.assertNotIn("curve_preview", clip.data)
+
+    def test_paint_stepnext_segment(self):
+        """stepnext tangent type renders without crashing."""
+        from qtpy import QtGui, QtWidgets
+
+        preview = {
+            "keys": [(0, 0.0), (50, 1.0)],
+            "segments": [
+                {
+                    "t0": 0,
+                    "v0": 0.0,
+                    "t1": 50,
+                    "v1": 1.0,
+                    "out_type": "stepnext",
+                    "cp1": None,
+                    "cp2": None,
+                }
+            ],
+            "val_min": 0.0,
+            "val_max": 1.0,
+        }
+        clip, item = self._make_preview_clip(preview)
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+
+# =========================================================================
+# Keyframe Rendering (legacy keyframe_times path)
 # =========================================================================
 
 
 class TestKeyframeRendering(BaseTestCase):
-    """Verify keyframe glyphs render on sub-row clips with keyframe_times."""
+    """Verify legacy keyframe_times clips fall through to default paint."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -1864,6 +2048,61 @@ class TestKeyboardDispatch(BaseTestCase):
         )
         result = self.w.event(ev)
         self.assertTrue(result)
+
+    def test_delete_shortcut_dispatches_with_selected_clips(self):
+        """Delete key shortcut fires callback with currently selected clips.
+
+        Bug: marquee-selecting clips in the sequencer and pressing Delete
+        did not delete the selected keyframes.
+        Fixed: 2026-03-25
+        """
+        from unittest.mock import MagicMock
+
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 50, obj="pCube1", orig_start=0, orig_end=50)
+        c1 = self.w.add_clip(tid, 60, 30, obj="pCube1", orig_start=60, orig_end=90)
+
+        # Register a Delete callback via the shortcut manager (as shot_sequencer_slots does)
+        mock_delete = MagicMock()
+        self.w._shortcut_mgr.add_shortcut(
+            "Delete",
+            mock_delete,
+            "Delete keys for selected clips",
+            self.QtCore.Qt.WidgetWithChildrenShortcut,
+        )
+        self.w._timeline._shortcut_sequences.append(self.QtGui.QKeySequence("Delete"))
+
+        # Programmatically select clips (simulates rubber-band result)
+        self.w._clip_items[c0].setSelected(True)
+        self.w._clip_items[c1].setSelected(True)
+        self.assertEqual(len(self.w.selected_clips()), 2)
+
+        # Simulate Delete key press on the timeline view
+        ev = self._make_key_event(self.QtCore.Qt.Key_Delete)
+        self.w._timeline.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        mock_delete.assert_called_once()
+
+    def test_delete_shortcut_dispatches_on_sequencer_widget(self):
+        """Delete key on the SequencerWidget (not timeline) also dispatches."""
+        from unittest.mock import MagicMock
+
+        tid = self.w.add_track("T")
+        c0 = self.w.add_clip(tid, 0, 50)
+        mock_delete = MagicMock()
+        self.w._shortcut_mgr.add_shortcut(
+            "Delete",
+            mock_delete,
+            "Delete test",
+            self.QtCore.Qt.WidgetWithChildrenShortcut,
+        )
+        self.w._timeline._shortcut_sequences.append(self.QtGui.QKeySequence("Delete"))
+
+        self.w._clip_items[c0].setSelected(True)
+        ev = self._make_key_event(self.QtCore.Qt.Key_Delete)
+        self.w.keyPressEvent(ev)
+        self.assertTrue(ev.isAccepted())
+        mock_delete.assert_called_once()
 
 
 # =========================================================================
