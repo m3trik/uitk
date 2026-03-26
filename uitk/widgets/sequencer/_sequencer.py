@@ -305,6 +305,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_range_overlays: bool = True  # toggle for shot range overlays
         self._show_gap_overlays: bool = True  # toggle for gap overlays
         self._show_range_highlight: bool = True  # toggle for active shot highlight
+        self._window_shortcuts: bool = False  # shortcuts active at window level
+        self._window_filter_installed: bool = False
         self._active_range: Optional[tuple] = None  # (start, end) in frames
         self._active_range_color = QtGui.QColor(
             90, 140, 220, 25
@@ -393,6 +395,69 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self.set_attributes(self, **kwargs)
 
     # -- consume assigned hotkeys so they don't leak to the host app --------
+
+    @property
+    def window_shortcuts(self) -> bool:
+        """When ``True``, sequencer shortcuts are active whenever the
+        top-level window has focus, not just when the sequencer widget
+        itself is focused."""
+        return self._window_shortcuts
+
+    @window_shortcuts.setter
+    def window_shortcuts(self, enabled: bool) -> None:
+        if enabled == self._window_shortcuts:
+            return
+        self._window_shortcuts = enabled
+        ctx = (
+            QtCore.Qt.WindowShortcut
+            if enabled
+            else QtCore.Qt.WidgetWithChildrenShortcut
+        )
+        for entry in self._shortcut_mgr.shortcuts.values():
+            entry["shortcut"].setContext(ctx)
+        # Defer event filter install until the widget is shown (parented),
+        # since self.window() may not return the actual top-level yet.
+        if not enabled:
+            self._uninstall_window_filter()
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        if self._window_shortcuts and not self._window_filter_installed:
+            self._install_window_filter()
+
+    def _install_window_filter(self) -> None:
+        win = self.window()
+        if win is not None and not self._window_filter_installed:
+            win.installEventFilter(self)
+            self._window_filter_installed = True
+
+    def _uninstall_window_filter(self) -> None:
+        win = self.window()
+        if win is not None and self._window_filter_installed:
+            win.removeEventFilter(self)
+            self._window_filter_installed = False
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Intercept ShortcutOverride on the window when window_shortcuts is on."""
+        if (
+            self._window_shortcuts
+            and event.type() == QtCore.QEvent.ShortcutOverride
+        ):
+            # Don't intercept keystrokes while a text-editing widget has focus
+            focused = QtWidgets.QApplication.focusWidget()
+            if isinstance(
+                focused, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)
+            ):
+                return super().eventFilter(obj, event)
+            mods = event.modifiers()
+            mod_int = mods.value if hasattr(mods, "value") else int(mods)
+            key = QtGui.QKeySequence(event.key() | mod_int)
+            for seq in self._timeline._shortcut_sequences:
+                if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
+                    event.accept()
+                    return True
+        return super().eventFilter(obj, event)
+
     def event(self, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.ShortcutOverride:
             mods = event.modifiers()

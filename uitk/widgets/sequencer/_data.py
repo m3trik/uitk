@@ -126,3 +126,50 @@ _DEFAULT_ATTRIBUTE_COLORS = {
     "visibility": "#FFD966",
     "consolidated": "#FFFFFF",
 }
+
+
+# ---------------------------------------------------------------------------
+#  Hatching / fill-pattern helpers
+# ---------------------------------------------------------------------------
+# Pre-defined spacing tiers for visual hierarchy:
+HATCH_DENSE = 6  # interpolation clips — subtle, tight
+HATCH_MEDIUM = 8  # ruler shot gaps — mid-density
+HATCH_SPARSE = 12  # main gap overlays — bold, wide
+
+_hatch_cache: Dict[tuple, QtGui.QBrush] = {}
+_HATCH_CACHE_MAX = 64
+
+
+def hatch_brush(
+    color: QtGui.QColor,
+    spacing: int = HATCH_SPARSE,
+    line_width: float = 1.0,
+) -> QtGui.QBrush:
+    """Return a tiled diagonal-hatch brush.
+
+    Results are cached by (*color key*, *spacing*, *line_width*) so
+    repeated paint calls reuse the same ``QPixmap``.
+
+    Parameters
+    ----------
+    color : QColor
+        Stroke colour for the diagonal lines.
+    spacing : int
+        Tile size in pixels (controls hatching density).
+    line_width : float
+        Pen width for each diagonal stroke.
+    """
+    key = (color.rgba(), spacing, line_width)
+    brush = _hatch_cache.get(key)
+    if brush is None:
+        tile = QtGui.QPixmap(spacing, spacing)
+        tile.fill(QtCore.Qt.transparent)
+        tp = QtGui.QPainter(tile)
+        tp.setPen(QtGui.QPen(color, line_width))
+        tp.drawLine(0, spacing, spacing, 0)
+        tp.end()
+        brush = QtGui.QBrush(tile)
+        if len(_hatch_cache) >= _HATCH_CACHE_MAX:
+            _hatch_cache.pop(next(iter(_hatch_cache)))
+        _hatch_cache[key] = brush
+    return brush

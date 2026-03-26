@@ -423,7 +423,7 @@ class TestRecentValuesCenterTruncation(QtBaseTestCase):
         """Long values should be truncated from the center, keeping both ends visible."""
         import pythontk as ptk
 
-        long_value = "A" * 30 + "B" * 30 + "C" * 30  # 90 chars
+        long_value = "A" * 50 + "B" * 50 + "C" * 50  # 150 chars, exceeds _MAX_DISPLAY_LENGTH (120)
         parent = self.track_widget(QtWidgets.QWidget())
         popup = RecentValuesPopup(parent=parent)
         self.track_widget(popup.menu)

@@ -115,7 +115,16 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         if window and delta != 0:
             w = self.parentWidget()
             while w is not None:
-                wl = w.layout()
+                # Use callable check to guard against widgets that shadow
+                # Qt's layout() method with a layout instance attribute
+                # (e.g. self.layout = QVBoxLayout()).
+                layout_attr = getattr(w, "layout", None)
+                if callable(layout_attr):
+                    wl = layout_attr()
+                elif isinstance(layout_attr, QtWidgets.QLayout):
+                    wl = layout_attr
+                else:
+                    wl = None
                 if wl:
                     wl.activate()
                 if w is window:

@@ -14,6 +14,8 @@ from uitk.widgets.sequencer._data import (
     _SHOT_LANE_HEIGHT,
     _styled_menu,
     _menu_exec_pos,
+    hatch_brush,
+    HATCH_SPARSE,
 )
 
 # ---------------------------------------------------------------------------
@@ -187,6 +189,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
         sq = self._timeline.parent_sequencer
+        sq._shift_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
         sq._capture_undo()
         event.accept()
 
@@ -275,18 +278,9 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         painter.save()
         painter.setClipRect(r)
         painter.fillRect(r, self._color)
-        pen = QtGui.QPen(self._line_color, 1)
-        painter.setPen(pen)
-        spacing = 12
-        x0, y0, w, h = r.x(), r.y(), r.width(), r.height()
-        # Diagonal lines from bottom-left to top-right
-        d = int(w + h)
-        for i in range(-int(h), d, spacing):
-            painter.drawLine(
-                QtCore.QPointF(x0 + i, y0 + h),
-                QtCore.QPointF(x0 + i + h, y0),
-            )
+        painter.fillRect(r, hatch_brush(self._line_color, HATCH_SPARSE))
         # Edge handle highlights
+        w = r.width()
         hw = min(self._EDGE_WIDTH, w / 2)
         handle_alpha = self._base_alpha + 80 if self._hovered else self._base_alpha + 50
         handle_color = QtGui.QColor(self._line_color)

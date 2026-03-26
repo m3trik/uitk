@@ -26,6 +26,10 @@ from uitk.widgets.sequencer._data import (  # noqa: F401
     _DEFAULT_ATTRIBUTE_COLORS,
     _styled_menu,
     _menu_exec_pos,
+    HATCH_DENSE,
+    HATCH_MEDIUM,
+    HATCH_SPARSE,
+    hatch_brush,
 )
 from uitk.widgets.sequencer._clip import ClipItem  # noqa: F401
 from uitk.widgets.sequencer._overlays import (  # noqa: F401

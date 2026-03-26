@@ -109,12 +109,19 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._layout.setContentsMargins(m.left(), margin, m.right(), m.bottom())
 
     def add_track_label(
-        self, name: str, icon=None, dimmed: bool = False, italic: bool = False,
-        color: str = None, text_color: str = None,
+        self,
+        name: str,
+        icon=None,
+        dimmed: bool = False,
+        italic: bool = False,
+        color: str = None,
+        text_color: str = None,
     ):
         if color and not dimmed:
             tc = text_color or "#CCCCCC"
-            base_style = f"padding-left:6px; color:{tc}; background:{color}; border-radius:3px;"
+            base_style = (
+                f"padding-left:6px; color:{tc}; background:{color}; border-radius:3px;"
+            )
         elif dimmed:
             base_style = self._STYLE_DIMMED
         else:
@@ -143,7 +150,11 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             ico_lbl.setFixedSize(22, _TRACK_HEIGHT)
             ico_lbl.setAlignment(QtCore.Qt.AlignCenter)
             ico_lbl.setStyleSheet("background:transparent; border:none; padding:0;")
-            txt_color = text_color if (text_color and not dimmed) else ("#777777" if dimmed else "#CCCCCC")
+            txt_color = (
+                text_color
+                if (text_color and not dimmed)
+                else ("#777777" if dimmed else "#CCCCCC")
+            )
             if italic and not text_color:
                 txt_color = "#999977" if not dimmed else "#777766"
             txt_lbl = _ElidingLabel(name)
@@ -253,7 +264,11 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             elif i < len(self._dimmed) and self._dimmed[i]:
                 style = self._STYLE_DIMMED
             elif i < len(self._colors) and self._colors[i]:
-                tc = self._text_colors[i] if i < len(self._text_colors) and self._text_colors[i] else "#CCCCCC"
+                tc = (
+                    self._text_colors[i]
+                    if i < len(self._text_colors) and self._text_colors[i]
+                    else "#CCCCCC"
+                )
                 style = f"padding-left:6px; color:{tc}; background:{self._colors[i]}; border-radius:3px;"
             else:
                 style = self._STYLE_NORMAL
@@ -534,7 +549,7 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     def contextMenuEvent(self, event):
         item = self.itemAt(event.pos())
-        if isinstance(item, (ClipItem, MarkerItem)):
+        if isinstance(item, (ClipItem, MarkerItem, _GapOverlayItem)):
             super().contextMenuEvent(event)
             return
 

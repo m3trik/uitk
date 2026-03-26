@@ -588,7 +588,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._pending_trigger_hook = False
 
         # Widget structure
-        self.layout: Optional[QtWidgets.QVBoxLayout] = None
+        self._layout: Optional[QtWidgets.QVBoxLayout] = None
         self.gridLayout: Optional[QtWidgets.QGridLayout] = None
         self.centralWidgetLayout: Optional[QtWidgets.QVBoxLayout] = None
         self._central_widget: Optional[QtWidgets.QWidget] = None
@@ -1139,7 +1139,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
     def _ensure_layout_created(self):
         """Ensure layout is created (called when first item is added)."""
-        if self.layout is None or self.gridLayout is None:
+        if self._layout is None or self.gridLayout is None:
             self.init_layout()
             self.logger.debug("Menu._ensure_layout_created: Layout created")
 
@@ -1473,7 +1473,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         self._central_widget = widget
         self._central_widget.setProperty("class", "centralWidget")
-        self.layout.addWidget(self._central_widget)
+        self._layout.addWidget(self._central_widget)
 
     def centralWidget(self):
         """Return the central widget."""
@@ -1482,7 +1482,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     def init_layout(self):
         """Initialize the menu layout. Called lazily on first item add."""
         # Guard against double initialization
-        if self.layout is not None:
+        if self._layout is not None:
             return
 
         # CRITICAL OPTIMIZATION: Disable updates AND layout calculation
@@ -1494,12 +1494,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         try:
             # Create outer layout for the translucent window (margins for frame border)
-            self.layout = QtWidgets.QVBoxLayout(self)
+            self._layout = QtWidgets.QVBoxLayout(self)
             # Provide a 2px transparent gutter so translucent borders never touch window edges
-            self.layout.setContentsMargins(2, 2, 2, 2)
-            self.layout.setSpacing(0)
-            self.layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
-            self.setLayout(self.layout)
+            self._layout.setContentsMargins(2, 2, 2, 2)
+            self._layout.setSpacing(0)
+            self._layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+            self.setLayout(self._layout)
 
             # Create frame container that will have the border
             self._frame = QtWidgets.QFrame(self)
@@ -1509,7 +1509,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self._frame.setSizePolicy(
                 QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
             )
-            self.layout.addWidget(self._frame)
+            self._layout.addWidget(self._frame)
 
             # Create inner layout inside the frame (with spacing for border)
             frame_layout = QtWidgets.QVBoxLayout(self._frame)
@@ -1565,8 +1565,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self.setUpdatesEnabled(True)
 
             # Activate layout now that setup is complete
-            if self.layout:
-                self.layout.activate()
+            if self._layout:
+                self._layout.activate()
 
     def _setup_leave_timer(self):
         """Set up timer for auto-hide on mouse leave."""
@@ -1635,10 +1635,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         width-matching logic while still trimming vertical dead space.
         """
 
-        if not self.layout:
+        if not self._layout:
             return
 
-        self.layout.activate()
+        self._layout.activate()
         hint = self.sizeHint()
         if not hint.isValid():
             return
@@ -2296,7 +2296,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # Only resize if menu is visible (prevents flash during lazy initialization)
             if self.isVisible():
                 self.resize(self.sizeHint())
-            self.layout.invalidate()
+            self._layout.invalidate()
 
             # Ensure trigger event filters are installed once the menu has content
             # This allows trigger_button clicks to work before the first show()
@@ -2331,8 +2331,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self.setUpdatesEnabled(True)
 
             # Activate layout to apply all changes at once
-            if self.layout:
-                self.layout.activate()
+            if self._layout:
+                self._layout.activate()
 
     def _add_action_widget(
         self,
@@ -2398,25 +2398,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         Returns:
             QtCore.QSize: The recommended size for the widget.
         """
-        if self.layout is None:
+        if self._layout is None:
             return super().sizeHint()
 
         total_height = 0
         total_width = 0
 
-        for i in range(self.layout.count()):
-            widget = self.layout.itemAt(i).widget()
+        for i in range(self._layout.count()):
+            widget = self._layout.itemAt(i).widget()
             if widget:
-                total_height += widget.sizeHint().height() + self.layout.spacing()
+                total_height += widget.sizeHint().height() + self._layout.spacing()
                 total_width = max(total_width, widget.sizeHint().width())
 
         # Adjust for layout's top and bottom margins
         total_height += (
-            self.layout.contentsMargins().top() + self.layout.contentsMargins().bottom()
+            self._layout.contentsMargins().top() + self._layout.contentsMargins().bottom()
         )
         # Adjust for layout's left and right margins for width
         total_width += (
-            self.layout.contentsMargins().left() + self.layout.contentsMargins().right()
+            self._layout.contentsMargins().left() + self._layout.contentsMargins().right()
         )
 
         return QtCore.QSize(total_width, total_height)
@@ -2481,9 +2481,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # Update visibility immediately (this shows the container)
             self._update_apply_button_visibility()
             # Force complete layout update
-            if self.layout:
-                self.layout.invalidate()
-                self.layout.activate()
+            if self._layout:
+                self._layout.invalidate()
+                self._layout.activate()
             # Use adjustSize to recalculate based on new content
             self.adjustSize()
             self.logger.debug(

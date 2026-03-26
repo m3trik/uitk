@@ -10,13 +10,19 @@ from qtpy import QtWidgets, QtGui, QtCore
 if TYPE_CHECKING:
     from uitk.widgets.sequencer._timeline import TimelineView
 
-from uitk.widgets.sequencer._data import _RULER_HEIGHT, _SHOT_LANE_HEIGHT
+from uitk.widgets.sequencer._data import (
+    _RULER_HEIGHT,
+    _SHOT_LANE_HEIGHT,
+    hatch_brush,
+    HATCH_MEDIUM,
+)
 
 # -- local constants -------------------------------------------------------
 _SHOT_BLOCK_RADIUS = 3
 _SHOT_BLOCK_ACTIVE_COLOR = "#5B8BD4"
 _SHOT_BLOCK_INACTIVE_COLOR = "#888888"
 _SHOT_GAP_COLOR = "#3A3A3A"
+_SHOT_GAP_LINE_COLOR = "#4A4A4A"
 
 
 # ---------------------------------------------------------------------------
@@ -101,16 +107,9 @@ class ShotLaneItem(QtWidgets.QGraphicsItem):
                 painter.save()
                 painter.setClipRect(r)
                 painter.fillRect(r, gap_color)
-                pen = QtGui.QPen(QtGui.QColor("#4A4A4A"), 1)
-                painter.setPen(pen)
-                spacing = 8
-                x0, y0, w, h = r.x(), r.y(), r.width(), r.height()
-                d = int(w + h)
-                for j in range(-int(h), d, spacing):
-                    painter.drawLine(
-                        QtCore.QPointF(x0 + j, y0 + h),
-                        QtCore.QPointF(x0 + j + h, y0),
-                    )
+                painter.fillRect(
+                    r, hatch_brush(QtGui.QColor(_SHOT_GAP_LINE_COLOR), HATCH_MEDIUM)
+                )
                 painter.restore()
 
         # Draw shot blocks
