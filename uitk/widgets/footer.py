@@ -51,7 +51,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         # Main layout
         self.main_layout = QtWidgets.QHBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setContentsMargins(0, 0, 0, 2)
         self.main_layout.setSpacing(0)
 
         # Stacked widget for status/progress
@@ -118,11 +118,65 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
     def _setup_size_grip(self):
         """Set up the size grip in the footer."""
+        self._grip_spacer = QtWidgets.QSpacerItem(
+            6, 0, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Minimum
+        )
+        self.main_layout.addItem(self._grip_spacer)
         self._size_grip = self.create_size_grip(
             container=self,
             layout=self.main_layout,
             alignment=QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight,
         )
+
+    # ── Action buttons ───────────────────────────────────────────
+
+    def add_action_button(
+        self,
+        text: str = "",
+        icon_name: str = None,
+        tooltip: str = "",
+        callback=None,
+    ) -> QtWidgets.QPushButton:
+        """Add an action button to the right side of the footer.
+
+        Buttons are inserted before the size grip (if present) and after
+        the status/progress area, similar to how :class:`Header` hosts
+        icon buttons.
+
+        Parameters:
+            text: Button label text.
+            icon_name: Icon name (without extension) for ``IconManager``.
+            tooltip: Tooltip text.
+            callback: Callable connected to the button's ``clicked`` signal.
+
+        Returns:
+            The created QPushButton.
+        """
+        btn = QtWidgets.QPushButton(text, self)
+        h = self.height()
+        btn.setFixedHeight(h)
+        btn.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
+
+        if icon_name:
+            from uitk.widgets.mixins.icon_manager import IconManager
+
+            icon_size = int(h * 0.7)
+            IconManager.set_icon(btn, icon_name, size=(icon_size, icon_size))
+
+        if tooltip:
+            btn.setToolTip(tooltip)
+
+        if callback:
+            btn.clicked.connect(callback)
+
+        # Insert before grip spacer if present, otherwise append
+        if self._size_grip:
+            idx = self.main_layout.indexOf(self._grip_spacer)
+            self.main_layout.insertWidget(idx, btn)
+        else:
+            self.main_layout.addWidget(btn)
+
+        return btn
 
     @property
     def progress_bar(self) -> ProgressBar:

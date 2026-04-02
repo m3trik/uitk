@@ -17,6 +17,8 @@ from uitk.widgets.sequencer._data import (
     _HANDLE_WIDTH,
     _styled_menu,
     _menu_exec_pos,
+    hatch_brush,
+    HATCH_DENSE,
 )
 
 
@@ -145,6 +147,12 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawRect(rect)
 
+        # Interpolated-motion overlay (no physical keys in this shot)
+        if self._data.data.get("interpolated"):
+            hc = QtGui.QColor(color.darker(180))
+            hc.setAlpha(90)
+            painter.fillRect(rect, hatch_brush(hc, HATCH_DENSE))
+
         # Status tint overlay (assessment severity from shot manifest)
         status_hex = self._data.data.get("status_color")
         if status_hex:
@@ -208,8 +216,12 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                     lbl_right,
                 )
 
-            # Center label (abbreviated attrs)
-            if lbl_center and tw > 0:
+            # Center label — during drag show frame count, otherwise
+            # show abbreviated attribute names.
+            center_text = lbl_center
+            if dragging:
+                center_text = f"{round(self._data.duration)}f"
+            if center_text and tw > 0:
                 avail = tw - left_used - right_used
                 if avail > fm.horizontalAdvance(".."):
                     center_rect = QtCore.QRectF(
@@ -218,7 +230,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                         avail,
                         text_rect.height(),
                     )
-                    elided = fm.elidedText(lbl_center, QtCore.Qt.ElideRight, int(avail))
+                    elided = fm.elidedText(center_text, QtCore.Qt.ElideRight, int(avail))
                     painter.drawText(
                         center_rect,
                         QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter,

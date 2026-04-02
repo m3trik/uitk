@@ -456,6 +456,20 @@ class TimelineView(QtWidgets.QGraphicsView):
             self.setCursor(QtCore.Qt.ClosedHandCursor)
             event.accept()
             return
+
+        # Ctrl+Shift+Click: request shot switch at clicked time
+        mods = event.modifiers()
+        if (
+            event.button() == QtCore.Qt.LeftButton
+            and mods & QtCore.Qt.ControlModifier
+            and mods & QtCore.Qt.ShiftModifier
+        ):
+            scene_pos = self.mapToScene(event.pos())
+            t = self.x_to_time(scene_pos.x())
+            self.parent_sequencer.shot_switch_requested.emit(t)
+            event.accept()
+            return
+
         zone = self._hit_zone(event.pos().y())
         if event.button() == QtCore.Qt.LeftButton and zone == "ruler":
             item = self.itemAt(event.pos())

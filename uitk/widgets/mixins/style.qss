@@ -629,9 +629,6 @@ QTableWidget::item:checked {
 QTableWidget::item:checked:selected {
     background-color: {TABLE_ITEM_SELECTED};
 }
-QTableWidget::item:hover {
-    background-color: {TABLE_ITEM_HOVER};
-}
 
 QTreeView::branch {
     background-color: transparent;
@@ -913,6 +910,13 @@ QSizeGrip[class~="SizeGrip"] {
     color: {TEXT_COLOR};
     selection-background-color: {TEXT_BACKGROUND};
     selection-color: {HIGHLIGHT_COLOR};
+}
+.translucentBgWithBorder:hover {
+    border: 1px solid {BORDER_COLOR};
+}
+.translucentBgWithBorder QAbstractItemView::item:hover {
+    background-color: transparent;
+    color: {TEXT_COLOR};
 }
 .bgWithBorder {
     background-color: {PANEL_BACKGROUND};

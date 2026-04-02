@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.1.13"
+__version__ = "1.1.14"
 
 
 DEFAULT_INCLUDE = {
@@ -55,6 +55,11 @@ DEFAULT_INCLUDE = {
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
     "widgets.colorSwatch": "ColorSwatch",
+    "widgets.editors.color_mapping_editor": [
+        "ColorMappingEditor",
+        "ColorMappingDialog",
+    ],
+    "widgets.editors.editor_panel": "EditorPanel",
     "widgets.comboBox": "ComboBox",
     "widgets.doubleSpinBox": "DoubleSpinBox",
     "widgets.expandableList": "ExpandableList",

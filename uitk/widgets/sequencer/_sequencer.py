@@ -18,6 +18,10 @@ from typing import Dict, List, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
 
+from uitk.widgets.editors.color_mapping_editor import (
+    ColorMappingEditor,
+    ColorMappingDialog,
+)
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.shortcuts import ShortcutManager
@@ -47,8 +51,11 @@ from uitk.widgets.sequencer._timeline import TrackHeaderWidget, TimelineView
 # ---------------------------------------------------------------------------
 #  AttributeColorDialog
 # ---------------------------------------------------------------------------
-class AttributeColorDialog(QtWidgets.QDialog):
-    """A dialog for configuring attribute-type color mappings.
+class AttributeColorDialog(ColorMappingDialog):
+    """Dialog for configuring attribute-type color mappings.
+
+    Extends :class:`ColorMappingDialog` with sequencer-specific sections
+    (Common / Scene / Display) and dynamic *active_attrs* discovery.
 
     Parameters
     ----------
@@ -64,10 +71,7 @@ class AttributeColorDialog(QtWidgets.QDialog):
         Parent widget.
     """
 
-    colors_changed = QtCore.Signal(dict)
-
     _SETTINGS_NS = "sequencer/attribute_colors"
-    _SWATCH_SIZE = 22
 
     def __init__(
         self,
@@ -77,131 +81,49 @@ class AttributeColorDialog(QtWidgets.QDialog):
         settings: Optional["SettingsManager"] = None,
         parent=None,
     ):
-        super().__init__(parent)
-        self.setWindowTitle("Attribute Colors")
-        self.setMinimumWidth(280)
+        defs = defaults or dict(_DEFAULT_ATTRIBUTE_COLORS)
+        common = common_attrs or list(_COMMON_ATTRIBUTES)
+        active = active_attrs or []
 
-        self._defaults = defaults or dict(_DEFAULT_ATTRIBUTE_COLORS)
-        self._common = common_attrs or list(_COMMON_ATTRIBUTES)
-        self._active = active_attrs or []
-        self._settings = settings or SettingsManager(namespace=self._SETTINGS_NS)
-        self._swatches: Dict[str, QtWidgets.QPushButton] = {}
-
-        self._build_ui()
-        self._load_from_settings()
-
-    def _build_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
-
-        # Scrollable attribute list
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        container = QtWidgets.QWidget()
-        self._grid = QtWidgets.QGridLayout(container)
-        self._grid.setContentsMargins(0, 0, 0, 0)
-        self._grid.setSpacing(3)
-
-        # Common attributes section
-        row = 0
-        header = QtWidgets.QLabel("Common")
-        header.setStyleSheet("color:#999; font-size:10px; font-weight:bold;")
-        self._grid.addWidget(header, row, 0, 1, 2)
-        row += 1
-
-        for attr in self._common:
-            row = self._add_color_row(attr, row)
-
-        # Active-only attributes (keyed in scene but not in common list)
-        all_known = set(self._common) | set(_DISPLAY_COLORS)
-        extra = sorted(set(self._active) - all_known)
+        # Build sections
+        all_known = set(common) | set(_DISPLAY_COLORS)
+        extra = sorted(set(active) - all_known)
+        sections = [("Common", common)]
         if extra:
-            sep = QtWidgets.QLabel("Scene Attributes")
-            sep.setStyleSheet("color:#999; font-size:10px; font-weight:bold;")
-            self._grid.addWidget(sep, row, 0, 1, 2)
-            row += 1
+            sections.append(("Scene Attributes", extra))
             for attr in extra:
-                row = self._add_color_row(attr, row)
+                if attr not in defs:
+                    defs[attr] = ColorMappingEditor._FALLBACK_COLOR
+        sections.append(("Display", list(_DISPLAY_COLORS)))
 
-        # Display colors (non-attribute entries like 'consolidated')
-        display_header = QtWidgets.QLabel("Display")
-        display_header.setStyleSheet("color:#999; font-size:10px; font-weight:bold;")
-        self._grid.addWidget(display_header, row, 0, 1, 2)
-        row += 1
-        for attr in _DISPLAY_COLORS:
-            row = self._add_color_row(attr, row)
-
-        self._grid.setRowStretch(row, 1)
-        scroll.setWidget(container)
-        layout.addWidget(scroll, 1)
-
-        # Bottom buttons
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_defaults = QtWidgets.QPushButton("Restore Defaults")
-        btn_defaults.clicked.connect(self._restore_defaults)
-        btn_row.addWidget(btn_defaults)
-        btn_row.addStretch()
-        btn_close = QtWidgets.QPushButton("Close")
-        btn_close.clicked.connect(self.accept)
-        btn_row.addWidget(btn_close)
-        layout.addLayout(btn_row)
-
-    def _add_color_row(self, attr: str, row: int) -> int:
-        label = QtWidgets.QLabel(attr)
-        label.setStyleSheet("color:#CCC; font-size:11px;")
-
-        swatch = QtWidgets.QPushButton()
-        swatch.setFixedSize(self._SWATCH_SIZE, self._SWATCH_SIZE)
-        swatch.setCursor(QtCore.Qt.PointingHandCursor)
-        swatch.clicked.connect(lambda checked=False, a=attr: self._pick_color(a))
-        self._swatches[attr] = swatch
-
-        self._grid.addWidget(label, row, 0)
-        self._grid.addWidget(swatch, row, 1, QtCore.Qt.AlignRight)
-        return row + 1
-
-    def _update_swatch(self, attr: str, hex_color: str):
-        btn = self._swatches.get(attr)
-        if btn:
-            btn.setStyleSheet(
-                f"background-color:{hex_color}; border:1px solid #555; "
-                f"border-radius:3px;"
-            )
-
-    def _pick_color(self, attr: str):
-        current = self._current_color(attr)
-        color = QtWidgets.QColorDialog.getColor(
-            QtGui.QColor(current),
-            self,
-            f"Color for {attr}",
+        kw = {"settings": settings} if settings else {"settings_ns": self._SETTINGS_NS}
+        super().__init__(
+            defaults=defs,
+            sections=sections,
+            title="Attribute Colors",
+            parent=parent,
+            **kw,
         )
-        if color.isValid():
-            hex_val = color.name()
-            self._settings.setValue(attr, hex_val)
-            self._update_swatch(attr, hex_val)
-            self.colors_changed.emit(self.color_map())
 
-    def _current_color(self, attr: str) -> str:
-        val = self._settings.value(attr)
-        return val if val else self._defaults.get(attr, "#5B8BD4")
+    # Backward-compatible proxies ----------------------------------------
 
-    def _load_from_settings(self):
-        for attr in self._swatches:
-            self._update_swatch(attr, self._current_color(attr))
+    @property
+    def _swatches(self):
+        return self._editor._swatches
+
+    def _current_color(self, attr):
+        return self._editor._current_color(attr)
 
     def _restore_defaults(self):
-        for attr in self._swatches:
-            self._settings.clear(attr)
-        self._load_from_settings()
-        self.colors_changed.emit(self.color_map())
+        self._editor.restore_defaults()
 
-    def color_map(self) -> Dict[str, str]:
-        """Return the full attribute â†’ hex-color mapping."""
-        result = dict(self._defaults)
-        for key in self._settings.keys():
-            val = self._settings.value(key)
+    @staticmethod
+    def load_color_map() -> Dict[str, str]:
+        """Return the persisted attribute color map without opening a dialog."""
+        sm = SettingsManager(namespace=AttributeColorDialog._SETTINGS_NS)
+        result = dict(_DEFAULT_ATTRIBUTE_COLORS)
+        for key in sm.keys():
+            val = sm.value(key)
             if val:
                 result[key] = val
         return result
@@ -274,6 +196,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     )  # (QMenu, gap_start, gap_end) â€” add actions before exec
     shot_block_clicked = QtCore.Signal(str)  # (shot_name) from shot lane
     shot_lane_double_clicked = QtCore.Signal(float)  # (time) edit shot at time
+    shot_switch_requested = QtCore.Signal(float)  # (time) Ctrl+Shift+Click
     zone_context_menu_requested = QtCore.Signal(
         str, float, QtCore.QPoint
     )  # (zone, time, global_pos)
@@ -385,14 +308,26 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._shortcut_mgr.add_shortcuts_batch(
             [(k, fn, desc, _ctx) for k, fn, desc in _shortcut_defs]
         )
-        # Tell the TimelineView which keys to claim via ShortcutOverride
-        self._timeline._shortcut_sequences = [
-            QtGui.QKeySequence(k) for k, *_ in _shortcut_defs
-        ]
+        self._shortcut_mgr.add_info_entry(
+            "Ctrl+Shift+LMB", "Switch to shot at cursor"
+        )
+        # Keep the ShortcutOverride sequences in sync with the manager
+        self._shortcut_mgr.on_change(self._sync_shortcut_sequences)
+        self._sync_shortcut_sequences()
 
         # -- apply kwargs via AttributesMixin --------------------------------
         if kwargs:
             self.set_attributes(self, **kwargs)
+
+    # -- shortcut sequence sync --------------------------------------------
+
+    def _sync_shortcut_sequences(self) -> None:
+        """Rebuild the ShortcutOverride key list from the manager."""
+        self._timeline._shortcut_sequences = [
+            QtGui.QKeySequence(k)
+            for k, v in self._shortcut_mgr.shortcuts.items()
+            if not v.get("read_only")
+        ]
 
     # -- consume assigned hotkeys so they don't leak to the host app --------
 
@@ -414,7 +349,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             else QtCore.Qt.WidgetWithChildrenShortcut
         )
         for entry in self._shortcut_mgr.shortcuts.values():
-            entry["shortcut"].setContext(ctx)
+            if entry["shortcut"] is not None:
+                entry["shortcut"].setContext(ctx)
         # Defer event filter install until the widget is shown (parented),
         # since self.window() may not return the actual top-level yet.
         if not enabled:
@@ -439,14 +375,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         """Intercept ShortcutOverride on the window when window_shortcuts is on."""
-        if (
-            self._window_shortcuts
-            and event.type() == QtCore.QEvent.ShortcutOverride
-        ):
+        if self._window_shortcuts and event.type() == QtCore.QEvent.ShortcutOverride:
             # Don't intercept keystrokes while a text-editing widget has focus
             focused = QtWidgets.QApplication.focusWidget()
             if isinstance(
-                focused, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)
+                focused,
+                (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit),
             ):
                 return super().eventFilter(obj, event)
             mods = event.modifiers()
@@ -513,8 +447,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         td = TrackData(track_id=tid, name=name, color=color, text_color=text_color)
         self._tracks.append(td)
         self._header.add_track_label(
-            name, icon=icon, dimmed=dimmed, italic=italic,
-            color=color, text_color=text_color,
+            name,
+            icon=icon,
+            dimmed=dimmed,
+            italic=italic,
+            color=color,
+            text_color=text_color,
         )
         self._timeline._update_scene_rect()
         return tid

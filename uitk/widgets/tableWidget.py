@@ -268,6 +268,99 @@ class CellFormatMixin(ConvertMixin):
 
         return _fmt
 
+    # -- Section / category rows -------------------------------------------
+
+    _SECTION_ROLE = QtCore.Qt.UserRole + 900
+
+    @staticmethod
+    def add_section_row(
+        table: QtWidgets.QTableWidget,
+        title: str,
+        row: int = -1,
+        col_count: int = None,
+        bg: Any = None,
+        fg: Any = "#999",
+        bold: bool = True,
+        font_delta: int = -1,
+        height: int = 22,
+    ) -> int:
+        """Insert a non-selectable section header that spans all columns.
+
+        Parameters
+        ----------
+        table : QTableWidget
+            Target table (works with plain QTableWidget or TableWidget).
+        title : str
+            Section label text.
+        row : int
+            Row index to insert at.  ``-1`` appends after the last row.
+        col_count : int, optional
+            Columns to span.  Defaults to ``table.columnCount()``.
+        bg : color, optional
+            Background colour.  Defaults to ``rgba(255,255,255,20)``.
+        fg : color, optional
+            Foreground colour.  Defaults to ``#999``.
+        bold : bool
+            Whether the label is bold.
+        font_delta : int
+            Point-size adjustment relative to the table font.
+        height : int
+            Row height in pixels.
+
+        Returns
+        -------
+        int
+            The row index immediately *after* the inserted section row,
+            convenient for chaining inserts.
+        """
+        if row < 0:
+            row = table.rowCount()
+        if col_count is None:
+            col_count = table.columnCount()
+        table.insertRow(row)
+
+        bg_color = bg or "transparent"
+        fg_color = fg or "#999"
+
+        # Tag column-0 item so is_section_row() works
+        tag_item = QtWidgets.QTableWidgetItem()
+        tag_item.setFlags(QtCore.Qt.ItemIsEnabled)
+        tag_item.setData(CellFormatMixin._SECTION_ROLE, True)
+        table.setItem(row, 0, tag_item)
+
+        for c in range(1, col_count):
+            filler = QtWidgets.QTableWidgetItem()
+            filler.setFlags(QtCore.Qt.ItemIsEnabled)
+            filler.setData(CellFormatMixin._SECTION_ROLE, True)
+            table.setItem(row, c, filler)
+
+        table.setSpan(row, 0, 1, col_count)
+
+        # Cell widget paints on top of QSS item backgrounds
+        label = QtWidgets.QLabel(title)
+        label.setIndent(4)
+        label_font = label.font()
+        label_font.setBold(bold)
+        if font_delta and label_font.pointSize() > 0:
+            label_font.setPointSize(max(label_font.pointSize() + font_delta, 6))
+        label.setFont(label_font)
+        label.setStyleSheet(
+            f"background: {bg_color}; color: {fg_color};"
+            f" border-bottom: 1px solid {fg_color}; padding-left: 2px;"
+        )
+        table.setCellWidget(row, 0, label)
+
+        table.setRowHeight(row, height)
+        return row + 1
+
+    @staticmethod
+    def is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool:
+        """Return ``True`` if *row* is a section header."""
+        item = table.item(row, 0)
+        if item is None:
+            return False
+        return bool(item.data(CellFormatMixin._SECTION_ROLE))
+
     # Private methods
     def _on_cell_edited(self, row, col):
         item = self.item(row, col)

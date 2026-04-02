@@ -101,6 +101,12 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         # Pin state - when True, window resists hide requests
         self._pinned = False
 
+        # Debounce timer for geometry saves on resize/move
+        self._geometry_save_timer = QtCore.QTimer(self)
+        self._geometry_save_timer.setSingleShot(True)
+        self._geometry_save_timer.setInterval(500)
+        self._geometry_save_timer.timeout.connect(self.save_window_geometry)
+
         self.connected_slots = ptk.NamespaceHandler(
             self,
             "connected_slots",
@@ -705,6 +711,18 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
     def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
         self.on_focus_out.emit()
+
+    def resizeEvent(self, event) -> None:
+        """Save geometry on resize so pinned/non-hidden windows persist size."""
+        super().resizeEvent(event)
+        if self.is_initialized and self.restore_window_size:
+            self._geometry_save_timer.start()
+
+    def moveEvent(self, event) -> None:
+        """Save geometry on move so pinned/non-hidden windows persist position."""
+        super().moveEvent(event)
+        if self.is_initialized and self.restore_window_size:
+            self._geometry_save_timer.start()
 
     def hideEvent(self, event) -> None:
         """Reimplement hideEvent to emit custom signal when window is hidden."""

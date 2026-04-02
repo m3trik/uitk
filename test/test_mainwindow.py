@@ -1180,6 +1180,71 @@ class TestSyncWidgetValues(QtBaseTestCase):
         self.assertNotIn("sync_test#startmenu", names)
 
 
+class TestMainWindowGeometryPinned(QtBaseTestCase):
+    """Tests for geometry persistence when window is pinned (never hidden)."""
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_pinned_window_saves_geometry_on_resize(self):
+        """Pinned window should save geometry on resize even without hide.
+
+        Bug: save_window_geometry() only ran in hideEvent/closeEvent. Pinned
+        windows block setVisible(False) and request_hide(), so the geometry
+        was never persisted. If the session ended without an explicit hide
+        (e.g. Maya shutdown), the next session had no stored geometry and
+        adjustSize() produced a small window.
+        Fixed: 2026-04-01
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        name = "TestPinnedGeom"
+
+        # --- Session 1: show, pin, resize (NO hide) ---
+        window1 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=QtWidgets.QWidget())
+        )
+        window1.clear_saved_geometry()
+        window1.show()
+        QtWidgets.QApplication.processEvents()
+
+        window1.set_pinned(True)
+        window1.resize(600, 450)
+        QtWidgets.QApplication.processEvents()
+
+        # Wait for the debounce timer (500ms) to fire and save geometry
+        from qtpy.QtTest import QTest
+
+        QTest.qWait(700)
+        QtWidgets.QApplication.processEvents()
+
+        # Verify hide is blocked by pin
+        window1.setVisible(False)
+        self.assertTrue(window1.isVisible(), "Pin should block hide")
+
+        # Destroy without hiding (simulates Maya crash / process exit)
+        # Do NOT call hide — that would trigger the old save path
+        saved_geometry = window1.settings.getByteArray("window_geometry")
+        self.assertIsNotNone(
+            saved_geometry,
+            "Geometry should be saved on resize even when pinned",
+        )
+
+        # --- Session 2: new window restores the pinned session's size ---
+        window2 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=QtWidgets.QWidget())
+        )
+        window2.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertEqual(window2.width(), 600)
+        self.assertEqual(window2.height(), 450)
+
+        # Cleanup
+        window2.clear_saved_geometry()
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
