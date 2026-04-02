@@ -16,7 +16,7 @@ from conftest import QtBaseTestCase
 
 # Code to Test
 from uitk.switchboard import Switchboard
-from uitk.widgets.hotkey_editor import HotkeyEditor
+from uitk.widgets.editors.hotkey_editor import HotkeyEditor
 from uitk.widgets.mixins.shortcuts import Shortcut
 from uitk.examples.example import ExampleSlots
 

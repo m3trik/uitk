@@ -9,7 +9,8 @@ from pathlib import Path
 from qtpy import QtWidgets, QtCore
 from conftest import QtBaseTestCase, setup_qt_application
 from uitk.widgets.mixins.style_sheet import StyleSheet
-from uitk.widgets.style_editor import StyleEditor
+from uitk.widgets.editors.style_editor import StyleEditor
+from uitk.widgets.editors.editor_panel import EditorPanel
 
 app = setup_qt_application()
 
@@ -109,15 +110,15 @@ class TestStyleEditorPresets(QtBaseTestCase):
         # Override preset_dir to a temporary location
         self._test_preset_dir = Path(__file__).parent / "temp_tests" / "style_presets"
         self._test_preset_dir.mkdir(parents=True, exist_ok=True)
-        # Patch the property for testing
+        # Patch the property on the subclass so EditorPanel's original
+        # is still accessible via MRO after cleanup.
         StyleEditor.preset_dir = property(lambda self_: self._test_preset_dir)
 
     def tearDown(self):
         StyleSheet.reset_overrides()
-        # Restore original property
-        StyleEditor.preset_dir = StyleEditor.__dict__.get(
-            "_original_preset_dir", StyleEditor.preset_dir
-        )
+        # Remove subclass override so EditorPanel.preset_dir is visible again
+        if "preset_dir" in StyleEditor.__dict__:
+            delattr(StyleEditor, "preset_dir")
         if self._test_preset_dir and self._test_preset_dir.exists():
             shutil.rmtree(self._test_preset_dir, ignore_errors=True)
         super().tearDown()

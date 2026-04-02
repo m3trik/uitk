@@ -9,7 +9,8 @@ from pathlib import Path
 from qtpy import QtWidgets, QtCore
 from conftest import QtBaseTestCase, setup_qt_application
 from uitk.switchboard import Switchboard
-from uitk.widgets.hotkey_editor import HotkeyEditor
+from uitk.widgets.editors.hotkey_editor import HotkeyEditor
+from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.examples.example import ExampleSlots
 
 app = setup_qt_application()
@@ -40,10 +41,14 @@ class TestHotkeyEditorPresets(QtBaseTestCase):
         # Override preset_dir to a temp location
         self._test_preset_dir = Path(__file__).parent / "temp_tests" / "hotkey_presets"
         self._test_preset_dir.mkdir(parents=True, exist_ok=True)
-        # Patch preset_dir property for testing
+        # Patch the property on the subclass so EditorPanel's original
+        # is still accessible via MRO after cleanup.
         HotkeyEditor.preset_dir = property(lambda self_: self._test_preset_dir)
 
     def tearDown(self):
+        # Remove subclass override so EditorPanel.preset_dir is visible again
+        if "preset_dir" in HotkeyEditor.__dict__:
+            delattr(HotkeyEditor, "preset_dir")
         if hasattr(self, "editor") and self.editor:
             self.editor.close()
         if hasattr(self, "ui") and self.ui:
@@ -65,9 +70,7 @@ class TestHotkeyEditorPresets(QtBaseTestCase):
         """export_shortcuts should include entries for loaded UIs with slots."""
         data = self.editor.export_shortcuts()
         # The example UI has connected slots, so it should appear
-        has_entries = any(
-            "example" in key.lower() for key in data.keys()
-        )
+        has_entries = any("example" in key.lower() for key in data.keys())
         registry = self.sb.get_shortcut_registry(self.ui)
         if registry:
             self.assertTrue(has_entries, "Expected example UI in export data")

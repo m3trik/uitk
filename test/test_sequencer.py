@@ -418,10 +418,14 @@ class TestAttributeColorDialog(BaseTestCase):
         dlg.close()
 
     def test_color_map_returns_defaults(self):
-        dlg = AttributeColorDialog()
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        settings = SettingsManager(namespace="test_attr_colors_defaults")
+        dlg = AttributeColorDialog(settings=settings)
         cmap = dlg.color_map()
         self.assertEqual(cmap["translateX"], _DEFAULT_ATTRIBUTE_COLORS["translateX"])
         dlg.close()
+        settings.clear()
 
     def test_restore_defaults_resets(self):
         from uitk.widgets.mixins.settings_manager import SettingsManager

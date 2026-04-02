@@ -306,13 +306,22 @@ class TestLineEditActionColors(QtBaseTestCase):
         line_edit = self.track_widget(LineEdit())
         self.assertTrue(hasattr(line_edit, "reset_action_color"))
 
-    def test_action_color_map_has_expected_keys(self):
-        """Should have expected action color keys."""
+    def test_set_action_color_sets_property(self):
+        """set_action_color should set the actionState dynamic property."""
         from uitk.widgets.lineEdit import LineEdit
 
         line_edit = self.track_widget(LineEdit())
-        expected_keys = {"valid", "invalid", "warning", "info", "inactive"}
-        self.assertTrue(expected_keys.issubset(line_edit.ACTION_COLOR_MAP.keys()))
+        line_edit.set_action_color("valid")
+        self.assertEqual(line_edit.property("actionState"), "valid")
+
+    def test_reset_action_color_clears_property(self):
+        """reset_action_color should clear the actionState dynamic property."""
+        from uitk.widgets.lineEdit import LineEdit
+
+        line_edit = self.track_widget(LineEdit())
+        line_edit.set_action_color("warning")
+        line_edit.reset_action_color()
+        self.assertIsNone(line_edit.property("actionState"))
 
 
 class TestLineEditSignals(QtBaseTestCase):

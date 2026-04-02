@@ -1,10 +1,9 @@
 # !/usr/bin/python
 # coding=utf-8
-import json
-from pathlib import Path
-
 from qtpy import QtWidgets, QtCore, QtGui
-from uitk.widgets.mixins.preset_manager import QStandardPaths_writableLocation
+from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.widgets.editors.editor_panel import EditorPanel
+from uitk.widgets.mixins.icon_manager import IconManager
 
 
 class KeyCaptureDialog(QtWidgets.QDialog):
@@ -50,9 +49,11 @@ class KeyCaptureDialog(QtWidgets.QDialog):
         btn_layout.addWidget(self.btn_ok)
         layout.addLayout(btn_layout)
 
+        self.style = StyleSheet(self)
+        self.style.set(theme="dark")
+
     def keyPressEvent(self, event):
         """Capture key press event."""
-        # Handle Modifier keys alone
         key = event.key()
         modifiers = event.modifiers()
 
@@ -78,7 +79,7 @@ class KeyCaptureDialog(QtWidgets.QDialog):
         return self._sequence
 
 
-class HotkeyEditor(QtWidgets.QWidget):
+class HotkeyEditor(EditorPanel):
     """UI for editing global shortcuts with preset support.
 
     Presets capture all user-customised shortcut bindings across every
@@ -87,66 +88,20 @@ class HotkeyEditor(QtWidgets.QWidget):
     """
 
     def __init__(self, switchboard, parent=None):
-        super().__init__(parent)
+        super().__init__(
+            title="Hotkey Editor",
+            status_text="Customize keyboard shortcuts.",
+            parent=parent,
+        )
         self.sb = switchboard
-        self.setWindowFlags(QtCore.Qt.Window)
-        self.setWindowTitle("Hotkey Editor")
         self.resize(600, 600)
-
-        # Main layout
-        self.main_layout = QtWidgets.QVBoxLayout(self)
-        self.main_layout.setContentsMargins(4, 4, 4, 4)
-        self.main_layout.setSpacing(4)
 
         FIXED_H = 20
 
-        # Info Header
-        info_label = QtWidgets.QLabel("Customize keyboard shortcuts.")
-        info_label.setAlignment(QtCore.Qt.AlignCenter)
-        info_label.setFixedHeight(FIXED_H)
-        self.main_layout.addWidget(info_label)
+        # Preset row
+        self.init_preset_row("hotkey_presets")
 
-        # ── Preset row ──────────────────────────────────────────────
-        preset_layout = QtWidgets.QHBoxLayout()
-        preset_label = QtWidgets.QLabel("Preset:")
-        preset_label.setFixedHeight(FIXED_H)
-        self.cmb_preset = QtWidgets.QComboBox()
-        self.cmb_preset.setFixedHeight(FIXED_H)
-        self.cmb_preset.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-        )
-        self.cmb_preset.setPlaceholderText("No saved presets")
-        self.cmb_preset.currentIndexChanged.connect(self._on_preset_selected)
-
-        self.btn_save_preset = QtWidgets.QPushButton("Save")
-        self.btn_save_preset.setFixedHeight(FIXED_H)
-        self.btn_save_preset.setToolTip("Save current shortcuts as a named preset")
-        self.btn_save_preset.clicked.connect(self._on_save_preset)
-
-        self.btn_rename_preset = QtWidgets.QPushButton("Rename")
-        self.btn_rename_preset.setFixedHeight(FIXED_H)
-        self.btn_rename_preset.setToolTip("Rename the selected preset")
-        self.btn_rename_preset.clicked.connect(self._on_rename_preset)
-
-        self.btn_delete_preset = QtWidgets.QPushButton("Delete")
-        self.btn_delete_preset.setFixedHeight(FIXED_H)
-        self.btn_delete_preset.setToolTip("Delete the selected preset")
-        self.btn_delete_preset.clicked.connect(self._on_delete_preset)
-
-        self.btn_open_folder = QtWidgets.QPushButton("\u2026")
-        self.btn_open_folder.setFixedSize(28, FIXED_H)
-        self.btn_open_folder.setToolTip("Open preset folder")
-        self.btn_open_folder.clicked.connect(self._on_open_folder)
-
-        preset_layout.addWidget(preset_label)
-        preset_layout.addWidget(self.cmb_preset)
-        preset_layout.addWidget(self.btn_save_preset)
-        preset_layout.addWidget(self.btn_rename_preset)
-        preset_layout.addWidget(self.btn_delete_preset)
-        preset_layout.addWidget(self.btn_open_folder)
-        self.main_layout.addLayout(preset_layout)
-
-        # ── UI Selection ────────────────────────────────────────────
+        # UI Selection
         ui_layout = QtWidgets.QHBoxLayout()
         ui_label = QtWidgets.QLabel("Target UI:")
         ui_label.setFixedHeight(FIXED_H)
@@ -161,13 +116,16 @@ class HotkeyEditor(QtWidgets.QWidget):
         ui_layout.addWidget(ui_label)
         ui_layout.addWidget(self.cmb_ui)
         ui_layout.addWidget(self.chk_hide_empty)
-        self.main_layout.addLayout(ui_layout)
+        self.body_layout.addLayout(ui_layout)
 
         # Table
         self.table = QtWidgets.QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
             ["Action", "Shortcut", "Description", "Reset"]
+        )
+        self.table.horizontalHeader().setDefaultAlignment(
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
         )
         self.table.horizontalHeader().setSectionResizeMode(
             0, QtWidgets.QHeaderView.ResizeToContents
@@ -184,43 +142,23 @@ class HotkeyEditor(QtWidgets.QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
-        self.main_layout.addWidget(self.table)
+        self.body_layout.addWidget(self.table, 1)
 
-        # Buttons
-        btn_layout = QtWidgets.QHBoxLayout()
-        self.btn_close = QtWidgets.QPushButton("Close")
-        self.btn_close.setFixedHeight(FIXED_H)
-        self.btn_close.clicked.connect(self.close)
-
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.btn_close)
-        self.main_layout.addLayout(btn_layout)
-
-        self._refresh_presets()
         self.refresh_ui_list()
 
     # ------------------------------------------------------------------
-    # Preset directory & file helpers
+    # Preset hooks
     # ------------------------------------------------------------------
 
-    @property
-    def preset_dir(self) -> Path:
-        """Auto-derived preset directory under AppConfigLocation."""
-        d = Path(QStandardPaths_writableLocation()) / "uitk" / "hotkey_presets"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
+    def export_preset_data(self):
+        return self.export_shortcuts()
 
-    def _preset_path(self, name: str) -> Path:
-        safe = "".join(c if c.isalnum() or c in ("-", "_", " ") else "_" for c in name)
-        return self.preset_dir / f"{safe}.json"
-
-    def _list_presets(self) -> list:
-        if not self.preset_dir.exists():
-            return []
-        return sorted(p.stem for p in self.preset_dir.glob("*.json"))
+    def import_preset_data(self, data):
+        self.import_shortcuts(data)
+        self.populate()
 
     # ------------------------------------------------------------------
-    # Preset export / import
+    # Shortcut export / import
     # ------------------------------------------------------------------
 
     def export_shortcuts(self) -> dict:
@@ -272,111 +210,6 @@ class HotkeyEditor(QtWidgets.QWidget):
                 self.sb.set_user_shortcut(target_ui, method_name, sequence)
                 applied += 1
         return applied
-
-    # ------------------------------------------------------------------
-    # Preset save / load / delete / rename
-    # ------------------------------------------------------------------
-
-    def save_preset(self, name: str) -> Path:
-        """Save current shortcut bindings to a named preset."""
-        data = self.export_shortcuts()
-        data["_meta"] = {"version": 1}
-        filepath = self._preset_path(name)
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-        return filepath
-
-    def load_preset(self, name: str) -> bool:
-        """Load a preset and apply its shortcut bindings."""
-        filepath = self._preset_path(name)
-        if not filepath.exists():
-            return False
-        with open(filepath, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError:
-                return False
-        data.pop("_meta", None)
-        self.import_shortcuts(data)
-        self.populate()
-        return True
-
-    def delete_preset(self, name: str) -> bool:
-        filepath = self._preset_path(name)
-        if filepath.exists():
-            filepath.unlink()
-            return True
-        return False
-
-    def rename_preset(self, old: str, new: str) -> bool:
-        old_path = self._preset_path(old)
-        new_path = self._preset_path(new)
-        if not old_path.exists() or new_path.exists():
-            return False
-        old_path.rename(new_path)
-        return True
-
-    # ------------------------------------------------------------------
-    # Preset UI wiring
-    # ------------------------------------------------------------------
-
-    def _refresh_presets(self, select_name: str = None):
-        """Repopulate the preset combo."""
-        self.cmb_preset.blockSignals(True)
-        try:
-            self.cmb_preset.clear()
-            names = self._list_presets()
-            if names:
-                self.cmb_preset.addItems(names)
-                if select_name:
-                    idx = self.cmb_preset.findText(select_name)
-                    self.cmb_preset.setCurrentIndex(max(idx, 0))
-                else:
-                    self.cmb_preset.setCurrentIndex(-1)
-                self.cmb_preset.setPlaceholderText("Select a preset\u2026")
-            else:
-                self.cmb_preset.setPlaceholderText("No saved presets")
-        finally:
-            self.cmb_preset.blockSignals(False)
-
-    def _on_preset_selected(self, idx):
-        if idx < 0:
-            return
-        name = self.cmb_preset.itemText(idx)
-        if name:
-            self.load_preset(name)
-
-    def _on_save_preset(self):
-        name, ok = QtWidgets.QInputDialog.getText(self, "Save Preset", "Preset name:")
-        if ok and name.strip():
-            name = name.strip()
-            self.save_preset(name)
-            self._refresh_presets(select_name=name)
-
-    def _on_rename_preset(self):
-        idx = self.cmb_preset.currentIndex()
-        if idx < 0:
-            return
-        current = self.cmb_preset.itemText(idx)
-        if not current:
-            return
-        new_name, ok = QtWidgets.QInputDialog.getText(
-            self, "Rename Preset", "New name:", text=current
-        )
-        if ok and new_name.strip() and new_name.strip() != current:
-            if self.rename_preset(current, new_name.strip()):
-                self._refresh_presets(select_name=new_name.strip())
-
-    def _on_delete_preset(self):
-        idx = self.cmb_preset.currentIndex()
-        if idx < 0:
-            return
-        name = self.cmb_preset.itemText(idx)
-        if name and self.delete_preset(name):
-            self._refresh_presets()
-
-    def _on_open_folder(self):
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(self.preset_dir)))
 
     # ------------------------------------------------------------------
     # Show / refresh
@@ -477,6 +310,13 @@ class HotkeyEditor(QtWidgets.QWidget):
             return
 
         self.table.setRowCount(len(registry))
+        modified = sum(
+            1 for e in registry if (e.get("current") or "") != (e.get("default") or "")
+        )
+        status = f"{len(registry)} shortcuts"
+        if modified:
+            status += f" ({modified} customised)"
+        self.footer.setStatusText(status)
 
         for i, entry in enumerate(registry):
             method_name = entry["method"]
@@ -507,8 +347,10 @@ class HotkeyEditor(QtWidgets.QWidget):
             self.table.setItem(i, 2, item_doc)
 
             # Reset Button
-            reset_btn = QtWidgets.QPushButton("Reset")
-            reset_btn.setFixedWidth(50)
+            reset_btn = QtWidgets.QPushButton()
+            reset_btn.setFixedSize(24, 24)
+            reset_btn.setToolTip("Reset to default shortcut")
+            IconManager.set_icon(reset_btn, "undo", size=(16, 16))
             if current_seq == default_seq:
                 reset_btn.setEnabled(False)
 
@@ -544,7 +386,10 @@ class HotkeyEditor(QtWidgets.QWidget):
             new_seq = dlg.get_sequence()
             if new_seq != current_seq:
                 self.sb.set_user_shortcut(target_ui, method_name, new_seq)
-                self.populate()  # Refresh to show green color etc
+                self.footer.setStatusText(
+                    f"Assigned {new_seq or 'None'} to {item_name.text()}"
+                )
+                self.populate()
 
     def reset_shortcut(self, ui, method_name, default_seq):
         """Reset to default."""

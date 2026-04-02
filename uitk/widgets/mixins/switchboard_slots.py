@@ -335,6 +335,16 @@ class SwitchboardSlotsMixin:
             # Get deferred widgets BEFORE creating the instance
             deferred_widgets = self._get_deferred_widgets(key)
 
+            # Ensure the UI is accessible via loaded_ui during construction.
+            # When resolution uses WeakValueDictionary, the entry can be lost
+            # before the slots constructor accesses it (e.g. loaded_ui.<name>).
+            # Only pre-store when the base name matches the objectName (no tags
+            # stripped).  For tagged UIs like "display#submenu", storing under
+            # the base name "display" clobbers the resolution path for the
+            # standalone "display" UI, causing slots to get the wrong self.ui.
+            if key == ui.objectName() and not self.loaded_ui.has(key):
+                self.loaded_ui[key] = ui
+
             instance = slots_cls(switchboard=self)
 
             # Register shortcuts

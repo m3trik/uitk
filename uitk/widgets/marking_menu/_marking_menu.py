@@ -907,10 +907,17 @@ class MarkingMenu(
         if hasattr(widget, "clicked"):
             ui = getattr(widget, "ui", None)
             base_name = getattr(widget, "base_name", lambda: None)()
-            self.hide()
             if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
+                self.hide()
                 widget.clicked.emit()
                 return True
+            else:
+                self.logger.debug(
+                    f"[_handle_widget_action] Click skipped for "
+                    f"'{widget.objectName()}': ui={ui}, "
+                    f"has_tags={ui.has_tags(['startmenu', 'submenu']) if ui else 'N/A'}, "
+                    f"base_name='{base_name}'"
+                )
 
         # Handle ExpandableList items (widgets with item_text set by ExpandableList)
         if hasattr(widget, "item_text"):
@@ -1007,6 +1014,12 @@ class MarkingMenu(
         # For stacked UIs, check if we're releasing over a widget
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+
+            self.logger.debug(
+                f"[mouseReleaseEvent] current_ui={current_ui.objectName()}, "
+                f"widgetAt={widget.objectName() if widget and hasattr(widget, 'objectName') else widget}, "
+                f"grabber={self.mouseGrabber() is self}"
+            )
 
             if widget and widget is not self and widget is not current_ui:
                 # When mouse is grabbed, child event filter is bypassed - handle clicks here
