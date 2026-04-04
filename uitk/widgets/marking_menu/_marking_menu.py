@@ -233,10 +233,7 @@ class MarkingMenu(
         self.logger.debug("_on_activation_release: Emitting key_show_release signal")
         self.key_show_release.emit()
 
-        # Direct backup: hide any visible standalone windows that aren't pinned.
-        # The signal connection (setup_lifecycle) should handle this, but we also
-        # iterate explicitly to cover cases where the connection wasn't established
-        # (e.g. widget recreated, signal disconnected, etc.).
+        # Hide any visible standalone windows that aren't pinned.
         for win in list(self.sb.visible_windows):
             if win is not self and not win.has_tags(["startmenu", "submenu"]):
                 if hasattr(win, "request_hide"):
@@ -553,10 +550,7 @@ class MarkingMenu(
             # Stacked menus: No explicit lifecycle setup needed (they hide with parent)
 
         else:  # Standalone MainWindow
-            # Parent normal windows to the MarkingMenu to ensure lifecycle coupling.
-            # EXCEPTION: 'mayatk' windows (wrapped native menus) should remain parented to the host app.
-            if not ui.has_tags(["mayatk", "maya"]):
-                ui.setParent(self.parent(), QtCore.Qt.Window)
+            ui.setParent(self.parent(), QtCore.Qt.Window)
 
             # Delegate all window setup to UiHandler (styling + lifecycle)
             self.ui_handler.apply_styles(ui)

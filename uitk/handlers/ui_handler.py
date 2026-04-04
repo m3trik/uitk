@@ -23,7 +23,7 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         "flags": {"FramelessWindowHint": True},
         "theme": "dark",
         "style_class": "translucentBgWithBorder",
-        "header_buttons": ("menu", "collapse", "minimize", "hide"),
+        "header_buttons": ("menu", "collapse", "pin"),
     }
 
     # Configuration defaults exposed to Switchboard
@@ -42,6 +42,7 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         discover_slots: bool = False,
         recursive: bool = True,
         log_level: str = "WARNING",
+        source_tags=None,
         **kwargs,
     ):
         """
@@ -55,6 +56,7 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
             discover_slots: If True, also scans for slots recursively (can be slow).
             recursive: Whether to scan directories recursively.
             log_level: Logging level.
+            source_tags: Optional tags to apply to UIs loaded from ui_root.
             **kwargs: Additional arguments.
         """
         self.logger.setLevel(log_level)
@@ -73,7 +75,9 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
 
         # 2. Dynamic Discovery
         if ui_root:
-            self.sb.register(ui_location=ui_root, recursive=self.recursive)
+            self.sb.register(
+                ui_location=ui_root, recursive=self.recursive, tags=source_tags
+            )
             if discover_slots and (slot_root or ui_root):
                 self.sb.register(
                     slot_location=(slot_root or ui_root), recursive=self.recursive
@@ -231,18 +235,18 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         """
         Apply default styles to the UI instance.
         """
-        # Load style from arg > config > default class var
-        config_style = self.config.value("style", self.DEFAULT_STYLE)
-        style = copy.deepcopy(style or config_style)
+        # Always use the class-level DEFAULT_STYLE as the authoritative source.
+        # Persisted config may contain stale values from previous code versions.
+        # When style is provided by a subclass override, trust it as pre-built.
+        # Otherwise deepcopy from DEFAULT_STYLE so mutations stay local.
+        if style is None:
+            style = copy.deepcopy(self.DEFAULT_STYLE)
 
         if not style:
             return
 
         # Tag-based overrides
         try:
-            if ui.has_tags(["mayatk", "maya"]):
-                style["header_buttons"] = ("menu", "collapse", "minimize", "pin")
-
             if ui.has_tags(["startmenu", "submenu"]):
                 style["style_class"] = "translucentBgNoBorder"
         except AttributeError:
@@ -283,7 +287,6 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
                     else None
                 )
             if header is not None and hasattr(header, "config_buttons"):
-                desired = tuple(style["header_buttons"])
                 current = tuple(getattr(header, "buttons", {}).keys())
-                if current != desired:
-                    header.config_buttons(*desired)
+                if not current:
+                    header.config_buttons(*style["header_buttons"])
