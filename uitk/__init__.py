@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.1.14"
+__version__ = "1.1.16"
 
 
 DEFAULT_INCLUDE = {

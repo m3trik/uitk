@@ -263,13 +263,27 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
         """Alias for pinned property."""
         return self._pinned
 
+    @property
+    def _has_pin_button(self) -> bool:
+        """Whether the window's header has a pin button configured."""
+        header = getattr(self, "header", None)
+        if header is not None:
+            return "pin" in getattr(header, "buttons", {})
+        return False
+
     def request_hide(self) -> bool:
         """Request to hide, respecting pin state.
 
+        Windows without a pin button are considered permanently visible
+        and will refuse auto-hide requests. Only the user clicking the
+        explicit hide/close button should dismiss them.
+
         Returns:
-            bool: True if hidden, False if blocked by pin
+            bool: True if hidden, False if blocked
         """
         if self._pinned:
+            return False
+        if not self._has_pin_button:
             return False
         self.hide()
         return True

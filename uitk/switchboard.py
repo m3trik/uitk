@@ -146,6 +146,7 @@ class Switchboard(
         self.settings = SettingsManager(namespace="switchboard")
         self.configurable = self.settings.branch("configurable")  # Persistent config
 
+        self._source_tags = {}  # {normalized_dir_path: set_of_tags}
         self._current_ui = None
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
@@ -325,6 +326,7 @@ class Switchboard(
         base_dir=1,
         recursive: bool = False,
         validate=0,
+        tags=None,
     ):
         """Add new locations to the Switchboard registries.
 
@@ -336,7 +338,18 @@ class Switchboard(
             base_dir: Base directory for relative paths. Defaults to caller's directory.
             recursive: If True, directory locations are scanned recursively.
             validate: Validation level for paths (0=None, 1=Warn, 2=Raise).
+            tags: Optional set/list of tags to apply to UIs loaded from ui_location.
+                  When a UI file from this location is loaded via add_ui(), these
+                  tags are automatically merged into its tag set.
         """
+        if tags and ui_location:
+            tag_set = set(ptk.make_iterable(tags))
+            for loc in ptk.make_iterable(ui_location):
+                if inspect.ismodule(loc) and hasattr(loc, "__file__"):
+                    loc = os.path.dirname(loc.__file__)
+                if isinstance(loc, str):
+                    resolved = os.path.normpath(os.path.abspath(loc))
+                    self._source_tags[resolved] = tag_set
         locations = {
             "ui_registry": (ui_location, "UI"),
             "slot_registry": (slot_location, "Slot"),
@@ -473,8 +486,16 @@ class Switchboard(
             else widget
         )
 
-        tags = tags or (self.get_tags_from_name(name) if name else None)
+        tags = set(tags or (self.get_tags_from_name(name) if name else set()))
         path = ptk.format_path(path, "path") if path else None
+
+        # Merge source tags from registered directories
+        if path and self._source_tags:
+            norm_path = os.path.normpath(os.path.abspath(path))
+            for src_dir, src_tags in self._source_tags.items():
+                if norm_path.startswith(src_dir + os.sep) or norm_path == src_dir:
+                    tags.update(src_tags)
+                    break
 
         # Don't add footer to stacked UIs (startmenu/submenu)
         if tags and any(tag in tags for tag in ["startmenu", "submenu"]):

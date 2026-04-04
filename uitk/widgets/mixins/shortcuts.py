@@ -461,7 +461,9 @@ class _KeyCaptureDialog(QtWidgets.QDialog):
             return
         mods = event.modifiers()
         mod_int = mods.value if hasattr(mods, "value") else int(mods)
-        mod_int &= ~int(QtCore.Qt.KeypadModifier)
+        kp = QtCore.Qt.KeypadModifier
+        kp_int = kp.value if hasattr(kp, "value") else int(kp)
+        mod_int &= ~kp_int
         seq = QtGui.QKeySequence(key | mod_int).toString()
         self._sequence = seq
         self._label.setText(seq)

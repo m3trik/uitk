@@ -36,7 +36,7 @@ class Header(
         "minimize": ("minimize.svg", "minimize_window"),
         "maximize": ("maximize.svg", "toggle_maximize"),
         "hide": ("close.svg", "hide_window"),
-        "pin": ("close.svg", "toggle_pin"),  # Default: close icon (hide mode)
+        "pin": ("radio_empty.svg", "toggle_pin"),
     }
 
     def __init__(
@@ -218,14 +218,6 @@ class Header(
                 icon_filename, callback, button_type=button_name
             )
             button.setVisible(True)
-
-            # Set initial hideMode property and stylesheet for pin button
-            if button_name == "pin":
-                # Default icon is close (hide mode) so apply red hover
-                button.setProperty("hideMode", True)
-                button.setStyleSheet(
-                    "QPushButton:hover { background-color: red; border: none; }"
-                )
 
             self.container_layout.addWidget(button)
             self.buttons[button_name] = button
@@ -618,26 +610,12 @@ class Header(
 
         Parameters:
             from_drag (bool): If True, this was triggered by dragging the header.
-                Used to differentiate between click and drag when pin_on_drag_only is enabled.
         """
-        window = self.window()
-
-        # Default behavior: clicking hides, dragging pins
-        if self.pin_on_drag_only and not from_drag:
-            if self.pinned:
-                # Unpin first
-                self._set_pin_state(False)
-            # Always hide on click regardless of previous pin state
-            window.hide()
-            return
-
-        # Standard pin button behavior OR drag behavior
         new_state = not self.pinned
         self._set_pin_state(new_state)
 
-        if not new_state and not self.pin_on_drag_only:
-            # Standard behavior: when unpinned via button, hide the window
-            window.hide()
+        if not new_state:
+            self.window().hide()
 
     def _on_window_pinned_changed(self, pinned: bool):
         """Slot to handle pin state changes from the window."""
@@ -660,12 +638,10 @@ class Header(
                 window.set_pinned(pinned)
 
         # Update button icon
-        icon_name = "radio" if pinned else "close"
+        icon_name = "radio" if pinned else "radio_empty"
         pin_button = self.buttons.get("pin")
         if pin_button:
             IconManager.set_icon(pin_button, icon_name, size=(16, 16))
-            pin_button.setProperty("hideMode", not pinned)
-            self._refresh_button_style(pin_button)
 
         self.toggled.emit(pinned)
 
@@ -677,18 +653,6 @@ class Header(
 
     def _refresh_button_style(self, button):
         """Force a button to refresh its stylesheet after property changes."""
-        # For the pin button in hide mode, apply red hover background directly
-        if button.property("hideMode") is not None:
-            hide_mode = button.property("hideMode")
-            if hide_mode:
-                # Apply the same red hover style as the hide button
-                button.setStyleSheet(
-                    "QPushButton:hover { background-color: red; border: none; }"
-                )
-            else:
-                # Clear custom stylesheet for normal pin mode
-                button.setStyleSheet("")
-
         button.update()
 
     def mousePressEvent(self, event):
