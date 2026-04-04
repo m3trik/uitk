@@ -202,6 +202,7 @@ class ShortcutManager:
             "default_key": shortcut_key,
         }
 
+        self._notify_change()
         return shortcut
 
     def add_shortcuts_batch(

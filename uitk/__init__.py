@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.1.16"
+__version__ = "1.1.17"
 
 
 DEFAULT_INCLUDE = {
@@ -86,6 +86,7 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox.options.clear": "ClearButton",
     "widgets.optionBox.options._options": ["BaseOption", "ButtonOption"],
     "widgets.optionBox.options.action": ["ActionOption", "MenuOption"],
+    "widgets.optionBox.options.browse": "BrowseOption",
     "widgets.optionBox.options.clear": ["ClearOption", "ClearButton"],
     "widgets.optionBox.options.pin_values": "PinValuesOption",
     "widgets.optionBox.options.option_menu": ["OptionMenuOption", "ContextMenuOption"],

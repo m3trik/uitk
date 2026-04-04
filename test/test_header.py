@@ -478,6 +478,32 @@ class TestHeaderWindowActions(QtBaseTestCase):
         self.assertEqual(window.width(), 200)
         self.assertTrue(header._collapsed)
 
+    def test_collapse_with_fixed_width_below_minimum(self):
+        """Should collapse below the window's minimum width.
+
+        Bug: Windows with a minimum width wider than MINIMIZE_WIDTH could not
+        shrink because intermediate widget minimumWidth constraints were not
+        cleared during collapse.
+        Fixed: 2026-04-03
+        """
+        window, header, body = self._make_header_window()
+        # Set a minimum width larger than the collapse target
+        window.setMinimumWidth(350)
+        body.setMinimumWidth(350)
+        app.processEvents()
+
+        header.collapse_window(fixed_width=200)
+        app.processEvents()
+        self.assertTrue(header._collapsed)
+        self.assertEqual(window.width(), 200)
+
+        # Expand and verify constraints are restored
+        header.expand_window()
+        app.processEvents()
+        self.assertFalse(header._collapsed)
+        self.assertEqual(window.minimumWidth(), 350)
+        self.assertEqual(body.minimumWidth(), 350)
+
     # ---- basic window actions ----
 
     def test_hide_window_hides_parent(self):

@@ -69,6 +69,7 @@ class Header(
         self._saved_max_size = None
         self._saved_pos = None
         self._saved_parent_min_heights = {}  # Store min heights of ancestors
+        self._saved_parent_min_widths = {}  # Store min widths of ancestors
         self._collapse_saved_pos = (
             None  # Position before collapse (for right-edge anchoring)
         )
@@ -517,11 +518,16 @@ class Header(
         self._set_siblings_visibility(False)
 
         # Walk up hierarchy to window, saving and nuking minimum heights
+        # (and minimum widths when collapsing to a fixed_width)
         curr = self.parent()
         self._saved_parent_min_heights = {}
+        self._saved_parent_min_widths = {}
         while curr and curr is not window:
             self._saved_parent_min_heights[curr] = curr.minimumHeight()
             curr.setMinimumHeight(0)
+            if fixed_width is not None:
+                self._saved_parent_min_widths[curr] = curr.minimumWidth()
+                curr.setMinimumWidth(0)
             curr = curr.parent()
 
         # Calculate exact required height based on header height + parent margins
@@ -569,7 +575,7 @@ class Header(
         # Restore visibility of siblings
         self._set_siblings_visibility(True)
 
-        # Restore ancestor minimum heights
+        # Restore ancestor minimum heights and widths
         for widget, min_h in self._saved_parent_min_heights.items():
             if widget:  # check validity
                 try:
@@ -577,6 +583,13 @@ class Header(
                 except RuntimeError:
                     pass  # Widget might be deleted
         self._saved_parent_min_heights = {}
+        for widget, min_w in self._saved_parent_min_widths.items():
+            if widget:
+                try:
+                    widget.setMinimumWidth(min_w)
+                except RuntimeError:
+                    pass
+        self._saved_parent_min_widths = {}
 
         # Restore size constraints (this also undoes setFixedHeight)
         if self._saved_min_size:
