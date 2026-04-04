@@ -86,6 +86,7 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox.options.clear": "ClearButton",
     "widgets.optionBox.options._options": ["BaseOption", "ButtonOption"],
     "widgets.optionBox.options.action": ["ActionOption", "MenuOption"],
+    "widgets.optionBox.options.browse": "BrowseOption",
     "widgets.optionBox.options.clear": ["ClearOption", "ClearButton"],
     "widgets.optionBox.options.pin_values": "PinValuesOption",
     "widgets.optionBox.options.option_menu": ["OptionMenuOption", "ContextMenuOption"],

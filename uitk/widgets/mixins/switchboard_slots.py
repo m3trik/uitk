@@ -60,7 +60,15 @@ class Signals:
 
 
 class SlotWrapper:
-    """Wrapper class for slots to handle argument injection, history tracking, and timeout monitoring."""
+    """Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monitoring.
+
+    Debounce
+    --------
+    If ``widget.debounce`` is set to a positive integer (milliseconds),
+    the slot call is deferred until that many ms elapse without another
+    signal.  Each new signal restarts the timer so rapid changes (e.g.
+    spinner increments) coalesce into a single slot invocation.
+    """
 
     # Class-level cache: slot function id -> (param_names frozenset, wants_widget bool)
     _sig_cache: dict = {}
@@ -69,6 +77,9 @@ class SlotWrapper:
         self.slot = slot
         self.widget = widget
         self.sb = switchboard
+        self._debounce_timer = None
+        self._debounce_args = None
+        self._debounce_kwargs = None
 
         # Cache inspect.signature per slot function to avoid repeated introspection
         slot_id = id(slot)
@@ -111,6 +122,34 @@ class SlotWrapper:
         # Filter kwargs to match signature (prevents TypeErrors)
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.param_names}
 
+        # Debounce: defer the call if the widget requests it
+        debounce_ms = getattr(self.widget, "debounce", 0) or 0
+        if debounce_ms > 0:
+            self._debounce_args = args
+            self._debounce_kwargs = filtered_kwargs
+            if self._debounce_timer is None:
+                from qtpy.QtCore import QTimer
+
+                self._debounce_timer = QTimer(self.widget)
+                self._debounce_timer.setSingleShot(True)
+                self._debounce_timer.timeout.connect(self._flush_debounce)
+            self._debounce_timer.setInterval(int(debounce_ms))
+            self._debounce_timer.start()
+            return None
+
+        return self._invoke(*args, **filtered_kwargs)
+
+    def _flush_debounce(self):
+        """Execute the deferred slot call after the debounce timer fires."""
+        args = self._debounce_args or ()
+        kwargs = self._debounce_kwargs or {}
+        self._debounce_args = None
+        self._debounce_kwargs = None
+        self._invoke(*args, **kwargs)
+
+    def _invoke(self, *args, **kwargs):
+        """Execute the slot with history tracking and optional timeout."""
+
         # History Tracking
         self.sb.slot_history(add=self.slot)
 
@@ -127,14 +166,14 @@ class SlotWrapper:
             )(self.slot)
 
             try:
-                return monitored_slot(*args, **filtered_kwargs)
+                return monitored_slot(*args, **kwargs)
             except KeyboardInterrupt:
                 self.sb.logger.warning(
                     f"Execution of {self.slot.__name__} aborted by user."
                 )
                 return None
         else:
-            return self.slot(*args, **filtered_kwargs)
+            return self.slot(*args, **kwargs)
 
 
 class SwitchboardSlotsMixin:

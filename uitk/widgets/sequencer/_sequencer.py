@@ -200,6 +200,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     zone_context_menu_requested = QtCore.Signal(
         str, float, QtCore.QPoint
     )  # (zone, time, global_pos)
+    header_menu_requested = QtCore.Signal(
+        object
+    )  # (QMenu) right-click on header background
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
@@ -308,9 +311,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._shortcut_mgr.add_shortcuts_batch(
             [(k, fn, desc, _ctx) for k, fn, desc in _shortcut_defs]
         )
-        self._shortcut_mgr.add_info_entry(
-            "Ctrl+Shift+LMB", "Switch to shot at cursor"
-        )
+        self._shortcut_mgr.add_info_entry("Ctrl+Shift+LMB", "Switch to shot at cursor")
         # Keep the ShortcutOverride sequences in sync with the manager
         self._shortcut_mgr.on_change(self._sync_shortcut_sequences)
         self._sync_shortcut_sequences()
@@ -844,13 +845,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._timeline.viewport().update()
 
     def _show_hidden_menu(self, pos):
-        """Right-click on header background â†’ menu listing hidden tracks."""
-        if not self._hidden_tracks:
-            return
+        """Right-click on header background → menu with consumer actions
+        and hidden-track entries."""
         menu = QtWidgets.QMenu(self._header)
-        menu.setTitle("Show Hidden Tracks")
-        for name in sorted(self._hidden_tracks):
-            menu.addAction(f"Show: {name}", lambda n=name: self.track_shown.emit(n))
+        # Let consumers add their own actions first
+        self.header_menu_requested.emit(menu)
+        if self._hidden_tracks:
+            if not menu.isEmpty():
+                menu.addSeparator()
+            for name in sorted(self._hidden_tracks):
+                menu.addAction(f"Show: {name}", lambda n=name: self.track_shown.emit(n))
+        if menu.isEmpty():
+            return
         menu.exec_(self._header.mapToGlobal(pos))
 
     # -- playhead navigation -----------------------------------------------

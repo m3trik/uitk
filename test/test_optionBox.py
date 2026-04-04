@@ -26,6 +26,7 @@ from pathlib import Path
 from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
 from uitk.widgets.optionBox.options._options import ButtonOption
 from uitk.widgets.optionBox.options.pin_values import PinValuesOption
+from uitk.widgets.optionBox.options.browse import BrowseOption
 from uitk.widgets.optionBox.options.recent_values import (
     RecentValuesOption,
     RecentValuesPopup,
@@ -423,7 +424,9 @@ class TestRecentValuesCenterTruncation(QtBaseTestCase):
         """Long values should be truncated from the center, keeping both ends visible."""
         import pythontk as ptk
 
-        long_value = "A" * 50 + "B" * 50 + "C" * 50  # 150 chars, exceeds _MAX_DISPLAY_LENGTH (120)
+        long_value = (
+            "A" * 50 + "B" * 50 + "C" * 50
+        )  # 150 chars, exceeds _MAX_DISPLAY_LENGTH (120)
         parent = self.track_widget(QtWidgets.QWidget())
         popup = RecentValuesPopup(parent=parent)
         self.track_widget(popup.menu)
@@ -612,6 +615,250 @@ class TestOptionBoxDisabledState(QtBaseTestCase):
         ]
         for btn in buttons:
             self.assertFalse(btn.isEnabled(), "Button should be disabled at wrap time")
+
+
+class TestBrowseOption(QtBaseTestCase):
+    """Tests for BrowseOption file/folder browsing plugin.
+
+    Added: 2026-04-04
+    """
+
+    def test_creation_with_defaults(self):
+        """BrowseOption should create a button with default icon and tooltip."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget)
+        button = browse.widget
+        self.assertIsNotNone(button)
+        self.assertEqual(button.toolTip(), "Browse...")
+        self.assertEqual(button.property("class"), "BrowseButton")
+
+    def test_wrap_adds_browse_button(self):
+        """Wrapping a widget with BrowseOption should add a browse button."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget)
+        ob = OptionBox(options=[browse])
+        container = self.track_widget(ob.wrap(widget))
+        buttons = container.findChildren(QtWidgets.QPushButton)
+        browse_buttons = [b for b in buttons if b.property("class") == "BrowseButton"]
+        self.assertEqual(len(browse_buttons), 1)
+
+    def test_callable_start_dir(self):
+        """start_dir should accept a callable for lazy evaluation."""
+        calls = []
+
+        def get_dir():
+            calls.append(1)
+            return ""
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget, start_dir=get_dir)
+        result = browse._resolve_start_dir()
+        self.assertEqual(len(calls), 1, "Callable should be invoked at resolve time")
+        self.assertEqual(result, "")
+
+    def test_string_start_dir(self):
+        """start_dir should accept a plain string."""
+        import tempfile, os
+
+        tmp = tempfile.gettempdir()
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget, start_dir=tmp)
+        result = browse._resolve_start_dir()
+        self.assertEqual(result, tmp)
+
+    def test_start_dir_falls_back_to_widget_value(self):
+        """When start_dir is None, should use the widget's current value if it's a valid directory."""
+        import tempfile
+
+        tmp = tempfile.gettempdir()
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        widget.setText(tmp)
+        browse = BrowseOption(wrapped_widget=widget)
+        result = browse._resolve_start_dir()
+        self.assertEqual(result, tmp)
+
+    def test_start_dir_falls_back_to_parent_of_file(self):
+        """When widget contains a file path, should use parent directory."""
+        import tempfile, os
+
+        tmp = tempfile.gettempdir()
+        fake_file = os.path.join(tmp, "nonexistent_file.txt")
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        widget.setText(fake_file)
+        browse = BrowseOption(wrapped_widget=widget)
+        result = browse._resolve_start_dir()
+        self.assertEqual(result, tmp)
+
+    def test_start_dir_empty_when_no_hints(self):
+        """When no start_dir and widget is empty, should return empty string."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget)
+        result = browse._resolve_start_dir()
+        self.assertEqual(result, "")
+
+    def test_file_types_property(self):
+        """file_types should be gettable/settable."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget, file_types="Images (*.png *.jpg)")
+        self.assertEqual(browse.file_types, "Images (*.png *.jpg)")
+        browse.file_types = "All Files (*.*)"
+        self.assertEqual(browse.file_types, "All Files (*.*)")
+
+    def test_start_dir_property_setter(self):
+        """start_dir should be updatable after creation."""
+        import tempfile
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget)
+        self.assertIsNone(browse.start_dir)
+        browse.start_dir = tempfile.gettempdir()
+        self.assertEqual(browse.start_dir, tempfile.gettempdir())
+
+    def test_mode_defaults_to_file(self):
+        """Default mode should be 'file'."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget)
+        self.assertEqual(browse._mode, "file")
+
+    def test_records_to_sibling_recent_option(self):
+        """Browse should auto-record to a sibling RecentValuesOption."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        # Use OptionBoxManager (real-world path) so _option_box_manager is set
+        mgr = OptionBoxManager(widget)
+        widget._option_box_manager = mgr
+
+        recent = RecentValuesOption(
+            wrapped_widget=widget, settings_key="test_browse_recent"
+        )
+        browse = BrowseOption(wrapped_widget=widget)
+        ob = OptionBox(options=[recent, browse])
+        container = self.track_widget(ob.wrap(widget))
+        mgr._option_box = ob
+        mgr._is_wrapped = True
+
+        # Simulate what browse() does after a successful dialog
+        browse._set_widget_value("/some/test/path.txt")
+        browse._record_recent("/some/test/path.txt")
+
+        self.assertIn("/some/test/path.txt", recent.recent_values)
+
+    def test_user_callback_receives_result(self):
+        """User callback should be invoked with the selected path."""
+        results = []
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(
+            wrapped_widget=widget, callback=lambda r: results.append(r)
+        )
+        self.assertIsNotNone(browse._user_callback)
+
+    def test_has_public_browse_method(self):
+        """BrowseOption should expose a public browse() method."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget)
+        self.assertTrue(callable(getattr(browse, "browse", None)))
+
+
+class TestOptionBoxManagerBrowse(QtBaseTestCase):
+    """Tests for the OptionBoxManager.browse() fluent API.
+
+    Added: 2026-04-04
+    """
+
+    def test_browse_fluent_returns_self(self):
+        """browse() should return the manager for chaining."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        mgr = OptionBoxManager(widget)
+        result = mgr.browse(file_types="All Files (*.*)")
+        self.assertIs(result, mgr)
+
+    def test_browse_adds_browse_option(self):
+        """browse() should add a BrowseOption to pending options."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        mgr = OptionBoxManager(widget)
+        mgr.browse(file_types="Text Files (*.txt)")
+
+        browse_opts = [o for o in mgr._pending_options if isinstance(o, BrowseOption)]
+        self.assertEqual(len(browse_opts), 1)
+        self.assertEqual(browse_opts[0].file_types, "Text Files (*.txt)")
+
+    def test_browse_chained_with_recent(self):
+        """browse() and recent() should chain without conflict."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        mgr = OptionBoxManager(widget)
+        mgr.browse(file_types="All Files (*.*)").recent(settings_key="test_chain")
+
+        browse_opts = [o for o in mgr._pending_options if isinstance(o, BrowseOption)]
+        recent_opts = [
+            o for o in mgr._pending_options if isinstance(o, RecentValuesOption)
+        ]
+        self.assertEqual(len(browse_opts), 1)
+        self.assertEqual(len(recent_opts), 1)
+
+
+class TestOptionBoxManagerFindOption(QtBaseTestCase):
+    """Tests for OptionBoxManager.find_option() method.
+
+    Added: 2026-04-04
+    """
+
+    def test_find_pending_option(self):
+        """find_option should search pending options."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        mgr = OptionBoxManager(widget)
+        mgr.browse(file_types="All Files (*.*)")
+
+        found = mgr.find_option(BrowseOption)
+        self.assertIsNotNone(found)
+        self.assertIsInstance(found, BrowseOption)
+
+    def test_find_returns_none_when_absent(self):
+        """find_option should return None when no match exists."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        mgr = OptionBoxManager(widget)
+
+        found = mgr.find_option(BrowseOption)
+        self.assertIsNone(found)
+
+    def test_find_live_option(self):
+        """find_option should search live options on a wrapped option box."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        browse = BrowseOption(wrapped_widget=widget)
+        ob = OptionBox(options=[browse])
+        container = self.track_widget(ob.wrap(widget))
+
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        mgr = OptionBoxManager(widget)
+        mgr._option_box = ob
+        mgr._is_wrapped = True
+
+        found = mgr.find_option(BrowseOption)
+        self.assertIsNotNone(found)
+        self.assertIsInstance(found, BrowseOption)
+
+    def test_find_with_tuple_of_types(self):
+        """find_option should accept a tuple of types."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        mgr = OptionBoxManager(widget)
+        mgr.browse()
+
+        found = mgr.find_option((BrowseOption, PinValuesOption))
+        self.assertIsNotNone(found)
+        self.assertIsInstance(found, BrowseOption)
 
 
 # -----------------------------------------------------------------------------

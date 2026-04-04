@@ -186,6 +186,50 @@ class OptionBoxManager(ptk.LoggingMixin):
         self.add_option(action_option)
         return self
 
+    def browse(
+        self,
+        file_types=None,
+        title="Browse",
+        start_dir=None,
+        mode="file",
+        icon="folder",
+        tooltip="Browse...",
+        callback=None,
+    ):
+        """Enable file/folder browse button (fluent interface).
+
+        Args:
+            file_types: File filter string for QFileDialog
+                (e.g. ``"Images (*.png *.jpg);;All Files (*.*)"``).
+                Ignored when *mode* is ``"directory"``.
+            title: Dialog window title.
+            start_dir: Initial directory. When *None*, inferred from
+                the current widget value or defaults to home.
+            mode: ``"file"`` (default), ``"files"`` (multi-select),
+                ``"save"``, or ``"directory"``.
+            icon: Icon name for the button (default: ``"folder"``).
+            tooltip: Tooltip text (default: ``"Browse..."``).
+            callback: Optional callable invoked with the selected
+                path(s) after the widget value has been set.
+
+        Returns:
+            self: For fluent interface chaining.
+        """
+        from uitk.widgets.optionBox.options.browse import BrowseOption
+
+        browse_option = BrowseOption(
+            wrapped_widget=self._widget,
+            file_types=file_types,
+            title=title,
+            start_dir=start_dir,
+            mode=mode,
+            icon=icon,
+            tooltip=tooltip,
+            callback=callback,
+        )
+        self.add_option(browse_option)
+        return self
+
     def enable_clear(self):
         """Enable clear option (fluent interface)"""
         self.clear_option = True
@@ -210,6 +254,26 @@ class OptionBoxManager(ptk.LoggingMixin):
 
         self._pending_options = []
         return self
+
+    def find_option(self, option_type):
+        """Find the first option of the given type.
+
+        Searches both pending and live options.
+
+        Args:
+            option_type: The class (or tuple of classes) to match.
+
+        Returns:
+            The first matching option instance, or None.
+        """
+        for opt in self._pending_options:
+            if isinstance(opt, option_type):
+                return opt
+        if self._option_box:
+            for opt in self._option_box.get_options():
+                if isinstance(opt, option_type):
+                    return opt
+        return None
 
     def set_order(self, order):
         """Set option order (fluent interface)
