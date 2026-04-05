@@ -1865,8 +1865,123 @@ class TestClipItemHitZone(BaseTestCase):
 
 
 # =========================================================================
-# Multiple Expanded Tracks
+# Window-level Shortcut Dispatch
 # =========================================================================
+
+
+class TestWindowShortcutDispatch(BaseTestCase):
+    """Verify eventFilter dispatches actions for window-level shortcuts.
+
+    Bug: When window_shortcuts=True, the eventFilter accepted
+    ShortcutOverride to block the host app (Maya) but didn't invoke
+    the action. The QShortcut couldn't fire either (override accepted),
+    leaving the key dead when focus was outside the sequencer.
+    Fixed: 2026-04-04
+    """
+
+    def setUp(self):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        self.w = SequencerWidget()
+        self.w.window_shortcuts = True
+        self.calls = []
+        self.w._shortcut_mgr.add_shortcut(
+            "Delete",
+            lambda: self.calls.append("delete"),
+            "Test action",
+            QtCore.Qt.WindowShortcut,
+        )
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_override_dispatches_action(self):
+        """ShortcutOverride for a registered key invokes the action."""
+        from qtpy import QtCore, QtGui
+
+        override = QtGui.QKeyEvent(
+            QtCore.QEvent.ShortcutOverride,
+            QtCore.Qt.Key_Delete,
+            QtCore.Qt.NoModifier,
+        )
+        result = self.w.eventFilter(self.w, override)
+        self.assertTrue(result, "eventFilter should return True for matched key")
+        self.assertTrue(override.isAccepted(), "ShortcutOverride must be accepted")
+        self.assertEqual(self.calls, ["delete"], "Action must be dispatched")
+
+    def test_subsequent_keypress_consumed(self):
+        """KeyPress after a dispatched ShortcutOverride is consumed."""
+        from qtpy import QtCore, QtGui
+
+        # First: ShortcutOverride
+        override = QtGui.QKeyEvent(
+            QtCore.QEvent.ShortcutOverride,
+            QtCore.Qt.Key_Delete,
+            QtCore.Qt.NoModifier,
+        )
+        self.w.eventFilter(self.w, override)
+        # Second: KeyPress
+        press = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress,
+            QtCore.Qt.Key_Delete,
+            QtCore.Qt.NoModifier,
+        )
+        consumed = self.w.eventFilter(self.w, press)
+        self.assertTrue(consumed, "KeyPress after dispatched override must be consumed")
+        self.assertEqual(len(self.calls), 1, "Action should fire only once")
+
+    def test_unmatched_key_passes_through(self):
+        """Unregistered keys are not intercepted by the filter."""
+        from qtpy import QtCore, QtGui
+
+        override = QtGui.QKeyEvent(
+            QtCore.QEvent.ShortcutOverride,
+            QtCore.Qt.Key_A,
+            QtCore.Qt.NoModifier,
+        )
+        result = self.w.eventFilter(self.w, override)
+        self.assertFalse(result, "Unmatched key should pass through")
+        self.assertEqual(self.calls, [], "No action should fire")
+
+    def test_text_edit_focus_bypasses_filter(self):
+        """ShortcutOverride is NOT intercepted when a line edit has focus."""
+        from unittest.mock import patch
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        line_edit = QtWidgets.QLineEdit()
+        with patch.object(
+            QtWidgets.QApplication, "focusWidget", return_value=line_edit
+        ):
+            override = QtGui.QKeyEvent(
+                QtCore.QEvent.ShortcutOverride,
+                QtCore.Qt.Key_Delete,
+                QtCore.Qt.NoModifier,
+            )
+            result = self.w.eventFilter(self.w, override)
+        self.assertFalse(result, "Filter must not intercept when text widget focused")
+        self.assertEqual(self.calls, [], "No action should fire")
+        line_edit.deleteLater()
+
+    def test_unrelated_keypress_not_consumed(self):
+        """A KeyPress for a different key after dispatch is NOT consumed."""
+        from qtpy import QtCore, QtGui
+
+        # Dispatch Delete via ShortcutOverride
+        override = QtGui.QKeyEvent(
+            QtCore.QEvent.ShortcutOverride,
+            QtCore.Qt.Key_Delete,
+            QtCore.Qt.NoModifier,
+        )
+        self.w.eventFilter(self.w, override)
+        # Now send a KeyPress for a DIFFERENT key (e.g. 'A')
+        press_a = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress,
+            QtCore.Qt.Key_A,
+            QtCore.Qt.NoModifier,
+        )
+        consumed = self.w.eventFilter(self.w, press_a)
+        self.assertFalse(consumed, "Unrelated key must not be consumed")
 
 
 class TestMultipleExpandedTracks(BaseTestCase):

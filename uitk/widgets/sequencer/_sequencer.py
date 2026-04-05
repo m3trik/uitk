@@ -233,6 +233,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_range_highlight: bool = True  # toggle for active shot highlight
         self._window_shortcuts: bool = False  # shortcuts active at window level
         self._window_filter_installed: bool = False
+        self._filter_pending_key: int = (
+            0  # raw key dispatched by eventFilter, awaiting KeyPress
+        )
         self._active_range: Optional[tuple] = None  # (start, end) in frames
         self._active_range_color = QtGui.QColor(
             90, 140, 220, 25
@@ -375,22 +378,48 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self._window_filter_installed = False
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
-        """Intercept ShortcutOverride on the window when window_shortcuts is on."""
-        if self._window_shortcuts and event.type() == QtCore.QEvent.ShortcutOverride:
-            # Don't intercept keystrokes while a text-editing widget has focus
-            focused = QtWidgets.QApplication.focusWidget()
-            if isinstance(
-                focused,
-                (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit),
+        """Intercept ShortcutOverride on the window when window_shortcuts is on.
+
+        Accepting a ``ShortcutOverride`` prevents Qt from firing the
+        matching ``QShortcut``, so the action must be dispatched here.
+        The subsequent ``KeyPress`` is consumed to stop the host app
+        (e.g. Maya) from also processing the key.
+        """
+        if self._window_shortcuts:
+            if event.type() == QtCore.QEvent.ShortcutOverride:
+                # Don't intercept keystrokes while a text-editing widget has focus
+                focused = QtWidgets.QApplication.focusWidget()
+                if isinstance(
+                    focused,
+                    (
+                        QtWidgets.QLineEdit,
+                        QtWidgets.QTextEdit,
+                        QtWidgets.QPlainTextEdit,
+                    ),
+                ):
+                    return super().eventFilter(obj, event)
+                mods = event.modifiers()
+                mod_int = mods.value if hasattr(mods, "value") else int(mods)
+                key = QtGui.QKeySequence(event.key() | mod_int)
+                for seq in self._timeline._shortcut_sequences:
+                    if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
+                        event.accept()
+                        # Dispatch the action directly — the QShortcut won't
+                        # fire because we accepted the override.
+                        entry = self._shortcut_mgr.shortcuts.get(seq.toString())
+                        if entry and entry.get("action"):
+                            entry["action"]()
+                        self._filter_pending_key = event.key()
+                        return True
+            elif (
+                event.type() == QtCore.QEvent.KeyPress
+                and self._filter_pending_key
+                and event.key() == self._filter_pending_key
             ):
-                return super().eventFilter(obj, event)
-            mods = event.modifiers()
-            mod_int = mods.value if hasattr(mods, "value") else int(mods)
-            key = QtGui.QKeySequence(event.key() | mod_int)
-            for seq in self._timeline._shortcut_sequences:
-                if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                    event.accept()
-                    return True
+                # Consume the KeyPress that Qt delivers after the accepted
+                # ShortcutOverride so the host app doesn't also act on it.
+                self._filter_pending_key = 0
+                return True
         return super().eventFilter(obj, event)
 
     def event(self, event: QtCore.QEvent) -> bool:
