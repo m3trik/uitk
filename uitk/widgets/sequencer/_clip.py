@@ -132,6 +132,10 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         # graph-editor view (Bézier curves + key dots).
         preview = self._data.data.get("curve_preview")
         if self._data.sub_row and preview:
+            # Dim hold clips (flat-key spans shown via "Show Internal Holds")
+            if self._data.data.get("is_hold"):
+                color = QtGui.QColor(color.darker(180))
+                color.setAlpha(100)
             self._paint_curve_preview(painter, rect, preview, color, fg)
             # Lock indicator still needed on sub-rows
             if (
@@ -230,7 +234,9 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                         avail,
                         text_rect.height(),
                     )
-                    elided = fm.elidedText(center_text, QtCore.Qt.ElideRight, int(avail))
+                    elided = fm.elidedText(
+                        center_text, QtCore.Qt.ElideRight, int(avail)
+                    )
                     painter.drawText(
                         center_rect,
                         QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter,

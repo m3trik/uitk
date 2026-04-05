@@ -106,9 +106,20 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
     def _update_tooltip(self):
         self._gap_frames = max(0, int(round(self._end - self._start)))
         lock_label = " [Locked]" if self._locked else ""
+        mode = self._drag_mode
+        if mode == "left":
+            frame = int(round(self._start))
+            info = f"◀ Left edge → frame {frame}"
+        elif mode == "right":
+            frame = int(round(self._end))
+            info = f"Right edge ▶ → frame {frame}"
+        elif mode == "move":
+            info = f"Sliding → {int(round(self._start))}–{int(round(self._end))}"
+        else:
+            info = "Drag edges to resize · Shift+drag body to slide"
         self.setToolTip(
             f"Gap: {self._gap_frames} frame{'s' if self._gap_frames != 1 else ''}{lock_label}"
-            "\nDrag edges to resize · Shift+drag body to slide"
+            f"\n{info}"
             "\nRight-click for options"
         )
 
@@ -164,6 +175,9 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         self.update()
 
     def hoverMoveEvent(self, event):
+        if self._clip_at(event.scenePos()):
+            self.setCursor(QtCore.Qt.ArrowCursor)
+            return
         zone = self._hit_zone(event.pos())
         if zone in ("left", "right"):
             self.setCursor(QtCore.Qt.SizeHorCursor)
@@ -171,6 +185,15 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
             self.setCursor(QtCore.Qt.OpenHandCursor)
         else:
             self.setCursor(QtCore.Qt.ArrowCursor)
+
+    def _clip_at(self, scene_pos: QtCore.QPointF) -> bool:
+        """Return True if a ClipItem exists at *scene_pos*."""
+        from uitk.widgets.sequencer._clip import ClipItem
+
+        for item in self.scene().items(scene_pos):
+            if isinstance(item, ClipItem):
+                return True
+        return False
 
     def mousePressEvent(self, event):
         if event.button() != QtCore.Qt.LeftButton:
@@ -203,14 +226,14 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
 
         if self._drag_mode == "right":
             new_end = self._snap(self._drag_origin_end + dt)
-            if new_end > self._start:
+            if new_end >= self._start:
                 self.prepareGeometryChange()
                 self._end = new_end
                 self._update_tooltip()
                 self.update()
         elif self._drag_mode == "left":
             new_start = self._snap(self._drag_origin_start + dt)
-            if new_start < self._end:
+            if new_start <= self._end:
                 self.prepareGeometryChange()
                 self._start = new_start
                 self._update_tooltip()
@@ -246,6 +269,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
             if self._drag_mode == "move":
                 self.setCursor(QtCore.Qt.OpenHandCursor)
             self._drag_mode = None
+            self._update_tooltip()
         event.accept()
 
     def contextMenuEvent(self, event):
