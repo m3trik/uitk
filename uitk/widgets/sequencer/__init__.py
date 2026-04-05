@@ -32,6 +32,7 @@ from uitk.widgets.sequencer._data import (  # noqa: F401
     hatch_brush,
 )
 from uitk.widgets.sequencer._clip import ClipItem  # noqa: F401
+from uitk.widgets.sequencer._keyframe import KeyframeItem  # noqa: F401
 from uitk.widgets.sequencer._overlays import (  # noqa: F401
     _StaticRangeOverlay,
     _GapOverlayItem,

@@ -20,6 +20,7 @@ from uitk.widgets.sequencer._data import (
     hatch_brush,
     HATCH_DENSE,
 )
+from uitk.widgets.sequencer._keyframe import KeyframeItem
 
 
 class ClipItem(QtWidgets.QGraphicsRectItem):
@@ -36,10 +37,18 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         self._drag_peers: list = []  # [(ClipItem, original_start), ...]
         self._waveform_pixmap: Optional[QtGui.QPixmap] = None
         self._waveform_pixmap_size: Optional[tuple] = None
+        self._keyframe_items: list = []  # KeyframeItem children for sub-rows
+        self._keys_dragging = False  # True while any child KeyframeItem is mid-drag
         self.setAcceptHoverEvents(True)
         self.setFlags(
-            QtWidgets.QGraphicsItem.ItemIsSelectable
-            | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
+            QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
+            # Sub-row clips are not directly selectable — interaction is
+            # via KeyframeItem children.  Locked clips are also non-selectable.
+            | (
+                QtWidgets.QGraphicsItem.ItemIsSelectable
+                if not (clip_data.sub_row or clip_data.locked)
+                else QtWidgets.QGraphicsItem.GraphicsItemFlags(0)
+            )
         )
         # Dimmed (non-active shot) clips sit behind active clips
         if clip_data.data.get("dimmed"):
@@ -84,6 +93,77 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         if self.rect().width() != new_rect.width():
             self._waveform_pixmap = None
         self.setRect(new_rect)
+        self._sync_keyframe_items()
+
+    def _sync_keyframe_items(self):
+        """Create, destroy, or reposition :class:`KeyframeItem` children.
+
+        Called from :meth:`_sync_geometry` on every zoom / scroll / data
+        refresh.  Only sub-row clips with a ``curve_preview`` get children.
+        """
+        if not self._data.sub_row:
+            return
+
+        # If any child key is mid-drag, skip rebuild to avoid destroying
+        # active drag state.  Just reposition existing items.
+        if self._keys_dragging:
+            for ki in self._keyframe_items:
+                ki._reposition()
+            return
+
+        preview = self._data.data.get("curve_preview") or {}
+        keys = preview.get("keys", [])  # [(t, v), ...]
+        segments = preview.get("segments", [])
+
+        # Build a comparable fingerprint to decide rebuild vs reposition.
+        new_fp = tuple((t, v) for t, v, *_ in keys)
+        old_fp = tuple((k._time, k._value) for k in self._keyframe_items)
+
+        if new_fp != old_fp:
+            # Tear down old items
+            scene = self.scene()
+            for item in self._keyframe_items:
+                if scene:
+                    scene.removeItem(item)
+            self._keyframe_items.clear()
+
+            # Create new items
+            for idx, key_data in enumerate(keys):
+                t, v = key_data[0], key_data[1]
+                # Derive stepped from the segment that starts at this key
+                is_stepped = False
+                if idx < len(segments):
+                    is_stepped = segments[idx].get("out_type") in ("step", "stepnext")
+                ki = KeyframeItem(t, v, is_stepped, self)
+                self._keyframe_items.append(ki)
+
+        # (Re)position all items and hide bounding keys that fall
+        # outside the clip's time range (build_curve_preview includes
+        # one extra key on each side for curve continuity).
+        start = self._data.start
+        end = start + self._data.duration
+        eps = 0.5
+        for ki in self._keyframe_items:
+            ki._reposition()
+            in_range = (start - eps) <= ki._time <= (end + eps)
+            ki.setVisible(in_range)
+            ki.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, in_range)
+
+    def boundingRect(self):
+        base = super().boundingRect()
+        # During key drag, expand bounds to include dragged key
+        # positions so Qt doesn't clip the expanded background / curve.
+        if not self._keys_dragging:
+            return base
+        left = base.left()
+        right = base.right()
+        pad = KeyframeItem._DOT_RADIUS + 2
+        for ki in self._keyframe_items:
+            if ki.isVisible():
+                kx = ki.pos().x()
+                left = min(left, kx - pad)
+                right = max(right, kx + pad)
+        return QtCore.QRectF(left, base.top(), right - left, base.height())
 
     def _track_index(self) -> int:
         widget = self._timeline.parent_sequencer
@@ -92,6 +172,52 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                 return i
         return 0
 
+    def _drag_adjusted_segments(self, segments, keys):
+        """Return segments with times scaled to current KeyframeItem positions.
+
+        If no keys have moved, returns *segments* unchanged (no copy).
+        Bézier control-point times are linearly remapped within each
+        segment's new time span.
+        """
+        items = self._keyframe_items
+        if not items or len(items) != len(keys):
+            return segments
+
+        # Quick check: did any key actually move?
+        moved = False
+        for ki, key in zip(items, keys):
+            if abs(ki._time - key[0]) > 1e-6:
+                moved = True
+                break
+        if not moved:
+            return segments
+
+        # Build adjusted copies
+        new_segs = []
+        for i, seg in enumerate(segments):
+            ns = dict(seg)
+            new_t0 = items[i]._time
+            new_t1 = items[i + 1]._time
+            orig_t0 = seg["t0"]
+            orig_t1 = seg["t1"]
+            orig_span = orig_t1 - orig_t0
+            new_span = new_t1 - new_t0
+
+            ns["t0"] = new_t0
+            ns["t1"] = new_t1
+
+            # Scale control-point times proportionally
+            if abs(orig_span) > 1e-9:
+                for cp_key in ("cp1", "cp2"):
+                    cp = seg.get(cp_key)
+                    if cp is not None:
+                        frac = (cp[0] - orig_t0) / orig_span
+                        ns[cp_key] = (new_t0 + frac * new_span, cp[1])
+
+            new_segs.append(ns)
+
+        return new_segs
+
     def _resolve_color(self) -> QtGui.QColor:
         """Resolve clip color from attributes.
 
@@ -99,15 +225,19 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         resolves to the *same* color (e.g. a single-attribute clip or a
         group where all attrs share a color).  Mixed-attribute clips use
         the 'consolidated' color (default white) to indicate that multiple
-        attributes are combined.
+        attributes are combined.  Attributes not present in the color map
+        are treated as having their own unique implicit color, so a clip
+        with both a known and unknown attribute is always consolidated.
         """
         attrs = self._data.data.get("attributes")
         if attrs:
             color_map = self._timeline.parent_sequencer.attribute_colors
-            matched = {color_map[a] for a in attrs if a in color_map}
-            if len(matched) == 1:
-                return QtGui.QColor(matched.pop())
-            if len(matched) > 1:
+            resolved = [color_map.get(a) for a in attrs]
+            known = {c for c in resolved if c is not None}
+            has_unknown = None in resolved
+            if len(known) == 1 and not has_unknown:
+                return QtGui.QColor(known.pop())
+            if known or (has_unknown and len(attrs) > 1):
                 return QtGui.QColor(color_map.get("consolidated", "#FFFFFF"))
         return QtGui.QColor(self._data.color or "#CCCCCC")
 
@@ -351,15 +481,35 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         val_min = preview.get("val_min", 0.0)
         val_max = preview.get("val_max", 1.0)
 
+        # During key drag, expand the paint area to cover all visible
+        # key positions so the background tint follows the curve.
+        paint_rect = rect
+        if self._keys_dragging and self._keyframe_items:
+            left = rect.left()
+            right = rect.right()
+            for ki in self._keyframe_items:
+                if ki.isVisible():
+                    kx = ki.pos().x()
+                    left = min(left, kx - 2)
+                    right = max(right, kx + 2)
+            if right > left:
+                paint_rect = QtCore.QRectF(
+                    left, rect.top(), right - left, rect.height()
+                )
+
         # --- background tint ---
         bar_color = QtGui.QColor(color)
         bar_color.setAlpha(60)
         painter.setBrush(bar_color)
         painter.setPen(QtCore.Qt.NoPen)
-        painter.drawRect(rect)
+        painter.drawRect(paint_rect)
 
         if not segments:
             return
+
+        # If keyframe items are being dragged, adjust segment times to
+        # follow the current key positions so the curve updates live.
+        segments = self._drag_adjusted_segments(segments, keys)
 
         # --- coordinate mapping helpers ---
         pad = rect.height() * 0.15
@@ -399,9 +549,9 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             frac = (v - val_min) / val_range
             return y_bot - frac * y_span
 
-        # --- draw curve path (clip to rect to contain bounding keys) ---
+        # --- draw curve path (clipped to paint_rect so dragged curves remain visible) ---
         painter.save()
-        painter.setClipRect(rect)
+        painter.setClipRect(paint_rect)
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
 
         curve_color = QtGui.QColor(color)
@@ -444,24 +594,12 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
 
         painter.drawPath(path)
 
-        # --- draw key dots ---
-        dot_r = min(rect.height() * 0.18, 3.5)
-        key_color = QtGui.QColor(color)
-        if self.isSelected():
-            key_color = key_color.lighter(150)
-        painter.setBrush(key_color)
-        painter.setPen(QtGui.QPen(fg, 0.6))
-
-        for t, v in keys:
-            kx = map_x(t)
-            ky = map_y(v)
-            painter.drawEllipse(QtCore.QPointF(kx, ky), dot_r, dot_r)
-
         painter.restore()
+        # Key dots are rendered by KeyframeItem children (un-cropped).
 
     # -- hover cursor -------------------------------------------------------
     def hoverMoveEvent(self, event):
-        if self._data.locked:
+        if self._data.locked or self._data.sub_row:
             self.setCursor(QtCore.Qt.ArrowCursor)
             super().hoverMoveEvent(event)
             return
@@ -479,8 +617,8 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
     # -- drag interaction ---------------------------------------------------
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
-            if self._data.locked:
-                # Allow selection but prevent drag
+            if self._data.locked or self._data.sub_row:
+                # Sub-row keys are dragged by KeyframeItem children.
                 super().mousePressEvent(event)
                 return
             self._drag_mode = self._hit_zone(event.pos())
@@ -605,9 +743,9 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
 
         chosen = menu.exec_(_menu_exec_pos(event))
         if chosen == action_lock:
-            self._data.locked = not self._data.locked
-            self.update()
-            widget.clip_locked.emit(self._data.clip_id, self._data.locked)
+            new_locked = not self._data.locked
+            widget.set_clip_locked(self._data.clip_id, new_locked)
+            widget.clip_locked.emit(self._data.clip_id, new_locked)
         elif chosen == action_rename:
             self._start_inline_rename()
 

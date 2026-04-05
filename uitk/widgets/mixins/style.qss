@@ -377,7 +377,6 @@ QComboBox {
     border: 1px solid {BORDER_COLOR};
     padding: 0px 1px 0px 1px;
     border-radius: 1px;
-    min-width: 0em;
 }
 QComboBox:disabled {
     color: {TEXT_DISABLED};

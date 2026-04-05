@@ -358,7 +358,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setRenderHint(QtGui.QPainter.Antialiasing)
-        self.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
+        self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
         self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
         self.setStyleSheet("background:#1E1E1E; border:none;")
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
@@ -366,7 +366,14 @@ class TimelineView(QtWidgets.QGraphicsView):
         self._pan_start = QtCore.QPoint()
         self._ruler_drag = False
         self._shortcut_sequences: List[QtGui.QKeySequence] = []
-        self._ctrl_subtract_snapshot: Optional[set] = None
+        # Custom marquee state
+        self._marquee_active = False
+        self._marquee_anchor = QtCore.QPoint()  # viewport coords
+        self._marquee_current = QtCore.QPoint()
+        self._marquee_pre_selection: set = set()  # item ids before drag
+        self._marquee_modifier = 0  # modifier held at press time
+        self._space_held = False
+        self._space_last_pos = QtCore.QPoint()
         # Now that the scene/view wiring is complete, sync deferred items
         self._scene.playhead.sync()
         # Keep ruler pinned to the viewport top during vertical scroll
@@ -385,6 +392,13 @@ class TimelineView(QtWidgets.QGraphicsView):
         return super().event(event)
 
     def keyPressEvent(self, event):
+        # Spacebar during marquee: start repositioning the selection area
+        if event.key() == QtCore.Qt.Key_Space and self._marquee_active:
+            self._space_held = True
+            self._space_last_pos = self._marquee_current
+            event.accept()
+            return
+
         mods = event.modifiers()
         mod_int = mods.value if hasattr(mods, "value") else int(mods)
         key_seq = QtGui.QKeySequence(event.key() | mod_int)
@@ -398,6 +412,13 @@ class TimelineView(QtWidgets.QGraphicsView):
                 event.accept()
                 return
         super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Space and self._marquee_active:
+            self._space_held = False
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
 
     def enterEvent(self, event):
         self.setFocus(QtCore.Qt.MouseFocusReason)
@@ -448,6 +469,73 @@ class TimelineView(QtWidgets.QGraphicsView):
             return "ruler"
         return "tracks"
 
+    # -- marquee helpers ----------------------------------------------------
+
+    def _marquee_rect(self) -> QtCore.QRect:
+        """Return the current marquee rectangle in viewport coords."""
+        return QtCore.QRect(self._marquee_anchor, self._marquee_current).normalized()
+
+    def _items_in_marquee(self) -> set:
+        """Return the set of selectable items inside the current marquee."""
+        rect = self._marquee_rect()
+        scene_rect = QtCore.QRectF(
+            self.mapToScene(rect.topLeft()),
+            self.mapToScene(rect.bottomRight()),
+        )
+        items = set()
+        for item in self._scene.items(scene_rect, QtCore.Qt.IntersectsItemShape):
+            if item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable:
+                items.add(item)
+        return items
+
+    def _sync_marquee_selection(self):
+        """Update scene selection to reflect the current marquee state."""
+        in_band = self._items_in_marquee()
+        mods = self._marquee_modifier
+
+        _ctrl = QtCore.Qt.ControlModifier
+        _ctrl_v = _ctrl.value if hasattr(_ctrl, "value") else int(_ctrl)
+        _shift = QtCore.Qt.ShiftModifier
+        _shift_v = _shift.value if hasattr(_shift, "value") else int(_shift)
+
+        # Block selectionChanged until we're done batching
+        self._scene.blockSignals(True)
+        try:
+            if mods & _ctrl_v:
+                # Ctrl: subtract items inside marquee from the pre-selection
+                for item in self._scene.items():
+                    if not (item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
+                        continue
+                    should = id(item) in self._marquee_pre_selection and item not in in_band
+                    if item.isSelected() != should:
+                        item.setSelected(should)
+            elif mods & _shift_v:
+                # Shift: add to pre-selection
+                for item in self._scene.items():
+                    if not (item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
+                        continue
+                    should = id(item) in self._marquee_pre_selection or item in in_band
+                    if item.isSelected() != should:
+                        item.setSelected(should)
+            else:
+                # No modifier: exact replacement
+                for item in self._scene.items():
+                    if not (item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
+                        continue
+                    should = item in in_band
+                    if item.isSelected() != should:
+                        item.setSelected(should)
+        finally:
+            self._scene.blockSignals(False)
+        # Emit once
+        self._scene.selectionChanged.emit()
+
+    def _finish_marquee(self):
+        """Clean up marquee state and trigger a final viewport repaint."""
+        self._marquee_active = False
+        self._space_held = False
+        self.viewport().update()
+
     # -- clicking / dragging ------------------------------------------------
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton:
@@ -482,18 +570,31 @@ class TimelineView(QtWidgets.QGraphicsView):
             self._scene.playhead.time = t
             self.parent_sequencer.playhead_moved.emit(t)
             event.accept()
-        else:
-            if (
-                event.button() == QtCore.Qt.LeftButton
-                and event.modifiers() & QtCore.Qt.ControlModifier
+        elif event.button() == QtCore.Qt.LeftButton:
+            # Check if click landed on a selectable item
+            item = self.itemAt(event.pos())
+            if item is not None and (
+                item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable
             ):
-                self._ctrl_subtract_snapshot = {
-                    item
-                    for item in self._scene.selectedItems()
-                    if isinstance(item, ClipItem)
-                }
+                # Direct item click — let Qt handle it (drag, selection toggle)
+                super().mousePressEvent(event)
             else:
-                self._ctrl_subtract_snapshot = None
+                # Empty space — start custom marquee
+                self._marquee_active = True
+                self._marquee_anchor = event.pos()
+                self._marquee_current = event.pos()
+                self._marquee_modifier = mods.value if hasattr(mods, "value") else int(mods)
+                self._space_held = False
+                # Snapshot current selection (by id) for additive/subtractive modes
+                self._marquee_pre_selection = {
+                    id(it)
+                    for it in self._scene.selectedItems()
+                }
+                # If no modifier, clear selection immediately
+                if not (mods & (QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)):
+                    self._scene.clearSelection()
+                event.accept()
+        else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -513,6 +614,18 @@ class TimelineView(QtWidgets.QGraphicsView):
             self._scene.playhead.time = t
             self.parent_sequencer.playhead_moved.emit(t)
             event.accept()
+        elif self._marquee_active:
+            if self._space_held:
+                # Reposition: shift the anchor by the mouse delta
+                delta = event.pos() - self._space_last_pos
+                self._marquee_anchor += delta
+                self._marquee_current += delta
+                self._space_last_pos = event.pos()
+            else:
+                self._marquee_current = event.pos()
+            self._sync_marquee_selection()
+            self.viewport().update()
+            event.accept()
         else:
             super().mouseMoveEvent(event)
 
@@ -524,24 +637,11 @@ class TimelineView(QtWidgets.QGraphicsView):
         elif event.button() == QtCore.Qt.LeftButton and self._ruler_drag:
             self._ruler_drag = False
             event.accept()
+        elif event.button() == QtCore.Qt.LeftButton and self._marquee_active:
+            self._finish_marquee()
+            event.accept()
         else:
-            snapshot = self._ctrl_subtract_snapshot
             super().mouseReleaseEvent(event)
-            if snapshot is not None:
-                newly_selected = {
-                    item
-                    for item in self._scene.selectedItems()
-                    if isinstance(item, ClipItem)
-                }
-                keep = snapshot - newly_selected
-                self._scene.blockSignals(True)
-                for item in self._scene.selectedItems():
-                    item.setSelected(False)
-                for item in keep:
-                    item.setSelected(True)
-                self._scene.blockSignals(False)
-                self.parent_sequencer._on_scene_selection()
-                self._ctrl_subtract_snapshot = None
 
     def mouseDoubleClickEvent(self, event):
         zone = self._hit_zone(event.pos().y())
@@ -560,6 +660,20 @@ class TimelineView(QtWidgets.QGraphicsView):
             event.accept()
         else:
             super().mouseDoubleClickEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._marquee_active:
+            rect = self._marquee_rect()
+            if not rect.isNull():
+                painter = QtGui.QPainter(self.viewport())
+                color = QtGui.QColor(51, 153, 255, 40)
+                painter.fillRect(rect, color)
+                pen = QtGui.QPen(QtGui.QColor(51, 153, 255, 160), 1)
+                pen.setStyle(QtCore.Qt.DashLine)
+                painter.setPen(pen)
+                painter.drawRect(rect.adjusted(0, 0, -1, -1))
+                painter.end()
 
     def contextMenuEvent(self, event):
         item = self.itemAt(event.pos())
