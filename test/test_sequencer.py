@@ -18,6 +18,7 @@ from uitk.widgets.sequencer import (
     ClipData,
     TrackData,
     ClipItem,
+    KeyframeItem,
     MarkerData,
     RangeHighlightItem,
     AttributeColorDialog,
@@ -376,13 +377,28 @@ class TestAttributeColors(BaseTestCase):
         self.assertEqual(self.w.attribute_colors["custom_attr"], "#00FF00")
 
     def test_clip_resolves_attribute_color(self):
-        """Clip with attributes data resolves color from the widget map."""
-        self.w.attribute_colors = {"rotateY": "#123456"}
+        """Clip with all attributes mapped to the same color uses that color."""
+        self.w.attribute_colors = {
+            "rotateY": "#123456",
+            "translateX": "#123456",
+        }
         tid = self.w.add_track("Obj")
         cid = self.w.add_clip(tid, 0, 10, attributes=["rotateY", "translateX"])
         item = self.w._clip_items[cid]
         resolved = item._resolve_color()
         self.assertEqual(resolved.name(), "#123456")
+
+    def test_clip_mixed_known_unknown_attrs_uses_consolidated(self):
+        """Clip with one known and one unknown attribute uses consolidated."""
+        self.w.attribute_colors = {
+            "rotateY": "#123456",
+            "consolidated": "#FFFFFF",
+        }
+        tid = self.w.add_track("Obj")
+        cid = self.w.add_clip(tid, 0, 10, attributes=["rotateY", "unknownAttr"])
+        item = self.w._clip_items[cid]
+        resolved = item._resolve_color()
+        self.assertEqual(resolved.name(), "#ffffff")
 
     def test_clip_falls_back_to_default_color(self):
         """Clip without attributes falls back to ClipData.color."""
@@ -699,15 +715,15 @@ class TestSubRowExpansion(BaseTestCase):
         self.assertTrue(rows[1][2])  # sub-row is_sub=True
         self.assertTrue(rows[2][2])  # sub-row is_sub=True
 
-    def test_zero_duration_sub_clip_not_resizable(self):
-        """Point (zero-duration) sub-row clips are not resizable."""
+    def test_sub_clip_default_resizable(self):
+        """Sub-row clips with duration are resizable by default."""
         tid = self.w.add_track("obj_A")
-        sub_data = [("tx", [(25, 0, "tx", "#FF0000", {})])]
+        sub_data = [("tx", [(25, 10, "tx", "#FF0000", {})])]
         self.w.expand_track(tid, sub_row_data=sub_data)
         sub_clips = [c for c in self.w.clips() if c.sub_row]
         self.assertEqual(len(sub_clips), 1)
-        self.assertFalse(sub_clips[0].data.get("resizable_left", True))
-        self.assertFalse(sub_clips[0].data.get("resizable_right", True))
+        self.assertTrue(sub_clips[0].data.get("resizable_left", True))
+        self.assertTrue(sub_clips[0].data.get("resizable_right", True))
 
 
 # =========================================================================
@@ -2394,6 +2410,823 @@ class TestSwapClipsUndo(BaseTestCase):
         # Sub-row clip exists
         sub_clips = [cd for cd in self.w._clips.values() if cd.sub_row]
         self.assertEqual(len(sub_clips), 1)
+
+
+# =========================================================================
+# KeyframeItem (interactive dots on sub-row clips)
+# =========================================================================
+
+
+class TestKeyframeItem(BaseTestCase):
+    """Tests for KeyframeItem creation, positioning, selection, and signals."""
+
+    SAMPLE_PREVIEW = {
+        "keys": [(10, 0.0), (50, 1.0), (90, 0.5)],
+        "segments": [
+            {
+                "t0": 10,
+                "v0": 0.0,
+                "t1": 50,
+                "v1": 1.0,
+                "out_type": "spline",
+                "cp1": (23.33, 0.33),
+                "cp2": (36.67, 0.67),
+            },
+            {
+                "t0": 50,
+                "v0": 1.0,
+                "t1": 90,
+                "v1": 0.5,
+                "out_type": "step",
+                "cp1": None,
+                "cp2": None,
+            },
+        ],
+        "val_min": 0.0,
+        "val_max": 1.0,
+    }
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _make_clip_with_keys(self, preview=None):
+        """Create a sub-row clip with curve_preview and return (clip, item)."""
+        if preview is None:
+            preview = self.SAMPLE_PREVIEW
+        tid = self.w.add_track("obj_A")
+        sub_data = [
+            (
+                "translateX",
+                [(0, 100, "translateX", "#FF6600", {"curve_preview": preview})],
+            ),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        self.assertEqual(len(sub_clips), 1)
+        clip = sub_clips[0]
+        item = self.w._clip_items[clip.clip_id]
+        return clip, item
+
+    # -- creation -----------------------------------------------------------
+
+    def test_keyframe_items_created_from_curve_preview(self):
+        """Sub-row clip with curve_preview spawns KeyframeItem children."""
+        clip, item = self._make_clip_with_keys()
+        self.assertEqual(len(item._keyframe_items), 3)
+        for ki in item._keyframe_items:
+            self.assertIsInstance(ki, KeyframeItem)
+
+    def test_keyframe_times_match_preview_keys(self):
+        """Each KeyframeItem stores the correct time and value."""
+        clip, item = self._make_clip_with_keys()
+        expected = [(10, 0.0), (50, 1.0), (90, 0.5)]
+        actual = [(ki._time, ki._value) for ki in item._keyframe_items]
+        self.assertEqual(actual, expected)
+
+    def test_stepped_flag_derived_from_segments(self):
+        """KeyframeItems derive is_stepped from segment out_type."""
+        clip, item = self._make_clip_with_keys()
+        # key 0 → segment[0].out_type == "spline" → not stepped
+        self.assertFalse(item._keyframe_items[0]._is_stepped)
+        # key 1 → segment[1].out_type == "step" → stepped
+        self.assertTrue(item._keyframe_items[1]._is_stepped)
+        # key 2 → no segment[2] → not stepped
+        self.assertFalse(item._keyframe_items[2]._is_stepped)
+
+    def test_no_keyframe_items_on_main_row(self):
+        """Main-row clips must not spawn KeyframeItem children."""
+        tid = self.w.add_track("T")
+        cid = self.w.add_clip(tid, 0, 100, curve_preview=self.SAMPLE_PREVIEW)
+        item = self.w._clip_items[cid]
+        self.assertEqual(len(item._keyframe_items), 0)
+
+    def test_no_keyframe_items_without_curve_preview(self):
+        """Sub-row clip without curve_preview has no KeyframeItem children."""
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(0, 100, "tx", "#FF0000", {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        item = self.w._clip_items[sub_clips[0].clip_id]
+        self.assertEqual(len(item._keyframe_items), 0)
+
+    def test_empty_keys_list_creates_no_items(self):
+        """curve_preview with empty keys list produces no KeyframeItems."""
+        preview = {"keys": [], "segments": [], "val_min": 0, "val_max": 1}
+        clip, item = self._make_clip_with_keys(preview)
+        self.assertEqual(len(item._keyframe_items), 0)
+
+    # -- positioning --------------------------------------------------------
+
+    def test_reposition_sets_pos(self):
+        """_reposition must call setPos so the item is not stuck at origin."""
+        clip, item = self._make_clip_with_keys()
+        ki = item._keyframe_items[0]
+        pos = ki.pos()
+        # Key at time=10 in a 0–100 clip should not be at x=0
+        self.assertNotEqual(pos.x(), 0.0)
+
+    def test_reposition_within_clip_rect(self):
+        """KeyframeItem positions fall within the parent clip's rect."""
+        clip, item = self._make_clip_with_keys()
+        rect = item.rect()
+        for ki in item._keyframe_items:
+            pos = ki.pos()
+            # X should be within rect (with small tolerance for edge keys)
+            self.assertGreaterEqual(pos.x(), rect.x() - 1)
+            self.assertLessEqual(pos.x(), rect.right() + 1)
+
+    def test_reposition_flat_curve_centres_vertically(self):
+        """Flat value range places keys at vertical centre."""
+        preview = {
+            "keys": [(25, 5.0), (75, 5.0)],
+            "segments": [
+                {
+                    "t0": 25,
+                    "v0": 5.0,
+                    "t1": 75,
+                    "v1": 5.0,
+                    "out_type": "linear",
+                    "cp1": None,
+                    "cp2": None,
+                }
+            ],
+            "val_min": 5.0,
+            "val_max": 5.0,
+        }
+        clip, item = self._make_clip_with_keys(preview)
+        rect = item.rect()
+        mid_y = (rect.top() + rect.bottom()) / 2
+        for ki in item._keyframe_items:
+            self.assertAlmostEqual(ki.pos().y(), mid_y, delta=1)
+
+    # -- selection ----------------------------------------------------------
+
+    def test_keyframe_items_are_selectable(self):
+        """KeyframeItems must have the ItemIsSelectable flag."""
+        from qtpy import QtWidgets
+
+        clip, item = self._make_clip_with_keys()
+        ki = item._keyframe_items[0]
+        self.assertTrue(ki.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable)
+
+    def test_selected_clips_excludes_keyframe_items(self):
+        """selected_clips() must not include KeyframeItem in its results."""
+        clip, item = self._make_clip_with_keys()
+        ki = item._keyframe_items[0]
+        ki.setSelected(True)
+        # selected_clips filters by isinstance(ClipItem), so keyframe
+        # selections should not appear
+        selected = self.w.selected_clips()
+        for cid in selected:
+            self.assertIsNotNone(self.w.get_clip(cid))
+
+    # -- sub-row drag suppression -------------------------------------------
+
+    def test_sub_row_clip_does_not_drag(self):
+        """Mouse press on a sub-row clip must not initiate drag mode."""
+        from qtpy import QtCore, QtWidgets
+
+        clip, item = self._make_clip_with_keys()
+        # Simulate a left-button press at the centre of the clip
+        centre = item.rect().center()
+        event = QtWidgets.QGraphicsSceneMouseEvent(
+            QtCore.QEvent.GraphicsSceneMousePress
+        )
+        event.setButton(QtCore.Qt.LeftButton)
+        event.setPos(centre)
+        event.setScenePos(centre)
+        event.setScreenPos(QtCore.QPoint(int(centre.x()), int(centre.y())))
+        item.mousePressEvent(event)
+        # _drag_mode should remain None (sub-row gate blocks it)
+        self.assertIsNone(item._drag_mode)
+
+    def test_sub_row_hover_shows_arrow_cursor(self):
+        """Sub-row clips show ArrowCursor instead of grab cursor."""
+        from qtpy import QtCore, QtWidgets
+
+        clip, item = self._make_clip_with_keys()
+        centre = item.rect().center()
+        event = QtWidgets.QGraphicsSceneHoverEvent(QtCore.QEvent.GraphicsSceneHoverMove)
+        event.setPos(centre)
+        event.setScenePos(centre)
+        event.setScreenPos(QtCore.QPoint(int(centre.x()), int(centre.y())))
+        item.hoverMoveEvent(event)
+        self.assertEqual(item.cursor().shape(), QtCore.Qt.ArrowCursor)
+
+    # -- paint --------------------------------------------------------------
+
+    def test_paint_keyframe_items_does_not_crash(self):
+        """Painting a sub-row clip with KeyframeItem children must not raise."""
+        from qtpy import QtGui, QtWidgets
+
+        clip, item = self._make_clip_with_keys()
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        # Paint the clip (curve path) — dots are painted by children
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        # Also paint each KeyframeItem directly
+        for ki in item._keyframe_items:
+            ki.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    def test_paint_stepped_keyframe_draws_square(self):
+        """Stepped KeyframeItem paints drawRect, not drawEllipse."""
+        from unittest.mock import patch
+        from qtpy import QtGui, QtWidgets
+
+        clip, item = self._make_clip_with_keys()
+        stepped_ki = item._keyframe_items[1]  # segment[1] is "step"
+        self.assertTrue(stepped_ki._is_stepped)
+
+        pixmap = QtGui.QPixmap(20, 20)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        with patch.object(painter, "drawRect", wraps=painter.drawRect) as m_rect:
+            stepped_ki.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+            m_rect.assert_called_once()
+        painter.end()
+
+    # -- signals ------------------------------------------------------------
+
+    def test_keys_moved_signal_exists(self):
+        """SequencerWidget must have a keys_moved signal."""
+        self.assertTrue(hasattr(self.w, "keys_moved"))
+
+    def test_keys_deleted_signal_exists(self):
+        """SequencerWidget must have a keys_deleted signal."""
+        self.assertTrue(hasattr(self.w, "keys_deleted"))
+
+    def test_delete_selected_keys_emits_signal(self):
+        """Selecting KeyframeItems and deleting emits keys_deleted."""
+        clip, item = self._make_clip_with_keys()
+        ki = item._keyframe_items[0]
+        ki.setSelected(True)
+
+        received = []
+        self.w.keys_deleted.connect(lambda cid, ts: received.append((cid, ts)))
+        self.w._delete_selected_keys()
+
+        self.assertEqual(len(received), 1)
+        cid, times = received[0]
+        self.assertEqual(cid, clip.clip_id)
+        self.assertIn(10, times)  # key at t=10
+
+    def test_delete_with_no_keys_selected_is_noop(self):
+        """_delete_selected_keys with no KeyframeItems selected emits nothing."""
+        clip, item = self._make_clip_with_keys()
+        # No keyframe selected
+
+        received = []
+        self.w.keys_deleted.connect(lambda cid, ts: received.append((cid, ts)))
+        self.w._delete_selected_keys()
+
+        self.assertEqual(len(received), 0)
+
+    # -- rebuild vs reposition ----------------------------------------------
+
+    def test_sync_repositions_without_rebuild(self):
+        """When key data hasn't changed, _sync_keyframe_items repositions
+        existing items instead of rebuilding them."""
+        clip, item = self._make_clip_with_keys()
+        original_items = list(item._keyframe_items)
+        # Trigger another sync (e.g. from zoom)
+        item._sync_geometry()
+        # Same objects should still be the children
+        self.assertEqual(item._keyframe_items, original_items)
+
+    def test_sync_rebuilds_on_data_change(self):
+        """When preview keys change, items are rebuilt."""
+        clip, item = self._make_clip_with_keys()
+        old_count = len(item._keyframe_items)
+        # Mutate the curve_preview data
+        clip.data["curve_preview"]["keys"] = [(20, 0.5), (80, 0.5)]
+        item._sync_keyframe_items()
+        self.assertEqual(len(item._keyframe_items), 2)
+        # Old objects should be gone
+        self.assertNotEqual(old_count, 2)
+
+    # -- drag-adjusted curve ------------------------------------------------
+
+    def test_drag_adjusted_segments_returns_original_when_no_move(self):
+        """If no keys moved, _drag_adjusted_segments returns same object."""
+        clip, item = self._make_clip_with_keys()
+        preview = clip.data["curve_preview"]
+        result = item._drag_adjusted_segments(preview["segments"], preview["keys"])
+        self.assertIs(result, preview["segments"])
+
+    def test_drag_adjusted_segments_updates_times(self):
+        """Moving a key updates t0/t1 in the adjacent segments."""
+        clip, item = self._make_clip_with_keys()
+        preview = clip.data["curve_preview"]
+        # Simulate dragging key[1] (t=50) to t=60
+        item._keyframe_items[1]._time = 60
+        result = item._drag_adjusted_segments(preview["segments"], preview["keys"])
+        # segment[0] end and segment[1] start should now be 60
+        self.assertAlmostEqual(result[0]["t1"], 60)
+        self.assertAlmostEqual(result[1]["t0"], 60)
+        # Other endpoints unchanged
+        self.assertAlmostEqual(result[0]["t0"], 10)
+        self.assertAlmostEqual(result[1]["t1"], 90)
+
+    def test_drag_adjusted_segments_scales_control_points(self):
+        """Bézier control-point times are proportionally remapped."""
+        clip, item = self._make_clip_with_keys()
+        preview = clip.data["curve_preview"]
+        seg0 = preview["segments"][0]
+        orig_cp1 = seg0["cp1"]
+        orig_t0, orig_t1 = seg0["t0"], seg0["t1"]
+        orig_span = orig_t1 - orig_t0  # 50 - 10 = 40
+        frac = (orig_cp1[0] - orig_t0) / orig_span
+
+        # Move key[1] from 50 to 70
+        item._keyframe_items[1]._time = 70
+        result = item._drag_adjusted_segments(preview["segments"], preview["keys"])
+        new_t0, new_t1 = result[0]["t0"], result[0]["t1"]
+        expected_cp1_t = new_t0 + frac * (new_t1 - new_t0)
+        self.assertAlmostEqual(result[0]["cp1"][0], expected_cp1_t)
+        # Value component unchanged
+        self.assertAlmostEqual(result[0]["cp1"][1], orig_cp1[1])
+
+    def test_curve_repaints_during_key_drag(self):
+        """Painting after key drag uses adjusted segments — no crash."""
+        from qtpy import QtGui, QtWidgets
+
+        clip, item = self._make_clip_with_keys()
+        # Simulate dragging key[1] from t=50 to t=65
+        item._keyframe_items[1]._time = 65
+        item._keyframe_items[1]._reposition()
+
+        pixmap = QtGui.QPixmap(200, 30)
+        pixmap.fill(QtGui.QColor("#1E1E1E"))
+        painter = QtGui.QPainter(pixmap)
+        item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
+        painter.end()
+
+    # -- key selection signal -----------------------------------------------
+
+    def test_key_selection_changed_signal_exists(self):
+        """SequencerWidget must have a key_selection_changed signal."""
+        self.assertTrue(hasattr(self.w, "key_selection_changed"))
+
+    def test_key_selection_changed_emits_on_select(self):
+        """Selecting a KeyframeItem emits key_selection_changed with times."""
+        clip, item = self._make_clip_with_keys()
+
+        received = []
+        self.w.key_selection_changed.connect(lambda groups: received.append(groups))
+
+        # Select one keyframe item
+        ki = item._keyframe_items[0]
+        ki.setSelected(True)
+
+        # The signal should have fired via _on_scene_selection
+        self.assertTrue(len(received) > 0)
+        last = received[-1]
+        clip_ids = [g["clip_id"] for g in last]
+        self.assertIn(clip.clip_id, clip_ids)
+        group = next(g for g in last if g["clip_id"] == clip.clip_id)
+        self.assertIn(10, group["times"])  # key at t=10
+
+    def test_key_selection_changed_empty_when_no_keys_selected(self):
+        """Deselecting all keys emits key_selection_changed with empty list."""
+        clip, item = self._make_clip_with_keys()
+
+        received = []
+        self.w.key_selection_changed.connect(lambda groups: received.append(groups))
+
+        # Select then deselect
+        ki = item._keyframe_items[0]
+        ki.setSelected(True)
+        ki.setSelected(False)
+
+        last = received[-1]
+        key_groups = [g for g in last if g["times"]]
+        self.assertEqual(len(key_groups), 0)
+
+
+# =========================================================================
+# Shortcut Dispatch
+# =========================================================================
+
+
+class TestShortcutDispatch(BaseTestCase):
+    """Verify keyboard shortcut registration and dispatch."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_all_default_shortcuts_registered(self):
+        """Every expected shortcut exists in the manager."""
+        expected = [
+            "Ctrl+Z", "Ctrl+Shift+Z",
+            "Left", "Right",
+            "Shift+Left", "Shift+Right",
+            "Home", "End",
+            "M", "F", "Delete",
+        ]
+        from qtpy.QtGui import QKeySequence
+
+        for key in expected:
+            norm = QKeySequence(key).toString()
+            self.assertIn(
+                norm, self.w._shortcut_mgr.shortcuts,
+                f"Shortcut '{key}' (normalized: '{norm}') not registered",
+            )
+
+    def test_shortcut_actions_are_callable(self):
+        """Every registered shortcut has a callable action."""
+        for key, entry in self.w._shortcut_mgr.shortcuts.items():
+            if entry.get("read_only"):
+                continue
+            self.assertTrue(
+                callable(entry["action"]),
+                f"Shortcut '{key}' action is not callable: {entry['action']}",
+            )
+
+    def test_shortcut_sequences_synced(self):
+        """_shortcut_sequences matches non-read-only manager entries."""
+        from qtpy.QtGui import QKeySequence
+
+        expected = {
+            QKeySequence(k).toString()
+            for k, v in self.w._shortcut_mgr.shortcuts.items()
+            if not v.get("read_only")
+        }
+        actual = {seq.toString() for seq in self.w._timeline._shortcut_sequences}
+        self.assertEqual(expected, actual)
+
+    def test_delete_shortcut_emits_keys_deleted(self):
+        """Delete key action emits keys_deleted for selected KeyframeItems."""
+        self.w.resize(800, 400)
+        self.w.show()
+        tid = self.w.add_track("obj")
+        preview = {
+            "keys": [(10, 0.0), (50, 1.0), (90, 0.5)],
+            "segments": [
+                {"t0": 10, "v0": 0.0, "t1": 50, "v1": 1.0,
+                 "out_type": "spline", "cp1": (23, 0.3), "cp2": (37, 0.7)},
+                {"t0": 50, "v0": 1.0, "t1": 90, "v1": 0.5,
+                 "out_type": "spline", "cp1": None, "cp2": None},
+            ],
+            "val_min": 0.0, "val_max": 1.0,
+        }
+        sub_data = [
+            ("translateX", [(0, 100, "translateX", "#FF6600",
+                             {"curve_preview": preview})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub_clips = [c for c in self.w.clips() if c.sub_row]
+        item = self.w._clip_items[sub_clips[0].clip_id]
+        ki = item._keyframe_items[0]
+        ki.setSelected(True)
+
+        received = []
+        self.w.keys_deleted.connect(lambda cid, times: received.append((cid, times)))
+        self.w._delete_selected_keys()
+        self.assertEqual(len(received), 1)
+        self.assertIn(10, received[0][1])
+
+    def test_delete_no_selection_is_noop(self):
+        """Delete with nothing selected does not emit."""
+        self.w.resize(800, 400)
+        self.w.show()
+        tid = self.w.add_track("obj")
+        preview = {
+            "keys": [(10, 0.0)],
+            "segments": [],
+            "val_min": 0.0, "val_max": 1.0,
+        }
+        sub_data = [
+            ("translateX", [(0, 100, "translateX", "#FF6600",
+                             {"curve_preview": preview})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+
+        received = []
+        self.w.keys_deleted.connect(lambda cid, times: received.append((cid, times)))
+        self.w._delete_selected_keys()
+        self.assertEqual(len(received), 0)
+
+    def test_info_entry_excluded_from_sequences(self):
+        """Read-only info entries don't appear in _shortcut_sequences."""
+        self.w._shortcut_mgr.add_info_entry("Ctrl+Alt+X", "Test info")
+        self.w._sync_shortcut_sequences()
+        seq_strs = {s.toString() for s in self.w._timeline._shortcut_sequences}
+        from qtpy.QtGui import QKeySequence
+
+        self.assertNotIn(
+            QKeySequence("Ctrl+Alt+X").toString(), seq_strs,
+        )
+
+
+# =========================================================================
+# Marquee Selection
+# =========================================================================
+
+
+class TestMarqueeSelection(BaseTestCase):
+    """Verify custom rubber-band selection behaviour."""
+
+    SAMPLE_PREVIEW = {
+        "keys": [(10, 0.0), (50, 0.5), (90, 1.0)],
+        "segments": [
+            {"t0": 10, "v0": 0.0, "t1": 50, "v1": 0.5,
+             "out_type": "spline", "cp1": (23, 0.2), "cp2": (37, 0.3)},
+            {"t0": 50, "v0": 0.5, "t1": 90, "v1": 1.0,
+             "out_type": "spline", "cp1": None, "cp2": None},
+        ],
+        "val_min": 0.0,
+        "val_max": 1.0,
+    }
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _make_keys(self):
+        """Create a sub-row clip with 3 keys and return (clip, item)."""
+        tid = self.w.add_track("obj")
+        sub_data = [
+            ("translateX", [(0, 100, "translateX", "#FF6600",
+                             {"curve_preview": self.SAMPLE_PREVIEW})]),
+        ]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        sub = [c for c in self.w.clips() if c.sub_row]
+        clip = sub[0]
+        item = self.w._clip_items[clip.clip_id]
+        return clip, item
+
+    def _key_viewport_pos(self, ki):
+        """Map a KeyframeItem centre to viewport coordinates."""
+        scene_pt = ki.mapToScene(ki.boundingRect().center())
+        return self.w._timeline.mapFromScene(scene_pt)
+
+    # -- 1) shrinking marquee deselects ------------------------------------
+
+    def test_shrink_marquee_deselects_keys(self):
+        """Keys that leave the marquee during drag are deselected."""
+        from qtpy import QtCore as C, QtGui as G
+
+        _clip, item = self._make_keys()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        self.assertGreaterEqual(len(keys), 3)
+
+        # Build a viewport rect that covers ALL keys
+        positions = [self._key_viewport_pos(k) for k in keys]
+        x_min = min(p.x() for p in positions) - 5
+        x_max = max(p.x() for p in positions) + 5
+        y_min = min(p.y() for p in positions) - 5
+        y_max = max(p.y() for p in positions) + 5
+
+        # Press — start marquee on empty space above and to the left
+        anchor = C.QPoint(x_min, y_min)
+        ev_press = G.QMouseEvent(
+            C.QEvent.MouseButtonPress, C.QPointF(anchor),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mousePressEvent(ev_press)
+        self.assertTrue(tl._marquee_active)
+
+        # Move — expand to cover all keys
+        ev_move_full = G.QMouseEvent(
+            C.QEvent.MouseMove, C.QPointF(C.QPoint(x_max, y_max)),
+            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mouseMoveEvent(ev_move_full)
+        sel_full = [k for k in keys if k.isSelected()]
+        self.assertEqual(len(sel_full), 3, "All 3 keys should be selected")
+
+        # Shrink — only cover the first key
+        first_pos = positions[0]
+        ev_move_shrink = G.QMouseEvent(
+            C.QEvent.MouseMove,
+            C.QPointF(C.QPoint(first_pos.x() + 3, first_pos.y() + 3)),
+            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mouseMoveEvent(ev_move_shrink)
+        sel_shrink = [k for k in keys if k.isSelected()]
+        self.assertEqual(len(sel_shrink), 1, "Only 1 key should remain selected")
+
+        # Release
+        ev_release = G.QMouseEvent(
+            C.QEvent.MouseButtonRelease,
+            C.QPointF(C.QPoint(first_pos.x() + 3, first_pos.y() + 3)),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mouseReleaseEvent(ev_release)
+        self.assertFalse(tl._marquee_active)
+
+    # -- 2) Ctrl+marquee subtracts -----------------------------------------
+
+    def test_ctrl_marquee_subtracts(self):
+        """Ctrl+marquee subtracts enclosed keys from existing selection."""
+        from qtpy import QtCore as C, QtGui as G
+
+        _clip, item = self._make_keys()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        # Pre-select all keys
+        for k in keys:
+            k.setSelected(True)
+        self.assertEqual(len([k for k in keys if k.isSelected()]), 3)
+
+        positions = [self._key_viewport_pos(k) for k in keys]
+
+        # Ctrl+press on empty space
+        anchor = C.QPoint(positions[0].x() - 5, positions[0].y() - 5)
+        ev_press = G.QMouseEvent(
+            C.QEvent.MouseButtonPress, C.QPointF(anchor),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ControlModifier,
+        )
+        tl.mousePressEvent(ev_press)
+        self.assertTrue(tl._marquee_active)
+
+        # Drag to cover first key only
+        ev_move = G.QMouseEvent(
+            C.QEvent.MouseMove,
+            C.QPointF(C.QPoint(positions[0].x() + 3, positions[0].y() + 3)),
+            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.ControlModifier,
+        )
+        tl.mouseMoveEvent(ev_move)
+        # First key should be deselected (subtracted), others stay selected
+        self.assertFalse(keys[0].isSelected(), "Key inside Ctrl-marquee should be deselected")
+        self.assertTrue(keys[1].isSelected())
+        self.assertTrue(keys[2].isSelected())
+
+        # Release
+        ev_rel = G.QMouseEvent(
+            C.QEvent.MouseButtonRelease,
+            C.QPointF(C.QPoint(positions[0].x() + 3, positions[0].y() + 3)),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ControlModifier,
+        )
+        tl.mouseReleaseEvent(ev_rel)
+
+    # -- 3) Shift+marquee adds --------------------------------------------
+
+    def test_shift_marquee_adds(self):
+        """Shift+marquee adds to existing selection."""
+        from qtpy import QtCore as C, QtGui as G
+
+        _clip, item = self._make_keys()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        # Pre-select first key only
+        keys[0].setSelected(True)
+
+        positions = [self._key_viewport_pos(k) for k in keys]
+
+        # Shift+press on empty space near last key
+        anchor = C.QPoint(positions[2].x() - 5, positions[2].y() - 5)
+        ev_press = G.QMouseEvent(
+            C.QEvent.MouseButtonPress, C.QPointF(anchor),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ShiftModifier,
+        )
+        tl.mousePressEvent(ev_press)
+
+        # Drag to cover last key
+        ev_move = G.QMouseEvent(
+            C.QEvent.MouseMove,
+            C.QPointF(C.QPoint(positions[2].x() + 5, positions[2].y() + 5)),
+            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.ShiftModifier,
+        )
+        tl.mouseMoveEvent(ev_move)
+        # Both first (pre-selected) and last (newly marqueed) should be selected
+        self.assertTrue(keys[0].isSelected(), "Pre-selected key should remain")
+        self.assertTrue(keys[2].isSelected(), "Key inside Shift-marquee should be selected")
+
+        ev_rel = G.QMouseEvent(
+            C.QEvent.MouseButtonRelease,
+            C.QPointF(C.QPoint(positions[2].x() + 5, positions[2].y() + 5)),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ShiftModifier,
+        )
+        tl.mouseReleaseEvent(ev_rel)
+
+    # -- 4) spacebar repositions marquee -----------------------------------
+
+    def test_space_repositions_marquee(self):
+        """Holding Space during marquee repositions the selection area."""
+        from qtpy import QtCore as C, QtGui as G
+
+        _clip, item = self._make_keys()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        positions = [self._key_viewport_pos(k) for k in keys]
+
+        # Start marquee covering first key
+        anchor = C.QPoint(positions[0].x() - 5, positions[0].y() - 5)
+        ev_press = G.QMouseEvent(
+            C.QEvent.MouseButtonPress, C.QPointF(anchor),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mousePressEvent(ev_press)
+
+        corner = C.QPoint(positions[0].x() + 5, positions[0].y() + 5)
+        ev_move = G.QMouseEvent(
+            C.QEvent.MouseMove, C.QPointF(corner),
+            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mouseMoveEvent(ev_move)
+        self.assertTrue(keys[0].isSelected())
+
+        # Record anchor before space
+        anchor_before = C.QPoint(tl._marquee_anchor)
+
+        # Press Space — start repositioning
+        ev_space = G.QKeyEvent(C.QEvent.KeyPress, C.Qt.Key_Space, C.Qt.NoModifier)
+        tl.keyPressEvent(ev_space)
+        self.assertTrue(tl._space_held)
+
+        # Move mouse by (20, 0) — shifts the entire marquee area
+        shifted = C.QPoint(corner.x() + 20, corner.y())
+        ev_move2 = G.QMouseEvent(
+            C.QEvent.MouseMove, C.QPointF(shifted),
+            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mouseMoveEvent(ev_move2)
+
+        # Anchor should have shifted
+        self.assertEqual(
+            tl._marquee_anchor.x(), anchor_before.x() + 20,
+            "Anchor should shift right by 20px during Space-reposition",
+        )
+
+        # Release Space
+        ev_space_up = G.QKeyEvent(C.QEvent.KeyRelease, C.Qt.Key_Space, C.Qt.NoModifier)
+        tl.keyReleaseEvent(ev_space_up)
+        self.assertFalse(tl._space_held)
+
+        # Release mouse
+        ev_rel = G.QMouseEvent(
+            C.QEvent.MouseButtonRelease, C.QPointF(shifted),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mouseReleaseEvent(ev_rel)
+        self.assertFalse(tl._marquee_active)
+
+    # -- 5) no-modifier clears prior selection -----------------------------
+
+    def test_marquee_no_modifier_clears_existing(self):
+        """Starting a marquee without modifiers clears previous selection."""
+        from qtpy import QtCore as C, QtGui as G
+
+        _clip, item = self._make_keys()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        # Pre-select all
+        for k in keys:
+            k.setSelected(True)
+
+        pos0 = self._key_viewport_pos(keys[0])
+        # Press on empty space (far from keys)
+        anchor = C.QPoint(pos0.x() + 200, pos0.y() + 100)
+        ev_press = G.QMouseEvent(
+            C.QEvent.MouseButtonPress, C.QPointF(anchor),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mousePressEvent(ev_press)
+        # All should be cleared
+        self.assertEqual(len([k for k in keys if k.isSelected()]), 0)
+
+        ev_rel = G.QMouseEvent(
+            C.QEvent.MouseButtonRelease, C.QPointF(anchor),
+            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+        )
+        tl.mouseReleaseEvent(ev_rel)
+
+    # -- 6) Space release passes through without marquee -------------------
+
+    def test_space_release_not_swallowed_outside_marquee(self):
+        """Space-release must not be eaten when no marquee is active."""
+        from qtpy import QtCore as C, QtGui as G
+        from unittest.mock import patch
+
+        tl = self.w._timeline
+        self.assertFalse(tl._marquee_active)
+
+        ev = G.QKeyEvent(C.QEvent.KeyRelease, C.Qt.Key_Space, C.Qt.NoModifier)
+        with patch.object(type(tl), "keyReleaseEvent", wraps=tl.keyReleaseEvent):
+            tl.keyReleaseEvent(ev)
+        # Event should NOT have been accepted by our handler
+        # (it falls through to super which may or may not accept it).
+        # The key fact: _space_held stays False and the event wasn't consumed.
+        self.assertFalse(tl._space_held)
 
 
 if __name__ == "__main__":

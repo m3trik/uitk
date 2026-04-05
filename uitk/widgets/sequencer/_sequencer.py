@@ -203,6 +203,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     header_menu_requested = QtCore.Signal(
         object
     )  # (QMenu) right-click on header background
+    keys_moved = QtCore.Signal(int, list)  # (clip_id, [(old_t, new_t), ...])
+    keys_deleted = QtCore.Signal(int, list)  # (clip_id, [time, ...])
+    key_selection_changed = QtCore.Signal(
+        list
+    )  # [{clip_id, obj, attr_name, times}, ...]
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
@@ -308,6 +313,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             ("End", self.go_to_end, "Jump playhead to last clip end"),
             ("M", self.add_marker_at_playhead, "Add marker at playhead"),
             ("F", self.frame_shot, "Frame the active shot range"),
+            ("Delete", self._delete_selected_keys, "Delete selected keyframes"),
         ]
         self._shortcut_mgr = ShortcutManager(self)
         _ctx = QtCore.Qt.WidgetWithChildrenShortcut
@@ -561,13 +567,19 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             item.update()
 
     def set_clip_locked(self, clip_id: int, locked: bool):
-        """Lock or unlock a clip, preventing drag/resize/rename."""
+        """Lock or unlock a clip, preventing drag/resize/rename/selection."""
         cd = self._clips.get(clip_id)
         if cd is None:
             return
         cd.locked = locked
         item = self._clip_items.get(clip_id)
         if item:
+            item.setFlag(
+                QtWidgets.QGraphicsItem.ItemIsSelectable,
+                not locked and not cd.sub_row,
+            )
+            if locked and item.isSelected():
+                item.setSelected(False)
             item.update()
 
     def remove_track(self, track_id: int):
@@ -1147,12 +1159,6 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 label = seg[2] if len(seg) > 2 else sub_name
                 color = seg[3] if len(seg) > 3 else None
                 extra = seg[4] if len(seg) > 4 else {}
-                # Single-key (zero-duration) sub-row clips can move but
-                # not resize since there is no duration to adjust.
-                is_point = dur < 1e-6
-                if is_point:
-                    extra.setdefault("resizable_left", False)
-                    extra.setdefault("resizable_right", False)
                 self.add_clip(
                     track_id,
                     start,
@@ -1266,6 +1272,51 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # Backwards-compat: also emit clip_selected for the first item
         if sel:
             self.clip_selected.emit(sel[0])
+
+        # Emit key-level selection info for graph-editor sync.
+        from uitk.widgets.sequencer._keyframe import KeyframeItem
+
+        try:
+            items = self._timeline._scene.selectedItems()
+        except RuntimeError:
+            items = []
+
+        by_clip: dict = {}
+        for item in items:
+            if isinstance(item, KeyframeItem):
+                cd = item._parent_clip._data
+                cid = cd.clip_id
+                by_clip.setdefault(cid, {"clip_id": cid, "times": []})
+                by_clip[cid]["times"].append(item._time)
+
+        self.key_selection_changed.emit(list(by_clip.values()))
+
+    def _delete_selected_keys(self):
+        """Delete all selected :class:`KeyframeItem` instances.
+
+        Groups deletions by parent clip and emits one
+        :attr:`keys_deleted` signal per clip.
+        """
+        from uitk.widgets.sequencer._keyframe import KeyframeItem
+
+        try:
+            items = self._timeline._scene.selectedItems()
+        except RuntimeError:
+            return
+
+        # Group selected keys by clip_id
+        by_clip: dict = {}
+        for item in items:
+            if isinstance(item, KeyframeItem):
+                cid = item._parent_clip._data.clip_id
+                by_clip.setdefault(cid, []).append(item._time)
+
+        if not by_clip:
+            return
+
+        self._capture_undo()
+        for clip_id, times in by_clip.items():
+            self.keys_deleted.emit(clip_id, times)
 
     def _on_splitter_moved(self, pos: int, index: int):
         """Snap-close the header pane when dragged below threshold."""
