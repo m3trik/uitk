@@ -367,15 +367,27 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         y_bot = rect.bottom() - pad
         y_span = y_bot - y_top
 
-        dur = self._data.duration
+        # During any drag, lock the time→pixel mapping to the pre-drag
+        # values.  Move: keeps the curve's local pixel coords fixed so
+        # it travels with the widget.  Resize: the original fractions
+        # applied to the growing/shrinking rect produce a proportional
+        # stretch that matches what scaleKey will do on release
+        # (new_t = anchor + (t - anchor) * new_dur / old_dur).
+        if self._drag_mode is not None:
+            map_start = self._drag_origin_start
+            map_dur = self._drag_origin_duration
+        else:
+            map_start = self._data.start
+            map_dur = self._data.duration
+
         val_range = val_max - val_min
         is_flat = val_range < 1e-9
         if is_flat:
             val_range = 1.0
 
         def map_x(t):
-            if dur > 1e-6:
-                frac = (t - self._data.start) / dur
+            if map_dur > 1e-6:
+                frac = (t - map_start) / map_dur
             else:
                 frac = 0.5
             return rect.x() + frac * rect.width()
@@ -487,6 +499,11 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                         and not item._data.locked
                     ):
                         self._drag_peers.append((item, item._data.start))
+                        # Propagate drag state so peer curve previews
+                        # also lock to their pre-drag positions.
+                        item._drag_mode = "move"
+                        item._drag_origin_start = item._data.start
+                        item._drag_origin_duration = item._data.duration
             # Capture pre-drag snapshot for undo
             self._timeline.parent_sequencer._capture_undo()
             self.setCursor(QtCore.Qt.ClosedHandCursor)
@@ -542,6 +559,11 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             self._drag_peers = []
             self.unsetCursor()
             self.update()  # repaint to hide drag frame labels
+            # Clear drag state on peers so their curve previews
+            # switch back to live data after release.
+            for peer, _ in peers:
+                peer._drag_mode = None
+                peer.update()
             widget = self._timeline.parent_sequencer
             if mode == "move":
                 if peers:
