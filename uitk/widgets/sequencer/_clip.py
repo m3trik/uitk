@@ -626,7 +626,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             self._drag_origin_start = self._data.start
             self._drag_origin_duration = self._data.duration
             sq = self._timeline.parent_sequencer
-            sq._shift_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+            sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
             # Capture peer clips for group move
             self._drag_peers = []
             if self._drag_mode == "move" and self.isSelected():
@@ -724,28 +724,54 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         if self._data.data.get("read_only"):
             event.ignore()
             return
+
+        widget = self._timeline.parent_sequencer
+
+        # Collect all selected, non-read-only clips for multi-select ops.
+        selected_clips = [
+            item
+            for item in self._timeline._scene.selectedItems()
+            if isinstance(item, ClipItem) and not item._data.data.get("read_only")
+        ]
+        if self not in selected_clips:
+            selected_clips = [self]
+        multi = len(selected_clips) > 1
+
         menu = _styled_menu()
 
-        # Lock / Unlock
-        if self._data.locked:
-            action_lock = menu.addAction("Unlock")
+        # Lock / Unlock — operates on all selected clips.
+        all_locked = all(c._data.locked for c in selected_clips)
+        if all_locked:
+            action_lock = menu.addAction(
+                f"Unlock ({len(selected_clips)})" if multi else "Unlock"
+            )
         else:
-            action_lock = menu.addAction("Lock")
+            action_lock = menu.addAction(
+                f"Lock ({len(selected_clips)})" if multi else "Lock"
+            )
 
-        # Rename
+        # Rename — only meaningful for a single clip.
         action_rename = menu.addAction("Rename")
-        if self._data.locked:
+        if self._data.locked or multi:
             action_rename.setEnabled(False)
 
         # Extensibility hook — let consumers add domain-specific actions
-        widget = self._timeline.parent_sequencer
         widget.clip_menu_requested.emit(menu, self._data.clip_id)
 
         chosen = menu.exec_(_menu_exec_pos(event))
         if chosen == action_lock:
-            new_locked = not self._data.locked
-            widget.set_clip_locked(self._data.clip_id, new_locked)
-            widget.clip_locked.emit(self._data.clip_id, new_locked)
+            new_locked = not all_locked
+            # Apply visual lock state to every selected clip.
+            # Emit clip_locked once per unique object so the consumer
+            # (e.g. Maya controller) persists and propagates to siblings
+            # without redundant O(n*m) iteration.
+            emitted_objs: set = set()
+            for clip in selected_clips:
+                widget.set_clip_locked(clip._data.clip_id, new_locked)
+                obj = clip._data.data.get("obj", clip._data.clip_id)
+                if obj not in emitted_objs:
+                    emitted_objs.add(obj)
+                    widget.clip_locked.emit(clip._data.clip_id, new_locked)
         elif chosen == action_rename:
             self._start_inline_rename()
 

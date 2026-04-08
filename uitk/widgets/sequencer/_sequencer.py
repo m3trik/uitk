@@ -236,6 +236,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_range_overlays: bool = True  # toggle for shot range overlays
         self._show_gap_overlays: bool = True  # toggle for gap overlays
         self._show_range_highlight: bool = True  # toggle for active shot highlight
+        self._bg_curve_previews: Dict[tuple, dict] = {}  # (track_id, sub_row) → preview
         self._window_shortcuts: bool = False  # shortcuts active at window level
         self._window_filter_installed: bool = False
         self._filter_pending_key: int = (
@@ -671,8 +672,16 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """Move the playhead to a specific time."""
         self._timeline._scene.playhead.time = time
 
-    def clear(self):
-        """Remove all tracks, clips, and markers."""
+    def clear(self, *, keep_range_highlight: bool = False):
+        """Remove all tracks, clips, and markers.
+
+        Parameters
+        ----------
+        keep_range_highlight : bool
+            If True the interactive range-highlight overlay is preserved
+            across the clear so that an in-progress drag is not
+            interrupted by a content rebuild.
+        """
         for cid in list(self._clips):
             item = self._clip_items.pop(cid, None)
             if item and item.scene():
@@ -686,16 +695,24 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._undo_stack.clear()
         self._redo_stack.clear()
         self.clear_markers()
-        self.clear_range_highlight()
+        if not keep_range_highlight:
+            self.clear_range_highlight()
         self.clear_range_overlays()
         self.clear_gap_overlays()
         self.clear_shot_blocks()
         self._timeline._refresh_all()
 
-    def clear_decorations(self):
-        """Remove markers, overlays, and shot lane without touching tracks or clips."""
+    def clear_decorations(self, *, keep_range_highlight: bool = False):
+        """Remove markers, overlays, and shot lane without touching tracks or clips.
+
+        Parameters
+        ----------
+        keep_range_highlight : bool
+            If True the interactive range-highlight overlay is preserved.
+        """
         self.clear_markers()
-        self.clear_range_highlight()
+        if not keep_range_highlight:
+            self.clear_range_highlight()
         self.clear_range_overlays()
         self.clear_gap_overlays()
         self.clear_shot_blocks()
@@ -1084,6 +1101,15 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         if self._range_highlight is not None:
             self._range_highlight.setVisible(value)
 
+    @property
+    def shift_held_at_press(self) -> bool:
+        """Whether Shift was held when the last drag interaction started."""
+        return self._shift_at_press
+
+    @shift_held_at_press.setter
+    def shift_held_at_press(self, value: bool) -> None:
+        self._shift_at_press = value
+
     # -- attribute colors ---------------------------------------------------
     @property
     def attribute_colors(self) -> Dict[str, str]:
@@ -1175,11 +1201,35 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._timeline._refresh_all()
         self.track_expanded.emit(track_id)
 
+    def set_bg_curve_preview(
+        self, track_id: int, sub_row: str, preview: dict, color: str = "#CCCCCC"
+    ) -> None:
+        """Set or clear a background curve preview for a sub-row.
+
+        Parameters
+        ----------
+        preview : dict or None
+            ``{keys, segments, val_min, val_max}`` from
+            ``build_curve_preview``, or *None* to clear.
+        color : str
+            Hex color for the curve line.
+        """
+        key = (track_id, sub_row)
+        if preview is None:
+            self._bg_curve_previews.pop(key, None)
+        else:
+            self._bg_curve_previews[key] = {"preview": preview, "color": color}
+        self._timeline.viewport().update()
+
     def collapse_track(self, track_id: int):
         """Collapse a previously expanded track, removing its sub-row clips."""
         if track_id not in self._expanded_tracks:
             return
         self._expanded_tracks.pop(track_id)
+        # Remove background curve previews for this track
+        stale_bg = [k for k in self._bg_curve_previews if k[0] == track_id]
+        for k in stale_bg:
+            del self._bg_curve_previews[k]
         # Remove sub-row clips
         to_remove = [
             cid

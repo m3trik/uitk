@@ -68,8 +68,8 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
     Supports three drag modes:
     - **Right edge**: resize gap (shifts the next shot and all downstream).
     - **Left edge**: resize gap from the left (shifts the prev shot end).
-    - **Body** (Shift+drag): slide the cut point between adjacent shots,
-      keeping gap size constant.
+    - **Center** (body drag): reposition the gap, keeping gap size constant.
+      Automatically disabled when the gap is too narrow for a center zone.
     """
 
     _EDGE_WIDTH = 6  # px from each edge that triggers resize cursor
@@ -116,7 +116,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         elif mode == "move":
             info = f"Sliding → {int(round(self._start))}–{int(round(self._end))}"
         else:
-            info = "Drag edges to resize · Shift+drag body to slide"
+            info = "Drag edges to resize · Drag center to reposition"
         self.setToolTip(
             f"Gap: {self._gap_frames} frame{'s' if self._gap_frames != 1 else ''}{lock_label}"
             f"\n{info}"
@@ -181,7 +181,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         zone = self._hit_zone(event.pos())
         if zone in ("left", "right"):
             self.setCursor(QtCore.Qt.SizeHorCursor)
-        elif event.modifiers() & QtCore.Qt.ShiftModifier:
+        elif zone == "body":
             self.setCursor(QtCore.Qt.OpenHandCursor)
         else:
             self.setCursor(QtCore.Qt.ArrowCursor)
@@ -201,9 +201,6 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
             return
         zone = self._hit_zone(event.pos())
         if zone == "body":
-            if not (event.modifiers() & QtCore.Qt.ShiftModifier):
-                event.ignore()
-                return
             self._drag_mode = "move"
             self.setCursor(QtCore.Qt.ClosedHandCursor)
         else:
@@ -212,7 +209,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
         sq = self._timeline.parent_sequencer
-        sq._shift_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+        sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
         sq._capture_undo()
         event.accept()
 
@@ -315,17 +312,31 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         )
         # Draw gap frame count label if wide enough
         if w > 30:
-            label = (
-                f"\U0001f512 {self._gap_frames}"
-                if self._locked
-                else str(self._gap_frames)
-            )
+            label = str(self._gap_frames)
             font = painter.font()
             font.setPixelSize(10)
             painter.setFont(font)
             text_color = QtGui.QColor("#dddddd" if self._hovered else "#aaaaaa")
             painter.setPen(text_color)
             painter.drawText(r, QtCore.Qt.AlignCenter, label)
+            # Paint lock icon to right of label when locked
+            if self._locked and w > 40:
+                self._paint_lock_icon(painter, r, text_color)
+        painter.restore()
+
+    def _paint_lock_icon(self, painter, rect, fg):
+        """Draw a small lock glyph centered above the frame-count label."""
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        icon_w, icon_h = 8, 10  # body(6) + shackle(4)
+        ix = rect.center().x() - icon_w / 2
+        iy = rect.center().y() - icon_h - 2  # just above the centered text
+        painter.setPen(QtGui.QPen(fg, 1.2))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawArc(QtCore.QRectF(ix + 1, iy, 6, 6), 0 * 16, 180 * 16)
+        painter.setBrush(fg)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawRect(QtCore.QRectF(ix, iy + 4, 8, 6))
         painter.restore()
 
 
@@ -517,7 +528,7 @@ class RangeHighlightItem(QtWidgets.QGraphicsItem):
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
         sq = self._timeline.parent_sequencer
-        sq._shift_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+        sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
         # Capture widget-level undo snapshot before drag begins
         sq._capture_undo()
         if self._drag_mode == "move":

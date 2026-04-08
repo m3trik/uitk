@@ -51,6 +51,7 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
         self._dragging = False
         self._drag_origin_scene_x = 0.0
         self._drag_peers: List[Tuple["KeyframeItem", float]] = []
+        self._drag_tooltip: QtWidgets.QGraphicsSimpleTextItem | None = None
 
         self.setAcceptHoverEvents(True)
         self.setFlags(
@@ -147,6 +148,7 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
         sq = self._parent_clip._timeline.parent_sequencer
         sq._capture_undo()
 
+        self._show_drag_tooltip(event.scenePos())
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -185,6 +187,7 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
             else:
                 clip.update()
 
+        self._update_drag_tooltip(event.scenePos())
         event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -211,6 +214,8 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
                     by_clip.setdefault(cid, []).append((origin_time, peer._time))
             self._drag_peers = []
 
+            self._hide_drag_tooltip()
+
             if by_clip:
                 sq = self._parent_clip._timeline.parent_sequencer
                 for clip_id, changes in by_clip.items():
@@ -219,6 +224,35 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+
+    # -- drag tooltip -------------------------------------------------------
+
+    def _show_drag_tooltip(self, scene_pos):
+        self._drag_tooltip = QtWidgets.QGraphicsSimpleTextItem()
+        self._drag_tooltip.setZValue(100)
+        font = self._drag_tooltip.font()
+        font.setPointSize(8)
+        font.setBold(True)
+        self._drag_tooltip.setFont(font)
+        color = self._parent_clip._resolve_color()
+        self._drag_tooltip.setBrush(QtGui.QColor(color).lighter(160))
+        if self.scene():
+            self.scene().addItem(self._drag_tooltip)
+        self._update_drag_tooltip(scene_pos)
+
+    def _update_drag_tooltip(self, scene_pos):
+        if self._drag_tooltip is None:
+            return
+        t = self._time
+        label = str(int(t)) if t == int(t) else f"{t:.1f}"
+        self._drag_tooltip.setText(label)
+        self._drag_tooltip.setPos(scene_pos.x() + 10, scene_pos.y() - 18)
+
+    def _hide_drag_tooltip(self):
+        if self._drag_tooltip is not None:
+            if self._drag_tooltip.scene():
+                self._drag_tooltip.scene().removeItem(self._drag_tooltip)
+            self._drag_tooltip = None
 
     # -- positioning --------------------------------------------------------
 
