@@ -144,7 +144,8 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             "<body>": '<body style="color;">',  # body <body> </body>
             "<b>": '<b style="font-weight: bold;">',  # bold <b> </b>
             "<strong>": '<strong style="font-weight: bold;">',  # <strong> </strong>
-            "<mark>": '<mark style="background-color: grey">',  # highlight <mark> </mark>
+            "<mark>": '<font style="background-color: grey;">',  # highlight
+            "</mark>": "</font>",
         }
 
         for k, v in style.items():
@@ -156,23 +157,21 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         """ """
         return "<font color=" + color + ">" + string + "</font>"
 
-    def _setBackgroundColor(self, string, color):
-        """ """
-        return '<mark style="background-color:' + color + '">' + string + "</mark>"
-
     def _setFontSize(self, string, size) -> str:
         """ """
         return "<font size=" + str(size) + ">" + string + "</font>"
 
-    def setText(
-        self, string, fontColor="white", backgroundColor="rgb(50,50,50)", fontSize=5
-    ) -> None:
+    def setText(self, string, fontColor="white", background=0.75, fontSize=5) -> None:
         """Set the text to be displayed with the specified alignment unless overridden by HTML.
 
         Parameters:
             string (str): The text or HTML content to display.
             fontColor (str): The text color.
-            backgroundColor (str): The background color of the text.
+            background (bool/float/str): Controls the label background.
+                ``True`` uses default dark grey at 50% opacity,
+                ``False`` or ``0`` disables the background,
+                a ``float`` 0–1 sets opacity on the default dark grey,
+                a CSS color ``str`` is used verbatim.
             fontSize (int): The font size of the text.
         """
         # Apply default alignment if not overridden in the HTML
@@ -182,10 +181,31 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         s = self._setPrefixStyle(string)
         s = self._setHTML(s)
         s = self._setFontColor(s, fontColor)
-        s = self._setBackgroundColor(s, backgroundColor)
         s = self._setFontSize(s, fontSize)
 
+        # Apply background via QSS on the internal label — HTML background-color
+        # on <font>/<span> is unreliable across Qt builds (e.g. Maya's embedded Qt).
+        bg_css = self._resolve_background(background)
+        if bg_css:
+            self.setStyleSheet(
+                f"QLabel#qt_msgbox_label {{ background-color: {bg_css}; padding: 8px; }}"
+            )
+        else:
+            self.setStyleSheet("")
+
         super().setText(s)
+
+    @staticmethod
+    def _resolve_background(background):
+        """Convert a background param to a CSS color string or None."""
+        if background is False or background == 0:
+            return None
+        if background is True:
+            return "rgba(50,50,50,255)"
+        if isinstance(background, (int, float)):
+            alpha = max(0, min(255, int(background * 255)))
+            return f"rgba(50,50,50,{alpha})"
+        return background  # str passed verbatim
 
     def autoClose(self):
         # Close the MessageBox if no standard buttons are set

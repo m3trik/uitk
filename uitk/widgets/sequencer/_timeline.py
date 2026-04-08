@@ -234,24 +234,38 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             self.track_expand_requested.emit(idx)
             return True
         if event.type() == QtCore.QEvent.MouseButtonPress and obj in self._labels:
+            btn = event.button()
             idx = self._labels.index(obj)
-            mods = event.modifiers()
-            ctrl = mods & QtCore.Qt.ControlModifier
-            shift = mods & QtCore.Qt.ShiftModifier
-            if shift and self._selected:
-                anchor = self._selected[-1]
-                lo, hi = sorted((anchor, idx))
-                self._selected = list(range(lo, hi + 1))
-            elif ctrl:
-                if idx in self._selected:
-                    self._selected.remove(idx)
+
+            if btn == QtCore.Qt.RightButton:
+                # Preserve multi-selection on right-click (matching
+                # standard OS behaviour):  only switch when the
+                # right-clicked track is not already selected.
+                if idx not in self._selected:
+                    self._selected = [idx]
+                    self._refresh_styles()
+                    self.track_selected.emit(self.selected_names())
+                return False  # let Qt deliver the ContextMenu event
+
+            if btn == QtCore.Qt.LeftButton:
+                mods = event.modifiers()
+                ctrl = mods & QtCore.Qt.ControlModifier
+                shift = mods & QtCore.Qt.ShiftModifier
+                if shift and self._selected:
+                    anchor = self._selected[-1]
+                    lo, hi = sorted((anchor, idx))
+                    self._selected = list(range(lo, hi + 1))
+                elif ctrl:
+                    if idx in self._selected:
+                        self._selected.remove(idx)
+                    else:
+                        self._selected.append(idx)
                 else:
-                    self._selected.append(idx)
-            else:
-                self._selected = [idx]
-            self._refresh_styles()
-            self.track_selected.emit(self.selected_names())
-            return True  # consumed
+                    self._selected = [idx]
+                self._refresh_styles()
+                self.track_selected.emit(self.selected_names())
+                return True  # consumed
+
         return super().eventFilter(obj, event)
 
     def selected_names(self) -> List[str]:
@@ -277,10 +291,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
     # -- context menu ------------------------------------------------------
 
     def _show_label_menu(self, widget, pos):
-        idx = self._labels.index(widget)
-        if idx not in self._selected:
-            self._selected = [idx]
-            self._refresh_styles()
+        # Selection is already adjusted by eventFilter (right-click path).
         names = self.selected_names()
         count = len(names)
         menu = _styled_menu(self)
@@ -506,7 +517,9 @@ class TimelineView(QtWidgets.QGraphicsView):
                 for item in self._scene.items():
                     if not (item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
                         continue
-                    should = id(item) in self._marquee_pre_selection and item not in in_band
+                    should = (
+                        id(item) in self._marquee_pre_selection and item not in in_band
+                    )
                     if item.isSelected() != should:
                         item.setSelected(should)
             elif mods & _shift_v:
@@ -579,21 +592,41 @@ class TimelineView(QtWidgets.QGraphicsView):
                 # Direct item click — let Qt handle it (drag, selection toggle)
                 super().mousePressEvent(event)
             else:
-                # Empty space — start custom marquee
+                # Forward to scene so non-selectable interactive overlays
+                # (gap, range-highlight) can accept edge drags.
+                if item is not None:
+                    super().mousePressEvent(event)
+                    if self._scene.mouseGrabberItem() is not None:
+                        return  # overlay started a drag — done
+                # Empty space (or overlay rejected) — start custom marquee
                 self._marquee_active = True
                 self._marquee_anchor = event.pos()
                 self._marquee_current = event.pos()
-                self._marquee_modifier = mods.value if hasattr(mods, "value") else int(mods)
+                self._marquee_modifier = (
+                    mods.value if hasattr(mods, "value") else int(mods)
+                )
                 self._space_held = False
                 # Snapshot current selection (by id) for additive/subtractive modes
                 self._marquee_pre_selection = {
-                    id(it)
-                    for it in self._scene.selectedItems()
+                    id(it) for it in self._scene.selectedItems()
                 }
                 # If no modifier, clear selection immediately
                 if not (mods & (QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)):
                     self._scene.clearSelection()
                 event.accept()
+        elif event.button() == QtCore.Qt.RightButton:
+            # Preserve multi-selection on right-click: if the item under
+            # the cursor is already selected, keep the whole selection so
+            # the context menu can operate on all selected items.
+            # If it's unselected, switch to it (standard OS behaviour).
+            item = self.itemAt(event.pos())
+            if isinstance(item, ClipItem):
+                if not item.isSelected():
+                    self._scene.clearSelection()
+                    item.setSelected(True)
+                event.accept()
+            else:
+                super().mousePressEvent(event)
         else:
             super().mousePressEvent(event)
 
@@ -805,6 +838,83 @@ class TimelineView(QtWidgets.QGraphicsView):
                     QtCore.QPointF(rect.right(), cy),
                 )
                 painter.setPen(QtCore.Qt.NoPen)
+
+        # --- full-range background curves for expanded sub-rows ---
+        # Exclude each visible clip rect so curves don't overlap clip-level
+        # curve previews.  The mask follows clips in real-time during drag.
+        bg_previews = getattr(sq, "_bg_curve_previews", {})
+        if bg_previews:
+            painter.save()
+            clip_items = getattr(sq, "_clip_items", {})
+            if clip_items:
+                full = QtGui.QRegion(rect.toAlignedRect())
+                exclude = QtGui.QRegion()
+                for item in clip_items.values():
+                    if item.isVisible():
+                        sr = item.mapToScene(item.boundingRect()).boundingRect()
+                        cr = sr.toAlignedRect()
+                        if not cr.isEmpty():
+                            exclude += QtGui.QRegion(cr)
+                if not exclude.isEmpty():
+                    painter.setClipRegion(full.subtracted(exclude))
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            for (track_id, sub_row), entry in bg_previews.items():
+                preview = entry["preview"]
+                segs = preview.get("segments", [])
+                if not segs:
+                    continue
+                row_y, row_h = sq._row_position(track_id, sub_row)
+                pad = row_h * 0.15
+                y_top = row_y + pad
+                y_bot = row_y + row_h - pad
+                y_span = y_bot - y_top
+                val_min = preview.get("val_min", 0.0)
+                val_max = preview.get("val_max", 1.0)
+                val_range = val_max - val_min
+                if val_range < 1e-9:
+                    val_range = 1.0
+
+                def _mx(t, _self=self):
+                    return _self.time_to_x(t)
+
+                def _my(
+                    v, _vmin=val_min, _vr=val_range, _yt=y_top, _ys=y_span, _yb=y_bot
+                ):
+                    if _vr < 1e-9:
+                        return _yt + _ys * 0.5
+                    return _yb - ((v - _vmin) / _vr) * _ys
+
+                path = QtGui.QPainterPath()
+                path.moveTo(_mx(segs[0]["t0"]), _my(segs[0]["v0"]))
+                for seg in segs:
+                    x1 = _mx(seg["t1"])
+                    y1 = _my(seg["v1"])
+                    ot = seg.get("out_type", "spline")
+                    cp1 = seg.get("cp1")
+                    cp2 = seg.get("cp2")
+                    if ot == "step":
+                        path.lineTo(x1, _my(seg["v0"]))
+                        path.lineTo(x1, y1)
+                    elif ot == "stepnext":
+                        path.lineTo(_mx(seg["t0"]), y1)
+                        path.lineTo(x1, y1)
+                    elif ot == "linear" or cp1 is None or cp2 is None:
+                        path.lineTo(x1, y1)
+                    else:
+                        path.cubicTo(
+                            _mx(cp1[0]),
+                            _my(cp1[1]),
+                            _mx(cp2[0]),
+                            _my(cp2[1]),
+                            x1,
+                            y1,
+                        )
+                c = QtGui.QColor(entry.get("color", "#CCCCCC"))
+                c.setAlpha(180)
+                painter.setPen(QtGui.QPen(c, 1.2))
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawPath(path)
+            painter.restore()
 
         ar = sq._active_range
         if ar is not None:

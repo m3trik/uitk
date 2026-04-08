@@ -535,7 +535,7 @@ class SwitchboardUtilsMixin:
         *buttons,
         location="topMiddle",
         timeout=3,
-        background_color="",
+        background=0.75,
     ):
         """Spawns a message box with the given text and optionally sets buttons.
 
@@ -545,8 +545,11 @@ class SwitchboardUtilsMixin:
                 box is modal (``exec_``); otherwise a passive popup.
             location: Placement hint (default ``"topMiddle"``).
             timeout: Auto-dismiss seconds (default 3).
-            background_color: Override the text background colour
-                (default uses the MessageBox's built-in dark grey).
+            background (bool/float/str): Controls the label background.
+                ``True`` uses default dark grey at 50% opacity,
+                ``False`` disables the background,
+                a ``float`` 0–1 sets opacity (default 0.5),
+                a CSS color ``str`` is used verbatim.
         """
         # Log text without HTML tags
         self.logger.info(f"# {re.sub('<.*?>', '', string)}")
@@ -557,10 +560,7 @@ class SwitchboardUtilsMixin:
             msg_box.location = location
             msg_box.timeout = timeout
             msg_box.setStandardButtons(*buttons)
-            if background_color:
-                msg_box.setText(string, backgroundColor=background_color)
-            else:
-                msg_box.setText(string)
+            msg_box.setText(string, background=background)
             return msg_box.exec_()
         else:
             # Safe to reuse for passive popups
@@ -569,10 +569,7 @@ class SwitchboardUtilsMixin:
 
             self._messageBox.location = location
             self._messageBox.timeout = timeout
-            if background_color:
-                self._messageBox.setText(string, backgroundColor=background_color)
-            else:
-                self._messageBox.setText(string)
+            self._messageBox.setText(string, background=background)
             self._messageBox.show()
             return None
 

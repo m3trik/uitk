@@ -1142,6 +1142,45 @@ class TestGapOverlays(BaseTestCase):
         ]
         self.assertEqual(len(gap_items), 1)
 
+    def test_gap_edge_click_does_not_start_marquee(self):
+        """Clicking a gap overlay edge must start a gap drag, not a marquee.
+
+        Bug: mousePressEvent in TimelineView checked ItemIsSelectable
+        which gap overlays don't have, so clicks fell to marquee code.
+        Fixed: 2026-04-07
+        """
+        from qtpy import QtCore, QtWidgets, QtTest
+
+        self.w.resize(800, 400)
+        self.w.show()
+        self.w.add_track("obj_A")
+        self.w.add_gap_overlay(50, 70)
+        QtWidgets.QApplication.processEvents()
+
+        tl = self.w._timeline
+        gap_item = self.w._gap_overlays[0]
+        # Ensure the gap is within the visible viewport before mapping
+        gap_rect = gap_item._rect()
+        tl.ensureVisible(gap_rect, 50, 50)
+        QtWidgets.QApplication.processEvents()
+        # Map the right edge of the gap to view coords
+        right_edge = QtCore.QPointF(gap_rect.right() - 2, gap_rect.center().y())
+        view_pos = tl.mapFromScene(right_edge)
+
+        # Simulate a left-button press at the gap's right edge
+        QtTest.QTest.mousePress(
+            tl.viewport(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+            QtCore.QPoint(int(view_pos.x()), int(view_pos.y())),
+        )
+
+        # Marquee should NOT have started
+        self.assertFalse(
+            tl._marquee_active,
+            "Marquee started instead of forwarding to gap overlay!",
+        )
+
 
 # =========================================================================
 # Shot Blocks (Ruler)
@@ -1311,6 +1350,34 @@ class TestDrawBackground(BaseTestCase):
 
         self.w.add_track("obj_A")
         self.w.set_active_range(10, 90)
+        pixmap = QtGui.QPixmap(800, 400)
+        painter = QtGui.QPainter(pixmap)
+        self.w._timeline.drawBackground(painter, QtCore.QRectF(0, 0, 800, 400))
+        painter.end()
+
+    def test_draw_background_bg_curves_clipped_outside_active_range(self):
+        """Background curves must not paint inside the active-range area.
+
+        The drawBackground method uses QRegion subtraction to exclude the
+        active range rectangle from the clip region when painting bg curves.
+        This verifies the path executes without errors.
+        Fixed: 2026-04-07
+        """
+        from qtpy import QtGui, QtCore
+
+        tid = self.w.add_track("obj_A")
+        sub_data = [("tx", [(0, 100, "tx", "#FF0000", {})])]
+        self.w.expand_track(tid, sub_row_data=sub_data)
+        self.w.set_active_range(30, 70)
+
+        # Inject a minimal bg curve preview
+        preview = {
+            "segments": [{"t0": 0, "v0": 0, "t1": 100, "v1": 1, "out_type": "linear"}],
+            "val_min": 0.0,
+            "val_max": 1.0,
+        }
+        self.w.set_bg_curve_preview(tid, "tx", preview, "#FF0000")
+
         pixmap = QtGui.QPixmap(800, 400)
         painter = QtGui.QPainter(pixmap)
         self.w._timeline.drawBackground(painter, QtCore.QRectF(0, 0, 800, 400))
@@ -2829,18 +2896,25 @@ class TestShortcutDispatch(BaseTestCase):
     def test_all_default_shortcuts_registered(self):
         """Every expected shortcut exists in the manager."""
         expected = [
-            "Ctrl+Z", "Ctrl+Shift+Z",
-            "Left", "Right",
-            "Shift+Left", "Shift+Right",
-            "Home", "End",
-            "M", "F", "Delete",
+            "Ctrl+Z",
+            "Ctrl+Shift+Z",
+            "Left",
+            "Right",
+            "Shift+Left",
+            "Shift+Right",
+            "Home",
+            "End",
+            "M",
+            "F",
+            "Delete",
         ]
         from qtpy.QtGui import QKeySequence
 
         for key in expected:
             norm = QKeySequence(key).toString()
             self.assertIn(
-                norm, self.w._shortcut_mgr.shortcuts,
+                norm,
+                self.w._shortcut_mgr.shortcuts,
                 f"Shortcut '{key}' (normalized: '{norm}') not registered",
             )
 
@@ -2874,16 +2948,33 @@ class TestShortcutDispatch(BaseTestCase):
         preview = {
             "keys": [(10, 0.0), (50, 1.0), (90, 0.5)],
             "segments": [
-                {"t0": 10, "v0": 0.0, "t1": 50, "v1": 1.0,
-                 "out_type": "spline", "cp1": (23, 0.3), "cp2": (37, 0.7)},
-                {"t0": 50, "v0": 1.0, "t1": 90, "v1": 0.5,
-                 "out_type": "spline", "cp1": None, "cp2": None},
+                {
+                    "t0": 10,
+                    "v0": 0.0,
+                    "t1": 50,
+                    "v1": 1.0,
+                    "out_type": "spline",
+                    "cp1": (23, 0.3),
+                    "cp2": (37, 0.7),
+                },
+                {
+                    "t0": 50,
+                    "v0": 1.0,
+                    "t1": 90,
+                    "v1": 0.5,
+                    "out_type": "spline",
+                    "cp1": None,
+                    "cp2": None,
+                },
             ],
-            "val_min": 0.0, "val_max": 1.0,
+            "val_min": 0.0,
+            "val_max": 1.0,
         }
         sub_data = [
-            ("translateX", [(0, 100, "translateX", "#FF6600",
-                             {"curve_preview": preview})]),
+            (
+                "translateX",
+                [(0, 100, "translateX", "#FF6600", {"curve_preview": preview})],
+            ),
         ]
         self.w.expand_track(tid, sub_row_data=sub_data)
         sub_clips = [c for c in self.w.clips() if c.sub_row]
@@ -2905,11 +2996,14 @@ class TestShortcutDispatch(BaseTestCase):
         preview = {
             "keys": [(10, 0.0)],
             "segments": [],
-            "val_min": 0.0, "val_max": 1.0,
+            "val_min": 0.0,
+            "val_max": 1.0,
         }
         sub_data = [
-            ("translateX", [(0, 100, "translateX", "#FF6600",
-                             {"curve_preview": preview})]),
+            (
+                "translateX",
+                [(0, 100, "translateX", "#FF6600", {"curve_preview": preview})],
+            ),
         ]
         self.w.expand_track(tid, sub_row_data=sub_data)
 
@@ -2926,7 +3020,8 @@ class TestShortcutDispatch(BaseTestCase):
         from qtpy.QtGui import QKeySequence
 
         self.assertNotIn(
-            QKeySequence("Ctrl+Alt+X").toString(), seq_strs,
+            QKeySequence("Ctrl+Alt+X").toString(),
+            seq_strs,
         )
 
 
@@ -2941,10 +3036,24 @@ class TestMarqueeSelection(BaseTestCase):
     SAMPLE_PREVIEW = {
         "keys": [(10, 0.0), (50, 0.5), (90, 1.0)],
         "segments": [
-            {"t0": 10, "v0": 0.0, "t1": 50, "v1": 0.5,
-             "out_type": "spline", "cp1": (23, 0.2), "cp2": (37, 0.3)},
-            {"t0": 50, "v0": 0.5, "t1": 90, "v1": 1.0,
-             "out_type": "spline", "cp1": None, "cp2": None},
+            {
+                "t0": 10,
+                "v0": 0.0,
+                "t1": 50,
+                "v1": 0.5,
+                "out_type": "spline",
+                "cp1": (23, 0.2),
+                "cp2": (37, 0.3),
+            },
+            {
+                "t0": 50,
+                "v0": 0.5,
+                "t1": 90,
+                "v1": 1.0,
+                "out_type": "spline",
+                "cp1": None,
+                "cp2": None,
+            },
         ],
         "val_min": 0.0,
         "val_max": 1.0,
@@ -2963,8 +3072,18 @@ class TestMarqueeSelection(BaseTestCase):
         """Create a sub-row clip with 3 keys and return (clip, item)."""
         tid = self.w.add_track("obj")
         sub_data = [
-            ("translateX", [(0, 100, "translateX", "#FF6600",
-                             {"curve_preview": self.SAMPLE_PREVIEW})]),
+            (
+                "translateX",
+                [
+                    (
+                        0,
+                        100,
+                        "translateX",
+                        "#FF6600",
+                        {"curve_preview": self.SAMPLE_PREVIEW},
+                    )
+                ],
+            ),
         ]
         self.w.expand_track(tid, sub_row_data=sub_data)
         sub = [c for c in self.w.clips() if c.sub_row]
@@ -2998,16 +3117,22 @@ class TestMarqueeSelection(BaseTestCase):
         # Press — start marquee on empty space above and to the left
         anchor = C.QPoint(x_min, y_min)
         ev_press = G.QMouseEvent(
-            C.QEvent.MouseButtonPress, C.QPointF(anchor),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseButtonPress,
+            C.QPointF(anchor),
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mousePressEvent(ev_press)
         self.assertTrue(tl._marquee_active)
 
         # Move — expand to cover all keys
         ev_move_full = G.QMouseEvent(
-            C.QEvent.MouseMove, C.QPointF(C.QPoint(x_max, y_max)),
-            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseMove,
+            C.QPointF(C.QPoint(x_max, y_max)),
+            C.Qt.NoButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mouseMoveEvent(ev_move_full)
         sel_full = [k for k in keys if k.isSelected()]
@@ -3018,7 +3143,9 @@ class TestMarqueeSelection(BaseTestCase):
         ev_move_shrink = G.QMouseEvent(
             C.QEvent.MouseMove,
             C.QPointF(C.QPoint(first_pos.x() + 3, first_pos.y() + 3)),
-            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.Qt.NoButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mouseMoveEvent(ev_move_shrink)
         sel_shrink = [k for k in keys if k.isSelected()]
@@ -3028,7 +3155,9 @@ class TestMarqueeSelection(BaseTestCase):
         ev_release = G.QMouseEvent(
             C.QEvent.MouseButtonRelease,
             C.QPointF(C.QPoint(first_pos.x() + 3, first_pos.y() + 3)),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mouseReleaseEvent(ev_release)
         self.assertFalse(tl._marquee_active)
@@ -3052,8 +3181,11 @@ class TestMarqueeSelection(BaseTestCase):
         # Ctrl+press on empty space
         anchor = C.QPoint(positions[0].x() - 5, positions[0].y() - 5)
         ev_press = G.QMouseEvent(
-            C.QEvent.MouseButtonPress, C.QPointF(anchor),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ControlModifier,
+            C.QEvent.MouseButtonPress,
+            C.QPointF(anchor),
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.ControlModifier,
         )
         tl.mousePressEvent(ev_press)
         self.assertTrue(tl._marquee_active)
@@ -3062,11 +3194,15 @@ class TestMarqueeSelection(BaseTestCase):
         ev_move = G.QMouseEvent(
             C.QEvent.MouseMove,
             C.QPointF(C.QPoint(positions[0].x() + 3, positions[0].y() + 3)),
-            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.ControlModifier,
+            C.Qt.NoButton,
+            C.Qt.LeftButton,
+            C.Qt.ControlModifier,
         )
         tl.mouseMoveEvent(ev_move)
         # First key should be deselected (subtracted), others stay selected
-        self.assertFalse(keys[0].isSelected(), "Key inside Ctrl-marquee should be deselected")
+        self.assertFalse(
+            keys[0].isSelected(), "Key inside Ctrl-marquee should be deselected"
+        )
         self.assertTrue(keys[1].isSelected())
         self.assertTrue(keys[2].isSelected())
 
@@ -3074,7 +3210,9 @@ class TestMarqueeSelection(BaseTestCase):
         ev_rel = G.QMouseEvent(
             C.QEvent.MouseButtonRelease,
             C.QPointF(C.QPoint(positions[0].x() + 3, positions[0].y() + 3)),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ControlModifier,
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.ControlModifier,
         )
         tl.mouseReleaseEvent(ev_rel)
 
@@ -3095,8 +3233,11 @@ class TestMarqueeSelection(BaseTestCase):
         # Shift+press on empty space near last key
         anchor = C.QPoint(positions[2].x() - 5, positions[2].y() - 5)
         ev_press = G.QMouseEvent(
-            C.QEvent.MouseButtonPress, C.QPointF(anchor),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ShiftModifier,
+            C.QEvent.MouseButtonPress,
+            C.QPointF(anchor),
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.ShiftModifier,
         )
         tl.mousePressEvent(ev_press)
 
@@ -3104,17 +3245,23 @@ class TestMarqueeSelection(BaseTestCase):
         ev_move = G.QMouseEvent(
             C.QEvent.MouseMove,
             C.QPointF(C.QPoint(positions[2].x() + 5, positions[2].y() + 5)),
-            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.ShiftModifier,
+            C.Qt.NoButton,
+            C.Qt.LeftButton,
+            C.Qt.ShiftModifier,
         )
         tl.mouseMoveEvent(ev_move)
         # Both first (pre-selected) and last (newly marqueed) should be selected
         self.assertTrue(keys[0].isSelected(), "Pre-selected key should remain")
-        self.assertTrue(keys[2].isSelected(), "Key inside Shift-marquee should be selected")
+        self.assertTrue(
+            keys[2].isSelected(), "Key inside Shift-marquee should be selected"
+        )
 
         ev_rel = G.QMouseEvent(
             C.QEvent.MouseButtonRelease,
             C.QPointF(C.QPoint(positions[2].x() + 5, positions[2].y() + 5)),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.ShiftModifier,
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.ShiftModifier,
         )
         tl.mouseReleaseEvent(ev_rel)
 
@@ -3132,15 +3279,21 @@ class TestMarqueeSelection(BaseTestCase):
         # Start marquee covering first key
         anchor = C.QPoint(positions[0].x() - 5, positions[0].y() - 5)
         ev_press = G.QMouseEvent(
-            C.QEvent.MouseButtonPress, C.QPointF(anchor),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseButtonPress,
+            C.QPointF(anchor),
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mousePressEvent(ev_press)
 
         corner = C.QPoint(positions[0].x() + 5, positions[0].y() + 5)
         ev_move = G.QMouseEvent(
-            C.QEvent.MouseMove, C.QPointF(corner),
-            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseMove,
+            C.QPointF(corner),
+            C.Qt.NoButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mouseMoveEvent(ev_move)
         self.assertTrue(keys[0].isSelected())
@@ -3156,14 +3309,18 @@ class TestMarqueeSelection(BaseTestCase):
         # Move mouse by (20, 0) — shifts the entire marquee area
         shifted = C.QPoint(corner.x() + 20, corner.y())
         ev_move2 = G.QMouseEvent(
-            C.QEvent.MouseMove, C.QPointF(shifted),
-            C.Qt.NoButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseMove,
+            C.QPointF(shifted),
+            C.Qt.NoButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mouseMoveEvent(ev_move2)
 
         # Anchor should have shifted
         self.assertEqual(
-            tl._marquee_anchor.x(), anchor_before.x() + 20,
+            tl._marquee_anchor.x(),
+            anchor_before.x() + 20,
             "Anchor should shift right by 20px during Space-reposition",
         )
 
@@ -3174,8 +3331,11 @@ class TestMarqueeSelection(BaseTestCase):
 
         # Release mouse
         ev_rel = G.QMouseEvent(
-            C.QEvent.MouseButtonRelease, C.QPointF(shifted),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseButtonRelease,
+            C.QPointF(shifted),
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mouseReleaseEvent(ev_rel)
         self.assertFalse(tl._marquee_active)
@@ -3197,16 +3357,22 @@ class TestMarqueeSelection(BaseTestCase):
         # Press on empty space (far from keys)
         anchor = C.QPoint(pos0.x() + 200, pos0.y() + 100)
         ev_press = G.QMouseEvent(
-            C.QEvent.MouseButtonPress, C.QPointF(anchor),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseButtonPress,
+            C.QPointF(anchor),
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mousePressEvent(ev_press)
         # All should be cleared
         self.assertEqual(len([k for k in keys if k.isSelected()]), 0)
 
         ev_rel = G.QMouseEvent(
-            C.QEvent.MouseButtonRelease, C.QPointF(anchor),
-            C.Qt.LeftButton, C.Qt.LeftButton, C.Qt.NoModifier,
+            C.QEvent.MouseButtonRelease,
+            C.QPointF(anchor),
+            C.Qt.LeftButton,
+            C.Qt.LeftButton,
+            C.Qt.NoModifier,
         )
         tl.mouseReleaseEvent(ev_rel)
 
