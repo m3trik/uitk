@@ -44,6 +44,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "ACTION_INFO_FG": "rgb(109,155,170)",
             "ACTION_INFO_BG": "rgb(226,243,249)",
             "ACTION_INACTIVE_FG": "rgb(170,170,170)",
+            "LINK_COLOR": "rgb(130,170,210)",
+            "LINK_VISITED_COLOR": "rgb(160,150,190)",
         },
         "dark": {
             "PANEL_BACKGROUND": "rgb(115,115,115)",
@@ -75,6 +77,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "ACTION_INFO_FG": "rgb(163,203,224)",
             "ACTION_INFO_BG": "rgb(30,46,51)",
             "ACTION_INACTIVE_FG": "rgb(119,119,119)",
+            "LINK_COLOR": "rgb(130,170,210)",
+            "LINK_VISITED_COLOR": "rgb(160,150,190)",
         },
     }
 

@@ -14,9 +14,51 @@ class TextEditLogHandler(logging.Handler):
         self.widget = widget
         self.setLevel(logging.NOTSET)  # Always receive all messages
 
+        # Ensure custom action:// links fire anchorClicked instead of
+        # being opened in an external browser (QTextBrowser only).
+        # setOpenLinks(False) prevents QTextBrowser from navigating
+        # internally (which would clear the document).
+        # setOpenExternalLinks(False) prevents delegation to QDesktopServices.
+        if hasattr(widget, "setOpenLinks"):
+            widget.setOpenLinks(False)
+        if hasattr(widget, "setOpenExternalLinks"):
+            widget.setOpenExternalLinks(False)
+
+        # Set palette link colours so <a> tags are readable against the
+        # dark background.  Uses the theme's LINK_COLOR when available,
+        # otherwise falls back to a soft desaturated blue pastel.
+        self._apply_link_palette(widget)
+
         if monospace:
             font = self._get_monospace_font()
             self.widget.setFont(font)
+
+    @staticmethod
+    def _apply_link_palette(widget):
+        """Set QPalette.Link / LinkVisited so <a> tags are readable."""
+        try:
+            from uitk.widgets.mixins.style_sheet import StyleSheet
+
+            theme_name = StyleSheet._widget_themes.get(widget, "dark")
+            theme_vars = StyleSheet.themes.get(theme_name, {})
+        except Exception:
+            theme_vars = {}
+
+        link_str = theme_vars.get("LINK_COLOR", "rgb(130,170,210)")
+        visited_str = theme_vars.get("LINK_VISITED_COLOR", "rgb(160,150,190)")
+
+        def _parse_rgb(s):
+            s = s.strip()
+            if s.startswith("rgb(") and s.endswith(")"):
+                parts = s[4:-1].split(",")
+                if len(parts) == 3:
+                    return QtGui.QColor(*(int(p.strip()) for p in parts))
+            return QtGui.QColor(s)
+
+        pal = widget.palette()
+        pal.setColor(QtGui.QPalette.Link, _parse_rgb(link_str))
+        pal.setColor(QtGui.QPalette.LinkVisited, _parse_rgb(visited_str))
+        widget.setPalette(pal)
 
     @staticmethod
     def _get_monospace_font() -> QtGui.QFont:
