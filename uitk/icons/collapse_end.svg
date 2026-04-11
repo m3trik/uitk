@@ -1,0 +1,10 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <!-- Vertical top segment -->
+  <line x1="8" y1="0" x2="8" y2="4" stroke="#888888" stroke-width="0.5"/>
+  <!-- Horizontal right segment -->
+  <line x1="12" y1="8" x2="16" y2="8" stroke="#888888" stroke-width="0.5"/>
+  <!-- Box -->
+  <rect x="4" y="4" width="8" height="8" rx="1" stroke="#888888" stroke-width="0.5" fill="#393939"/>
+  <!-- Minus -->
+  <line x1="6" y1="8" x2="10" y2="8" stroke="#888888" stroke-width="0.5"/>
+</svg>

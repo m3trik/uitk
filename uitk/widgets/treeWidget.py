@@ -15,6 +15,9 @@ from uitk.widgets.mixins.settings_manager import SettingsManager
 class HierarchyIconMixin:
     """Mixin to handle custom hierarchy icons in tree widgets using CSS branch styling."""
 
+    _HIER_START = "/* __HIERARCHY_START__ */"
+    _HIER_END = "/* __HIERARCHY_END__ */"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._hierarchy_icons_enabled = True
@@ -33,12 +36,13 @@ class HierarchyIconMixin:
         icons_dir = Path(__file__).parent.parent / "icons"
 
         # Use absolute paths for CSS - Qt expects normal file paths
-        expand_plus_path = str(icons_dir / "expand_plus.svg").replace("\\", "/")
-        collapse_minus_path = str(icons_dir / "collapse_minus.svg").replace("\\", "/")
+        expand_branch_path = str(icons_dir / "expand_branch.svg").replace("\\", "/")
+        expand_end_path = str(icons_dir / "expand_end.svg").replace("\\", "/")
+        collapse_branch_path = str(icons_dir / "collapse_branch.svg").replace("\\", "/")
+        collapse_end_path = str(icons_dir / "collapse_end.svg").replace("\\", "/")
         tree_branch_path = str(icons_dir / "tree_branch.svg").replace("\\", "/")
         tree_vertical_path = str(icons_dir / "tree_vertical.svg").replace("\\", "/")
         tree_end_path = str(icons_dir / "tree_end.svg").replace("\\", "/")
-        tree_end_circle_path = str(icons_dir / "tree_end_circle.svg").replace("\\", "/")
 
         style = f"""
             QTreeWidget {{
@@ -75,7 +79,7 @@ class HierarchyIconMixin:
                 image: url({tree_branch_path});
             }}
             
-            /* L-junction: last item in a group that has no children (end with circle) */
+            /* L-junction: last item in a group (leaf node) */
             QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {{
                 background: transparent;
                 border-image: none;
@@ -86,28 +90,28 @@ class HierarchyIconMixin:
             QTreeWidget::branch:has-children:!has-siblings:closed {{
                 background: transparent;
                 border-image: none;
-                image: url({expand_plus_path});
+                image: url({expand_end_path});
             }}
             
             /* L-junction: last item in a group that has children and is open */
             QTreeWidget::branch:has-children:!has-siblings:open {{
                 background: transparent;
                 border-image: none;
-                image: url({collapse_minus_path});
+                image: url({collapse_end_path});
             }}
             
             /* T-junction: item with siblings that has children (closed) */
             QTreeWidget::branch:closed:has-children:has-siblings {{
                 background: transparent;
                 border-image: none;
-                image: url({expand_plus_path});
+                image: url({expand_branch_path});
             }}
             
             /* T-junction: item with siblings that has children (open) */
             QTreeWidget::branch:open:has-children:has-siblings {{
                 background: transparent;
                 border-image: none;
-                image: url({collapse_minus_path});
+                image: url({collapse_branch_path});
             }}
             
             QTreeWidget::item {{
@@ -137,8 +141,13 @@ class HierarchyIconMixin:
             }}
         """
 
-        current_style = self.styleSheet()
-        self.setStyleSheet(current_style + style)
+        tagged = f"{self._HIER_START}\n{style}\n{self._HIER_END}"
+        current = self.styleSheet()
+        start = current.find(self._HIER_START)
+        end = current.find(self._HIER_END)
+        if start != -1 and end != -1:
+            current = current[:start] + current[end + len(self._HIER_END) :]
+        self.setStyleSheet(current + tagged)
 
     def set_icon_style(self, style: str):
         """Set the icon style for hierarchy indicators.
@@ -158,8 +167,13 @@ class HierarchyIconMixin:
         if enabled:
             self._apply_hierarchy_stylesheet()
         else:
-            # Reset to default Qt styling
-            self.setStyleSheet("")
+            current = self.styleSheet()
+            start = current.find(self._HIER_START)
+            end = current.find(self._HIER_END)
+            if start != -1 and end != -1:
+                self.setStyleSheet(
+                    current[:start] + current[end + len(self._HIER_END) :]
+                )
 
     def get_available_icon_styles(self) -> list:
         """Get list of available icon styles."""
@@ -409,6 +423,135 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
         super().paint(painter, option, index)
 
 
+class _HeaderActionBar(QtWidgets.QWidget):
+    """Right-aligned strip of icon buttons overlaid on a QHeaderView.
+
+    Parented to the header's viewport so it floats over the header without
+    requiring a custom QHeaderView subclass.  Repositioned automatically
+    when the tree resizes.
+
+    Not intended for direct use — access via ``TreeWidget.header_actions``.
+    """
+
+    def __init__(self, tree: "TreeWidget") -> None:
+        header = tree.header()
+        super().__init__(header.viewport())
+        self._tree = tree
+        self._buttons: Dict[str, QtWidgets.QToolButton] = {}
+        self._layout = QtWidgets.QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 4, 0)
+        self._layout.setSpacing(2)
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._reposition()
+
+    # -- public API ----------------------------------------------------------
+
+    def add(
+        self,
+        name: str,
+        icon: str,
+        tooltip: str = "",
+        callback: Optional[Callable] = None,
+        toggle: bool = False,
+        checked: bool = False,
+    ) -> QtWidgets.QToolButton:
+        """Add a named icon button to the strip.
+
+        Parameters
+        ----------
+        name : str
+            Unique identifier for the button.
+        icon : str
+            Icon name resolved by ``IconManager``.
+        tooltip : str
+            Tooltip text.
+        callback : callable, optional
+            Connected to ``clicked(bool)`` for toggles or ``clicked()``
+            for momentary buttons.
+        toggle : bool
+            If ``True`` the button is checkable.
+        checked : bool
+            Initial checked state (only meaningful when *toggle* is True).
+
+        Returns
+        -------
+        QToolButton
+            The created button, for further customization if needed.
+        """
+        if name in self._buttons:
+            self.remove(name)
+
+        btn = QtWidgets.QToolButton(self)
+        btn.setAutoRaise(True)
+        btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        btn.setToolTip(tooltip)
+
+        h = max(self._tree.header().height() - 4, 16)
+        btn.setFixedSize(h, h)
+        icon_size = max(int(h * 0.7), 10)
+        btn.setIconSize(QtCore.QSize(icon_size, icon_size))
+        btn.setIcon(IconManager.get(icon, size=(icon_size, icon_size)))
+        btn.setObjectName(f"hdr_action_{name}")
+
+        if toggle:
+            btn.setCheckable(True)
+            btn.setChecked(checked)
+
+        if callback is not None:
+            btn.clicked.connect(callback)
+
+        self._buttons[name] = btn
+        self._layout.addWidget(btn)
+        self._reposition()
+        self.show()
+        return btn
+
+    def remove(self, name: str) -> None:
+        """Remove a button by name."""
+        btn = self._buttons.pop(name, None)
+        if btn is not None:
+            self._layout.removeWidget(btn)
+            btn.deleteLater()
+            self._reposition()
+            if not self._buttons:
+                self.hide()
+
+    def get(self, name: str) -> Optional[QtWidgets.QToolButton]:
+        """Return the button for *name*, or ``None``."""
+        return self._buttons.get(name)
+
+    def set_checked(self, name: str, checked: bool) -> None:
+        """Programmatically set a toggle button's checked state."""
+        btn = self._buttons.get(name)
+        if btn is not None and btn.isCheckable():
+            btn.setChecked(checked)
+
+    def is_checked(self, name: str) -> bool:
+        """Query a toggle button's checked state."""
+        btn = self._buttons.get(name)
+        return btn.isChecked() if btn is not None and btn.isCheckable() else False
+
+    def clear(self) -> None:
+        """Remove all buttons."""
+        for btn in list(self._buttons.values()):
+            self._layout.removeWidget(btn)
+            btn.deleteLater()
+        self._buttons.clear()
+        self.hide()
+
+    # -- internal ------------------------------------------------------------
+
+    def _reposition(self) -> None:
+        """Right-align self within the header viewport."""
+        header = self._tree.header()
+        vp = header.viewport()
+        hint = self.sizeHint()
+        x = vp.width() - hint.width()
+        y = (header.height() - hint.height()) // 2
+        self.setGeometry(max(x, 0), max(y, 0), hint.width(), hint.height())
+
+
 class TreeWidget(
     QtWidgets.QTreeWidget,
     MenuMixin,
@@ -422,7 +565,9 @@ class TreeWidget(
     item_selected = QtCore.Signal(QtWidgets.QTreeWidgetItem)
     item_data_changed = QtCore.Signal(QtWidgets.QTreeWidgetItem, int)
 
-    def __init__(self, parent=None, selection_mode="extended", **kwargs):
+    def __init__(
+        self, parent=None, selection_mode="extended", ctrl_toggle=True, **kwargs
+    ):
         """
         Initialize TreeWidget.
 
@@ -433,6 +578,8 @@ class TreeWidget(
                 - "single": Single item selection only
                 - "extended": Ctrl+Click multi-selection (default)
                 - "multi": Click to toggle selection
+            ctrl_toggle: If True (default), Ctrl+click on a selected item
+                deselects it. If False, Ctrl+click only adds to selection.
             **kwargs: Additional attributes to set
         """
         super().__init__(parent)
@@ -449,8 +596,14 @@ class TreeWidget(
         # Set selection mode
         self._set_selection_mode(selection_mode)
 
+        # Ctrl+click toggle deselection
+        self._ctrl_toggle = ctrl_toggle
+
         # For custom deselection behavior
         self._last_clicked_item = None
+        self._was_selected = False
+        self._ctrl_pressed = False
+        self._shift_pressed = False
         self._click_timer = QtCore.QTimer()
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self._handle_delayed_click)
@@ -460,6 +613,9 @@ class TreeWidget(
 
         # Column configuration persistence
         self._column_settings = None  # SettingsManager, set via enable_column_config()
+
+        # Header action bar (lazy — created on first access)
+        self._header_actions = None
 
         # Row and column tinting (composited by _RowTintDelegate)
         self._child_row_color = QtGui.QColor()
@@ -471,6 +627,25 @@ class TreeWidget(
         self.itemSelectionChanged.connect(self._on_selection_changed)
 
         self.set_attributes(**kwargs)
+
+    # -- header action bar --------------------------------------------------
+
+    @property
+    def header_actions(self) -> _HeaderActionBar:
+        """Right-aligned icon-button strip overlaid on the tree header.
+
+        Created lazily on first access.  Use to add filter toggles,
+        expand/collapse buttons, or other header-level controls::
+
+            tree.header_actions.add(
+                "filter", icon="filter", tooltip="Filter",
+                toggle=True, callback=self._on_filter_toggled,
+            )
+        """
+        if self._header_actions is None:
+            self._header_actions = _HeaderActionBar(self)
+            self._header_actions.hide()  # hidden until buttons are added
+        return self._header_actions
 
     # -- child-row background (styleable via qproperty-childRowColor) ----
 
@@ -548,12 +723,20 @@ class TreeWidget(
         if current:
             self.item_selected.emit(current)
 
+    @property
+    def ctrl_toggle(self):
+        """Whether Ctrl+click toggles (deselects) an already-selected item."""
+        return self._ctrl_toggle
+
+    @ctrl_toggle.setter
+    def ctrl_toggle(self, value):
+        self._ctrl_toggle = bool(value)
+
     def mousePressEvent(self, event):
-        """Custom mouse press handling for deselection behavior."""
+        """Track pre-click state; defer Ctrl+click toggle to release."""
         # Don't interfere with right-click - let it propagate to menu event filter
-        # Must check BEFORE calling super() to avoid consuming the event
         if event.button() == QtCore.Qt.RightButton:
-            # Only trigger menu if one exists (avoid creating empty menu)
+            self._last_clicked_item = None  # prevent stale state in release
             if self.has_menu:
                 self.menu.trigger_from_widget(self, button=event.button())
             super().mousePressEvent(event)
@@ -562,39 +745,60 @@ class TreeWidget(
         item = self.itemAt(event.pos())
         modifiers = event.modifiers()
 
-        # Store state for potential deselection
+        # Store state for toggle handling in mouseReleaseEvent
         self._last_clicked_item = item
         self._was_selected = item.isSelected() if item else False
         self._ctrl_pressed = bool(modifiers & QtCore.Qt.ControlModifier)
         self._shift_pressed = bool(modifiers & QtCore.Qt.ShiftModifier)
 
-        # Call parent implementation for left-click
         super().mousePressEvent(event)
 
-        # Handle deselection logic after parent processing (left-click only)
+        # Plain click on the only selected item -> deselect (non-Ctrl)
         if (
             item
             and self._was_selected
+            and not self._ctrl_pressed
             and not self._shift_pressed
             and event.button() == QtCore.Qt.LeftButton
         ):
-
-            # In extended mode with Ctrl, toggle selection
             if self.selectionMode() == QtWidgets.QAbstractItemView.ExtendedSelection:
-                if self._ctrl_pressed:
-                    # Ctrl+click on selected item should deselect it
-                    item.setSelected(False)
-                elif len(self.selectedItems()) == 1:
-                    # Single selected item clicked without modifiers should deselect
+                if len(self.selectedItems()) == 1:
                     QtCore.QTimer.singleShot(0, lambda: item.setSelected(False))
-
-            # In multi mode, always toggle
             elif self.selectionMode() == QtWidgets.QAbstractItemView.MultiSelection:
                 item.setSelected(False)
 
+    def mouseReleaseEvent(self, event):
+        """Handle Ctrl+click toggle after Qt finalises selection."""
+        super().mouseReleaseEvent(event)
+
+        item = self._last_clicked_item
+        self._last_clicked_item = None  # consume — one press per release
+
+        if (
+            event.button() != QtCore.Qt.LeftButton
+            or item is None
+            or not self._was_selected
+            or self._shift_pressed
+            or not self._ctrl_pressed
+        ):
+            return
+
+        # Verify the release landed on the same item that was pressed
+        release_item = self.itemAt(event.pos())
+        if release_item is not item:
+            return
+
+        if self._ctrl_toggle:
+            # Ensure Ctrl+click on a selected item deselects it
+            if item.isSelected():
+                item.setSelected(False)
+        else:
+            # Prevent Ctrl+click from deselecting — keep item selected
+            if not item.isSelected():
+                item.setSelected(True)
+
     def _handle_delayed_click(self):
         """Handle delayed click processing for deselection."""
-        # This method can be used for more complex click timing if needed
         pass
 
     def create_item(
@@ -879,8 +1083,15 @@ class TreeWidget(
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if self._header_actions is not None:
+            self._header_actions._reposition()
         if self._stretch_column is not None:
             self.stretch_column_to_fill(self._stretch_column)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._header_actions is not None:
+            self._header_actions._reposition()
 
     def stretch_column_to_fill(self, stretch_col: int):
         """Resize one column to fill remaining horizontal space."""
