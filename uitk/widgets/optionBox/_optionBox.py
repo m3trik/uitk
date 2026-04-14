@@ -92,7 +92,14 @@ class OptionBox:
     ):
         self._show_clear_button = show_clear
         self._options = []
-        self._option_order = option_order or ["clear", "recent", "pin", "action"]
+        self._option_order = option_order or [
+            "clear",
+            "recent",
+            "pin",
+            "action",
+            "browse",
+            "menu",
+        ]
         self.wrapped_widget = None
         self.container = None
 
@@ -159,8 +166,12 @@ class OptionBox:
         value first.  Options without one fall back to the type-based grouping
         defined by ``_option_order``.  Stable sort preserves insertion order
         among options that share the same priority.
+
+        The default order places menu buttons after action buttons so the
+        option-box dropdown is always the rightmost control.
         """
         from .options.action import MenuOption, ActionOption
+        from .options.browse import BrowseOption
         from .options.clear import ClearOption
         from .options.pin_values import PinValuesOption
         from .options.recent_values import RecentValuesOption
@@ -169,6 +180,7 @@ class OptionBox:
             ClearOption: "clear",
             RecentValuesOption: "recent",
             PinValuesOption: "pin",
+            BrowseOption: "browse",
         }
         _fallback = len(self._option_order)
 
@@ -179,7 +191,15 @@ class OptionBox:
                         return self._option_order.index(key)
                     except ValueError:
                         return _fallback
-            if isinstance(option, (MenuOption, ActionOption)):
+            # MenuOption (subclass of ActionOption) gets its own slot so
+            # the dropdown menu always appears after action buttons.
+            if isinstance(option, MenuOption):
+                key = "menu" if "menu" in self._option_order else "action"
+                try:
+                    return self._option_order.index(key)
+                except ValueError:
+                    return _fallback
+            if isinstance(option, ActionOption):
                 try:
                     return self._option_order.index("action")
                 except ValueError:

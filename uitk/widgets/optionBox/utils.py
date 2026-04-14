@@ -25,7 +25,9 @@ class OptionBoxManager(ptk.LoggingMixin):
             "recent",
             "pin",
             "action",
-        ]  # Default order: clear, recent, pin, then action button
+            "browse",
+            "menu",
+        ]  # Default order: clear, recent, pin, action, browse, then menu
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -57,7 +59,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         if not isinstance(order, (list, tuple)):
             raise ValueError("Option order must be a list or tuple")
 
-        valid_options = {"clear", "recent", "pin", "action"}
+        valid_options = {"clear", "recent", "pin", "action", "browse", "menu"}
         if not all(opt in valid_options for opt in order):
             raise ValueError(
                 f"Invalid options in order. Valid options: {valid_options}"
