@@ -1245,6 +1245,144 @@ class TestMainWindowGeometryPinned(QtBaseTestCase):
         window2.clear_saved_geometry()
 
 
+class TestStateLoadFiresConnectedSlots(QtBaseTestCase):
+    """Regression: state.load() must fire connected slots so controllers
+    that track selection via currentTextChanged/currentIndexChanged etc.
+    get their internal state updated during session restore.
+
+    Bug: init_slot() wraps _perform_state_init in widget.blockSignals(True),
+    so even though block_signals_on_restore defaults to False, the outer
+    block suppressed signal emission during setCurrentIndex. Result:
+    the combo UI showed the restored value but connected slots never ran.
+    Fixed: 2026-05-01
+    """
+
+    def setUp(self):
+        super().setUp()
+        from uitk.switchboard import Switchboard
+        from uitk.widgets.mainWindow import MainWindow
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from collections import namedtuple
+
+        self.SettingsManager = SettingsManager
+        self.sb = Switchboard(ui_source=None)
+        UiEntry = namedtuple("Ui", ["filename", "filepath"])
+        self.sb.registry.ui_registry.named_tuples.append(
+            UiEntry("state_fire_test", "/fake/state_fire_test.ui")
+        )
+        self.ui = self.track_widget(
+            MainWindow(
+                "state_fire_test",
+                self.sb,
+                settings=SettingsManager(org="test_state_fire", app="main"),
+                central_widget=QtWidgets.QWidget(),
+            )
+        )
+        self.sb.loaded_ui["state_fire_test"] = self.ui
+
+    def tearDown(self):
+        self.ui.close()
+        self.SettingsManager(org="test_state_fire", app="main").clear()
+        super().tearDown()
+
+    def test_combo_slot_fires_during_state_restore(self):
+        """state.load() via setCurrentIndex must invoke connected slots."""
+        cmb = QtWidgets.QComboBox()
+        cmb.setObjectName("cmb_fire_test")
+        cmb.setParent(self.ui.centralWidget())
+        cmb.addItems(["alpha", "beta", "gamma"])
+        cmb.setCurrentIndex(0)
+        self.ui.register_widget(cmb)
+        cmb.restore_state = True
+
+        # Save index 2 (gamma) to QSettings
+        self.ui.state.save(cmb, 2)
+
+        # Track slot invocation
+        received = []
+        cmb.currentTextChanged.connect(lambda s: received.append(s))
+
+        # Simulate the init_slot outer blockSignals(True) wrap
+        cmb.blockSignals(True)
+        try:
+            self.ui.state.load(cmb)
+        finally:
+            cmb.blockSignals(False)
+
+        self.assertEqual(cmb.currentIndex(), 2, "Value must be restored")
+        self.assertEqual(cmb.currentText(), "gamma")
+        self.assertEqual(
+            received,
+            ["gamma"],
+            "Connected slot must fire during state restore even "
+            "when widget signals are externally blocked",
+        )
+
+    def test_block_signals_on_restore_true_suppresses_slot(self):
+        """When block_signals_on_restore=True, connected slots must NOT fire."""
+        cmb = QtWidgets.QComboBox()
+        cmb.setObjectName("cmb_block_test")
+        cmb.setParent(self.ui.centralWidget())
+        cmb.addItems(["alpha", "beta", "gamma"])
+        cmb.setCurrentIndex(0)
+        self.ui.register_widget(cmb)
+        cmb.restore_state = True
+        cmb.block_signals_on_restore = True
+
+        self.ui.state.save(cmb, 2)
+
+        received = []
+        cmb.currentTextChanged.connect(lambda s: received.append(s))
+
+        self.ui.state.load(cmb)
+
+        self.assertEqual(cmb.currentIndex(), 2, "Value must still be restored")
+        self.assertEqual(
+            received, [], "Slot must NOT fire when block_signals_on_restore=True"
+        )
+
+    def test_apply_preserves_outer_blocked_state(self):
+        """apply() must restore the original signalsBlocked state after finishing."""
+        cmb = QtWidgets.QComboBox()
+        cmb.setObjectName("cmb_preserve_test")
+        cmb.setParent(self.ui.centralWidget())
+        cmb.addItems(["alpha", "beta"])
+        self.ui.register_widget(cmb)
+        cmb.restore_state = True
+
+        cmb.blockSignals(True)
+        self.assertTrue(cmb.signalsBlocked())
+        self.ui.state.apply(cmb, 1)
+        self.assertTrue(cmb.signalsBlocked(), "Outer blocked state must be preserved")
+        cmb.blockSignals(False)
+
+    def test_reset_all_does_not_leak_block_signals_attribute(self):
+        """reset_all must not leave block_signals_on_restore=True on widgets
+        that never had the attribute (module default is False)."""
+        cmb = QtWidgets.QComboBox()
+        cmb.setObjectName("cmb_reset_leak_test")
+        cmb.setParent(self.ui.centralWidget())
+        cmb.addItems(["alpha", "beta"])
+        self.ui.register_widget(cmb)
+        cmb.restore_state = True
+
+        # Capture default, then change value
+        self.ui.state.capture_default(cmb)
+        cmb.setCurrentIndex(1)
+
+        # Before reset: attribute not set (so getattr returns module default False)
+        self.assertFalse(getattr(cmb, "block_signals_on_restore", False))
+
+        self.ui.state.reset_all()
+
+        # After reset: attribute still effectively False
+        self.assertFalse(
+            getattr(cmb, "block_signals_on_restore", False),
+            "reset_all must not leave block_signals_on_restore=True on widgets "
+            "that never had it set",
+        )
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

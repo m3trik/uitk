@@ -18,8 +18,8 @@ class StateManager(ptk.LoggingMixin):
     Widget Attributes:
     - restore_state (bool): If True, widget state is saved/restored. Default: True
     - block_signals_on_restore (bool): If True, signals are blocked during state
-      restoration to prevent side effects. Set to False to allow signals during
-      restore (useful for widgets that need to trigger updates). Default: True
+      restoration to prevent side effects. Set to True for widgets where restore
+      should be cosmetic only (no slot execution). Default: False
 
     Protections:
     - Skips applying None values to text-based widgets to prevent clearing valid text
@@ -32,7 +32,7 @@ class StateManager(ptk.LoggingMixin):
         self.set_log_level(log_level)
         self.qsettings = qsettings
         self._defaults = {}
-        self._save_suppressed = False
+        self._save_suppressed = 0
 
     def _get_settings(self, widget: QtWidgets.QWidget) -> QtCore.QSettings:
         return self.qsettings
@@ -73,18 +73,23 @@ class StateManager(ptk.LoggingMixin):
                 )
                 return
 
-        # Check if widget wants signals blocked during restore (default: True)
-        block_signals = getattr(widget, "block_signals_on_restore", True)
+        # Check if widget wants signals blocked during restore (default: False).
+        # Explicitly manage the widget's blocked state so that an outer context
+        # (e.g. init_slot wrapping in blockSignals(True)) can't silently
+        # suppress connected slot invocations during state restore.
+        block_signals = getattr(widget, "block_signals_on_restore", False)
+        previously_blocked = widget.signalsBlocked()
+        widget.blockSignals(block_signals)
 
         try:
             if signal_name:
                 # Use signal-based approach for compatibility with existing behavior
                 ValueManager.set_value_by_signal(
-                    widget, value, signal_name, block_signals=block_signals
+                    widget, value, signal_name, block_signals=False
                 )
             else:
                 # Fallback to direct value setting
-                ValueManager.set_value(widget, value, block_signals=block_signals)
+                ValueManager.set_value(widget, value, block_signals=False)
 
             # Force visual update since signals may be blocked
             widget.update()
@@ -93,6 +98,8 @@ class StateManager(ptk.LoggingMixin):
             self.logger.debug(
                 f"Could not apply value '{value}' to widget {widget}: {e}"
             )
+        finally:
+            widget.blockSignals(previously_blocked)
 
     @contextmanager
     def suppress_save(self):
@@ -106,11 +113,11 @@ class StateManager(ptk.LoggingMixin):
             with state_manager.suppress_save():
                 state_manager.apply(widget, preset_value)
         """
-        self._save_suppressed = True
+        self._save_suppressed += 1
         try:
             yield
         finally:
-            self._save_suppressed = False
+            self._save_suppressed -= 1
 
     def save(self, widget: QtWidgets.QWidget, value: Any = None) -> None:
         """Save the current value of the widget to QSettings.
@@ -163,7 +170,8 @@ class StateManager(ptk.LoggingMixin):
                     parsed_value = json.loads(value)
                 except (TypeError, json.JSONDecodeError):
                     parsed_value = value
-                self.apply(widget, parsed_value)
+                with self.suppress_save():
+                    self.apply(widget, parsed_value)
                 self.logger.debug(f"Loaded state: {key} -> {parsed_value}")
         except EOFError:
             self.logger.debug(f"EOFError reading state for {key}")
@@ -186,11 +194,22 @@ class StateManager(ptk.LoggingMixin):
                 )
                 continue
 
-            # Temporarily override block_signals_on_restore if specified
-            original_block = getattr(widget, "block_signals_on_restore", True)
+            # Temporarily override block_signals_on_restore if specified.
+            # Default matches module-wide default (False) so widgets that
+            # never had the attribute don't inherit it as True post-reset.
+            had_attr = hasattr(widget, "block_signals_on_restore")
+            original_block = getattr(widget, "block_signals_on_restore", False)
             widget.block_signals_on_restore = block_signals
-            self.apply(widget, default_value)
-            widget.block_signals_on_restore = original_block
+            try:
+                self.apply(widget, default_value)
+            finally:
+                if had_attr:
+                    widget.block_signals_on_restore = original_block
+                else:
+                    try:
+                        del widget.block_signals_on_restore
+                    except AttributeError:
+                        widget.block_signals_on_restore = original_block
 
     def reset(self, widget: QtWidgets.QWidget) -> None:
         """Reset a widget to its default value."""

@@ -49,7 +49,7 @@ class HierarchyIconMixin:
                 outline: none;
                 background-color: #393939;
                 color: #cccccc;
-                selection-background-color: rgba(90, 140, 190, 0.3);
+                selection-background-color: transparent;
                 show-decoration-selected: 1;
                 font-size: 12px;
                 gridline-color: transparent;
@@ -126,7 +126,7 @@ class HierarchyIconMixin:
             }}
             
             QTreeWidget::item:selected {{
-                background-color: rgba(90, 140, 190, 0.4);
+                background-color: rgba(90, 140, 190, 0.08);
                 color: #ffffff;
                 border: none;
             }}
@@ -367,11 +367,14 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
       2. Column tint — ``tree._column_tints[col]``
       3. Row tint    — ``tree._parent_row_color`` or ``tree._child_row_color``
       4. Item bg     — per-item ``BackgroundRole`` (assessment / status colors)
+      5. Selection   — translucent overlay when ``selection_style == "tint"``
 
     The result is an opaque color painted via ``fillRect`` **and** injected into
     ``option.backgroundBrush`` so that ``super().paint()`` cannot override it
     with a QSS-resolved background.
     """
+
+    _SEL_TINT = QtGui.QColor(90, 140, 190, 45)
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
@@ -414,6 +417,14 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
                 bg = QtGui.QColor(c)
             elif c.alpha() > 0:
                 bg = _alpha_over(bg, c)
+
+        # Layer 4 — selection tint (only when selection_style == "tint")
+        use_tint = getattr(tree, "_selection_style", "border") == "tint"
+        selected = bool(option.state & QtWidgets.QStyle.State_Selected)
+        if use_tint and selected:
+            bg = _alpha_over(bg, self._SEL_TINT)
+            # Strip State_Selected so the QSS border rule doesn't fire.
+            option.state &= ~QtWidgets.QStyle.State_Selected
 
         # Paint the single solid composite and inject it into the option
         # so super().paint() uses it instead of the QSS-resolved background.
@@ -566,7 +577,12 @@ class TreeWidget(
     item_data_changed = QtCore.Signal(QtWidgets.QTreeWidgetItem, int)
 
     def __init__(
-        self, parent=None, selection_mode="extended", ctrl_toggle=True, **kwargs
+        self,
+        parent=None,
+        selection_mode="extended",
+        ctrl_toggle=True,
+        selection_style="border",
+        **kwargs,
     ):
         """
         Initialize TreeWidget.
@@ -580,9 +596,13 @@ class TreeWidget(
                 - "multi": Click to toggle selection
             ctrl_toggle: If True (default), Ctrl+click on a selected item
                 deselects it. If False, Ctrl+click only adds to selection.
+            selection_style: Visual style for selected items.
+                - "border": Top/bottom blue border (default)
+                - "tint": Translucent blue overlay composited by the delegate
             **kwargs: Additional attributes to set
         """
         super().__init__(parent)
+        self._selection_style = selection_style
         TreeFormatMixin.__init__(self)
         HierarchyIconMixin.__init__(self)
 
@@ -627,6 +647,18 @@ class TreeWidget(
         self.itemSelectionChanged.connect(self._on_selection_changed)
 
         self.set_attributes(**kwargs)
+
+    # -- selection style -----------------------------------------------------
+
+    @property
+    def selection_style(self) -> str:
+        """Visual style for selected items: ``"border"`` or ``"tint"``."""
+        return self._selection_style
+
+    @selection_style.setter
+    def selection_style(self, value: str):
+        self._selection_style = value
+        self.viewport().update()
 
     # -- header action bar --------------------------------------------------
 

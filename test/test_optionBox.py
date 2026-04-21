@@ -720,6 +720,101 @@ class TestBrowseOption(QtBaseTestCase):
         browse = BrowseOption(wrapped_widget=widget)
         self.assertEqual(browse._mode, "file")
 
+
+class TestActionOptionMultiInstance(QtBaseTestCase):
+    """Tests for multiple ActionOption instances on a single widget."""
+
+    def _make_managed_widget(self):
+        """Create a widget with OptionBoxManager wired up."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        widget = QtWidgets.QPushButton("Test")
+        layout.addWidget(widget)
+        mgr = OptionBoxManager(widget)
+        widget._option_box_manager = mgr
+        widget.option_box = mgr
+        return widget, mgr
+
+    def test_add_action_creates_multiple_buttons(self):
+        """add_action() should add a second action without replacing the first."""
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        widget, mgr = self._make_managed_widget()
+
+        mgr.set_action(lambda: None, icon="play")
+        mgr.add_action(lambda: None, icon="pause")
+
+        # Force wrapping
+        container = mgr.container
+        self.assertIsNotNone(container)
+
+        # Count ActionOption instances
+        actions = [
+            o for o in mgr._option_box.get_options() if isinstance(o, ActionOption)
+        ]
+        self.assertEqual(len(actions), 2, "Should have two ActionOption instances")
+
+    def test_set_action_replaces_only_actions_not_menu(self):
+        """set_action(replace=True) must not remove MenuOption instances."""
+        from uitk.widgets.optionBox.options.action import ActionOption, MenuOption
+
+        widget, mgr = self._make_managed_widget()
+
+        # Add menu first, then action
+        mgr.menu  # triggers enable_menu
+        mgr.set_action(lambda: None, icon="play")
+
+        container = mgr.container
+        self.assertIsNotNone(container)
+
+        options = mgr._option_box.get_options()
+        menu_opts = [o for o in options if isinstance(o, MenuOption)]
+        action_opts = [
+            o
+            for o in options
+            if isinstance(o, ActionOption) and not isinstance(o, MenuOption)
+        ]
+        self.assertEqual(len(menu_opts), 1, "MenuOption must survive set_action")
+        self.assertEqual(len(action_opts), 1)
+
+        # Replace with a new action — menu must still survive
+        mgr.set_action(lambda: None, icon="stop")
+        options = mgr._option_box.get_options()
+        menu_opts = [o for o in options if isinstance(o, MenuOption)]
+        action_opts = [
+            o
+            for o in options
+            if isinstance(o, ActionOption) and not isinstance(o, MenuOption)
+        ]
+        self.assertEqual(len(menu_opts), 1, "MenuOption must survive second set_action")
+        self.assertEqual(len(action_opts), 1, "Old action should be replaced")
+
+    def test_set_action_replaces_all_pure_actions(self):
+        """set_action(replace=True) should remove all prior pure ActionOptions."""
+        from uitk.widgets.optionBox.options.action import ActionOption, MenuOption
+
+        widget, mgr = self._make_managed_widget()
+
+        mgr.set_action(lambda: None, icon="a")
+        mgr.add_action(lambda: None, icon="b")
+        # Now replace all
+        mgr.set_action(lambda: None, icon="c")
+
+        container = mgr.container
+        options = mgr._option_box.get_options()
+        action_opts = [
+            o
+            for o in options
+            if isinstance(o, ActionOption) and not isinstance(o, MenuOption)
+        ]
+        self.assertEqual(len(action_opts), 1, "set_action should replace all")
+
+
+class TestBrowseOptionIntegration(QtBaseTestCase):
+    """Tests for BrowseOption integration with other options."""
+
     def test_records_to_sibling_recent_option(self):
         """Browse should auto-record to a sibling RecentValuesOption."""
         from uitk.widgets.optionBox.utils import OptionBoxManager
