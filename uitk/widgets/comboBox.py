@@ -160,7 +160,6 @@ class ComboBox(
         self.prev_index = -1
         self.has_header = False
         self.header_text = None
-        self.restore_state = False
         self.editable = editable
 
         self.currentIndexChanged.connect(self.check_index)

@@ -154,7 +154,7 @@ class AttributesMixin:
             set_button_symbols (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
             set_limits (tuple): Set the min, max, step, and decimal value using a string value. ex. (0.01, 10, 1, 2)
             setCheckState (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
-            block_signals_on_restore (bool): If False, widget signals will fire during state restoration. Default is True (signals blocked).
+            block_signals_on_restore (bool): If True, widget signals will be blocked during state restoration. Default is False (signals fire).
         """
         try:
             if attr == "transfer_properties":

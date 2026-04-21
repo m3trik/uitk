@@ -273,50 +273,45 @@ class TestColorSwatchSettings(QtBaseTestCase):
 # =============================================================================
 
 
+def _mock_mayatk_modules():
+    """Build a sys.modules patch dict that stubs the mayatk package chain.
+
+    Mocks pymel (Maya) so color_manager can be imported without Maya,
+    while using the real mayatk source from the monorepo.
+    """
+    import sys
+    import types
+    import os
+
+    # Ensure mayatk source is importable
+    mayatk_root = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "mayatk")
+    )
+    if mayatk_root not in sys.path:
+        sys.path.insert(0, mayatk_root)
+
+    mock_pm = types.ModuleType("pymel")
+    mock_pm.core = types.ModuleType("pymel.core")
+
+    return {
+        "pymel": mock_pm,
+        "pymel.core": mock_pm.core,
+    }
+
+
 class TestDefaultSwatchColors(QtBaseTestCase):
     """Tests for the DEFAULT_SWATCH_COLORS palette on ColorManager."""
 
     def test_palette_has_12_colors(self):
         """Should have exactly 12 default swatch colors."""
-        # Import only the non-Maya parts
-        import importlib
-        import types
-
-        # Mock pymel so the import doesn't fail
-        mock_pm = types.ModuleType("pymel")
-        mock_pm.core = types.ModuleType("pymel.core")
-        mock_matutils = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "pymel": mock_pm,
-                "pymel.core": mock_pm.core,
-                "mayatk.mat_utils._mat_utils": mock_matutils,
-            },
-        ):
-            mock_matutils.MatUtils = MagicMock()
+        with patch.dict("sys.modules", _mock_mayatk_modules()):
             from mayatk.display_utils.color_manager import ColorManager
 
             self.assertEqual(len(ColorManager.DEFAULT_SWATCH_COLORS), 12)
 
     def test_palette_colors_are_valid_rgb_tuples(self):
         """Each default color should be a valid (R, G, B) tuple with values 0-255."""
-        import types
-
-        mock_pm = types.ModuleType("pymel")
-        mock_pm.core = types.ModuleType("pymel.core")
-        mock_matutils = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "pymel": mock_pm,
-                "pymel.core": mock_pm.core,
-                "mayatk.mat_utils._mat_utils": mock_matutils,
-            },
-        ):
-            mock_matutils.MatUtils = MagicMock()
+        with patch.dict("sys.modules", _mock_mayatk_modules()):
             from mayatk.display_utils.color_manager import ColorManager
 
             for color in ColorManager.DEFAULT_SWATCH_COLORS:
@@ -328,21 +323,7 @@ class TestDefaultSwatchColors(QtBaseTestCase):
 
     def test_palette_colors_are_all_distinct(self):
         """Each default swatch color should be unique."""
-        import types
-
-        mock_pm = types.ModuleType("pymel")
-        mock_pm.core = types.ModuleType("pymel.core")
-        mock_matutils = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "pymel": mock_pm,
-                "pymel.core": mock_pm.core,
-                "mayatk.mat_utils._mat_utils": mock_matutils,
-            },
-        ):
-            mock_matutils.MatUtils = MagicMock()
+        with patch.dict("sys.modules", _mock_mayatk_modules()):
             from mayatk.display_utils.color_manager import ColorManager
 
             colors = ColorManager.DEFAULT_SWATCH_COLORS
@@ -350,21 +331,7 @@ class TestDefaultSwatchColors(QtBaseTestCase):
 
     def test_palette_colors_are_desaturated(self):
         """Default colors should be muted (not fully saturated primary colors)."""
-        import types
-
-        mock_pm = types.ModuleType("pymel")
-        mock_pm.core = types.ModuleType("pymel.core")
-        mock_matutils = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "pymel": mock_pm,
-                "pymel.core": mock_pm.core,
-                "mayatk.mat_utils._mat_utils": mock_matutils,
-            },
-        ):
-            mock_matutils.MatUtils = MagicMock()
+        with patch.dict("sys.modules", _mock_mayatk_modules()):
             from mayatk.display_utils.color_manager import ColorManager
 
             for color in ColorManager.DEFAULT_SWATCH_COLORS:
@@ -386,21 +353,7 @@ class TestGetColorDifference(unittest.TestCase):
     """Tests for get_color_difference static method."""
 
     def _get_cls(self):
-        import types
-
-        mock_pm = types.ModuleType("pymel")
-        mock_pm.core = types.ModuleType("pymel.core")
-        mock_matutils = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "pymel": mock_pm,
-                "pymel.core": mock_pm.core,
-                "mayatk.mat_utils._mat_utils": mock_matutils,
-            },
-        ):
-            mock_matutils.MatUtils = MagicMock()
+        with patch.dict("sys.modules", _mock_mayatk_modules()):
             from mayatk.display_utils.color_manager import ColorUtils
 
             return ColorUtils

@@ -142,7 +142,8 @@ class OptionBoxManager(ptk.LoggingMixin):
             icon: Icon name for the button (default: "option_box")
             tooltip: Tooltip text (default: "Options")
             text: Optional text to display instead of icon
-            replace: If True, removes any existing ActionOptions first (default: True)
+            replace: If True, removes any existing ActionOptions first
+                (default: True).  MenuOption instances are never removed.
             states: Optional list of state dicts for multi-state cycling.
                 Each dict may have 'icon', 'tooltip', and 'callback' keys.
                 When provided, clicking cycles through the states.
@@ -152,26 +153,26 @@ class OptionBoxManager(ptk.LoggingMixin):
         """
         # from ..optionBox.options import ActionOption
         # Use absolute import to ensure type consistency
-        from uitk.widgets.optionBox.options.action import ActionOption
+        from uitk.widgets.optionBox.options.action import ActionOption, MenuOption
 
         if replace:
-            # Remove existing ActionOption instances
+            # Remove existing ActionOption instances (but NOT MenuOption
+            # subclasses — those are managed by enable_menu/disable_menu).
+            def _is_pure_action(opt):
+                return isinstance(opt, ActionOption) and not isinstance(opt, MenuOption)
+
             # Check pending options
             self._pending_options = [
-                opt
-                for opt in self._pending_options
-                if not isinstance(opt, ActionOption)
+                opt for opt in self._pending_options if not _is_pure_action(opt)
             ]
 
             # Check active options
             if self._option_box:
-                options_to_remove = []
-                for opt in self._option_box.get_options():
-                    if isinstance(opt, ActionOption):
-                        options_to_remove.append(opt)
-                    # Also check via class name string to be robust against reload/import issues
-                    elif opt.__class__.__name__ == "ActionOption":
-                        options_to_remove.append(opt)
+                options_to_remove = [
+                    opt
+                    for opt in self._option_box.get_options()
+                    if _is_pure_action(opt)
+                ]
 
                 for opt in options_to_remove:
                     self._option_box.remove_option(opt)
@@ -187,6 +188,38 @@ class OptionBoxManager(ptk.LoggingMixin):
         )
         self.add_option(action_option)
         return self
+
+    def add_action(
+        self,
+        callback=None,
+        icon="option_box",
+        tooltip="Options",
+        text=None,
+        states=None,
+        settings_key=None,
+    ):
+        """Add an action button without replacing existing ones.
+
+        Convenience wrapper around ``set_action(replace=False)``.
+        Use when a widget needs multiple independent action buttons.
+
+        Args:
+            callback: Function or object to call/trigger when clicked
+            icon: Icon name for the button (default: "option_box")
+            tooltip: Tooltip text (default: "Options")
+            text: Optional text to display instead of icon
+            states: Optional list of state dicts for multi-state cycling.
+            settings_key: Optional explicit persistence key.
+        """
+        return self.set_action(
+            callback=callback,
+            icon=icon,
+            tooltip=tooltip,
+            text=text,
+            replace=False,
+            states=states,
+            settings_key=settings_key,
+        )
 
     def browse(
         self,
