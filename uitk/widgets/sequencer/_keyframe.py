@@ -7,11 +7,14 @@ from typing import TYPE_CHECKING, List, Tuple
 
 from qtpy import QtWidgets, QtGui, QtCore
 
+from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
+from uitk.widgets.sequencer._draggable import DraggableItemMixin
+
 if TYPE_CHECKING:
     from uitk.widgets.sequencer._clip import ClipItem
 
 
-class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
+class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
     """An interactive keyframe indicator inside a sub-row :class:`ClipItem`.
 
     Each instance represents a single keyframe at a specific time and value.
@@ -51,7 +54,7 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
         self._dragging = False
         self._drag_origin_scene_x = 0.0
         self._drag_peers: List[Tuple["KeyframeItem", float]] = []
-        self._drag_tooltip: QtWidgets.QGraphicsSimpleTextItem | None = None
+        self._drag_tooltip = FrameTooltip()
 
         self.setAcceptHoverEvents(True)
         self.setFlags(
@@ -190,6 +193,28 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
         self._update_drag_tooltip(event.scenePos())
         event.accept()
 
+    def _is_drag_active(self) -> bool:
+        return self._dragging
+
+    def _restore_drag_state(self) -> None:
+        affected = {}
+        for peer, origin_time in self._drag_peers:
+            peer._time = origin_time
+            peer._reposition()
+            pid = id(peer._parent_clip)
+            if pid not in affected:
+                affected[pid] = peer._parent_clip
+        for clip in affected.values():
+            clip.prepareGeometryChange()
+            clip._keys_dragging = False
+            scene = clip.scene()
+            if scene:
+                scene.invalidate(clip.mapToScene(clip.boundingRect()).boundingRect())
+            else:
+                clip.update()
+        self._dragging = False
+        self._drag_peers = []
+
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._dragging:
             self._dragging = False
@@ -228,31 +253,20 @@ class KeyframeItem(QtWidgets.QGraphicsEllipseItem):
     # -- drag tooltip -------------------------------------------------------
 
     def _show_drag_tooltip(self, scene_pos):
-        self._drag_tooltip = QtWidgets.QGraphicsSimpleTextItem()
-        self._drag_tooltip.setZValue(100)
-        font = self._drag_tooltip.font()
-        font.setPointSize(8)
-        font.setBold(True)
-        self._drag_tooltip.setFont(font)
-        color = self._parent_clip._resolve_color()
-        self._drag_tooltip.setBrush(QtGui.QColor(color).lighter(160))
-        if self.scene():
-            self.scene().addItem(self._drag_tooltip)
-        self._update_drag_tooltip(scene_pos)
+        color = self._parent_clip._resolve_color().lighter(160).name()
+        self._drag_tooltip.show(
+            self.scene(), scene_pos,
+            label=FrameTooltip.format_frame(self._time),
+            color=color,
+        )
 
     def _update_drag_tooltip(self, scene_pos):
-        if self._drag_tooltip is None:
-            return
-        t = self._time
-        label = str(int(t)) if t == int(t) else f"{t:.1f}"
-        self._drag_tooltip.setText(label)
-        self._drag_tooltip.setPos(scene_pos.x() + 10, scene_pos.y() - 18)
+        self._drag_tooltip.update(
+            scene_pos, label=FrameTooltip.format_frame(self._time)
+        )
 
     def _hide_drag_tooltip(self):
-        if self._drag_tooltip is not None:
-            if self._drag_tooltip.scene():
-                self._drag_tooltip.scene().removeItem(self._drag_tooltip)
-            self._drag_tooltip = None
+        self._drag_tooltip.hide()
 
     # -- positioning --------------------------------------------------------
 

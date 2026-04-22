@@ -16,12 +16,16 @@ from uitk.widgets.sequencer._data import (
     _styled_menu,
     _menu_exec_pos,
 )
+from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
+from uitk.widgets.sequencer._draggable import DraggableItemMixin, snap_time
 
 _MARKER_TRI_SIZE = 8  # size of the triangle pennant in pixels
 
 
-class MarkerItem(QtWidgets.QGraphicsItem):
+class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     """A named marker on the timeline: triangle at the ruler + dashed line."""
+
+    DRAG_CAPTURES_UNDO = False
 
     def __init__(self, marker_data: MarkerData, timeline: "TimelineView"):
         super().__init__()
@@ -30,7 +34,7 @@ class MarkerItem(QtWidgets.QGraphicsItem):
         self._drag_active = False
         self._drag_origin_x = 0.0
         self._drag_origin_time = 0.0
-        self._drag_tooltip: Optional[QtWidgets.QGraphicsSimpleTextItem] = None
+        self._drag_tooltip = FrameTooltip()
         self.setZValue(15)
         self.setAcceptHoverEvents(True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
@@ -184,32 +188,50 @@ class MarkerItem(QtWidgets.QGraphicsItem):
             return super().mouseMoveEvent(event)
         tl = self._timeline
         dx_time = tl.x_to_time(event.scenePos().x()) - tl.x_to_time(self._drag_origin_x)
-        new_time = max(0.0, self._drag_origin_time + dx_time)
-        modifiers = event.modifiers()
-        if modifiers & QtCore.Qt.ControlModifier:
-            new_time = round(new_time)
-        else:
-            interval = tl.parent_sequencer.snap_interval
-            if interval > 0:
-                new_time = round(new_time / interval) * interval
+        new_time = max(0.0, snap_time(self._drag_origin_time + dx_time, tl))
         self._data.time = new_time
         self.sync()
         self.update()
-        self._update_drag_tooltip(event.scenePos())
+        outside = self._cursor_outside_window()
+        self.setCursor(
+            QtCore.Qt.ForbiddenCursor if outside else QtCore.Qt.ClosedHandCursor
+        )
+        self._update_drag_tooltip(event.scenePos(), outside=outside)
         event.accept()
+
+    def _is_drag_active(self) -> bool:
+        return self._drag_active
+
+    def _restore_drag_state(self) -> None:
+        self._data.time = self._drag_origin_time
+        self._drag_active = False
+        self.sync()
+        self.unsetCursor()
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._drag_active:
             self._drag_active = False
             self.unsetCursor()
             self._hide_drag_tooltip()
+            widget = self._timeline.parent_sequencer
+            if self._cursor_outside_window():
+                widget.remove_marker(self._data.marker_id)
+                event.accept()
+                return
             self.sync()
             self.update()
-            widget = self._timeline.parent_sequencer
             widget.marker_moved.emit(self._data.marker_id, self._data.time)
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+
+    def _cursor_outside_window(self) -> bool:
+        """True when the global cursor is outside the sequencer's top-level window."""
+        try:
+            win = self._timeline.parent_sequencer.window()
+            return not win.frameGeometry().contains(QtGui.QCursor.pos())
+        except Exception:
+            return False
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
@@ -220,30 +242,24 @@ class MarkerItem(QtWidgets.QGraphicsItem):
     # -- drag tooltip -------------------------------------------------------
 
     def _show_drag_tooltip(self, scene_pos):
-        self._drag_tooltip = QtWidgets.QGraphicsSimpleTextItem()
-        self._drag_tooltip.setZValue(100)
-        font = self._drag_tooltip.font()
-        font.setPointSize(8)
-        font.setBold(True)
-        self._drag_tooltip.setFont(font)
-        self._drag_tooltip.setBrush(QtGui.QColor(self._data.color))
-        if self.scene():
-            self.scene().addItem(self._drag_tooltip)
-        self._update_drag_tooltip(scene_pos)
+        self._drag_tooltip.show(
+            self.scene(), scene_pos,
+            label=FrameTooltip.format_frame(self._data.time),
+            color=self._data.color,
+        )
 
-    def _update_drag_tooltip(self, scene_pos):
-        if self._drag_tooltip is None:
-            return
-        t = self._data.time
-        label = str(int(t)) if t == int(t) else f"{t:.1f}"
-        self._drag_tooltip.setText(label)
-        self._drag_tooltip.setPos(scene_pos.x() + 10, scene_pos.y() - 18)
+    def _update_drag_tooltip(self, scene_pos, outside: bool = False):
+        if outside:
+            self._drag_tooltip.update(scene_pos, label="delete", color="#e05050")
+        else:
+            self._drag_tooltip.update(
+                scene_pos,
+                label=FrameTooltip.format_frame(self._data.time),
+                color=self._data.color,
+            )
 
     def _hide_drag_tooltip(self):
-        if self._drag_tooltip is not None:
-            if self._drag_tooltip.scene():
-                self._drag_tooltip.scene().removeItem(self._drag_tooltip)
-            self._drag_tooltip = None
+        self._drag_tooltip.hide()
 
     # -- context menu -------------------------------------------------------
 
