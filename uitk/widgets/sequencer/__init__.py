@@ -31,6 +31,7 @@ from uitk.widgets.sequencer._data import (  # noqa: F401
     HATCH_SPARSE,
     hatch_brush,
 )
+from uitk.widgets.sequencer._drag_tooltip import FrameTooltip  # noqa: F401
 from uitk.widgets.sequencer._clip import ClipItem  # noqa: F401
 from uitk.widgets.sequencer._keyframe import KeyframeItem  # noqa: F401
 from uitk.widgets.sequencer._overlays import (  # noqa: F401
@@ -50,4 +51,10 @@ from uitk.widgets.sequencer._timeline import (  # noqa: F401
 from uitk.widgets.sequencer._sequencer import (  # noqa: F401
     AttributeColorDialog,
     SequencerWidget,
+)
+from uitk.widgets.sequencer._scrub_player import ScrubPlayer  # noqa: F401
+from uitk.widgets.sequencer._transport_controls import (  # noqa: F401
+    TransportControls,
+    ScrubPlayerPlayController,
+    PlayController,
 )

@@ -17,6 +17,8 @@ from uitk.widgets.sequencer._data import (
     hatch_brush,
     HATCH_SPARSE,
 )
+from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
+from uitk.widgets.sequencer._draggable import DraggableItemMixin, snap_time
 
 # ---------------------------------------------------------------------------
 #  _StaticRangeOverlay
@@ -61,7 +63,7 @@ class _StaticRangeOverlay(QtWidgets.QGraphicsItem):
 # ---------------------------------------------------------------------------
 
 
-class _GapOverlayItem(QtWidgets.QGraphicsItem):
+class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     """Diagonal-hatch overlay for gaps between shots.
 
     Displays the gap duration as centered text and a tooltip on hover.
@@ -102,6 +104,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         self.setAcceptHoverEvents(True)
         self._gap_frames = int(round(end - start))
         self._update_tooltip()
+        self._drag_tooltip = FrameTooltip()
 
     def _update_tooltip(self):
         self._gap_frames = max(0, int(round(self._end - self._start)))
@@ -151,15 +154,6 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         if local_x >= r.width() - self._EDGE_WIDTH:
             return "right"
         return "body"
-
-    def _snap(self, value: float) -> float:
-        modifiers = QtWidgets.QApplication.keyboardModifiers()
-        if modifiers & QtCore.Qt.ControlModifier:
-            return round(value)
-        interval = self._timeline.parent_sequencer.snap_interval
-        if interval > 0:
-            return round(value / interval) * interval
-        return value
 
     def hoverEnterEvent(self, event):
         self._hovered = True
@@ -211,6 +205,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         sq = self._timeline.parent_sequencer
         sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
         sq._capture_undo()
+        self._show_gap_drag_tooltip(event.scenePos())
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -222,14 +217,14 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
         dt = dx / ppu if ppu else 0
 
         if self._drag_mode == "right":
-            new_end = self._snap(self._drag_origin_end + dt)
+            new_end = snap_time(self._drag_origin_end + dt, self._timeline)
             if new_end >= self._start:
                 self.prepareGeometryChange()
                 self._end = new_end
                 self._update_tooltip()
                 self.update()
         elif self._drag_mode == "left":
-            new_start = self._snap(self._drag_origin_start + dt)
+            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
             if new_start <= self._end:
                 self.prepareGeometryChange()
                 self._start = new_start
@@ -237,13 +232,43 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
                 self.update()
         elif self._drag_mode == "move":
             span = self._drag_origin_end - self._drag_origin_start
-            new_start = self._snap(self._drag_origin_start + dt)
+            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
             self.prepareGeometryChange()
             self._start = new_start
             self._end = new_start + span
             self._update_tooltip()
             self.update()
+        self._update_gap_drag_tooltip(event.scenePos())
         event.accept()
+
+    def _gap_drag_frame(self) -> float:
+        if self._drag_mode == "right":
+            return float(self._end)
+        return float(self._start)
+
+    def _show_gap_drag_tooltip(self, scene_pos):
+        self._drag_tooltip.show(
+            self.scene(), scene_pos,
+            label=FrameTooltip.format_frame(self._gap_drag_frame()),
+            color=self._line_color.name(),
+        )
+
+    def _update_gap_drag_tooltip(self, scene_pos):
+        self._drag_tooltip.update(
+            scene_pos, label=FrameTooltip.format_frame(self._gap_drag_frame())
+        )
+
+    def _is_drag_active(self) -> bool:
+        return self._drag_mode is not None
+
+    def _restore_drag_state(self) -> None:
+        self.prepareGeometryChange()
+        self._start = self._drag_origin_start
+        self._end = self._drag_origin_end
+        if self._drag_mode == "move":
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+        self._drag_mode = None
+        self._update_tooltip()
 
     def mouseReleaseEvent(self, event):
         if self._drag_mode is not None:
@@ -267,6 +292,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
                 self.setCursor(QtCore.Qt.OpenHandCursor)
             self._drag_mode = None
             self._update_tooltip()
+            self._drag_tooltip.hide()
         event.accept()
 
     def contextMenuEvent(self, event):
@@ -346,7 +372,7 @@ class _GapOverlayItem(QtWidgets.QGraphicsItem):
 _RANGE_HANDLE_WIDTH = 4  # pixels from edge that activates resize cursor
 
 
-class RangeHighlightItem(QtWidgets.QGraphicsItem):
+class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     """A semi-transparent rectangle highlighting a time range on the timeline.
 
     Supports dragging (move) and edge-handle resizing.  Sits behind clips
@@ -367,6 +393,7 @@ class RangeHighlightItem(QtWidgets.QGraphicsItem):
         self._locked: bool = False
         self.setZValue(-1)
         self.setAcceptHoverEvents(True)
+        self._drag_tooltip = FrameTooltip()
 
     @property
     def locked(self) -> bool:
@@ -465,16 +492,6 @@ class RangeHighlightItem(QtWidgets.QGraphicsItem):
             QtCore.QRectF(r.right() - hw, r.top(), hw, r.height()), self._handle_color
         )
 
-    # -- snapping helper ----------------------------------------------------
-    def _snap(self, value: float) -> float:
-        modifiers = QtWidgets.QApplication.keyboardModifiers()
-        if modifiers & QtCore.Qt.ControlModifier:
-            return round(value)
-        interval = self._timeline.parent_sequencer.snap_interval
-        if interval > 0:
-            return round(value / interval) * interval
-        return value
-
     # -- hit zone -----------------------------------------------------------
     def _hit_zone(self, pos: QtCore.QPointF) -> str:
         r = self._rect()
@@ -533,6 +550,7 @@ class RangeHighlightItem(QtWidgets.QGraphicsItem):
         sq._capture_undo()
         if self._drag_mode == "move":
             self.setCursor(QtCore.Qt.ClosedHandCursor)
+        self._show_range_drag_tooltip(event.scenePos())
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -548,20 +566,49 @@ class RangeHighlightItem(QtWidgets.QGraphicsItem):
 
         if self._drag_mode == "move":
             span = self._drag_origin_end - self._drag_origin_start
-            new_start = self._snap(self._drag_origin_start + dt)
+            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
             self._start = new_start
             self._end = new_start + span
         elif self._drag_mode == "left":
-            new_start = self._snap(self._drag_origin_start + dt)
+            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
             if new_start < self._end:
                 self._start = new_start
         elif self._drag_mode == "right":
-            new_end = self._snap(self._drag_origin_end + dt)
+            new_end = snap_time(self._drag_origin_end + dt, self._timeline)
             if new_end > self._start:
                 self._end = new_end
 
         self.sync()
+        self._update_range_drag_tooltip(event.scenePos())
         event.accept()
+
+    def _range_drag_frame(self) -> float:
+        if self._drag_mode == "right":
+            return float(self._end)
+        return float(self._start)
+
+    def _show_range_drag_tooltip(self, scene_pos):
+        self._drag_tooltip.show(
+            self.scene(), scene_pos,
+            label=FrameTooltip.format_frame(self._range_drag_frame()),
+            color=self._handle_color.name(),
+        )
+
+    def _update_range_drag_tooltip(self, scene_pos):
+        self._drag_tooltip.update(
+            scene_pos, label=FrameTooltip.format_frame(self._range_drag_frame())
+        )
+
+    def _is_drag_active(self) -> bool:
+        return self._drag_mode is not None
+
+    def _restore_drag_state(self) -> None:
+        self._start = self._drag_origin_start
+        self._end = self._drag_origin_end
+        if self._drag_mode == "move":
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+        self._drag_mode = None
+        self.sync()
 
     def mouseReleaseEvent(self, event):
         if self._locked:
@@ -573,4 +620,5 @@ class RangeHighlightItem(QtWidgets.QGraphicsItem):
         if self._drag_mode == "move":
             self.setCursor(QtCore.Qt.OpenHandCursor)
         self._drag_mode = None
+        self._drag_tooltip.hide()
         event.accept()

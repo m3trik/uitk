@@ -315,6 +315,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             ("M", self.add_marker_at_playhead, "Add marker at playhead"),
             ("F", self.frame_shot, "Frame the active shot range"),
             ("Delete", self._delete_selected_keys, "Delete selected keyframes"),
+            ("Escape", self._cancel_active_drag, "Cancel the active drag"),
         ]
         self._shortcut_mgr = ShortcutManager(self)
         _ctx = QtCore.Qt.WidgetWithChildrenShortcut
@@ -325,6 +326,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # Keep the ShortcutOverride sequences in sync with the manager
         self._shortcut_mgr.on_change(self._sync_shortcut_sequences)
         self._sync_shortcut_sequences()
+
+        # -- audio scrub player (lazy) --------------------------------------
+        self._scrub_player = None  # type: Optional[ScrubPlayer]
+        self._audio_fps: float = 24.0
+        self.playhead_moved.connect(self._on_playhead_moved_for_audio)
 
         # -- apply kwargs via AttributesMixin --------------------------------
         if kwargs:
@@ -672,6 +678,32 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """Move the playhead to a specific time."""
         self._timeline._scene.playhead.time = time
 
+    # -- audio scrub --------------------------------------------------------
+
+    def set_audio_source(self, path: str, fps: float = 24.0) -> bool:
+        """Bind an audio file (typically a composite WAV) for scrub playback.
+
+        Once set, user-driven playhead motion automatically emits short
+        audio grains.  External ``set_playhead`` calls do not trigger
+        audio (no signal emission), so Maya time-sync won't stutter.
+        """
+        from uitk.widgets.sequencer._scrub_player import ScrubPlayer
+
+        if self._scrub_player is None:
+            self._scrub_player = ScrubPlayer(self)
+        self._audio_fps = float(fps) if fps and fps > 0 else 24.0
+        return self._scrub_player.set_source(path)
+
+    def clear_audio_source(self) -> None:
+        """Drop the bound audio source and stop any in-flight scrub."""
+        if self._scrub_player is not None:
+            self._scrub_player.clear_source()
+
+    def _on_playhead_moved_for_audio(self, time: float) -> None:
+        if self._scrub_player is None:
+            return
+        self._scrub_player.play_at_frame(time, self._audio_fps)
+
     def clear(self, *, keep_range_highlight: bool = False):
         """Remove all tracks, clips, and markers.
 
@@ -1014,6 +1046,29 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
     # Keep legacy alias so external callers aren't broken
     frame_all = frame_shot
+
+    # -- drag cancel -------------------------------------------------------
+    def _cancel_active_drag(self) -> bool:
+        """Abort any in-progress drag on the timeline.
+
+        Iterates scene items, calls their ``cancel_drag`` method, and pops
+        the pre-drag undo snapshot so Escape leaves no spurious undo step.
+        Returns True if something was cancelled.
+        """
+        scene = self._timeline._scene
+        if scene is None:
+            return False
+        cancelled = False
+        captured_undo = False
+        for item in scene.items():
+            fn = getattr(item, "cancel_drag", None)
+            if callable(fn) and fn():
+                cancelled = True
+                if getattr(item, "DRAG_CAPTURES_UNDO", False):
+                    captured_undo = True
+        if captured_undo and self._undo_stack:
+            self._undo_stack.pop()
+        return cancelled
 
     # -- undo / redo -------------------------------------------------------
     def _snapshot(self) -> Dict[int, tuple]:

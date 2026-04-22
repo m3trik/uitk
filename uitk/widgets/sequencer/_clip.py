@@ -21,9 +21,11 @@ from uitk.widgets.sequencer._data import (
     HATCH_DENSE,
 )
 from uitk.widgets.sequencer._keyframe import KeyframeItem
+from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
+from uitk.widgets.sequencer._draggable import DraggableItemMixin, snap_time
 
 
-class ClipItem(QtWidgets.QGraphicsRectItem):
+class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     """A draggable, resizable rectangle representing one clip on the timeline."""
 
     def __init__(self, clip_data: ClipData, timeline: "TimelineView"):
@@ -35,6 +37,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         self._drag_origin_start = 0.0
         self._drag_origin_duration = 0.0
         self._drag_peers: list = []  # [(ClipItem, original_start), ...]
+        self._drag_tooltip = FrameTooltip()
         self._waveform_pixmap: Optional[QtGui.QPixmap] = None
         self._waveform_pixmap_size: Optional[tuple] = None
         self._keyframe_items: list = []  # KeyframeItem children for sub-rows
@@ -59,17 +62,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
         self._sync_geometry()
 
     def _snap(self, value: float) -> float:
-        """Snap *value* to the nearest grid interval if snapping is enabled.
-
-        Holding **Ctrl** while dragging forces the interval to 1 (per-frame).
-        """
-        modifiers = QtWidgets.QApplication.keyboardModifiers()
-        if modifiers & QtCore.Qt.ControlModifier:
-            return round(value)
-        interval = self._timeline.parent_sequencer.snap_interval
-        if interval > 0:
-            return round(value / interval) * interval
-        return value
+        return snap_time(value, self._timeline)
 
     # -- data access --------------------------------------------------------
     @property
@@ -646,6 +639,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             self._timeline.parent_sequencer._capture_undo()
             self.setCursor(QtCore.Qt.ClosedHandCursor)
             self.update()  # repaint to show drag frame labels
+            self._show_clip_drag_tooltip(event.scenePos())
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -687,7 +681,24 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
 
         self._sync_geometry()
         self.update()
+        self._update_clip_drag_tooltip(event.scenePos())
         event.accept()
+
+    def _is_drag_active(self) -> bool:
+        return self._drag_mode is not None
+
+    def _restore_drag_state(self) -> None:
+        self._data.start = self._drag_origin_start
+        self._data.duration = self._drag_origin_duration
+        for peer, origin_start in self._drag_peers:
+            peer._data.start = origin_start
+            peer._drag_mode = None
+            peer._sync_geometry()
+            peer.update()
+        self._drag_mode = None
+        self._drag_peers = []
+        self._sync_geometry()
+        self.unsetCursor()
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._drag_mode:
@@ -697,6 +708,7 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
             self._drag_peers = []
             self.unsetCursor()
             self.update()  # repaint to hide drag frame labels
+            self._drag_tooltip.hide()
             # Clear drag state on peers so their curve previews
             # switch back to live data after release.
             for peer, _ in peers:
@@ -818,6 +830,26 @@ class ClipItem(QtWidgets.QGraphicsRectItem):
                 proxy.scene().removeItem(proxy)
 
         edit.editingFinished.connect(_finish)
+
+    # -- drag tooltip -------------------------------------------------------
+    def _clip_drag_frame(self) -> float:
+        """Frame value relevant to the current drag mode."""
+        if self._drag_mode == "resize_right":
+            return float(self._data.start + self._data.duration)
+        return float(self._data.start)
+
+    def _show_clip_drag_tooltip(self, scene_pos):
+        color = self._resolve_color().lighter(160).name()
+        self._drag_tooltip.show(
+            self.scene(), scene_pos,
+            label=FrameTooltip.format_frame(self._clip_drag_frame()),
+            color=color,
+        )
+
+    def _update_clip_drag_tooltip(self, scene_pos):
+        self._drag_tooltip.update(
+            scene_pos, label=FrameTooltip.format_frame(self._clip_drag_frame())
+        )
 
     # -- utilities ----------------------------------------------------------
     def _hit_zone(self, pos) -> str:

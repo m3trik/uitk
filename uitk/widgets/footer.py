@@ -130,6 +130,40 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
     # ── Action buttons ───────────────────────────────────────────
 
+    def add_widget(
+        self,
+        widget: QtWidgets.QWidget,
+        side: str = "right",
+    ) -> QtWidgets.QWidget:
+        """Insert an arbitrary widget into the footer on the given side.
+
+        ``side="right"`` places the widget on the right, before the size
+        grip (if present).  ``side="left"`` places it at the left edge,
+        before the status/progress stack.  Returns *widget* for chaining.
+        """
+        if side not in ("left", "right"):
+            raise ValueError(f"side must be 'left' or 'right', got {side!r}")
+
+        widget.setParent(self)
+        if side == "left":
+            self.main_layout.insertWidget(0, widget)
+        else:
+            if self._size_grip:
+                idx = self.main_layout.indexOf(self._grip_spacer)
+                self.main_layout.insertWidget(idx, widget)
+            else:
+                self.main_layout.addWidget(widget)
+
+        # Grow the footer's fixed height if the new child is taller, so
+        # callers can drop in prebuilt widgets without clipping.
+        try:
+            needed = max(widget.minimumHeight(), widget.sizeHint().height())
+        except Exception:
+            needed = 0
+        if needed and needed > self.height():
+            self.setFixedHeight(needed)
+        return widget
+
     def add_action_button(
         self,
         text: str = "",
