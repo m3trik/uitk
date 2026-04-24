@@ -1,583 +1,418 @@
-# UITK User Guide
+# User Guide
 
-This guide covers how to effectively use UITK for Qt application development, from basic concepts to practical implementation patterns.
+A practical walk-through for building a real application with UITK.
 
-## Table of Contents
-1. [Getting Started](#getting-started)
-2. [Project Organization](#project-organization)
-3. [Understanding Naming Conventions](#understanding-naming-conventions)
-4. [Creating Slot Classes](#creating-slot-classes)
-5. [Working with Enhanced Widgets](#working-with-enhanced-widgets)
-6. [State Management](#state-management)
-7. [Styling and Themes](#styling-and-themes)
-8. [Advanced Usage](#advanced-usage)
-9. [Best Practices](#best-practices)
-10. [Common Issues](#common-issues)
+**Nav**: [← README](README.md) · [Slots](SLOTS.md) · [Widgets](WIDGETS.md) · [Marking Menu](MARKING_MENU.md) · [Architecture](ARCHITECTURE.md) · [Cookbook](COOKBOOK.md) · [API](API_REFERENCE.md)
 
-## Getting Started
+---
 
-### Installation
+## 1. Install and verify
+
 ```bash
 pip install uitk
 ```
 
-### Your First UITK Application
+Sanity check:
+```python
+from uitk import Switchboard
+print(Switchboard.__module__)   # 'uitk.switchboard'
+```
 
-1. **Create the project structure:**
+UITK works with either PySide2 or PySide6 via `qtpy`. If neither is installed, pick one: `pip install PySide6`.
+
+---
+
+## 2. Your first app
+
+### Project layout
+
 ```
 my_app/
 ├── ui/
-│   └── main_window.ui
+│   └── editor.ui          # designed in Qt Designer
 ├── slots/
-│   └── main_window_slots.py
+│   └── editor_slots.py    # class EditorSlots
 └── main.py
 ```
 
-2. **Design your UI in Qt Designer:**
-   - Create `main_window.ui` with a button named `hello_button`
-   - Save to the `ui/` directory
+### Design the UI
 
-3. **Create the slot class:**
+Create `editor.ui` in Qt Designer with:
+- A `QMainWindow` base
+- A `QLineEdit` named `txt_path`
+- A `QPushButton` named `btn_open`
+- A `QTextEdit` named `txt_content`
+- A `QLabel` named `lbl_status`
+
+Save to `my_app/ui/editor.ui`.
+
+### Write the slots
+
 ```python
-# slots/main_window_slots.py
-class MainWindowSlots:
+# slots/editor_slots.py
+class EditorSlots:
     def __init__(self, **kwargs):
-        self.sb = kwargs.get("switchboard")
-        self.ui = self.sb.loaded_ui.main_window
+        self.sb = kwargs["switchboard"]
+        self.ui = self.sb.loaded_ui.editor
 
-    def hello_button(self, widget):
-        self.sb.message_box("Hello, UITK!")
+    def btn_open_init(self, widget):
+        widget.setText("Open")
+
+    def btn_open(self):
+        path = self.sb.file_dialog(file_types="Text (*.txt);;All (*)")
+        if not path:
+            return
+        with open(path) as f:
+            self.ui.txt_content.setText(f.read())
+        self.ui.txt_path.setText(path)
+        self.ui.lbl_status.setText(f"Loaded {path}")
+
+    def txt_path(self, text, widget):
+        # LineEdit default signal is textChanged; text comes first.
+        import os
+        widget.set_action_color("valid" if os.path.isfile(text) else "invalid")
 ```
 
-4. **Create the main application:**
+### Bootstrap
+
 ```python
 # main.py
 from uitk import Switchboard
 
-if __name__ == "__main__":
-    sb = Switchboard(
-        ui_source="./ui",
-        slot_source="./slots"
-    )
-    
-    ui = sb.main_window
-    ui.show(app_exec=True)
+sb = Switchboard(ui_source="./ui", slot_source="./slots")
+ui = sb.loaded_ui.editor
+ui.style.set(theme="dark", style_class="translucentBgWithBorder")
+ui.show(pos="screen", app_exec=True)
 ```
 
-## Project Organization
-
-### Recommended Directory Layout
-```
-your_project/
-├── ui/                     # Qt Designer .ui files
-│   ├── main_window.ui
-│   ├── settings_dialog.ui
-│   └── about_dialog.ui
-├── slots/                  # Slot class implementations
-│   ├── main_window_slots.py
-│   ├── settings_dialog_slots.py
-│   └── about_dialog_slots.py
-├── widgets/                # Custom widget classes (optional)
-│   ├── custom_button.py
-│   └── enhanced_table.py
-├── resources/              # Icons, stylesheets, etc.
-├── main.py                # Application entry point
-└── config.py              # Configuration and settings
+Run it:
+```bash
+python main.py
 ```
 
-### File Naming Requirements
+That's a complete working application — file dialog, rich text loading, live path validation, persistent window geometry — in ~20 lines of Python.
 
-UITK relies on naming conventions to automatically connect components:
+---
 
-| UI File | Slot Class File | Slot Class Name |
-|---------|----------------|-----------------|
-| `main_window.ui` | `main_window_slots.py` | `MainWindowSlots` |
-| `settings.ui` | `settings_slots.py` | `SettingsSlots` |
-| `about.ui` | `about_slots.py` | `AboutSlots` |
+## 3. The naming convention
 
-## Understanding Naming Conventions
+| Filename / objectName | Matches | Example |
+|:---|:---|:---|
+| `editor.ui` | Slot class: `EditorSlots`, then `Editor`; or file: `editor_slots.py`, `editorSlots.py`, `editor.py`, `_editor.py` | `EditorSlots` |
+| `editor#file.ui` | Same class resolution using base name `editor` | `EditorSlots` (shared) |
+| `btn_save` objectName | Method `btn_save` (+ optional `btn_save_init`) | `def btn_save(self)` |
+| `txt_path` objectName | Method `txt_path` — default signal is `textChanged(str)` | `def txt_path(self, text)` |
 
-### Widget to Method Mapping
+Complete details in [SLOTS.md](SLOTS.md).
 
-UITK automatically connects widgets to methods based on the widget's `objectName`:
+---
+
+## 4. Widget conveniences
+
+Every registered widget gains lazy capabilities:
+
+### `.menu`
+```python
+widget.menu.add("QCheckBox", setText="Auto-save", setObjectName="chk_auto")
+widget.menu.add(["A", "B", "C"])              # batch
+widget.menu.add("QSeparator")
+widget.menu.trigger_button = "right"          # right-click instead of left
+```
+
+Added widgets are attributes by `objectName`:
+```python
+is_auto = widget.menu.chk_auto.isChecked()
+```
+
+### `.option_box`
+For input widgets (LineEdit, SpinBox, ComboBox). A column of helpers beside the widget.
 
 ```python
-# Widget in UI: objectName="save_button"
-# Slot class methods:
-
-def save_button_init(self, widget):
-    """Called once during UI initialization"""
-    widget.setText("💾 Save")
-    widget.setToolTip("Save the document")
-
-def save_button(self, widget):
-    """Called when the widget's default signal is emitted"""
-    # For QPushButton, default signal is 'clicked'
-    self.perform_save()
+widget.option_box.enable_clear()                         # clear button
+widget.option_box.set_action(self.browse, icon="folder") # custom action
+widget.option_box.menu.add("QPushButton", setText="More...")
 ```
 
-### Default Signals by Widget Type
-
-UITK uses these default signals for automatic connection:
-
-| Widget Type | Default Signal |
-|-------------|----------------|
-| QPushButton | clicked |
-| QCheckBox | toggled |
-| QLineEdit | textChanged |
-| QTextEdit | textChanged |
-| QComboBox | currentIndexChanged |
-| QSpinBox | valueChanged |
-| QSlider | valueChanged |
-| QListWidget | itemClicked |
-| QTreeWidget | itemClicked |
-| QTableWidget | cellChanged |
-
-### Widget Tags
-
-Add tags to widget object names to control UITK behavior:
+### `.set_attributes()`
+Bulk config from kwargs — attribute setters, method calls, or signal connections (framework auto-detects which):
 
 ```python
-# In Qt Designer, set objectName to: "my_button#no_signals"
-# Available tags:
-# #no_signals    - Skip automatic signal connection
-# #no_state      - Don't save/restore widget state  
-# (Other tags may be supported but are implementation dependent)
+widget.set_attributes(
+    setText="Save",
+    setToolTip="Write to disk",
+    clicked=self.save,
+)
 ```
 
-## Creating Slot Classes
-
-### Basic Slot Class Structure
+### `.set_action_color()` on LineEdit
 
 ```python
-class MyDialogSlots:
+def txt_path(self, text, widget):
+    widget.set_action_color("valid" if os.path.isfile(text) else "invalid")
+```
+
+Keys: `valid`, `invalid`, `warning`, `info`, `inactive`. Colors from the active theme palette.
+
+See [WIDGETS.md](WIDGETS.md) for the full widget catalog.
+
+---
+
+## 5. State persistence
+
+UITK auto-saves widget values on change and restores them on next show. No setup required.
+
+```python
+# User types in txt_path, closes app.
+# Next launch: txt_path still has that text.
+```
+
+Per-widget opt-out:
+```python
+widget.restore_state = False              # in *_init
+widget.block_signals_on_restore = True    # restore silently
+```
+
+Per-UI opt-out:
+```python
+ui.restore_widget_states = False
+ui.restore_window_size = False
+```
+
+Windows geometry (size + position) also persists, debounced to 500ms.
+
+For named preset save/load, see [Presets in the Cookbook](COOKBOOK.md#presets).
+
+---
+
+## 6. Rapid-fire slots: debounce, timeout, refresh
+
+Three widget attributes shape slot execution:
+
+### `widget.debounce = ms`
+Coalesce rapid signals into a single slot call. Essential for spinboxes and sliders:
+```python
+def spn_start_init(self, widget):
+    widget.debounce = 400
+    widget.setKeyboardTracking(False)   # don't fire valueChanged mid-edit
+```
+
+### `widget.slot_timeout = seconds`
+Show a progress indicator + allow Esc to cancel if the slot runs long:
+```python
+def btn_render_init(self, widget):
+    widget.slot_timeout = 300.0
+```
+
+Or set `ui.default_slot_timeout = 360` to apply to all slots in a UI.
+
+### `widget.refresh_on_show = True`
+Re-run `*_init` on every subsequent show, not just the first. For UIs that reflect changing environment state (workspace folders, scene contents):
+```python
+def list000_init(self, widget):
+    widget.refresh_on_show = True
+    widget.clear()
+    for item in scan_workspace():
+        widget.add(item)
+```
+
+---
+
+## 7. Tags and UI hierarchy
+
+Tags in filenames encode metadata and hierarchy.
+
+```
+menu.ui               # base (depth 0)
+menu#file.ui          # child  (depth 1, tag "file")
+menu#file#recent.ui   # grandchild (depth 2)
+panel#floating.ui     # base "panel" with tag "floating"
+```
+
+Access the tags set:
+```python
+ui.tags                          # {"file"}
+ui.has_tags("file")              # True
+ui.edit_tags(add="active")
+```
+
+Navigate the hierarchy:
+```python
+ancestors = sb.get_ui_relatives(ui, upstream=True)
+children  = sb.get_ui_relatives(ui, downstream=True)
+siblings  = sb.get_ui_relatives(ui, exact=True)
+```
+
+**Slot class resolution always uses the base name** — `menu.ui`, `menu#file.ui`, and `menu#file#recent.ui` all map to `MenuSlots`. This is why tags don't fragment your slot code.
+
+---
+
+## 8. Theming
+
+Two built-in themes, both palette dicts keyed by well-known variables (`WIDGET_BACKGROUND`, `BUTTON_HOVER`, `TEXT_COLOR`, `ACTION_VALID_FG`, …).
+
+```python
+ui.style.set(theme="dark", style_class="translucentBgWithBorder")
+ui.style.set(theme="light")                    # just the theme
+ui.style.set(style_class="modernDialog")       # just the style class
+```
+
+Theme changes emit `ui.style.theme_changed(widget, name, vars)` — hook for icon recoloring, custom overlay widgets, etc.
+
+Monochrome SVG icons in `uitk/icons/` are auto-colored to match `ICON_COLOR`:
+```python
+icon = sb.get_icon("save")
+button.setIcon(icon)
+```
+
+Live theme editing:
+```python
+from uitk.widgets.editors.style_editor import StyleEditor
+editor = StyleEditor()
+editor.show()
+```
+
+---
+
+## 9. Dialogs and helpers
+
+```python
+sb.message_box("Operation complete!")
+sb.message_box("Proceed?", "Yes", "No", "Cancel")
+
+path = sb.file_dialog(file_types="Images (*.png *.jpg)")
+folder = sb.dir_dialog()
+
+sb.center_widget(widget, pos="cursor")
+sb.center_widget(widget, relative=other_widget)
+```
+
+Batch-operate on multiple widgets:
+```python
+sb.toggle_multi(ui, setDisabled="btn_a,btn_b,btn_c")
+sb.connect_multi(ui, widgets, signals, slots)
+sb.create_button_groups(ui, "chk_001-3")   # radio group from range
+```
+
+---
+
+## 10. Persistent configuration
+
+Beyond widget state, the Switchboard exposes `sb.configurable` — a nested namespace backed by `QSettings`. Handlers register their `DEFAULTS` under their name; consumers read/write via dot-notation.
+
+```python
+sb.configurable.ui.default_position.get()       # "cursor"
+sb.configurable.ui.default_position.set("screen")
+
+sb.configurable.ui.default_position.changed.connect(self._on_pos_changed)
+
+sb.configurable.my_feature.enabled.set(True)    # any namespace you want
+```
+
+Changes are live — `.changed.connect()` fires on update from any source.
+
+---
+
+## 11. Common patterns
+
+### Slot class constructor — touch widgets up front
+
+```python
+class EditorSlots:
     def __init__(self, **kwargs):
-        # Always include these standard attributes
-        self.sb = kwargs.get("switchboard")
-        self.ui = self.sb.loaded_ui.my_dialog
-        
-        # Initialize any class-specific attributes
-        self.data_model = None
+        self.sb = kwargs["switchboard"]
+        self.ui = self.sb.loaded_ui.editor
 
-    # Initialization methods (called once during UI setup)
-    def save_button_init(self, widget):
-        """Initialize the save button"""
-        widget.setText("💾 Save Document")
-        widget.setToolTip("Save the current document")
-
-    # Event handler methods (called when signals are emitted)
-    def save_button(self, widget):
-        """Handle save button clicks"""
-        if self.validate_data():
-            self.save_document()
-            self.sb.message_box("Document saved!")
-
-    def filename_edit(self, text, widget):
-        """Handle filename text changes"""
-        # Enable save button only when filename is provided
-        self.ui.save_button.setEnabled(bool(text.strip()))
-
-    # Helper methods
-    def validate_data(self):
-        """Validate form data before saving"""
-        return bool(self.ui.filename_edit.text().strip())
-
-    def save_document(self):
-        """Implement document saving logic"""
-        pass
+        # Debounce all spinner inputs
+        for name in ("spn_start", "spn_end", "spn_step"):
+            w = getattr(self.ui, name, None)
+            if w is not None:
+                w.debounce = 400
+                w.setKeyboardTracking(False)
 ```
 
-### Signal Override
+Accessing `self.ui.<name>` triggers lazy widget registration — safe in `__init__`.
 
-Use the `@Signals()` decorator to specify different signals:
-
+### @Signals for custom widgets
+UITK widgets sometimes emit their own signals not in the default table:
 ```python
 from uitk import Signals
 
-class AdvancedSlots:
-    @Signals("textChanged")
-    def search_edit(self, text, widget):
-        """Handle real-time search as user types"""
-        self.filter_results(text)
-
-    @Signals("clicked", "returnPressed")  
-    def submit_action(self, widget):
-        """Handle both button click and Enter key"""
-        self.submit_form()
-
-    @Signals()  # Empty - no automatic connection
-    def custom_widget(self, widget):
-        """Handle manually - must connect signals yourself"""
-        pass
+@Signals("on_item_interacted")    # ExpandableList custom signal
+def list000(self, item):
+    print(item.item_text())
 ```
 
-### Accessing Other UI Components
-
+### Block signals during bulk updates
 ```python
-class MainWindowSlots:
-    def open_settings(self, widget):
-        """Open settings dialog"""
-        settings_ui = self.sb.settings_dialog
-        if settings_ui.exec_() == QtWidgets.QDialog.Accepted:
-            self.apply_settings()
-
-    def apply_settings(self):
-        """Apply settings from dialog"""
-        # Implementation depends on your settings structure
-        pass
+@Signals.blockSignals
+def refresh_all(self):
+    self.ui.spn_value.setValue(42)
+    self.ui.chk_enabled.setChecked(True)
 ```
 
-## Working with Enhanced Widgets
+### Cross-UI sync
+When a widget's value changes, UITK auto-syncs it to same-named widgets in tag-related UIs. Parent / child / sibling UIs share state for widgets with the same `objectName`.
 
-### Enhanced Widget Features
+```
+scene.ui         has chk_lock
+scene#submenu.ui has chk_lock       # kept in sync automatically
+```
 
-UITK widgets extend standard Qt widgets with additional capabilities:
+See `MainWindow.sync_widget_values` in [mainWindow.py:483](../uitk/widgets/mainWindow.py#L483).
 
+---
+
+## 12. Debugging
+
+Enable debug logging on construction:
 ```python
-# Rich text support (where available)
-button = PushButton(
-    setText='<b>Bold</b> and <i style="color:red;">Red</i> text'
-)
-
-# Bulk attribute setting
-widget.set_attributes(
-    setObjectName="my_widget",
-    setText="Hello World", 
-    setEnabled=True,
-    setVisible=True
-)
+sb = Switchboard(ui_source="./ui", slot_source="./slots", log_level="debug")
 ```
 
-### Creating Custom Widgets
-
+Inspect registries and loaded state:
 ```python
-from qtpy import QtWidgets
-from uitk.widgets.mixins import AttributesMixin
-
-class CustomLineEdit(QtWidgets.QLineEdit, AttributesMixin):
-    def __init__(self, parent=None, **kwargs):
-        super().__init__(parent)
-        
-        # Set CSS class for styling
-        self.setProperty("class", self.__class__.__name__)
-        
-        # Apply initialization attributes
-        self.set_attributes(**kwargs)
-
-    # Add custom functionality
-    def set_error_state(self, is_error=True):
-        """Set visual error state"""
-        style = "border: 2px solid red;" if is_error else ""
-        self.setStyleSheet(style)
+list(sb.registry.ui_registry.get("filename"))
+list(sb.registry.slot_registry.get("classname"))
+list(sb.loaded_ui.keys())
+list(sb.registered_widgets.keys())
 ```
 
-### Widget Menus
-
-Some UITK widgets support integrated menus:
-
+Manually connect for troubleshooting:
 ```python
-def export_button_init(self, widget):
-    """Setup button with menu options"""
-    widget.menu.add("QAction", setText="Export PDF", triggered=self.export_pdf)
-    widget.menu.add("QAction", setText="Export Excel", triggered=self.export_excel)
-
-def export_pdf(self):
-    """Handle PDF export"""
-    pass
-
-def export_excel(self):
-    """Handle Excel export"""
-    pass
+widget.clicked.connect(lambda: print("clicked!"))
 ```
 
-## State Management
-
-### Automatic State Persistence
-
-UITK provides basic automatic state saving for common widgets:
-
+Track slot history:
 ```python
-# These states are automatically managed:
-# - QLineEdit.text()
-# - QTextEdit.toPlainText() 
-# - QCheckBox.isChecked()
-# - QComboBox.currentIndex()
-# - QSpinBox.value()
-# - Window geometry and position
+print(sb.slot_history())     # all
+print(sb.prev_slot)          # last one
 ```
 
-### Controlling State Persistence
+---
 
-```python
-class MySlots:
-    def temporary_widget_init(self, widget):
-        # Disable state saving for this widget
-        widget.save_state = False
+## 13. Common issues
 
-    def custom_state_widget_init(self, widget):
-        # Use custom state key
-        widget.state_key = "custom_key"
-```
+**Widget not connecting.**
+Verify `objectName` in Designer matches the method name exactly. Check `sb.registered_widgets` — if missing, the widget never registered (likely missing `objectName` or outside the UI's central widget tree).
 
-### Custom State Management
+**State not persisting.**
+Widget must have a non-empty `objectName` and a recognized default signal (see [SLOTS.md §3](SLOTS.md#3-default-signals)). Check `widget.restore_state` hasn't been set to `False`.
 
-For widgets with complex state, implement custom methods:
+**UI file not found.**
+Verify `ui_source` path. `find_ui_filename` does pattern-matching against the registry; if the name has unusual characters, it may not match. Try `sb.registry.ui_registry.get("filename")` to see what's registered.
 
-```python
-class CustomWidget(QtWidgets.QWidget):
-    def get_state(self):
-        """Return state data for persistence"""
-        return {
-            "custom_property": self.custom_value,
-            "view_settings": {
-                "zoom_level": self.zoom_level,
-                "show_grid": self.show_grid
-            }
-        }
+**Slot class not loading.**
+Check both class name and file name resolution rules in [SLOTS.md §1](SLOTS.md#1-class-resolution). Exception during `__init__` is silent in the slot class; enable debug logging to see the traceback.
 
-    def set_state(self, state):
-        """Restore from saved state"""
-        self.custom_value = state.get("custom_property", "default")
-        view_settings = state.get("view_settings", {})
-        self.zoom_level = view_settings.get("zoom_level", 1.0)
-        self.show_grid = view_settings.get("show_grid", True)
-```
+**QCheckBox not firing `chk_xxx` on check change.**
+Default signal is `toggled(bool)` — your method must accept `state: bool`. If you need `stateChanged(int)` (tristate), use `@Signals("stateChanged")`.
 
-## Styling and Themes
+---
 
-### Using Built-in Themes
+## See also
 
-```python
-# Apply dark theme
-ui.style.set(theme="dark")
-
-# Apply light theme  
-ui.style.set(theme="light")
-
-# Apply theme with style class
-ui.style.set(theme="dark", style_class="translucentBgWithBorder")
-```
-
-### Available Style Classes
-
-UITK provides some predefined style classes:
-- `translucentBgWithBorder`
-- `modernDialog` (if implemented)
-- `flatButton` (if implemented)
-
-*Note: Style class availability depends on the implementation and may vary.*
-
-## Advanced Usage
-
-### Event Filtering
-
-For complex event handling, UITK provides event filtering:
-
-```python
-from uitk.events import EventFactoryFilter
-
-class MySlots:
-    def __init__(self, **kwargs):
-        self.sb = kwargs.get("switchboard")
-        self.ui = self.sb.loaded_ui.my_dialog
-        
-        # Setup event filtering
-        self.event_filter = EventFactoryFilter(
-            forward_events_to=self,
-            event_name_prefix="child_",
-            event_types={"MousePress", "KeyPress"}
-        )
-        
-        # Install on specific widgets
-        self.event_filter.install([self.ui.input_area])
-
-    def child_mousePressEvent(self, event, widget):
-        """Handle mouse press events"""
-        print(f"Mouse pressed on {widget.objectName()}")
-
-    def child_keyPressEvent(self, event, widget):
-        """Handle key press events"""
-        if event.key() == QtCore.Qt.Key_Escape:
-            self.ui.close()
-```
-
-### Multiple UI Management
-
-```python
-class MainSlots:
-    def open_child_window(self, widget):
-        """Open a child window"""
-        child_ui = self.sb.child_dialog
-        child_ui.show()
-
-    def show_modal_dialog(self, widget):
-        """Show modal dialog"""
-        dialog_ui = self.sb.settings_dialog
-        result = dialog_ui.exec_()
-        if result == QtWidgets.QDialog.Accepted:
-            self.handle_dialog_accepted()
-```
-
-## Best Practices
-
-### Code Organization
-
-1. **Keep slot methods focused:**
-   ```python
-   def save_button(self, widget):
-       if self.validate_input():
-           self.perform_save()
-           self.update_ui_state()
-   ```
-
-2. **Use initialization methods:**
-   ```python
-   def complex_widget_init(self, widget):
-       # Configure widget during setup
-       widget.setEnabled(False)
-       widget.setToolTip("Enable after selecting file")
-   ```
-
-3. **Organize related functionality:**
-   ```python
-   class FileManagerSlots:
-       def __init__(self, **kwargs):
-           self.sb = kwargs.get("switchboard")
-           self.ui = self.sb.loaded_ui.file_manager
-           self.current_directory = None
-           
-       # Group related methods together
-       def open_file(self, widget): pass
-       def save_file(self, widget): pass
-       def close_file(self, widget): pass
-   ```
-
-### Error Handling
-
-```python
-def risky_operation(self, widget):
-    """Handle operations that might fail"""
-    try:
-        result = self.perform_operation()
-        self.display_result(result)
-    except Exception as e:
-        self.sb.message_box(f"Operation failed: {str(e)}", "Error")
-        # Log the error for debugging
-        print(f"Error in risky_operation: {e}")
-```
-
-### Performance Considerations
-
-1. **Lazy initialization:**
-   ```python
-   def expensive_widget_init(self, widget):
-       # Don't load heavy data during init
-       widget.data_loaded = False
-       
-   def expensive_widget(self, widget):
-       if not widget.data_loaded:
-           self.load_heavy_data(widget)
-           widget.data_loaded = True
-   ```
-
-2. **Debounce frequent events:**
-   ```python
-   def search_edit_init(self, widget):
-       self.search_timer = QtCore.QTimer()
-       self.search_timer.setSingleShot(True)
-       self.search_timer.timeout.connect(self.perform_search)
-
-   @Signals("textChanged")
-   def search_edit(self, text, widget):
-       # Debounce to avoid excessive searches
-       self.search_text = text
-       self.search_timer.start(300)  # 300ms delay
-   ```
-
-## Common Issues
-
-### Widget Not Connecting
-
-**Problem**: Widget signals not connecting to slot methods.
-
-**Solutions**:
-- Verify widget `objectName` in Qt Designer matches method name
-- Check that slot class is properly named and loaded
-- Ensure widget is not tagged with `#no_signals`
-- Verify method signature matches expected pattern
-
-### State Not Persisting
-
-**Problem**: Widget states not saved between sessions.
-
-**Solutions**:
-- Ensure widget has `objectName` set in Qt Designer
-- Check that `save_state` wasn't set to `False`
-- Verify widget type is supported for state persistence
-- Check file permissions for settings storage
-
-### UI File Not Found
-
-**Problem**: Cannot load UI file.
-
-**Solutions**:
-- Verify file path in `ui_source` parameter
-- Check file naming matches what you're accessing
-- Ensure `.ui` file is properly saved from Qt Designer
-- Check file permissions and accessibility
-
-### Slot Class Not Loading
-
-**Problem**: Slot class cannot be imported.
-
-**Solutions**:
-- Verify slot class naming convention
-- Check for Python syntax errors in slot file
-- Ensure slot file is in correct directory
-- Verify class name matches file naming pattern
-
-### Rich Text Not Rendering
-
-**Problem**: HTML text appears as plain text.
-
-**Solutions**:
-- Verify widget supports rich text (not all do)
-- Check HTML syntax in text content
-- Ensure you're using UITK widgets that support rich text
-- Try with simple HTML tags first
-
-## Debugging Tips
-
-### Enable Debug Logging
-
-```python
-sb = Switchboard(
-    ui_source="./ui",
-    slot_source="./slots", 
-    log_level="debug"
-)
-```
-
-### Check Loaded Components
-
-```python
-# Verify registries are populated
-print("UI files:", list(sb.registry.ui_registry.keys()))
-print("Slot classes:", list(sb.registry.slot_registry.keys()))
-print("Loaded UIs:", list(sb.loaded_ui.keys()))
-```
-
-### Manual Signal Connection
-
-For troubleshooting, you can manually connect signals:
-
-```python
-def manual_connection_init(self, widget):
-    # Manual connection for debugging
-    widget.clicked.connect(self.manual_connection)
-
-def manual_connection(self):
-    print("Manual connection working")
-```
-
-This user guide covers the practical aspects of working with UITK based on its actual capabilities. For specific implementation details, refer to the source code and examples provided with the package.
+- [Slots Contract](SLOTS.md) — the full wiring spec
+- [Widgets](WIDGETS.md) — every custom widget's API
+- [Cookbook](COOKBOOK.md) — real patterns from mayatk and tentacle
+- [Tutorial](EXAMPLES.md) — step-by-step building a larger example
+- [Architecture](ARCHITECTURE.md) — how it all works internally

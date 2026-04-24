@@ -449,6 +449,9 @@ QLabel:hover {
 QLabel[clickable="true"]:hover {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
+    border-style: outset;
+    border-radius: 1px;
+    border: 1px solid {BORDER_COLOR};
 }
 QLabel:enabled {
     color: {TEXT_COLOR};
