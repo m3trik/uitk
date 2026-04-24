@@ -1,205 +1,150 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
-[![Version](https://img.shields.io/badge/Version-1.1.32-blue.svg)](https://pypi.org/project/uitk/)
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![Qt](https://img.shields.io/badge/Qt-PySide6%20|%20PyQt5-green.svg)](https://doc.qt.io/)
+[![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
+[![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
 [![Tests](https://img.shields.io/badge/tests-582%20passed-brightgreen.svg)](test/)
 
-# UITK
+# uitk
 
 <!-- short_description_start -->
-**Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Design in Qt Designer, name your widgets, write matching Python methods—everything else is automatic. While conventions handle the common cases, you retain full control to customize anything.
+**Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Design in Qt Designer, name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
 <!-- short_description_end -->
 
-## Installation
+Built on `qtpy` (PySide2 / PySide6). Runs standalone or hosted inside Maya, Blender, and 3ds Max via a pluggable handler ecosystem.
+
+## Install
 
 ```bash
 pip install uitk
 ```
 
----
-
-## Quick Start
+## Quickstart
 
 ```python
 from uitk import Switchboard
 
-class MySlots:
+class EditorSlots:
     def __init__(self, **kwargs):
-        self.sb = kwargs.get("switchboard")
-        self.ui = self.sb.loaded_ui.my_app
-    
-    def btn_save_init(self, widget):
-        """Called once when widget registers."""
-        widget.setText("Save")
-    
-    def btn_save(self):
-        """Called on every click."""
-        print("Saved!")
+        self.sb = kwargs["switchboard"]
+        self.ui = self.sb.loaded_ui.editor
 
-sb = Switchboard(ui_source="./", slot_source=MySlots)
-sb.loaded_ui.my_app.show(app_exec=True)
+    def btn_save_init(self, widget):   # runs once when btn_save registers
+        widget.setText("Save")
+
+    def btn_save(self):                # runs on clicked (QPushButton default signal)
+        self.sb.message_box("Saved")
+
+sb = Switchboard(ui_source="editor.ui", slot_source=EditorSlots)
+sb.loaded_ui.editor.show(pos="screen", app_exec=True)
 ```
 
-That's it. No `connect()` calls. No widget lookups. No manual state management.
+Widget `btn_save` in `editor.ui` is connected to `EditorSlots.btn_save` because the names match.
 
 ---
 
-## Where Convention Applies
+## How it wires up
 
-UITK uses naming conventions to automatically wire your application. Understanding where convention applies helps you work with the framework effectively.
+| Convention | Example | Result |
+|:---|:---|:---|
+| UI file → slot class | `editor.ui` → `EditorSlots` | Class discovered, instantiated with `switchboard=` kwarg |
+| Widget → slot method | `btn_save` (`objectName`) → `def btn_save(self)` | Widget's default signal connected |
+| Widget → init hook | `btn_save` → `def btn_save_init(self, widget)` | Called once on registration |
+| UI hierarchy | `menu#file.ui` is child of `menu.ui` | `sb.get_ui_relatives(ui, upstream=True)` |
+| Tags | `panel#floating.ui` | `ui.tags == {"floating"}` |
 
-### What Gets Auto-Wired
+**Default signals** by base Qt type:
 
-| Convention | Pattern | What Happens |
-|------------|---------|--------------|
-| **UI → Slot Class** | `my_app.ui` → `MyAppSlots` | Slot class discovered and instantiated |
-| **Widget → Slot** | `btn_save` → `def btn_save()` | Widget's default signal connected to method |
-| **Widget → Init** | `btn_save` → `def btn_save_init(widget)` | Method called once when widget registers |
-| **UI Hierarchy** | `menu.file.ui` | Child of `menu.ui`, accessed via `get_ui_relatives()` |
-| **Tags** | `panel#floating.ui` | Tags extracted to `ui.tags` set |
+| Widget | Signal | Callback arg |
+|:---|:---|:---|
+| QPushButton | `clicked` | — |
+| QCheckBox | `toggled` | `checked: bool` |
+| QRadioButton | `toggled` | `checked: bool` |
+| QComboBox | `currentIndexChanged` | `index: int` |
+| QLineEdit | `textChanged` | `text: str` |
+| QTextEdit | `textChanged` | — |
+| QSpinBox / QDoubleSpinBox | `valueChanged` | `value` |
+| QSlider / QDial / QScrollBar | `valueChanged` | `value: int` |
+| QListWidget / QTreeWidget | `itemClicked` | `item[, column]` |
+| QTableWidget | `cellChanged` | `row, column` |
+| QTabWidget / QStackedWidget / QToolBox | `currentChanged` | `index: int` |
 
-### What You Still Control
-
-Conventions provide sensible defaults, but you can always override:
+**Override with `@Signals`**:
 
 ```python
 from uitk import Signals
 
-# Override default signal
-@Signals("textChanged")  # Instead of editingFinished
-def txt_search(self, text):
+@Signals("textChanged")        # QLineEdit default is textChanged already,
+def txt_search(self, text):    # but e.g. override "released" on a button
     self.filter_results(text)
 
-# Connect additional signals manually
-widget.clicked.connect(my_handler)
-
-# Use any Qt API directly
-widget.setStyleSheet("background: red;")
+@Signals()                     # Empty - no auto-connection (you wire manually)
+def manual_widget(self): ...
 ```
 
----
-
-## Naming Conventions
-
-### UI File → Slot Class
-
-| UI Filename | Slot Class Name |
-|-------------|-----------------|
-| `editor.ui` | `EditorSlots` |
-| `file_browser.ui` | `FileBrowserSlots` |
-| `export-dialog.ui` | `ExportDialogSlots` |
-
-### Widget → Methods
-
-| Widget objectName | Slot Method | Init Method |
-|-------------------|-------------|-------------|
-| `btn_save` | `def btn_save(self)` | `def btn_save_init(self, widget)` |
-| `txt_name` | `def txt_name(self)` | `def txt_name_init(self, widget)` |
-| `cmb_type` | `def cmb_type(self, index)` | `def cmb_type_init(self, widget)` |
-| `chk_active` | `def chk_active(self, state)` | `def chk_active_init(self, widget)` |
-
-### Default Signals
-
-| Widget Type | Default Signal | Slot Receives |
-|-------------|----------------|---------------|
-| `QPushButton` | `clicked` | — |
-| `QCheckBox` | `stateChanged` | `state` |
-| `QRadioButton` | `toggled` | `checked` |
-| `QComboBox` | `currentIndexChanged` | `index` |
-| `QLineEdit` | `editingFinished` | — |
-| `QTextEdit` | `textChanged` | — |
-| `QSpinBox` | `valueChanged` | `value` |
-| `QDoubleSpinBox` | `valueChanged` | `value` |
-| `QSlider` | `valueChanged` | `value` |
-| `QListWidget` | `itemSelectionChanged` | — |
-| `QTreeWidget` | `itemClicked` | `item, column` |
-| `QTableWidget` | `cellClicked` | `row, column` |
-
-### Slot Parameter Injection
-
-Slots can request any combination of these parameters:
+**Parameter injection** — slots can request `widget` by name; UITK introspects the signature:
 
 ```python
-def btn_action(self):                           # No params
-def btn_action(self, widget):                   # Widget only
-def btn_action(self, widget, ui):               # Widget + UI
-def btn_action(self, widget, ui, sb):           # All three
-def cmb_option(self, index, widget, ui, sb):    # Signal arg + all three
+def btn_save(self): ...                       # no params
+def btn_save(self, widget): ...               # widget injected
+def cmb_font(self, index): ...                # signal arg only
+def cmb_font(self, index, widget): ...        # signal arg + widget
 ```
 
 ---
 
-## Widget Enhancements
+## Widget enhancements
 
-Every widget automatically gains these capabilities:
+Every registered widget gains these lazy-initialized properties.
 
-### `.menu` — Popup Menu
+### `.menu` — dynamic popup menu
 
 ```python
 def btn_options_init(self, widget):
-    menu = widget.menu
-    menu.setTitle("Settings")
-    menu.add("QCheckBox", setText="Auto-save", setObjectName="chk_auto")
-    menu.add("QSpinBox", setPrefix="Interval: ", setObjectName="spn_int")
-    menu.add("QSeparator")
-    menu.add("QPushButton", setText="Apply", setObjectName="btn_apply")
+    widget.menu.add("QCheckBox", setText="Auto-save", setObjectName="chk_auto")
+    widget.menu.add("QSpinBox", setPrefix="Interval: ", setObjectName="spn_int")
+    widget.menu.add("QSeparator")
+    widget.menu.add("QPushButton", setText="Apply", setObjectName="btn_apply")
 
 def btn_options(self):
-    menu = self.ui.btn_options.menu
-    auto = menu.chk_auto.isChecked()
-    interval = menu.spn_int.value()
+    auto = self.ui.btn_options.menu.chk_auto.isChecked()
+    interval = self.ui.btn_options.menu.spn_int.value()
 ```
 
-### `.option_box` — Action Panel
+`menu.add()` accepts a widget class string, a list of strings (shorthand for multiple items), a dict (text → data), or another widget instance. Added widgets are accessible by `objectName` on the menu.
+
+### `.option_box` — action panel attached to input widgets
 
 ```python
 def txt_path_init(self, widget):
-    menu = widget.option_box.menu
-    menu.add(
-        "QPushButton",
-        setText="Browse...",
-        setObjectName="btn_browse"
-    )
-    menu.btn_browse.clicked.connect(self.browse)
+    widget.option_box.menu.add("QPushButton", setText="Browse...", setObjectName="btn_browse")
+    widget.option_box.menu.btn_browse.clicked.connect(self.browse)
 ```
 
-### `menu.add()` Flexibility
+Pluggable option system: `ClearOption`, `BrowseOption`, `PinValuesOption`, `ActionOption`, `MenuOption`, `ContextMenuOption`, `RecentValuesOption`. See [WIDGETS.md](https://github.com/m3trik/uitk/blob/main/docs/WIDGETS.md#option-box-system).
+
+### State persistence
+
+Widget values save on change, restore on show:
 
 ```python
-# Widget type as string
-menu.add("QDoubleSpinBox", setValue=1.0, setObjectName="spn")
+# User sets spinbox to 5, closes app. Next launch: spinbox is 5 again.
 
-# Batch add from list
-menu.add(["Option A", "Option B", "Option C"])
+widget.restore_state = False        # per-widget opt-out
+ui.restore_widget_states = False    # per-UI opt-out
+ui.restore_window_size = False      # skip window geometry
 
-# Dict with data
-menu.add({"Save": save_data, "Load": load_data})
-
-# Separator
-menu.add("QSeparator")
-
-# Access added widgets by objectName
-value = menu.spn.value()
+widget.block_signals_on_restore = True  # restore without firing slot
 ```
 
----
+Window geometry also persists automatically, debounced to 500ms on resize/move.
 
-## Automatic State Persistence
-
-Widget values save on change and restore on next show:
+### Slot-level controls
 
 ```python
-# User sets spinbox to 5, closes app
-# Next launch: spinbox is 5 again
-
-# Disable per widget
-widget.restore_state = False
-
-# Disable for entire UI
-ui.restore_widget_states = False
-
-# Window geometry also persists automatically
-ui.restore_window_size = False  # Disable if needed
+widget.debounce = 300          # coalesce rapid signals into one slot call after 300ms
+widget.slot_timeout = 60       # warn if slot takes > 60s; allow Esc to cancel
+widget.refresh_on_show = True  # call *_init again on every subsequent show
+ui.default_slot_timeout = 360  # fallback timeout for all slots in this UI
 ```
 
 ---
@@ -207,357 +152,112 @@ ui.restore_window_size = False  # Disable if needed
 ## Theming
 
 ```python
-# Apply theme
 ui.style.set(theme="dark", style_class="translucentBgWithBorder")
-
-# Icons are monochrome and auto-colored to match the theme
-icon = sb.get_icon("save")
 ```
 
----
+Themes (`light`, `dark`) are palette dicts — `WIDGET_BACKGROUND`, `BUTTON_HOVER`, `BORDER_COLOR`, etc. QSS variables are substituted at apply time. Monochrome SVG icons in `uitk/icons/` are auto-colored to match `ICON_COLOR`.
 
-## UI Hierarchy & Tags
+## Hierarchy & tags
 
-### Hierarchy via Naming
-
-```
-menu.ui              # Parent
-menu.file.ui         # Child of menu
-menu.file.recent.ui  # Grandchild
-```
-
-```python
-ancestors = sb.get_ui_relatives(ui, upstream=True)
-children = sb.get_ui_relatives(ui, downstream=True)
-```
-
-### Tags via `#`
+UI filenames with `#` encode hierarchy and metadata:
 
 ```
-panel#floating.ui       # tags: {"floating"}
-dialog#modal#dark.ui    # tags: {"modal", "dark"}
+menu.ui              # base
+menu#file.ui         # child of menu (tag "file")
+menu#file#recent.ui  # grandchild (tags "file", "recent")
+panel#floating.ui    # base "panel" with tag "floating"
 ```
 
-```python
-if ui.has_tags("modal"):
-    ui.edit_tags(add="active")
-```
+- `ui.tags` — set of tags
+- `ui.has_tags("floating")` — check
+- `ui.edit_tags(add="active", remove="inactive")`
+- `sb.get_ui_relatives(ui, upstream=True)` — ancestors
+- `sb.get_ui_relatives(ui, downstream=True)` — children
+- `sb.get_ui_relatives(ui, exact=True)` — siblings
+
+Cross-UI widget value sync: when a widget's value changes, `MainWindow.on_child_changed` syncs that widget's value to same-named widgets in related UIs via `get_ui_relatives`.
 
 ---
 
 ## MainWindow
 
-Every UI is wrapped in `MainWindow`, providing these properties and methods:
+Every UI is wrapped in a `MainWindow` instance.
 
-### Properties
+**Lifecycle signals** — `on_show`, `on_first_show`, `on_hide`, `on_close`, `on_focus_in`, `on_focus_out`, `on_child_registered(widget)`, `on_child_changed(widget, value)`, `on_pinned_changed(bool)`.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `ui.sb` | `Switchboard` | Reference to switchboard |
-| `ui.widgets` | `set` | All registered child widgets |
-| `ui.slots` | `object` | Slot class instance |
-| `ui.settings` | `SettingsManager` | Persistent settings |
-| `ui.state` | `StateManager` | Widget state persistence |
-| `ui.style` | `StyleSheet` | Theme manager |
-| `ui.tags` | `set` | Tags from UI name |
-| `ui.path` | `str` | Path to .ui file |
-| `ui.is_initialized` | `bool` | True after first show |
-| `ui.is_current_ui` | `bool` | True if active UI |
-| `ui.is_pinned` | `bool` | True if pinned (won't auto-hide) |
-| `ui.header` | `Header` | Header widget (if present) |
-| `ui.footer` | `Footer` | Footer widget (if present) |
+**Key properties** — `ui.sb`, `ui.widgets` (set), `ui.slots` (slot instance), `ui.settings` (SettingsManager branch), `ui.state` (StateManager), `ui.style` (StyleSheet), `ui.tags` (set), `ui.path` (str), `ui.is_initialized`, `ui.is_current_ui`, `ui.is_pinned`, `ui.header`, `ui.footer`, `ui.presets`.
 
-### Signals
+**Show positioning** — `ui.show(pos="screen" | "cursor" | QPoint | (x, y), app_exec=False)`.
 
-| Signal | Emitted When |
-|--------|--------------|
-| `on_show` | Window shown |
-| `on_hide` | Window hidden |
-| `on_close` | Window closed |
-| `on_focus_in` | Window gains focus |
-| `on_focus_out` | Window loses focus |
-| `on_child_registered` | Widget registered |
-| `on_child_changed` | Widget value changes |
+## Handler ecosystem
 
-### Methods
+Extend UITK without editing it. Handlers are classes with a `DEFAULTS` dict that register under `sb.handlers.<name>`:
 
 ```python
-# Window configuration
-ui.set_attributes(WA_TranslucentBackground=True)
-ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
+sb = Switchboard(
+    ui_source="...",
+    handlers={"ui": MyCustomUiHandler},   # replaces the default UiHandler
+)
 
-# Show with positioning
-ui.show()                    # Default position
-ui.show(pos="screen")        # Center on screen
-ui.show(pos="cursor")        # At cursor
-ui.show(app_exec=True)       # Start event loop
-
-# Tag management
-ui.has_tags("submenu")
-ui.edit_tags(add="active", remove="inactive")
+sb.handlers.ui.apply_styles(ui)
+sb.handlers.ui.show(ui, pos="cursor")
+sb.configurable.ui.default_position.set("cursor")  # handler DEFAULTS merged here
 ```
 
----
-
-## Widget Attributes Added by Registration
-
-When widgets register, they gain these attributes:
-
-| Attribute | Description |
-|-----------|-------------|
-| `widget.ui` | Parent MainWindow |
-| `widget.base_name()` | Name without tags/suffixes |
-| `widget.legal_name()` | Name with special chars replaced |
-| `widget.type` | Widget class |
-| `widget.derived_type` | Qt base type |
-| `widget.default_signals()` | Default signal names |
-| `widget.get_slot()` | Get connected slot method |
-| `widget.call_slot()` | Manually invoke slot |
-| `widget.init_slot()` | Trigger init method |
-| `widget.connect_slot()` | Connect to slot |
-| `widget.is_initialized` | True after init called |
-| `widget.restore_state` | Enable/disable persistence |
+The built-in `UiHandler` applies default styling and positions windows. `MarkingMenu` registers itself as `sb.handlers.marking_menu`. Consumers like tentacle ship subclassed handlers (`MayaUiHandler`) for DCC-specific behavior.
 
 ---
 
-## Switchboard Utilities
+## Consumer patterns
 
-The switchboard provides many helper methods:
-
-### Dialogs
-
+### Standalone app
 ```python
-sb.message_box("Operation complete!")
-sb.message_box("Choose:", "Yes", "No", "Cancel")
-
-path = sb.file_dialog(file_types="Images (*.png *.jpg)")
-folder = sb.dir_dialog()
+sb = Switchboard(ui_source="./ui", slot_source="./slots")
+sb.loaded_ui.main.show(app_exec=True)
 ```
 
-### Widget Helpers
-
+### Hosted-or-standalone tool (mayatk pattern)
 ```python
-sb.center_widget(widget)                    # Center on screen
-sb.center_widget(widget, relative=other)    # Size relative to another widget
-
-sb.toggle_multi(ui, setDisabled="btn_a,btn_b")  # Batch property toggle
-sb.connect_multi(ui, widgets, signals, slots)   # Batch connect
-
-sb.create_button_groups(ui, "chk_001-3")    # Radio group from range
+def launch(sb=None):
+    if sb is None:
+        sb = Switchboard(ui_source="my_tool.ui", slot_source=MyToolSlots)
+        ui = sb.loaded_ui.my_tool
+        ui.show(pos="screen")
+    else:
+        ui = sb.handlers.marking_menu.show("my_tool")
+    return ui
 ```
 
-### UI Navigation
-
+### Marking-menu DCC shell (tentacle pattern)
 ```python
-sb.current_ui                  # Active UI
-sb.prev_ui                     # Previous UI
-sb.ui_history()                # Full UI history
-sb.ui_history(-1)              # Previous UI by index
-sb.get_ui("editor")            # Get by name
-sb.get_ui_relatives(ui, upstream=True)
+from uitk import MarkingMenu
+
+class TclMaya(MarkingMenu):
+    def __init__(self, parent=None, **kwargs):
+        bindings = {
+            "Key_F12": "main#startmenu",
+            "Key_F12|LeftButton": "cameras#startmenu",
+            "Key_F12|RightButton": "scene#startmenu",
+        }
+        super().__init__(parent, ui_source="ui", slot_source="slots",
+                         bindings=bindings, **kwargs)
 ```
 
 ---
 
-## Custom Widgets Included
+## Deeper documentation
 
-UITK provides enhanced versions of common widgets:
+Rendered from the GitHub repository:
 
-| Widget | Enhancements |
-|--------|--------------|
-| `PushButton` | Menu, option box, rich text |
-| `CheckBox` | Menu, option box |
-| `ComboBox` | Header text, alignment, menu |
-| `LineEdit` | Action colors (valid/invalid/warning), menu |
-| `TextEdit` | Enhanced text handling |
-| `Label` | Rich text, text overlay |
-| `TreeWidget` | Hierarchy icons, item helpers |
-| `TableWidget` | Enhanced cell handling |
-| `Menu` | Dynamic add(), grid layout, positioning |
-| `Header` | Draggable, pin/minimize/close buttons |
-| `Footer` | Status text, size grip |
-| `CollapsableGroup` | Expandable/collapsible sections |
-| `ColorSwatch` | Color picker widget |
-| `ProgressBar` | Enhanced progress display |
-| `MessageBox` | Styled message dialogs |
-
----
-
-## Package Structure
-
-```
-uitk/
-├── __init__.py
-├── switchboard.py              # Core: UI loading, slot wiring, registries
-├── signals.py                  # @Signals decorator
-├── events.py                   # EventFactoryFilter, MouseTracking
-├── file_manager.py             # FileContainer, FileManager
-│
-├── widgets/
-│   ├── mainWindow.py           # MainWindow wrapper
-│   ├── menu.py                 # Dynamic Menu
-│   ├── header.py               # Draggable header bar
-│   ├── footer.py               # Status bar with size grip
-│   ├── pushButton.py           # Enhanced button
-│   ├── checkBox.py             # Enhanced checkbox
-│   ├── comboBox.py             # ComboBox with header
-│   ├── lineEdit.py             # Input with action colors
-│   ├── textEdit.py             # Enhanced text editor
-│   ├── label.py                # Rich text label
-│   ├── treeWidget.py           # Tree with icons
-│   ├── tableWidget.py          # Enhanced table
-│   ├── progressBar.py          # Progress display
-│   ├── messageBox.py           # Styled dialogs
-│   ├── collapsableGroup.py     # Expandable sections
-│   ├── colorSwatch.py          # Color picker
-│   ├── separator.py            # Visual separator
-│   ├── region.py               # Layout region
-│   │
-│   ├── optionBox/              # Option box system
-│   │   ├── _optionBox.py       # OptionBox, OptionBoxContainer
-│   │   ├── utils.py            # OptionBoxManager
-│   │   └── options/            # ClearOption, PinOption, etc.
-│   │
-│   └── mixins/
-│       ├── attributes.py       # set_attributes(), set_flags()
-│       ├── menu_mixin.py       # .menu property
-│       ├── option_box_mixin.py # .option_box property
-│       ├── state_manager.py    # Widget state persistence
-│       ├── settings_manager.py # QSettings wrapper
-│       ├── style_sheet.py      # Theme management
-│       ├── value_manager.py    # Widget value get/set
-│       ├── icon_manager.py     # Icon loading and theming
-│       ├── text.py             # RichText, TextOverlay
-│       ├── convert.py          # Type conversions
-│       ├── shortcuts.py        # Keyboard shortcuts
-│       ├── tasks.py            # Background tasks
-│       ├── docking.py          # Docking behavior
-│       ├── switchboard_slots.py    # Slot connection logic
-│       ├── switchboard_widgets.py  # Widget registration
-│       ├── switchboard_utils.py    # Helper utilities
-│       └── switchboard_names.py    # Name/tag handling
-│
-├── icons/                      # Monochrome icons (auto-colored by theme)
-└── examples/                   # Example application
-```
-
----
-
-## Complete Example
-
-```python
-from uitk import Switchboard
-
-class EditorSlots:
-    def __init__(self, **kwargs):
-        self.sb = kwargs.get("switchboard")
-        self.ui = self.sb.loaded_ui.editor
-
-    # Button initialization
-    def btn_open_init(self, widget):
-        menu = widget.menu
-        menu.add("QPushButton", setText="Recent...", setObjectName="btn_recent")
-        menu.btn_recent.clicked.connect(self.show_recent)
-
-    def btn_open(self):
-        path = self.sb.file_dialog(file_types="Text (*.txt)")
-        if path:
-            self.ui.txt_content.setText(open(path).read())
-            self.ui.lbl_status.setText(f"Opened: {path}")
-
-    def btn_save(self):
-        self.sb.message_box("Saved!")
-
-    # ComboBox with index parameter
-    def cmb_font_init(self, widget):
-        widget.addItems(["Arial", "Helvetica", "Courier"])
-
-    def cmb_font(self, index):
-        font_name = self.ui.cmb_font.currentText()
-        self.ui.txt_content.setFont(self.sb.QtGui.QFont(font_name))
-
-    # Checkbox with state parameter
-    def chk_wrap(self, state):
-        QTextEdit = self.sb.QtWidgets.QTextEdit
-        mode = QTextEdit.WidgetWidth if state else QTextEdit.NoWrap
-        self.ui.txt_content.setLineWrapMode(mode)
-
-    def show_recent(self):
-        self.sb.message_box("Recent files...")
-
-sb = Switchboard(ui_source="./", slot_source=EditorSlots)
-ui = sb.loaded_ui.editor
-ui.style.set(theme="dark")
-ui.show(pos="screen", app_exec=True)
-```
-
----
-
-## Feature Summary
-
-### Core Architecture
-- Convention-based UI loading and slot connection
-- Automatic widget registration with attribute injection
-- Lazy loading of UIs on first access
-- UI hierarchy via filename patterns
-- Tag system for UI categorization
-
-### Signal/Slot System
-- Auto-connection via naming convention
-- Default signal mappings for all widget types
-- `@Signals` decorator for custom signals
-- Parameter injection (widget, ui, sb)
-- Slot history tracking
-
-### State Management
-- Automatic widget value persistence
-- Window geometry save/restore
-- Cross-UI widget sync
-- Per-widget and per-UI control
-- QSettings-based storage
-
-### Widget Enhancements
-- `.menu` popup on any widget
-- `.option_box` action panels
-- Rich text support
-- Action colors for validation
-- Menu with dynamic `add()`
-
-### Theming
-- Light/dark themes with custom theme support
-- Monochrome icons auto-colored by theme
-- StyleSheet manager
-- Translucent window styles
-
-### Utilities
-- Message box dialogs
-- File/directory dialogs
-- Widget centering
-- Batch operations
-- Button group creation
-- Deferred execution
-
-### Custom Widgets
-- Enhanced versions of all common widgets
-- Draggable header with controls
-- Collapsable groups
-- Color swatches
-- Tree with hierarchy icons
-
-### Event Handling
-- EventFactoryFilter for custom events
-- MouseTracking for hover detection
-- Focus tracking
-- Window lifecycle signals
-
----
-
-## Contributing
-
-```bash
-python -m pytest test/ -v
-```
+- [User Guide](https://github.com/m3trik/uitk/blob/main/docs/USER_GUIDE.md) — building your first real app
+- [Slots Contract](https://github.com/m3trik/uitk/blob/main/docs/SLOTS.md) — naming, signals, parameter injection, debounce, timeout, refresh
+- [Widgets](https://github.com/m3trik/uitk/blob/main/docs/WIDGETS.md) — per-widget reference with the sequencer and editors subpackages
+- [Marking Menu](https://github.com/m3trik/uitk/blob/main/docs/MARKING_MENU.md) — radial menu subsystem
+- [Architecture](https://github.com/m3trik/uitk/blob/main/docs/ARCHITECTURE.md) — Switchboard mixins, registries, lifecycle
+- [Cookbook](https://github.com/m3trik/uitk/blob/main/docs/COOKBOOK.md) — recipes from real consumers
+- [Tutorial](https://github.com/m3trik/uitk/blob/main/docs/EXAMPLES.md) — step-by-step walkthrough
+- [API Reference](https://github.com/m3trik/uitk/blob/main/docs/API_REFERENCE.md) — public signatures
 
 ## License
 
-LGPL v3 — See [LICENSE](../COPYING.LESSER)
+LGPL-3.0-or-later — see [COPYING.LESSER](https://github.com/m3trik/uitk/blob/main/COPYING.LESSER).
