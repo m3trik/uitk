@@ -120,6 +120,44 @@ class TextEditLogHandler(logging.Handler):
     def get_color(self, level: str) -> str:
         return LoggerExt.get_color(level)
 
+    def available_columns(self) -> int:
+        """Return the number of monospace columns that fit in the viewport.
+
+        Used by ``LoggerExt._log_box`` so boxes shrink to fit the redirect
+        target instead of being clipped or wrapped. Returns ``0`` when the
+        widget is not yet sized or too narrow to host a usable box, in
+        which case callers should fall back to ``DEFAULT_BOX_WIDTH``.
+        """
+        try:
+            mono = self._get_monospace_font()
+            # Box markup forces font-family:monospace inline but inherits
+            # the widget's point size — match that so measurement tracks
+            # any user-customized font size.
+            widget_font = self.widget.font()
+            pt = widget_font.pointSizeF()
+            if pt > 0:
+                mono.setPointSizeF(pt)
+            else:
+                px = widget_font.pixelSize()
+                if px > 0:
+                    mono.setPixelSize(px)
+            char_w = QtGui.QFontMetrics(mono).horizontalAdvance(" ")
+            if not char_w:
+                return 0
+            viewport = self.widget.viewport() if hasattr(self.widget, "viewport") else None
+            avail_px = viewport.width() if viewport else self.widget.width()
+            # viewport() already excludes the scrollbar; reserve one char
+            # for cursor padding so the box never touches the right edge.
+            usable = avail_px - char_w
+            if usable <= 0:
+                return 0
+            cols = usable // char_w
+            # Anything below ~20 cols produces a degenerate box; defer to
+            # the caller's default instead.
+            return cols if cols >= 20 else 0
+        except Exception:
+            return 0
+
 
 # ----------------------------------------------------------------------------
 

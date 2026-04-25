@@ -1,763 +1,765 @@
 # !/usr/bin/python
 # coding=utf-8
-"""UITK Package Explorer
+"""UITK Example — a polished tour of the framework.
 
-An interactive browser for exploring UITK's package structure, classes,
-and documentation with introspection that excludes inherited members.
+This single-window demo exercises the major UITK features:
 
-NAVIGATION:
-===========
-- ComboBox: Select package/subpackage to browse
-- Tree: Hierarchical view (modules > classes > methods)
-- Click: Show help in output panel
+  • Convention-based slot discovery (``def widget_name`` runs on the
+    widget's default signal; ``_init`` suffix runs once on registration).
+  • Default signal auto-wiring (combobox, tree, menus).
+  • Header popup menu — theme picker, log-level selector, timestamp
+    toggle, logger-name toggle, clear, about.
+  • LineEdit option_box plugin stack — stateful action, browse,
+    recent, pin, clear — wired with a single fluent chain.
+  • Tree right-click context menu via ``widget.menu`` with
+    ``trigger_button = "right"``.
+  • CollapsableGroup + QSplitter for the resizable tree/console split.
+  • pythontk LoggingMixin console with HTML rendering, custom log
+    levels (PROGRESS / SUCCESS / RESULT / NOTICE), ``log_box``,
+    ``log_divider``, and clickable ``action://`` links routed through
+    ``QTextBrowser.anchorClicked``.
+  • Footer default status, live status, and progress context manager.
+  • Slot-level controls — ``widget.debounce`` and
+    ``ui.default_slot_timeout``.
 
-KEY PATTERNS DEMONSTRATED:
-==========================
-1. Name slots to match widget objectNames (e.g., 'tree_demo' -> 'def tree_demo()')
-2. Use '_init' suffix for one-time setup (e.g., 'def tree_demo_init(widget)')
-3. Default signals connect automatically (e.g., QTreeWidget uses itemClicked)
-4. Use @Signals decorator only for non-default signals
-5. Access .menu on any widget to add a popup menu
-6. Access .option_box on input widgets for pin/clear/menu features
+Every visible message comes from the shared class logger.
 """
 import os
+import html
+import inspect
 import logging
 import importlib
+import importlib.util
 from pathlib import Path
+from urllib.parse import parse_qs
+
 from qtpy import QtWidgets, QtCore, QtGui
+from qtpy.QtCore import Qt
+
+import pythontk as ptk
+from pythontk.core_utils.logging_mixin import LevelAwareFormatter, LoggerExt
+
 from uitk import Switchboard
-from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.widgets.textEditLogHandler import TextEditLogHandler
 
 
-class ResizeHandle(QtWidgets.QFrame):
-    """Horizontal drag handle for resizing widget heights.
-
-    A thin bar that can be dragged vertically to resize the widget above it.
-    Shows visual feedback on hover.
-    """
-
-    def __init__(self, target_widget, min_height=250, max_height=600, parent=None):
-        super().__init__(parent)
-        self.target_widget = target_widget
-        self.min_height = min_height
-        self.max_height = max_height
-        self._dragging = False
-        self._start_y = 0
-        self._start_height = 0
-
-        # Visual setup
-        self.setFixedHeight(6)
-        self.setCursor(QtCore.Qt.SizeVerCursor)
-        self.setStyleSheet(
-            """
-            ResizeHandle {
-                background-color: transparent;
-                border: none;
-            }
-            ResizeHandle:hover {
-                background-color: rgba(100, 150, 255, 80);
-            }
-            """
-        )
-
-    def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.LeftButton:
-            self._dragging = True
-            self._start_y = event.globalPos().y()
-            self._start_height = self.target_widget.height()
-            self.setStyleSheet(
-                """
-                ResizeHandle {
-                    background-color: rgba(100, 150, 255, 150);
-                }
-                """
-            )
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self._dragging:
-            delta = event.globalPos().y() - self._start_y
-            new_height = max(
-                self.min_height, min(self.max_height, self._start_height + delta)
-            )
-            self.target_widget.setMinimumHeight(new_height)
-            self.target_widget.setMaximumHeight(new_height)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == QtCore.Qt.LeftButton:
-            self._dragging = False
-            self.setStyleSheet(
-                """
-                ResizeHandle {
-                    background-color: transparent;
-                    border: none;
-                }
-                ResizeHandle:hover {
-                    background-color: rgba(100, 150, 255, 80);
-                }
-                """
-            )
-            event.accept()
+# Wire pythontk's LoggingMixin to use UITK's Qt-aware handler so that
+# ``logger.add_text_widget_handler(...)`` (and any downstream helpers)
+# emit through TextEditLogHandler by default.
+LoggerExt._set_text_handler(TextEditLogHandler)
 
 
-class ExampleSlots:
-    """Slots for the UITK Package Explorer - method names match widget objectNames."""
+class ExampleSlots(ptk.LoggingMixin):
+    """Slots for the UITK Example — method names match widget objectNames."""
 
+    # =========================================================================
+    # Lifecycle
+    # =========================================================================
     def __init__(self, **kwargs):
-        self.sb = kwargs.get("switchboard")
+        self.sb = kwargs["switchboard"]
         self.ui = self.sb.loaded_ui.example
-        self._selected_obj = None  # Currently selected module/class/method
+
+        self._selected_obj = None
         self._selected_name = None
-        self._setup_logger()
+        self._include_inherited = False
 
-    def _setup_logger(self):
-        """Route logging to the output widget."""
-        self.logger = logging.getLogger("uitk.example")
-        self.logger.handlers.clear()
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.addHandler(TextEditLogHandler(self.ui.txt_output))
-        # Use Footer's setDefaultStatusText for persistent status
-        self.ui.footer.setDefaultStatusText("Select an item to view details")
-        self.logger.info("UITK Package Explorer ready")
-
-    def _get_help_text(self, obj, include_inherited=False):
-        """Get help text for an object, optionally filtering inherited members.
-
-        Parameters:
-            obj: The object to get help for.
-            include_inherited (bool): If False, filter out inherited attributes.
-
-        Returns:
-            str: Formatted help text.
-        """
-        import inspect
-
-        lines = []
-
-        # Get basic info
-        name = getattr(obj, "__name__", type(obj).__name__)
-        doc = inspect.getdoc(obj) or "No documentation available."
-
-        # Signature for callables
-        sig = ""
-        if callable(obj):
-            try:
-                sig = str(inspect.signature(obj))
-            except (ValueError, TypeError):
-                sig = "(...)"
-
-        lines.append(f"{name}{sig}")
-        lines.append("=" * len(f"{name}{sig}"))
-        lines.append("")
-        lines.append(doc)
-
-        # For classes, show defined (non-inherited) members
-        if isinstance(obj, type):
-            # Get members defined in this class only
-            own_members = []
-            inherited_from = set()
-
-            for base in obj.__mro__[1:]:
-                inherited_from.update(dir(base))
-
-            for attr_name in sorted(dir(obj)):
-                if attr_name.startswith("_"):
-                    continue
-                if not include_inherited and attr_name in inherited_from:
-                    continue
-                try:
-                    attr = getattr(obj, attr_name)
-                    if callable(attr) and not isinstance(attr, type):
-                        own_members.append((attr_name, "method", attr))
-                    elif isinstance(attr, property):
-                        own_members.append((attr_name, "property", attr))
-                except Exception:
-                    continue
-
-            if own_members:
-                lines.append("")
-                lines.append("Defined Members:")
-                lines.append("-" * 16)
-                for member_name, member_type, member_obj in own_members:
-                    member_doc = inspect.getdoc(member_obj)
-                    desc = ""
-                    if member_doc:
-                        desc = member_doc.split("\n")[0][:60]
-                    lines.append(f"    {member_name} ({member_type}): {desc}")
-
-        # For modules, show contents
-        elif inspect.ismodule(obj):
-            classes = []
-            functions = []
-
-            for attr_name in sorted(dir(obj)):
-                if attr_name.startswith("_"):
-                    continue
-                try:
-                    attr = getattr(obj, attr_name)
-                    if isinstance(attr, type) and attr.__module__ == obj.__name__:
-                        classes.append(attr_name)
-                    elif (
-                        callable(attr)
-                        and getattr(attr, "__module__", None) == obj.__name__
-                    ):
-                        functions.append(attr_name)
-                except Exception:
-                    continue
-
-            if classes:
-                lines.append("")
-                lines.append("Classes:")
-                lines.append("-" * 8)
-                for c in classes:
-                    lines.append(f"    {c}")
-
-            if functions:
-                lines.append("")
-                lines.append("Functions:")
-                lines.append("-" * 10)
-                for f in functions:
-                    lines.append(f"    {f}")
-
-        return "\n".join(lines)
+        self._setup_console()
+        self._welcome()
 
     # =========================================================================
-    # HEADER - window controls and settings menu
+    # Console — driven entirely by pythontk's LoggingMixin
     # =========================================================================
+    def _setup_console(self):
+        """Attach a Qt text-widget handler to the class logger."""
+        logger = self.logger
+        logger.setLevel(logging.DEBUG)
 
+        # Hot-reload safety — drop any stale handlers from prior sessions.
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+
+        handler = TextEditLogHandler(self.ui.txt_output, monospace=True)
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(LevelAwareFormatter(logger=logger, strip_html=False))
+        logger.addHandler(handler)
+
+        logger.hide_logger_name(True)
+        logger.log_timestamp = "%H:%M:%S"
+
+        # Footer default status replaces the current example's "sticky" setText.
+        self.ui.footer.setDefaultStatusText("Ready  •  Select an item to inspect")
+
+        # action:// link routing from QTextBrowser (log_link clicks).
+        out = self.ui.txt_output
+        if hasattr(out, "anchorClicked"):
+            out.anchorClicked.connect(self._on_anchor_clicked)
+
+    def _welcome(self):
+        """Splash banner printed once at startup."""
+        self.logger.log_box(
+            "UITK EXAMPLE  —  a polished feature tour",
+            items=[
+                "• pick a subpackage from the Navigate row",
+                "• click any tree item — its docs render here",
+                "• try the buttons attached to the path field  (option_box plugins)",
+                "• right-click the tree for a context menu",
+                "• open the gear menu in the header for themes / log level / more",
+            ],
+            level="NOTICE",
+            align="left",
+        )
+        self.logger.info("Console ready.")
+
+    def _on_anchor_clicked(self, url: QtCore.QUrl):
+        """Route pythontk ``log_link`` clicks (``action://VERB?k=v``)."""
+        if url.scheme() != "action":
+            return
+        action = url.host() or url.path().strip("/")
+        params = {k: v[0] for k, v in parse_qs(url.query()).items()}
+
+        if action == "reveal":
+            path = params.get("path", "")
+            if path and os.path.exists(path):
+                folder = path if os.path.isdir(path) else os.path.dirname(path)
+                QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(folder))
+                self.logger.success(f"Revealed in file explorer: <code>{html.escape(path)}</code>")
+            else:
+                self.logger.warning(f"Path not found: {html.escape(path)}")
+        elif action == "copy":
+            text = params.get("text", "")
+            QtWidgets.QApplication.clipboard().setText(text)
+            preview = text if len(text) <= 60 else text[:57] + "..."
+            self.logger.success(f"Copied: <code>{html.escape(preview)}</code>")
+        else:
+            self.logger.notice(f"Unhandled link action: <code>{html.escape(action)}</code>")
+
+        # Prevent QTextBrowser from navigating away and clearing the document.
+        self.ui.txt_output.setSource(QtCore.QUrl())
+
+    # =========================================================================
+    # Header — popup menu
+    # =========================================================================
     def header_init(self, widget):
-        """Setup header buttons and menu."""
         widget.config_buttons("menu", "minimize", "maximize", "hide")
-        # Build settings menu - items are accessible as widget.menu.objectName
-        widget.menu.add(
-            "QComboBox", setObjectName="cmb_theme", addItems=["Dark", "Light"]
+
+        m = widget.menu
+        m.add("QLabel", setText="<b>Preferences</b>")
+        m.add("QSeparator")
+        m.add(
+            "QComboBox",
+            setObjectName="cmb_theme",
+            addItems=["Dark", "Light"],
         )
-        widget.menu.add("QSeparator")
-        widget.menu.add("QPushButton", setText="Clear Log", setObjectName="btn_clear")
-        # Connect menu widget signals
-        widget.menu.cmb_theme.currentTextChanged.connect(
-            lambda t: self.ui.style.set(
-                theme=t.lower(), style_class="translucentBgWithBorder"
-            )
+        m.add(
+            "QComboBox",
+            setObjectName="cmb_level",
+            addItems=["Debug", "Info", "Progress", "Success", "Result", "Notice", "Warning"],
         )
-        widget.menu.btn_clear.clicked.connect(self.ui.txt_output.clear)
+        m.add(
+            "QCheckBox",
+            setObjectName="chk_timestamps",
+            setText="Show timestamps",
+            setChecked=True,
+        )
+        m.add(
+            "QCheckBox",
+            setObjectName="chk_hide_name",
+            setText="Hide logger name",
+            setChecked=True,
+        )
+        m.add("QSeparator")
+        m.add("QPushButton", setText="Clear console", setObjectName="btn_clear")
+        m.add("QPushButton", setText="About UITK",    setObjectName="btn_about")
+
+        m.cmb_level.setCurrentText("Debug")
+
+        m.cmb_theme.currentTextChanged.connect(self._on_theme_change)
+        m.cmb_level.currentTextChanged.connect(self._on_level_change)
+        m.chk_timestamps.toggled.connect(self._on_timestamps_toggled)
+        m.chk_hide_name.toggled.connect(self._on_hide_name_toggled)
+        m.btn_clear.clicked.connect(self._clear_console)
+        m.btn_about.clicked.connect(self._log_about)
+
+    def _on_theme_change(self, theme: str):
+        self.ui.style.set(theme=theme.lower(), style_class="translucentBgWithBorder")
+        self.logger.success(f"Theme: <b>{theme}</b>")
+
+    def _on_level_change(self, level_name: str):
+        level_map = {
+            "Debug":    logging.DEBUG,
+            "Info":     logging.INFO,
+            "Progress": LoggerExt.PROGRESS,
+            "Success":  LoggerExt.SUCCESS,
+            "Result":   LoggerExt.RESULT,
+            "Notice":   LoggerExt.NOTICE,
+            "Warning":  logging.WARNING,
+        }
+        level = level_map.get(level_name, logging.INFO)
+        self.logger.setLevel(level)
+        for h in self.logger.handlers:
+            h.setLevel(level)
+        self.logger.result(
+            f"Log level: <b>{level_name}</b> "
+            f"<i>(messages below this threshold are hidden)</i>"
+        )
+
+    def _on_timestamps_toggled(self, checked: bool):
+        self.logger.log_timestamp = "%H:%M:%S" if checked else None
+        self.logger.notice(f"Timestamps: {'on' if checked else 'off'}")
+
+    def _on_hide_name_toggled(self, checked: bool):
+        self.logger.hide_logger_name(checked)
+        LoggerExt._update_handler_formatters(self.logger)
+        self.logger.notice(f"Hide logger name: {'on' if checked else 'off'}")
+
+    def _clear_console(self):
+        self.ui.txt_output.clear()
+        self.logger.notice("Console cleared.")
+
+    def _log_about(self):
+        self.logger.log_box(
+            "ABOUT  —  UITK",
+            items=[
+                "A convention-driven Qt framework built on qtpy (PySide2 / PySide6).",
+                "Every message in this console is rendered by pythontk's LoggingMixin.",
+                "",
+                "• Docs:  https://github.com/m3trik/uitk",
+                "• PyPI:  pip install uitk",
+            ],
+            level="NOTICE",
+            align="left",
+        )
 
     # =========================================================================
-    # INPUT WIDGETS - package and view options
+    # Navigation row
     # =========================================================================
-
     def txt_input_init(self, widget):
-        """Show file path to uitk package root."""
-        uitk_path = Path(__file__).parent.parent
-        widget.setText(str(uitk_path))
+        """Wire the full option_box plugin stack onto the path field."""
+        uitk_root = str(Path(__file__).parent.parent)
+        widget.setText(uitk_root)
+        # Demonstrate slot-level debounce (rapid edits coalesce into one call).
+        widget.debounce = 300
+
+        # Stateful action button — toggles 'include inherited' for help output.
+        widget.option_box.add_action(
+            callback=self._toggle_inherited,
+            icon="eye_off",
+            tooltip="Inherited members: hidden",
+            states=[
+                {"icon": "eye_off", "tooltip": "Inherited members: hidden  (click to show)"},
+                {"icon": "eye",     "tooltip": "Inherited members: visible  (click to hide)"},
+            ],
+        )
+        widget.option_box.browse(
+            mode="directory",
+            title="Select a package directory",
+            tooltip="Browse for a package folder",
+        )
+        widget.option_box.recent(max_recent=8)
+        widget.option_box.pin()
+        widget.option_box.enable_clear()
+
+    def _toggle_inherited(self):
+        self._include_inherited = not self._include_inherited
+        state = "visible" if self._include_inherited else "hidden"
+        self.logger.success(f"Inherited members: <b>{state}</b>")
+        if self._selected_obj is not None:
+            self._log_help(self._selected_obj, self._selected_name)
+
+    def txt_input(self, text):
+        """Default signal = textChanged (debounced 300 ms via ``widget.debounce``)."""
+        text = (text or "").strip()
+        if not text:
+            return
+        uitk_root = Path(__file__).parent.parent.resolve()
+        try:
+            p = Path(text).resolve()
+        except (OSError, ValueError):
+            return
+        if not p.is_dir():
+            return
+        if p != uitk_root and uitk_root not in p.parents:
+            return
+        rel = p.relative_to(uitk_root.parent) if p != uitk_root else Path("uitk")
+        dot = str(rel).replace(os.sep, ".").replace("/", ".")
+        idx = self.ui.cmb_options.findText(dot)
+        if idx >= 0 and self.ui.cmb_options.currentIndex() != idx:
+            self.ui.cmb_options.setCurrentIndex(idx)
+            self.logger.progress(f"Jumped to package: <b>{html.escape(dot)}</b>")
 
     def cmb_options_init(self, widget):
-        """Setup package combobox with UITK subdirectories using flexible add method."""
-        import pythontk as ptk
-
+        """Populate the package combo with every importable UITK subpackage."""
         uitk_path = Path(__file__).parent.parent
-
-        # Get all subdirectories recursively
         packages = ["uitk"]
-        all_dirs = ptk.FileUtils.get_dir_contents(
+        subdirs = ptk.FileUtils.get_dir_contents(
             str(uitk_path),
             content="dirpath",
             recursive=True,
             exc_dirs=["__pycache__", ".*", "_*", "icons"],
         )
-
-        for dir_path in sorted(all_dirs):
-            rel_path = Path(dir_path).relative_to(uitk_path)
-            if (Path(dir_path) / "__init__.py").exists():
-                dot_path = "uitk." + str(rel_path).replace("\\", ".").replace("/", ".")
-                packages.append(dot_path)
-
-        # Use flexible add() method - no header, displays current selection
+        for d in sorted(subdirs):
+            rel = Path(d).relative_to(uitk_path)
+            if (Path(d) / "__init__.py").exists():
+                packages.append("uitk." + str(rel).replace(os.sep, ".").replace("/", "."))
         widget.add(packages)
-        widget.setCurrentIndex(0)  # Start with 'uitk' selected
+        widget.setCurrentIndex(0)
 
     def cmb_options(self, index):
-        """Update tree when package selection changes."""
+        """Default signal = currentIndexChanged."""
         package = self.ui.cmb_options.currentText()
         self._populate_tree(package)
-        # Update path display
+
         uitk_path = Path(__file__).parent.parent
-        if package == "uitk":
-            self.ui.txt_input.setText(str(uitk_path))
-        else:
-            rel_path = package.replace("uitk.", "").replace(".", os.sep)
-            self.ui.txt_input.setText(str(uitk_path / rel_path))
+        target = uitk_path if package == "uitk" else uitk_path / package.replace("uitk.", "").replace(".", os.sep)
+        # Update the path field *without* retriggering our debounced handler.
+        blocker = QtCore.QSignalBlocker(self.ui.txt_input)
+        self.ui.txt_input.setText(str(target))
+        del blocker
 
     def cmb_view_init(self, widget):
-        """Setup view options dropdown with checkboxes."""
-        from qtpy.QtWidgets import QCheckBox
-
-        # Create checkboxes for view options
-        widget.chk_types = QCheckBox("Show Types")
-        widget.chk_types.setChecked(True)
-        widget.chk_types.toggled.connect(
+        """Inline checkbox panel for tree view options."""
+        chk_types = QtWidgets.QCheckBox("Show Types")
+        chk_types.setChecked(True)
+        chk_types.toggled.connect(
             lambda show: self.ui.tree_demo.setColumnHidden(1, not show)
         )
 
-        widget.chk_classes = QCheckBox("Show Classes")
-        widget.chk_classes.setChecked(True)
-        widget.chk_classes.toggled.connect(
-            lambda: self._populate_tree(self.ui.cmb_options.currentText())
-        )
+        chk_classes = QtWidgets.QCheckBox("Show Classes")
+        chk_classes.setChecked(True)
+        chk_classes.toggled.connect(self._refresh_current)
 
-        widget.chk_members = QCheckBox("Show Members")
-        widget.chk_members.setChecked(False)
-        widget.chk_members.toggled.connect(
-            lambda: self._populate_tree(self.ui.cmb_options.currentText())
-        )
+        chk_members = QtWidgets.QCheckBox("Show Members")
+        chk_members.setChecked(False)
+        chk_members.toggled.connect(self._refresh_current)
 
-        widget.chk_expand = QCheckBox("Auto-expand")
-        widget.chk_expand.setChecked(True)
+        chk_expand = QtWidgets.QCheckBox("Auto-expand")
+        chk_expand.setChecked(True)
 
-        widget.chk_recursive = QCheckBox("Include Subpackages")
-        widget.chk_recursive.setChecked(False)
-        widget.chk_recursive.toggled.connect(
-            lambda: self._populate_tree(self.ui.cmb_options.currentText())
-        )
+        chk_recursive = QtWidgets.QCheckBox("Include Subpackages")
+        chk_recursive.setChecked(False)
+        chk_recursive.toggled.connect(self._refresh_current)
 
-        # Add all checkboxes using flexible add method with (widget, label) tuples
+        # Store on the widget so tree code can read them by name.
+        widget.chk_types = chk_types
+        widget.chk_classes = chk_classes
+        widget.chk_members = chk_members
+        widget.chk_expand = chk_expand
+        widget.chk_recursive = chk_recursive
+
         widget.add(
             [
-                (widget.chk_types, "Types"),
-                (widget.chk_classes, "Classes"),
-                (widget.chk_members, "Members"),
-                (widget.chk_expand, "Expand"),
-                (widget.chk_recursive, "Recursive"),
+                (chk_types,     "Types"),
+                (chk_classes,   "Classes"),
+                (chk_members,   "Members"),
+                (chk_expand,    "Expand"),
+                (chk_recursive, "Recursive"),
             ],
             header="VIEW OPTIONS",
         )
 
-    # =========================================================================
-    # TREE - shows UITK package structure with context menu
-    # =========================================================================
+    def _refresh_current(self):
+        self._populate_tree(self.ui.cmb_options.currentText())
 
+    # =========================================================================
+    # Tree — default signal is itemClicked, plus a right-click context menu
+    # =========================================================================
     def tree_demo_init(self, widget):
-        """Populate tree with UITK package structure and add context menu."""
-        # Use TreeWidget's set_selection_mode method
         widget.set_selection_mode("single")
         widget.setHeaderLabels(["Name", "Type", "Description"])
-        widget.setColumnWidth(0, 180)
-        widget.setColumnWidth(1, 70)
-        # Disable double-click expand/collapse behavior
+        widget.setColumnWidth(0, 200)
+        widget.setColumnWidth(1, 80)
         widget.setExpandsOnDoubleClick(False)
-        # Override mouseDoubleClickEvent to completely block double-click
         widget.mouseDoubleClickEvent = lambda event: None
+        # Coalesce rapid clicks so the console isn't flooded.
+        widget.debounce = 120
+
         self._populate_tree("uitk")
 
-        # Add resize handle below tree for height adjustment
-        self._add_tree_resize_handle()
+        # Right-click context menu — uses the MenuMixin on the tree widget.
+        m = widget.menu
+        m.trigger_button = "right"
+        m.add("QPushButton", setText="Expand All",       setObjectName="btn_expand")
+        m.add("QPushButton", setText="Collapse All",     setObjectName="btn_collapse")
+        m.add("QSeparator")
+        m.add("QPushButton", setText="Log Signature",    setObjectName="btn_sig")
+        m.add("QPushButton", setText="Log Source Path",  setObjectName="btn_src")
+        m.add("QPushButton", setText="Reveal in Finder", setObjectName="btn_reveal")
+        m.add("QSeparator")
+        m.add("QPushButton", setText="Refresh",          setObjectName="btn_refresh")
 
-        # Add right-click context menu using MenuMixin
-        widget.menu.trigger_button = "right"
-        widget.menu.add("QPushButton", setText="Expand All", setObjectName="btn_expand")
-        widget.menu.add(
-            "QPushButton", setText="Collapse All", setObjectName="btn_collapse"
-        )
-        widget.menu.add("QSeparator")
-        widget.menu.add("QPushButton", setText="Refresh", setObjectName="btn_refresh")
-        # Use TreeWidget's expand_all_items/collapse_all_items methods
-        widget.menu.btn_expand.clicked.connect(widget.expand_all_items)
-        widget.menu.btn_collapse.clicked.connect(widget.collapse_all_items)
-        widget.menu.btn_refresh.clicked.connect(
-            lambda: self._populate_tree(self.ui.cmb_options.currentText())
-        )
-
-    def _add_tree_resize_handle(self):
-        """Add a draggable resize handle below the tree widget."""
-        # Find the parent layout that contains tree_group and output_group
-        tree_group = self.ui.tree_group
-        output_group = self.ui.output_group
-        parent_widget = tree_group.parentWidget()
-
-        if parent_widget and parent_widget.layout():
-            layout = parent_widget.layout()
-            # Find index of output_group (we'll insert handle before it)
-            for i in range(layout.count()):
-                item = layout.itemAt(i)
-                if item and item.widget() == output_group:
-                    # Create resize handle targeting the tree widget
-                    handle = ResizeHandle(
-                        self.ui.tree_demo, min_height=300, max_height=600
-                    )
-                    layout.insertWidget(i, handle)
-                    break
+        m.btn_expand.clicked.connect(widget.expand_all_items)
+        m.btn_collapse.clicked.connect(widget.collapse_all_items)
+        m.btn_sig.clicked.connect(self._log_selected_signature)
+        m.btn_src.clicked.connect(self._log_selected_source)
+        m.btn_reveal.clicked.connect(self._reveal_selected_source)
+        m.btn_refresh.clicked.connect(self._refresh_current)
 
     def tree_demo(self, item, column, widget=None):
-        """Handle tree item click - show help for selected item.
-
-        Connected automatically to itemClicked (default signal for QTreeWidget).
-        """
-        from qtpy.QtCore import Qt
-
-        item_data = item.data(0, Qt.UserRole)
-        if not item_data:
+        """Default signal = itemClicked. Shows rich help in the console."""
+        data = item.data(0, Qt.UserRole)
+        if not data:
             return
-
-        obj = item_data.get("obj")
-        name = item_data.get("full_name", item.text(0))
+        obj = data.get("obj")
+        name = data.get("full_name", item.text(0))
 
         self._selected_obj = obj
         self._selected_name = name
-        self.ui.footer.setText(f"{item.text(0)}: {item.text(2)}")
+        self.ui.footer.setStatusText(f"{item.text(0)}  —  {item.text(2) or item.text(1)}")
 
-        # Update path to show file location
-        if hasattr(obj, "__file__"):
-            self.ui.txt_input.setText(obj.__file__)
-        elif hasattr(obj, "__module__"):
-            try:
-                mod = importlib.import_module(obj.__module__)
-                if hasattr(mod, "__file__"):
-                    self.ui.txt_input.setText(mod.__file__)
-            except Exception:
-                pass
-
-        # Auto-populate help in output (exclude inherited members by default)
-        self.ui.txt_output.clear()
         if obj is None:
-            self.ui.txt_output.setPlainText(f"{name}: No object data available")
+            self.logger.warning(f"No live object for <b>{html.escape(name)}</b>")
             return
+
+        # Reflect file path in the text field (blocked to avoid triggering nav).
+        src = getattr(obj, "__file__", None) or self._module_file(obj)
+        if src:
+            blocker = QtCore.QSignalBlocker(self.ui.txt_input)
+            self.ui.txt_input.setText(src)
+            del blocker
+
+        self._log_help(obj, name)
+
+    # ---- context menu actions -------------------------------------------------
+    def _log_selected_signature(self):
+        if self._selected_obj is None:
+            self.logger.warning("Nothing selected.")
+            return
+        sig = self._signature_of(self._selected_obj)
+        name = self._selected_name or "<obj>"
+        copy_link = self.logger.log_link(
+            "copy", "copy", text=f"{name}{sig}"
+        )
+        self.logger.result(
+            f"<b>{html.escape(name)}</b>{html.escape(sig)}  &nbsp;·&nbsp;  [{copy_link}]"
+        )
+
+    def _log_selected_source(self):
+        path = self._selected_source_path()
+        if not path:
+            self.logger.warning("No source file for selection.")
+            return
+        reveal = self.logger.log_link("reveal in explorer", "reveal", path=path)
+        self.logger.result(f"Source: <code>{html.escape(path)}</code>  &nbsp;·&nbsp;  [{reveal}]")
+
+    def _reveal_selected_source(self):
+        path = self._selected_source_path()
+        if not path:
+            self.logger.warning("No source file for selection.")
+            return
+        folder = path if os.path.isdir(path) else os.path.dirname(path)
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(folder))
+        self.logger.success(f"Opened: <code>{html.escape(folder)}</code>")
+
+    def _selected_source_path(self) -> str | None:
+        obj = self._selected_obj
+        if obj is None:
+            return None
+        path = getattr(obj, "__file__", None)
+        if path:
+            return path
+        return self._module_file(obj)
+
+    @staticmethod
+    def _module_file(obj) -> str | None:
+        mod_name = getattr(obj, "__module__", None)
+        if not mod_name:
+            return None
         try:
-            help_text = self._get_help_text(obj, include_inherited=False)
-            formatted = self._format_help_text(name, help_text)
-            self.ui.txt_output.setHtml(formatted)
-        except Exception as e:
-            self.ui.txt_output.setPlainText(f"Error getting help for {name}: {e}")
+            return getattr(importlib.import_module(mod_name), "__file__", None)
+        except Exception:
+            return None
 
-    def _format_help_text(self, name, help_text):
-        """Format help text as styled HTML for the output widget."""
-        import html
+    # =========================================================================
+    # Rich help rendering — all output goes through the logger
+    # =========================================================================
+    def _log_help(self, obj, name: str):
+        """Print a pretty, multi-section help entry for *obj*."""
+        logger = self.logger
 
-        lines = help_text.split("\n")
-        html_parts = [
-            "<style>",
-            "body { font-family: Consolas, monospace; font-size: 11px; }",
-            ".header { color: #4EC9B0; font-weight: bold; font-size: 13px; }",
-            ".section { color: #569CD6; font-weight: bold; margin-top: 10px; }",
-            ".param { color: #9CDCFE; }",
-            ".type { color: #4EC9B0; }",
-            ".desc { color: #D4D4D4; }",
-            ".code { color: #CE9178; }",
-            "</style>",
-            f'<div class="header">=== {html.escape(name)} ===</div>',
-            "<pre>",
-        ]
+        # Signature box ---------------------------------------------------------
+        sig = self._signature_of(obj)
+        title = f"{name}{sig}"
+        kind = self._kind_of(obj)
+        logger.log_box(title, items=[f"kind: {kind}"], level="NOTICE", align="left")
 
-        in_params = False
-        in_example = False
+        # Docstring -------------------------------------------------------------
+        doc = inspect.getdoc(obj) or "No documentation available."
+        logger.info(html.escape(doc).replace("\n", "<br>"))
 
-        for line in lines:
-            escaped = html.escape(line)
+        # Members for classes ---------------------------------------------------
+        if isinstance(obj, type):
+            self._log_class_members(obj)
 
-            # Detect section headers (lines of === or ---)
-            if line.strip() and all(c in "=-" for c in line.strip()):
-                continue  # Skip separator lines
+        # Actions footer --------------------------------------------------------
+        path = getattr(obj, "__file__", None) or self._module_file(obj)
+        parts = []
+        if path:
+            parts.append(self.logger.log_link("reveal source", "reveal", path=path))
+        parts.append(self.logger.log_link("copy signature", "copy", text=f"{name}{sig}"))
+        logger.notice(" &nbsp;·&nbsp; ".join(f"[{p}]" for p in parts))
 
-            # Detect section titles
-            if line.strip().endswith(":") and not line.startswith(" "):
-                section = line.strip()
-                html_parts.append(
-                    f'<span class="section">{html.escape(section)}</span>'
-                )
-                in_params = "Parameters" in section or "Attributes" in section
-                in_example = "Example" in section
-                continue
+    def _log_class_members(self, cls: type):
+        """Render defined and (optionally) inherited members as grouped lists."""
+        inherited_names = set()
+        for base in cls.__mro__[1:]:
+            inherited_names.update(dir(base))
 
-            # Format parameter lines
-            if in_params and line.strip().startswith("-"):
-                # Parameter description continuation
-                html_parts.append(f'<span class="desc">  {escaped.strip()}</span>')
-            elif in_params and ":" in line and line.startswith("    "):
-                # Parameter name : type
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    param_name = parts[0].strip()
-                    param_type = parts[1].strip()
-                    html_parts.append(
-                        f'  <span class="param">{html.escape(param_name)}</span>: '
-                        f'<span class="type">{html.escape(param_type)}</span>'
-                    )
-                else:
-                    html_parts.append(escaped)
-            elif in_example:
-                html_parts.append(f'<span class="code">{escaped}</span>')
-            else:
-                html_parts.append(escaped)
-
-        html_parts.append("</pre>")
-        return "\n".join(html_parts)
-
-    # Double-click is disabled - we show info on single click instead
-
-    def _get_docstring_summary(self, obj):
-        """Extract the first line of a docstring."""
-        doc = getattr(obj, "__doc__", None)
-        if not doc:
-            return ""
-        first_line = doc.strip().split("\n")[0].strip()
-        return first_line.rstrip(".")
-
-    def _add_class_members(self, parent_item, cls):
-        """Add methods and properties of a class as tree children."""
-        tree = self.ui.tree_demo
-
-        members = []
-        for name in dir(cls):
-            if name.startswith("_"):
+        defined, inherited = [], []
+        for attr_name in sorted(dir(cls)):
+            if attr_name.startswith("_"):
                 continue
             try:
-                attr = getattr(cls, name)
-                # Skip inherited from object
-                if hasattr(object, name):
-                    continue
-                if callable(attr):
-                    desc = self._get_docstring_summary(attr)
-                    members.append((name, "method", desc or "Method", attr, "code"))
-                elif isinstance(attr, property):
-                    desc = self._get_docstring_summary(attr.fget) if attr.fget else ""
-                    members.append((name, "property", desc or "Property", attr, "tag"))
+                attr = getattr(cls, attr_name)
             except Exception:
                 continue
+            kind = self._member_kind(attr)
+            if kind is None:
+                continue
+            entry = (attr_name, kind, self._first_line(inspect.getdoc(attr)))
+            if attr_name in inherited_names:
+                inherited.append(entry)
+            else:
+                defined.append(entry)
 
-        for name, typ, desc, obj, icon_name in sorted(members):
-            child = tree.create_item([name, typ, desc], parent=parent_item)
-            tree.set_item_type_icon(child, icon_name)
-            tree.set_item_data(
-                child, {"obj": obj, "full_name": f"{cls.__name__}.{name}"}
+        if defined:
+            self.logger.log_divider(width=72, char="─")
+            self.logger.progress(f"Defined members ({len(defined)})")
+            for entry in defined:
+                self._log_member_row(*entry)
+
+        if self._include_inherited and inherited:
+            self.logger.log_divider(width=72, char="─")
+            self.logger.progress(f"Inherited members ({len(inherited)})")
+            for entry in inherited:
+                self._log_member_row(*entry)
+        elif inherited:
+            self.logger.log_divider(width=72, char="─")
+            self.logger.debug(
+                f"{len(inherited)} inherited members hidden "
+                f"— toggle the eye icon on the path field to show."
             )
 
-    def _introspect_subdir(self, package):
-        """Dynamically introspect a UITK package and return modules with their classes."""
+    def _log_member_row(self, name: str, kind: str, desc: str):
+        colors = LoggerExt.LOG_COLORS
+        name_c = colors.get("RESULT", "#CCFFFF")   # pastel teal
+        kind_c = colors.get("SUCCESS", "#CCFFCC")  # pastel green
+        desc_c = colors.get("INFO", "#FFFFFF")
+        # Single raw HTML row — bypass level-color wrapping for cleaner layout.
+        name_html = f'<span style="color:{name_c}">{html.escape(name):<22}</span>'
+        kind_html = f'<span style="color:{kind_c}">{html.escape(kind):<10}</span>'
+        desc_html = f'<span style="color:{desc_c}">{html.escape(desc)}</span>'
+        self.logger.log_raw(f"  {name_html} {kind_html} {desc_html}")
+
+    # ---- introspection helpers ------------------------------------------------
+    @staticmethod
+    def _signature_of(obj) -> str:
+        if not callable(obj):
+            return ""
+        try:
+            return str(inspect.signature(obj))
+        except (ValueError, TypeError):
+            return "(...)"
+
+    @staticmethod
+    def _kind_of(obj) -> str:
+        if inspect.ismodule(obj):
+            return "module"
+        if isinstance(obj, type):
+            return "class"
+        if isinstance(obj, property):
+            return "property"
+        if inspect.isfunction(obj) or inspect.ismethod(obj):
+            return "function"
+        if callable(obj):
+            return "callable"
+        return type(obj).__name__
+
+    @staticmethod
+    def _member_kind(attr) -> str | None:
+        if isinstance(attr, property):
+            return "property"
+        if isinstance(attr, type):
+            return "class"
+        if callable(attr):
+            return "method"
+        return None
+
+    @staticmethod
+    def _first_line(doc: str | None) -> str:
+        if not doc:
+            return ""
+        return doc.strip().splitlines()[0].strip().rstrip(".")[:72]
+
+    # =========================================================================
+    # Tree population
+    # =========================================================================
+    def _introspect_subdir(self, package: str):
         modules = []
         uitk_path = Path(__file__).parent.parent
 
         if package == "uitk":
-            target_path = uitk_path
-            import_prefix = "uitk"
+            target = uitk_path
+            prefix = "uitk"
         else:
-            rel_path = package.replace("uitk.", "").replace(".", os.sep)
-            target_path = uitk_path / rel_path
-            import_prefix = package
+            rel = package.replace("uitk.", "").replace(".", os.sep)
+            target = uitk_path / rel
+            prefix = package
 
-        if not target_path.exists():
+        if not target.exists():
             return modules
 
-        for py_file in sorted(target_path.glob("*.py")):
-            if py_file.name.startswith("_"):
+        for py in sorted(target.glob("*.py")):
+            if py.name.startswith("_"):
                 continue
-            mod_name = py_file.stem
+            mod_name = py.stem
             try:
-                # Use importlib.util to check if module can be imported safely
-                spec = importlib.util.find_spec(f"{import_prefix}.{mod_name}")
+                spec = importlib.util.find_spec(f"{prefix}.{mod_name}")
                 if spec is None:
-                    modules.append((mod_name, "module", f"{mod_name}", None, []))
+                    modules.append((mod_name, "module", mod_name, None, []))
                     continue
-
-                mod = importlib.import_module(f"{import_prefix}.{mod_name}")
-                desc = self._get_docstring_summary(mod)
-                # Find all classes defined in this module
+                mod = importlib.import_module(f"{prefix}.{mod_name}")
+                desc = self._first_line(inspect.getdoc(mod))
                 classes = []
-                for attr_name in dir(mod):
-                    if attr_name.startswith("_"):
+                for a in dir(mod):
+                    if a.startswith("_"):
                         continue
                     try:
-                        attr = getattr(mod, attr_name)
-                        if isinstance(attr, type) and attr.__module__ == mod.__name__:
-                            classes.append(attr)
+                        v = getattr(mod, a)
+                        if isinstance(v, type) and v.__module__ == mod.__name__:
+                            classes.append(v)
                     except Exception:
                         continue
-                modules.append(
-                    (mod_name, "module", desc or f"{mod_name}", mod, classes)
-                )
+                modules.append((mod_name, "module", desc or mod_name, mod, classes))
             except Exception:
-                # Module exists but can't be imported (missing dependencies, etc.)
-                # Just show it as a module without drilling into it
-                modules.append((mod_name, "module", f"{mod_name}", None, []))
+                modules.append((mod_name, "module", mod_name, None, []))
 
-        # Also check for subpackages
-        for item in sorted(target_path.iterdir()):
+        for item in sorted(target.iterdir()):
             if (
                 item.is_dir()
                 and not item.name.startswith(("_", "."))
                 and (item / "__init__.py").exists()
             ):
                 try:
-                    mod = importlib.import_module(f"{import_prefix}.{item.name}")
-                    desc = self._get_docstring_summary(mod)
-                    modules.append(
-                        (item.name, "package", desc or f"{item.name}", mod, [])
-                    )
+                    mod = importlib.import_module(f"{prefix}.{item.name}")
+                    desc = self._first_line(inspect.getdoc(mod))
+                    modules.append((item.name, "package", desc or item.name, mod, []))
                 except Exception:
-                    modules.append((item.name, "package", f"{item.name}", None, []))
+                    modules.append((item.name, "package", item.name, None, []))
 
         return modules
 
-    def _populate_tree(self, package="uitk"):
-        """Build tree showing modules → classes → members hierarchy."""
+    def _populate_tree(self, package: str = "uitk"):
         tree = self.ui.tree_demo
         tree.clear()
         self._selected_obj = None
         self._selected_name = None
 
-        # Get view settings from cmb_view dropdown
         show_classes = self.ui.cmb_view.chk_classes.isChecked()
         show_members = self.ui.cmb_view.chk_members.isChecked()
         auto_expand = self.ui.cmb_view.chk_expand.isChecked()
-        include_subpackages = self.ui.cmb_view.chk_recursive.isChecked()
+        recurse = self.ui.cmb_view.chk_recursive.isChecked()
 
-        modules = self._introspect_subdir(package)
+        with self.ui.footer.progress(100, f"Scanning {package}…") as tick:
+            tick(10)
+            modules = self._introspect_subdir(package)
+            tick(40)
 
-        # If include subpackages, recursively add contents from child packages
-        if include_subpackages:
-            subpkg_modules = []
-            for name, typ, desc, obj, classes in modules:
-                if typ == "package":
-                    subpkg_name = f"{package}.{name}"
-                    sub_modules = self._introspect_subdir(subpkg_name)
-                    # Prefix names with subpackage for clarity
-                    for sn, st, sd, so, sc in sub_modules:
-                        if st != "package":  # Don't recurse further
-                            subpkg_modules.append((f"{name}.{sn}", st, sd, so, sc))
-            modules.extend(subpkg_modules)
+            if recurse:
+                extra = []
+                for name, typ, desc, obj, classes in modules:
+                    if typ == "package":
+                        sub = self._introspect_subdir(f"{package}.{name}")
+                        for sn, st, sd, so, sc in sub:
+                            if st != "package":
+                                extra.append((f"{name}.{sn}", st, sd, so, sc))
+                modules.extend(extra)
+            tick(60)
 
-        # Separate packages from modules
-        packages = [(n, t, d, o, c) for n, t, d, o, c in modules if t == "package"]
-        mods = [(n, t, d, o, c) for n, t, d, o, c in modules if t == "module"]
+            packages = [m for m in modules if m[1] == "package"]
+            mods     = [m for m in modules if m[1] == "module"]
 
-        # Add packages group using TreeWidget's create_item method
-        if packages:
-            pkg_parent = tree.create_item(["Packages", "", ""])
-            tree.set_item_type_icon(pkg_parent, "folder")
-            for name, typ, desc, obj, classes in packages:
-                child = tree.create_item([name, "package", desc], parent=pkg_parent)
-                tree.set_item_type_icon(child, "folder")
-                if obj:
-                    tree.set_item_data(
-                        child, {"obj": obj, "full_name": f"{package}.{name}"}
-                    )
-            pkg_parent.setExpanded(auto_expand)
+            if packages:
+                root = tree.create_item(["Packages", "", ""])
+                tree.set_item_type_icon(root, "folder")
+                for name, _, desc, obj, _ in packages:
+                    child = tree.create_item([name, "package", desc], parent=root)
+                    tree.set_item_type_icon(child, "folder")
+                    if obj:
+                        tree.set_item_data(child, {"obj": obj, "full_name": f"{package}.{name}"})
+                root.setExpanded(auto_expand)
 
-        # Add modules group using TreeWidget's create_item method
-        if mods:
-            mod_parent = tree.create_item(["Modules", "", ""])
-            tree.set_item_type_icon(mod_parent, "folder")
-            for name, typ, desc, obj, classes in mods:
-                mod_item = tree.create_item([name, typ, desc], parent=mod_parent)
-                tree.set_item_type_icon(mod_item, "file")
-                if obj:
-                    tree.set_item_data(
-                        mod_item, {"obj": obj, "full_name": f"{package}.{name}"}
-                    )
+            if mods:
+                root = tree.create_item(["Modules", "", ""])
+                tree.set_item_type_icon(root, "folder")
+                for name, _, desc, obj, classes in mods:
+                    mod_item = tree.create_item([name, "module", desc], parent=root)
+                    tree.set_item_type_icon(mod_item, "file")
+                    if obj:
+                        tree.set_item_data(mod_item, {"obj": obj, "full_name": f"{package}.{name}"})
+                    if show_classes and classes:
+                        for cls in classes:
+                            cls_item = tree.create_item(
+                                [cls.__name__, "class", self._first_line(inspect.getdoc(cls))],
+                                parent=mod_item,
+                            )
+                            tree.set_item_type_icon(cls_item, "widgets")
+                            tree.set_item_data(
+                                cls_item,
+                                {"obj": cls, "full_name": f"{package}.{name}.{cls.__name__}"},
+                            )
+                            if show_members:
+                                self._add_class_members(tree, cls_item, cls)
+                            if auto_expand:
+                                cls_item.setExpanded(True)
+                    if auto_expand and show_classes and classes:
+                        mod_item.setExpanded(True)
+                root.setExpanded(auto_expand)
 
-                # Add classes under this module
-                if show_classes and classes:
-                    for cls in classes:
-                        cls_desc = self._get_docstring_summary(cls)
-                        cls_item = tree.create_item(
-                            [cls.__name__, "class", cls_desc], parent=mod_item
-                        )
-                        tree.set_item_type_icon(cls_item, "widgets")
-                        tree.set_item_data(
-                            cls_item,
-                            {
-                                "obj": cls,
-                                "full_name": f"{package}.{name}.{cls.__name__}",
-                            },
-                        )
+            tick(100)
 
-                        # Add members under this class
-                        if show_members:
-                            self._add_class_members_inline(tree, cls_item, cls)
+        self.logger.progress(
+            f"Loaded <b>{len(packages)}</b> subpackages, <b>{len(mods)}</b> modules"
+            f" from <b>{html.escape(package)}</b>"
+        )
 
-                        if auto_expand:
-                            cls_item.setExpanded(True)
+    def _add_class_members(self, tree, parent_item, cls):
+        inherited = set()
+        for base in cls.__mro__[1:]:
+            inherited.update(dir(base))
 
-                if auto_expand and (show_classes and classes):
-                    mod_item.setExpanded(True)
-
-            mod_parent.setExpanded(auto_expand)
-
-    def _add_class_members_inline(self, tree, parent_item, cls):
-        """Add methods and properties of a class as tree children (inline mode)."""
-        members = []
-        for name in dir(cls):
-            if name.startswith("_"):
+        rows = []
+        for name in sorted(dir(cls)):
+            if name.startswith("_") or name in inherited:
                 continue
             try:
                 attr = getattr(cls, name)
-                if hasattr(object, name):
-                    continue
-                if callable(attr):
-                    desc = self._get_docstring_summary(attr)
-                    members.append((name, "method", desc or "Method", attr, "code"))
-                elif isinstance(attr, property):
-                    desc = self._get_docstring_summary(attr.fget) if attr.fget else ""
-                    members.append((name, "property", desc or "Property", attr, "tag"))
             except Exception:
                 continue
+            if isinstance(attr, property):
+                rows.append((name, "property", self._first_line(inspect.getdoc(attr.fget)), attr, "tag"))
+            elif callable(attr):
+                rows.append((name, "method",   self._first_line(inspect.getdoc(attr)),       attr, "code"))
 
-        for name, typ, desc, obj, icon_name in sorted(members):
-            child = tree.create_item([name, typ, desc], parent=parent_item)
-            tree.set_item_type_icon(child, icon_name)
-            tree.set_item_data(
-                child, {"obj": obj, "full_name": f"{cls.__name__}.{name}"}
-            )
-
-    # =========================================================================
-    # OUTPUT - collapsible log section
-    # =========================================================================
-
-    def output_group_init(self, widget):
-        """Start with output section expanded."""
-        widget.setChecked(True)
-
-    # =========================================================================
-    # TEST WIDGETS - hidden, for unit tests only
-    # =========================================================================
-
-    def button_a_init(self, widget):
-        pass
-
-    def button_a(self):
-        pass
-
-    def button_b_init(self, widget):
-        widget.menu.add(
-            "QRadioButton", setText="Option 1", setObjectName="opt1", setChecked=True
-        )
-        widget.menu.add("QRadioButton", setText="Option 2", setObjectName="opt2")
-
-    def button_b(self):
-        pass
-
-    def checkbox(self, state):
-        pass
-
-    def spinbox(self, value):
-        pass
+        for name, kind, desc, attr, icon in rows:
+            row = tree.create_item([name, kind, desc], parent=parent_item)
+            tree.set_item_type_icon(row, icon)
+            tree.set_item_data(row, {"obj": attr, "full_name": f"{cls.__name__}.{name}"})
 
 
 # =============================================================================
-# MAIN - Minimal setup code
+# Main
 # =============================================================================
-
 if __name__ == "__main__":
     from uitk.examples import example
 
-    # Two lines to load UI and connect all slots automatically
     sb = Switchboard(ui_source=example, slot_source=example.ExampleSlots)
     ui = sb.loaded_ui.example
 
-    # Configure window appearance
+    # Demonstrate the per-UI timeout fallback.
+    ui.default_slot_timeout = 30
+
     ui.set_attributes(WA_TranslucentBackground=True)
     ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
     ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 
-    # Show and run
     ui.show(pos="screen", app_exec=True)

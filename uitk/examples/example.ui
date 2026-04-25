@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>600</width>
-    <height>480</height>
+    <width>720</width>
+    <height>560</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -52,15 +52,15 @@
        </font>
       </property>
       <property name="text">
-       <string>EXAMPLE</string>
+       <string>UITK EXAMPLE</string>
       </property>
      </widget>
     </item>
-    <!-- INPUT SECTION -->
+    <!-- NAVIGATION -->
     <item>
      <widget class="QGroupBox" name="input_group">
       <property name="title">
-       <string>Navigation</string>
+       <string>Navigate</string>
       </property>
       <layout class="QVBoxLayout" name="input_layout">
        <property name="spacing">
@@ -78,7 +78,6 @@
        <property name="bottomMargin">
         <number>6</number>
        </property>
-       <!-- LineEdit shows path to uitk root -->
        <item>
         <widget class="LineEdit" name="txt_input">
          <property name="minimumSize">
@@ -87,18 +86,14 @@
            <height>22</height>
           </size>
          </property>
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
          <property name="placeholderText">
-          <string>Path to uitk package</string>
+          <string>Browse, pin, or recall a package path</string>
          </property>
          <property name="toolTip">
-          <string>File path to the uitk package root</string>
+          <string>Current package path. The buttons on the right are option_box plugins: toggle inherited members, browse, recent, pin, clear.</string>
          </property>
         </widget>
        </item>
-       <!-- ComboBoxes row -->
        <item>
         <layout class="QHBoxLayout" name="combobox_layout">
          <property name="spacing">
@@ -113,7 +108,7 @@
             </size>
            </property>
            <property name="toolTip">
-            <string>Select package to browse</string>
+            <string>Pick a UITK subpackage to introspect</string>
            </property>
           </widget>
          </item>
@@ -121,18 +116,18 @@
           <widget class="WidgetComboBox" name="cmb_view">
            <property name="minimumSize">
             <size>
-             <width>120</width>
+             <width>130</width>
              <height>22</height>
             </size>
            </property>
            <property name="maximumSize">
             <size>
-             <width>150</width>
+             <width>160</width>
              <height>22</height>
             </size>
            </property>
            <property name="toolTip">
-            <string>View options</string>
+            <string>Tree view options</string>
            </property>
           </widget>
          </item>
@@ -141,177 +136,110 @@
       </layout>
      </widget>
     </item>
-    <!-- TREE VIEW SECTION -->
+    <!-- SPLIT: Tree (top) · Console (bottom) -->
     <item>
-     <widget class="QGroupBox" name="tree_group">
-      <property name="title">
-       <string>Package Explorer</string>
+     <widget class="QSplitter" name="main_splitter">
+      <property name="orientation">
+       <enum>Qt::Vertical</enum>
       </property>
-      <layout class="QVBoxLayout" name="tree_layout">
-       <property name="spacing">
-        <number>1</number>
+      <property name="childrenCollapsible">
+       <bool>false</bool>
+      </property>
+      <property name="handleWidth">
+       <number>6</number>
+      </property>
+      <widget class="QGroupBox" name="tree_group">
+       <property name="title">
+        <string>Packages</string>
        </property>
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <item>
-        <widget class="TreeWidget" name="tree_demo">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>120</height>
-          </size>
-         </property>
-         <property name="alternatingRowColors">
-          <bool>false</bool>
-         </property>
-         <column>
-          <property name="text">
-           <string>Item</string>
+       <layout class="QVBoxLayout" name="tree_layout">
+        <property name="spacing">
+         <number>1</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="TreeWidget" name="tree_demo">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>160</height>
+           </size>
           </property>
-         </column>
-         <column>
-          <property name="text">
-           <string>Value</string>
+          <property name="alternatingRowColors">
+           <bool>false</bool>
           </property>
-         </column>
-         <column>
-          <property name="text">
-           <string>Type</string>
+          <column>
+           <property name="text">
+            <string>Name</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Type</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Description</string>
+           </property>
+          </column>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="CollapsableGroup" name="output_group">
+       <property name="title">
+        <string>Console</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignLeft</set>
+       </property>
+       <layout class="QVBoxLayout" name="output_layout">
+        <property name="spacing">
+         <number>1</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QTextBrowser" name="txt_output">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>140</height>
+           </size>
           </property>
-         </column>
-        </widget>
-       </item>
-      </layout>
+          <property name="openLinks">
+           <bool>false</bool>
+          </property>
+          <property name="openExternalLinks">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
      </widget>
-    </item>
-    <!-- COLLAPSIBLE OUTPUT SECTION -->
-    <item>
-     <widget class="CollapsableGroup" name="output_group">
-      <property name="title">
-       <string>• • •</string>
-      </property>
-      <property name="alignment">
-       <set>Qt::AlignCenter</set>
-      </property>
-      <layout class="QVBoxLayout" name="output_layout">
-       <property name="spacing">
-        <number>1</number>
-       </property>
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <item>
-        <widget class="QTextEdit" name="txt_output">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>80</height>
-          </size>
-         </property>
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="verticalScrollBarPolicy">
-          <enum>Qt::ScrollBarAlwaysOff</enum>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </item>
-    <!-- TEST WIDGETS - Hidden widgets for unit tests (zero size) -->
-    <item>
-     <layout class="QHBoxLayout" name="test_layout">
-      <property name="spacing">
-       <number>0</number>
-      </property>
-      <property name="leftMargin">
-       <number>0</number>
-      </property>
-      <property name="topMargin">
-       <number>0</number>
-      </property>
-      <property name="rightMargin">
-       <number>0</number>
-      </property>
-      <property name="bottomMargin">
-       <number>0</number>
-      </property>
-      <item>
-       <widget class="QSpinBox" name="spinbox">
-        <property name="maximumSize">
-         <size>
-          <width>0</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="maximum">
-         <number>100</number>
-        </property>
-        <property name="value">
-         <number>50</number>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QCheckBox" name="checkbox">
-        <property name="maximumSize">
-         <size>
-          <width>0</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="text">
-         <string>Test</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="PushButton" name="button_a">
-        <property name="maximumSize">
-         <size>
-          <width>0</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="text">
-         <string>A</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="PushButton" name="button_b">
-        <property name="maximumSize">
-         <size>
-          <width>0</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="text">
-         <string>B</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
     </item>
     <!-- FOOTER -->
     <item>
@@ -348,11 +276,6 @@
    <class>LineEdit</class>
    <extends>QLineEdit</extends>
    <header>uitk.widgets.lineEdit</header>
-  </customwidget>
-  <customwidget>
-   <class>PushButton</class>
-   <extends>QPushButton</extends>
-   <header>uitk.widgets.pushButton</header>
   </customwidget>
   <customwidget>
    <class>ComboBox</class>

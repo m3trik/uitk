@@ -134,16 +134,21 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self,
         widget: QtWidgets.QWidget,
         side: str = "right",
+        background: bool = False,
     ) -> QtWidgets.QWidget:
         """Insert an arbitrary widget into the footer on the given side.
 
         ``side="right"`` places the widget on the right, before the size
         grip (if present).  ``side="left"`` places it at the left edge,
         before the status/progress stack.  Returns *widget* for chaining.
+
+        ``background=False`` (default) makes the widget transparent so it
+        blends with the footer; set to ``True`` for normal styled background.
         """
         if side not in ("left", "right"):
             raise ValueError(f"side must be 'left' or 'right', got {side!r}")
 
+        widget.setProperty("footerWidget", not background)
         widget.setParent(self)
         if side == "left":
             self.main_layout.insertWidget(0, widget)
@@ -187,8 +192,13 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             The created QPushButton.
         """
         btn = QtWidgets.QPushButton(text, self)
+        btn.setProperty("footerWidget", True)
         h = self.height()
-        btn.setFixedHeight(h)
+        btn_h = max(h - 2, 1)  # 1px clearance top and bottom
+        if icon_name and not text:
+            btn.setFixedSize(btn_h, btn_h)  # square for icon-only
+        else:
+            btn.setFixedHeight(btn_h)  # flexible width for text
         btn.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
 
         if icon_name:
