@@ -227,6 +227,8 @@ class RulerItem(QtWidgets.QGraphicsItem):
             label_font = QtGui.QFont(painter.font())
             label_font.setPointSize(7)
             label_font.setBold(True)
+            painter.setFont(label_font)
+            metrics = QtGui.QFontMetrics(label_font)
 
             for blk in sorted_blocks:
                 bx0 = tl.time_to_x(blk["start"])
@@ -234,13 +236,18 @@ class RulerItem(QtWidgets.QGraphicsItem):
                 if bx1 < vis_left or bx0 > vis_right:
                     continue
                 name = blk.get("name", "")
-                if name:
-                    is_active = blk.get("active", False)
-                    painter.setFont(label_font)
-                    tc = QtGui.QColor("#FFFFFF" if is_active else "#CCCCCC")
-                    tc.setAlpha(220 if is_active else 160)
-                    painter.setPen(tc)
-                    painter.drawText(QtCore.QPointF(bx0 + 3, _RULER_HEIGHT - 2), name)
+                if not name:
+                    continue
+                s = round(blk["start"])
+                e = round(blk["end"])
+                label = f"{name}  {s}-{e}  {e - s}f"
+                avail = max(0, int(bx1 - bx0) - 6)
+                label = metrics.elidedText(label, QtCore.Qt.ElideRight, avail)
+                is_active = blk.get("active", False)
+                tc = QtGui.QColor("#FFFFFF" if is_active else "#CCCCCC")
+                tc.setAlpha(220 if is_active else 160)
+                painter.setPen(tc)
+                painter.drawText(QtCore.QPointF(bx0 + 3, _RULER_HEIGHT - 2), label)
 
     @staticmethod
     def _nice_interval(raw: float) -> int:

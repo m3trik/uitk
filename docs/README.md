@@ -2,6 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
+[![Tests](https://img.shields.io/badge/Tests-33+-brightgreen.svg)](https://github.com/m3trik/uitk/tree/main/test)
 
 # uitk
 
@@ -9,12 +10,20 @@
 **Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Design in Qt Designer, name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
 <!-- short_description_end -->
 
-Built on `qtpy` (PySide2 / PySide6). Runs standalone or hosted inside Maya, Blender, and 3ds Max via a pluggable handler ecosystem.
+Built on `qtpy` (PySide2 / PySide6). Runs standalone or hosted inside DCCs (Maya, Blender, 3ds Max) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells.
 
 ## Install
 
 ```bash
 pip install uitk
+```
+
+## Live demo
+
+The package ships an interactive example window that exercises the full feature set — option_box plugins, the pythontk logging console, header/footer, themes, and more:
+
+```bash
+python -m uitk.examples.example
 ```
 
 ## Quickstart
@@ -48,8 +57,8 @@ Widget `btn_save` in `editor.ui` is connected to `EditorSlots.btn_save` because 
 | UI file → slot class | `editor.ui` → `EditorSlots` | Class discovered, instantiated with `switchboard=` kwarg |
 | Widget → slot method | `btn_save` (`objectName`) → `def btn_save(self)` | Widget's default signal connected |
 | Widget → init hook | `btn_save` → `def btn_save_init(self, widget)` | Called once on registration |
-| UI hierarchy | `menu#file.ui` is child of `menu.ui` | `sb.get_ui_relatives(ui, upstream=True)` |
-| Tags | `panel#floating.ui` | `ui.tags == {"floating"}` |
+| UI hierarchy | `menu#file.ui` is child of `menu.ui` | Resolvable via `sb.get_ui_relatives(ui, upstream=True)` |
+| Tags | `panel#floating.ui` | Exposed as `ui.tags == {"floating"}` |
 
 **Default signals** by base Qt type:
 
@@ -67,17 +76,22 @@ Widget `btn_save` in `editor.ui` is connected to `EditorSlots.btn_save` because 
 | QTableWidget | `cellChanged` | `row, column` |
 | QTabWidget / QStackedWidget / QToolBox | `currentChanged` | `index: int` |
 
-**Override with `@Signals`**:
+**Override with `@Signals`** — declare one or more signals to connect instead of the default. `@Signals.blockSignals` is a companion decorator that suppresses widget signals while the slot runs (useful for programmatic state changes):
 
 ```python
 from uitk import Signals
 
-@Signals("textChanged")        # QLineEdit default is textChanged already,
-def txt_search(self, text):    # but e.g. override "released" on a button
-    self.filter_results(text)
+@Signals("released")           # override default (e.g. "clicked") on a button
+def btn_confirm(self):
+    self.commit()
 
-@Signals()                     # Empty - no auto-connection (you wire manually)
-def manual_widget(self): ...
+@Signals("textChanged", "editingFinished")  # connect to multiple signals
+def txt_search(self, *args):
+    self.filter_results()
+
+@Signals.blockSignals          # run without firing widget signals
+def refresh_spinbox(self):
+    self.ui.spn_count.setValue(10)
 ```
 
 **Parameter injection** — slots can request `widget` by name; UITK introspects the signature:
@@ -186,7 +200,7 @@ Every UI is wrapped in a `MainWindow` instance.
 
 **Key properties** — `ui.sb`, `ui.widgets` (set), `ui.slots` (slot instance), `ui.settings` (SettingsManager branch), `ui.state` (StateManager), `ui.style` (StyleSheet), `ui.tags` (set), `ui.path` (str), `ui.is_initialized`, `ui.is_current_ui`, `ui.is_pinned`, `ui.header`, `ui.footer`, `ui.presets`.
 
-**Show positioning** — `ui.show(pos="screen" | "cursor" | QPoint | (x, y), app_exec=False)`.
+**Show positioning** — `ui.show(pos="screen" | "cursor" | QPoint, app_exec=False)`. `app_exec=True` starts the Qt event loop and exits the process on close.
 
 ## Handler ecosystem
 

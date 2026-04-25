@@ -1001,8 +1001,41 @@ Header > QPushButton:hover {
     background-color: {WINDOW_BACKGROUND};
     border: none;
 }
+Header > QPushButton:checked {
+    background-color: {BUTTON_CHECKED};
+    border: none;
+}
+Header > QPushButton:checked:hover {
+    background-color: {BUTTON_CHECKED};
+    border: none;
+}
+Header > QPushButton:pressed {
+    background-color: {BUTTON_HOVER};
+    border: none;
+}
 Header > QPushButton#hdr_hide:hover {
     background-color: red;
+    border: none;
+}
+/* Footer widgets — transparent when footerWidget="true", normal otherwise */
+[footerWidget="true"] {
+    background-color: transparent;
+    border: none;
+}
+[footerWidget="true"]:hover {
+    background-color: {WINDOW_BACKGROUND};
+    border: none;
+}
+[footerWidget="true"]:checked {
+    background-color: {BUTTON_CHECKED};
+    border: none;
+}
+[footerWidget="true"]:checked:hover {
+    background-color: {BUTTON_CHECKED};
+    border: none;
+}
+[footerWidget="true"]:pressed {
+    background-color: {BUTTON_HOVER};
     border: none;
 }
 

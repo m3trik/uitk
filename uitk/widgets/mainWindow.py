@@ -12,9 +12,10 @@ from uitk.widgets.mixins.state_manager import StateManager
 from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.widgets.mixins.tooltip_mixin import TooltipMixin, TooltipProxy
 
 
-class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
+class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin):
     """Application main window with state persistence and child widget management."""
 
     on_show = QtCore.Signal()
@@ -382,6 +383,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, ptk.LoggingMixin):
 
         ptk.set_attributes(widget, **kwargs)
         setattr(self, widget.objectName(), widget)
+
+        widget.tooltip = TooltipProxy(widget)
 
         self._add_child_changed_signal(widget)
         self._add_child_destroyed_signal(widget)

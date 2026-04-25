@@ -2,20 +2,18 @@
 # coding=utf-8
 """Tests for MarkingMenu show/hide behaviour when standalone windows are opened."""
 import unittest
-from unittest.mock import MagicMock, patch, PropertyMock
 from qtpy import QtWidgets, QtCore
 
 from conftest import QtBaseTestCase
+from uitk.widgets.marking_menu._resolver import resolve_target_menu
 
 
 class MarkingMenuStub(QtWidgets.QStackedWidget):
     """Minimal stub that replicates the MarkingMenu methods under test.
 
-    We re-implement just enough of:
-      _show_window, _transition_to_state, _build_lookup_key,
-      _on_activation_press, _on_activation_release, hide
-
-    to verify the guards added for the standalone-window reshow bug.
+    Re-implements just enough of ``_show_window``, ``_sync_menu_to_state``,
+    ``_on_activation_press``, ``_on_activation_release`` and ``hide`` to
+    verify the standalone-window reshow guards without booting Switchboard.
     """
 
     key_show_release = QtCore.Signal()
@@ -26,37 +24,24 @@ class MarkingMenuStub(QtWidgets.QStackedWidget):
         self._activation_key_str = "Key_F12"
         self._standalone_suppress = False
         self._bindings = bindings or {"Key_F12": "startmenu"}
-        self._chord_buttons_at_press = 0
-        self._cancel_chord_timer_called = False
-        self._hidden = False  # Track explicit hide() calls
+        self._suppress_default_on_reentry = False
+        self._non_default_shown = False
+        self._current_widget = None
+        self._last_shown_ui = None
 
-    # ------------------------------------------------------------------
-    # Real methods (copied from _marking_menu.py with minimal stubs)
-    # ------------------------------------------------------------------
-
-    def _build_lookup_key(self, buttons=None, modifiers=None, key=None):
-        parts = []
-        if self._activation_key_held and self._activation_key_str:
-            parts.append(self._activation_key_str)
-        if buttons:
-            buttons_int = int(buttons)
-            if buttons_int & int(QtCore.Qt.LeftButton):
-                parts.append("LeftButton")
-        return "|".join(sorted(parts)) if parts else ""
-
-    def _transition_to_state(self, buttons, modifiers=None):
+    def _sync_menu_to_state(self, *, buttons=0, modifiers=0, extra_key=None):
         if self.isHidden():
             return
-        lookup = self._build_lookup_key(buttons=buttons, modifiers=modifiers)
-        next_ui = self._bindings.get(lookup)
-        if next_ui:
-            self._show_marking_menu(next_ui)
-
-    def _show_marking_menu(self, widget_or_name, **kwargs):
-        """Record that the marking menu was reshown."""
-        if self.isHidden():
-            self.show()
-        self._last_shown_ui = widget_or_name
+        target = resolve_target_menu(
+            activation_held=self._activation_key_held,
+            activation_key_str=self._activation_key_str,
+            buttons=int(buttons) if buttons else 0,
+            modifiers=int(modifiers) if modifiers else 0,
+            bindings=self._bindings,
+            extra_key=extra_key,
+        )
+        if target:
+            self._last_shown_ui = target
 
     def _show_window(self, widget, pos=None, force=False, **kwargs):
         if widget.parent() is self:
@@ -77,9 +62,6 @@ class MarkingMenuStub(QtWidgets.QStackedWidget):
         self.key_show_release.emit()
         self.hide()
 
-    def _cancel_chord_timer(self):
-        self._cancel_chord_timer_called = True
-
 
 class TestStandaloneWindowSuppression(QtBaseTestCase):
     """Verify the marking menu doesn't reshow after opening a standalone window."""
@@ -94,8 +76,8 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
     # ----- _show_window guards -----
 
     def test_show_window_clears_activation_key_held(self):
-        """_show_window must clear _activation_key_held so _build_lookup_key
-        won't include Key_F12 in subsequent lookups."""
+        """_show_window must clear _activation_key_held so subsequent state
+        syncs won't resolve any activation-keyed binding."""
         self.mm._activation_key_held = True
         child = QtWidgets.QWidget()
         self.track_widget(child)
@@ -140,45 +122,41 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
         self.mm._show_window(child)
         self.assertFalse(child._pinned)
 
-    # ----- _transition_to_state guards -----
+    # ----- _sync_menu_to_state guards -----
 
-    def test_transition_blocked_when_hidden(self):
-        """_transition_to_state must be a no-op when the MarkingMenu is hidden.
+    def test_sync_menu_to_state_blocked_when_hidden(self):
+        """_sync_menu_to_state must be a no-op when the MarkingMenu is hidden.
 
         Bug: releasing all mouse buttons while F12 is held after _show_window
-        built lookup 'Key_F12' -> 'startmenu' and reshowed the overlay.
+        reshowed the overlay via a stale state lookup.
         """
         self.mm._activation_key_held = True
         self.mm.show()
         self.mm._show_window(QtWidgets.QWidget())
-        # Now hidden, activation_key_held is False. Simulate fallthrough:
-        self.mm._activation_key_held = True  # hypothetical stale state
-        self.mm._transition_to_state(QtCore.Qt.NoButton)
-        # Should NOT have called _show_marking_menu
+        # Now hidden, activation_key_held is False. Simulate a stale fallthrough:
+        self.mm._activation_key_held = True
+        self.mm._last_shown_ui = None
+        self.mm._sync_menu_to_state(buttons=0, modifiers=0)
+        self.assertIsNone(self.mm._last_shown_ui)
         self.assertTrue(self.mm.isHidden())
 
-    def test_transition_still_works_when_visible(self):
-        """Normal transition (menu visible) should proceed."""
+    def test_sync_menu_to_state_still_works_when_visible(self):
+        """Normal sync (menu visible) should resolve and record the target."""
         self.mm._activation_key_held = True
         self.mm.show()
         self.mm._last_shown_ui = None
-        self.mm._transition_to_state(QtCore.Qt.NoButton)
+        self.mm._sync_menu_to_state(buttons=0, modifiers=0)
         self.assertEqual(self.mm._last_shown_ui, "startmenu")
 
     # ----- _on_activation_press / _on_activation_release guards -----
 
     def test_activation_press_suppressed_after_standalone_window(self):
         """If a standalone window was opened during this key-hold cycle,
-        a spurious re-press must NOT reactivate the marking menu.
-
-        Bug: focus changes in Maya could cause a spurious KeyRelease then
-        KeyPress, firing _on_activation_press a second time.
-        """
+        a spurious re-press must NOT reactivate the marking menu."""
         self.mm._activation_key_held = True
         self.mm.show()
         self.mm._show_window(QtWidgets.QWidget())
         self.assertTrue(self.mm._standalone_suppress)
-        # Simulate spurious re-press
         self.mm._on_activation_press()
         self.assertFalse(self.mm._activation_key_held)
 
@@ -196,11 +174,9 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
         self.mm.show()
         self.mm._show_window(QtWidgets.QWidget())
 
-        # Genuine release
         self.mm._on_activation_release()
         self.assertFalse(self.mm._standalone_suppress)
 
-        # Genuine re-press
         self.mm._on_activation_press()
         self.assertTrue(self.mm._activation_key_held)
 
@@ -213,7 +189,6 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
         received = []
         self.mm.key_show_release.connect(lambda: received.append(True))
 
-        # After standalone window open
         self.mm._standalone_suppress = True
         self.mm._on_activation_release()
         self.assertEqual(received, [True], "key_show_release should always fire")
