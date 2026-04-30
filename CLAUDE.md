@@ -10,6 +10,16 @@
 - **snake_case** for Python wrappers. Only use camelCase when overriding Qt methods (e.g. `showEvent`).
 - **No side-effects on import.** Widget classes registered via root `DEFAULT_INCLUDE`.
 
+## API surface
+
+Before writing a new helper, **check the registry first** — duplicates undermine the SSoT goal.
+
+- This package: [`API_REGISTRY.md`](API_REGISTRY.md) · [`API_CHANGES.md`](API_CHANGES.md) (diff vs last refresh)
+- Upstream: [`pythontk` API](../pythontk/API_REGISTRY.md)
+- Cross-package shadows: [`m3trik/docs/API_SHADOWS.md`](../m3trik/docs/API_SHADOWS.md)
+
+Refresh manually: `python m3trik/scripts/generate_api_registry.py uitk` — otherwise auto-refreshed bi-weekly.
+
 ## Architecture
 
 - `uitk/widgets/` — reusable widgets.

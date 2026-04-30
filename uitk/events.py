@@ -232,8 +232,20 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         Parameters:
             widgets: Iterable of QWidget instances to register.
         """
+        cache = getattr(self, "_widgets", None)
         for w in widgets:
+            if w is None:
+                continue
             self._extra_widgets.add(w)
+            # Merge into the live tracking set immediately so registration
+            # after the cache was last built (e.g. sublists created during
+            # populate) takes effect without waiting for the next refresh.
+            if cache is not None:
+                try:
+                    cache.add(w)
+                    cache.update(w.findChildren(QtWidgets.QWidget))
+                except RuntimeError:
+                    continue
 
     def _update_widgets_under_cursor(self, top_widget: QtWidgets.QWidget):
         """Updates the list of widgets currently under the cursor."""
@@ -251,7 +263,22 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             widgets = current.findChildren(QtWidgets.QWidget) if current else []
         else:
             widgets = parent.findChildren(QtWidgets.QWidget)
-        self._widgets: set[QtWidgets.QWidget] = set(widgets) | set(self._extra_widgets)
+
+        # External widgets (e.g. ExpandableList sublists reparented to the
+        # window) are not in the parent's child tree, so we expand each one
+        # to include its descendants — otherwise items added inside a
+        # registered sublist would not receive synthesized hover events.
+        extras = set()
+        for w in self._extra_widgets:
+            if w is None:
+                continue
+            try:
+                extras.add(w)
+                extras.update(w.findChildren(QtWidgets.QWidget))
+            except RuntimeError:
+                continue
+
+        self._widgets: set[QtWidgets.QWidget] = set(widgets) | extras
 
     def track(self):
         """Efficiently updates tracking data and sends enter and leave events to widgets."""
