@@ -360,14 +360,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.set_attributes(widget, **kwargs)
         widget.installEventFilter(self)
 
-        # If this list is itself a registered sublist, the parent's
-        # MouseTracking cache was snapshotted before this item existed.
-        # Register the item directly so it receives synthesized hover
-        # events during a button-held drag without waiting for the next
-        # update_child_widgets cycle. For root-level lists this is
-        # redundant with the UI's findChildren scan but harmless.
-        if hasattr(self, "parent_list"):
-            self._register_for_drag_tracking(widget)
+        # Items inside a registered sublist are picked up by findChildren on
+        # the sublist itself during update_child_widgets — no per-item
+        # registration needed.
 
         # Resize only when already visible. During bulk population, sizing
         # is deferred to a single resize in showEvent on the root list, and

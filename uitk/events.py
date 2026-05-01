@@ -226,26 +226,18 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         """Register widgets that should receive synthesized Enter/Leave events
         even though they are not children of the tracked parent.
 
-        This is used for top-level ToolTip windows (e.g. ExpandableList sublists)
-        that need to participate in mouse-grab drag tracking.
+        Used for top-level windows (e.g. ExpandableList sublists reparented to
+        the window) that need to participate in mouse-grab drag tracking.
+        Registered widgets are picked up on the next ``update_child_widgets()``
+        call along with all their descendants.
 
         Parameters:
             widgets: Iterable of QWidget instances to register.
         """
-        cache = getattr(self, "_widgets", None)
         for w in widgets:
             if w is None:
                 continue
             self._extra_widgets.add(w)
-            # Merge into the live tracking set immediately so registration
-            # after the cache was last built (e.g. sublists created during
-            # populate) takes effect without waiting for the next refresh.
-            if cache is not None:
-                try:
-                    cache.add(w)
-                    cache.update(w.findChildren(QtWidgets.QWidget))
-                except RuntimeError:
-                    continue
 
     def _update_widgets_under_cursor(self, top_widget: QtWidgets.QWidget):
         """Updates the list of widgets currently under the cursor."""
@@ -266,13 +258,16 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
         # External widgets (e.g. ExpandableList sublists reparented to the
         # window) are not in the parent's child tree, so we expand each one
-        # to include its descendants — otherwise items added inside a
-        # registered sublist would not receive synthesized hover events.
+        # to include its descendants. Hidden externals from previously-shown
+        # UIs are skipped — only the currently-visible chain participates in
+        # cursor tracking.
         extras = set()
         for w in self._extra_widgets:
             if w is None:
                 continue
             try:
+                if not w.isVisible():
+                    continue
                 extras.add(w)
                 extras.update(w.findChildren(QtWidgets.QWidget))
             except RuntimeError:
@@ -368,9 +363,43 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         except RuntimeError:
             self.logger.debug("Widget deleted before release event could be sent.")
 
+    def _is_external_widget(self, widget: QtWidgets.QWidget) -> bool:
+        """Return True if `widget` is an externally-registered widget or a
+        descendant of one (e.g. an item inside an ExpandableList sublist).
+
+        External widgets are reparented out of the natural UI tree, so they
+        shouldn't take mouse-grab transfer when the parent's natural
+        gesture (e.g. MarkingMenu) owns the grab — only natural descendants
+        of the tracked parent should.
+        """
+        if widget is None:
+            return False
+        for ext in list(self._extra_widgets):
+            if ext is None:
+                continue
+            try:
+                if ext is widget or ext.isAncestorOf(widget):
+                    return True
+            except RuntimeError:
+                continue
+        return False
+
     def _handle_mouse_grab(self, top_widget: QtWidgets.QWidget):
         """Handles mouse grabbing depending on the widget currently under the cursor."""
         try:
+            # When the parent already owns the grab (e.g. MarkingMenu called
+            # grabMouse() in _transfer_mouse_control), don't transfer it to
+            # a widget that lives outside the parent's natural UI tree
+            # (e.g. an ExpandableList sublist reparented to the window).
+            # Doing so would invert the intended grab and route subsequent
+            # press/release events past the parent. Natural descendants
+            # still receive the transfer so their event filters fire.
+            if (
+                QtWidgets.QWidget.mouseGrabber() is self.parent()
+                and self._is_external_widget(top_widget)
+            ):
+                return
+
             if (
                 top_widget
                 and top_widget.isVisible()
