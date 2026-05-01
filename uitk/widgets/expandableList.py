@@ -360,21 +360,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.set_attributes(widget, **kwargs)
         widget.installEventFilter(self)
 
-        # If this list is itself a registered sublist, the parent's
-        # MouseTracking cache was snapshotted before this item existed.
-        # Register the item directly so it receives synthesized hover
-        # events during a button-held drag without waiting for the next
-        # update_child_widgets cycle. For root-level lists this is
-        # redundant with the UI's findChildren scan but harmless.
-        if hasattr(self, "parent_list"):
-            self._register_for_drag_tracking(widget)
-
-        # Resize only when already visible. During bulk population, sizing
-        # is deferred to a single resize in showEvent on the root list, and
-        # sublists are explicitly resized by _handle_widget_enter_event
-        # before being shown. Eager resize here was O(N^2) over populate.
-        if self.isVisible():
-            self.resize(self.sizeHint())
+        self.resize(self.sizeHint())
+        self._layout.invalidate()
 
     def add(self, x, data=None, **kwargs):
         """Add an item or multiple items to the list or its sublists.
@@ -503,28 +490,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         sublist.on_item_added.connect(self.on_item_added.emit)
 
         self._setup_sublist_relationships(widget, sublist)
-        self._register_for_drag_tracking(sublist)
         return sublist
-
-    def _register_for_drag_tracking(self, target):
-        """Register a widget (sublist or item) with the window's MouseTracking.
-
-        Sublists are reparented to the window to avoid clipping, which puts
-        them outside the UI subtree that ``MouseTracking`` enumerates via
-        ``findChildren``. Items inside sublists need the same treatment
-        because the parent's snapshot was taken before they existed.
-        Without registration, hover events stop firing on these widgets
-        the moment a parent (e.g. MarkingMenu) grabs the mouse — the user
-        sees an unresponsive list during a drag-hold.
-        """
-        win = self.window()
-        mt = getattr(win, "mouse_tracking", None)
-        if mt is None or not hasattr(mt, "register_external_widgets"):
-            return
-        try:
-            mt.register_external_widgets([target])
-        except Exception:
-            pass
 
     def _has_any_visible_sublist(self):
         """Check if any direct child widget's sublist is currently visible.
@@ -547,44 +513,6 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         if self._has_any_visible_sublist():
             return
         super().hide()
-
-    def showEvent(self, event):
-        """On the root list's show, size to content and retroactively
-        register every sublist with the window's MouseTracking.
-
-        Per-add resize was removed for O(N) populate; the consolidated
-        resize happens here so standalone (non-layout-managed) usage
-        still sizes correctly. For layout-managed parents this is a
-        no-op, since the layout's setGeometry overrides on the next pass.
-
-        Sublists created before the list was parented into a window with
-        ``mouse_tracking`` (typical when populated during slot init) will
-        have failed their per-add registration silently. By the time the
-        root list is shown the parent chain is fully assembled, so this
-        is a reliable point to catch anything that was missed.
-        """
-        super().showEvent(event)
-        if hasattr(self, "parent_list"):
-            return  # only run on the root list
-
-        self.resize(self.sizeHint())
-
-        win = self.window()
-        mt = getattr(win, "mouse_tracking", None)
-        if mt is None or not hasattr(mt, "register_external_widgets"):
-            return
-        sublists = []
-        seen = set()
-        for item in self.get_items():
-            sub = getattr(item, "sublist", None)
-            if sub is not None and id(sub) not in seen:
-                seen.add(id(sub))
-                sublists.append(sub)
-        if sublists:
-            try:
-                mt.register_external_widgets(sublists)
-            except Exception:
-                pass
 
     def hideEvent(self, event):
         """Ensure all sublists are closed when this list is hidden.
