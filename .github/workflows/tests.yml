@@ -32,7 +32,4 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          # test_button_text_persistence segfaults under Qt offscreen; deselected
-          # pending local-Qt investigation. Track in follow-up.
-          pytest --tb=short -v test/ \
-            --deselect test/test_switchboard.py::TestSwitchboardWidgetState::test_button_text_persistence
+          pytest --tb=short -v test/
