@@ -133,6 +133,59 @@
          </item>
         </layout>
        </item>
+       <!-- Hidden test fixtures (maxSize 0,0). Referenced by test_switchboard.py. -->
+       <item>
+        <widget class="QSpinBox" name="spinbox">
+         <property name="maximumSize">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximum">
+          <number>100</number>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="checkbox">
+         <property name="maximumSize">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Test</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="PushButton" name="button_a">
+         <property name="maximumSize">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>A</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="PushButton" name="button_b">
+         <property name="maximumSize">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>B</string>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
     </item>
@@ -297,6 +350,11 @@
    <class>TreeWidget</class>
    <extends>QTreeWidget</extends>
    <header>uitk.widgets.treeWidget</header>
+  </customwidget>
+  <customwidget>
+   <class>PushButton</class>
+   <extends>QPushButton</extends>
+   <header>uitk.widgets.pushButton</header>
   </customwidget>
  </customwidgets>
  <resources/>
