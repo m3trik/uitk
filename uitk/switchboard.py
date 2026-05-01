@@ -4,8 +4,9 @@ import re
 import os
 import sys
 import inspect
-from typing import List, Union, Optional
-from xml.etree.ElementTree import ElementTree
+from typing import List, Union, Optional, Iterable
+from xml.etree.ElementTree import ElementTree, ParseError, Element, SubElement
+import xml.etree.ElementTree as ET
 from qtpy import QtWidgets, QtCore, QtGui, QtUiTools
 import pythontk as ptk
 
@@ -15,6 +16,8 @@ from uitk.widgets.mixins.shortcuts import SwitchboardShortcutMixin
 from uitk.widgets.mixins.switchboard_widgets import SwitchboardWidgetMixin
 from uitk.widgets.mixins.switchboard_utils import SwitchboardUtilsMixin
 from uitk.widgets.mixins.switchboard_names import SwitchboardNameMixin
+from uitk.widgets.mixins.switchboard_editors import SwitchboardEditorsMixin
+from uitk.widgets.mixins.switchboard_style import SwitchboardStyleMixin
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.settings_manager import SettingsManager
@@ -29,6 +32,8 @@ class Switchboard(
     SwitchboardWidgetMixin,
     SwitchboardUtilsMixin,
     SwitchboardNameMixin,
+    SwitchboardEditorsMixin,
+    SwitchboardStyleMixin,
 ):
     """Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
     It facilitates the loading of UI files, dynamic assignment of properties, and
@@ -68,6 +73,11 @@ class Switchboard(
     # Use the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
+    # Emitted when a new UI enters ui_registry via register().
+    on_ui_registered = QtCore.Signal(str)
+    # Emitted after save_ui_tags() persists XML tags for an existing UI.
+    on_ui_tags_changed = QtCore.Signal(str)
+
     def __init__(
         self,
         parent=None,
@@ -97,6 +107,10 @@ class Switchboard(
         # Store handlers for registration after configurable is initialized
         self._pending_handlers = handlers
 
+        # Tag overlays must exist before any registry population.
+        self._source_tags = {}  # {normalized_dir_path: set_of_tags}
+        self._ui_xml_tags = {}  # {ui_name: set_of_tags} parsed from <property name="uitk_tags">
+
         # Define source configuration
         sources = self._get_registry_config(
             ui_source, slot_source, widget_source, icon_source
@@ -111,6 +125,10 @@ class Switchboard(
                 base_dir=base_dir,
                 **config,
             )
+
+        # Parse XML tags for any UI entries that came from constructor sources.
+        # No signal emission here — listeners cannot connect before __init__ ends.
+        self._ingest_new_ui_entries(set(), emit=False)
 
         # Include this package's widgets (and subpackages like sequencer/)
         self.registry.widget_registry.extend("widgets", base_dir=self, recursive=True)
@@ -146,7 +164,6 @@ class Switchboard(
         self.settings = SettingsManager(namespace="switchboard")
         self.configurable = self.settings.branch("configurable")  # Persistent config
 
-        self._source_tags = {}  # {normalized_dir_path: set_of_tags}
         self._current_ui = None
         self._ui_history = []  # Ordered ui history.
         self._slot_history = []  # Previously called slots.
@@ -401,8 +418,19 @@ class Switchboard(
                 config.pop("objects", None)
                 registry = self.registry.create(registry_name, None, **config)
 
+            # Track UI registry entries before extension so we can emit a
+            # signal for newly added entries (and parse their XML tags).
+            prev_ui_names = (
+                set(self.registry.ui_registry.get("filename") or [])
+                if registry_name == "ui_registry"
+                else None
+            )
+
             registry.extend(location, base_dir=base_dir, recursive=recursive)
             self.logger.debug(f"[register] {type_name} location added: {location}")
+
+            if registry_name == "ui_registry":
+                self._ingest_new_ui_entries(prev_ui_names)
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.
@@ -496,6 +524,10 @@ class Switchboard(
                 if norm_path.startswith(src_dir + os.sep) or norm_path == src_dir:
                     tags.update(src_tags)
                     break
+
+        # Merge tags parsed from the .ui file's <property name="uitk_tags">
+        if name and name in self._ui_xml_tags:
+            tags.update(self._ui_xml_tags[name])
 
         # Don't add footer to stacked UIs (startmenu/submenu)
         if tags and any(tag in tags for tag in ["startmenu", "submenu"]):
@@ -678,6 +710,158 @@ class Switchboard(
             result.append(prop_list)
 
         return result
+
+    # ── XML tag persistence ──────────────────────────────────────────
+
+    UITK_TAGS_PROPERTY = "uitk_tags"
+
+    def _ingest_new_ui_entries(self, prev_ui_names, emit=True):
+        """Parse XML tags and (optionally) emit on_ui_registered for new UI entries.
+
+        Called after each registry extension. Only UI files not already in
+        prev_ui_names are processed. Pass emit=False during __init__ when no
+        listener can be connected yet.
+        """
+        if prev_ui_names is None:
+            prev_ui_names = set()
+
+        ui_registry = getattr(self.registry, "ui_registry", None)
+        if ui_registry is None:
+            return
+
+        for entry in list(ui_registry.named_tuples):
+            name = getattr(entry, "filename", None)
+            path = getattr(entry, "filepath", None)
+            if not name or name in prev_ui_names:
+                continue
+
+            # Parse XML tags (graceful on failure — empty set is fine)
+            self._ui_xml_tags[name] = self._parse_ui_tags(path) if path else set()
+
+            if not emit:
+                continue
+            try:
+                self.on_ui_registered.emit(name)
+            except Exception:
+                # Signal emission shouldn't block registration on Qt errors.
+                self.logger.debug(
+                    f"[on_ui_registered] emit failed for '{name}'", exc_info=True
+                )
+
+    @classmethod
+    def _parse_ui_tags(cls, filepath: str) -> set:
+        """Parse the uitk_tags dynamic property from a .ui file's root widget.
+
+        Returns the set of tag names, or an empty set if the property is
+        absent, the file cannot be read, or the XML is malformed (e.g. a
+        partial read during a cloud-sync operation).
+        """
+        try:
+            tree = ElementTree()
+            tree.parse(filepath)
+        except (ParseError, OSError, ValueError):
+            return set()
+
+        root = tree.getroot()
+        widget = root.find("widget") if root is not None else None
+        if widget is None:
+            return set()
+
+        for prop in widget.findall("property"):
+            if prop.get("name") != cls.UITK_TAGS_PROPERTY:
+                continue
+            string_el = prop.find("string")
+            if string_el is None or not string_el.text:
+                return set()
+            return {t.strip() for t in string_el.text.split(",") if t.strip()}
+        return set()
+
+    def save_ui_tags(self, path: str, tags: Iterable[str]) -> None:
+        """Persist tags into a .ui file as a Designer-safe dynamic property.
+
+        Writes ``<property name="uitk_tags" stdset="0"><string>tag1,tag2</string></property>``
+        as the first <property> child of the root widget. Uses an atomic
+        write (temp file + os.replace) so cloud-sync clients never observe a
+        partial write.
+
+        If ``tags`` is empty, removes the property entirely.
+
+        Updates the cached XML tag set, the live MainWindow.tags if the UI
+        is currently loaded, and emits ``on_ui_tags_changed``.
+        """
+        if not path or not os.path.isfile(path):
+            raise FileNotFoundError(f"UI file not found: {path}")
+
+        tag_set = {t.strip() for t in tags if t and t.strip()}
+
+        tree = ElementTree()
+        tree.parse(path)
+        root = tree.getroot()
+        widget = root.find("widget") if root is not None else None
+        if widget is None:
+            raise ValueError(f"Root <widget> not found in: {path}")
+
+        # Locate any existing uitk_tags property
+        existing = None
+        for prop in widget.findall("property"):
+            if prop.get("name") == self.UITK_TAGS_PROPERTY:
+                existing = prop
+                break
+
+        if not tag_set:
+            if existing is not None:
+                widget.remove(existing)
+        else:
+            if existing is None:
+                existing = Element("property")
+                existing.set("name", self.UITK_TAGS_PROPERTY)
+                # Insert as the first <property> child of the root widget
+                # so it appears prominently in Designer's Property Editor.
+                insert_idx = 0
+                for i, child in enumerate(list(widget)):
+                    if child.tag == "property":
+                        insert_idx = i
+                        break
+                    insert_idx = i + 1
+                widget.insert(insert_idx, existing)
+            existing.set("stdset", "0")
+            # Replace any children with a fresh <string>
+            for child in list(existing):
+                existing.remove(child)
+            string_el = SubElement(existing, "string")
+            string_el.text = ",".join(sorted(tag_set))
+
+        # Pretty-print for clean diffs (Python 3.9+)
+        try:
+            ET.indent(tree, space=" ")
+        except AttributeError:
+            pass
+
+        serialized = ET.tostring(root, encoding="unicode")
+        if not serialized.startswith("<?xml"):
+            serialized = '<?xml version="1.0" encoding="UTF-8"?>\n' + serialized
+        ptk.FileUtils.atomic_write_text(path, serialized)
+
+        # Update caches and live state
+        ui_name = ptk.format_path(path, "name")
+        self._ui_xml_tags[ui_name] = set(tag_set)
+
+        if ui_name in self.loaded_ui:
+            ui = self.loaded_ui[ui_name]
+            try:
+                ui.edit_tags(reset=True, add=list(tag_set))
+            except Exception:
+                self.logger.debug(
+                    f"[save_ui_tags] failed to update live tags on '{ui_name}'",
+                    exc_info=True,
+                )
+
+        try:
+            self.on_ui_tags_changed.emit(ui_name)
+        except Exception:
+            self.logger.debug(
+                f"[on_ui_tags_changed] emit failed for '{ui_name}'", exc_info=True
+            )
 
     def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
         """Get the UI history."""
