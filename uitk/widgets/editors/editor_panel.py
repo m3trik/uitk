@@ -3,12 +3,15 @@
 """Base panel for editor windows with Header, body, Footer, and optional presets."""
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
-from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.preset_manager import QStandardPaths_writableLocation
+
+if TYPE_CHECKING:  # pragma: no cover
+    from uitk.widgets.mixins.style_sheet import StyleSheet
 
 
 class EditorPanel(QtWidgets.QWidget):
@@ -68,13 +71,56 @@ class EditorPanel(QtWidgets.QWidget):
             self._footer.setDefaultStatusText(status_text)
         frame_layout.addWidget(self._footer)
 
-        # Dark theme
-        self.style = StyleSheet(self)
-        self.style.set(theme="dark")
+        # Style is exposed via the ``style`` lazy property; theme is
+        # applied on first ``showEvent`` so panels constructed but never
+        # shown skip the QSS work entirely.
         self._size_initialized = False
+
+    @property
+    def style(self) -> "StyleSheet":
+        """Lazy :class:`StyleSheet` bound to this panel.
+
+        Constructed on first access. The default ``dark`` theme is
+        applied automatically the first time the panel is shown (see
+        :meth:`showEvent`); subclasses can override at any time via
+        ``self.style.set(theme=..., style_class=...)``.
+
+        Robust against accidental ``self._style = None`` reassignment —
+        a missing or None-valued cache rebuilds rather than returning
+        None to the caller.
+        """
+        style = self.__dict__.get("_style")
+        if style is None:
+            from uitk.widgets.mixins.style_sheet import StyleSheet
+
+            style = StyleSheet(self)
+            self._style = style
+        return style
 
     def showEvent(self, event):
         super().showEvent(event)
+        # First-show: apply the default dark theme unless someone has
+        # already explicitly styled this panel. The dual-condition
+        # check is deliberate:
+        #   ``_default_theme_applied`` — *we* haven't already considered
+        #     this panel for default theming on a prior show. Prevents
+        #     re-applying dark on every show / hide cycle.
+        #   ``self in StyleSheet._widget_configs`` — *anyone* (subclass,
+        #     external caller) has applied any theme to this panel. The
+        #     StyleSheet maintains this dict as the single source of
+        #     truth for "has been themed", so checking it lets a
+        #     subclass that called ``self.style.set(theme="light")`` in
+        #     __init__ skip our default and keep their choice.
+        if not getattr(self, "_default_theme_applied", False):
+            self._default_theme_applied = True
+            # Pull the class off the (now-instantiated) instance to
+            # avoid a second import statement; the import system caches
+            # this anyway, but going through ``type(self.style)`` keeps
+            # the lazy chain in one place.
+            stylesheet_cls = type(self.style)
+            if self not in stylesheet_cls._widget_configs:
+                self.style.set(theme="dark")
+
         if not self._size_initialized:
             self._size_initialized = True
             QtCore.QTimer.singleShot(0, self._fit_to_content)

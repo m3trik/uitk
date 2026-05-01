@@ -88,6 +88,21 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         """Access configuration branch for this handler."""
         return self.sb.configurable.branch("ui")
 
+    @property
+    def editors(self):
+        """Shortcut to the bound switchboard's editor registry.
+
+        Equivalent to ``self.sb.editors`` — exists so shelf scripts and
+        other handler callers can launch a bundled editor in one line
+        without threading through ``.sb``::
+
+            handler.editors.show("browser")
+
+        See :class:`uitk.widgets.mixins.switchboard_editors._EditorRegistry`
+        for the available editor names and methods.
+        """
+        return self.sb.editors
+
     def _register_manual_overrides(self):
         """Register items explicitly defined in UI_REGISTRY."""
         for name, data in self.UI_REGISTRY.items():
