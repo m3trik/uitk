@@ -2647,6 +2647,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         - Parent hide events to auto-hide menu
         - Item interactions to emit signals
         """
+        # Qt may deliver queued events to widgets that have started destruction
+        # (PySide6 on Linux/offscreen surfaces this aggressively). Touching a
+        # dead C++ object via its Python wrapper segfaults the process, so
+        # treat such events as nothing to handle.
+        try:
+            widget.objectName()
+        except RuntimeError:
+            return False
+
         event_type = event.type()
         parent_widget = self._get_anchor_widget()
 
@@ -2671,7 +2680,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self.hide()
 
         elif event_type == QtCore.QEvent.MouseButtonRelease:
-            if widget in self.get_items():
+            try:
+                items = self.get_items()
+            except RuntimeError:
+                items = ()
+            if widget in items:
                 self.logger.debug(
                     f"eventFilter: Item interacted: {widget.objectName() or type(widget).__name__}"
                 )
