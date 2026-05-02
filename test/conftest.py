@@ -85,6 +85,15 @@ class QtBaseTestCase(BaseTestCase):
         super().setUp()
         self._widgets_to_cleanup = []
 
+    # Drain the Qt event queue between tests so DeferredDelete events fire
+    # inside tearDown instead of piling up across tests. Without this drain,
+    # under PySide6 + offscreen QPA on Linux the backlog eventually SIGSEGVs
+    # inside C++ event filters when a later test calls processEvents() and
+    # Qt tries to deliver events to mid-destruction widgets. Set False on
+    # subclasses that intentionally rely on cross-method Qt state (e.g.
+    # input-sequence integration tests).
+    _drain_qt_events_in_teardown: bool = True
+
     def tearDown(self):
         """Clean up widgets created during the test."""
         super().tearDown()
@@ -96,6 +105,13 @@ class QtBaseTestCase(BaseTestCase):
                     # Widget may already be deleted
                     pass
             self._widgets_to_cleanup.clear()
+        if self._drain_qt_events_in_teardown:
+            from qtpy import QtCore, QtWidgets
+
+            for _ in range(3):
+                QtWidgets.QApplication.processEvents(
+                    QtCore.QEventLoop.AllEvents, 50
+                )
 
     def track_widget(self, widget):
         """Register a widget for automatic cleanup.
