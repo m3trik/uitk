@@ -266,6 +266,11 @@ class _NoopFilter:
 class MarkingMenuInputScenarios(QtBaseTestCase):
     """Drives press/release sequences with QTest and asserts the visible UI."""
 
+    # This class drives a multi-step input simulation across test methods
+    # via QTest. processEvents() in tearDown advances the marking-menu
+    # state past what the next test's assertions expect, so opt out.
+    _drain_qt_events_in_teardown = False
+
     def setUp(self):
         super().setUp()
         self.parent = QtWidgets.QWidget()
