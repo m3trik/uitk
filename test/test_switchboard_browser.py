@@ -72,7 +72,27 @@ class BrowserBase(QtBaseTestCase):
         self.browser = SwitchboardBrowser(self.sb)
 
     def tearDown(self):
+        # Disconnect any signal-driven slots that would fire on parent
+        # destruction and reach into the (about-to-be-deleted) browser.
+        try:
+            self.sb.on_ui_tags_changed.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        # Drop the browser cleanly: detach from any parent layout, then
+        # schedule deletion, then DRAIN the Qt event queue so the deferred
+        # delete fires inside tearDown rather than piling up across tests.
+        # Without the drain, processEvents() inside a later test fires every
+        # accumulated deleteLater plus its own — under PySide6 + offscreen
+        # QPA this overwhelms Qt's event dispatch and segfaults inside C++
+        # event filters that touch a not-quite-dead widget. Repeated
+        # processEvents() calls flush DeferredDelete events fully.
+        self.browser.setParent(None)
         self.browser.deleteLater()
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(
+                QtCore.QEventLoop.AllEvents, 50
+            )
         self.tmp.cleanup()
         super().tearDown()
 
