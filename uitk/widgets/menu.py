@@ -7,6 +7,18 @@ from typing import Optional, Union, Callable, Dict, Any, Tuple
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
+# shiboken's isValid distinguishes dead-C++ wrappers from live Qt objects.
+# Either binding may be present; fall back to a no-op (treat as valid) when
+# neither is importable so the import never breaks the module.
+try:
+    from shiboken6 import isValid as _shiboken_isvalid  # type: ignore
+except ImportError:  # pragma: no cover - PySide2 path
+    try:
+        from shiboken2 import isValid as _shiboken_isvalid  # type: ignore
+    except ImportError:  # pragma: no cover
+        def _shiboken_isvalid(_obj):
+            return True
+
 # From this package:
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
@@ -2649,11 +2661,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """
         # Qt may deliver queued events to widgets that have started destruction
         # (PySide6 on Linux/offscreen surfaces this aggressively). Touching a
-        # dead C++ object via its Python wrapper segfaults the process, so
-        # treat such events as nothing to handle.
-        try:
-            widget.objectName()
-        except RuntimeError:
+        # dead C++ object segfaults the process, so check both `widget` and
+        # `self` are still alive before doing anything. shiboken's isValid
+        # is the canonical check; objectName() etc. can SIGSEGV on dead
+        # objects rather than raising.
+        if not _shiboken_isvalid(widget) or not _shiboken_isvalid(self):
             return False
 
         event_type = event.type()
@@ -2681,7 +2693,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         elif event_type == QtCore.QEvent.MouseButtonRelease:
             try:
-                items = self.get_items()
+                items = [w for w in self.get_items() if _shiboken_isvalid(w)]
             except RuntimeError:
                 items = ()
             if widget in items:
