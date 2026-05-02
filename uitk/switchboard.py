@@ -200,6 +200,17 @@ class Switchboard(
         return instance
 
     @property
+    def active_ui(self) -> Optional[QtWidgets.QWidget]:
+        """Return the currently set UI, or None — no auto-load, no warning.
+
+        Use this when None is a valid state the caller will handle (e.g. the
+        marking menu probing whether anything is shown yet). ``current_ui``
+        is for callers that semantically require a UI and benefit from the
+        auto-load + warning when one isn't set.
+        """
+        return self._current_ui
+
+    @property
     def current_ui(self) -> QtWidgets.QWidget:
         """Get or load the current UI if not already set."""
         if self._current_ui is not None:

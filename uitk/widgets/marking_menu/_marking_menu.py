@@ -257,8 +257,9 @@ class MarkingMenu(
         if target != default_name:
             self._non_default_shown = True
 
-        # Skip re-showing the same UI.
-        current = self.sb.current_ui
+        # Skip re-showing the same UI. Use active_ui (no-warn peek) — None
+        # is a valid state on first activation; current_ui would warn.
+        current = self.sb.active_ui
         if (
             current is self._current_widget
             and current is not None
@@ -509,6 +510,18 @@ class MarkingMenu(
         if ui.has_tags(["startmenu", "submenu"]):  # StackedWidget
             ui.style.set(theme="dark", style_class="translucentBgNoBorder")
             ui.ensure_on_screen = False
+            # Stacked menus are transient — they hide on every transition
+            # and reshow on the next gesture. Persisting their geometry via
+            # MainWindow's save-on-hide / restore-on-show creates a feedback
+            # loop: a transient size saved during a hide gets restored on
+            # the next show, which is then re-saved, locking the menu to a
+            # tiny restored size (visible as the upper-section-cropped bug).
+            # Disable the persistence and discard any previously-saved value.
+            ui.restore_window_size = False
+            try:
+                ui.settings.clear("window_geometry")
+            except Exception:
+                pass
             self.addWidget(ui)  # add the UI to the stackedLayout.
             # Resize after addWidget (setParent can reset geometry)
             w = max(ui.width(), 600)
@@ -670,7 +683,7 @@ class MarkingMenu(
     def _delayed_show_ui(self) -> None:
         """Show the UI after smooth positioning delay."""
         if self._pending_ui:
-            current_ui = self.sb.current_ui
+            current_ui = self.sb.active_ui
             if current_ui == self._pending_ui:
                 if self._current_widget and self._current_widget != current_ui:
                     self._current_widget.hide()
@@ -878,7 +891,7 @@ class MarkingMenu(
         if self._activation_key_held and self.mouseGrabber() is not self:
             self.grabMouse()
 
-        current_ui = self.sb.current_ui
+        current_ui = self.sb.active_ui
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             self.overlay.start_gesture(event.globalPos())
 
@@ -914,7 +927,7 @@ class MarkingMenu(
 
     def mouseDoubleClickEvent(self, event) -> None:
         """ """
-        current_ui = self.sb.current_ui
+        current_ui = self.sb.active_ui
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             if event.button() == QtCore.Qt.LeftButton:
                 if event.modifiers() == QtCore.Qt.ControlModifier:
@@ -935,7 +948,7 @@ class MarkingMenu(
 
     def mouseReleaseEvent(self, event) -> None:
         """Handle mouse release: dispatch click action or sync menu state."""
-        current_ui = self.sb.current_ui
+        current_ui = self.sb.active_ui
 
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
@@ -1095,7 +1108,7 @@ class MarkingMenu(
         # target to it so Qt window-group management keeps the new window
         # above the launching window.  Without this they are siblings and the
         # OS can freely reorder them.
-        invoker = self.sb.current_ui
+        invoker = self.sb.active_ui
         if (
             invoker is not None
             and invoker is not self
@@ -1134,7 +1147,7 @@ class MarkingMenu(
         if self.currentWidget():
             self.setCurrentIndex(-1)
 
-        current_ui = self.sb.current_ui
+        current_ui = self.sb.active_ui
         if current_ui:
             self.logger.debug(
                 f"MarkingMenu.hide(): current_ui={current_ui.objectName()}, "
