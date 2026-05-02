@@ -204,5 +204,169 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
         self.assertEqual(received, [True])
 
 
+# ── Stacked-UI persistence opt-out (tier 2 of the geometry-loop fix) ──
+#
+# Tier 1 (test_mainwindow.TestMainWindowGeometry) verifies the primitive:
+# restore_window_size=False blocks both save-on-hide and restore-on-show.
+# Tier 2 (here) verifies MarkingMenu correctly opts stacked UIs out of
+# that persistence — without which the primitive sits unused and the
+# 200x100-cropped-cameras-menu regression returns.
+
+
+from test_mainwindow import MockSwitchboard as _MockSwitchboard
+
+
+class _NoopUiHandler:
+    def apply_styles(self, ui):
+        pass
+
+    def setup_lifecycle(self, ui, **kwargs):
+        pass
+
+
+class _InitOnlyMarkingMenu(QtWidgets.QWidget):
+    """Bypass MarkingMenu.__init__ so we can call the real _init_ui.
+
+    The persistence opt-out lives in ``MarkingMenu._init_ui``, so the test
+    must hit that exact code path. Booting the real ``__init__`` pulls in
+    Switchboard / GlobalShortcut / EventFactoryFilter setup that's
+    irrelevant to what we're verifying. We borrow ``_init_ui`` and
+    ``addWidget`` from MarkingMenu itself and stub out only the bits
+    ``_init_ui`` reaches into for non-persistence work.
+    """
+
+    key_show_release = QtCore.Signal()
+
+    def __init__(self, parent=None):
+        import logging
+
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+
+        super().__init__(parent=parent)
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.ui_handler = _NoopUiHandler()
+        # Borrow the real implementations under test
+        self._init_ui = MarkingMenu._init_ui.__get__(self, type(self))
+        self.addWidget = MarkingMenu.addWidget.__get__(self, type(self))
+
+    def add_child_event_filter(self, widgets):
+        # Real impl needs self.sb / self.child_event_filter; orthogonal to
+        # the persistence behaviour under test.
+        pass
+
+
+class TestStackedMenuPersistenceOptOut(QtBaseTestCase):
+    """MarkingMenu must opt stacked UIs out of MainWindow's geometry persistence.
+
+    Stacked menus (startmenu/submenu) hide on every transition and reshow on
+    the next gesture. Without an opt-out, a transient bad size saved during
+    a hide gets restored on the next show, locking the menu to that size.
+    The fix: ``_init_ui`` sets ``restore_window_size = False`` and clears
+    any previously-saved value.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.parent = QtWidgets.QWidget()
+        self.parent.resize(400, 400)
+        self.track_widget(self.parent)
+
+        self.mm = self.track_widget(_InitOnlyMarkingMenu(self.parent))
+        self.sb = _MockSwitchboard()
+
+    def _make_ui(self, name, tags):
+        from uitk.widgets.mainWindow import MainWindow
+
+        return self.track_widget(MainWindow(name, self.sb, tags=list(tags)))
+
+    def test_init_ui_disables_persistence_for_startmenu(self):
+        """A startmenu UI must come out of _init_ui with restore_window_size=False."""
+        ui = self._make_ui("StartMenuOptOutTest", tags=["startmenu"])
+        self.assertTrue(ui.restore_window_size, "default must be True before _init_ui")
+
+        self.mm._init_ui(ui)
+
+        self.assertFalse(
+            ui.restore_window_size,
+            "stacked startmenu must be opted out of geometry persistence",
+        )
+
+    def test_init_ui_disables_persistence_for_submenu(self):
+        """Submenu UIs must also be opted out — same hide/reshow lifecycle."""
+        ui = self._make_ui("SubmenuOptOutTest", tags=["submenu"])
+
+        self.mm._init_ui(ui)
+
+        self.assertFalse(
+            ui.restore_window_size,
+            "stacked submenu must be opted out of geometry persistence",
+        )
+
+    def test_init_ui_clears_previously_saved_geometry(self):
+        """Pre-existing bad geometry in QSettings must be wiped on init.
+
+        This is the recovery path: a user who hit the loop before the fix
+        landed has 200x100 in their registry. _init_ui must clear it so
+        the next show isn't shrunk.
+        """
+        name = "ClearOnInitTest"
+
+        seeder = self._make_ui(name, tags=["startmenu"])
+        # Save a deliberately bad geometry as a prior buggy session would.
+        seeder.show()
+        QtWidgets.QApplication.processEvents()
+        seeder.resize(180, 90)
+        QtWidgets.QApplication.processEvents()
+        # Force-save while restore_window_size is still True.
+        seeder.save_window_geometry()
+        saved_before = seeder.settings.getByteArray("window_geometry")
+        self.assertTrue(saved_before, "test setup: seeder did not save geometry")
+        seeder.hide()
+
+        # New UI with same name — should find seeded value, then have
+        # _init_ui clear it.
+        recovered = self._make_ui(name, tags=["startmenu"])
+        self.assertTrue(
+            recovered.settings.getByteArray("window_geometry"),
+            "new window with same name should see the seeded geometry",
+        )
+
+        self.mm._init_ui(recovered)
+
+        cleared = recovered.settings.getByteArray("window_geometry")
+        # settings.clear() may leave None or an empty QByteArray
+        cleared_bytes = bytes(cleared) if cleared else b""
+        self.assertFalse(
+            cleared_bytes,
+            f"_init_ui must wipe stale geometry; still got {cleared_bytes!r}",
+        )
+
+    def test_init_ui_does_not_disable_persistence_for_standalone(self):
+        """Standalone windows (no startmenu/submenu tag) keep persistence enabled.
+
+        The opt-out is intentionally narrow — pinned standalone windows
+        rely on geometry persistence for their normal lifecycle.
+        """
+        ui = self._make_ui("StandaloneKeepsPersistTest", tags=[])
+
+        self.mm._init_ui(ui)
+
+        self.assertTrue(
+            ui.restore_window_size,
+            "standalone windows must keep geometry persistence enabled",
+        )
+
+    def test_init_ui_resizes_stacked_ui_to_minimum(self):
+        """Stacked UIs are resized to at least 600x600 to survive the
+        geometry-restore degenerate-size case."""
+        ui = self._make_ui("ResizeFloorTest", tags=["startmenu"])
+        ui.resize(100, 100)
+
+        self.mm._init_ui(ui)
+
+        self.assertGreaterEqual(ui.width(), 600)
+        self.assertGreaterEqual(ui.height(), 600)
+
+
 if __name__ == "__main__":
     unittest.main()

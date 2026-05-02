@@ -119,6 +119,11 @@ class StubSwitchboard:
     def current_ui(self, ui):
         self._current_ui = ui
 
+    @property
+    def active_ui(self):
+        # Mirror Switchboard.active_ui — same value, no warning.
+        return self._current_ui
+
     def get_ui(self, name):
         if name is None:
             return self._current_ui

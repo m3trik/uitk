@@ -1534,6 +1534,74 @@ class TestDefaultSignalsLookupEfficiency(QtBaseTestCase):
         self.assertIsNone(result)
 
 
+class TestSwitchboardActiveUi(QtBaseTestCase):
+    """The ``active_ui`` no-warn peek vs ``current_ui`` auto-load+warn property.
+
+    ``current_ui`` historically warns when no UI is set. That's noise when
+    callers (e.g. the marking menu) legitimately probe for None. ``active_ui``
+    is the silent variant — same value, no auto-load, no warning.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        # Force multiple loaded UIs so the auto-load fallback doesn't fire
+        # and we're guaranteed to hit the warning path on current_ui.
+        self.sb.loaded_ui.example  # ensure loaded
+        # Reset _current_ui to simulate the pre-first-show state.
+        self.sb._current_ui = None
+
+    def test_active_ui_returns_none_without_warning(self):
+        """active_ui returns None when no UI is set, with no log records."""
+        import logging
+
+        records = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        h = _Capture(level=logging.DEBUG)
+        Switchboard.logger.addHandler(h)
+        try:
+            self.assertIsNone(self.sb.active_ui)
+        finally:
+            Switchboard.logger.removeHandler(h)
+
+        warnings = [r for r in records if r.levelno >= logging.WARNING]
+        self.assertEqual(
+            warnings, [],
+            f"active_ui must not emit log warnings; got {[r.getMessage() for r in warnings]}",
+        )
+
+    def test_active_ui_returns_set_value(self):
+        """active_ui returns the same value as current_ui once one is set."""
+        ui = self.sb.loaded_ui.example
+        self.sb.current_ui = ui
+        self.assertIs(self.sb.active_ui, ui)
+        self.assertIs(self.sb.active_ui, self.sb.current_ui)
+
+    def test_active_ui_does_not_auto_load(self):
+        """Unlike current_ui, active_ui must not trigger auto-load logic."""
+        # Pre-condition: multiple UIs loaded so auto-load wouldn't fire even
+        # for current_ui — test confirms active_ui is a pure peek regardless.
+        before = self.sb._current_ui
+        result = self.sb.active_ui
+        after = self.sb._current_ui
+        self.assertIs(result, before)
+        self.assertIs(after, before)
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

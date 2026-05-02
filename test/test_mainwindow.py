@@ -482,6 +482,107 @@ class TestMainWindowGeometry(QtBaseTestCase):
         # Cleanup stored settings
         window2.clear_saved_geometry()
 
+    def test_restore_disabled_ignores_saved_geometry_on_show(self):
+        """A restore_window_size=False window must not apply saved geometry on show.
+
+        Catches the persistence-loop primitive: a transient bad size
+        (e.g. 200x100 from a layout pass) gets save-on-hide → restore-on-show
+        and locks the window to that bad size forever. The opt-out must
+        block the restore path, not just the save path.
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        name = "TestRestoreOptOut"
+
+        # Seed QSettings with a deliberately small geometry as a prior
+        # "session" would have done.
+        seeder = self.track_widget(
+            MainWindow(name, self.sb, central_widget=QtWidgets.QWidget())
+        )
+        seeder.clear_saved_geometry()
+        seeder.show()
+        QtWidgets.QApplication.processEvents()
+        seeder.resize(200, 100)
+        QtWidgets.QApplication.processEvents()
+        seeder.hide()
+        QtWidgets.QApplication.processEvents()
+
+        # Now open a new window with the same name but persistence disabled.
+        # It must NOT shrink to 200x100.
+        opted_out = self.track_widget(
+            MainWindow(
+                name,
+                self.sb,
+                central_widget=QtWidgets.QLabel("content sized larger than 200x100"),
+                restore_window_size=False,
+            )
+        )
+        opted_out.resize(640, 480)
+        opted_out.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertGreaterEqual(
+            opted_out.width(), 400,
+            f"opt-out window shrunk to saved geometry: {opted_out.width()}x{opted_out.height()}",
+        )
+        self.assertGreaterEqual(
+            opted_out.height(), 300,
+            f"opt-out window shrunk to saved geometry: {opted_out.width()}x{opted_out.height()}",
+        )
+
+        # Cleanup
+        seeder.clear_saved_geometry()
+
+    def test_restore_disabled_does_not_save_on_hide(self):
+        """A restore_window_size=False window must not overwrite saved
+        geometry on hide.
+
+        Catches the other half of the loop: even if a stale value is
+        present, an opt-out window must not write its own (potentially
+        bad) size back on every hide cycle.
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        name = "TestSaveOptOut"
+
+        # Seed a known geometry the opt-out window must NOT clobber.
+        seeder = self.track_widget(
+            MainWindow(name, self.sb, central_widget=QtWidgets.QWidget())
+        )
+        seeder.clear_saved_geometry()
+        seeder.show()
+        QtWidgets.QApplication.processEvents()
+        seeder.resize(800, 600)
+        QtWidgets.QApplication.processEvents()
+        seeder.hide()
+        QtWidgets.QApplication.processEvents()
+
+        seeded = seeder.settings.getByteArray("window_geometry")
+        self.assertTrue(seeded, "seeder did not persist geometry — test setup broken")
+
+        opted_out = self.track_widget(
+            MainWindow(
+                name,
+                self.sb,
+                central_widget=QtWidgets.QWidget(),
+                restore_window_size=False,
+            )
+        )
+        opted_out.show()
+        QtWidgets.QApplication.processEvents()
+        opted_out.resize(120, 80)  # transient bad size
+        QtWidgets.QApplication.processEvents()
+        opted_out.hide()
+        QtWidgets.QApplication.processEvents()
+
+        after = opted_out.settings.getByteArray("window_geometry")
+        self.assertEqual(
+            bytes(after), bytes(seeded),
+            "restore_window_size=False window overwrote saved geometry on hide",
+        )
+
+        opted_out.clear_saved_geometry()
+
 
 class TestMainWindowStyleSheet(QtBaseTestCase):
     """Tests for MainWindow stylesheet locking."""
