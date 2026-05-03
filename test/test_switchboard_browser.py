@@ -138,19 +138,19 @@ class SearchScope(BrowserBase):
         self.assertEqual(self.proxy_names(), ["alpha"])
 
     def test_scope_tags_only(self):
-        self.browser._scope.setCurrentText(SCOPE_TAGS)
+        self.browser.set_search_scope(SCOPE_TAGS)
         self.browser._search.setText("rig")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["alpha"])
 
     def test_scope_name_only_excludes_tag_match(self):
-        self.browser._scope.setCurrentText(SCOPE_NAME)
+        self.browser.set_search_scope(SCOPE_NAME)
         self.browser._search.setText("anim")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), [])
 
     def test_scope_both(self):
-        self.browser._scope.setCurrentText(SCOPE_BOTH)
+        self.browser.set_search_scope(SCOPE_BOTH)
         self.browser._search.setText("anim")
         self.browser._apply_filter()
         # alpha and beta both have anim tag; haystack=name+tags so both match
@@ -257,26 +257,36 @@ class SelfExclusion(BrowserBase):
 
 class FilterEnableToggle(BrowserBase):
     def test_filter_disabled_ignores_text_query(self):
-        # alpha matches "alph" while filter is enabled
+        # alpha matches "alph" while the search filter is enabled
         self.browser._search.setText("alph")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["alpha"])
-        # Disable the filter — text query should be ignored
-        self.browser._set_filter_enabled(False)
+        # Disable the search filter — text query should be ignored
+        self.browser._set_search_filter_enabled(False)
         self.assertEqual(self.proxy_names(), ["alpha", "beta", "gamma"])
         # Re-enable — query takes effect again
-        self.browser._set_filter_enabled(True)
+        self.browser._set_search_filter_enabled(True)
         self.assertEqual(self.proxy_names(), ["alpha"])
 
     def test_filter_enabled_persists(self):
-        self.browser._set_filter_enabled(False)
+        self.browser._set_search_filter_enabled(False)
         self.assertFalse(
-            self.sb.settings.branch("ui_browser").value("filter_enabled", True)
+            self.sb.settings.branch("ui_browser").value(
+                "search.filter_enabled", True
+            )
         )
+
+    def test_exclude_filter_disabled_ignores_exclude_query(self):
+        self.browser._exclude.setText("alph")
+        self.browser._apply_filter()
+        self.assertEqual(self.proxy_names(), ["beta", "gamma"])
+        self.browser._set_exclude_filter_enabled(False)
+        self.assertEqual(self.proxy_names(), ["alpha", "beta", "gamma"])
 
     def test_chip_filter_still_applies_when_text_filter_disabled(self):
         # Hide-by-tag and chip filters operate independently of the text filter
-        self.browser._set_filter_enabled(False)
+        self.browser._set_search_filter_enabled(False)
+        self.browser._set_exclude_filter_enabled(False)
         self.browser._on_chip_toggled("rig", True)  # only alpha has rig
         self.assertEqual(self.proxy_names(), ["alpha"])
 
@@ -329,7 +339,7 @@ class ExcludeFilter(BrowserBase):
     def test_exclude_persisted(self):
         self.browser._exclude.setText("foo")
         self.assertEqual(
-            self.sb.settings.branch("ui_browser").value("exclude"), "foo"
+            self.sb.settings.branch("ui_browser").value("exclude.text"), "foo"
         )
 
 
@@ -353,28 +363,27 @@ class LaunchParenting(BrowserBase):
             host.deleteLater()
 
 
-class ActionButton(BrowserBase):
-    def test_label_is_launch_when_not_visible(self):
-        # Select alpha — not visible
-        idx = self.browser._proxy.index(0, 0)
-        self.browser._view.setCurrentIndex(idx)
-        self.browser._update_action_button()
-        self.assertEqual(self.browser._action_btn.text(), "Launch")
+class DoubleClickLaunch(BrowserBase):
+    """The footer Launch/Focus button was removed. Launching is now done via
+    the per-row icon (or a double-click on the name column), so any
+    integration tests that previously poked the button must drive the
+    double-click path instead."""
 
-    def test_label_switches_to_focus_when_visible(self):
-        # Lazy-load alpha and force visible state via a stub override
-        ui = self.sb.loaded_ui.alpha
-        # The MainWindow's isVisible is what the model checks; show then verify.
-        ui.show()
-        self.browser._model.refresh_after_launch("alpha")
-
-        idx = self.browser._proxy.index(
-            self.proxy_names().index("alpha"), 0
-        )
+    def test_double_click_on_name_column_launches(self):
+        idx = self.browser._proxy.index(0, 0)  # alpha, name column
         self.browser._view.setCurrentIndex(idx)
-        self.browser._update_action_button()
-        self.assertEqual(self.browser._action_btn.text(), "Focus")
-        ui.hide()
+        # Simulate the doubleClicked signal payload
+        self.browser._on_double_click(idx)
+        QtWidgets.QApplication.processEvents()
+        self.assertIn("alpha", self.sb.loaded_ui)
+        self.sb.loaded_ui.alpha.hide()
+
+    def test_double_click_on_tags_column_does_not_launch(self):
+        # Tags column is for inline edit; the double-click must not launch.
+        idx = self.browser._proxy.index(0, SwitchboardBrowserModel.COL_TAGS)
+        self.browser._on_double_click(idx)
+        QtWidgets.QApplication.processEvents()
+        self.assertNotIn("alpha", self.sb.loaded_ui)
 
 
 class TableLayout(BrowserBase):
@@ -527,7 +536,8 @@ class HeaderMenuAndPresets(BrowserBase):
         # Mutate state, export, reset, import — should round-trip.
         self.browser._search.setText("alph")
         self.browser._exclude.setText("xyz")
-        self.browser._scope.setCurrentText(SCOPE_TAGS)
+        self.browser.set_search_scope(SCOPE_TAGS)
+        self.browser.set_exclude_scope(SCOPE_NAME)
         self.browser._show.setCurrentText(SHOW_ALL)
         self.browser._toggle_hide_ui("alpha", hide=True)
         self.browser._toggle_hide_tag("rig", hide=True)
@@ -539,7 +549,8 @@ class HeaderMenuAndPresets(BrowserBase):
         # Now reset to a different state
         self.browser._search.setText("")
         self.browser._exclude.setText("")
-        self.browser._scope.setCurrentText(SCOPE_NAME)
+        self.browser.set_search_scope(SCOPE_NAME)
+        self.browser.set_exclude_scope(SCOPE_BOTH)
         self.browser._show.setCurrentText(SHOW_VISIBLE)
         self.browser.hidden_uis = set()
         self.browser.hidden_tags = set()
@@ -551,7 +562,12 @@ class HeaderMenuAndPresets(BrowserBase):
 
         self.assertEqual(self.browser._search.text(), "alph")
         self.assertEqual(self.browser._exclude.text(), "xyz")
-        self.assertEqual(self.browser._scope.currentText(), SCOPE_TAGS)
+        self.assertEqual(
+            self.browser._scope_for(self.browser._search), SCOPE_TAGS
+        )
+        self.assertEqual(
+            self.browser._scope_for(self.browser._exclude), SCOPE_NAME
+        )
         self.assertEqual(self.browser._show.currentText(), SHOW_ALL)
         self.assertIn("alpha", self.browser.hidden_uis)
         self.assertIn("rig", self.browser.hidden_tags)
@@ -559,8 +575,8 @@ class HeaderMenuAndPresets(BrowserBase):
         self.assertFalse(self.browser._cb_frameless.isChecked())
 
     def test_import_preset_data_tolerates_missing_keys(self):
-        # Sparse preset (only some fields) should not raise
-        self.browser._import_preset_data({"search_text": "expo"})
+        # Sparse preset (only the search.text field) should not raise.
+        self.browser._import_preset_data({"search": {"text": "expo"}})
         self.assertEqual(self.browser._search.text(), "expo")
 
     def test_preset_manager_metadata_provider_wired(self):
@@ -571,6 +587,26 @@ class HeaderMenuAndPresets(BrowserBase):
         mgr = self.browser._header.menu.presets
         self.assertEqual(mgr.metadata_provider, self.browser._export_preset_data)
         self.assertEqual(mgr.on_metadata_loaded, self.browser._import_preset_data)
+
+    def test_state_reset_preserves_checkbox_label(self):
+        # Regression: the state shim used to call ValueManager.set_value,
+        # which checks setText *before* setChecked — so a QCheckBox got
+        # its visible label clobbered with "True"/"False" on Restore Defaults
+        # instead of having its checked state toggled. The shim now
+        # dispatches by widget type to call the semantic setter.
+        cb = self.browser._cb_frameless
+        original_label = cb.text()
+        cb.setChecked(False)  # default is True
+        self.browser.state.reset(cb)
+        self.assertEqual(cb.text(), original_label)
+        self.assertTrue(cb.isChecked())  # default restored
+
+    def test_state_reset_resets_combobox_value(self):
+        combo = self.browser._show
+        combo.setCurrentText(SHOW_ALL)
+        self.browser.state.reset(combo)
+        # The captured default for show_mode is SHOW_VISIBLE.
+        self.assertEqual(combo.currentText(), SHOW_VISIBLE)
 
 
 class ColumnLayout(BrowserBase):
@@ -583,17 +619,11 @@ class ColumnLayout(BrowserBase):
             view.columnWidth(SwitchboardBrowserModel.COL_CLOSE), 22
         )
 
-    def test_show_combobox_minimum_width_fits_longest_item(self):
-        # The combobox + popup view minimum width must accommodate the
-        # longest item ("visible") so first-show doesn't truncate.
+    def test_show_combobox_lists_all_modes(self):
+        # The show combo lives in the header menu now; verify the items.
         combo = self.browser._show
-        fm = combo.fontMetrics()
-        max_w = max(
-            fm.horizontalAdvance(combo.itemText(i))
-            for i in range(combo.count())
-        )
-        self.assertGreaterEqual(combo.minimumWidth(), max_w)
-        self.assertGreaterEqual(combo.view().minimumWidth(), max_w)
+        items = [combo.itemText(i) for i in range(combo.count())]
+        self.assertEqual(set(items), {SHOW_VISIBLE, SHOW_HIDDEN, SHOW_ALL})
 
 
 class SwitchboardConstruction(QtBaseTestCase):

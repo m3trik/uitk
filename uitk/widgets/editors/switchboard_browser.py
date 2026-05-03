@@ -580,6 +580,62 @@ SCOPE_NAME = "name"
 SCOPE_TAGS = "tags"
 SCOPE_BOTH = "name + tags"
 
+# Tri-state scope cycle used by the search/exclude action buttons. The
+# index into ``SCOPES`` is what gets persisted; the icon mapping signals
+# the active scope at a glance — a clean uppercase "A" for text matching,
+# an asterisk (the universal wildcard / "match all") for the combined
+# scope, and a tag glyph for tag-only matching.
+SCOPES = (SCOPE_NAME, SCOPE_BOTH, SCOPE_TAGS)
+SCOPE_ICONS = {
+    SCOPE_NAME: "text",
+    SCOPE_BOTH: "asterisk",
+    SCOPE_TAGS: "tag",
+}
+
+
+class _BrowserState:
+    """Minimal ``state`` shim for ``Menu``'s built-in *Restore Defaults* button.
+
+    ``Menu._restore_menu_defaults`` walks parents looking for a widget that
+    exposes a ``state`` attribute with a ``reset(widget)`` method (the contract
+    is normally satisfied by ``MainWindow.state`` / ``StateManager``). The
+    browser is an ``EditorPanel``, not a ``MainWindow``, so without this shim
+    the *Restore Defaults* button silently no-ops.
+
+    We capture each menu widget's initial value at construction time and apply
+    it back through the widget's type-appropriate setter on reset. Dispatching
+    by widget type (rather than delegating to ``ValueManager.set_value``)
+    avoids a known footgun: ``ValueManager`` checks ``setText`` before
+    ``setChecked``, so a ``QCheckBox`` — which inherits ``setText`` from
+    ``QAbstractButton`` — gets its visible label clobbered with ``"True"``
+    / ``"False"`` instead of toggling its checked state.
+
+    Calling the semantic setter (``setChecked`` / ``setCurrentText`` /
+    ``setText``) also fires the widget's normal change signals, which is what
+    wires the reset back into our settings + filter pipeline.
+    """
+
+    def __init__(self):
+        self._defaults = {}
+
+    def capture(self, widget, value) -> None:
+        self._defaults[widget] = value
+
+    def reset(self, widget) -> None:
+        if widget not in self._defaults:
+            return
+        value = self._defaults[widget]
+        if isinstance(widget, QtWidgets.QCheckBox):
+            widget.setChecked(bool(value))
+        elif isinstance(widget, QtWidgets.QComboBox):
+            widget.setCurrentText(str(value))
+        elif isinstance(widget, QtWidgets.QLineEdit):
+            widget.setText("" if value is None else str(value))
+        else:
+            from uitk.widgets.mixins.value_manager import ValueManager
+
+            ValueManager.set_value(widget, value)
+
 
 class SwitchboardBrowser(EditorPanel):
     """Searchable launcher for every UI registered with a Switchboard.
@@ -643,112 +699,70 @@ class SwitchboardBrowser(EditorPanel):
         # Browser-owned settings (hide lists, scope, last options)
         self._settings = self.sb.settings.branch("ui_browser")
 
-        # Persistent filter-enabled state (controls whether the text query
-        # is applied; chip filters and hide system always apply).
-        self._filter_enabled = bool(self._settings.value("filter_enabled", True))
+        # ``state`` is the contract a Menu's *Restore Defaults* button looks
+        # for — see :class:`_BrowserState`. Made public-ish so any nested
+        # Menu (option-box menus, header menu) reaches it via parent walk.
+        self.state = _BrowserState()
+
+        # Persistent filter-enabled state for each text field. Chip filters
+        # and the hide list always apply; only the text-query gates flip.
+        self._search_filter_enabled = bool(
+            self._settings.value("search.filter_enabled", True)
+        )
+        self._exclude_filter_enabled = bool(
+            self._settings.value("exclude.filter_enabled", True)
+        )
 
         self._model = SwitchboardBrowserModel(self.sb, parent=self)
 
         # ── Search row ─────────────────────────────────────────────────
-        # Use uitk's registered LineEdit so we get OptionBoxMixin (action
-        # button + dropdown menu) — pattern mirrors mayatk reference_manager.
-        self._search = self.sb.registered_widgets.LineEdit()
-        self._search.setPlaceholderText("Search (comma-separated; supports * ?)")
-        self._search.setToolTip(
-            "Search the registered UI list.\n"
-            "\n"
-            "• Multi-term: separate terms with commas — any matching term keeps\n"
-            "  the row, e.g.  alpha, beta  matches either.\n"
-            "• Wildcards:\n"
-            "    *      any sequence of characters\n"
-            "    ?      any single character\n"
-            "    [seq]  any character in the set, e.g. [abc]\n"
-            "  Bare terms are wrapped as *term* automatically (substring match).\n"
-            "• Use the option-box menu (▾) to set the search scope, change the\n"
-            "  filter mode, or specify an exclude pattern.\n"
-            "• Click the action button to toggle the filter on/off without\n"
-            "  clearing the text."
-        )
-        self._search.textChanged.connect(self._apply_filter)
-
-        # Filter enable/disable as an option-box action (cycle states)
-        self._search.option_box.set_action(
-            states=[
-                {
-                    "icon": "filter",
-                    "tooltip": "Filter enabled. Click to disable.",
-                    "callback": lambda: self._set_filter_enabled(False),
-                },
-                {
-                    "icon": "filter",
-                    "color": "#555555",
-                    "tooltip": "Filter disabled. Click to enable.",
-                    "callback": lambda: self._set_filter_enabled(True),
-                },
-            ],
-        )
-
-        # Search options live inside the line edit's option-box menu
-        self._search.option_box.menu.setTitle("Search options:")
-        self._scope = self._search.option_box.menu.add(
-            "QComboBox",
-            setObjectName="cmb_search_scope",
-            setToolTip="What the search text matches against.",
-            addItems=[SCOPE_BOTH, SCOPE_NAME, SCOPE_TAGS],
-        )
-        self._scope.setCurrentText(self._settings.value("scope", SCOPE_BOTH))
-        self._scope.currentTextChanged.connect(self._on_scope_changed)
-
-        # Exclude line edit — wired through pythontk.filter_list's ``exc=``
-        # parameter, so it accepts the same wildcards / comma-delimited terms
-        # as the include search above.
-        self._exclude = self._search.option_box.menu.add(
-            "QLineEdit",
-            setObjectName="le_exclude",
-            setPlaceholderText="Exclude (comma-separated; supports * ?)",
-            setToolTip=(
-                "Hide rows that match any of these patterns.\n"
-                "Same wildcard / multi-term syntax as the main search field."
+        self._search = self._build_filter_lineedit(
+            object_name="le_search",
+            placeholder="Search (comma-separated; supports * ?)",
+            tooltip=(
+                "Search the registered UI list.\n"
+                "\n"
+                "• Multi-term: separate terms with commas — any matching term\n"
+                "  keeps the row, e.g.  alpha, beta  matches either.\n"
+                "• Wildcards:\n"
+                "    *      any sequence of characters\n"
+                "    ?      any single character\n"
+                "    [seq]  any character in the set, e.g. [abc]\n"
+                "  Bare terms are wrapped as *term* (substring match).\n"
+                "• Click the filter icon to toggle the filter on/off without\n"
+                "  clearing the text. Click the scope icon to cycle through\n"
+                "  Name / Name+Tags / Tags."
             ),
-            setText=self._settings.value("exclude", "") or "",
+            text_settings_key="search.text",
+            scope_settings_key="search.scope",
+            on_text_changed=self._apply_filter,
+            on_filter_toggle=self._set_search_filter_enabled,
+            initial_filter_enabled=self._search_filter_enabled,
         )
-        self._exclude.textChanged.connect(self._on_exclude_changed)
-
         self.body_layout.addWidget(self._search)
 
-        # ── Show row ───────────────────────────────────────────────────
-        show_row = QtWidgets.QHBoxLayout()
-        show_row.addWidget(QtWidgets.QLabel("Show:"))
-        self._show = QtWidgets.QComboBox()
-        self._show.addItems([SHOW_VISIBLE, SHOW_HIDDEN, SHOW_ALL])
-        # Force the combobox AND its dropdown view to fit the longest item.
-        # ``AdjustToContents`` alone is sometimes ignored by the parent layout
-        # on first show, so we explicitly compute the longest item width
-        # via font metrics and set both the combo's and the popup view's
-        # minimum width.
-        self._show.setSizeAdjustPolicy(
-            QtWidgets.QComboBox.AdjustToContents
+        # ── Exclude row ────────────────────────────────────────────────
+        # Mirrors the search row's controls so a user can shape both halves
+        # of the filter independently (e.g. include scope = name only,
+        # exclude scope = tags only).
+        self._exclude = self._build_filter_lineedit(
+            object_name="le_exclude",
+            placeholder="Exclude (comma-separated; supports * ?)",
+            tooltip=(
+                "Hide rows that match any of these patterns.\n"
+                "Same wildcard / multi-term syntax as the search field above.\n"
+                "\n"
+                "• Click the filter icon to toggle the exclude on/off.\n"
+                "• Click the scope icon to choose what the patterns match\n"
+                "  against (Name / Name+Tags / Tags)."
+            ),
+            text_settings_key="exclude.text",
+            scope_settings_key="exclude.scope",
+            on_text_changed=self._apply_filter,
+            on_filter_toggle=self._set_exclude_filter_enabled,
+            initial_filter_enabled=self._exclude_filter_enabled,
         )
-        self._show.setSizePolicy(
-            QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Fixed
-        )
-        fm = self._show.fontMetrics()
-        max_w = max(
-            fm.horizontalAdvance(self._show.itemText(i))
-            for i in range(self._show.count())
-        )
-        # +30 covers the dropdown arrow, internal padding, and a small
-        # margin so text doesn't kiss the edges.
-        self._show.setMinimumWidth(max_w + 30)
-        self._show.view().setMinimumWidth(max_w + 30)
-        self._show.setCurrentText(self._settings.value("show_mode", SHOW_VISIBLE))
-        self._show.currentTextChanged.connect(self._on_show_changed)
-        show_row.addWidget(self._show)
-        self._unhide_all_btn = QtWidgets.QPushButton("Unhide all")
-        self._unhide_all_btn.clicked.connect(self._on_unhide_all)
-        show_row.addWidget(self._unhide_all_btn)
-        show_row.addStretch(1)
-        self.body_layout.addLayout(show_row)
+        self.body_layout.addWidget(self._exclude)
 
         # ── Tag chips ──────────────────────────────────────────────────
         self._chip_scroll = QtWidgets.QScrollArea()
@@ -761,13 +775,19 @@ class SwitchboardBrowser(EditorPanel):
         self._chip_container = QtWidgets.QWidget()
         self._chip_layout = QtWidgets.QHBoxLayout(self._chip_container)
         self._chip_layout.setContentsMargins(0, 0, 0, 0)
-        self._chip_layout.setSpacing(4)
+        self._chip_layout.setSpacing(1)
         self._chip_layout.addStretch(1)
         self._chip_scroll.setWidget(self._chip_container)
         self.body_layout.addWidget(self._chip_scroll)
 
         self._active_tag_filters: Set[str] = set()
         self._chip_buttons = {}  # tag -> QPushButton
+
+        # ── Header option menu ─────────────────────────────────────────
+        # Built *before* the table view because attaching a proxy via
+        # ``setSourceModel`` / ``setModel`` immediately invokes the filter
+        # predicate, which reads ``self._show`` (created here).
+        self._init_header_menu()
 
         # ── Table view ─────────────────────────────────────────────────
         self._proxy = _BrowserFilterProxy(self)
@@ -784,7 +804,6 @@ class SwitchboardBrowser(EditorPanel):
         )
         self._view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_row_context_menu)
-        self._view.selectionModel().currentChanged.connect(self._update_action_button)
         self._view.doubleClicked.connect(self._on_double_click)
         self._row_delegate = _BrowserRowDelegate(self)
         self._view.setItemDelegate(self._row_delegate)
@@ -809,20 +828,282 @@ class SwitchboardBrowser(EditorPanel):
         self._view.setShowGrid(False)
         self.body_layout.addWidget(self._view, 1)
 
-        # ── Footer action button ───────────────────────────────────────
-        # Use uitk's PushButton so we get an OptionBox dropdown menu for
-        # launch flags — pattern mirrors mayatk scene_exporter task options.
-        self._action_btn = self.sb.registered_widgets.PushButton()
-        self._action_btn.setText("Launch")
-        self._action_btn.setMinimumHeight(28)
-        self._action_btn.clicked.connect(self._on_action_clicked)
-        self._action_btn.option_box.menu.setTitle("Launch options:")
+        # ── Footer status ──────────────────────────────────────────────
+        # Idle: counts (registered / visible / shown). Selected: the
+        # selected UI's name + path. HTML-formatted via the footer's
+        # status label (which is a QLabel under the hood).
+        self.footer.setDefaultStatusText("")
 
-        # Defaults match the tentacle marking menu launch style:
-        #   - Frameless + Translucent + dark theme + translucentBgWithBorder
-        # so the browser-launched window matches the tools UX out of the box.
-        # No "Start pinned" option — pin/unpin is the launched window's own
-        # header concern (its hide button replaces pin in this UX).
+        # Final wiring. Footer/chip/row-widget refresh share a single
+        # debounced path (``_do_full_refresh``); per-signal connections
+        # to ``_update_footer_status`` would re-fire its O(N) visible-count
+        # loop on every dataChanged, which is wasteful. Selection changes
+        # update only the footer (no row rebuild needed).
+        self._model.dataChanged.connect(self._on_model_data_changed)
+        self._model.rowsInserted.connect(self._defer_full_refresh)
+        self._model.rowsRemoved.connect(self._defer_full_refresh)
+        self._proxy.layoutChanged.connect(self._defer_full_refresh)
+        self._view.selectionModel().currentChanged.connect(
+            self._update_footer_status
+        )
+        self._refresh_chips()
+        self._update_show_ui()
+        self._apply_filter()
+        self._refresh_row_widgets()
+        self._select_first_row()
+        self._update_footer_status()
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    @property
+    def hidden_uis(self) -> Set[str]:
+        raw = self._settings.value("hidden_uis", []) or []
+        return set(raw)
+
+    @hidden_uis.setter
+    def hidden_uis(self, value: Iterable[str]) -> None:
+        self._settings.setValue("hidden_uis", sorted(set(value)))
+
+    @property
+    def hidden_tags(self) -> Set[str]:
+        raw = self._settings.value("hidden_tags", []) or []
+        return set(raw)
+
+    @hidden_tags.setter
+    def hidden_tags(self, value: Iterable[str]) -> None:
+        self._settings.setValue("hidden_tags", sorted(set(value)))
+
+    # ── Search / Exclude line-edit factory ──────────────────────────────────
+
+    def _build_filter_lineedit(
+        self,
+        *,
+        object_name: str,
+        placeholder: str,
+        tooltip: str,
+        text_settings_key: str,
+        scope_settings_key: str,
+        on_text_changed,
+        on_filter_toggle,
+        initial_filter_enabled: bool,
+    ):
+        """Construct a LineEdit with the filter-on/off + scope-cycle controls.
+
+        Both the search and exclude rows share the same UX, so the construction
+        is factored into a single helper. Each LineEdit gets two action buttons
+        on its option-box:
+
+            1. Filter on/off — two-state cycle (enabled / dimmed-disabled).
+            2. Scope — three-state cycle (Name / Name+Tags / Tags) whose icon
+               reflects the active scope at a glance.
+
+        The option-box ``menu`` is intentionally never accessed: every option
+        the user can toggle is a button, so a dropdown would only show an empty
+        popup. Skipping ``.menu`` also skips the menu-button, keeping the
+        right edge of the LineEdit clean.
+        """
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        le = self.sb.registered_widgets.LineEdit()
+        le.setObjectName(object_name)
+        le.setPlaceholderText(placeholder)
+        le.setToolTip(tooltip)
+        saved_text = self._settings.value(text_settings_key, "") or ""
+        if saved_text:
+            le.setText(saved_text)
+
+        # textChanged: drive the filter and persist verbatim text. Persisting
+        # in the same lambda avoids spawning a second slot just for save.
+        le.textChanged.connect(
+            lambda v, k=text_settings_key: self._settings.setValue(k, v)
+        )
+        le.textChanged.connect(lambda _v: on_text_changed())
+
+        # ── Filter on/off button (cycles two states) ──────────────────
+        # State 0 = enabled (full-color icon); state 1 = disabled (dimmed).
+        # Click in state 0 calls back with False (will-be-disabled), then
+        # cycles visually to state 1. Symmetric for state 1.
+        le.option_box.set_action(
+            states=[
+                {
+                    "icon": "filter",
+                    "tooltip": "Filter enabled. Click to disable.",
+                    "callback": lambda: on_filter_toggle(False),
+                },
+                {
+                    "icon": "filter",
+                    "color": "#555555",
+                    "tooltip": "Filter disabled. Click to enable.",
+                    "callback": lambda: on_filter_toggle(True),
+                },
+            ],
+            settings_key=False,  # We persist via _settings so presets see it.
+        )
+
+        # ── Scope tri-state action button ──────────────────────────────
+        # Icon = SCOPE_ICONS[currently active scope]. Click cycles to
+        # the next scope; the per-state callback writes the *new* scope
+        # value before the visual state advances, so icon + active scope
+        # stay in lock-step.
+        saved_scope = self._settings.value(scope_settings_key, SCOPE_BOTH)
+        if saved_scope not in SCOPES:
+            saved_scope = SCOPE_BOTH
+        scope_states = []
+        for i, current in enumerate(SCOPES):
+            nxt = SCOPES[(i + 1) % len(SCOPES)]
+            scope_states.append(
+                {
+                    "icon": SCOPE_ICONS[current],
+                    "tooltip": (
+                        f"Scope: matches {current}. "
+                        f"Click to switch to '{nxt}'."
+                    ),
+                    "callback": (
+                        lambda s=nxt, k=scope_settings_key: self._set_scope(k, s)
+                    ),
+                }
+            )
+
+        scope_action = ActionOption(
+            wrapped_widget=le,
+            states=scope_states,
+            settings_key=False,
+        )
+        # Sync visible state to the persisted scope before adding so the
+        # initial render shows the correct icon.
+        scope_action._current_state = SCOPES.index(saved_scope)
+        le.option_box.add_option(scope_action)
+
+        # Stash the action reference and the filter-enabled flag's getter on
+        # the LineEdit so other call sites (filter predicate, presets) read
+        # current values from a single source.
+        le._scope_action = scope_action
+        le._scope_settings_key = scope_settings_key
+        le._text_settings_key = text_settings_key
+
+        # Reflect the persisted filter-enabled state on the action button:
+        # state 0 = enabled, state 1 = disabled. The filter-on/off action is
+        # the *first* ActionOption added (above), so find_option will return
+        # it (the scope action is added second).
+        filter_action = le.option_box.find_option(ActionOption)
+        if filter_action is not None and filter_action is not scope_action:
+            filter_action._current_state = 0 if initial_filter_enabled else 1
+
+        return le
+
+    def _set_scope(self, settings_key: str, value: str) -> None:
+        """Slot called by a scope action button — persist + re-filter.
+
+        The action button itself owns its visual cycle, so we don't touch
+        ``_current_state`` here. External callers that want to *programmatically*
+        change a scope (presets, tests) should use :meth:`set_search_scope`
+        / :meth:`set_exclude_scope` which keep the visual state in sync.
+        """
+        if value not in SCOPES:
+            return
+        self._settings.setValue(settings_key, value)
+        self._apply_filter()
+
+    def _set_scope_external(self, le, value: str) -> None:
+        """Programmatically set a LineEdit's scope, syncing the action visual."""
+        if value not in SCOPES:
+            return
+        self._settings.setValue(le._scope_settings_key, value)
+        action = getattr(le, "_scope_action", None)
+        if action is not None:
+            action._current_state = SCOPES.index(value)
+            if action._widget is not None:
+                action._apply_state()
+        self._apply_filter()
+
+    def set_search_scope(self, value: str) -> None:
+        """Public helper: set the search-line-edit scope to ``value``."""
+        self._set_scope_external(self._search, value)
+
+    def set_exclude_scope(self, value: str) -> None:
+        """Public helper: set the exclude-line-edit scope to ``value``."""
+        self._set_scope_external(self._exclude, value)
+
+    def _set_search_filter_enabled(self, enabled: bool) -> None:
+        self._search_filter_enabled = bool(enabled)
+        self._settings.setValue("search.filter_enabled", self._search_filter_enabled)
+        self._apply_filter()
+
+    def _set_exclude_filter_enabled(self, enabled: bool) -> None:
+        self._exclude_filter_enabled = bool(enabled)
+        self._settings.setValue(
+            "exclude.filter_enabled", self._exclude_filter_enabled
+        )
+        self._apply_filter()
+
+    def _scope_for(self, le) -> str:
+        """Read the persisted scope for a LineEdit built by ``_build_filter_lineedit``."""
+        v = self._settings.value(le._scope_settings_key, SCOPE_BOTH)
+        return v if v in SCOPES else SCOPE_BOTH
+
+    # ── Header menu (Refresh + Show + Launch + Theme + Presets) ─────────────
+
+    def _init_header_menu(self) -> None:
+        """Populate the header dropdown with global browser options.
+
+        Sections in display order:
+            • "Refresh" button — re-pulls the registry.
+            • "Show:" separator + show-mode combo + Unhide-All button.
+            • "Launch options:" separator + frameless / on-top / translucent
+              / restore-geometry checkboxes + theme combo.
+            • "Presets:" separator + preset combo (Save / Rename / Delete /
+              Open Folder built into the combo by ``PresetManager``).
+
+        Defaults are captured into ``self.state`` after each widget is added,
+        so the menu's built-in *Restore Defaults* button (enabled below) can
+        round-trip them via :class:`_BrowserState`.
+
+        On-top behavior of the browser itself is inherited from
+        ``EditorPanel``; no per-browser toggle is exposed.
+        """
+        menu = self._header.menu
+        menu.setTitle("Browser Options:")
+        # Light-up the built-in Restore Defaults button. Without ``state`` on
+        # the browser (see :class:`_BrowserState`) it would silently no-op.
+        menu.add_defaults_button = True
+
+        self._btn_refresh = menu.add(
+            "QPushButton",
+            setText="Refresh",
+            setObjectName="btn_refresh",
+            setToolTip="Re-read the switchboard registry and rebuild the list.",
+        )
+        self._btn_refresh.clicked.connect(self._on_refresh_clicked)
+
+        # ── Show ──
+        menu.add("Separator", setTitle="Show:")
+        self._show = menu.add(
+            "QComboBox",
+            setObjectName="cmb_show_mode",
+            setToolTip=(
+                "Which UIs appear in the list:\n"
+                "  visible — exclude UIs/tags from the hide lists.\n"
+                "  hidden  — show only UIs/tags that are currently hidden.\n"
+                "  all     — ignore the hide lists entirely."
+            ),
+            addItems=[SHOW_VISIBLE, SHOW_HIDDEN, SHOW_ALL],
+        )
+        self._show.setCurrentText(self._settings.value("show_mode", SHOW_VISIBLE))
+        self._show.currentTextChanged.connect(self._on_show_changed)
+        self.state.capture(self._show, SHOW_VISIBLE)
+
+        self._unhide_all_btn = menu.add(
+            "QPushButton",
+            setText="Unhide all",
+            setToolTip="Clear the hidden-UI and hidden-tag lists.",
+        )
+        self._unhide_all_btn.clicked.connect(self._on_unhide_all)
+
+        # ── Launch options ──
+        # Defaults match the tentacle marking-menu launch style (frameless +
+        # translucent + dark + translucentBgWithBorder) so a browser-launched
+        # window matches the rest of the toolset out of the box.
+        menu.add("Separator", setTitle="Launch options:")
         self._launch_option_widgets = {}
         for key, label, default, tooltip in [
             ("frameless", "Frameless", True, "Remove window title bar."),
@@ -850,8 +1131,9 @@ class SwitchboardBrowser(EditorPanel):
                 "Restore the last saved size/position.",
             ),
         ]:
-            cb = self._action_btn.option_box.menu.add(
+            cb = menu.add(
                 "QCheckBox",
+                setObjectName=f"cb_launch_{key}",
                 setText=label,
                 setToolTip=tooltip,
                 setChecked=bool(self._settings.value(f"opt_{key}", default)),
@@ -860,120 +1142,34 @@ class SwitchboardBrowser(EditorPanel):
                 lambda v, k=key: self._settings.setValue(f"opt_{k}", bool(v))
             )
             self._launch_option_widgets[key] = cb
+            self.state.capture(cb, default)
         # Backward-compatible attribute aliases used elsewhere in the class
         self._cb_frameless = self._launch_option_widgets["frameless"]
         self._cb_on_top = self._launch_option_widgets["on_top"]
         self._cb_translucent = self._launch_option_widgets["translucent"]
         self._cb_restore = self._launch_option_widgets["restore_geometry"]
 
-        # Theme: pulled through the switchboard's ``style`` proxy (the
-        # ``SwitchboardStyleMixin``) so any theme added to ``StyleSheet``
-        # shows up here automatically without a direct import.
+        # Theme: pulled through the switchboard's ``style`` proxy so any
+        # theme added to ``StyleSheet`` shows up here automatically.
         theme_names = list(self.sb.style.themes.keys()) or ["dark", "light"]
-        self._cmb_theme = self._action_btn.option_box.menu.add(
+        default_theme = "dark" if "dark" in theme_names else theme_names[0]
+        self._cmb_theme = menu.add(
             "QComboBox",
             setObjectName="cmb_theme",
             setToolTip="Style template applied to the launched window.",
             addItems=theme_names,
         )
-        saved_theme = self._settings.value("opt_theme", "dark")
+        saved_theme = self._settings.value("opt_theme", default_theme)
         if saved_theme not in theme_names:
-            saved_theme = theme_names[0]
+            saved_theme = default_theme
         self._cmb_theme.setCurrentText(saved_theme)
         self._cmb_theme.currentTextChanged.connect(
             lambda v: self._settings.setValue("opt_theme", v)
         )
+        self.state.capture(self._cmb_theme, default_theme)
 
-        self.body_layout.addWidget(self._action_btn)
-
-        # ── Header option menu ─────────────────────────────────────────
-        # Lives off the header's "menu" button; hosts the preset selector
-        # plus global browser toggles. Built last because the preset's
-        # metadata provider reads from body widgets that must already exist.
-        self._init_header_menu()
-
-        # ── Footer status ──────────────────────────────────────────────
-        # Idle: counts (registered / visible / shown). Selected: the
-        # selected UI's name + path. HTML-formatted via the footer's
-        # status label (which is a QLabel under the hood).
-        self.footer.setDefaultStatusText("")
-
-        # Final wiring. Footer/chip/row-widget refresh share a single
-        # debounced path (``_do_full_refresh``); per-signal connections
-        # to ``_update_footer_status`` would re-fire its O(N) visible-count
-        # loop on every dataChanged, which is wasteful. Selection changes
-        # update only the footer (no row rebuild needed).
-        self._model.dataChanged.connect(self._on_model_data_changed)
-        self._model.rowsInserted.connect(self._defer_full_refresh)
-        self._model.rowsRemoved.connect(self._defer_full_refresh)
-        self._proxy.layoutChanged.connect(self._defer_full_refresh)
-        self._view.selectionModel().currentChanged.connect(
-            self._update_footer_status
-        )
-        self._refresh_chips()
-        self._update_show_ui()
-        self._apply_filter()
-        self._refresh_row_widgets()
-        self._select_first_row()
-        self._update_action_button()
-        self._update_footer_status()
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    @property
-    def hidden_uis(self) -> Set[str]:
-        raw = self._settings.value("hidden_uis", []) or []
-        return set(raw)
-
-    @hidden_uis.setter
-    def hidden_uis(self, value: Iterable[str]) -> None:
-        self._settings.setValue("hidden_uis", sorted(set(value)))
-
-    @property
-    def hidden_tags(self) -> Set[str]:
-        raw = self._settings.value("hidden_tags", []) or []
-        return set(raw)
-
-    @hidden_tags.setter
-    def hidden_tags(self, value: Iterable[str]) -> None:
-        self._settings.setValue("hidden_tags", sorted(set(value)))
-
-    # ── Header menu (presets + global toggles) ──────────────────────────────
-
-    def _init_header_menu(self) -> None:
-        """Populate the header dropdown with global browser options.
-
-        Two sections:
-            • "Refresh" button — re-pulls the registry (handy after a
-              ``register()`` call from another tool).
-            • Preset combo (Save / Rename / Delete / Open Folder built into
-              the combo's actions section by ``PresetManager.wire_combo``).
-
-        The preset manager captures and restores all browser state — text
-        filter, scope, exclude, hide lists, launch options, theme, etc. —
-        via the ``metadata_provider`` / ``on_metadata_loaded`` hooks, which
-        means presets are portable across machines / users (no machine-
-        specific paths or widget object pointers stored).
-
-        On-top behavior is inherited from ``EditorPanel`` (always on-top);
-        no toggle is exposed because the symptom that motivated one — the
-        browser disappearing when the launching popup menu closed — was a
-        focus-restoration bug, not an on-top problem. That bug is fixed
-        in ``_EditorRegistry.show`` via a deferred re-raise.
-        """
-        menu = self._header.menu
-        menu.setTitle("Browser Options:")
-
-        self._btn_refresh = menu.add(
-            "QPushButton",
-            setText="Refresh",
-            setObjectName="btn_refresh",
-            setToolTip="Re-read the switchboard registry and rebuild the list.",
-        )
-        self._btn_refresh.clicked.connect(self._on_refresh_clicked)
-
+        # ── Presets ──
         menu.add("Separator", setTitle="Presets:")
-
         # ``setup`` creates a ``cmb_presets`` WidgetComboBox in the menu
         # with Save / Rename / Delete / Open Folder built-in. Metadata
         # hooks pipe through our full state dict so presets carry
@@ -990,15 +1186,22 @@ class SwitchboardBrowser(EditorPanel):
         """Serialize all browser state into a JSON-safe dict.
 
         Used as ``PresetManager.metadata_provider`` so the preset captures
-        cross-menu state (search line edit, exclude, hide lists, launch
-        options, theme, …) rather than only widgets in the header menu.
+        cross-menu state (search/exclude line edits, scopes, filter toggles,
+        hide lists, launch options, theme, …) rather than only widgets in
+        the header menu.
         """
         return {
-            "search_text": self._search.text(),
-            "exclude": self._exclude.text(),
-            "scope": self._scope.currentText(),
+            "search": {
+                "text": self._search.text(),
+                "scope": self._scope_for(self._search),
+                "filter_enabled": self._search_filter_enabled,
+            },
+            "exclude": {
+                "text": self._exclude.text(),
+                "scope": self._scope_for(self._exclude),
+                "filter_enabled": self._exclude_filter_enabled,
+            },
             "show_mode": self._show.currentText(),
-            "filter_enabled": self._filter_enabled,
             "active_tag_filters": sorted(self._active_tag_filters),
             "hidden_uis": sorted(self.hidden_uis),
             "hidden_tags": sorted(self.hidden_tags),
@@ -1022,21 +1225,42 @@ class SwitchboardBrowser(EditorPanel):
         # ``version`` and our keys). Tolerate missing keys for forward /
         # backward compat.
 
-        # Text fields — block signals to suppress the per-keystroke
-        # apply_filter that would otherwise re-fire for each setter.
-        for w, val in [
-            (self._search, data.get("search_text", "")),
-            (self._exclude, data.get("exclude", "")),
+        # ── Search / exclude line edits ──
+        for le, section in [
+            (self._search, data.get("search") or {}),
+            (self._exclude, data.get("exclude") or {}),
         ]:
-            w.blockSignals(True)
-            try:
-                w.setText(val or "")
-            finally:
-                w.blockSignals(False)
+            text = section.get("text")
+            if text is not None:
+                le.blockSignals(True)
+                try:
+                    le.setText(text)
+                finally:
+                    le.blockSignals(False)
+                self._settings.setValue(le._text_settings_key, text)
+            scope = section.get("scope")
+            if scope in SCOPES:
+                self._settings.setValue(le._scope_settings_key, scope)
+                action = getattr(le, "_scope_action", None)
+                if action is not None:
+                    action._current_state = SCOPES.index(scope)
+                    if action._widget is not None:
+                        action._apply_state()
 
-        # Combos
+        # ── Filter-enabled flags ──
+        if "search" in data and "filter_enabled" in data["search"]:
+            self._search_filter_enabled = bool(data["search"]["filter_enabled"])
+            self._settings.setValue(
+                "search.filter_enabled", self._search_filter_enabled
+            )
+        if "exclude" in data and "filter_enabled" in data["exclude"]:
+            self._exclude_filter_enabled = bool(data["exclude"]["filter_enabled"])
+            self._settings.setValue(
+                "exclude.filter_enabled", self._exclude_filter_enabled
+            )
+
+        # ── Show combo + theme combo ──
         for combo, val in [
-            (self._scope, data.get("scope")),
             (self._show, data.get("show_mode")),
             (self._cmb_theme, (data.get("launch") or {}).get("theme")),
         ]:
@@ -1047,11 +1271,7 @@ class SwitchboardBrowser(EditorPanel):
                 combo.setCurrentText(val)
             finally:
                 combo.blockSignals(False)
-
-        # Filter enabled flag — also reflect in settings
-        if "filter_enabled" in data:
-            self._filter_enabled = bool(data["filter_enabled"])
-            self._settings.setValue("filter_enabled", self._filter_enabled)
+        self._settings.setValue("show_mode", self._show.currentText())
 
         # Active chip filters; cleared first so the loaded set is exact.
         self._active_tag_filters = set(data.get("active_tag_filters") or [])
@@ -1074,17 +1294,10 @@ class SwitchboardBrowser(EditorPanel):
             if key in launch:
                 cb.setChecked(bool(launch[key]))
 
-        # Persist scope/show/exclude/search since their per-widget
-        # textChanged signals were blocked during the bulk apply.
-        self._settings.setValue("scope", self._scope.currentText())
-        self._settings.setValue("show_mode", self._show.currentText())
-        self._settings.setValue("exclude", self._exclude.text())
-
-        # Single consolidated refresh — chips, view filter, action button.
+        # Single consolidated refresh — chips, view filter.
         self._update_show_ui()
         self._refresh_chips()
         self._apply_filter()
-        self._update_action_button()
 
     # ── Header-menu slots ───────────────────────────────────────────────────
 
@@ -1151,19 +1364,6 @@ class SwitchboardBrowser(EditorPanel):
 
     # ── Slots ────────────────────────────────────────────────────────────────
 
-    def _on_scope_changed(self, value: str) -> None:
-        self._settings.setValue("scope", value)
-        self._apply_filter()
-
-    def _set_filter_enabled(self, enabled: bool) -> None:
-        self._filter_enabled = bool(enabled)
-        self._settings.setValue("filter_enabled", self._filter_enabled)
-        self._apply_filter()
-
-    def _on_exclude_changed(self, value: str) -> None:
-        self._settings.setValue("exclude", value)
-        self._apply_filter()
-
     def _on_show_changed(self, value: str) -> None:
         self._settings.setValue("show_mode", value)
         self._update_show_ui()
@@ -1178,6 +1378,20 @@ class SwitchboardBrowser(EditorPanel):
         self._refresh_chips()
         self._apply_filter()
 
+    def _visible_tags(self) -> List[str]:
+        """Tags from currently visible (post-filter) rows.
+
+        Active tag filters are forcibly included so the user can always toggle
+        them off — otherwise an active chip with no remaining matches would
+        vanish from the strip and become un-removable.
+        """
+        seen: Set[str] = set(self._active_tag_filters)
+        for r in range(self._proxy.rowCount()):
+            idx = self._proxy.index(r, 0)
+            tags = idx.data(SwitchboardBrowserModel.TagsRole) or []
+            seen.update(tags)
+        return sorted(seen)
+
     def _refresh_chips(self) -> None:
         # Clear all items (chip buttons + trailing stretch)
         while self._chip_layout.count():
@@ -1186,7 +1400,10 @@ class SwitchboardBrowser(EditorPanel):
             if w is not None:
                 w.deleteLater()
         self._chip_buttons.clear()
-        for t in self._model.all_unique_tags():
+        # Chips reflect the currently visible rows so the user only sees
+        # tags that are useful to refine the current view further. Active
+        # filters are always included via :meth:`_visible_tags`.
+        for t in self._visible_tags():
             btn = QtWidgets.QPushButton(f"#{t}")
             btn.setCheckable(True)
             btn.setChecked(t in self._active_tag_filters)
@@ -1356,7 +1573,6 @@ class SwitchboardBrowser(EditorPanel):
         # ensures the row's visibility state refreshes even when our
         # ``on_show``/``on_hide`` listeners weren't wired up at launch.
         self._model.refresh_after_launch(name)
-        self._update_action_button()
 
     def _launch(self, name: str) -> None:
         opts = self.launch_options()
@@ -1415,7 +1631,6 @@ class SwitchboardBrowser(EditorPanel):
             return
 
         self._model.refresh_after_launch(name)
-        self._update_action_button()
 
     @staticmethod
     def _configure_launched_header(ui) -> None:
@@ -1451,25 +1666,12 @@ class SwitchboardBrowser(EditorPanel):
         ui.raise_()
         ui.activateWindow()
 
-    def _update_action_button(self, *_args) -> None:
-        idx = self._view.currentIndex()
-        if not idx.isValid():
-            self._action_btn.setText("Launch")
-            self._action_btn.setEnabled(False)
-            return
-        self._action_btn.setEnabled(True)
-        if idx.data(SwitchboardBrowserModel.VisibleRole):
-            self._action_btn.setText("Focus")
-        else:
-            self._action_btn.setText("Launch")
-
     def _on_model_data_changed(self, *_args) -> None:
         # A row's tags or visibility changed; chip set may need to add/drop
         # entries, and per-row buttons may need their enabled-state updated.
         # All deferred to coalesce bursts (registration of many UIs, rapid
         # signal volleys, etc.) into a single rebuild per event-loop turn.
         self._defer_full_refresh()
-        self._update_action_button()
 
     def _defer_full_refresh(self, *_args) -> None:
         # Coalesce multiple updates within an event-loop turn into one
@@ -1576,9 +1778,24 @@ class SwitchboardBrowser(EditorPanel):
         # part, ~2 buttons per visible row) is debounced via
         # ``layoutChanged`` -> ``_defer_full_refresh``.
         self._proxy.invalidate()
-        self._update_action_button()
 
     # ── Filter predicate (called by proxy) ───────────────────────────────────
+
+    @staticmethod
+    def _haystack(name: str, all_tags: Set[str], scope: str) -> str:
+        if scope == SCOPE_NAME:
+            return name
+        if scope == SCOPE_TAGS:
+            return " ".join(sorted(all_tags))
+        return name + " " + " ".join(sorted(all_tags))
+
+    @staticmethod
+    def _to_patterns(text: str):
+        # Bare terms become ``*term*`` (substring match); terms that already
+        # carry a glob / character-class pass through verbatim. Applied to
+        # both include and exclude patterns.
+        terms = [t.strip() for t in text.split(",") if t.strip()]
+        return [t if any(c in t for c in "*?[") else f"*{t}*" for t in terms]
 
     def _row_passes_filter(self, name: str, all_tags: Set[str]) -> bool:
         # Hide-mode predicate
@@ -1593,39 +1810,33 @@ class SwitchboardBrowser(EditorPanel):
         if self._active_tag_filters and not self._active_tag_filters <= all_tags:
             return False
 
-        # Text query — skipped entirely when the filter action is disabled.
-        # Note: the exclude pattern is also part of the filter and is gated
-        # by the same enable toggle, so disabling the filter shows everything
-        # the hide / chip predicates allow.
-        if not self._filter_enabled:
-            return True
+        # Search (include) — gated by its own filter-enabled toggle.
+        if self._search_filter_enabled:
+            inc_text = self._search.text().strip()
+            if inc_text:
+                inc_patterns = self._to_patterns(inc_text)
+                inc_haystack = self._haystack(
+                    name, all_tags, self._scope_for(self._search)
+                )
+                if not ptk.filter_list(
+                    [inc_haystack], inc=inc_patterns, ignore_case=True
+                ):
+                    return False
 
-        scope = self._scope.currentText()
-        if scope == SCOPE_NAME:
-            haystack = name
-        elif scope == SCOPE_TAGS:
-            haystack = " ".join(sorted(all_tags))
-        else:
-            haystack = name + " " + " ".join(sorted(all_tags))
+        # Exclude — independent toggle and scope so the user can, e.g.,
+        # search by name but exclude by tag.
+        if self._exclude_filter_enabled:
+            exc_text = self._exclude.text().strip()
+            if exc_text:
+                exc_patterns = self._to_patterns(exc_text)
+                exc_haystack = self._haystack(
+                    name, all_tags, self._scope_for(self._exclude)
+                )
+                if not ptk.filter_list(
+                    [exc_haystack], exc=exc_patterns, ignore_case=True
+                ):
+                    return False
 
-        # Bare terms get wrapped as *term* for substring matching; explicit
-        # globs / character-classes pass through verbatim. Same rule applies
-        # to both include and exclude patterns.
-        def _to_patterns(text: str):
-            terms = [t.strip() for t in text.split(",") if t.strip()]
-            return [t if any(c in t for c in "*?[") else f"*{t}*" for t in terms]
-
-        inc_patterns = _to_patterns(self._search.text().strip())
-        exc_patterns = _to_patterns(self._exclude.text().strip())
-
-        # pythontk.filter_list returns the matching subset; an empty result
-        # for a single haystack means the row is filtered out.
-        matches = ptk.filter_list(
-            [haystack],
-            inc=inc_patterns or None,
-            exc=exc_patterns or None,
-            ignore_case=True,
-        )
-        return bool(matches)
+        return True
 
 
