@@ -6,6 +6,30 @@ from typing import Dict, List, Tuple, Union, Callable, Optional, Any
 from qtpy import QtWidgets, QtGui, QtCore
 
 
+# Scope name <-> Qt.ShortcutContext mapping. Used for persistence (string form
+# survives JSON/QSettings) and editor UX. The two end-user-facing scopes are
+# "window" and "application"; the widget-scoped variants are decorator-only.
+SCOPE_NAME_TO_CONTEXT: Dict[str, QtCore.Qt.ShortcutContext] = {
+    "widget": QtCore.Qt.WidgetShortcut,
+    "widget_children": QtCore.Qt.WidgetWithChildrenShortcut,
+    "window": QtCore.Qt.WindowShortcut,
+    "application": QtCore.Qt.ApplicationShortcut,
+}
+SCOPE_CONTEXT_TO_NAME: Dict[QtCore.Qt.ShortcutContext, str] = {
+    v: k for k, v in SCOPE_NAME_TO_CONTEXT.items()
+}
+
+
+def context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str:
+    """Convert a Qt.ShortcutContext to its persistence string."""
+    return SCOPE_CONTEXT_TO_NAME.get(context, "window")
+
+
+def scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext:
+    """Convert a persisted scope string to a Qt.ShortcutContext."""
+    return SCOPE_NAME_TO_CONTEXT.get(name, QtCore.Qt.WindowShortcut)
+
+
 class GlobalShortcut(QtCore.QObject):
     """A robust global shortcut handler that detects both press and release events.
 
@@ -155,6 +179,14 @@ class GlobalShortcut(QtCore.QObject):
         )
         self._key_val = self._get_primary_key(self._key_sequence)
         self._shortcut.setKey(self._key_sequence)
+
+    def setContext(self, context: QtCore.Qt.ShortcutContext):
+        """Live-update the underlying QShortcut's context.
+
+        Mirrors QShortcut.setContext so the SwitchboardShortcutMixin can rebind
+        scope without recreating the shortcut.
+        """
+        self._shortcut.setContext(context)
 
 
 class ShortcutManager:
@@ -926,16 +958,22 @@ class SwitchboardShortcutMixin:
             if not default_sequence:
                 continue
 
-            # 3. Check Settings for Override
+            # 3. Check Settings for Override (sequence + scope)
             final_sequence = default_sequence
+            default_context = meta.get("context", QtCore.Qt.WindowShortcut)
+            final_context = default_context
             settings_key = f"shortcuts.{slots_cls_name}.{name}"
+            scope_settings_key = f"{settings_key}.scope"
 
             if hasattr(ui, "settings"):
-                # If the key doesn't exist, settings might return None. using .get() with default.
-                # Assuming SettingsManager Proxy object.
                 user_override = ui.settings.value(settings_key)
                 if user_override:
                     final_sequence = user_override
+                scope_override = ui.settings.value(scope_settings_key)
+                # Validate against known scopes so legacy/garbage values
+                # silently fall back to the decorator default.
+                if scope_override in SCOPE_NAME_TO_CONTEXT:
+                    final_context = scope_name_to_context(scope_override)
 
             if not final_sequence:
                 continue
@@ -947,7 +985,7 @@ class SwitchboardShortcutMixin:
                 method,
                 name,
                 final_sequence,
-                meta.get("context"),
+                final_context,
                 meta.get("robust", False),
             )
 
@@ -1072,13 +1110,24 @@ class SwitchboardShortcutMixin:
             default = meta.get("sequence", attr_seq)
             doc = meta.get("doc") or method.__doc__ or ""
 
+            default_context = meta.get("context", QtCore.Qt.WindowShortcut)
+            default_scope = context_to_scope_name(default_context)
+
             # Get Current (check for user override)
             current = default
+            current_scope = default_scope
             if hasattr(ui, "settings"):
                 settings_key = f"shortcuts.{slots_cls_name}.{name}"
                 override = ui.settings.value(settings_key)
                 if override:
                     current = override
+                scope_override = ui.settings.value(f"{settings_key}.scope")
+                # Only honour overrides that map to a known scope. Anything
+                # else (legacy bad data, manual edits, mis-typed values) is
+                # ignored so the user falls back to the decorator default
+                # rather than seeing a stuck/garbage scope label.
+                if scope_override in SCOPE_NAME_TO_CONTEXT:
+                    current_scope = scope_override
 
             registry.append(
                 {
@@ -1087,6 +1136,8 @@ class SwitchboardShortcutMixin:
                     "name": meta.get("name", name),
                     "current": current,
                     "default": default,
+                    "current_scope": current_scope,
+                    "default_scope": default_scope,
                     "doc": inspect.cleandoc(doc).split("\n")[0] if doc else "",
                 }
             )
@@ -1094,7 +1145,11 @@ class SwitchboardShortcutMixin:
         return registry
 
     def set_user_shortcut(
-        self, ui: QtWidgets.QWidget, slot_name: str, sequence: str
+        self,
+        ui: QtWidgets.QWidget,
+        slot_name: str,
+        sequence: str,
+        scope: Optional[str] = None,
     ) -> None:
         """Update a shortcut setting dynamically and live-update the active QShortcut.
 
@@ -1102,38 +1157,70 @@ class SwitchboardShortcutMixin:
             ui (QtWidgets.QWidget): The main window/UI.
             slot_name (str): The name of the method (e.g., "save_file").
             sequence (str): The new key sequence (e.g., "Ctrl+Alt+S").
+            scope (str, optional): Persisted scope name ("window", "application",
+                "widget", "widget_children"). When None, the existing scope
+                override (if any) is preserved; otherwise the decorator default
+                applies.
         """
         slots_instance = self.get_slots_instance(ui)
         if not slots_instance:
             return
 
-        # 1. Update Persistent Settings
-        if hasattr(ui, "settings"):
-            cls_name = slots_instance.__class__.__name__
-            key = f"shortcuts.{cls_name}.{slot_name}"
-            ui.settings.setValue(key, sequence)
+        cls_name = slots_instance.__class__.__name__
+        key = f"shortcuts.{cls_name}.{slot_name}"
+        scope_key = f"{key}.scope"
 
-        # 2. Live Re-bind
-        # Check if we already have a shortcut for this slot
+        # 1. Update Persistent Settings. Treat empty scope the same as
+        # None — don't write garbage that the registry would have to
+        # filter on read.
+        if hasattr(ui, "settings"):
+            ui.settings.setValue(key, sequence)
+            if scope:
+                ui.settings.setValue(scope_key, scope)
+
+        # 2. Resolve target context for live rebind
+        method = getattr(slots_instance, slot_name, None)
+        meta = getattr(method, "_shortcut_meta", {}) if method else {}
+        default_context = meta.get("context", QtCore.Qt.WindowShortcut)
+
+        # Empty/None scope is treated identically: fall through to the
+        # existing override (if any) or the decorator default. This keeps
+        # the read and write paths aligned — neither persists nor honours
+        # a "" scope. Stored overrides are also validated against the
+        # known scope set so legacy bad data can't sneak through.
+        if scope and scope in SCOPE_NAME_TO_CONTEXT:
+            target_context = scope_name_to_context(scope)
+        elif hasattr(ui, "settings"):
+            existing_scope = ui.settings.value(scope_key)
+            target_context = (
+                scope_name_to_context(existing_scope)
+                if existing_scope in SCOPE_NAME_TO_CONTEXT
+                else default_context
+            )
+        else:
+            target_context = default_context
+
+        # 3. Live Re-bind
         existing_shortcuts = getattr(slots_instance, "_connected_shortcuts", {})
         shortcut = existing_shortcuts.get(slot_name)
 
         if shortcut:
-            # Update existing
             shortcut.setKey(QtGui.QKeySequence(sequence))
-            self.logger.info(f"[set_user_shortcut] Rebound {slot_name} to {sequence}")
-        else:
-            # Create new if it didn't exist (e.g. was previously unset)
-            method = getattr(slots_instance, slot_name, None)
-            if method:
-                # Need to infer context or default to WindowShortcut
-                # Try to get from meta, else Window
-                meta = getattr(method, "_shortcut_meta", {})
-                context = meta.get("context", QtCore.Qt.WindowShortcut)
-
-                self._create_switchboard_shortcut(
-                    ui, slots_instance, method, slot_name, sequence, context
-                )
+            shortcut.setContext(target_context)
+            self.logger.info(
+                f"[set_user_shortcut] Rebound {slot_name} to {sequence} "
+                f"({context_to_scope_name(target_context)})"
+            )
+        elif method:
+            self._create_switchboard_shortcut(
+                ui,
+                slots_instance,
+                method,
+                slot_name,
+                sequence,
+                target_context,
+                meta.get("robust", False),
+            )
 
 
 # -----------------------------------------------------------------------------

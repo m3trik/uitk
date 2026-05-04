@@ -41,18 +41,26 @@ class MockWidget(QtWidgets.QPushButton):
         print(f"DEBUG: Click received on {self.objectName()}")
 
 
+@unittest.skipUnless(_INTERACTIVE, "Requires interactive display/events")
 class TestStackedControllerInteractions(unittest.TestCase):
+    """Interactive tests for the marking-menu controller's chord / release logic.
+
+    The whole class is opt-in via ``INTERACTIVE_TESTS=1`` because its
+    ``setUp`` instantiates a real ``MarkingMenu`` (singleton) and registers
+    Qt event filters that would otherwise pollute non-interactive tests run
+    afterward (notably ``test_marking_menu_integration``'s mouse sequences).
+    """
+
     @classmethod
     def setUpClass(cls):
         if not QtWidgets.QApplication.instance():
             cls.app = QtWidgets.QApplication(sys.argv)
 
     def setUp(self):
-        # Reset singleton to ensure fresh state
-        if hasattr(StackedController, "_instance"):
-            # We can't easily delete it if it's referenced elsewhere, but we can set the class var to None
-            # The SingletonMixin implementation usually stores it in _instance
-            StackedController._instance = None
+        # SingletonMixin caches in ``_instances`` (plural dict), not
+        # ``_instance``. Pop the entry so __new__ rebuilds a fresh
+        # controller for each test method.
+        StackedController.reset_instance()
 
         self.sb = Switchboard()
         self.controller = StackedController.instance(switchboard=self.sb)
@@ -61,6 +69,32 @@ class TestStackedControllerInteractions(unittest.TestCase):
         self.btn = MockWidget("TargetButton")
         # Mock underMouse to always be true for these tests
         self.btn.underMouse = lambda: True
+
+    def tearDown(self):
+        # The controller is a real MarkingMenu — it installs Qt event
+        # filters (EventFactoryFilter on itself, GlobalShortcut on the
+        # QApplication) and mutates class-level dicts (``_submenu_cache``).
+        # Without comprehensive teardown, subsequent tests in OTHER files
+        # (notably test_marking_menu_integration's QTest mouse sequences)
+        # hit a stale widget tree and report wrong "current UI" state.
+        from uitk.widgets.mixins.shortcuts import GlobalShortcut
+
+        try:
+            self.controller.deleteLater()
+        except Exception:
+            pass
+        # Drop the singleton so __new__ rebuilds, plus the class-level
+        # caches that the controller mutated.
+        StackedController.reset_instance()
+        StackedController._submenu_cache.clear()
+        StackedController._last_ui_history_check = None
+        # GlobalShortcut keeps strong refs to every wrapper it ever made;
+        # those wrappers' application-level event filters survive the
+        # controller's destruction otherwise.
+        GlobalShortcut._instances.clear()
+        # Drain the Qt event queue so the deleteLater above actually fires
+        # and the filters are removed before the next test starts.
+        QtWidgets.QApplication.processEvents()
 
     @unittest.skipUnless(_INTERACTIVE, "Requires interactive display/events")
     def test_loose_chord_release(self):

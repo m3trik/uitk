@@ -181,6 +181,174 @@ class TestHotkeyEditorPresets(QtBaseTestCase):
         names = self.editor._list_presets()
         self.assertEqual(names, ["alpha", "zebra"])
 
+    # ------------------------------------------------------------------
+    # Preset format: scope round-trip + back-compat
+    # ------------------------------------------------------------------
+
+    def test_export_includes_scope(self):
+        """Exported bindings should be {seq, scope} dicts."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+
+        slot_name = registry[0]["method"]
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+E", "application")
+
+        data = self.editor.export_shortcuts()
+        ui_name = next((n for n in data if "example" in n.lower()), None)
+        self.assertIsNotNone(ui_name)
+
+        binding = data[ui_name][slot_name]
+        self.assertIsInstance(binding, dict)
+        self.assertEqual(binding["seq"], "Ctrl+Alt+E")
+        self.assertEqual(binding["scope"], "application")
+
+    def test_import_legacy_string_format(self):
+        """Legacy presets where values are bare strings should still import."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+
+        slot_name = registry[0]["method"]
+        ui_name = next(
+            (n for n in self.editor.export_shortcuts() if "example" in n.lower()),
+            None,
+        )
+        self.assertIsNotNone(ui_name)
+
+        # Old-shape preset: value is the sequence string directly
+        legacy = {ui_name: {slot_name: "Ctrl+Alt+L"}}
+        self.editor.import_shortcuts(legacy)
+
+        new_registry = self.sb.get_shortcut_registry(self.ui)
+        entry = next((r for r in new_registry if r["method"] == slot_name), None)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["current"], "Ctrl+Alt+L")
+
+    def test_import_new_format_round_trip(self):
+        """Exported preset should re-import and restore both seq and scope."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+
+        slot_name = registry[0]["method"]
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+R", "application")
+        snapshot = self.editor.export_shortcuts()
+
+        # Knock the binding back to something else
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+Z", "window")
+
+        self.editor.import_shortcuts(snapshot)
+
+        new_registry = self.sb.get_shortcut_registry(self.ui)
+        entry = next((r for r in new_registry if r["method"] == slot_name), None)
+        self.assertEqual(entry["current"], "Ctrl+Alt+R")
+        self.assertEqual(entry["current_scope"], "application")
+
+    # ------------------------------------------------------------------
+    # Collision checker hook
+    # ------------------------------------------------------------------
+
+    def test_collision_checker_receives_assignment_args(self):
+        """Custom checkers should be called with (sequence, scope, ui_name, method)."""
+        captured = {}
+
+        def fake_checker(sequence, scope, ui_name, method_name):
+            captured["sequence"] = sequence
+            captured["scope"] = scope
+            captured["ui_name"] = ui_name
+            captured["method_name"] = method_name
+            return []
+
+        self.editor.add_collision_checker(fake_checker)
+
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+        slot_name = registry[0]["method"]
+        ui_name = next(
+            (n for n in self.editor.export_shortcuts() if "example" in n.lower()),
+            None,
+        )
+
+        proceed = self.editor._resolve_collisions(
+            self.ui, slot_name, "Ctrl+Alt+K", "application"
+        )
+        self.assertTrue(proceed)
+        self.assertEqual(captured["sequence"], "Ctrl+Alt+K")
+        self.assertEqual(captured["scope"], "application")
+        self.assertEqual(captured["method_name"], slot_name)
+        # ui_name comes from the combobox; just assert it was passed as a string
+        self.assertIsInstance(captured["ui_name"], str)
+
+    def test_builtin_checker_flags_application_duplicate(self):
+        """Two Application bindings on the same key should be a breaks_binding conflict."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if len(registry) < 2:
+            self.skipTest("Need at least two slots to test internal collision")
+
+        first = registry[0]["method"]
+        second = registry[1]["method"]
+
+        # Bind the first slot to Ctrl+Alt+D / application
+        self.sb.set_user_shortcut(self.ui, first, "Ctrl+Alt+D", "application")
+
+        # Now ask the checker about assigning the same key to the second slot
+        conflicts = self.editor._builtin_internal_collision_checker(
+            "Ctrl+Alt+D",
+            "application",
+            self.editor.cmb_ui.currentText() or "",
+            second,
+        )
+
+        self.assertTrue(any(c.breaks_binding for c in conflicts))
+        breaking = next(c for c in conflicts if c.breaks_binding)
+        self.assertIsNotNone(breaking.clear_action)
+
+    # ------------------------------------------------------------------
+    # UI listing & on-demand load
+    # ------------------------------------------------------------------
+
+    def test_combobox_lists_all_registered_uis(self):
+        """The Target UI combobox should list every registered UI, loaded or not."""
+        filenames = self.sb.registry.ui_registry.get("filename") or []
+        expected = {
+            self.sb.convert_to_legal_name(name.rsplit(".", 1)[0]) for name in filenames
+        }
+        self.assertTrue(expected, "Test fixture should register at least one UI")
+
+        listed = {
+            self.editor.cmb_ui.itemText(i) for i in range(self.editor.cmb_ui.count())
+        }
+        self.assertEqual(listed, expected)
+
+    def test_populate_loads_unloaded_ui_on_selection(self):
+        """Selecting an unloaded UI in the combobox should instantiate it on demand."""
+        # The fixture's setUp loaded the example UI. Evict it from the
+        # loaded_ui cache so we can prove that selecting it triggers a
+        # fresh load, rather than just reading the cached value.
+        target_name = self.editor.cmb_ui.itemText(0)
+        self.assertTrue(target_name)
+
+        del self.sb.loaded_ui[target_name]
+        self.assertIsNone(
+            self.sb.loaded_ui.peek(target_name),
+            "Eviction should leave loaded_ui.peek returning None",
+        )
+
+        # Force a re-selection to fire currentTextChanged → populate().
+        self.editor.cmb_ui.setCurrentIndex(-1)
+        self.editor.cmb_ui.setCurrentIndex(0)
+        QtWidgets.QApplication.processEvents()
+
+        self.assertIsNotNone(
+            self.sb.loaded_ui.peek(target_name),
+            "Selecting an unloaded UI should instantiate it",
+        )
+        first_cell = self.editor.table.item(0, 0)
+        if first_cell is not None:
+            self.assertNotIn("Could not load", first_cell.text())
+
 
 if __name__ == "__main__":
     unittest.main()
