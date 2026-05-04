@@ -21,7 +21,7 @@ Mirrors the spirit of :class:`mayatk.MayaUiHandler`'s "use what's given,
 otherwise stand one up" pattern; the mixin doesn't need a host instance
 because the Switchboard itself is the ambient host.
 """
-from typing import TYPE_CHECKING, Any, Dict, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List
 
 if TYPE_CHECKING:  # pragma: no cover
     from qtpy import QtWidgets
@@ -53,12 +53,36 @@ class _EditorRegistry:
     def __init__(self, sb):
         self._sb = sb
         self._cache: Dict[str, Any] = {}
+        # Hooks run once, immediately after each editor is built. Lets
+        # host packages (tentacle/mayatk) wire DCC-specific configuration
+        # (e.g. Maya collision checkers) without coupling uitk to them.
+        self._post_build_hooks: Dict[str, List[Callable]] = {}
 
     # ── Public API ──────────────────────────────────────────────────────────
 
     def names(self) -> Iterable[str]:
         """Return the editor names this registry knows how to build."""
         return tuple(self._EDITORS.keys())
+
+    def add_post_build_hook(self, name: str, hook: Callable) -> None:
+        """Register a callable to run when *name* editor is first built.
+
+        The hook receives the editor instance:
+        ``hook(editor) -> None``. Hooks fire once per build (which means
+        again after the editor is destroyed and recreated). Registration
+        is idempotent — adding the same hook twice has no effect.
+
+        Args:
+            name: Editor name (one of :meth:`names`).
+            hook: ``Callable[[editor], None]``.
+        """
+        if name not in self._EDITORS:
+            raise KeyError(
+                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
+            )
+        bucket = self._post_build_hooks.setdefault(name, [])
+        if hook not in bucket:
+            bucket.append(hook)
 
     def get(self, name: str) -> "QtWidgets.QWidget":
         """Return a live editor instance for *name*.
@@ -182,8 +206,20 @@ class _EditorRegistry:
 
         parent = self._resolve_parent()
         if needs_switchboard:
-            return cls(switchboard=self._sb, parent=parent)
-        return cls(parent=parent)
+            instance = cls(switchboard=self._sb, parent=parent)
+        else:
+            instance = cls(parent=parent)
+
+        for hook in self._post_build_hooks.get(name, ()):
+            try:
+                hook(instance)
+            except Exception as exc:  # noqa: BLE001
+                logger = getattr(self._sb, "logger", None)
+                if logger is not None:
+                    logger.warning(
+                        f"[editors] Post-build hook {hook} raised for {name!r}: {exc}"
+                    )
+        return instance
 
 
 class SwitchboardEditorsMixin:

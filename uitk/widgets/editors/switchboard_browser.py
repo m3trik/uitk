@@ -10,6 +10,7 @@ are knowable for every entry without breaking lazy loading.
 The browser itself is unregistered — a plain ``EditorPanel`` instantiated
 directly by user code, consistent with ``StyleEditor`` and ``ColorMappingDialog``.
 """
+
 from __future__ import annotations
 
 import os
@@ -32,17 +33,16 @@ if TYPE_CHECKING:  # pragma: no cover
 
 # ── Launch options (per-launch, not persisted per-UI) ─────────────────────────
 #
-# Defaults mirror the tentacle marking-menu style (frameless + translucent +
-# dark theme + translucentBgWithBorder) so a browser-launched window matches
+# Defaults: frameless + dark theme so a browser-launched window matches
 # the rest of the toolset out of the box.
 
 
 @dataclass
 class LaunchOptions:
     frameless: bool = True
-    on_top: bool = False
     translucent: bool = True
     restore_geometry: bool = True
+    on_top: bool = True
     theme: str = "dark"
 
 
@@ -125,11 +125,8 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
         """Lazily connect to a loaded UI's on_show/on_hide signals."""
         if name in self._tracked:
             return
-        try:
-            if name not in self.sb.loaded_ui:
-                return
-            ui = self.sb.loaded_ui[name]
-        except Exception:
+        ui = self.sb.loaded_ui.peek(name)
+        if ui is None:
             return
 
         on_show = getattr(ui, "on_show", None)
@@ -262,19 +259,20 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
     def _all_tags_for(self, name: str) -> Set[str]:
         tags = self._inherited_tags_for(name)
         tags |= set(self.sb._ui_xml_tags.get(name, set()))
-        if name in self.sb.loaded_ui:
+        ui = self.sb.loaded_ui.peek(name)
+        if ui is not None:
             try:
-                tags |= set(self.sb.loaded_ui[name].tags or set())
+                tags |= set(ui.tags or set())
             except Exception:
                 pass
         return tags
 
     def _is_visible(self, name: str) -> bool:
+        ui = self.sb.loaded_ui.peek(name)
         try:
-            ui = self.sb.loaded_ui[name] if name in self.sb.loaded_ui else None
+            return bool(ui and ui.isVisible())
         except Exception:
             return False
-        return bool(ui and ui.isVisible())
 
     def all_unique_tags(self) -> List[str]:
         seen: Set[str] = set()
@@ -406,10 +404,10 @@ class TagEditDialog(QtWidgets.QDialog):
 # diff trees, etc.) and stay consistent if those palettes are tweaked later.
 _STATUS_PALETTE = ptk.Palette.status()
 _UI_PALETTE = ptk.Palette.ui()
-_NAME_COLOR = _UI_PALETTE["text"].hex                  # neutral text
-_NAME_VISIBLE_COLOR = _STATUS_PALETTE["warn"].fg.hex   # warm gold (visible)
+_NAME_COLOR = _UI_PALETTE["text"].hex  # neutral text
+_NAME_VISIBLE_COLOR = _STATUS_PALETTE["warn"].fg.hex  # warm gold (visible)
 _INHERITED_TAG_COLOR = _STATUS_PALETTE["locked"].fg.hex  # dimmed grey
-_FILE_TAG_COLOR = _STATUS_PALETTE["info"].fg.hex       # soft steel-blue
+_FILE_TAG_COLOR = _STATUS_PALETTE["info"].fg.hex  # soft steel-blue
 
 
 class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
@@ -461,9 +459,7 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
                 f"#{escape(t)}</span>"
             )
         for t in sorted(file_tags):
-            chips.append(
-                f'<span style="color:{_FILE_TAG_COLOR}">#{escape(t)}</span>'
-            )
+            chips.append(f'<span style="color:{_FILE_TAG_COLOR}">#{escape(t)}</span>')
         return " ".join(chips)
 
     def _build_html(self, index) -> Optional[str]:
@@ -535,8 +531,7 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
         if inherited:
             inh_str = ", ".join(f"#{t}" for t in inherited)
             editor.setToolTip(
-                f"Editing file tags only.\n"
-                f"Inherited (not editable here): {inh_str}"
+                f"Editing file tags only.\n" f"Inherited (not editable here): {inh_str}"
             )
         else:
             editor.setToolTip("Comma-separated tags stored in this .ui file.")
@@ -768,9 +763,7 @@ class SwitchboardBrowser(EditorPanel):
         self._chip_scroll = QtWidgets.QScrollArea()
         self._chip_scroll.setWidgetResizable(True)
         self._chip_scroll.setFixedHeight(34)
-        self._chip_scroll.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAsNeeded
-        )
+        self._chip_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self._chip_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self._chip_container = QtWidgets.QWidget()
         self._chip_layout = QtWidgets.QHBoxLayout(self._chip_container)
@@ -809,10 +802,18 @@ class SwitchboardBrowser(EditorPanel):
         self._view.setItemDelegate(self._row_delegate)
         # Header configuration: name stretches, tags expand, action columns fixed
         h = self._view.horizontalHeader()
-        h.setSectionResizeMode(SwitchboardBrowserModel.COL_NAME, QtWidgets.QHeaderView.ResizeToContents)
-        h.setSectionResizeMode(SwitchboardBrowserModel.COL_TAGS, QtWidgets.QHeaderView.Stretch)
-        h.setSectionResizeMode(SwitchboardBrowserModel.COL_ACTION, QtWidgets.QHeaderView.Fixed)
-        h.setSectionResizeMode(SwitchboardBrowserModel.COL_CLOSE, QtWidgets.QHeaderView.Fixed)
+        h.setSectionResizeMode(
+            SwitchboardBrowserModel.COL_NAME, QtWidgets.QHeaderView.ResizeToContents
+        )
+        h.setSectionResizeMode(
+            SwitchboardBrowserModel.COL_TAGS, QtWidgets.QHeaderView.Stretch
+        )
+        h.setSectionResizeMode(
+            SwitchboardBrowserModel.COL_ACTION, QtWidgets.QHeaderView.Fixed
+        )
+        h.setSectionResizeMode(
+            SwitchboardBrowserModel.COL_CLOSE, QtWidgets.QHeaderView.Fixed
+        )
         # Action columns are sized to exactly the icon button (22x22) plus
         # zero item padding, so the cell hugs the button with no dead zone
         # on either side. Padding is killed via ``QTableView::item`` QSS so
@@ -843,9 +844,7 @@ class SwitchboardBrowser(EditorPanel):
         self._model.rowsInserted.connect(self._defer_full_refresh)
         self._model.rowsRemoved.connect(self._defer_full_refresh)
         self._proxy.layoutChanged.connect(self._defer_full_refresh)
-        self._view.selectionModel().currentChanged.connect(
-            self._update_footer_status
-        )
+        self._view.selectionModel().currentChanged.connect(self._update_footer_status)
         self._refresh_chips()
         self._update_show_ui()
         self._apply_filter()
@@ -955,8 +954,7 @@ class SwitchboardBrowser(EditorPanel):
                 {
                     "icon": SCOPE_ICONS[current],
                     "tooltip": (
-                        f"Scope: matches {current}. "
-                        f"Click to switch to '{nxt}'."
+                        f"Scope: matches {current}. " f"Click to switch to '{nxt}'."
                     ),
                     "callback": (
                         lambda s=nxt, k=scope_settings_key: self._set_scope(k, s)
@@ -1031,9 +1029,7 @@ class SwitchboardBrowser(EditorPanel):
 
     def _set_exclude_filter_enabled(self, enabled: bool) -> None:
         self._exclude_filter_enabled = bool(enabled)
-        self._settings.setValue(
-            "exclude.filter_enabled", self._exclude_filter_enabled
-        )
+        self._settings.setValue("exclude.filter_enabled", self._exclude_filter_enabled)
         self._apply_filter()
 
     def _scope_for(self, le) -> str:
@@ -1049,8 +1045,8 @@ class SwitchboardBrowser(EditorPanel):
         Sections in display order:
             • "Refresh" button — re-pulls the registry.
             • "Show:" separator + show-mode combo + Unhide-All button.
-            • "Launch options:" separator + frameless / on-top / translucent
-              / restore-geometry checkboxes + theme combo.
+            • "Launch options:" separator + frameless / restore-geometry
+              checkboxes + theme combo.
             • "Presets:" separator + preset combo (Save / Rename / Delete /
               Open Folder built into the combo by ``PresetManager``).
 
@@ -1058,8 +1054,6 @@ class SwitchboardBrowser(EditorPanel):
         so the menu's built-in *Restore Defaults* button (enabled below) can
         round-trip them via :class:`_BrowserState`.
 
-        On-top behavior of the browser itself is inherited from
-        ``EditorPanel``; no per-browser toggle is exposed.
         """
         menu = self._header.menu
         menu.setTitle("Browser Options:")
@@ -1100,35 +1094,28 @@ class SwitchboardBrowser(EditorPanel):
         self._unhide_all_btn.clicked.connect(self._on_unhide_all)
 
         # ── Launch options ──
-        # Defaults match the tentacle marking-menu launch style (frameless +
-        # translucent + dark + translucentBgWithBorder) so a browser-launched
-        # window matches the rest of the toolset out of the box.
         menu.add("Separator", setTitle="Launch options:")
         self._launch_option_widgets = {}
         for key, label, default, tooltip in [
             ("frameless", "Frameless", True, "Remove window title bar."),
             (
-                "on_top",
-                "On top",
-                True,
-                # Default ON: launched UIs need to share the browser's
-                # on-top z-class, otherwise they end up hidden behind the
-                # browser when the browser is on-top (the marking-menu
-                # default). Recent-raise wins within the same z-class so
-                # the launched UI ends up above the browser.
-                "Keep the window above other application windows.",
-            ),
-            (
                 "translucent",
                 "Translucent",
                 True,
-                "Translucent background with rounded border (matches marking-menu style).",
+                "Use a translucent background.",
             ),
             (
                 "restore_geometry",
                 "Restore geometry",
                 True,
                 "Restore the last saved size/position.",
+            ),
+            (
+                "on_top",
+                "Always on top",
+                True,
+                "Keep the launched window above other windows so the on-top "
+                "browser doesn't cover it.",
             ),
         ]:
             cb = menu.add(
@@ -1145,9 +1132,9 @@ class SwitchboardBrowser(EditorPanel):
             self.state.capture(cb, default)
         # Backward-compatible attribute aliases used elsewhere in the class
         self._cb_frameless = self._launch_option_widgets["frameless"]
-        self._cb_on_top = self._launch_option_widgets["on_top"]
         self._cb_translucent = self._launch_option_widgets["translucent"]
         self._cb_restore = self._launch_option_widgets["restore_geometry"]
+        self._cb_on_top = self._launch_option_widgets["on_top"]
 
         # Theme: pulled through the switchboard's ``style`` proxy so any
         # theme added to ``StyleSheet`` shows up here automatically.
@@ -1207,9 +1194,9 @@ class SwitchboardBrowser(EditorPanel):
             "hidden_tags": sorted(self.hidden_tags),
             "launch": {
                 "frameless": self._cb_frameless.isChecked(),
-                "on_top": self._cb_on_top.isChecked(),
                 "translucent": self._cb_translucent.isChecked(),
                 "restore_geometry": self._cb_restore.isChecked(),
+                "on_top": self._cb_on_top.isChecked(),
                 "theme": self._cmb_theme.currentText(),
             },
         }
@@ -1287,9 +1274,9 @@ class SwitchboardBrowser(EditorPanel):
         launch = data.get("launch") or {}
         for key, cb in [
             ("frameless", self._cb_frameless),
-            ("on_top", self._cb_on_top),
             ("translucent", self._cb_translucent),
             ("restore_geometry", self._cb_restore),
+            ("on_top", self._cb_on_top),
         ]:
             if key in launch:
                 cb.setChecked(bool(launch[key]))
@@ -1356,9 +1343,9 @@ class SwitchboardBrowser(EditorPanel):
     def launch_options(self) -> LaunchOptions:
         return LaunchOptions(
             frameless=self._cb_frameless.isChecked(),
-            on_top=self._cb_on_top.isChecked(),
             translucent=self._cb_translucent.isChecked(),
             restore_geometry=self._cb_restore.isChecked(),
+            on_top=self._cb_on_top.isChecked(),
             theme=self._cmb_theme.currentText(),
         )
 
@@ -1411,7 +1398,9 @@ class SwitchboardBrowser(EditorPanel):
             btn.customContextMenuRequested.connect(
                 lambda pos, tag=t, b=btn: self._on_chip_context_menu(tag, b, pos)
             )
-            btn.toggled.connect(lambda checked, tag=t: self._on_chip_toggled(tag, checked))
+            btn.toggled.connect(
+                lambda checked, tag=t: self._on_chip_toggled(tag, checked)
+            )
             self._chip_layout.addWidget(btn)
             self._chip_buttons[t] = btn
         self._chip_layout.addStretch(1)
@@ -1466,10 +1455,14 @@ class SwitchboardBrowser(EditorPanel):
             for t in tags:
                 if t in self.hidden_tags:
                     a = menu.addAction(f"Unhide tag #{t}")
-                    a.triggered.connect(lambda _=False, tt=t: self._toggle_hide_tag(tt, hide=False))
+                    a.triggered.connect(
+                        lambda _=False, tt=t: self._toggle_hide_tag(tt, hide=False)
+                    )
                 else:
                     a = menu.addAction(f"Hide by tag #{t}")
-                    a.triggered.connect(lambda _=False, tt=t: self._toggle_hide_tag(tt, hide=True))
+                    a.triggered.connect(
+                        lambda _=False, tt=t: self._toggle_hide_tag(tt, hide=True)
+                    )
 
         menu.exec_(self._view.viewport().mapToGlobal(pos))
 
@@ -1533,7 +1526,7 @@ class SwitchboardBrowser(EditorPanel):
 
         Routes through the launched UI's own ``Header.hide_window`` when
         present — that's the same code path the launched window's own hide
-        button uses, so pin / collapse / minimize state is reset cleanly
+        button uses, so collapse / minimize state is reset cleanly
         and any header-level hide hooks (subclasses, signals) fire as if
         the user had clicked the in-window button. Falls back to a direct
         ``ui.hide()`` for UIs that don't have a uitk Header.
@@ -1542,12 +1535,7 @@ class SwitchboardBrowser(EditorPanel):
         pin state and refuses to hide pinned windows or windows without
         a pin button, which is wrong for an explicit user gesture.
         """
-        if name not in self.sb.loaded_ui:
-            return
-        try:
-            ui = self.sb.loaded_ui[name]
-        except Exception:
-            return
+        ui = self.sb.loaded_ui.peek(name)
         if not isinstance(ui, QtWidgets.QWidget):
             return
 
@@ -1592,21 +1580,14 @@ class SwitchboardBrowser(EditorPanel):
 
             ui.set_flags(
                 FramelessWindowHint=opts.frameless,
-                WindowStaysOnTopHint=opts.on_top,
                 Tool=opts.frameless,
+                WindowStaysOnTopHint=opts.on_top,
             )
-            if opts.translucent:
-                ui.set_attributes(WA_TranslucentBackground=True)
+            ui.setAttribute(QtCore.Qt.WA_TranslucentBackground, opts.translucent)
 
-            # Apply theme + style class. Theme is user-selectable; the
-            # style class is paired with the translucent flag because the
-            # rounded-border look only makes sense when the BG is alpha.
             if hasattr(ui, "style"):
                 try:
-                    style_class = (
-                        "translucentBgWithBorder" if opts.translucent else ""
-                    )
-                    ui.style.set(theme=opts.theme, style_class=style_class)
+                    ui.style.set(theme=opts.theme)
                 except Exception:
                     pass
 
@@ -1619,11 +1600,6 @@ class SwitchboardBrowser(EditorPanel):
             if not opts.restore_geometry and hasattr(ui, "clear_saved_geometry"):
                 ui.clear_saved_geometry()
             ui.show(pos="screen")
-            # Raise + activate so the launched UI ends up *above* the
-            # browser within the on-top z-class. Without this the
-            # browser (also on-top by default) would cover the new
-            # window; recent-raise wins within a z-class so we
-            # explicitly bid for top.
             ui.raise_()
             ui.activateWindow()
         except Exception as e:
@@ -1729,20 +1705,12 @@ class SwitchboardBrowser(EditorPanel):
                 "eye" if visible else "open_external",
                 size=(14, 14),
             )
-            action_btn.setToolTip(
-                f"Focus {name}" if visible else f"Launch {name}"
-            )
+            action_btn.setToolTip(f"Focus {name}" if visible else f"Launch {name}")
             if visible:
-                action_btn.clicked.connect(
-                    lambda _=False, n=name: self._focus(n)
-                )
+                action_btn.clicked.connect(lambda _=False, n=name: self._focus(n))
             else:
-                action_btn.clicked.connect(
-                    lambda _=False, n=name: self._launch(n)
-                )
-            self._view.setIndexWidget(
-                proxy_idx_action, self._wrap_centered(action_btn)
-            )
+                action_btn.clicked.connect(lambda _=False, n=name: self._launch(n))
+            self._view.setIndexWidget(proxy_idx_action, self._wrap_centered(action_btn))
 
             # Close: only enabled when the UI is currently visible
             close_btn = self._make_icon_btn()
@@ -1750,18 +1718,12 @@ class SwitchboardBrowser(EditorPanel):
             close_btn.setToolTip(f"Hide {name}" if visible else "")
             close_btn.setEnabled(visible)
             close_btn.clicked.connect(lambda _=False, n=name: self._close_ui(n))
-            self._view.setIndexWidget(
-                proxy_idx_close, self._wrap_centered(close_btn)
-            )
+            self._view.setIndexWidget(proxy_idx_close, self._wrap_centered(close_btn))
 
-    @staticmethod
-    def _make_icon_btn() -> QtWidgets.QPushButton:
-        btn = QtWidgets.QPushButton()
-        btn.setFlat(True)
-        btn.setFocusPolicy(QtCore.Qt.NoFocus)
-        btn.setFixedSize(22, 22)
-        btn.setCursor(QtCore.Qt.PointingHandCursor)
-        return btn
+    def _make_icon_btn(self) -> QtWidgets.QPushButton:
+        # Delegates to EditorPanel.icon_button (shared template). Slightly
+        # smaller (22 vs the 24 default) to match this table's row height.
+        return self.icon_button(size=22)
 
     @staticmethod
     def _wrap_centered(widget: QtWidgets.QWidget) -> QtWidgets.QWidget:
@@ -1838,5 +1800,3 @@ class SwitchboardBrowser(EditorPanel):
                     return False
 
         return True
-
-

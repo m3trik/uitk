@@ -32,12 +32,29 @@ class EditorPanel(QtWidgets.QWidget):
 
     def __init__(self, title="", header_buttons=None, status_text="", parent=None):
         super().__init__(None)
-        self.setWindowFlags(
+        # Stay-on-top is part of the panel contract — editors are utility
+        # surfaces that should sit above the windows they're configuring.
+        # Subclasses that don't want this can clear the flag themselves.
+        _panel_flags = (
             QtCore.Qt.Window
             | QtCore.Qt.FramelessWindowHint
             | QtCore.Qt.WindowStaysOnTopHint
         )
+        self.setWindowFlags(_panel_flags)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+
+        # Anchor to a stable top-level so the panel survives a transient
+        # invoker hiding (e.g. a MarkingMenu, popup, or temporary host
+        # widget). We reparent to ``parent.window()`` rather than ``parent``
+        # directly so a caller passing some inner container still ends up
+        # anchored to the DCC main window. ``Qt.Window`` keeps us a real
+        # top-level despite having a Qt parent — same pattern MarkingMenu
+        # uses when launching standalone windows. Re-pass the full flag set
+        # because setParent(parent, flags) replaces window flags wholesale.
+        if parent is not None:
+            anchor = parent.window() or parent
+            self.setParent(anchor, _panel_flags)
+            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
 
         # Inner frame paints the semi-transparent background
         self._frame = QtWidgets.QFrame(self)
@@ -355,8 +372,58 @@ class EditorPanel(QtWidgets.QWidget):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(self.preset_dir)))
 
     @staticmethod
+    def icon_button(
+        icon_name: str = "",
+        size: int = 24,
+        tooltip: str = "",
+        icon_size=None,
+    ) -> QtWidgets.QPushButton:
+        """Build a square, flat, icon-only button for table cells / toolbars.
+
+        Single source of truth for "small icon button" UI elements across
+        editors. Use it for table action columns, header rows, anywhere a
+        compact iconographic button is needed.
+
+        Parameters
+        ----------
+        icon_name : str
+            IconManager registry name (e.g. ``"undo"``, ``"window"``).
+            When empty, the caller is expected to set the icon afterwards.
+        size : int
+            Edge length of the square button in pixels. Defaults to 24.
+        tooltip : str
+            Optional hover tooltip.
+        icon_size : tuple[int, int] or None
+            Inner icon size. Defaults to ``(size - 8, size - 8)``, which
+            gives the icon ~4 px breathing room on each side.
+
+        Returns
+        -------
+        QtWidgets.QPushButton
+            A flat, square, no-focus, pointing-hand-cursor button. The
+            caller is responsible for connecting ``clicked``.
+        """
+        from uitk.widgets.mixins.icon_manager import IconManager
+
+        btn = QtWidgets.QPushButton()
+        btn.setFlat(True)
+        btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        btn.setCursor(QtCore.Qt.PointingHandCursor)
+        btn.setFixedSize(size, size)
+        if tooltip:
+            btn.setToolTip(tooltip)
+        if icon_name:
+            sz = icon_size if icon_size else (max(8, size - 8), max(8, size - 8))
+            IconManager.set_icon(btn, icon_name, size=sz)
+        return btn
+
+    @staticmethod
     def _preset_icon_btn(icon_name, height, tooltip):
-        """Create a small icon-only button for the preset row."""
+        """Create a small icon-only button for the preset row.
+
+        Slightly wider than tall (toolbar look). For table-cell square
+        buttons, use :meth:`icon_button` instead.
+        """
         from uitk.widgets.mixins.icon_manager import IconManager
 
         btn = QtWidgets.QPushButton()

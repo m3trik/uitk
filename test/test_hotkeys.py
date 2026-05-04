@@ -247,5 +247,104 @@ class TestHotkeyEditor(QtBaseTestCase):
         )
 
 
+class TestShortcutScope(QtBaseTestCase):
+    """Test scope persistence and live-rebind behaviour."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_registry_includes_scope_fields(self):
+        """Each registry entry should expose current_scope and default_scope."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+        for entry in registry:
+            self.assertIn("current_scope", entry)
+            self.assertIn("default_scope", entry)
+            self.assertIn(
+                entry["current_scope"],
+                {"widget", "widget_children", "window", "application"},
+            )
+
+    def test_set_user_shortcut_persists_scope(self):
+        """set_user_shortcut(..., scope=...) should write the scope settings key."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+
+        slot_name = registry[0]["method"]
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+T", "application")
+
+        cls_name = self.sb.get_slots_instance(self.ui).__class__.__name__
+        scope_key = f"shortcuts.{cls_name}.{slot_name}.scope"
+        self.assertEqual(self.ui.settings.value(scope_key), "application")
+
+    def test_set_user_shortcut_live_updates_context(self):
+        """set_user_shortcut should update the live QShortcut's context."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+
+        slot_name = registry[0]["method"]
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+T", "application")
+
+        slots = self.sb.get_slots_instance(self.ui)
+        sc = slots._connected_shortcuts.get(slot_name)
+        self.assertIsNotNone(sc)
+        self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
+
+    def test_registry_reflects_scope_override(self):
+        """Registry's current_scope should reflect a persisted override."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+
+        slot_name = registry[0]["method"]
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+T", "application")
+
+        new_registry = self.sb.get_shortcut_registry(self.ui)
+        entry = next(r for r in new_registry if r["method"] == slot_name)
+        self.assertEqual(entry["current_scope"], "application")
+
+    def test_omitting_scope_preserves_existing_override(self):
+        """Calling set_user_shortcut without scope should not clobber a saved override."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+
+        slot_name = registry[0]["method"]
+        # First set scope=application
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+T", "application")
+        # Then update only the sequence
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+Y")
+
+        cls_name = self.sb.get_slots_instance(self.ui).__class__.__name__
+        scope_key = f"shortcuts.{cls_name}.{slot_name}.scope"
+        self.assertEqual(self.ui.settings.value(scope_key), "application")
+
+        slots = self.sb.get_slots_instance(self.ui)
+        sc = slots._connected_shortcuts.get(slot_name)
+        self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
+
+
 if __name__ == "__main__":
     unittest.main()
