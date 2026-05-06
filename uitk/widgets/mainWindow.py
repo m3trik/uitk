@@ -38,7 +38,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         path: str = None,
         log_level: int = "WARNING",
         restore_window_size: bool = True,
-        add_footer: bool = True,
+        add_footer: bool = False,
         ensure_on_screen: bool = True,
         default_slot_timeout: Optional[float] = None,
         settings: Optional[SettingsManager] = None,
@@ -55,7 +55,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             path: Optional path
             log_level: Logging level to use
             restore_window_size: Whether to save and restore window geometry. Defaults to True.
-            add_footer: Whether to add a footer with size grip. Defaults to True.
+            add_footer: If True and no Footer is embedded in the .ui file, lazily
+                construct one with a size grip. An embedded Footer (a child named
+                "footer" in the central widget) is always adopted regardless of
+                this flag. Defaults to False — embed the Footer in the .ui file.
             ensure_on_screen: Whether to ensure the window is fully on screen when shown. Defaults to True.
             default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
             settings: Optional SettingsManager to use. Defaults to a new instance.
@@ -131,44 +134,51 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         self._create_size_grip()
 
     def _create_size_grip(self) -> None:
-        """Create the size grip or footer if configured."""
+        """Adopt an embedded Footer or fall back to a plain size grip.
+
+        Resolution order:
+            1. If self.footer is already set, do nothing.
+            2. If the central widget contains a child named "footer", adopt it.
+            3. If add_footer=True (opt-in), construct a Footer with size grip.
+            4. Otherwise, attach a bare QSizeGrip — no Footer.
+        """
+        if getattr(self, "footer", None):
+            return
+
+        central = self.centralWidget()
+        if not central:
+            return
+
+        # Always adopt an embedded footer if the .ui file declares one.
+        # findChild matches by objectName since QUiLoader's dynamic subclasses
+        # may not isinstance-match the imported Footer class.
+        from qtpy.QtWidgets import QWidget
+
+        footer_child = central.findChild(QWidget, "footer")
+        if footer_child is not None:
+            self.footer = footer_child
+            return
+
         if self.add_footer:
-            # Use footer with integrated size grip
-            # Check if footer already exists on MainWindow or in central widget
-            existing_footer = getattr(self, "footer", None)
-            if existing_footer:
-                return
-
-            central = self.centralWidget()
-            if not central:
-                return
-
-            # Check for footer defined in .ui file (search by object name only,
-            # since class comparison may fail due to Qt's module path differences)
-            from qtpy.QtWidgets import QWidget
-
-            footer_child = central.findChild(QWidget, "footer")
-            if footer_child:
-                self.footer = footer_child
-                return
-
+            # Opt-in lazy construction for callers that haven't embedded one.
             self.footer = Footer(add_size_grip=True)
             self.footer.attach_to(central)
-        else:
-            # Legacy size grip without footer
-            existing_grip = self.findChild(QtWidgets.QSizeGrip, "size_grip")
-            if existing_grip:
-                return
+            return
 
-            size_grip = QtWidgets.QSizeGrip(self)
-            size_grip.setObjectName("size_grip")
+        # Default: no Footer — give the window a bare size grip so it's still
+        # resizable. Skip if one is already attached (e.g. re-entrant calls).
+        if self.findChild(QtWidgets.QSizeGrip, "size_grip"):
+            return
 
-            layout = self.centralWidget().layout() if self.centralWidget() else None
-            if layout:
-                layout.addWidget(size_grip)
-                layout.setAlignment(
-                    size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight
-                )
+        size_grip = QtWidgets.QSizeGrip(self)
+        size_grip.setObjectName("size_grip")
+
+        layout = central.layout()
+        if layout:
+            layout.addWidget(size_grip)
+            layout.setAlignment(
+                size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight
+            )
 
     def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
         """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""

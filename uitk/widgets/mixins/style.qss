@@ -520,7 +520,7 @@ QTextEdit {
     background-color: {WIDGET_BACKGROUND};
 }
 QTextEdit:hover {
-    border: 2px solid {BUTTON_HOVER};
+    border: 1px solid rgba(255,255,255,45);
 }
 QTextEdit:disabled {
     color: {TEXT_DISABLED};
@@ -543,7 +543,7 @@ QPlainTextEdit {
     color: {TEXT_COLOR};
 }
 QPlainTextEdit:hover {
-    border: 2px solid {BUTTON_HOVER};
+    border: 1px solid rgba(255,255,255,45);
 }
 QPlainTextEdit:disabled {
     color: {TEXT_DISABLED};
@@ -619,11 +619,18 @@ QTableCornerButton::section {
 
 /* QTableWidget hierarchy support */
 QTableWidget::item {
-    padding: 2px 4px;
-    border: none;
+    padding: 2px 5px;
+    border: 1px solid transparent;
+}
+QTableWidget::item:hover {
+    border: 1px solid rgba(255,255,255,45);
 }
 QTableWidget::item:selected {
     background-color: {TABLE_ITEM_SELECTED};
+}
+QTableWidget::item:selected:hover {
+    background-color: {TABLE_ITEM_SELECTED};
+    border: 1px solid rgba(255,255,255,70);
 }
 QTableWidget::item:checked {
     background-color: {BUTTON_CHECKED};
@@ -676,7 +683,7 @@ QFrame {
     border-radius: 1px;
 }
 QFrame:hover {
-    border: 2px solid {BUTTON_HOVER};
+    border: 1px solid rgba(255,255,255,45);
 }
 
 /* -- Scroll Areas -- */
@@ -687,7 +694,7 @@ QAbstractScrollArea {
     selection-color: {TEXT_COLOR};
 }
 QAbstractScrollArea:hover {
-    border: 2px solid {BUTTON_HOVER};
+    border: 1px solid rgba(255,255,255,45);
 }
 QAbstractScrollArea:disabled {
     color: {TEXT_DISABLED};
@@ -704,7 +711,7 @@ QAbstractSlider {
     background-color: {WIDGET_BACKGROUND};
 }
 QAbstractSlider:hover {
-    border: 2px solid {BUTTON_HOVER};
+    border: 1px solid rgba(255,255,255,45);
 }
 QAbstractSlider:disabled {
     color: {TEXT_DISABLED};
@@ -804,7 +811,7 @@ QProgressBar {
     background-color: {PANEL_BACKGROUND};
 }
 QProgressBar:hover {
-    border: 2px solid {BUTTON_HOVER};
+    border: 1px solid rgba(255,255,255,45);
 }
 QProgressBar:disabled {
     color: {TEXT_DISABLED};

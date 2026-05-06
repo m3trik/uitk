@@ -3,9 +3,10 @@
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 
 
-class Label(QtWidgets.QLabel, MenuMixin, AttributesMixin):
+class Label(QtWidgets.QLabel, MenuMixin, OptionBoxMixin, AttributesMixin):
     """Enhanced QLabel with click signals and context menu support.
 
     Extends QLabel with:

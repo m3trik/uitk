@@ -635,12 +635,16 @@ class TestMainWindowFooter(QtBaseTestCase):
         super().setUp()
         self.sb = MockSwitchboard()
 
-    def test_add_footer_default_true(self):
-        """Should default to add_footer=True."""
+    def test_add_footer_default_false(self):
+        """Should default to add_footer=False — Footers must be embedded in .ui files.
+
+        The lazy-construct path is opt-in so MainWindow doesn't tack a Footer
+        onto every legacy UI that didn't declare one.
+        """
         from uitk.widgets.mainWindow import MainWindow
 
         window = self.track_widget(MainWindow("TestWindow", self.sb))
-        self.assertTrue(window.add_footer)
+        self.assertFalse(window.add_footer)
 
     def test_add_footer_can_be_disabled(self):
         """Should be able to disable footer."""
@@ -660,6 +664,38 @@ class TestMainWindowFooter(QtBaseTestCase):
         )
         # Footer should be created
         self.assertIsNotNone(window.footer)
+
+    def test_no_footer_when_default(self):
+        """With add_footer=False (default), no Footer should be auto-created."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        window = self.track_widget(
+            MainWindow("TestWindow", self.sb, central_widget=central)
+        )
+        self.assertIsNone(window.footer)
+
+    def test_adopts_embedded_footer_even_when_opted_out(self):
+        """An embedded child named 'footer' must be adopted regardless of add_footer."""
+        from uitk.widgets.mainWindow import MainWindow
+        from uitk.widgets.footer import Footer
+
+        central = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(central)
+        embedded = Footer(add_size_grip=False)
+        embedded.setObjectName("footer")
+        layout.addWidget(embedded)
+
+        window = self.track_widget(
+            MainWindow(
+                "TestWindow",
+                self.sb,
+                central_widget=central,
+                add_footer=False,
+            )
+        )
+        self.assertIs(window.footer, embedded)
 
 
 class TestMainWindowIsCurrentUI(QtBaseTestCase):
