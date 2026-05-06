@@ -197,7 +197,19 @@ class ComboBox(
 
     @Signals.blockSignals
     def setCurrentText(self, text):
-        self.setRichText(text, self.currentIndex())
+        """Select the item whose rich or plain text matches *text*.
+
+        Matches Qt's ``QComboBox.setCurrentText`` contract: the current
+        index moves to the first item with the given text. The previous
+        override called ``setRichText(text, currentIndex())`` which
+        renamed item-0 in place and left the index untouched — silently
+        dropping the selected item's data on every restore-by-text.
+        """
+        for i in range(self.count()):
+            if self.richText(i) == text or self.itemText(i) == text:
+                self.setCurrentIndex(i)
+                return
+        super().setCurrentText(text)
 
     @Signals.blockSignals
     def setItemText(self, index, text):

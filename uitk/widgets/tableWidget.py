@@ -99,19 +99,28 @@ class CellFormatMixin(ConvertMixin):
 
     def apply_formatting(self):
         """Apply formatting based on the registered formatters."""
-        for row in range(self.rowCount()):
-            for col in range(self.columnCount()):
-                item = self.item(row, col)
-                if not item:
-                    continue
-                for fmt in self._get_formatters(row, col):
-                    fmt(
-                        item,
-                        item.data(QtCore.Qt.UserRole) or item.text(),
-                        row,
-                        col,
-                        self,
-                    )
+        # Block signals for the duration: format_item modifies item roles
+        # (foreground/background), which fires cellChanged → _on_cell_edited
+        # → formatters → format_item → cellChanged → ... (infinite recursion
+        # → stack overflow on tables with many formatted cells).
+        was_blocked = self.signalsBlocked()
+        self.blockSignals(True)
+        try:
+            for row in range(self.rowCount()):
+                for col in range(self.columnCount()):
+                    item = self.item(row, col)
+                    if not item:
+                        continue
+                    for fmt in self._get_formatters(row, col):
+                        fmt(
+                            item,
+                            item.data(QtCore.Qt.UserRole) or item.text(),
+                            row,
+                            col,
+                            self,
+                        )
+        finally:
+            self.blockSignals(was_blocked)
 
     def ensure_valid_color(self, color, color_type, item, row, col):
         """Ensure a valid QColor, using fallback if needed."""

@@ -386,6 +386,29 @@ class TestComboBoxItems(QtBaseTestCase):
         combo.setCurrentIndex(1)
         self.assertEqual(combo.currentText(), "Second")
 
+    def test_setCurrentText_selects_item_with_matching_text(self):
+        """setCurrentText must move currentIndex and preserve item data.
+
+        Bug: the previous override called setRichText(text, currentIndex())
+        which renamed item-0 in place and left the index at 0 — so callers
+        that did setCurrentText(name) to restore a selection got
+        currentData() == None and lost the selected item's payload.
+        Manifest: mayatk scene_exporter ignored the selected FBX preset.
+        Fixed: 2026-05-05
+        """
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("None", None)
+        combo.addItem("MyAsciiPreset", r"C:\fake\ascii.fbxexportpreset")
+        combo.addItem("MyBinaryPreset", r"C:\fake\binary.fbxexportpreset")
+
+        combo.setCurrentText("MyAsciiPreset")
+
+        self.assertEqual(combo.currentIndex(), 1)
+        self.assertEqual(combo.currentText(), "MyAsciiPreset")
+        self.assertEqual(combo.currentData(), r"C:\fake\ascii.fbxexportpreset")
+
 
 class TestAlignedComboBox(QtBaseTestCase):
     """Tests for AlignedComboBox header functionality."""
