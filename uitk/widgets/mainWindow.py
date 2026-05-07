@@ -130,17 +130,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if central_widget:
             self.setCentralWidget(central_widget)
 
-        # Always create size grip, even if no layout exists yet
-        self._create_size_grip()
+        self._resolve_footer()
 
-    def _create_size_grip(self) -> None:
-        """Adopt an embedded Footer or fall back to a plain size grip.
+    def _resolve_footer(self) -> None:
+        """Adopt an embedded Footer if present, or lazily build one when opted in.
 
         Resolution order:
             1. If self.footer is already set, do nothing.
             2. If the central widget contains a child named "footer", adopt it.
             3. If add_footer=True (opt-in), construct a Footer with size grip.
-            4. Otherwise, attach a bare QSizeGrip — no Footer.
+            4. Otherwise, leave the window without a Footer or size grip.
         """
         if getattr(self, "footer", None):
             return
@@ -163,22 +162,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             # Opt-in lazy construction for callers that haven't embedded one.
             self.footer = Footer(add_size_grip=True)
             self.footer.attach_to(central)
-            return
-
-        # Default: no Footer — give the window a bare size grip so it's still
-        # resizable. Skip if one is already attached (e.g. re-entrant calls).
-        if self.findChild(QtWidgets.QSizeGrip, "size_grip"):
-            return
-
-        size_grip = QtWidgets.QSizeGrip(self)
-        size_grip.setObjectName("size_grip")
-
-        layout = central.layout()
-        if layout:
-            layout.addWidget(size_grip)
-            layout.setAlignment(
-                size_grip, QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight
-            )
 
     def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
         """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""
@@ -188,8 +171,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         # Initialize window flags based on the new central widget
         self.initialize_window_flags(widget)
 
-        # Ensure size grip exists and is properly positioned
-        self._create_size_grip()
+        # Resolve footer (and its size grip) for the new central widget
+        self._resolve_footer()
 
     def initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None:
         """Initializes the window flags based on the central widget."""

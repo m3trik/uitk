@@ -326,7 +326,7 @@ Generic attribute editor — given a dict, renders a two-column form with label 
 
 Signals: `labelToggled(str, bool)`, `valueChanged(str, object)`, `refreshRequested()`.
 
-Used by tools like [mayatk's AttributeManager](https://github.com/m3trik/mayatk/blob/main/mayatk/node_utils/attributes/attribute_manager/).
+Used by tools like [mayatk's Channels](https://github.com/m3trik/mayatk/blob/main/mayatk/node_utils/attributes/channels/).
 
 ## ExpandableList
 

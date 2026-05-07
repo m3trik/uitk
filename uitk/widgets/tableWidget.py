@@ -439,6 +439,31 @@ class TableSelection:
         return widget_item.text() if widget_item is not None else default
 
 
+class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
+    """Strip frame and internal padding from text editors so entering
+    edit mode doesn't visually shift the cell's text.
+
+    The default ``QStyledItemDelegate`` opens a ``QLineEdit`` with a
+    frame, style-dependent text margins, and stylesheet padding — the
+    sum visibly offsets the text from where the cell display rendered
+    it.  Zeroing all three keeps the editor flush with the cell's
+    text rect.
+    """
+
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if isinstance(editor, QtWidgets.QLineEdit):
+            editor.setFrame(False)
+            editor.setTextMargins(0, 0, 0, 0)
+            editor.setContentsMargins(0, 0, 0, 0)
+            # Stylesheet zeroing covers padding/margins the QStyle adds
+            # on top of QLineEdit's own metrics.
+            editor.setStyleSheet(
+                "QLineEdit { padding: 0px; margin: 0px; border: 0px; }"
+            )
+        return editor
+
+
 class TableWidget(
     QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin
 ):
@@ -446,6 +471,19 @@ class TableWidget(
 
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
+
+    # Middle-mouse scrub-edit signals (opt-in via ``set_scrub_columns``).
+    # Callers translate pixel deltas into value changes — the widget is
+    # value-type agnostic.
+    cellScrubStarted = QtCore.Signal(int, int)  # (row, col)
+    cellScrubMoved = QtCore.Signal(int, int, int, int)  # (row, col, dx, dy) total px
+    cellScrubFinished = QtCore.Signal(int, int)  # (row, col)
+
+    # Mouse-wheel scroll over a cell (opt-in via ``set_wheel_scrub_columns``).
+    # ``steps`` is the signed Qt notch count (``angleDelta().y() / 120``).
+    # Callers map steps to value deltas appropriate for the underlying
+    # type / modifier state.
+    cellWheelScrolled = QtCore.Signal(int, int, int)  # (row, col, steps)
 
     def __init__(
         self,
@@ -489,7 +527,29 @@ class TableWidget(
         self._drag_selected_indexes = None
         self._drag_edit_column = None
 
+        # Middle-mouse scrub-edit state.  ``_scrub_columns`` is the
+        # opt-in set of columns where MMB-drag scrubs the cell value;
+        # ``_scrub_active`` tracks an in-flight drag.
+        self._scrub_columns: set = set()
+        self._scrub_active: Optional[Dict[str, Any]] = None
+        self._scrub_prev_cursor = None
+
+        # Wheel-scroll value adjustment (opt-in via ``set_wheel_scrub_columns``).
+        self._wheel_scrub_columns: set = set()
+
+        # Single-click-edit (opt-in via ``set_single_click_edit_columns``):
+        # LMB click + release without drag enters edit mode immediately,
+        # bypassing the default DoubleClicked edit trigger for those
+        # columns only.
+        self._single_click_edit_columns: set = set()
+
         self.cellClicked.connect(self._on_cell_clicked)
+
+        # Zero-spacing editor delegate keeps cell text from visibly
+        # jumping when the cell enters edit mode.  Downstream consumers
+        # that need a framed editor can replace this with their own
+        # delegate via ``setItemDelegate``.
+        self.setItemDelegate(_ZeroSpacingEditorDelegate(self))
 
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self.verticalHeader().setVisible(False)
@@ -506,6 +566,78 @@ class TableWidget(
         self.set_attributes(**kwargs)
 
     # ------------------------------------------------------------------
+    # Middle-mouse scrub-edit (opt-in — Maya channel-box virtual slider)
+    # ------------------------------------------------------------------
+
+    def set_scrub_columns(self, columns: Iterable[int]) -> None:
+        """Enable MMB-drag value scrubbing for *columns*.
+
+        Pass an empty iterable to disable.  When a user middle-clicks a
+        cell in any of these columns and drags, the widget emits
+        ``cellScrubStarted``, ``cellScrubMoved`` (per move event), and
+        ``cellScrubFinished`` (on release).  The widget reports raw
+        pixel deltas; consumers translate those into value changes
+        appropriate for the underlying type / sensitivity.
+        """
+        self._scrub_columns = set(int(c) for c in columns)
+
+    def add_scrub_column(self, column: int) -> None:
+        """Add a single column to the MMB-scrub set."""
+        self._scrub_columns.add(int(column))
+
+    def remove_scrub_column(self, column: int) -> None:
+        """Remove a column from the MMB-scrub set."""
+        self._scrub_columns.discard(int(column))
+
+    def is_scrubbing(self) -> bool:
+        """``True`` while an MMB scrub-drag is in progress."""
+        return self._scrub_active is not None
+
+    # ------------------------------------------------------------------
+    # Wheel-scroll value adjustment (opt-in)
+    # ------------------------------------------------------------------
+
+    def set_wheel_scrub_columns(self, columns: Iterable[int]) -> None:
+        """Enable mouse-wheel value adjustment for *columns*.
+
+        Wheel events on cells in these columns emit ``cellWheelScrolled``
+        with a signed step count (Qt notches, ``angleDelta / 120``) and
+        are consumed (no fall-through to the table's own scroll bar).
+        Pass an empty iterable to disable.
+        """
+        self._wheel_scrub_columns = set(int(c) for c in columns)
+
+    def add_wheel_scrub_column(self, column: int) -> None:
+        """Add a single column to the wheel-scrub set."""
+        self._wheel_scrub_columns.add(int(column))
+
+    def remove_wheel_scrub_column(self, column: int) -> None:
+        """Remove a column from the wheel-scrub set."""
+        self._wheel_scrub_columns.discard(int(column))
+
+    # ------------------------------------------------------------------
+    # Single-click edit (opt-in)
+    # ------------------------------------------------------------------
+
+    def set_single_click_edit_columns(self, columns: Iterable[int]) -> None:
+        """Enable click-to-edit for *columns* (no double-click required).
+
+        A bare LMB click+release (no drag, no modifier) on a cell in
+        these columns immediately opens the editor.  Drags still behave
+        normally — the click must release without movement.  Pass an
+        empty iterable to disable.
+        """
+        self._single_click_edit_columns = set(int(c) for c in columns)
+
+    def add_single_click_edit_column(self, column: int) -> None:
+        """Add a single column to the single-click-edit set."""
+        self._single_click_edit_columns.add(int(column))
+
+    def remove_single_click_edit_column(self, column: int) -> None:
+        """Remove a column from the single-click-edit set."""
+        self._single_click_edit_columns.discard(int(column))
+
+    # ------------------------------------------------------------------
     # Drag-select: edit or action (Maya channel-box style)
     # ------------------------------------------------------------------
 
@@ -520,13 +652,33 @@ class TableWidget(
 
     def mousePressEvent(self, event):
         pos = event.pos()
+        index = self.indexAt(pos)
+
+        # Middle-mouse scrub-edit takes priority over the LMB drag-select
+        # path so MMB on a scrub column never falls through to selection.
+        if (
+            event.button() == QtCore.Qt.MiddleButton
+            and self._scrub_columns
+            and index.isValid()
+            and index.column() in self._scrub_columns
+        ):
+            self._scrub_active = {
+                "row": index.row(),
+                "col": index.column(),
+                "start": pos,
+            }
+            self._scrub_prev_cursor = self.cursor()
+            self.setCursor(QtGui.QCursor(QtCore.Qt.SizeHorCursor))
+            self.cellScrubStarted.emit(index.row(), index.column())
+            event.accept()
+            return
+
         self._drag_start_pos = pos
         self._drag_has_modifier = bool(
             event.modifiers() & (QtCore.Qt.ShiftModifier | QtCore.Qt.ControlModifier)
         )
         self._drag_occurred = False
 
-        index = self.indexAt(pos)
         if (
             index.isValid()
             and event.button() == QtCore.Qt.LeftButton
@@ -543,6 +695,18 @@ class TableWidget(
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # Active MMB scrub: emit deltas, suppress base move handling so
+        # selection rubber-band etc. don't interfere.
+        if self._scrub_active is not None:
+            start = self._scrub_active["start"]
+            dx = event.pos().x() - start.x()
+            dy = event.pos().y() - start.y()
+            self.cellScrubMoved.emit(
+                self._scrub_active["row"], self._scrub_active["col"], dx, dy
+            )
+            event.accept()
+            return
+
         if (
             not self._drag_occurred
             and self._drag_start_pos is not None
@@ -564,6 +728,24 @@ class TableWidget(
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        # Finish an active MMB scrub before falling through to the LMB
+        # drag-select cleanup.
+        if (
+            event.button() == QtCore.Qt.MiddleButton
+            and self._scrub_active is not None
+        ):
+            row = self._scrub_active["row"]
+            col = self._scrub_active["col"]
+            self._scrub_active = None
+            if self._scrub_prev_cursor is not None:
+                self.setCursor(self._scrub_prev_cursor)
+                self._scrub_prev_cursor = None
+            else:
+                self.unsetCursor()
+            self.cellScrubFinished.emit(row, col)
+            event.accept()
+            return
+
         was_drag = self._drag_occurred
         had_modifier = self._drag_has_modifier
         is_action = self._drag_is_action
@@ -572,6 +754,27 @@ class TableWidget(
 
         self._reset_drag_state()
         super().mouseReleaseEvent(event)
+
+        # Single-click edit: bare LMB click+release (no drag, no modifier)
+        # on a registered column opens the editor immediately.  Cells
+        # with an embedded widget (combobox, etc.) handle their own
+        # input — skip those.
+        if (
+            not was_drag
+            and not had_modifier
+            and event.button() == QtCore.Qt.LeftButton
+            and self._single_click_edit_columns
+        ):
+            index = self.indexAt(event.pos())
+            if (
+                index.isValid()
+                and index.column() in self._single_click_edit_columns
+                and self.cellWidget(index.row(), index.column()) is None
+            ):
+                item = self.item(index.row(), index.column())
+                if item and (item.flags() & QtCore.Qt.ItemIsEditable):
+                    self.editItem(item)
+                    return
 
         if not (
             was_drag and not had_modifier and event.button() == QtCore.Qt.LeftButton
@@ -594,6 +797,124 @@ class TableWidget(
                 item = self.item(index.row(), col)
                 if item and (item.flags() & QtCore.Qt.ItemIsEditable):
                     self.editItem(item)
+
+    def wheelEvent(self, event):
+        """Consume wheel events on wheel-scrub columns; emit signal.
+
+        Fires whether or not the cell is in edit mode — when an editor
+        is open the wheel event sometimes reaches us via the
+        ``eventFilter`` path on the editor and sometimes via direct
+        propagation from the editor through the viewport to here.
+        Either path emits the same signal; the slot then calls
+        :meth:`refresh_active_editor` to keep the editor display in
+        sync with the model.
+        """
+        if self._wheel_scrub_columns:
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            index = self.indexAt(pos)
+            if index.isValid() and index.column() in self._wheel_scrub_columns:
+                self._emit_wheel_scrub(index, event.angleDelta().y())
+                event.accept()
+                return
+        super().wheelEvent(event)
+
+    def eventFilter(self, obj, event):
+        """Catch wheel events on editors so wheel-scrub also works in
+        edit mode.
+
+        ``QAbstractItemView`` automatically installs the view as an
+        event filter on every editor it opens (to handle Tab/Enter/Esc).
+        We piggy-back on that registration: when a wheel event arrives
+        while editing a wheel-scrub cell, route it through the same
+        ``cellWheelScrolled`` path.
+        """
+        if (
+            event.type() == QtCore.QEvent.Wheel
+            and self._wheel_scrub_columns
+            and self.state() == QtWidgets.QAbstractItemView.EditingState
+        ):
+            idx = self.currentIndex()
+            if idx.isValid() and idx.column() in self._wheel_scrub_columns:
+                self._emit_wheel_scrub(idx, event.angleDelta().y())
+                return True
+        return super().eventFilter(obj, event)
+
+    def _emit_wheel_scrub(self, index, angle_y):
+        """Emit ``cellWheelScrolled`` after quantizing the wheel angle
+        to whole notches.
+
+        The slot is expected to update the underlying model
+        synchronously and then call :meth:`refresh_active_editor` to
+        sync any open editor.  Decoupling editor-refresh from
+        wheel-event delivery makes the behavior identical regardless
+        of which Qt path delivers the wheel (eventFilter vs
+        wheelEvent).
+        """
+        steps = angle_y // 120
+        if not steps:
+            return
+        self.cellWheelScrolled.emit(index.row(), index.column(), int(steps))
+
+    def active_editor(self) -> Optional[QtWidgets.QWidget]:
+        """Return the currently-open cell editor widget, or ``None``.
+
+        Found via ``viewport().focusWidget()`` because ``QAbstractItemView``
+        always gives the editor focus when it opens.  Caller should
+        ``isinstance``-check the return value if a specific editor type
+        is expected (e.g. ``QLineEdit``) — non-editor focus widgets and
+        ``None`` are both valid "no editor open" indicators.
+        """
+        viewport = self.viewport()
+        if viewport is None:
+            return None
+        return viewport.focusWidget()
+
+    def refresh_active_editor(self) -> None:
+        """If a cell editor is currently open, refresh its display from
+        the model.
+
+        Use this after programmatically updating an item whose cell is
+        currently being edited so the user sees the new value in the
+        editor instead of the stale text the editor was opened with.
+
+        Finds the editor via ``viewport().focusWidget()`` — reliable
+        across Qt versions because ``QAbstractItemView`` always gives
+        the editor focus when it opens.  For ``QLineEdit`` editors, also
+        force-sets the text directly: some Qt styles don't repaint
+        ``QLineEdit`` when its ``text`` property is set via
+        ``QStyledItemDelegate.setEditorData`` while the editor has focus.
+        """
+        if self.state() != QtWidgets.QAbstractItemView.EditingState:
+            return
+        viewport = self.viewport()
+        if viewport is None:
+            return
+        editor = viewport.focusWidget()
+        if editor is None:
+            return
+        index = self.currentIndex()
+        if not index.isValid():
+            return
+        try:
+            delegate = self.itemDelegate(index)
+            if delegate is not None:
+                delegate.setEditorData(editor, index)
+            if isinstance(editor, QtWidgets.QLineEdit):
+                new_value = index.data(QtCore.Qt.EditRole)
+                if new_value is None:
+                    new_value = index.data(QtCore.Qt.DisplayRole)
+                if new_value is not None:
+                    text = str(new_value)
+                    if editor.text() != text:
+                        # Preserve cursor position relative to text end
+                        # so the user's caret doesn't jump to col 0 on
+                        # every notch.
+                        cursor_from_end = len(editor.text()) - editor.cursorPosition()
+                        editor.setText(text)
+                        new_pos = max(0, len(text) - cursor_from_end)
+                        editor.setCursorPosition(new_pos)
+        except Exception:
+            pass
 
     def closeEditor(self, editor, hint):
         """Propagate committed value to all drag-selected cells."""
