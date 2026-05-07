@@ -587,6 +587,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._parent_signal_source: Optional[Tuple[QtWidgets.QWidget, str]] = None
         self._pending_trigger_hook = False
 
+        # Per-item _register_with_main_window calls are coalesced into a
+        # single deferred drain (see _schedule_registration / _drain_pending_registrations).
+        # Order of registration is preserved; the contract is "after add() returns",
+        # not "one tick per item" — see test_register_with_main_window_deferred_not_synchronous.
+        self._pending_registrations: list = []
+        self._registration_drain_scheduled: bool = False
+
         # Widget structure
         self._layout: Optional[QtWidgets.QVBoxLayout] = None
         self.gridLayout: Optional[QtWidgets.QGridLayout] = None
@@ -639,8 +646,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.init_layout()
         self.style = StyleSheet(self, log_level="WARNING")
 
-        # Configure as popup window
-        self._setup_as_popup()
+        # Popup setup (Qt.Tool|FramelessWindowHint reparent + WA_* attributes)
+        # is deferred until the menu is actually shown — running it during
+        # ``__init__`` creates an OS-level Tool window per Menu, which on
+        # Windows produces a brief WM-visible artifact (a flash) for every
+        # option_box menu created during ``register_children``.  Construction
+        # leaves the Menu as a hidden child widget; ``show_as_popup`` and
+        # ``showEvent`` both call ``_setup_as_popup`` (idempotent via
+        # ``_popup_configured``) before the menu becomes visible.
+        #
+        # Explicit hide() prevents Qt's "auto-show with parent" behavior:
+        # without it, ``OptionBox.wrap``'s ``container.show()`` cascades to
+        # the Menu via its parent chain (Menu → button → container) and
+        # fires ``showEvent`` mid-wrap — defeating the whole point of
+        # deferring popup setup.  Calling ``hide()`` flips the widget's
+        # ``WA_WState_ExplicitShowHide`` attribute so the cascade skips it.
+        # Use super().hide() rather than self.hide() to bypass the
+        # pin-check + signal-emitting override (which doesn't apply at
+        # construction time and would emit ``on_hidden`` from the ctor).
+        super().hide()
 
     @classmethod
     def create_context_menu(
@@ -1413,12 +1437,96 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if x != frame_geo.x() or y != frame_geo.y():
             self.move(x, y)
 
+    def setVisible(self, visible: bool) -> None:
+        """Override to apply deferred popup setup before becoming visible.
+
+        Every visibility change in Qt routes through ``setVisible``
+        (including ``show()``, ``hide()``, ``setVisible``, and parent-
+        cascade auto-show on widgets that haven't had ``hide()`` called
+        explicitly).  Putting the popup-setup hook here covers every path
+        — direct ``setVisible(True)``, ``Menu.show()``, ``show_as_popup``
+        — without separate overrides for each.
+
+        Order is critical: ``_setup_as_popup`` calls ``setWindowFlags``
+        which Qt documents as hiding the widget.  Running it BEFORE
+        ``super().setVisible(True)`` means the hide happens while the
+        widget is still hidden (no-op), then super() makes it visible
+        with Tool flags applied.  Running it AFTER would re-hide the
+        widget mid-show.
+
+        ``_prepare_for_show`` runs the lazy first-show layout setup
+        (apply button, defaults button, presets combo, height resize)
+        BEFORE the widget becomes visible — historically these ran in
+        ``showEvent`` which fires AFTER super().setVisible(True), causing
+        a visible flash as buttons/sizing changed on screen.  Running
+        them here keeps the menu hidden until layout is final.
+
+        Idempotent — both helpers no-op once their work is done.
+        """
+        if visible:
+            self._setup_as_popup()
+            self._prepare_for_show()
+        super().setVisible(visible)
+
+    def _prepare_for_show(self) -> None:
+        """Run lazy first-show layout setup while the menu is still hidden.
+
+        Each block is gated by an idempotency check so this is safe to
+        call on every show — only the first call does work.  Splitting
+        these out of ``showEvent`` is the difference between a clean
+        appearance and the "rapid flashing window" users see when apply
+        buttons / defaults buttons / size adjustments fire visibly.
+        """
+        if (
+            self.contains_items
+            and self._trigger_button is not False
+            and not (self._event_filters_installed or self._parent_signal_source)
+        ):
+            self._ensure_trigger_hook()
+
+        if self.add_defaults_button and not self._button_manager.get_button("defaults"):
+            self._setup_defaults_button()
+            self._update_defaults_button_visibility()
+        elif self.add_defaults_button:
+            self._update_defaults_button_visibility()
+
+        self._ensure_style_initialized()
+        self._ensure_timer_created()
+
+        if self.add_presets and not self._button_manager.get_widget("presets"):
+            self._setup_presets()
+
+        if self.add_apply_button and not self._button_manager.get_button("apply"):
+            self._setup_apply_button()
+            self._update_apply_button_visibility()
+            if self._layout:
+                self._layout.invalidate()
+                self._layout.activate()
+            self.adjustSize()
+        elif self.add_apply_button:
+            self._update_apply_button_visibility()
+
+        self._resize_height_to_content()
+
     def show(self) -> None:
-        """Show the menu."""
+        """Show the menu.
+
+        Visibility setup is centralized in :meth:`setVisible`; this
+        override exists only to run the post-show on-screen check.
+
+        ``_ensure_on_screen`` runs SYNCHRONOUSLY here (same event-loop
+        tick as ``super().show()``) so any position correction completes
+        before the paint event fires.  Earlier versions used
+        ``QTimer.singleShot(0, ...)`` to defer the check until after
+        the native window's frameGeometry stabilized; the deferred
+        timer fired AFTER the first paint, producing a visible "menu
+        appears, then jumps into place" flash on multi-monitor / off-
+        screen-anchor scenarios.  Synchronous + same tick = correct
+        position is used by the very first paint.
+        """
         super().show()
         if self.ensure_on_screen:
-            # Use a timer to ensure the window geometry is updated before checking
-            QtCore.QTimer.singleShot(0, self._ensure_on_screen)
+            self._ensure_on_screen()
 
     def show_as_popup(
         self,
@@ -1434,6 +1542,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.logger.debug(
             f"Menu.show_as_popup: anchor_widget={anchor_widget}, position={position}"
         )
+
+        # Apply popup setup (Qt.Tool flag, attributes) before positioning so
+        # the position calculation operates in screen coordinates, not
+        # parent-local.  Idempotent — no-op if already configured.
+        self._setup_as_popup()
 
         # Store anchor widget temporarily for _apply_position to use
         # This allows proper width matching even when parent is different
@@ -1455,7 +1568,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.adjustSize()
         self._resize_height_to_content()
 
-        # Show the menu
+        # ``Menu.show`` runs ``_ensure_on_screen`` synchronously after
+        # ``super().show()`` — same event-loop tick, before the first
+        # paint.  No pre-show check needed here: pre-show frameGeometry
+        # is unreliable (the native window doesn't exist yet, so frame
+        # insets aren't applied), and any pre-show correction would be
+        # superseded by the post-show one anyway.
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1761,6 +1879,49 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     pass
                 return
             curr = curr.parent()
+
+    def _schedule_registration(self, widget: QtWidgets.QWidget) -> None:
+        """Queue *widget* for deferred registration with the main window.
+
+        Coalesces N per-item ``QTimer.singleShot`` calls into a single
+        drain pass.  Registration order (FIFO) and the deferred-not-sync
+        contract from :meth:`Menu.add` are preserved.
+        """
+        self._pending_registrations.append(widget)
+        if not self._registration_drain_scheduled:
+            self._registration_drain_scheduled = True
+            QtCore.QTimer.singleShot(0, self._drain_pending_registrations)
+
+    def _drain_pending_registrations(self) -> None:
+        """Process every queued registration in insertion order.
+
+        Anything appended *during* the drain (e.g. a registration that
+        ends up calling ``Menu.add`` again on a sibling menu) lands in a
+        fresh queue and triggers its own next-tick drain — matching the
+        per-item-timer behavior this replaced.
+
+        Exception handling: with one timer per item (the prior
+        implementation), each fired independently — a failure in one
+        registration didn't drop the rest.  We preserve that property by
+        catching all exceptions per-iteration.  ``RuntimeError`` (the
+        common case: widget destroyed between schedule and drain) is
+        swallowed silently; any other exception is logged so latent bugs
+        don't go unnoticed but the drain still completes.
+        """
+        pending, self._pending_registrations = self._pending_registrations, []
+        self._registration_drain_scheduled = False
+        for widget in pending:
+            try:
+                self._register_with_main_window(widget)
+            except RuntimeError:
+                # Widget destroyed between schedule and drain; skip silently.
+                continue
+            except Exception as exc:  # noqa: BLE001 — preserve per-timer isolation
+                self.logger.error(
+                    f"_drain_pending_registrations: {type(exc).__name__} during "
+                    f"_register_with_main_window: {exc}",
+                )
+                continue
 
     def _restore_menu_defaults(self, from_sync: bool = False):
         """Reset all menu widgets to their default values."""
@@ -2287,11 +2448,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # Calling register_widget synchronously here triggers init_slot()
             # which can create nested menus / option-box wraps while add()
             # is still running — causing flashes and layout corruption.
+            # Coalesced into a single drain so N items = 1 timer, not N.
             if widget.objectName():
-                QtCore.QTimer.singleShot(
-                    0,
-                    lambda w=widget: self._register_with_main_window(w),
-                )
+                self._schedule_registration(widget)
 
             # Only resize if menu is visible (prevents flash during lazy initialization)
             if self.isVisible():
@@ -2330,8 +2489,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             if updates_were_enabled:
                 self.setUpdatesEnabled(True)
 
-            # Activate layout to apply all changes at once
-            if self._layout:
+            # Activate layout to apply all changes at once.
+            # Skip when invisible: Qt re-activates layouts before paint, so
+            # the work is wasted if nothing is on screen.  Bulk-add (40+
+            # items during slot init) is the dominant caller and is always
+            # invisible — saves 1 activate per item.
+            if self._layout and self.isVisible():
                 self._layout.activate()
 
     def _add_action_widget(
@@ -2423,6 +2586,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
     def showEvent(self, event) -> None:
         """Handle show event with positioning (optimized for performance)."""
+        # Popup setup is handled in :meth:`setVisible`, which fires before
+        # this event.  By the time showEvent runs, the menu is already a
+        # configured Tool window with all attributes applied.
+
         # Track which window was active before showing menu
         # This allows us to restore focus only if our app was active
         app = QtWidgets.QApplication.instance()

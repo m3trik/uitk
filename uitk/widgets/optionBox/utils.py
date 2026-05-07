@@ -596,8 +596,37 @@ class OptionBoxManager(ptk.LoggingMixin):
         """Schedule a wrap attempt once the widget is laid out.
 
         The option box needs to wrap the underlying widget to display buttons.
-        When options are added before the widget has a parent/layout, we defer
-        wrapping and retry once Qt has finished parenting operations.
+        Strategy:
+
+        - **Fast path (parent already attached)**: perform the wrap
+          synchronously.  The vast majority of slot-init calls happen with
+          the widget already inserted into a layout, so this is the common
+          case.  Running the wrap synchronously means the
+          ``parent.layout().replaceWidget(...)`` reparent completes before
+          ``MainWindow.showEvent`` returns control to the event loop —
+          eliminating the visible flicker between ``super().showEvent()``
+          and the deferred-timer-driven wrap firing on the next tick.
+
+        - **Slow path (parent missing)**: fall back to the original
+          ``QTimer.singleShot(0, _attempt_wrap_when_ready)`` retry loop
+          so widgets parented late (e.g. via ``setParent`` after
+          construction) still get wrapped once their parent attaches.
+
+        Re-entrancy: ``_perform_wrap`` reparents *this* widget into a new
+        ``OptionBoxContainer``.  ``register_children`` walks via a
+        ``findChildren`` snapshot, so reparenting mid-walk is safe.
+        Menu-item registration (Contract 2) remains deferred via the
+        coalesced drain in :class:`Menu`.
+
+        **Observable consequence for slot authors**: when called from
+        inside a ``<name>_init(widget)`` body (which is the normal entry
+        point), ``widget.parent()`` changes *during* the slot body — from
+        the original layout parent (e.g. the central widget) to the new
+        ``OptionBoxContainer``.  Code in the slot body that reads
+        ``widget.parent()`` *after* wiring an option must account for
+        this; reading it *before* the option_box call sees the original
+        parent.  No tentacle / mayatk slot in the current monorepo
+        relies on the post-wiring parent (verified by grep).
         """
 
         if self._is_wrapped or not self._pending_options:
@@ -605,6 +634,12 @@ class OptionBoxManager(ptk.LoggingMixin):
 
         if self._wrap_retry_scheduled:
             return  # A retry is already pending
+
+        widget = getattr(self, "_widget", None)
+        if widget is not None and widget.parent() is not None:
+            # Fast path: synchronous wrap — completes before showEvent paints.
+            self._perform_wrap()
+            return
 
         self._wrap_retry_scheduled = True
         QtCore.QTimer.singleShot(0, self._attempt_wrap_when_ready)

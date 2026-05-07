@@ -1137,6 +1137,10 @@ class TestMenuInitializationVisibility(QtBaseTestCase):
         option-box menus and wrapping layout while add() was still running.
         This caused menus to flash on init and option menus to break.
         Fixed: 2026-03-18
+
+        Contract: registration is deferred to a later event-loop tick.  This
+        test only checks "not during add()"; the order/coalescing properties
+        are covered in the dedicated tests below.
         """
         parent = self.track_widget(QtWidgets.QWidget())
         parent.show()
@@ -1160,6 +1164,204 @@ class TestMenuInitializationVisibility(QtBaseTestCase):
             0,
             f"_register_with_main_window called {len(register_calls_during_add)} "
             f"time(s) synchronously during add() — should be deferred",
+        )
+
+
+class TestMenuRegistrationCoalescing(QtBaseTestCase):
+    """Locks down :meth:`Menu._schedule_registration` /
+    :meth:`Menu._drain_pending_registrations` semantics.
+
+    Background: ``Menu.add`` used to schedule one
+    ``QTimer.singleShot(0, _register_with_main_window)`` per item.  Bulk
+    adds inside ``tbXXX_init`` queued one timer wakeup per item, each
+    landing on its own event-loop tick.  The current implementation
+    coalesces every registration request from a given tick into a single
+    drain pass, but the *observable* contract — same FIFO order, no
+    synchronous call inside add(), re-entrant adds re-arm a fresh timer —
+    is preserved.  These tests guard the coalesced path against future
+    refactors that would re-introduce per-item timers or break ordering.
+    """
+
+    def test_bulk_add_schedules_single_drain_timer(self):
+        """N adds in one tick must schedule exactly one drain timer."""
+        from uitk.widgets import menu as menu_module
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        scheduled = []
+        original_singleShot = QtCore.QTimer.singleShot
+
+        def counting_singleShot(interval, slot, *args, **kwargs):
+            scheduled.append((interval, getattr(slot, "__name__", repr(slot))))
+            return original_singleShot(interval, slot, *args, **kwargs)
+
+        with patch.object(menu_module.QtCore.QTimer, "singleShot", counting_singleShot):
+            for i in range(5):
+                m.add("QPushButton", setObjectName=f"b{i:03d}")
+
+        drain_schedules = [
+            s for s in scheduled if s[1] == "_drain_pending_registrations"
+        ]
+        self.assertEqual(
+            len(drain_schedules),
+            1,
+            f"Expected exactly 1 drain timer for 5 adds; got {len(drain_schedules)}: {scheduled}",
+        )
+        self.assertEqual(len(m._pending_registrations), 5)
+        self.assertTrue(m._registration_drain_scheduled)
+
+    def test_drain_processes_in_fifo_order(self):
+        """_drain_pending_registrations must call _register_with_main_window
+        in insertion order (the contract callers rely on for sibling lookups
+        in <name>_init bodies)."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        order = []
+        m._register_with_main_window = lambda w: order.append(w.objectName())
+
+        names = ["b000", "b001", "b002", "b003"]
+        for n in names:
+            m.add("QPushButton", setObjectName=n)
+
+        m._drain_pending_registrations()
+        self.assertEqual(order, names)
+        self.assertEqual(m._pending_registrations, [])
+        self.assertFalse(m._registration_drain_scheduled)
+
+    def test_reentrant_add_during_drain_rearms_timer(self):
+        """If a registration handler triggers another add() while the drain
+        is running, the new item must land in a fresh queue with its own
+        scheduled drain — matching the per-item-timer behavior this replaced.
+        Without re-arming, items added during drain would never register."""
+        from uitk.widgets import menu as menu_module
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        timers_after_init: list[int] = []
+
+        def registration_handler(widget):
+            # Simulate an init-slot that adds another item mid-drain.
+            if widget.objectName() == "b000":
+                m.add("QPushButton", setObjectName="b000_child")
+
+        m._register_with_main_window = registration_handler
+
+        m.add("QPushButton", setObjectName="b000")
+
+        scheduled_during_drain = []
+        original_singleShot = QtCore.QTimer.singleShot
+
+        def counting_singleShot(interval, slot, *args, **kwargs):
+            scheduled_during_drain.append(getattr(slot, "__name__", repr(slot)))
+            return original_singleShot(interval, slot, *args, **kwargs)
+
+        with patch.object(menu_module.QtCore.QTimer, "singleShot", counting_singleShot):
+            m._drain_pending_registrations()
+
+        # The reentrant add() should have queued a fresh drain
+        self.assertEqual(len(m._pending_registrations), 1)
+        self.assertEqual(m._pending_registrations[0].objectName(), "b000_child")
+        self.assertTrue(m._registration_drain_scheduled)
+        self.assertIn("_drain_pending_registrations", scheduled_during_drain)
+
+    def test_drain_swallows_runtime_error_for_deleted_widget(self):
+        """A widget can be deleted between schedule and drain; the drain
+        must skip it without aborting the rest of the queue."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        registered = []
+
+        def patched_register(widget):
+            name = widget.objectName()
+            if name == "b001":
+                raise RuntimeError("Internal C++ object already deleted")
+            registered.append(name)
+
+        m._register_with_main_window = patched_register
+
+        for n in ("b000", "b001", "b002"):
+            m.add("QPushButton", setObjectName=n)
+
+        m._drain_pending_registrations()
+        self.assertEqual(registered, ["b000", "b002"])
+
+    def test_drain_isolates_non_runtime_exceptions(self):
+        """Per-item-timer behavior: a non-RuntimeError exception in one
+        registration must not abort the rest of the queue.  This guards
+        the parity between the coalesced drain and the prior per-item
+        QTimer mechanism, where each item's failure was naturally
+        independent."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        registered = []
+
+        def patched_register(widget):
+            name = widget.objectName()
+            if name == "b001":
+                raise ValueError("intentional bug in slot init")
+            registered.append(name)
+
+        m._register_with_main_window = patched_register
+
+        for n in ("b000", "b001", "b002"):
+            m.add("QPushButton", setObjectName=n)
+
+        m._drain_pending_registrations()
+        # b001's ValueError is logged but doesn't drop b002.
+        self.assertEqual(registered, ["b000", "b002"])
+
+    def test_layout_activate_skipped_when_invisible(self):
+        """Bulk add() during slot init must not call _layout.activate() per
+        item.  The menu is invisible at that point and Qt re-activates layouts
+        before paint anyway; activating per-item is wasted work that shows
+        up under the bench's phase 04 (register_children_sync)."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+        # Menu.__init__ creates _layout eagerly via init_layout — verify.
+        self.assertIsNotNone(m._layout)
+        self.assertFalse(m.isVisible())
+
+        with patch.object(m._layout, "activate") as mock_activate:
+            for i in range(5):
+                m.add("QPushButton", setObjectName=f"b{i:03d}")
+
+        self.assertEqual(
+            mock_activate.call_count,
+            0,
+            f"_layout.activate() called {mock_activate.call_count} time(s) "
+            f"while menu invisible — should be skipped (Qt activates before paint)",
+        )
+
+    def test_layout_activate_runs_when_visible(self):
+        """Counterpart to the invisible-skip test: when the menu *is*
+        visible, add() still calls activate() so the on-screen layout
+        updates immediately."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+        m.show()
+        QtWidgets.QApplication.processEvents()
+        if not m.isVisible():
+            self.skipTest("Menu did not become visible in this Qt environment")
+
+        with patch.object(m._layout, "activate") as mock_activate:
+            m.add("QPushButton", setObjectName="b_visible")
+
+        self.assertGreaterEqual(
+            mock_activate.call_count,
+            1,
+            "_layout.activate() must run on add() while menu is visible",
         )
 
 
@@ -1229,17 +1431,27 @@ class TestHeaderMenuPopup(QtBaseTestCase):
 
 
 class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
-    """Tests for OptionBox menu retaining popup flags after reparenting.
+    """Tests for OptionBox menu popup flag lifecycle.
 
-    Bug: MenuOption.set_wrapped_widget() called setParent(widget) without
-    preserving window flags, stripping Qt.Tool | Qt.FramelessWindowHint
-    set by _setup_as_popup(). The menu then rendered as a clipped child
-    instead of a floating popup.
+    Original bug: ``MenuOption.set_wrapped_widget()`` called setParent(widget)
+    without preserving window flags, stripping ``Qt.Tool | Qt.FramelessWindowHint``
+    set by ``_setup_as_popup()``.  The menu then rendered as a clipped
+    child instead of a floating popup.
     Fixed: 2026-03-18
+
+    Updated contract (Fix A): popup setup is deferred until the menu's
+    first show — running it during ``Menu.__init__`` creates a native
+    Tool window per Menu, which on Windows produces a brief WM-visible
+    artifact ("multiple menus initializing repeatedly") for every
+    option_box menu created during ``register_children``.  Tests below
+    were updated to reflect the deferred-setup contract.
     """
 
-    def test_option_box_menu_retains_popup_flags(self):
-        """OptionBox menu must retain Tool window flags after wrapping."""
+    def test_option_box_menu_acquires_popup_flags_on_first_show(self):
+        """Fix A contract: menu has *no* Tool flag pre-show; it's set
+        on the first ``show_as_popup`` (or ``showEvent``).  This eliminates
+        the Tool-window flash visible during ``register_children`` when
+        ``_setup_as_popup`` ran eagerly in ``Menu.__init__``."""
         from uitk.widgets.optionBox.utils import OptionBoxManager
 
         parent = self.track_widget(QtWidgets.QWidget())
@@ -1252,21 +1464,156 @@ class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
         mgr.enable_menu()
         menu = mgr.menu
 
-        # Menu should have popup flags right after enable_menu
+        # Pre-show: popup setup deferred — no Tool flag yet.
+        self.assertFalse(
+            menu._popup_configured,
+            "Menu must defer popup setup until first show",
+        )
         flags_before = menu.windowFlags()
-        self.assertTrue(
+        self.assertFalse(
             flags_before & QtCore.Qt.Tool,
-            "Menu must have Qt.Tool flag after enable_menu()",
+            "Menu must NOT have Qt.Tool flag before first show (Fix A)",
         )
 
-        # Trigger wrapping (which calls set_wrapped_widget internally)
+        # Wrap fires (Fix C: synchronous when parent exists).
         container = mgr.container
         self.track_widget(container)
 
-        # Menu must STILL have popup flags after wrapping
-        flags_after = menu.windowFlags()
+        # Wrap also doesn't set Tool flag — that waits for first show.
+        self.assertFalse(
+            menu.windowFlags() & QtCore.Qt.Tool,
+            "Wrap must not eagerly trigger popup setup",
+        )
+
+        # First show — popup setup runs synchronously inside show_as_popup
+        # before positioning, so the menu's geometry is in screen coords.
+        menu.show_as_popup(anchor_widget=button, position="bottom")
+
+        self.assertTrue(menu._popup_configured)
         self.assertTrue(
-            flags_after & QtCore.Qt.Tool,
+            menu.windowFlags() & QtCore.Qt.Tool,
+            "Menu must have Qt.Tool flag after first show_as_popup",
+        )
+        menu.hide(force=True)
+
+    def test_setvisible_true_directly_triggers_popup_setup(self):
+        """Direct ``menu.setVisible(True)`` (bypassing ``show()`` /
+        ``show_as_popup``) must still apply popup setup.  Without this,
+        callers that use the low-level visibility API would see a
+        non-popup menu, or worse, the ``setWindowFlags`` hide-during-show
+        race that bricked the show.
+        """
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu._popup_configured)
+
+        menu.setVisible(True)
+
+        self.assertTrue(
+            menu._popup_configured,
+            "setVisible(True) must trigger _setup_as_popup",
+        )
+        self.assertTrue(
+            menu.windowFlags() & QtCore.Qt.Tool,
+            "Tool flag must be applied via setVisible(True) path",
+        )
+        self.assertTrue(menu.isVisible())
+        menu.hide(force=True)
+
+    def test_show_hide_show_cycle_keeps_popup_configured(self):
+        """Once popup setup runs, subsequent show/hide cycles must not
+        re-run it — the ``_popup_configured`` flag is sticky.  Without
+        idempotency, every show would call setWindowFlags again,
+        recreating the native window handle and producing exactly the
+        flicker Fix A is meant to eliminate."""
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu._popup_configured)
+
+        menu.show()
+        self.assertTrue(menu._popup_configured)
+        flags_first_show = menu.windowFlags()
+
+        menu.hide(force=True)
+        menu.show()  # second show
+        flags_second_show = menu.windowFlags()
+
+        self.assertEqual(
+            flags_first_show,
+            flags_second_show,
+            "Window flags must be stable across show/hide cycles",
+        )
+        menu.hide(force=True)
+
+    def test_construction_does_not_create_tool_window(self):
+        """The user-facing flicker source: ``_setup_as_popup`` running
+        eagerly in ``Menu.__init__`` created an OS-level Tool window per
+        Menu, producing brief WM-visible artifacts during
+        register_children.  After Fix A, construction must leave the
+        menu as a hidden child widget — no popup setup, no Tool flag,
+        no native window created."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=parent))
+
+        self.assertFalse(menu._popup_configured)
+        self.assertFalse(menu.windowFlags() & QtCore.Qt.Tool)
+        self.assertIs(menu.parent(), parent)
+        # Explicit hide marker prevents parent-cascade auto-show.
+        self.assertFalse(menu.isVisible())
+
+    def test_parent_cascade_does_not_auto_show_menu(self):
+        """The bug Fix A's ``super().hide()`` in __init__ guards: when
+        the Menu is parented to a button that gets reparented into an
+        ``OptionBoxContainer``, the container's ``show()`` cascades
+        through children.  Without explicit hide, the cascade reaches
+        the Menu and fires showEvent — running popup setup mid-wrap and
+        defeating the deferral.  Explicit hide flips
+        ``WA_WState_ExplicitShowHide`` so the cascade skips it."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton()
+        layout.addWidget(button)
+        menu = self.track_widget(Menu(parent=button))
+
+        # Show the parent — cascade would auto-show Menu without explicit hide.
+        parent.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertFalse(
+            menu.isVisible(),
+            "Menu must remain hidden through parent.show() cascade",
+        )
+        self.assertFalse(
+            menu._popup_configured,
+            "Popup setup must NOT run via parent cascade",
+        )
+        parent.hide()
+
+    def test_option_box_menu_retains_popup_flags_across_wrap(self):
+        """Once popup setup has run, subsequent operations on the
+        wrapped menu must not strip Tool flags (the original 2026-03-18
+        bug)."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton("Test")
+        layout.addWidget(button)
+        parent.show()
+
+        mgr = OptionBoxManager(button)
+        mgr.enable_menu()
+        menu = mgr.menu
+
+        # Force popup setup to happen now (simulate first show).
+        menu._setup_as_popup()
+        self.assertTrue(menu.windowFlags() & QtCore.Qt.Tool)
+
+        # Trigger wrap path which reparents via setParent(widget, windowFlags()).
+        container = mgr.container
+        self.track_widget(container)
+
+        # Tool flag must be preserved through the wrap reparent.
+        self.assertTrue(
+            menu.windowFlags() & QtCore.Qt.Tool,
             "Menu must retain Qt.Tool flag after OptionBox wrapping",
         )
 
