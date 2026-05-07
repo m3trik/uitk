@@ -734,7 +734,15 @@ class TestActionOptionMultiInstance(QtBaseTestCase):
         layout.addWidget(widget)
         mgr = OptionBoxManager(widget)
         widget._option_box_manager = mgr
-        widget.option_box = mgr
+        # ``option_box`` may be a class-level property (when
+        # ``patch_common_widgets`` has been called by another test or by
+        # bootstrap code).  Setting it as an instance attribute would then
+        # raise AttributeError; the property resolves to the manager via
+        # ``_option_box_manager`` already, so the assignment is unnecessary.
+        try:
+            widget.option_box = mgr
+        except AttributeError:
+            pass
         return widget, mgr
 
     def test_add_action_creates_multiple_buttons(self):

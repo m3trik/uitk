@@ -554,7 +554,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         if event.button() == QtCore.Qt.MiddleButton:
             self._pan_active = True
             self._pan_start = event.pos()
-            self.setCursor(QtCore.Qt.ClosedHandCursor)
+            self.setCursor(QtCore.Qt.SizeAllCursor)
             event.accept()
             return
 
