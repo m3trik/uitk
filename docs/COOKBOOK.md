@@ -13,22 +13,22 @@ Patterns extracted from real UITK consumers — primarily [mayatk](https://githu
 **Solution**: optional `sb` parameter on the launch function. If present, use the caller's Switchboard via the marking menu handler. If absent, build a private one.
 
 ```python
-# mayatk/node_utils/attributes/attribute_manager/__init__.py
+# mayatk/node_utils/attributes/channels/__init__.py
 
 def launch(sb=None, targets=None, filter=None, search=None):
-    """Open the Attribute Manager, optionally pre-targeted."""
+    """Open the Channels UI, optionally pre-targeted."""
     if sb is None:
         # Standalone: private Switchboard
         from uitk import Switchboard
         sb = Switchboard(
-            ui_source="attribute_manager.ui",
-            slot_source=AttributeManagerSlots,
+            ui_source="channels.ui",
+            slot_source=ChannelsSlots,
         )
-        ui = sb.loaded_ui.attribute_manager
+        ui = sb.loaded_ui.channels
         ui.show(pos="screen")
     else:
         # Hosted: delegate to tentacle's marking menu
-        ui = sb.handlers.marking_menu.show("attribute_manager")
+        ui = sb.handlers.marking_menu.show("channels")
 
     slots = sb.get_slots_instance(ui)
     if slots is not None:

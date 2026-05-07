@@ -47,6 +47,77 @@ if TYPE_CHECKING:
     from uitk.widgets.tableWidget import TableWidget
 
 
+class _CenteredIconDelegate(QtWidgets.QStyledItemDelegate):
+    """Paints item-decoration icons centered in the cell.
+
+    Action columns hold icon-only items.  Qt's default delegate
+    positions the decoration via ``QStyle::SE_ItemViewItemDecoration``,
+    which is style-dependent and not reliably influenced by
+    ``Qt.TextAlignmentRole`` for empty-text items — the icon ends up
+    left-aligned with style-dictated margins, and shrinks/clips
+    inconsistently when the row height changes.
+
+    This delegate lets the base draw the cell background (selection,
+    focus, alternating colours), but suppresses the default icon /
+    text paint and renders the icon manually at the cell's centre.
+    """
+
+    def paint(self, painter, option, index):
+        # Fetch the icon directly from the model — relying on
+        # ``opt.icon`` after clearing it leaves a dangling wrapper in
+        # PySide and the icon comes back null.
+        icon_data = index.data(QtCore.Qt.DecorationRole)
+        if isinstance(icon_data, QtGui.QIcon):
+            icon = icon_data
+        elif icon_data is None:
+            icon = QtGui.QIcon()
+        else:
+            icon = QtGui.QIcon(icon_data)
+
+        opt = QtWidgets.QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+
+        # Clear icon/text and the corresponding feature flags so the
+        # style only paints the cell background + selection state.
+        # ``super().paint()`` would re-run ``initStyleOption`` on its
+        # own copy and undo this — call ``style.drawControl`` directly.
+        opt.icon = QtGui.QIcon()
+        opt.text = ""
+        opt.features &= ~QtWidgets.QStyleOptionViewItem.HasDecoration
+        opt.features &= ~QtWidgets.QStyleOptionViewItem.HasDisplay
+
+        widget = option.widget
+        style = widget.style() if widget else QtWidgets.QApplication.style()
+        style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, widget)
+
+        if icon.isNull():
+            return
+
+        cell = option.rect
+        # Prefer the view's iconSize (= option.decorationSize) when set;
+        # fall back to a square that fits within the cell minus a small
+        # visual margin.
+        target_size = option.decorationSize
+        if not target_size.isValid() or target_size.width() <= 0:
+            edge = max(8, min(cell.width(), cell.height()) - 4)
+            target_size = QtCore.QSize(edge, edge)
+
+        actual = icon.actualSize(target_size)
+        if actual.width() <= 0 or actual.height() <= 0:
+            edge = max(8, min(cell.width(), cell.height()) - 4)
+            actual = QtCore.QSize(edge, edge)
+        # Clamp so we never overflow the cell.
+        actual = QtCore.QSize(
+            min(actual.width(), cell.width()),
+            min(actual.height(), cell.height()),
+        )
+
+        pixmap = icon.pixmap(actual)
+        x = cell.x() + (cell.width() - pixmap.width()) // 2
+        y = cell.y() + (cell.height() - pixmap.height()) // 2
+        painter.drawPixmap(x, y, pixmap)
+
+
 class TableActions:
     """Manages action columns on a :class:`TableWidget`.
 
@@ -63,6 +134,9 @@ class TableActions:
         self._columns: Dict[int, dict] = {}
         # (row, col) -> state name
         self._cell_states: Dict[tuple, str] = {}
+        # Shared delegate that paints icons centered in their cells —
+        # one instance covers every action column on this table.
+        self._icon_delegate: Optional[_CenteredIconDelegate] = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -112,6 +186,7 @@ class TableActions:
             self._set_header_icon(column, header_icon)
         if square:
             self._apply_sizing(column)
+        self._install_icon_delegate(column)
 
     def set(self, row: int, col: int, state_name: str) -> None:
         """Set a cell to a named state, updating its icon, tooltip, and style.
@@ -144,6 +219,12 @@ class TableActions:
         item.setFlags(
             item.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable
         )
+
+        # Center the icon in the cell.  Qt positions the decoration via
+        # the item's TextAlignmentRole even when text is empty; without
+        # this the icon hugs the left edge and visibly clips when the
+        # cell is small (e.g. compact-mode rows).
+        item.setTextAlignment(QtCore.Qt.AlignCenter)
 
         # Icon
         color = state.get("color")
@@ -198,6 +279,19 @@ class TableActions:
         header_item.setIcon(icon)
         header_item.setText("")
 
+    def _install_icon_delegate(self, column: int) -> None:
+        """Set the centered-icon delegate on *column*.
+
+        Idempotent — uses a single shared delegate per ``TableActions``
+        instance so adding/refreshing many action columns doesn't
+        accumulate delegate objects.  Re-calling this on the same
+        column is a no-op for Qt because ``setItemDelegateForColumn``
+        replaces the previous delegate with the same instance.
+        """
+        if self._icon_delegate is None:
+            self._icon_delegate = _CenteredIconDelegate(self._table)
+        self._table.setItemDelegateForColumn(column, self._icon_delegate)
+
     def _apply_sizing(self, column: int) -> None:
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(column, QtWidgets.QHeaderView.Fixed)
@@ -221,3 +315,49 @@ class TableActions:
             icon_name = cfg.get("header_icon")
             if icon_name:
                 self._set_header_icon(col, icon_name)
+            self._install_icon_delegate(col)
+
+    def update_for_row_height(self) -> None:
+        """Re-size action columns and icons to fit the current row height.
+
+        Action columns are square (width = row height) and icons fit
+        within that — but column width is set once at registration and
+        icons default to ``(14, 14)``.  When the table's row height
+        changes (e.g. a compact-mode toggle), icons can clip at the row
+        boundary because Qt's style margins consume a fixed number of
+        pixels regardless of cell size.
+
+        Call this after changing ``defaultSectionSize`` so action
+        columns track the new height and icons re-render at the right
+        size.  Idempotent.
+        """
+        row_h = self._table.verticalHeader().defaultSectionSize()
+        # Leave 4 px of padding so the icon never butts the row edge —
+        # Qt's style draws ~2 px of focus/decoration margin around items.
+        icon_dim = max(8, row_h - 4)
+        icon_size = (icon_dim, icon_dim)
+
+        # The view-wide ``iconSize`` controls the decoration rect Qt
+        # asks the painter to fill.  Without setting it explicitly Qt
+        # falls back to the style hint (typically ~16×16), which
+        # overflows compact rows even after we've sized the QIcon
+        # itself to fit.
+        self._table.setIconSize(QtCore.QSize(icon_dim, icon_dim))
+
+        for col, cfg in self._columns.items():
+            # Update the stored icon_size for future ``set()`` calls so
+            # rows added later get the right size automatically.
+            for state_cfg in cfg["states"].values():
+                state_cfg["icon_size"] = icon_size
+            if cfg.get("square"):
+                self._apply_sizing(col)
+            icon_name = cfg.get("header_icon")
+            if icon_name:
+                self._set_header_icon(col, icon_name)
+            self._install_icon_delegate(col)
+
+        # Re-apply existing cells with the new icon size.  ``set`` reads
+        # ``icon_size`` from the state config (just updated above).
+        for (row, col), state_name in list(self._cell_states.items()):
+            if col in self._columns and row < self._table.rowCount():
+                self.set(row, col, state_name)
