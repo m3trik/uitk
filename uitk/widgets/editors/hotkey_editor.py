@@ -199,6 +199,8 @@ class HotkeyEditor(EditorPanel):
         )
         self.table.setColumnWidth(4, 24)
         self.table.verticalHeader().setVisible(False)
+        # Match the UI Browser table's row height for a consistent look.
+        self.table.verticalHeader().setDefaultSectionSize(22)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
         self.body_layout.addWidget(self.table, 1)

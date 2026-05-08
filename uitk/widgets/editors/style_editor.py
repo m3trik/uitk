@@ -31,6 +31,9 @@ class StyleEditor(EditorPanel):
         theme_layout = QtWidgets.QHBoxLayout()
         theme_label = QtWidgets.QLabel("Theme:")
         theme_label.setFixedHeight(FIXED_H)
+        theme_label.setFixedWidth(
+            theme_label.fontMetrics().horizontalAdvance("Theme:") + 6
+        )
         self.cmb_theme = QtWidgets.QComboBox()
         self.cmb_theme.setFixedHeight(FIXED_H)
         self.cmb_theme.addItems(list(StyleSheet.themes.keys()))
@@ -56,7 +59,17 @@ class StyleEditor(EditorPanel):
             2, QtWidgets.QHeaderView.ResizeToContents
         )
         self.table.verticalHeader().setVisible(False)
+        # Match the UI Browser table's row height for a consistent look.
+        self.table.verticalHeader().setDefaultSectionSize(22)
         self.body_layout.addWidget(self.table, 1)
+
+        # Tighten spacing: central body layout sits at 2, every sub-row
+        # layout (preset row, theme row) drops to 1 for a denser editor.
+        self.body_layout.setSpacing(2)
+        for i in range(self.body_layout.count()):
+            sublayout = self.body_layout.itemAt(i).layout()
+            if sublayout is not None:
+                sublayout.setSpacing(1)
 
         # Footer actions
         self.footer.add_action_button(
