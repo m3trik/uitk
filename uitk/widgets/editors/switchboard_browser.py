@@ -678,11 +678,11 @@ class SwitchboardBrowser(EditorPanel):
 
         # ``menu`` button gives us a header dropdown that hosts the preset
         # combo and global browser options (Refresh, presets, …).
-        # ``collapse`` and ``minimize`` give the same window-management
-        # affordances we configure on launched UIs.
+        # ``minimize`` gives the same window-management affordance we
+        # configure on launched UIs.
         super().__init__(
             title="UI Browser",
-            header_buttons=["menu", "collapse", "minimize", "hide"],
+            header_buttons=["menu", "minimize", "hide"],
             parent=parent,
         )
         self.sb: Switchboard = switchboard
