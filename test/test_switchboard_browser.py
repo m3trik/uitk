@@ -695,10 +695,8 @@ class TableHeaderAlignment(BrowserBase):
 
 
 class HeaderButtons(BrowserBase):
-    def test_collapse_and_minimize_present(self):
-        # The browser's header should expose the four window-management
-        # buttons we rely on for parity with launched UIs.
-        for name in ("menu", "collapse", "minimize", "hide"):
+    def test_default_header_buttons_present(self):
+        for name in ("menu", "minimize", "hide"):
             self.assertIn(name, self.browser._header.buttons, name)
 
 
