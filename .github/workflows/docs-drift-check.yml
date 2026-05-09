@@ -1,0 +1,90 @@
+name: Docs Drift Check
+
+# Replaces the prior LLM-based "uitk-docs-drift-check" routine that ran
+# bi-weekly on cron. This is a deterministic line-ref check: scan
+# hand-written docs for [text](path.py#Lline) refs that point at missing
+# files or out-of-range lines. Cross-document and factual-claim checks
+# from the old routine are intentionally not handled here — they require
+# LLM judgment and are out of scope for native CI.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'uitk/**.py'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-drift-check
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch shared scripts (m3trik)
+        run: git clone --depth 1 https://github.com/m3trik/m3trik.git /tmp/m3trik
+
+      - name: Run drift check
+        id: check
+        continue-on-error: true
+        run: |
+          set +e
+          python /tmp/m3trik/scripts/check_doc_line_refs.py \
+            --root . \
+            README.md \
+            docs/README.md \
+            docs/USER_GUIDE.md \
+            docs/SLOTS.md \
+            docs/MARKING_MENU.md \
+            docs/WIDGETS.md \
+            docs/ARCHITECTURE.md \
+            docs/COOKBOOK.md \
+            docs/EXAMPLES.md \
+            docs/API_REFERENCE.md \
+            > drift-report.txt 2>&1
+          rc=$?
+          cat drift-report.txt
+          if [ $rc -ne 0 ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update drift issue
+        if: steps.check.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TITLE="Docs: line-ref drift detected"
+          SHA=$(git rev-parse --short HEAD)
+          # Single-source the report; the existing-issue branch comments,
+          # the new-issue branch creates with the same body.
+          BODY=$(printf '%s\n\n```\n%s\n```\n' \
+            "Drift detected on \`$SHA\` (push to main)." \
+            "$(cat drift-report.txt)")
+
+          existing=$(gh issue list \
+            --search "$TITLE in:title state:open" \
+            --json number,title \
+            -q ".[] | select(.title == \"$TITLE\") | .number" \
+            | head -1)
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$BODY"
+          else
+            gh issue create \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label "docs"
+          fi
