@@ -13,7 +13,7 @@ Given `editor.ui`, the Switchboard looks for a slot class in this order:
 1. Class name match: `EditorSlots`, then `Editor` (CamelCase-from-snake_case + `Slots` suffix).
 2. Filename match: `editor_slots.py`, `editorSlots.py`, `editor.py`, `_editor.py` — first class found in the file is used.
 
-Convention implemented in [switchboard_names.py:33](../uitk/widgets/mixins/switchboard_names.py#L33) (`get_slot_class_names`, `get_slot_file_names`).
+Convention implemented in [_names.py:33](../uitk/switchboard/_names.py#L33) (`get_slot_class_names`, `get_slot_file_names`).
 
 ```python
 # editor.ui  →  EditorSlots class
@@ -47,13 +47,13 @@ def btn_save_init(self, widget):
 
 ### Widget objectName with illegal characters
 
-`menu#file.ui` has `objectName` `menu#file` (the `#` is an illegal attribute character). UITK stores it under a legal alias — `menu_file` — via [switchboard_names.py:19](../uitk/widgets/mixins/switchboard_names.py#L19) `convert_to_legal_name`. The raw name is preserved on `widget.base_name()`.
+`menu#file.ui` has `objectName` `menu#file` (the `#` is an illegal attribute character). UITK stores it under a legal alias — `menu_file` — via [_names.py:19](../uitk/switchboard/_names.py#L19) `convert_to_legal_name`. The raw name is preserved on `widget.base_name()`.
 
 ---
 
 ## 3. Default signals
 
-UITK auto-connects the slot method to the widget's default signal, chosen by base Qt type in [switchboard_slots.py:182](../uitk/widgets/mixins/switchboard_slots.py#L182):
+UITK auto-connects the slot method to the widget's default signal, chosen by base Qt type in [_slots.py:182](../uitk/switchboard/_slots.py#L182):
 
 | Base type | Default signal | Callback args |
 |:---|:---|:---|
@@ -88,7 +88,7 @@ Custom UITK widgets inherit these by base type (a `uitk.PushButton` is a `QPushB
 
 ## 4. Parameter injection
 
-UITK introspects your slot's signature ([switchboard_slots.py:87](../uitk/widgets/mixins/switchboard_slots.py#L87)) and injects `widget` as a kwarg if the name is present. The signal's own args are passed positionally as usual.
+UITK introspects your slot's signature ([_slots.py:87](../uitk/switchboard/_slots.py#L87)) and injects `widget` as a kwarg if the name is present. The signal's own args are passed positionally as usual.
 
 ```python
 def btn_save(self): ...                       # no params
@@ -157,7 +157,7 @@ def spn_start_init(self, widget):
     widget.debounce = 400   # coalesce rapid clicks into one call
 ```
 
-Implementation: [switchboard_slots.py:125](../uitk/widgets/mixins/switchboard_slots.py#L125).
+Implementation: [_slots.py:125](../uitk/switchboard/_slots.py#L125).
 
 ### `widget.slot_timeout: float`
 

@@ -255,11 +255,59 @@ class TestHeaderButtonDefinitions(QtBaseTestCase):
         """Should have pin definition."""
         self.assertIn("pin", Header.button_definitions)
 
+    def test_button_definitions_has_refresh_button(self):
+        """Should have refresh definition."""
+        self.assertIn("refresh", Header.button_definitions)
+
     def test_button_definition_contains_icon_and_method(self):
         """Should have (icon, method) tuple for each button."""
         for name, definition in Header.button_definitions.items():
             self.assertIsInstance(definition, tuple)
             self.assertEqual(len(definition), 2)
+
+
+class TestHeaderRefreshButton(QtBaseTestCase):
+    """Tests for Header refresh button and signal."""
+
+    def test_has_refresh_requested_signal(self):
+        """Should expose a refresh_requested signal."""
+        header = self.track_widget(Header())
+        self.assertTrue(hasattr(header, "refresh_requested"))
+
+    def test_config_buttons_adds_refresh_button(self):
+        """Should add refresh button when configured."""
+        header = self.track_widget(Header(config_buttons=["refresh"]))
+        self.assertIn("refresh", header.buttons)
+
+    def test_refresh_button_left_of_menu(self):
+        """Should place refresh button to the left of the menu button."""
+        header = self.track_widget(Header(config_buttons=["refresh", "menu"]))
+        # Find the layout positions of each button (skip the leading stretch).
+        positions = {}
+        for i in range(header.container_layout.count()):
+            item = header.container_layout.itemAt(i)
+            w = item.widget()
+            if w is header.buttons.get("refresh"):
+                positions["refresh"] = i
+            elif w is header.buttons.get("menu"):
+                positions["menu"] = i
+        self.assertLess(positions["refresh"], positions["menu"])
+
+    def test_trigger_refresh_emits_signal(self):
+        """Should emit refresh_requested when trigger_refresh is called."""
+        header = self.track_widget(Header(config_buttons=["refresh"]))
+        received = []
+        header.refresh_requested.connect(lambda: received.append(True))
+        header.trigger_refresh()
+        self.assertEqual(len(received), 1)
+
+    def test_refresh_button_click_emits_signal(self):
+        """Should emit refresh_requested when the refresh button is clicked."""
+        header = self.track_widget(Header(config_buttons=["refresh"]))
+        received = []
+        header.refresh_requested.connect(lambda: received.append(True))
+        header.buttons["refresh"].click()
+        self.assertEqual(len(received), 1)
 
 
 class TestHeaderWindowActions(QtBaseTestCase):

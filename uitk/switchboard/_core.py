@@ -5,26 +5,29 @@ import os
 import sys
 import inspect
 from typing import List, Union, Optional, Iterable
-from xml.etree.ElementTree import ElementTree, ParseError, Element, SubElement
+from xml.etree.ElementTree import ElementTree, Element, SubElement
 import xml.etree.ElementTree as ET
-from qtpy import QtWidgets, QtCore, QtGui, QtUiTools
+from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
-# From this package:
-from uitk.widgets.mixins.switchboard_slots import SwitchboardSlotsMixin
-from uitk.widgets.mixins.shortcuts import SwitchboardShortcutMixin
-from uitk.widgets.mixins.switchboard_widgets import SwitchboardWidgetMixin
-from uitk.widgets.mixins.switchboard_utils import SwitchboardUtilsMixin
-from uitk.widgets.mixins.switchboard_names import SwitchboardNameMixin
-from uitk.widgets.mixins.switchboard_editors import SwitchboardEditorsMixin
-from uitk.widgets.mixins.switchboard_style import SwitchboardStyleMixin
+# Composition pieces — private to this package:
+from uitk.switchboard.slots import SwitchboardSlotsMixin
+from uitk.switchboard.shortcuts import SwitchboardShortcutMixin
+from uitk.switchboard.widgets import SwitchboardWidgetMixin
+from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.switchboard.names import SwitchboardNameMixin
+from uitk.switchboard.editors import SwitchboardEditorsMixin
+from uitk.switchboard.style import SwitchboardStyleMixin
+
+# Generic infrastructure (shared with non-Switchboard widgets):
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.loaders import CompiledLoader, RuntimeLoader
 
 
 class Switchboard(
-    QtUiTools.QUiLoader,
+    QtCore.QObject,
     ptk.HelpMixin,
     ptk.LoggingMixin,
     SwitchboardSlotsMixin,
@@ -68,7 +71,6 @@ class Switchboard(
     QtCore = QtCore
     QtGui = QtGui
     QtWidgets = QtWidgets
-    QtUiTools = QtUiTools
 
     # Use the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
@@ -90,10 +92,13 @@ class Switchboard(
         ui_name_delimiters: str = None,
         log_level: str = "warning",
         base_dir=None,
+        loader="runtime",
     ) -> None:
         super().__init__(parent)
         """ """
         self.logger.setLevel(log_level)
+
+        self._loader = self._build_loader(loader)
 
         self.tag_delimiter = tag_delimiter or self.TAG_DELIMITER
         self.ui_name_delimiters = ui_name_delimiters or self.UI_NAME_DELIMITER
@@ -109,7 +114,10 @@ class Switchboard(
 
         # Tag overlays must exist before any registry population.
         self._source_tags = {}  # {normalized_dir_path: set_of_tags}
-        self._ui_xml_tags = {}  # {ui_name: set_of_tags} parsed from <property name="uitk_tags">
+        # {ui_name: set_of_tags} parsed from the .ui's <uitk_tags> property.
+        # Populated lazily on first access via ``_get_ui_tags`` to avoid
+        # paying an N×ET.parse cost at init for UIs that may never load.
+        self._ui_tags: dict = {}
 
         # Define source configuration
         sources = self._get_registry_config(
@@ -126,15 +134,15 @@ class Switchboard(
                 **config,
             )
 
-        # Parse XML tags for any UI entries that came from constructor sources.
-        # No signal emission here — listeners cannot connect before __init__ ends.
-        self._ingest_new_ui_entries(set(), emit=False)
-
-        # Include this package's widgets (and subpackages like sequencer/)
-        self.registry.widget_registry.extend("widgets", base_dir=self, recursive=True)
-
-        # Include this package's default icons
-        self.registry.icon_registry.extend("icons", base_dir=self)
+        # Include this package's widgets (and subpackages like sequencer/) and
+        # default icons. ``base_dir=self`` would resolve to this module's
+        # directory (``uitk/switchboard/``); the assets live one level up at
+        # the ``uitk/`` package root, so anchor on the package directory.
+        _UITK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.registry.widget_registry.extend(
+            "widgets", base_dir=_UITK_DIR, recursive=True
+        )
+        self.registry.icon_registry.extend("icons", base_dir=_UITK_DIR)
 
         self.loaded_ui = ptk.NamespaceHandler(
             self,
@@ -194,6 +202,51 @@ class Switchboard(
         if defaults:
             # Apply defaults to the configuration branch matching the handler name
             self.configurable.branch(name).set_defaults(defaults)
+
+    _LOADER_CLASSES = {
+        "compiled": CompiledLoader,
+        "runtime": RuntimeLoader,
+    }
+    _LOADER_CONTRACT = ("load", "read_ui_tags", "on_tags_written")
+
+    def _build_loader(self, loader):
+        """Resolve the ``loader`` kwarg to a delegate instance.
+
+        Accepts:
+          - ``"compiled"`` (default) — :class:`CompiledLoader`. pyside6-uic
+            produces a hashed _ui.py per .ui; loads through Python imports.
+          - ``"runtime"`` — :class:`RuntimeLoader`. ``QtUiTools.QUiLoader``
+            reads .ui XML directly each time. No on-disk artifact.
+          - A class implementing the loader contract (instantiated with
+            ``self``) — for custom delegates.
+          - An already-constructed delegate instance — used as-is.
+
+        Both built-ins implement the same three-method contract:
+        ``load(file)``, ``read_ui_tags(path)``, ``on_tags_written(path)``.
+        Custom delegates passed in are validated upfront against this
+        contract so a typo'd class fails here, not at first UI load.
+        """
+        if isinstance(loader, str):
+            cls = self._LOADER_CLASSES.get(loader)
+            if cls is None:
+                raise ValueError(
+                    f"Unknown loader {loader!r}; expected one of "
+                    f"{sorted(self._LOADER_CLASSES)}"
+                )
+            instance = cls(self)
+        elif isinstance(loader, type):
+            instance = loader(self)
+        else:
+            # Caller passed a constructed instance.
+            instance = loader
+        missing = [m for m in self._LOADER_CONTRACT if not callable(getattr(instance, m, None))]
+        if missing:
+            raise TypeError(
+                f"Loader {type(instance).__name__} is missing required "
+                f"method(s): {missing}. The loader contract is "
+                f"{list(self._LOADER_CONTRACT)}."
+            )
+        return instance
 
     def __new__(cls, *args, **kwargs):
         instance = super().__new__(cls)
@@ -453,25 +506,8 @@ class Switchboard(
         return [self.load_ui(f) for f in filepaths]
 
     def load_ui(self, file: str) -> QtWidgets.QMainWindow:
-        """Loads a UI from the given path to the UI file and adds it to the switchboard."""
-        custom_widgets = self.get_property_from_ui_file(file, "customwidget")
-        for widget in custom_widgets:
-            try:
-                class_name = widget[0][1]
-            except IndexError:
-                continue
-
-            if class_name not in self.registered_widgets.keys():
-                widget_class_info = self.registry.widget_registry.get(
-                    classname=class_name, return_field="classobj"
-                )
-                if widget_class_info:
-                    self.register_widget(widget_class_info)
-
-        loaded_ui = self.load(file)
-        name = ptk.format_path(file, "name")
-        self.logger.debug(f"[{name}] UI loaded via QUiLoader from {file}")
-        return loaded_ui
+        """Load a UI from the given .ui path via its compiled _ui.py module."""
+        return self._loader.load(file)
 
     def _add_existing_wrapped_ui(
         self, window: QtWidgets.QMainWindow, name: Optional[str] = None
@@ -526,6 +562,9 @@ class Switchboard(
         )
 
         tags = set(tags or (self.get_tags_from_name(name) if name else set()))
+        # Capture the .ui filepath before format_path coerces it to a
+        # directory — _get_ui_tags needs the file to read XML tags from.
+        ui_file_path = path if (path and os.path.isfile(path)) else None
         path = ptk.format_path(path, "path") if path else None
 
         # Merge source tags from registered directories
@@ -537,8 +576,9 @@ class Switchboard(
                     break
 
         # Merge tags parsed from the .ui file's <property name="uitk_tags">
-        if name and name in self._ui_xml_tags:
-            tags.update(self._ui_xml_tags[name])
+        # (lazy: read on first request, cached thereafter).
+        if name:
+            tags.update(self._get_ui_tags(name, ui_file_path))
 
         # Don't add footer to stacked UIs (startmenu/submenu)
         if tags and any(tag in tags for tag in ["startmenu", "submenu"]):
@@ -679,60 +719,26 @@ class Switchboard(
             )
             return matches
 
-    @staticmethod
-    def get_property_from_ui_file(file, prop):
-        """Retrieves a specified property from a given UI or XML file.
-
-        This method parses the given file, expecting it to be in either .ui or .xml format,
-        and searches for all elements with the specified property. It then returns a list
-        of these elements, where each element is represented as a list of tuples containing
-        the tag and text of its sub-elements.
-
-        Parameters:
-            file (str): The path to the UI or XML file to be parsed. The file must have a .ui or .xml extension.
-            prop (str): The property to search for within the file.
-
-        Returns:
-            list: A list of lists containing tuples with the tag and text of the sub-elements of each element found with the specified property.
-
-        Raises:
-            ValueError: If the file extension is not .ui or .xml, or if there is an error in parsing the file.
-
-        Example:
-            get_property_from_ui_file('example.ui', 'customwidget')
-            # Output: [[('class', 'CustomWidget'), ('extends', 'QWidget')], ...]
-        """
-        if not (file.endswith(".ui") or file.endswith(".xml")):
-            raise ValueError(
-                f"Invalid file extension. Expected a .ui or .xml file, got: {file}"
-            )
-
-        tree = ElementTree()
-        tree.parse(file)
-
-        # Find all elements with the given property
-        elements = tree.findall(".//{}".format(prop))
-
-        result = []
-        for elem in elements:
-            prop_list = []
-            for subelem in elem:
-                prop_list.append((subelem.tag, subelem.text))
-            result.append(prop_list)
-
-        return result
-
-    # ── XML tag persistence ──────────────────────────────────────────
+    # ── Tag persistence ──────────────────────────────────────────────
 
     UITK_TAGS_PROPERTY = "uitk_tags"
 
     def _ingest_new_ui_entries(self, prev_ui_names, emit=True):
-        """Parse XML tags and (optionally) emit on_ui_registered for new UI entries.
+        """Emit ``on_ui_registered`` for UI entries newly added to the registry.
 
-        Called after each registry extension. Only UI files not already in
-        prev_ui_names are processed. Pass emit=False during __init__ when no
-        listener can be connected yet.
+        Called after each registry extension. Tag XML is *not* parsed here —
+        ``_ui_tags[name]`` is populated lazily by :meth:`_get_ui_tags` on
+        first access. Eager parsing at init was an N×ET.parse cost paid for
+        every UI in the registry whether it ever loaded or not; under the
+        runtime loader that cost dominated startup.
+
+        Listeners (e.g. the switchboard browser model) only need the
+        notification — they query tags themselves when the user inspects
+        a row. Pass emit=False during __init__ where no listener exists.
         """
+        if not emit:
+            return
+
         if prev_ui_names is None:
             prev_ui_names = set()
 
@@ -742,14 +748,7 @@ class Switchboard(
 
         for entry in list(ui_registry.named_tuples):
             name = getattr(entry, "filename", None)
-            path = getattr(entry, "filepath", None)
             if not name or name in prev_ui_names:
-                continue
-
-            # Parse XML tags (graceful on failure — empty set is fine)
-            self._ui_xml_tags[name] = self._parse_ui_tags(path) if path else set()
-
-            if not emit:
                 continue
             try:
                 self.on_ui_registered.emit(name)
@@ -759,33 +758,24 @@ class Switchboard(
                     f"[on_ui_registered] emit failed for '{name}'", exc_info=True
                 )
 
-    @classmethod
-    def _parse_ui_tags(cls, filepath: str) -> set:
-        """Parse the uitk_tags dynamic property from a .ui file's root widget.
+    def _get_ui_tags(self, name: str, path: str = None) -> set:
+        """Return uitk_tags for a UI, lazy-loading from the .ui file on miss.
 
-        Returns the set of tag names, or an empty set if the property is
-        absent, the file cannot be read, or the XML is malformed (e.g. a
-        partial read during a cloud-sync operation).
+        Looks up ``path`` from the registry if not provided. Returns an empty
+        set if neither cache nor registry can resolve a file. Result is
+        cached in ``_ui_tags`` so subsequent calls are O(1).
         """
-        try:
-            tree = ElementTree()
-            tree.parse(filepath)
-        except (ParseError, OSError, ValueError):
+        if name in self._ui_tags:
+            return self._ui_tags[name]
+        if not path:
+            ui_registry = getattr(self.registry, "ui_registry", None)
+            if ui_registry is not None:
+                path = ui_registry.get(filename=name, return_field="filepath")
+        if not path:
             return set()
-
-        root = tree.getroot()
-        widget = root.find("widget") if root is not None else None
-        if widget is None:
-            return set()
-
-        for prop in widget.findall("property"):
-            if prop.get("name") != cls.UITK_TAGS_PROPERTY:
-                continue
-            string_el = prop.find("string")
-            if string_el is None or not string_el.text:
-                return set()
-            return {t.strip() for t in string_el.text.split(",") if t.strip()}
-        return set()
+        tags = self._loader.read_ui_tags(path)
+        self._ui_tags[name] = tags
+        return tags
 
     def save_ui_tags(self, path: str, tags: Iterable[str]) -> None:
         """Persist tags into a .ui file as a Designer-safe dynamic property.
@@ -853,9 +843,20 @@ class Switchboard(
             serialized = '<?xml version="1.0" encoding="UTF-8"?>\n' + serialized
         ptk.FileUtils.atomic_write_text(path, serialized)
 
+        # Regenerate the compiled artifact so runtime sees the new tags.
+        # Failure here means the next load_ui will detect drift and re-try.
+        try:
+            self._loader.on_tags_written(path)
+        except Exception:
+            self.logger.warning(
+                f"[save_ui_tags] failed to regenerate _ui.py for '{path}' — "
+                f"will retry on next load",
+                exc_info=True,
+            )
+
         # Update caches and live state
         ui_name = ptk.format_path(path, "name")
-        self._ui_xml_tags[ui_name] = set(tag_set)
+        self._ui_tags[ui_name] = set(tag_set)
 
         if ui_name in self.loaded_ui:
             ui = self.loaded_ui[ui_name]

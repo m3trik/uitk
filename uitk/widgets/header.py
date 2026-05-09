@@ -16,6 +16,7 @@ class Header(
 
     Signals:
         toggled(bool): Emitted when the pin state is toggled.
+        refresh_requested(): Emitted when the refresh button is clicked.
 
     Attributes:
         button_definitions (dict): Defines the properties of the buttons available in the header.
@@ -23,6 +24,7 @@ class Header(
     """
 
     toggled = QtCore.Signal(bool)
+    refresh_requested = QtCore.Signal()
 
     MINIMIZE_WIDTH = 200  # Fixed width when minimized to corner
     MINIMIZE_STACK = "horizontal"  # "horizontal" or "vertical"
@@ -31,6 +33,7 @@ class Header(
 
     # Define button properties with icon paths and callbacks
     button_definitions = {
+        "refresh": ("refresh.svg", "trigger_refresh"),
         "menu": ("menu.svg", "show_menu"),
         "collapse": ("chevron_up.svg", "toggle_collapse"),
         "minimize": ("minimize.svg", "minimize_window"),
@@ -51,8 +54,9 @@ class Header(
         Parameters:
             parent (QWidget, optional): The parent widget. Defaults to None.
             config_buttons (list, optional): List of button names to show in order.
-                Example: ['menu', 'pin']
-                Available buttons: 'menu', 'collapse', 'minimize', 'maximize', 'hide', 'pin'
+                Example: ['refresh', 'menu', 'pin']
+                Available buttons: 'refresh', 'menu', 'collapse', 'minimize',
+                'maximize', 'hide', 'pin'
             pin_on_drag_only (bool, optional): If True (default), clicking the pin button hides
                 the window, and only dragging the header pins it. If False, clicking the pin
                 button toggles traditional pin/unpin behavior.
@@ -187,9 +191,10 @@ class Header(
         Parameters:
             *button_list: Button names in display order (as args or single list).
                 Examples:
-                    config_buttons('pin', 'menu')
-                    config_buttons(['pin', 'menu'])
-                Available: 'menu', 'collapse', 'minimize', 'maximize', 'hide', 'pin'
+                    config_buttons('refresh', 'menu', 'pin')
+                    config_buttons(['refresh', 'menu', 'pin'])
+                Available: 'refresh', 'menu', 'collapse', 'minimize',
+                'maximize', 'hide', 'pin'
         """
         # Support both styles: config_buttons('a', 'b') and config_buttons(['a', 'b'])
         if len(button_list) == 1 and isinstance(button_list[0], (list, tuple)):
@@ -444,6 +449,15 @@ class Header(
         self.window().show()
         if not self.pinned:
             self.toggle_pin(from_drag=True)  # Programmatic toggle, not user click
+
+    def trigger_refresh(self):
+        """Emit the refresh_requested signal.
+
+        Slots connect to ``refresh_requested`` to perform the actual refresh
+        (rescan a table, repopulate a tree, etc.). Calling this method directly
+        is equivalent to clicking the refresh button.
+        """
+        self.refresh_requested.emit()
 
     def show_menu(self):
         """Show the menu."""

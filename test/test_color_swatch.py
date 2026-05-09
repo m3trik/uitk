@@ -276,12 +276,13 @@ class TestColorSwatchSettings(QtBaseTestCase):
 def _mock_mayatk_modules():
     """Build a sys.modules patch dict that stubs the mayatk package chain.
 
-    Mocks pymel (Maya) so color_manager can be imported without Maya,
-    while using the real mayatk source from the monorepo.
+    Stubs maya.cmds so color_manager can be imported without Maya, while
+    using the real mayatk source from the monorepo.
     """
     import sys
     import types
     import os
+    from unittest.mock import MagicMock
 
     # Ensure mayatk source is importable
     mayatk_root = os.path.normpath(
@@ -290,12 +291,12 @@ def _mock_mayatk_modules():
     if mayatk_root not in sys.path:
         sys.path.insert(0, mayatk_root)
 
-    mock_pm = types.ModuleType("pymel")
-    mock_pm.core = types.ModuleType("pymel.core")
+    mock_maya = types.ModuleType("maya")
+    mock_cmds = MagicMock()
 
     return {
-        "pymel": mock_pm,
-        "pymel.core": mock_pm.core,
+        "maya": mock_maya,
+        "maya.cmds": mock_cmds,
     }
 
 

@@ -460,13 +460,17 @@ class MenuPositioner:
             match_parent_width: Whether to match anchor width
             logger: Optional logger for debug output
         """
-        # Apply positioning
-        if anchor_widget:
-            MenuPositioner.position_relative_to_widget(menu, anchor_widget, position)
+        # Apply positioning. Explicit coordinates win over anchor-relative
+        # dispatch — passing a QPoint/tuple/list means "use this position",
+        # so the anchor (if any) is informational only. Strings continue to
+        # dispatch through the anchor when one is provided ("bottom",
+        # "right", etc. are anchor-relative by definition).
+        if isinstance(position, (tuple, list, QtCore.QPoint)):
+            MenuPositioner.position_at_coordinate(menu, position)
         elif position == "cursorPos":
             MenuPositioner.center_on_cursor(menu)
-        elif isinstance(position, (tuple, list, QtCore.QPoint)):
-            MenuPositioner.position_at_coordinate(menu, position)
+        elif anchor_widget:
+            MenuPositioner.position_relative_to_widget(menu, anchor_widget, position)
         else:
             MenuPositioner.center_on_cursor(menu)
 
@@ -1543,16 +1547,29 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             f"Menu.show_as_popup: anchor_widget={anchor_widget}, position={position}"
         )
 
-        # Apply popup setup (Qt.Tool flag, attributes) before positioning so
-        # the position calculation operates in screen coordinates, not
-        # parent-local.  Idempotent — no-op if already configured.
+        # Order matters: every step that affects size must run before
+        # positioning, and positioning must run before the on-screen
+        # check, all while the menu is still hidden.  By the time
+        # super().show() runs inside self.show(), the menu is already
+        # at its final size and final position — Qt never paints a
+        # pre-final state, so the user sees no flicker.
+        #
+        # 1. Configure as popup (Qt.Tool | FramelessWindowHint).
         self._setup_as_popup()
-
-        # Store anchor widget temporarily for _apply_position to use
-        # This allows proper width matching even when parent is different
         self._current_anchor_widget = anchor_widget
 
-        # Use the refactored positioning method (DRY - combines positioning and width matching)
+        # 2. Finalize layout (apply/defaults buttons, presets, trigger
+        #    hooks, style, height-fit) — must run BEFORE positioning so
+        #    that any size change from added widgets is included in the
+        #    measurement that drives position math.
+        self._prepare_for_show()
+
+        # 3. Final size pass on the now-complete layout.
+        self.adjustSize()
+        self._resize_height_to_content()
+
+        # 4. Position relative to anchor (uses the final size from
+        #    step 3).
         MenuPositioner.position_and_match_width(
             menu=self,
             anchor_widget=anchor_widget or self.parent(),
@@ -1561,24 +1578,18 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             logger=self.logger,
         )
 
-        # Don't use WindowStaysOnTopHint as it keeps menu on top even when other apps are focused
-        # The Tool window flag with raise_() and activateWindow() is sufficient for popup behavior
+        # 5. On-screen correction (uses the final position from step 4).
+        #    Frameless Tool windows have frameGeometry == geometry even
+        #    pre-show, so the check is reliable here.
+        if self.ensure_on_screen:
+            self._ensure_on_screen()
 
-        # Ensure geometry matches current content before showing
-        self.adjustSize()
-        self._resize_height_to_content()
-
-        # ``Menu.show`` runs ``_ensure_on_screen`` synchronously after
-        # ``super().show()`` — same event-loop tick, before the first
-        # paint.  No pre-show check needed here: pre-show frameGeometry
-        # is unreliable (the native window doesn't exist yet, so frame
-        # insets aren't applied), and any pre-show correction would be
-        # superseded by the post-show one anyway.
+        # 6. Make Qt-visible.  The setVisible override re-runs
+        #    _prepare_for_show; each branch is gated and no-ops.
         self.show()
         self.raise_()
         self.activateWindow()
 
-        # Clear anchor widget after show
         self._current_anchor_widget = None
 
     def setCentralWidget(self, widget, overwrite=False):

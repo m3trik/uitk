@@ -9,7 +9,7 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 ## 1. Design principles
 
 1. **Convention over configuration.** Names carry meaning. UI filenames map to slot classes; `objectName`s map to methods; `#`-tags map to UI hierarchy. Every convention is overridable.
-2. **Composition over inheritance.** Widgets gain capabilities through narrow mixins (`MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`), not deep class trees. The Switchboard itself is six mixins glued together.
+2. **Composition over inheritance.** Widgets gain capabilities through narrow mixins (`MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`), not deep class trees. The Switchboard itself is split into private partials co-located in [uitk/switchboard/](../uitk/switchboard/) and glued together by `Switchboard` in `_core.py`.
 3. **Lazy everything.** Widgets register on first access. UIs load on first attribute access (`sb.loaded_ui.editor`). Menus and option boxes create themselves only when touched. Slot signatures are introspected once, then cached.
 4. **Dependency injection, not global state.** Slot classes receive the `Switchboard` via constructor kwargs. Handlers are registered with the Switchboard. No singletons in the hot paths (`MarkingMenu` uses `SingletonMixin` only because there's one radial menu per host at a time).
 5. **Extend via registries and handlers.** New widgets, slots, icons, and UIs get added to typed registries. New behaviors (window positioning, styling, DCC integration) get added as handlers on `sb.handlers.*`.
@@ -51,11 +51,13 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 
 ## 3. Switchboard — the orchestrator
 
-[uitk/switchboard.py](../uitk/switchboard.py), 729 lines. Composed from:
+[uitk/switchboard/_core.py](../uitk/switchboard/_core.py). The Switchboard
+class composes private partials co-located in the
+[uitk/switchboard/](../uitk/switchboard/) package:
 
 ```python
 class Switchboard(
-    QtUiTools.QUiLoader,           # Qt's .ui file loader
+    QtCore.QObject,
     ptk.HelpMixin,                 # introspection helpers
     ptk.LoggingMixin,              # named logger, log_prefix
     SwitchboardSlotsMixin,         # slot resolution, Signals, SlotWrapper
@@ -63,10 +65,20 @@ class Switchboard(
     SwitchboardWidgetMixin,        # widget resolution + registration
     SwitchboardUtilsMixin,         # center_widget, unpack_names, dialogs
     SwitchboardNameMixin,          # tag/base name parsing, legal-name conversion
+    SwitchboardEditorsMixin,       # sb.editors registry (style/hotkey/browser)
+    SwitchboardStyleMixin,         # sb.style — lazy StyleSheet accessor
 ): ...
 ```
 
-Each mixin is a narrow contract — the Switchboard can be understood by reading each mixin in isolation.
+Each partial lives in `uitk/switchboard/_<name>.py` (e.g. `_slots.py`,
+`_shortcuts.py`). The leading underscore signals these are not
+standalone mixins — they exist only as composition pieces of
+`Switchboard` and aren't intended for reuse outside this package.
+
+The companion module [uitk/widgets/mixins/shortcuts.py](../uitk/widgets/mixins/shortcuts.py)
+holds the *generic* shortcut primitives (``GlobalShortcut``,
+``ShortcutManager``, ``ShortcutMixin``) that any Qt widget can adopt
+without involving Switchboard.
 
 ### Registries
 
@@ -125,9 +137,8 @@ Handler class attribute `DEFAULTS = {...}` is merged into `sb.configurable.<hand
 
 ```python
 DEFAULT_INCLUDE = {
-    "switchboard": "Switchboard",
+    "switchboard": ["Switchboard", "Signals", "SlotWrapper", "Shortcut"],
     "widgets.pushButton": "PushButton",
-    "widgets.mixins.switchboard_slots": "Signals",
     ...
 }
 ```
@@ -211,7 +222,7 @@ When a widget's default signal fires, `MainWindow._add_child_changed_signal` for
 
 ## 6. Slot system — how `btn_save()` actually gets called
 
-Implementation: [widgets/mixins/switchboard_slots.py](../uitk/widgets/mixins/switchboard_slots.py).
+Implementation: [switchboard/_slots.py](../uitk/switchboard/_slots.py).
 
 ### Resolution
 
