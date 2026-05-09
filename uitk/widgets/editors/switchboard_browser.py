@@ -3,8 +3,8 @@
 """Searchable, tag-filtered launcher for any UI registered with a Switchboard.
 
 Listed UIs are pulled from ``switchboard._file_manager.ui_registry`` and never
-instantiated until the user clicks Launch. Tags are read from the .ui XML at
-register time (see ``Switchboard.save_ui_tags`` / ``_parse_ui_tags``) so they
+instantiated until the user clicks Launch. Tags are read from the compiled
+_ui.py header at register time (see ``Switchboard.save_ui_tags``) so they
 are knowable for every entry without breaking lazy loading.
 
 The browser itself is unregistered — a plain ``EditorPanel`` instantiated
@@ -25,7 +25,9 @@ import pythontk as ptk
 # (lazy-imported there) and in type annotations (TYPE_CHECKING block).
 # ``StyleSheet`` is reachable via ``sb.style`` at use sites — no direct
 # import needed.
+from uitk.compile import precompile_async
 from uitk.widgets.editors.editor_panel import EditorPanel
+from uitk.widgets.pushButton import PushButton
 
 if TYPE_CHECKING:  # pragma: no cover
     from uitk.switchboard import Switchboard
@@ -194,7 +196,7 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
         if role == self.TagsRole:
             return sorted(self._all_tags_for(name))
         if role == self.FileTagsRole:
-            return sorted(self.sb._ui_xml_tags.get(name, set()))
+            return sorted(self.sb._get_ui_tags(name))
         if role == self.InheritedTagsRole:
             return sorted(self._inherited_tags_for(name))
         if role == self.LoadedRole:
@@ -258,7 +260,7 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
 
     def _all_tags_for(self, name: str) -> Set[str]:
         tags = self._inherited_tags_for(name)
-        tags |= set(self.sb._ui_xml_tags.get(name, set()))
+        tags |= set(self.sb._get_ui_tags(name))
         ui = self.sb.loaded_ui.peek(name)
         if ui is not None:
             try:
@@ -1069,6 +1071,59 @@ class SwitchboardBrowser(EditorPanel):
         )
         self._btn_refresh.clicked.connect(self._on_refresh_clicked)
 
+        # Use uitk's PushButton (not QPushButton) so the button has
+        # `option_box` available for the force-compile toggle below.
+        self._btn_compile_all = menu.add(
+            PushButton,
+            setText="Compile all",
+            setObjectName="btn_compile_all",
+            setToolTip=(
+                "Pre-compile every registered .ui to its _ui.py.\n"
+                "Stale or missing files are regenerated; up-to-date "
+                "files are skipped (hash match).\n\n"
+                "Toggle the option-box (refresh icon) on the right to "
+                "force-recompile every file regardless of hash."
+            ),
+        )
+        self._btn_compile_all.clicked.connect(self._on_compile_all_clicked)
+
+        # Option-box toggle: when on (state 1), the next click force-recompiles
+        # every .ui regardless of hash freshness. State 0 (off) keeps the
+        # default behavior (skip files whose hash already matches). Per-state
+        # callbacks flip the flag to the *will-be* value before the visual
+        # advances, so flag and icon stay in lock-step.
+        self._compile_force = False
+
+        def _set_force(value: bool) -> None:
+            self._compile_force = value
+
+        self._btn_compile_all.option_box.set_action(
+            states=[
+                {
+                    "icon": "refresh",
+                    "color": "#555555",
+                    "tooltip": (
+                        "Force-recompile: off. Click to enable — next "
+                        "'Compile all' will recompile every .ui regardless "
+                        "of hash."
+                    ),
+                    "callback": lambda: _set_force(True),
+                },
+                {
+                    "icon": "refresh",
+                    "tooltip": (
+                        "Force-recompile: on. Click to disable — next "
+                        "'Compile all' will skip files whose hash already "
+                        "matches."
+                    ),
+                    "callback": lambda: _set_force(False),
+                },
+            ],
+            settings_key=False,  # transient: reset to off each session
+        )
+
+        self._compile_poll_timer = None
+
         # ── Show ──
         menu.add("Separator", setTitle="Show:")
         self._show = menu.add(
@@ -1294,6 +1349,81 @@ class SwitchboardBrowser(EditorPanel):
         self._apply_filter()
         self._update_footer_status()
 
+    def _on_compile_all_clicked(self) -> None:
+        """Pre-compile registered .ui files in a background thread.
+
+        Default: only stale/missing _ui.py files are regenerated (hash check).
+        With the option-box force toggle on, every .ui is rewritten regardless
+        of hash. Footer reflects progress; the button is disabled while the
+        job is running.
+        """
+        ui_paths = [
+            entry.filepath for entry in self.sb.registry.ui_registry.named_tuples
+        ]
+        if not ui_paths:
+            self.footer.setStatusText("Compile all: no UIs registered.")
+            return
+
+        force = self._compile_force
+        job = precompile_async(*ui_paths, force=force)
+        if not job:
+            if job.reason == "running":
+                self.footer.setStatusText(
+                    "Compile all: another compile is already in progress."
+                )
+            else:
+                self.footer.setStatusText(
+                    f"Compile all: nothing to do "
+                    f"({len(ui_paths)} files already up-to-date — "
+                    f"toggle the refresh icon to force-recompile)."
+                )
+            return
+
+        import time as _time
+
+        compile_count = job.stale
+        started = _time.perf_counter()
+        self._btn_compile_all.setEnabled(False)
+        verb = "Force-compiling" if force else "Compiling"
+        if force:
+            self.footer.setStatusText(f"{verb} {compile_count} UIs…")
+        else:
+            self.footer.setStatusText(
+                f"{verb} {compile_count} of {len(ui_paths)} UIs…"
+            )
+
+        # Poll the worker thread without blocking the Qt event loop.
+        # QTimer is the idiomatic choice; it stays on the GUI thread so
+        # updating widgets is safe.
+        timer = QtCore.QTimer(self)
+        timer.setInterval(150)
+        self._compile_poll_timer = timer
+
+        def _check() -> None:
+            if job.is_alive():
+                return
+            elapsed = _time.perf_counter() - started
+            timer.stop()
+            self._compile_poll_timer = None
+            self._btn_compile_all.setEnabled(True)
+            # Refresh — tags/metadata may have shifted during compile. Refresh
+            # schedules a deferred ``_update_footer_status`` via QTimer.
+            # singleShot(0) on dataChanged, so we must queue our final status
+            # *after* that deferred update or it gets clobbered.
+            self._on_refresh_clicked()
+            done_verb = "force-recompiled" if force else "compiled"
+            done_msg = (
+                f"Compile all: done — {done_verb} {compile_count} "
+                f"of {len(ui_paths)} UIs in {elapsed:.2f}s."
+            )
+            QtCore.QTimer.singleShot(
+                0,
+                lambda: self.footer.setStatusText(done_msg),
+            )
+
+        timer.timeout.connect(_check)
+        timer.start()
+
     # ── Footer status ───────────────────────────────────────────────────────
 
     def _update_footer_status(self, *_args) -> None:
@@ -1483,7 +1613,7 @@ class SwitchboardBrowser(EditorPanel):
             )
             return
         inherited = self._model._inherited_tags_for(name)
-        file_tags = set(self.sb._ui_xml_tags.get(name, set()))
+        file_tags = set(self.sb._get_ui_tags(name))
         dlg = TagEditDialog(name, inherited, file_tags, parent=self)
         if dlg.exec_() == QtWidgets.QDialog.Accepted:
             new_tags = dlg.tags()
@@ -1614,9 +1744,8 @@ class SwitchboardBrowser(EditorPanel):
 
         Skips if the header already has buttons (a UI with a deliberate
         custom set should keep it). Falls back to ``findChild`` because
-        QUiLoader-loaded widgets use dynamic subclasses, so a plain
-        ``isinstance`` walk would miss them. Failure to find or configure
-        a header is non-fatal — the window still launches.
+        ``ui.header`` may not be a ready Header instance yet. Failure to
+        find or configure a header is non-fatal — the window still launches.
         """
         header = getattr(ui, "header", None)
         if header is None or not hasattr(header, "config_buttons"):

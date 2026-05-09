@@ -768,7 +768,7 @@ class TestSlotWrapper(QtBaseTestCase):
 
     def test_slot_wrapper_is_callable(self):
         """SlotWrapper should be callable."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         def test_slot():
             return "called"
@@ -778,7 +778,7 @@ class TestSlotWrapper(QtBaseTestCase):
 
     def test_slot_wrapper_calls_underlying_slot(self):
         """SlotWrapper should call the underlying slot."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         call_log = []
 
@@ -792,7 +792,7 @@ class TestSlotWrapper(QtBaseTestCase):
 
     def test_slot_wrapper_injects_widget_argument(self):
         """SlotWrapper should inject widget argument if signature accepts it."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         received_widget = []
 
@@ -1066,7 +1066,7 @@ class TestSlotWrapperEdgeCases(QtBaseTestCase):
 
     def test_slot_wrapper_with_lambda(self):
         """SlotWrapper should work with lambda functions."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         call_log = []
         wrapper = SlotWrapper(
@@ -1078,7 +1078,7 @@ class TestSlotWrapperEdgeCases(QtBaseTestCase):
 
     def test_slot_wrapper_with_exception(self):
         """SlotWrapper should propagate exceptions."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         def raising_slot():
             raise ValueError("test error")
@@ -1090,7 +1090,7 @@ class TestSlotWrapperEdgeCases(QtBaseTestCase):
 
     def test_slot_wrapper_with_args(self):
         """SlotWrapper should pass through positional arguments."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         received_args = []
 
@@ -1104,7 +1104,7 @@ class TestSlotWrapperEdgeCases(QtBaseTestCase):
 
     def test_slot_wrapper_with_kwargs(self):
         """SlotWrapper should pass through keyword arguments."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         received_kwargs = {}
 
@@ -1304,7 +1304,7 @@ class TestSlotWrapperSignatureCache(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         SlotWrapper._sig_cache.clear()
         self.sb = Switchboard(
@@ -1321,7 +1321,7 @@ class TestSlotWrapperSignatureCache(QtBaseTestCase):
     def test_signature_cached_across_wrappers(self):
         """Creating two SlotWrappers for the same slot should call inspect.signature only once."""
         from unittest.mock import patch
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
         import inspect
 
         def dummy_slot(self, widget=None):
@@ -1334,7 +1334,7 @@ class TestSlotWrapperSignatureCache(QtBaseTestCase):
 
         SlotWrapper._sig_cache.clear()
         with patch(
-            "uitk.widgets.mixins.switchboard_slots.inspect.signature",
+            "uitk.switchboard.slots.inspect.signature",
             wraps=inspect.signature,
         ) as mock_sig:
             w1 = SlotWrapper(dummy_slot, btn1, self.sb)
@@ -1352,7 +1352,7 @@ class TestSlotWrapperSignatureCache(QtBaseTestCase):
 
     def test_different_slots_cached_independently(self):
         """Different slot functions should each get their own cache entry."""
-        from uitk.widgets.mixins.switchboard_slots import SlotWrapper
+        from uitk.switchboard import SlotWrapper
 
         def slot_a(self, widget=None):
             pass

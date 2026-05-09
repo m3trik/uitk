@@ -149,8 +149,6 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             return
 
         # Always adopt an embedded footer if the .ui file declares one.
-        # findChild matches by objectName since QUiLoader's dynamic subclasses
-        # may not isinstance-match the imported Footer class.
         from qtpy.QtWidgets import QWidget
 
         footer_child = central.findChild(QWidget, "footer")

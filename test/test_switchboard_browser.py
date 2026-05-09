@@ -346,7 +346,7 @@ class ExcludeFilter(BrowserBase):
 class LaunchParenting(BrowserBase):
     def test_launched_ui_is_reparented_to_switchboard_parent(self):
         # Give the switchboard a parent (acts as the host DCC main window).
-        # Switchboard inherits from QUiLoader (a QObject); setParent works.
+        # Switchboard inherits from QObject; setParent works.
         host = QtWidgets.QWidget()
         host.setObjectName("host_main_window")
         self.sb.setParent(host)
@@ -411,8 +411,13 @@ class InlineTagEdit(BrowserBase):
         self.assertTrue(self.browser._model.setData(idx, "alpha_tag, beta_tag", QtCore.Qt.EditRole))
         # File should now contain those tags
         path = self.sb.registry.ui_registry.get(filename="alpha", return_field="filepath")
-        from uitk.switchboard import Switchboard
-        self.assertEqual(Switchboard._parse_ui_tags(path), {"alpha_tag", "beta_tag"})
+        from xml.etree import ElementTree as _ET
+        widget = _ET.parse(path).getroot().find("widget")
+        prop = next(
+            p for p in widget.findall("property") if p.get("name") == "uitk_tags"
+        )
+        tags = {t.strip() for t in prop.find("string").text.split(",")}
+        self.assertEqual(tags, {"alpha_tag", "beta_tag"})
 
     def test_set_data_rejects_non_tags_columns(self):
         from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel

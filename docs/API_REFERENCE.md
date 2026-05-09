@@ -198,7 +198,7 @@ MainWindow(
 
 ## `uitk.Signals`
 
-Source: [widgets/mixins/switchboard_slots.py](../uitk/widgets/mixins/switchboard_slots.py)
+Source: [switchboard/_slots.py](../uitk/switchboard/_slots.py)
 
 ### Decorator form
 
@@ -541,7 +541,7 @@ Mixin-provided properties:
 
 ## Default signals table
 
-From [switchboard_slots.py:182](../uitk/widgets/mixins/switchboard_slots.py#L182):
+From [_slots.py:182](../uitk/switchboard/_slots.py#L182):
 
 | Qt class | Default signal |
 |:---|:---|

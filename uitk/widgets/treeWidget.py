@@ -8,7 +8,7 @@ from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.icon_manager import IconManager
-from uitk.widgets.mixins.switchboard_slots import Signals
+from uitk.switchboard import Signals
 from uitk.widgets.mixins.settings_manager import SettingsManager
 
 

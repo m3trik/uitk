@@ -5,7 +5,7 @@
 
 These tests cover contract surface that lives at the intersection of
 :class:`uitk.Switchboard`, :class:`uitk.MainWindow`, and the slot
-pipeline in ``switchboard_slots.py``.  They complement the unit tests
+pipeline in ``_slots.py``.  They complement the unit tests
 in ``test_menu.py`` (which test :class:`Menu` in isolation).
 
 Coverage:
@@ -148,7 +148,7 @@ class _DynamicInitBase(QtBaseTestCase):
 
 class TestSlotConstructorReentrancy(_DynamicInitBase):
     """Locks down the placeholder + ``deferred_widgets`` machinery in
-    :func:`uitk.widgets.mixins.switchboard_slots._create_slots_instance`.
+    :func:`uitk.switchboard.slots._create_slots_instance`.
 
     The scene_exporter pattern reaches into ``self.ui.<child>`` from the
     slot ``__init__`` (e.g. ``self.ui.txt001.setText("")``).  Each access
@@ -275,7 +275,7 @@ class TestSlotConstructorReentrancy(_DynamicInitBase):
 
 class TestRefreshOnShow(_DynamicInitBase):
     """Locks down the gate at
-    :func:`uitk.widgets.mixins.switchboard_slots._perform_slot_init`
+    :func:`uitk.switchboard.slots._perform_slot_init`
     around line 427.  Slot init is idempotent by default; when
     ``widget.refresh_on_show = True`` the slot body re-runs on every
     ``init_slot()`` call.

@@ -1,5 +1,245 @@
 # uitk — API Changes
 
-_Diff vs prior baseline. Generated 2026-04-29._
+_Diff vs prior baseline. Generated 2026-05-08._
 
-No public API changes since last refresh.
+## Removed (80)
+
+- `switchboard.py::Switchboard` — was `(class)`
+- `switchboard.py::Switchboard.add_ui` — was `(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`
+- `switchboard.py::Switchboard.current_ui` — was `(self, ui: QtWidgets.QWidget) -> None`
+- `switchboard.py::Switchboard.find_ui_filename` — was `(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]`
+- `switchboard.py::Switchboard.get_property_from_ui_file` — was `(file, prop)`
+- `switchboard.py::Switchboard.get_ui` — was `(self, ui=None) -> QtWidgets.QWidget`
+- `switchboard.py::Switchboard.get_ui_relatives` — was `(self, ui, upstream=False, exact=False, downstream=False, reverse=False)`
+- `switchboard.py::Switchboard.load_all_ui` — was `(self) -> list`
+- `switchboard.py::Switchboard.load_ui` — was `(self, file: str) -> QtWidgets.QMainWindow`
+- `switchboard.py::Switchboard.prev_slot` — was `(self) -> object`
+- `switchboard.py::Switchboard.prev_ui` — was `(self) -> QtWidgets.QWidget`
+- `switchboard.py::Switchboard.register` — was `(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=0, tags=None)`
+- `switchboard.py::Switchboard.register_handler` — was `(self, name: str, instance, defaults: dict = None)`
+- `switchboard.py::Switchboard.ui_history` — was `(self, index=None, allow_duplicates=False, inc=[], exc=[])`
+- `switchboard.py::Switchboard.visible_windows` — was `(self) -> set`
+- `widgets/mixins/shortcuts.py::Shortcut` — was `(class)`
+- `widgets/mixins/shortcuts.py::SwitchboardShortcutMixin` — was `(class)`
+- `widgets/mixins/shortcuts.py::SwitchboardShortcutMixin.get_shortcut_registry` — was `(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]`
+- `widgets/mixins/shortcuts.py::SwitchboardShortcutMixin.register_slots_shortcuts` — was `(self, ui: QtWidgets.QWidget, slots_instance: object) -> None`
+- `widgets/mixins/shortcuts.py::SwitchboardShortcutMixin.set_user_shortcut` — was `(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str) -> None`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin` — was `(class)`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.convert_to_legal_name` — was `(name: str) -> str`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.edit_tags` — was `(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.filter_tags` — was `(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.get_base_name` — was `(self, name: str) -> str`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.get_slot_class_names` — was `(self, base_name: str) -> List[str]`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.get_slot_file_names` — was `(self, base_name: str) -> List[str]`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.get_tags_from_name` — was `(self, name: str) -> set[str]`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.get_unknown_tags` — was `(self, tag_string: str, known_tags: list[str]) -> list[str]`
+- `widgets/mixins/switchboard_names.py::SwitchboardNameMixin.has_tags` — was `(self, ui, tags=None) -> bool`
+- `widgets/mixins/switchboard_slots.py::Signals` — was `(class)`
+- `widgets/mixins/switchboard_slots.py::Signals.blockSignals` — was `(cls, func)`
+- `widgets/mixins/switchboard_slots.py::SlotWrapper` — was `(class)`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin` — was `(class)`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.call_slot` — was `(self, widget: QtWidgets.QWidget, *args, **kwargs)`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.connect_slot` — was `(self, widget, slot=None)`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.disconnect_slot` — was `(self, widget, slot=None)`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.get_available_signals` — was `(self, widget, derived=True, exc=[])`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.get_default_signals` — was `(self, widget: QtWidgets.QWidget) -> set`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.get_slot` — was `(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.get_slot_from_widget` — was `(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.get_slots_instance` — was `(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.init_slot` — was `(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.slot_history` — was `(self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[], length=200)`
+- `widgets/mixins/switchboard_slots.py::SwitchboardSlotsMixin.slots_instantiated` — was `(self, key: str) -> bool`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin` — was `(class)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.center_widget` — was `(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.connect_multi` — was `(self, ui, widgets, signals, slots)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.create_button_groups` — was `(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.defer_with_timer` — was `(self, func: callable, *args, ms: int = 300, **kwargs) -> None`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.dir_dialog` — was `(title: str = 'Select a directory', start_dir: str = '/home') -> str`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.file_dialog` — was `(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.gc_protect` — was `(self, obj=None, clear=False)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.get_axis_from_checkboxes` — was `(self, checkboxes, ui=None, return_type='str')`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.get_cursor_offset_from_center` — was `(widget)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.get_methods_by_string_pattern` — was `(self, clss, name_string)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.get_widgets_by_string_pattern` — was `(self, ui, name_string)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.hide_unmatched_groupboxes` — was `(self, ui, unknown_tags) -> None`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.input_dialog` — was `(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.invert_on_modifier` — was `(value)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.message_box` — was `(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.modal_menu` — was `(content_fn, parent=None, **kwargs)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.save_file_dialog` — was `(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.set_axis_for_checkboxes` — was `(self, checkboxes, axis, ui=None)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.simulate_key_press` — was `(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.toggle_multi` — was `(self, ui, trigger=None, signal=None, **kwargs)`
+- `widgets/mixins/switchboard_utils.py::SwitchboardUtilsMixin.unpack_names` — was `(cls, name_string)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin` — was `(class)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_all_widgets` — was `(name=None)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_all_windows` — was `(name=None)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_icon` — was `(self, icon_name: str) -> QtGui.QIcon`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_parent_widgets` — was `(widget, object_names=False)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_top_level_parent` — was `(cls, widget, index=-1)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_widget` — was `(self, name, ui=None)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_widget_at` — was `(pos, top_widget_only=True)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.get_widget_from_slot` — was `(self, method)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.is_widget` — was `(self, obj)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.register_widget` — was `(self, widget)`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.resolve_widget_class` — was `(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]`
+- `widgets/mixins/switchboard_widgets.py::SwitchboardWidgetMixin.set_widget_attrs` — was `(self, ui, widget_names, **kwargs)`
+
+## Added (150)
+
+- `_compiled_loader.py::CompiledLoader(class)`
+- `_compiled_loader.py::CompiledLoader.load(self, ui_file: str)`
+- `_compiled_loader.py::CompiledLoader.on_tags_written(self, ui_path: str) -> None`
+- `_compiled_loader.py::CompiledLoader.read_ui_tags(self, ui_path: str) -> set`
+- `compile.py::compile_ui(ui_path, out_path=None, header_resolver=None) -> Path`
+- `compile.py::compiled_path_for(ui_path) -> Path`
+- `compile.py::ensure_compiled(ui_path, header_resolver=None) -> Path`
+- `compile.py::extract_metadata(ui_path) -> dict`
+- `compile.py::hash_ui_source(ui_path) -> str`
+- `compile.py::is_compiled_fresh(ui_path, py_path=None) -> bool`
+- `compile.py::main()`
+- `compile.py::read_embedded_base_class(py_path) -> Optional[str]`
+- `compile.py::read_embedded_form_class(py_path) -> Optional[str]`
+- `compile.py::read_embedded_hash(py_path) -> Optional[str]`
+- `compile.py::read_embedded_tags(py_path) -> set`
+- `handlers/ui_handler.py::UiHandler.editors(self)`
+- `switchboard/_core.py::Switchboard(class)`
+- `switchboard/_core.py::Switchboard.active_ui(self) -> Optional[QtWidgets.QWidget]`
+- `switchboard/_core.py::Switchboard.add_ui(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`
+- `switchboard/_core.py::Switchboard.current_ui(self, ui: QtWidgets.QWidget) -> None`
+- `switchboard/_core.py::Switchboard.find_ui_filename(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]`
+- `switchboard/_core.py::Switchboard.get_ui(self, ui=None) -> QtWidgets.QWidget`
+- `switchboard/_core.py::Switchboard.get_ui_relatives(self, ui, upstream=False, exact=False, downstream=False, reverse=False)`
+- `switchboard/_core.py::Switchboard.load_all_ui(self) -> list`
+- `switchboard/_core.py::Switchboard.load_ui(self, file: str) -> QtWidgets.QMainWindow`
+- `switchboard/_core.py::Switchboard.prev_slot(self) -> object`
+- `switchboard/_core.py::Switchboard.prev_ui(self) -> QtWidgets.QWidget`
+- `switchboard/_core.py::Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=0, tags=None)`
+- `switchboard/_core.py::Switchboard.register_handler(self, name: str, instance, defaults: dict = None)`
+- `switchboard/_core.py::Switchboard.save_ui_tags(self, path: str, tags: Iterable[str]) -> None`
+- `switchboard/_core.py::Switchboard.ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[])`
+- `switchboard/_core.py::Switchboard.visible_windows(self) -> set`
+- `switchboard/_editors.py::SwitchboardEditorsMixin(class)`
+- `switchboard/_editors.py::SwitchboardEditorsMixin.editors(self) -> _EditorRegistry`
+- `switchboard/_names.py::SwitchboardNameMixin(class)`
+- `switchboard/_names.py::SwitchboardNameMixin.convert_to_legal_name(name: str) -> str`
+- `switchboard/_names.py::SwitchboardNameMixin.edit_tags(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]`
+- `switchboard/_names.py::SwitchboardNameMixin.filter_tags(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str`
+- `switchboard/_names.py::SwitchboardNameMixin.get_base_name(self, name: str) -> str`
+- `switchboard/_names.py::SwitchboardNameMixin.get_slot_class_names(self, base_name: str) -> List[str]`
+- `switchboard/_names.py::SwitchboardNameMixin.get_slot_file_names(self, base_name: str) -> List[str]`
+- `switchboard/_names.py::SwitchboardNameMixin.get_tags_from_name(self, name: str) -> set[str]`
+- `switchboard/_names.py::SwitchboardNameMixin.get_unknown_tags(self, tag_string: str, known_tags: list[str]) -> list[str]`
+- `switchboard/_names.py::SwitchboardNameMixin.has_tags(self, ui, tags=None) -> bool`
+- `switchboard/_shortcuts.py::Shortcut(class)`
+- `switchboard/_shortcuts.py::SwitchboardShortcutMixin(class)`
+- `switchboard/_shortcuts.py::SwitchboardShortcutMixin.get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]`
+- `switchboard/_shortcuts.py::SwitchboardShortcutMixin.register_slots_shortcuts(self, ui: QtWidgets.QWidget, slots_instance: object) -> None`
+- `switchboard/_shortcuts.py::SwitchboardShortcutMixin.set_user_shortcut(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None`
+- `switchboard/_slots.py::Signals(class)`
+- `switchboard/_slots.py::Signals.blockSignals(cls, func)`
+- `switchboard/_slots.py::SlotWrapper(class)`
+- `switchboard/_slots.py::SwitchboardSlotsMixin(class)`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs)`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.connect_slot(self, widget, slot=None)`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.disconnect_slot(self, widget, slot=None)`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=[])`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.get_slot(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.get_slot_from_widget(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.init_slot(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.slot_history(self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[], length=200)`
+- `switchboard/_slots.py::SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
+- `switchboard/_style.py::SwitchboardStyleMixin(class)`
+- `switchboard/_style.py::SwitchboardStyleMixin.style(self)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin(class)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.connect_multi(self, ui, widgets, signals, slots)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.defer_with_timer(self, func: callable, *args, ms: int = 300, **kwargs) -> None`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.dir_dialog(title: str = 'Select a directory', start_dir: str = '/home') -> str`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.gc_protect(self, obj=None, clear=False)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.get_axis_from_checkboxes(self, checkboxes, ui=None, return_type='str')`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.get_methods_by_string_pattern(self, clss, name_string)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.get_widgets_by_string_pattern(self, ui, name_string)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.hide_unmatched_groupboxes(self, ui, unknown_tags) -> None`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.input_dialog(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.invert_on_modifier(value)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.message_box(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.modal_menu(content_fn, parent=None, **kwargs)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.set_axis_for_checkboxes(self, checkboxes, axis, ui=None)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.simulate_key_press(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.toggle_multi(self, ui, trigger=None, signal=None, **kwargs)`
+- `switchboard/_utils.py::SwitchboardUtilsMixin.unpack_names(cls, name_string)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin(class)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_all_widgets(name=None)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_all_windows(name=None)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_icon(self, icon_name: str) -> QtGui.QIcon`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_parent_widgets(widget, object_names=False)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_top_level_parent(cls, widget, index=-1)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_widget(self, name, ui=None)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.get_widget_from_slot(self, method)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.is_widget(self, obj)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.register_widget(self, widget)`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.resolve_widget_class(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]`
+- `switchboard/_widgets.py::SwitchboardWidgetMixin.set_widget_attrs(self, ui, widget_names, **kwargs)`
+- `widgets/editors/editor_panel.py::EditorPanel.icon_button(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton`
+- `widgets/editors/editor_panel.py::EditorPanel.style(self) -> 'StyleSheet'`
+- `widgets/editors/hotkey_editor.py::CollisionConflict(class)`
+- `widgets/editors/hotkey_editor.py::HotkeyEditor.add_collision_checker(self, checker: Callable) -> None`
+- `widgets/editors/hotkey_editor.py::HotkeyEditor.remove_collision_checker(self, checker: Callable) -> None`
+- `widgets/editors/shortcut_editor.py::KeyCaptureDialog(class)`
+- `widgets/editors/shortcut_editor.py::KeyCaptureDialog.get_sequence(self) -> str`
+- `widgets/editors/shortcut_editor.py::KeyCaptureDialog.keyPressEvent(self, event)`
+- `widgets/editors/shortcut_editor.py::ShortcutEditorDialog(class)`
+- `widgets/editors/shortcut_editor.py::ShortcutEditorDialog.close(self)`
+- `widgets/editors/shortcut_editor.py::ShortcutEditorDialog.panel(self)`
+- `widgets/editors/shortcut_editor.py::ShortcutEditorDialog.show(self)`
+- `widgets/editors/switchboard_browser.py::LaunchOptions(class)`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowser(class)`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowser.hidden_tags(self, value: Iterable[str]) -> None`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowser.hidden_uis(self, value: Iterable[str]) -> None`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowser.launch_options(self) -> LaunchOptions`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowser.set_exclude_scope(self, value: str) -> None`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowser.set_search_scope(self, value: str) -> None`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel(class)`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.all_unique_tags(self) -> List[str]`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.columnCount(self, parent=QtCore.QModelIndex()) -> int`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.data(self, index, role=QtCore.Qt.DisplayRole)`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.flags(self, index)`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.headerData(self, section, orientation, role=QtCore.Qt.DisplayRole)`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.refresh_after_launch(self, name: str) -> None`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.rowCount(self, parent=QtCore.QModelIndex()) -> int`
+- `widgets/editors/switchboard_browser.py::SwitchboardBrowserModel.setData(self, index, value, role=QtCore.Qt.EditRole)`
+- `widgets/editors/switchboard_browser.py::TagEditDialog(class)`
+- `widgets/editors/switchboard_browser.py::TagEditDialog.tags(self) -> Set[str]`
+- `widgets/menu.py::Menu.setVisible(self, visible: bool) -> None`
+- `widgets/mixins/shortcuts.py::GlobalShortcut.setContext(self, context: QtCore.Qt.ShortcutContext)`
+- `widgets/mixins/shortcuts.py::context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`
+- `widgets/mixins/shortcuts.py::scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`
+- `widgets/tableWidget.py::TableWidget.active_editor(self) -> Optional[QtWidgets.QWidget]`
+- `widgets/tableWidget.py::TableWidget.add_scrub_column(self, column: int) -> None`
+- `widgets/tableWidget.py::TableWidget.add_single_click_edit_column(self, column: int) -> None`
+- `widgets/tableWidget.py::TableWidget.add_wheel_scrub_column(self, column: int) -> None`
+- `widgets/tableWidget.py::TableWidget.eventFilter(self, obj, event)`
+- `widgets/tableWidget.py::TableWidget.is_scrubbing(self) -> bool`
+- `widgets/tableWidget.py::TableWidget.refresh_active_editor(self) -> None`
+- `widgets/tableWidget.py::TableWidget.remove_scrub_column(self, column: int) -> None`
+- `widgets/tableWidget.py::TableWidget.remove_single_click_edit_column(self, column: int) -> None`
+- `widgets/tableWidget.py::TableWidget.remove_wheel_scrub_column(self, column: int) -> None`
+- `widgets/tableWidget.py::TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None`
+- `widgets/tableWidget.py::TableWidget.set_single_click_edit_columns(self, columns: Iterable[int]) -> None`
+- `widgets/tableWidget.py::TableWidget.set_wheel_scrub_columns(self, columns: Iterable[int]) -> None`
+- `widgets/tableWidget.py::TableWidget.wheelEvent(self, event)`
+- `widgets/table_actions.py::TableActions.update_for_row_height(self) -> None`
+
+## Signature changed (1)
+
+- `widgets/editors/hotkey_editor.py::HotkeyEditor.reset_shortcut`
+  - was: `(self, ui, method_name, default_seq)`
+  - now: `(self, ui, method_name, default_seq, default_scope='window')`

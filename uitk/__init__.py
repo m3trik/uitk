@@ -44,10 +44,16 @@ __version__ = "1.1.75"
 
 
 DEFAULT_INCLUDE = {
-    "widgets.mixins.shortcuts": "Shortcut",
+    # Switchboard symbols are mapped to their specific composition modules
+    # (rather than the package facade) to preserve per-symbol lazy loading.
+    # `from uitk import Signals` should not drag in the Switchboard machinery.
+    "switchboard._core": "Switchboard",
+    "switchboard.slots": ["Signals", "SlotWrapper"],
+    "switchboard.shortcuts": "Shortcut",
     "events": ["EventFactoryFilter", "MouseTracking"],
     "file_manager": ["FileContainer", "FileManager"],
-    "switchboard": "Switchboard",
+    "compile": ["compile_ui", "ensure_compiled", "is_compiled_fresh", "precompile_async"],
+    "loaders": ["CompiledLoader", "RuntimeLoader"],
     "widgets.marking_menu._marking_menu": "MarkingMenu",
     "managers.window_manager": "WindowManager",
     # Widgets
@@ -112,7 +118,6 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.shortcuts": ["ShortcutManager", "ShortcutMixin"],
     "widgets.mixins.state_manager": "StateManager",
     "widgets.mixins.style_sheet": "StyleSheet",
-    "widgets.mixins.switchboard_slots": "Signals",
     "widgets.mixins.tasks": ["WorkIndicator", "TasksMixin"],
     "widgets.mixins.text": ["TextTruncation", "RichText", "TextOverlay"],
     "widgets.mixins.value_manager": "ValueManager",

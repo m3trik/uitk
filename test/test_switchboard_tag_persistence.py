@@ -1,16 +1,15 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for Switchboard XML tag persistence (Designer-safe format).
+"""Unit tests for Switchboard tag persistence (Designer-safe XML format).
 
 Covers:
-- _parse_ui_tags reads <property name="uitk_tags"> from a .ui file
-- _parse_ui_tags handles missing property, missing root, malformed XML
-- register() ingests XML tags into _ui_xml_tags and emits on_ui_registered
-- save_ui_tags writes the property and atomically replaces the file
+- register() ingests tags into _ui_tags and emits on_ui_registered
+- save_ui_tags writes the property and atomically replaces the .ui file
 - save_ui_tags with empty tag set removes the property
 - save_ui_tags emits on_ui_tags_changed and updates the live MainWindow.tags
 - save_ui_tags finds the root <widget> even with leading <class> sibling
-- add_ui merges XML tags into the live ui.tags set
+- save_ui_tags regenerates _ui.py so runtime sees the new tags
+- add_ui merges tags into the live ui.tags set
 """
 import os
 import tempfile
@@ -22,6 +21,20 @@ from conftest import QtBaseTestCase, setup_qt_application
 app = setup_qt_application()
 
 from uitk.switchboard import Switchboard
+
+
+def _read_ui_tags(path) -> set:
+    """Read uitk_tags from a .ui file's XML directly (test-only helper)."""
+    tree = ET.parse(path)
+    widget = tree.getroot().find("widget")
+    if widget is None:
+        return set()
+    for prop in widget.findall("property"):
+        if prop.get("name") == "uitk_tags":
+            s = prop.find("string")
+            if s is not None and s.text:
+                return {t.strip() for t in s.text.split(",") if t.strip()}
+    return set()
 
 
 def _write_ui(path, name, tags_csv=None, extra_props=""):
@@ -46,45 +59,6 @@ def _write_ui(path, name, tags_csv=None, extra_props=""):
         f.write(content)
 
 
-class ParseUiTags(QtBaseTestCase):
-    def setUp(self):
-        super().setUp()
-        self.tmp = tempfile.TemporaryDirectory()
-        self.dir = self.tmp.name
-
-    def tearDown(self):
-        self.tmp.cleanup()
-        super().tearDown()
-
-    def test_parses_csv_tags(self):
-        path = os.path.join(self.dir, "alpha.ui")
-        _write_ui(path, "alpha", "anim,rig,export")
-        self.assertEqual(
-            Switchboard._parse_ui_tags(path), {"anim", "rig", "export"}
-        )
-
-    def test_strips_whitespace_and_drops_empty(self):
-        path = os.path.join(self.dir, "alpha.ui")
-        _write_ui(path, "alpha", " anim ,, rig ,")
-        self.assertEqual(Switchboard._parse_ui_tags(path), {"anim", "rig"})
-
-    def test_no_property_returns_empty(self):
-        path = os.path.join(self.dir, "alpha.ui")
-        _write_ui(path, "alpha", tags_csv=None)
-        self.assertEqual(Switchboard._parse_ui_tags(path), set())
-
-    def test_malformed_xml_returns_empty(self):
-        path = os.path.join(self.dir, "broken.ui")
-        with open(path, "w") as f:
-            f.write("<?xml version='1.0'?><ui><widget>not closed")
-        self.assertEqual(Switchboard._parse_ui_tags(path), set())
-
-    def test_missing_file_returns_empty(self):
-        self.assertEqual(
-            Switchboard._parse_ui_tags(os.path.join(self.dir, "nope.ui")), set()
-        )
-
-
 class RegisterIngestsTags(QtBaseTestCase):
     def setUp(self):
         super().setUp()
@@ -95,12 +69,18 @@ class RegisterIngestsTags(QtBaseTestCase):
         self.tmp.cleanup()
         super().tearDown()
 
-    def test_constructor_parses_tags_without_emitting(self):
+    def test_constructor_does_not_eagerly_parse_tags(self):
+        # Init no longer parses XML for every registered UI — the cost
+        # was paid for files that may never load. Tags resolve lazily on
+        # first access via _get_ui_tags.
         _write_ui(os.path.join(self.dir, "a.ui"), "a", "foo")
         _write_ui(os.path.join(self.dir, "b.ui"), "b", "bar")
         sb = Switchboard(ui_source=self.dir, log_level="WARNING")
-        self.assertEqual(sb._ui_xml_tags["a"], {"foo"})
-        self.assertEqual(sb._ui_xml_tags["b"], {"bar"})
+        self.assertEqual(sb._ui_tags, {})
+        # But on demand they resolve correctly and cache.
+        self.assertEqual(sb._get_ui_tags("a"), {"foo"})
+        self.assertEqual(sb._get_ui_tags("b"), {"bar"})
+        self.assertEqual(sb._ui_tags, {"a": {"foo"}, "b": {"bar"}})
 
     def test_register_emits_on_ui_registered_for_new_entries(self):
         _write_ui(os.path.join(self.dir, "a.ui"), "a", "foo")
@@ -108,13 +88,15 @@ class RegisterIngestsTags(QtBaseTestCase):
         received = []
         sb.on_ui_registered.connect(received.append)
 
-        # Add a second .ui in a separate dir, register it
+        # Add a second .ui in a separate dir, register it. Tags are now
+        # resolved lazily, so the file must still exist when we read them
+        # — assert tags inside the tempdir context.
         with tempfile.TemporaryDirectory() as d2:
             _write_ui(os.path.join(d2, "b.ui"), "b", "bar,baz")
             sb.register(ui_location=d2)
 
-        self.assertEqual(received, ["b"])
-        self.assertEqual(sb._ui_xml_tags["b"], {"bar", "baz"})
+            self.assertEqual(received, ["b"])
+            self.assertEqual(sb._get_ui_tags("b"), {"bar", "baz"})
 
     def test_register_does_not_re_emit_for_existing_entries(self):
         _write_ui(os.path.join(self.dir, "a.ui"), "a", "foo")
@@ -142,13 +124,13 @@ class SaveUiTags(QtBaseTestCase):
     def test_round_trip(self):
         self.sb.save_ui_tags(self.path, ["alpha", "beta"])
         self.assertEqual(
-            Switchboard._parse_ui_tags(self.path), {"alpha", "beta"}
+            _read_ui_tags(self.path), {"alpha", "beta"}
         )
-        self.assertEqual(self.sb._ui_xml_tags["target"], {"alpha", "beta"})
+        self.assertEqual(self.sb._ui_tags["target"], {"alpha", "beta"})
 
     def test_empty_set_removes_property(self):
         self.sb.save_ui_tags(self.path, [])
-        self.assertEqual(Switchboard._parse_ui_tags(self.path), set())
+        self.assertEqual(_read_ui_tags(self.path), set())
         # Property element should not exist in the file
         tree = ET.parse(self.path)
         widget = tree.getroot().find("widget")
@@ -163,7 +145,7 @@ class SaveUiTags(QtBaseTestCase):
             tags_csv=None,
             extra_props='<property name="windowTitle"><string>X</string></property>',
         )
-        self.sb._ui_xml_tags["target"] = set()
+        self.sb._ui_tags["target"] = set()
         self.sb.save_ui_tags(self.path, ["alpha"])
 
         tree = ET.parse(self.path)
@@ -174,7 +156,7 @@ class SaveUiTags(QtBaseTestCase):
     def test_finds_root_widget_with_leading_class_sibling(self):
         # _write_ui already places <class> before <widget> — sanity
         self.sb.save_ui_tags(self.path, ["x"])
-        self.assertEqual(Switchboard._parse_ui_tags(self.path), {"x"})
+        self.assertEqual(_read_ui_tags(self.path), {"x"})
 
     def test_emits_on_ui_tags_changed(self):
         received = []
@@ -183,11 +165,10 @@ class SaveUiTags(QtBaseTestCase):
         self.assertEqual(received, ["target"])
 
     def test_atomic_write_no_temp_left(self):
-        before = set(os.listdir(self.dir))
         self.sb.save_ui_tags(self.path, ["one", "two"])
-        after = set(os.listdir(self.dir))
-        # Only the original file should exist; no .tmp artifacts.
-        self.assertEqual(after, before)
+        # No .tmp artifacts from atomic writes (.ui or _ui.py).
+        leftovers = [f for f in os.listdir(self.dir) if f.endswith(".tmp")]
+        self.assertEqual(leftovers, [])
 
     def test_missing_file_raises(self):
         with self.assertRaises(FileNotFoundError):

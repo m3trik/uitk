@@ -20,7 +20,7 @@ from conftest import BaseTestCase, QtBaseTestCase, setup_qt_application
 app = setup_qt_application()
 
 from qtpy import QtWidgets
-from uitk.widgets.mixins.switchboard_slots import Signals
+from uitk.switchboard import Signals
 
 # Alias for backward compatibility in tests
 block_signals = Signals.blockSignals

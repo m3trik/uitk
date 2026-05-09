@@ -98,7 +98,7 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
 
             handler.editors.show("browser")
 
-        See :class:`uitk.widgets.mixins.switchboard_editors._EditorRegistry`
+        See :class:`uitk.switchboard.editors._EditorRegistry`
         for the available editor names and methods.
         """
         return self.sb.editors
@@ -292,8 +292,6 @@ class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         if "header_buttons" in style:
             # ui.header may not be registered yet (register_children runs
             # later in showEvent), so fall back to findChild by objectName.
-            # NOTE: QUiLoader creates widgets via dynamic subclasses, so
-            # isinstance / findChild-by-type won't match the imported class.
             header = getattr(ui, "header", None)
             if not hasattr(header, "config_buttons"):
                 header = (

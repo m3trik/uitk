@@ -1,8 +1,156 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-04-29",
+  "generated_at": "2026-05-08",
   "modules": [
+    {
+      "relpath": "_compiled_loader.py",
+      "summary": "Internal: switchboard delegate that loads UIs via compiled _ui.py modules.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "CompiledLoader",
+          "summary": "Switchboard delegate that loads UIs via compiled _ui.py modules.",
+          "line": 112,
+          "bases": [],
+          "members": [
+            {
+              "name": "read_ui_tags",
+              "qualname": "CompiledLoader.read_ui_tags",
+              "kind": "method",
+              "signature": "(self, ui_path: str) -> set",
+              "summary": "Return the uitk_tags set for a .ui file via direct XML extraction.",
+              "line": 139,
+              "deprecated": false
+            },
+            {
+              "name": "load",
+              "qualname": "CompiledLoader.load",
+              "kind": "method",
+              "signature": "(self, ui_file: str)",
+              "summary": "Build a widget tree from a .ui path via its compiled _ui.py module.",
+              "line": 154,
+              "deprecated": false
+            },
+            {
+              "name": "on_tags_written",
+              "qualname": "CompiledLoader.on_tags_written",
+              "kind": "method",
+              "signature": "(self, ui_path: str) -> None",
+              "summary": "Regenerate _ui.py after the .ui has been written with new tags.",
+              "line": 198,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "compile.py",
+      "summary": "Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.",
+      "functions": [
+        {
+          "name": "hash_ui_source",
+          "qualname": "hash_ui_source",
+          "kind": "function",
+          "signature": "(ui_path) -> str",
+          "summary": "SHA-256 hex digest of the .ui file bytes.",
+          "line": 68,
+          "deprecated": false
+        },
+        {
+          "name": "compiled_path_for",
+          "qualname": "compiled_path_for",
+          "kind": "function",
+          "signature": "(ui_path) -> Path",
+          "summary": "Return the _ui.py path paired with a given .ui path.",
+          "line": 73,
+          "deprecated": false
+        },
+        {
+          "name": "read_embedded_hash",
+          "qualname": "read_embedded_hash",
+          "kind": "function",
+          "signature": "(py_path) -> Optional[str]",
+          "summary": "Return __source_hash__ from a generated _ui.py header, or None.",
+          "line": 100,
+          "deprecated": false
+        },
+        {
+          "name": "read_embedded_tags",
+          "qualname": "read_embedded_tags",
+          "kind": "function",
+          "signature": "(py_path) -> set",
+          "summary": "Return __uitk_tags__ from a generated _ui.py header.",
+          "line": 105,
+          "deprecated": false
+        },
+        {
+          "name": "read_embedded_base_class",
+          "qualname": "read_embedded_base_class",
+          "kind": "function",
+          "signature": "(py_path) -> Optional[str]",
+          "summary": "Return __base_class__ from a generated _ui.py header, or None.",
+          "line": 116,
+          "deprecated": false
+        },
+        {
+          "name": "read_embedded_form_class",
+          "qualname": "read_embedded_form_class",
+          "kind": "function",
+          "signature": "(py_path) -> Optional[str]",
+          "summary": "Return __form_class__ from a generated _ui.py header, or None.",
+          "line": 121,
+          "deprecated": false
+        },
+        {
+          "name": "is_compiled_fresh",
+          "qualname": "is_compiled_fresh",
+          "kind": "function",
+          "signature": "(ui_path, py_path=None) -> bool",
+          "summary": "True if py_path exists and its embedded hash matches ui_path's content.",
+          "line": 126,
+          "deprecated": false
+        },
+        {
+          "name": "extract_metadata",
+          "qualname": "extract_metadata",
+          "kind": "function",
+          "signature": "(ui_path) -> dict",
+          "summary": "Extract switchboard-relevant metadata from a .ui file.",
+          "line": 142,
+          "deprecated": false
+        },
+        {
+          "name": "compile_ui",
+          "qualname": "compile_ui",
+          "kind": "function",
+          "signature": "(ui_path, out_path=None, header_resolver=None) -> Path",
+          "summary": "Compile a .ui file to a switchboard-augmented _ui.py.",
+          "line": 232,
+          "deprecated": false
+        },
+        {
+          "name": "ensure_compiled",
+          "qualname": "ensure_compiled",
+          "kind": "function",
+          "signature": "(ui_path, header_resolver=None) -> Path",
+          "summary": "Return the _ui.py path for ui_path, regenerating if missing or stale.",
+          "line": 284,
+          "deprecated": false
+        },
+        {
+          "name": "main",
+          "qualname": "main",
+          "kind": "function",
+          "signature": "()",
+          "summary": "CLI entry point: python -m uitk.compile [paths...] [--check] [--force].",
+          "line": 296,
+          "deprecated": false
+        }
+      ],
+      "classes": []
+    },
     {
       "relpath": "events.py",
       "summary": "Event handling utilities for Qt applications.",
@@ -334,12 +482,21 @@
               "deprecated": false
             },
             {
+              "name": "editors",
+              "qualname": "UiHandler.editors",
+              "kind": "property",
+              "signature": "(self)",
+              "summary": "Shortcut to the bound switchboard's editor registry.",
+              "line": 92,
+              "deprecated": false
+            },
+            {
               "name": "instance",
               "qualname": "UiHandler.instance",
               "kind": "classmethod",
               "signature": "(cls, switchboard: Switchboard = None, **kwargs) -> 'UiHandler'",
               "summary": "",
-              "line": 103,
+              "line": 118,
               "deprecated": false
             },
             {
@@ -348,7 +505,7 @@
               "kind": "method",
               "signature": "(self, name: str, reload: bool = False, **kwargs)",
               "summary": "Retrieve a standalone UI by name and apply default styling.",
-              "line": 108,
+              "line": 123,
               "deprecated": false
             },
             {
@@ -357,7 +514,7 @@
               "kind": "method",
               "signature": "(self, ui, pos: Union[str, Tuple[int, int], QtCore.QPoint, None] = None, force: bool = False, **kwargs)",
               "summary": "Show a UI by name or widget reference.",
-              "line": 129,
+              "line": 144,
               "deprecated": false
             },
             {
@@ -366,7 +523,7 @@
               "kind": "method",
               "signature": "(self, ui, hide_signal=None)",
               "summary": "Connect a window to a hide signal, respecting its pin state.",
-              "line": 221,
+              "line": 236,
               "deprecated": false
             },
             {
@@ -375,7 +532,7 @@
               "kind": "method",
               "signature": "(self, ui, style: Dict = None)",
               "summary": "Apply default styles to the UI instance.",
-              "line": 234,
+              "line": 249,
               "deprecated": false
             }
           ]
@@ -383,23 +540,25 @@
       ]
     },
     {
-      "relpath": "switchboard.py",
+      "relpath": "switchboard/_core.py",
       "summary": "",
       "functions": [],
       "classes": [
         {
           "name": "Switchboard",
           "summary": "Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.",
-          "line": 23,
+          "line": 29,
           "bases": [
-            "QtUiTools.QUiLoader",
+            "QtCore.QObject",
             "ptk.HelpMixin",
             "ptk.LoggingMixin",
             "SwitchboardSlotsMixin",
             "SwitchboardShortcutMixin",
             "SwitchboardWidgetMixin",
             "SwitchboardUtilsMixin",
-            "SwitchboardNameMixin"
+            "SwitchboardNameMixin",
+            "SwitchboardEditorsMixin",
+            "SwitchboardStyleMixin"
           ],
           "members": [
             {
@@ -408,7 +567,16 @@
               "kind": "method",
               "signature": "(self, name: str, instance, defaults: dict = None)",
               "summary": "Register a handler instance and apply defaults to its config.",
-              "line": 174,
+              "line": 199,
+              "deprecated": false
+            },
+            {
+              "name": "active_ui",
+              "qualname": "Switchboard.active_ui",
+              "kind": "property",
+              "signature": "(self) -> Optional[QtWidgets.QWidget]",
+              "summary": "Return the currently set UI, or None — no auto-load, no warning.",
+              "line": 211,
               "deprecated": false
             },
             {
@@ -417,7 +585,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QWidget",
               "summary": "Get or load the current UI if not already set.",
-              "line": 186,
+              "line": 222,
               "deprecated": false
             },
             {
@@ -426,7 +594,7 @@
               "kind": "method",
               "signature": "(self, ui: QtWidgets.QWidget) -> None",
               "summary": "Set the current UI and record it in UI history.",
-              "line": 211,
+              "line": 247,
               "deprecated": false
             },
             {
@@ -435,7 +603,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QWidget",
               "summary": "Get the previous UI from history.",
-              "line": 224,
+              "line": 260,
               "deprecated": false
             },
             {
@@ -444,7 +612,7 @@
               "kind": "property",
               "signature": "(self) -> object",
               "summary": "Get the last called slot.",
-              "line": 233,
+              "line": 269,
               "deprecated": false
             },
             {
@@ -453,7 +621,7 @@
               "kind": "property",
               "signature": "(self) -> set",
               "summary": "Return all currently visible MainWindow instances.",
-              "line": 246,
+              "line": 282,
               "deprecated": false
             },
             {
@@ -462,7 +630,7 @@
               "kind": "method",
               "signature": "(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=0, tags=None)",
               "summary": "Add new locations to the Switchboard registries.",
-              "line": 320,
+              "line": 356,
               "deprecated": false
             },
             {
@@ -471,7 +639,7 @@
               "kind": "method",
               "signature": "(self) -> list",
               "summary": "Extends the 'load_ui' method to load all UI from a given path.",
-              "line": 407,
+              "line": 454,
               "deprecated": false
             },
             {
@@ -479,8 +647,8 @@
               "qualname": "Switchboard.load_ui",
               "kind": "method",
               "signature": "(self, file: str) -> QtWidgets.QMainWindow",
-              "summary": "Loads a UI from the given path to the UI file and adds it to the switchboard.",
-              "line": 416,
+              "summary": "Load a UI from the given .ui path via its compiled _ui.py module.",
+              "line": 463,
               "deprecated": false
             },
             {
@@ -489,7 +657,7 @@
               "kind": "method",
               "signature": "(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow",
               "summary": "",
-              "line": 462,
+              "line": 492,
               "deprecated": false
             },
             {
@@ -498,7 +666,7 @@
               "kind": "method",
               "signature": "(self, ui=None) -> QtWidgets.QWidget",
               "summary": "Get a dynamic UI using its string name, or if no argument is given, return the current UI.",
-              "line": 522,
+              "line": 556,
               "deprecated": false
             },
             {
@@ -507,7 +675,7 @@
               "kind": "method",
               "signature": "(self, ui, upstream=False, exact=False, downstream=False, reverse=False)",
               "summary": "Get UIs related to the given UI via shared base name.",
-              "line": 549,
+              "line": 583,
               "deprecated": false
             },
             {
@@ -516,16 +684,16 @@
               "kind": "method",
               "signature": "(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]",
               "summary": "Convert the given legal name to its original name(s) by searching the UI files.",
-              "line": 615,
+              "line": 649,
               "deprecated": false
             },
             {
-              "name": "get_property_from_ui_file",
-              "qualname": "Switchboard.get_property_from_ui_file",
-              "kind": "staticmethod",
-              "signature": "(file, prop)",
-              "summary": "Retrieves a specified property from a given UI or XML file.",
-              "line": 640,
+              "name": "save_ui_tags",
+              "qualname": "Switchboard.save_ui_tags",
+              "kind": "method",
+              "signature": "(self, path: str, tags: Iterable[str]) -> None",
+              "summary": "Persist tags into a .ui file as a Designer-safe dynamic property.",
+              "line": 709,
               "deprecated": false
             },
             {
@@ -534,7 +702,665 @@
               "kind": "method",
               "signature": "(self, index=None, allow_duplicates=False, inc=[], exc=[])",
               "summary": "Get the UI history.",
-              "line": 682,
+              "line": 807,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "switchboard/_editors.py",
+      "summary": "Mixin that exposes the bundled editor windows on the Switchboard.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "SwitchboardEditorsMixin",
+          "summary": "Adds an ``editors`` property to Switchboard exposing the bundled editors.",
+          "line": 225,
+          "bases": [],
+          "members": [
+            {
+              "name": "editors",
+              "qualname": "SwitchboardEditorsMixin.editors",
+              "kind": "property",
+              "signature": "(self) -> _EditorRegistry",
+              "summary": "Cached editor registry — see :class:`_EditorRegistry`.",
+              "line": 233,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "switchboard/_names.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "SwitchboardNameMixin",
+          "summary": "Mixin for Switchboard name and tag management.",
+          "line": 9,
+          "bases": [],
+          "members": [
+            {
+              "name": "convert_to_legal_name",
+              "qualname": "SwitchboardNameMixin.convert_to_legal_name",
+              "kind": "staticmethod",
+              "signature": "(name: str) -> str",
+              "summary": "Convert a name to a legal format by replacing non-alphanumeric characters with underscores.",
+              "line": 19,
+              "deprecated": false
+            },
+            {
+              "name": "get_slot_class_names",
+              "qualname": "SwitchboardNameMixin.get_slot_class_names",
+              "kind": "method",
+              "signature": "(self, base_name: str) -> List[str]",
+              "summary": "Generate potential slot class names from a base name.",
+              "line": 33,
+              "deprecated": false
+            },
+            {
+              "name": "get_slot_file_names",
+              "qualname": "SwitchboardNameMixin.get_slot_file_names",
+              "kind": "method",
+              "signature": "(self, base_name: str) -> List[str]",
+              "summary": "Generate potential slot file names from a base name.",
+              "line": 46,
+              "deprecated": false
+            },
+            {
+              "name": "get_base_name",
+              "qualname": "SwitchboardNameMixin.get_base_name",
+              "kind": "method",
+              "signature": "(self, name: str) -> str",
+              "summary": "",
+              "line": 69,
+              "deprecated": false
+            },
+            {
+              "name": "get_tags_from_name",
+              "qualname": "SwitchboardNameMixin.get_tags_from_name",
+              "kind": "method",
+              "signature": "(self, name: str) -> set[str]",
+              "summary": "Extract tags from a UI name string.",
+              "line": 79,
+              "deprecated": false
+            },
+            {
+              "name": "has_tags",
+              "qualname": "SwitchboardNameMixin.has_tags",
+              "kind": "method",
+              "signature": "(self, ui, tags=None) -> bool",
+              "summary": "Check if any of the given tag(s) are present in the UI's tags set.",
+              "line": 91,
+              "deprecated": false
+            },
+            {
+              "name": "edit_tags",
+              "qualname": "SwitchboardNameMixin.edit_tags",
+              "kind": "method",
+              "signature": "(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
+              "summary": "Edit tags on a widget or a tag string.",
+              "line": 116,
+              "deprecated": false
+            },
+            {
+              "name": "filter_tags",
+              "qualname": "SwitchboardNameMixin.filter_tags",
+              "kind": "method",
+              "signature": "(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str",
+              "summary": "Filter tags from a tag string - either keep only specified tags or remove specified tags.",
+              "line": 173,
+              "deprecated": false
+            },
+            {
+              "name": "get_unknown_tags",
+              "qualname": "SwitchboardNameMixin.get_unknown_tags",
+              "kind": "method",
+              "signature": "(self, tag_string: str, known_tags: list[str]) -> list[str]",
+              "summary": "Get tags that are not in the known_tags list.",
+              "line": 210,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "switchboard/_shortcuts.py",
+      "summary": "Switchboard-side keyboard shortcut machinery.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "Shortcut",
+          "summary": "Decorator to assign a keyboard shortcut to a slot method.",
+          "line": 32,
+          "bases": [],
+          "members": []
+        },
+        {
+          "name": "SwitchboardShortcutMixin",
+          "summary": "Mixin for managing keyboard shortcuts for Switchboard Slots.",
+          "line": 76,
+          "bases": [],
+          "members": [
+            {
+              "name": "register_slots_shortcuts",
+              "qualname": "SwitchboardShortcutMixin.register_slots_shortcuts",
+              "kind": "method",
+              "signature": "(self, ui: QtWidgets.QWidget, slots_instance: object) -> None",
+              "summary": "Scan a Slots instance and register shortcuts for decorated methods.",
+              "line": 79,
+              "deprecated": false
+            },
+            {
+              "name": "get_shortcut_registry",
+              "qualname": "SwitchboardShortcutMixin.get_shortcut_registry",
+              "kind": "method",
+              "signature": "(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]",
+              "summary": "Get a registry of all assignable slots and their shortcut status.",
+              "line": 226,
+              "deprecated": false
+            },
+            {
+              "name": "set_user_shortcut",
+              "qualname": "SwitchboardShortcutMixin.set_user_shortcut",
+              "kind": "method",
+              "signature": "(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None",
+              "summary": "Update a shortcut setting dynamically and live-update the active QShortcut.",
+              "line": 324,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "switchboard/_slots.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "Signals",
+          "summary": "Decorator to specify which signals a slot should connect to.",
+          "line": 11,
+          "bases": [],
+          "members": [
+            {
+              "name": "blockSignals",
+              "qualname": "Signals.blockSignals",
+              "kind": "classmethod",
+              "signature": "(cls, func)",
+              "summary": "Decorator that blocks widget signals during method execution.",
+              "line": 48,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "SlotWrapper",
+          "summary": "Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…",
+          "line": 62,
+          "bases": [],
+          "members": []
+        },
+        {
+          "name": "SwitchboardSlotsMixin",
+          "summary": "Mixin for managing slot connections and signal-slot handling in the Switchboard.",
+          "line": 179,
+          "bases": [],
+          "members": [
+            {
+              "name": "get_default_signals",
+              "qualname": "SwitchboardSlotsMixin.get_default_signals",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget) -> set",
+              "summary": "Retrieves the default signals for a given widget type.",
+              "line": 211,
+              "deprecated": false
+            },
+            {
+              "name": "get_available_signals",
+              "qualname": "SwitchboardSlotsMixin.get_available_signals",
+              "kind": "method",
+              "signature": "(self, widget, derived=True, exc=[])",
+              "summary": "Get all available signals for a type of widget.",
+              "line": 234,
+              "deprecated": false
+            },
+            {
+              "name": "slots_instantiated",
+              "qualname": "SwitchboardSlotsMixin.slots_instantiated",
+              "kind": "method",
+              "signature": "(self, key: str) -> bool",
+              "summary": "",
+              "line": 309,
+              "deprecated": false
+            },
+            {
+              "name": "get_slots_instance",
+              "qualname": "SwitchboardSlotsMixin.get_slots_instance",
+              "kind": "method",
+              "signature": "(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]",
+              "summary": "Get or create a slots instance for the given UI.",
+              "line": 314,
+              "deprecated": false
+            },
+            {
+              "name": "init_slot",
+              "qualname": "SwitchboardSlotsMixin.init_slot",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None",
+              "summary": "",
+              "line": 594,
+              "deprecated": false
+            },
+            {
+              "name": "call_slot",
+              "qualname": "SwitchboardSlotsMixin.call_slot",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget, *args, **kwargs)",
+              "summary": "Call a slot method for a widget.",
+              "line": 623,
+              "deprecated": false
+            },
+            {
+              "name": "get_slot",
+              "qualname": "SwitchboardSlotsMixin.get_slot",
+              "kind": "method",
+              "signature": "(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]",
+              "summary": "",
+              "line": 652,
+              "deprecated": false
+            },
+            {
+              "name": "get_slot_from_widget",
+              "qualname": "SwitchboardSlotsMixin.get_slot_from_widget",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]",
+              "summary": "",
+              "line": 687,
+              "deprecated": false
+            },
+            {
+              "name": "connect_slot",
+              "qualname": "SwitchboardSlotsMixin.connect_slot",
+              "kind": "method",
+              "signature": "(self, widget, slot=None)",
+              "summary": "Connect a widget's signals to its slot.",
+              "line": 697,
+              "deprecated": false
+            },
+            {
+              "name": "disconnect_slot",
+              "qualname": "SwitchboardSlotsMixin.disconnect_slot",
+              "kind": "method",
+              "signature": "(self, widget, slot=None)",
+              "summary": "Disconnects a slot from a widget.",
+              "line": 763,
+              "deprecated": false
+            },
+            {
+              "name": "slot_history",
+              "qualname": "SwitchboardSlotsMixin.slot_history",
+              "kind": "method",
+              "signature": "(self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[], length=200)",
+              "summary": "Get the slot history.",
+              "line": 790,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "switchboard/_style.py",
+      "summary": "Mixin that exposes the :class:`StyleSheet` class on the Switchboard.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "SwitchboardStyleMixin",
+          "summary": "Adds a lazy ``style`` property exposing the :class:`StyleSheet` class.",
+          "line": 27,
+          "bases": [],
+          "members": [
+            {
+              "name": "style",
+              "qualname": "SwitchboardStyleMixin.style",
+              "kind": "property",
+              "signature": "(self)",
+              "summary": "The :class:`StyleSheet` class (imported lazily on first access).",
+              "line": 31,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "switchboard/_utils.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "SwitchboardUtilsMixin",
+          "summary": "Utility methods for widget positioning, centering, and screen geometry.",
+          "line": 10,
+          "bases": [],
+          "members": [
+            {
+              "name": "get_cursor_offset_from_center",
+              "qualname": "SwitchboardUtilsMixin.get_cursor_offset_from_center",
+              "kind": "staticmethod",
+              "signature": "(widget)",
+              "summary": "Get the relative position of the cursor with respect to the center of a given widget.",
+              "line": 14,
+              "deprecated": false
+            },
+            {
+              "name": "center_widget",
+              "qualname": "SwitchboardUtilsMixin.center_widget",
+              "kind": "staticmethod",
+              "signature": "(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)",
+              "summary": "Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…",
+              "line": 26,
+              "deprecated": false
+            },
+            {
+              "name": "unpack_names",
+              "qualname": "SwitchboardUtilsMixin.unpack_names",
+              "kind": "classmethod",
+              "signature": "(cls, name_string)",
+              "summary": "Unpacks a comma-separated string of names and returns a list of individual names.",
+              "line": 85,
+              "deprecated": false
+            },
+            {
+              "name": "get_widgets_by_string_pattern",
+              "qualname": "SwitchboardUtilsMixin.get_widgets_by_string_pattern",
+              "kind": "method",
+              "signature": "(self, ui, name_string)",
+              "summary": "Get a list of corresponding widgets from a single shorthand formatted string.",
+              "line": 125,
+              "deprecated": false
+            },
+            {
+              "name": "get_methods_by_string_pattern",
+              "qualname": "SwitchboardUtilsMixin.get_methods_by_string_pattern",
+              "kind": "method",
+              "signature": "(self, clss, name_string)",
+              "summary": "Get a list of corresponding methods from a single shorthand formatted string.",
+              "line": 152,
+              "deprecated": false
+            },
+            {
+              "name": "create_button_groups",
+              "qualname": "SwitchboardUtilsMixin.create_button_groups",
+              "kind": "method",
+              "signature": "(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]",
+              "summary": "Create button groups for a set of widgets.",
+              "line": 177,
+              "deprecated": false
+            },
+            {
+              "name": "toggle_multi",
+              "qualname": "SwitchboardUtilsMixin.toggle_multi",
+              "kind": "method",
+              "signature": "(self, ui, trigger=None, signal=None, **kwargs)",
+              "summary": "Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…",
+              "line": 242,
+              "deprecated": false
+            },
+            {
+              "name": "connect_multi",
+              "qualname": "SwitchboardUtilsMixin.connect_multi",
+              "kind": "method",
+              "signature": "(self, ui, widgets, signals, slots)",
+              "summary": "Connect multiple signals to multiple slots at once.",
+              "line": 352,
+              "deprecated": false
+            },
+            {
+              "name": "set_axis_for_checkboxes",
+              "qualname": "SwitchboardUtilsMixin.set_axis_for_checkboxes",
+              "kind": "method",
+              "signature": "(self, checkboxes, axis, ui=None)",
+              "summary": "Set the given checkbox's check states to reflect the specified axis.",
+              "line": 405,
+              "deprecated": false
+            },
+            {
+              "name": "get_axis_from_checkboxes",
+              "qualname": "SwitchboardUtilsMixin.get_axis_from_checkboxes",
+              "kind": "method",
+              "signature": "(self, checkboxes, ui=None, return_type='str')",
+              "summary": "Get the intended axis value as a string or integer by reading the multiple checkbox's check states.",
+              "line": 433,
+              "deprecated": false
+            },
+            {
+              "name": "hide_unmatched_groupboxes",
+              "qualname": "SwitchboardUtilsMixin.hide_unmatched_groupboxes",
+              "kind": "method",
+              "signature": "(self, ui, unknown_tags) -> None",
+              "summary": "Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted",
+              "line": 476,
+              "deprecated": false
+            },
+            {
+              "name": "invert_on_modifier",
+              "qualname": "SwitchboardUtilsMixin.invert_on_modifier",
+              "kind": "staticmethod",
+              "signature": "(value)",
+              "summary": "Invert a numerical or boolean value if the alt key is pressed.",
+              "line": 509,
+              "deprecated": false
+            },
+            {
+              "name": "message_box",
+              "qualname": "SwitchboardUtilsMixin.message_box",
+              "kind": "method",
+              "signature": "(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)",
+              "summary": "Spawns a message box with the given text and optionally sets buttons.",
+              "line": 532,
+              "deprecated": false
+            },
+            {
+              "name": "file_dialog",
+              "qualname": "SwitchboardUtilsMixin.file_dialog",
+              "kind": "staticmethod",
+              "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]",
+              "summary": "Open a file dialog to select files of the given type(s) using qtpy.",
+              "line": 577,
+              "deprecated": false
+            },
+            {
+              "name": "dir_dialog",
+              "qualname": "SwitchboardUtilsMixin.dir_dialog",
+              "kind": "staticmethod",
+              "signature": "(title: str = 'Select a directory', start_dir: str = '/home') -> str",
+              "summary": "Open a directory dialog to select a directory using qtpy.",
+              "line": 613,
+              "deprecated": false
+            },
+            {
+              "name": "save_file_dialog",
+              "qualname": "SwitchboardUtilsMixin.save_file_dialog",
+              "kind": "staticmethod",
+              "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]",
+              "summary": "Open a save-file dialog to choose a destination path.",
+              "line": 634,
+              "deprecated": false
+            },
+            {
+              "name": "input_dialog",
+              "qualname": "SwitchboardUtilsMixin.input_dialog",
+              "kind": "staticmethod",
+              "signature": "(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str",
+              "summary": "Show a modal text-input dialog and return the entered string.",
+              "line": 671,
+              "deprecated": false
+            },
+            {
+              "name": "simulate_key_press",
+              "qualname": "SwitchboardUtilsMixin.simulate_key_press",
+              "kind": "staticmethod",
+              "signature": "(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)",
+              "summary": "Simulate a key press event for the given UI and optionally release the keyboard.",
+              "line": 762,
+              "deprecated": false
+            },
+            {
+              "name": "defer_with_timer",
+              "qualname": "SwitchboardUtilsMixin.defer_with_timer",
+              "kind": "method",
+              "signature": "(self, func: callable, *args, ms: int = 300, **kwargs) -> None",
+              "summary": "Defer execution of any callable with arguments after a delay.",
+              "line": 785,
+              "deprecated": false
+            },
+            {
+              "name": "gc_protect",
+              "qualname": "SwitchboardUtilsMixin.gc_protect",
+              "kind": "method",
+              "signature": "(self, obj=None, clear=False)",
+              "summary": "Protect the given object(s) from garbage collection by holding a strong reference.",
+              "line": 825,
+              "deprecated": false
+            },
+            {
+              "name": "modal_menu",
+              "qualname": "SwitchboardUtilsMixin.modal_menu",
+              "kind": "staticmethod",
+              "signature": "(content_fn, parent=None, **kwargs)",
+              "summary": "Show a themed modal Menu popup, block until dismissed.",
+              "line": 858,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "switchboard/_widgets.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "SwitchboardWidgetMixin",
+          "summary": "Widget registration, resolution, and dynamic class loading for Switchboard.",
+          "line": 8,
+          "bases": [],
+          "members": [
+            {
+              "name": "resolve_widget_class",
+              "qualname": "SwitchboardWidgetMixin.resolve_widget_class",
+              "kind": "method",
+              "signature": "(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]",
+              "summary": "Return the widget class registered under the given name.",
+              "line": 11,
+              "deprecated": false
+            },
+            {
+              "name": "get_icon",
+              "qualname": "SwitchboardWidgetMixin.get_icon",
+              "kind": "method",
+              "signature": "(self, icon_name: str) -> QtGui.QIcon",
+              "summary": "Get a registered icon by name.",
+              "line": 68,
+              "deprecated": false
+            },
+            {
+              "name": "register_widget",
+              "qualname": "SwitchboardWidgetMixin.register_widget",
+              "kind": "method",
+              "signature": "(self, widget)",
+              "summary": "Register any custom widgets using the module names.",
+              "line": 123,
+              "deprecated": false
+            },
+            {
+              "name": "get_widget",
+              "qualname": "SwitchboardWidgetMixin.get_widget",
+              "kind": "method",
+              "signature": "(self, name, ui=None)",
+              "summary": "Case insensitive.",
+              "line": 137,
+              "deprecated": false
+            },
+            {
+              "name": "get_widget_from_slot",
+              "qualname": "SwitchboardWidgetMixin.get_widget_from_slot",
+              "kind": "method",
+              "signature": "(self, method)",
+              "summary": "Get the corresponding widget from a given method.",
+              "line": 154,
+              "deprecated": false
+            },
+            {
+              "name": "set_widget_attrs",
+              "qualname": "SwitchboardWidgetMixin.set_widget_attrs",
+              "kind": "method",
+              "signature": "(self, ui, widget_names, **kwargs)",
+              "summary": "Set multiple properties, for multiple widgets, on multiple UI's at once.",
+              "line": 176,
+              "deprecated": false
+            },
+            {
+              "name": "is_widget",
+              "qualname": "SwitchboardWidgetMixin.is_widget",
+              "kind": "method",
+              "signature": "(self, obj)",
+              "summary": "Returns True if the given obj is a valid widget.",
+              "line": 197,
+              "deprecated": false
+            },
+            {
+              "name": "get_parent_widgets",
+              "qualname": "SwitchboardWidgetMixin.get_parent_widgets",
+              "kind": "staticmethod",
+              "signature": "(widget, object_names=False)",
+              "summary": "Get the all parent widgets of the given widget.",
+              "line": 212,
+              "deprecated": false
+            },
+            {
+              "name": "get_top_level_parent",
+              "qualname": "SwitchboardWidgetMixin.get_top_level_parent",
+              "kind": "classmethod",
+              "signature": "(cls, widget, index=-1)",
+              "summary": "Get the parent widget at the top of the hierarchy for the given widget.",
+              "line": 232,
+              "deprecated": false
+            },
+            {
+              "name": "get_all_windows",
+              "qualname": "SwitchboardWidgetMixin.get_all_windows",
+              "kind": "staticmethod",
+              "signature": "(name=None)",
+              "summary": "Get Qt windows.",
+              "line": 245,
+              "deprecated": false
+            },
+            {
+              "name": "get_all_widgets",
+              "qualname": "SwitchboardWidgetMixin.get_all_widgets",
+              "kind": "staticmethod",
+              "signature": "(name=None)",
+              "summary": "Get Qt widgets.",
+              "line": 261,
+              "deprecated": false
+            },
+            {
+              "name": "get_widget_at",
+              "qualname": "SwitchboardWidgetMixin.get_widget_at",
+              "kind": "staticmethod",
+              "signature": "(pos, top_widget_only=True)",
+              "summary": "Get visible and enabled widget(s) located at the given position.",
+              "line": 277,
               "deprecated": false
             }
           ]
@@ -1100,7 +1926,7 @@
               "qualname": "ComboBox.setCurrentText",
               "kind": "method",
               "signature": "(self, text)",
-              "summary": "",
+              "summary": "Select the item whose rich or plain text matches *text*.",
               "line": 199,
               "deprecated": false
             },
@@ -1110,7 +1936,7 @@
               "kind": "method",
               "signature": "(self, index, text)",
               "summary": "",
-              "line": 203,
+              "line": 215,
               "deprecated": false
             },
             {
@@ -1119,7 +1945,7 @@
               "kind": "method",
               "signature": "(self, i: Union[str, int], blockSignals: bool = False, strict: bool = False, fallback_index: int = None) -> None",
               "summary": "Set the current item by value or index, with optional fallback if not found.",
-              "line": 206,
+              "line": 218,
               "deprecated": false
             },
             {
@@ -1128,7 +1954,7 @@
               "kind": "method",
               "signature": "(self, index)",
               "summary": "",
-              "line": 250,
+              "line": 262,
               "deprecated": false
             },
             {
@@ -1137,7 +1963,7 @@
               "kind": "method",
               "signature": "(self, index)",
               "summary": "",
-              "line": 257,
+              "line": 269,
               "deprecated": false
             },
             {
@@ -1146,7 +1972,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 265,
+              "line": 277,
               "deprecated": false
             },
             {
@@ -1155,7 +1981,7 @@
               "kind": "method",
               "signature": "(self, editable, emit_signal=True)",
               "summary": "",
-              "line": 271,
+              "line": 283,
               "deprecated": false
             },
             {
@@ -1164,7 +1990,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 286,
+              "line": 302,
               "deprecated": false
             },
             {
@@ -1173,7 +1999,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "",
-              "line": 290,
+              "line": 306,
               "deprecated": false
             },
             {
@@ -1182,7 +2008,7 @@
               "kind": "method",
               "signature": "(self, item, data, ascending)",
               "summary": "",
-              "line": 296,
+              "line": 312,
               "deprecated": false
             },
             {
@@ -1191,7 +2017,7 @@
               "kind": "method",
               "signature": "(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, prefix=None, **kwargs)",
               "summary": "",
-              "line": 303,
+              "line": 319,
               "deprecated": false
             },
             {
@@ -1200,7 +2026,7 @@
               "kind": "method",
               "signature": "(self, index=None)",
               "summary": "",
-              "line": 384,
+              "line": 400,
               "deprecated": false
             },
             {
@@ -1209,7 +2035,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 391,
+              "line": 407,
               "deprecated": false
             },
             {
@@ -1218,7 +2044,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 396,
+              "line": 412,
               "deprecated": false
             }
           ]
@@ -1405,18 +2231,27 @@
         {
           "name": "EditorPanel",
           "summary": "Unified editor panel: Header → body → Footer.",
-          "line": 14,
+          "line": 17,
           "bases": [
             "QtWidgets.QWidget"
           ],
           "members": [
+            {
+              "name": "style",
+              "qualname": "EditorPanel.style",
+              "kind": "property",
+              "signature": "(self) -> 'StyleSheet'",
+              "summary": "Lazy :class:`StyleSheet` bound to this panel.",
+              "line": 97,
+              "deprecated": false
+            },
             {
               "name": "showEvent",
               "qualname": "EditorPanel.showEvent",
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 76,
+              "line": 117,
               "deprecated": false
             },
             {
@@ -1425,7 +2260,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The :class:`Header` widget at the top.",
-              "line": 108,
+              "line": 171,
               "deprecated": false
             },
             {
@@ -1434,7 +2269,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The :class:`Footer` widget at the bottom.",
-              "line": 113,
+              "line": 176,
               "deprecated": false
             },
             {
@@ -1443,7 +2278,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "``QVBoxLayout`` for editor controls and content.",
-              "line": 118,
+              "line": 181,
               "deprecated": false
             },
             {
@@ -1452,7 +2287,7 @@
               "kind": "method",
               "signature": "(self, dir_name)",
               "summary": "Add a preset management row to the body layout.",
-              "line": 127,
+              "line": 190,
               "deprecated": false
             },
             {
@@ -1461,7 +2296,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "Auto-derived preset directory under AppConfigLocation.",
-              "line": 187,
+              "line": 250,
               "deprecated": false
             },
             {
@@ -1470,7 +2305,7 @@
               "kind": "method",
               "signature": "(self) -> dict",
               "summary": "Override to provide data for preset saving.",
-              "line": 204,
+              "line": 267,
               "deprecated": false
             },
             {
@@ -1479,7 +2314,7 @@
               "kind": "method",
               "signature": "(self, data: dict)",
               "summary": "Override to apply data from a loaded preset.",
-              "line": 208,
+              "line": 271,
               "deprecated": false
             },
             {
@@ -1488,7 +2323,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Path",
               "summary": "Save current state to a named preset.",
-              "line": 213,
+              "line": 276,
               "deprecated": false
             },
             {
@@ -1497,7 +2332,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Load a preset and apply it.",
-              "line": 222,
+              "line": 285,
               "deprecated": false
             },
             {
@@ -1506,7 +2341,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 236,
+              "line": 299,
               "deprecated": false
             },
             {
@@ -1515,7 +2350,16 @@
               "kind": "method",
               "signature": "(self, old: str, new: str) -> bool",
               "summary": "",
-              "line": 243,
+              "line": 306,
+              "deprecated": false
+            },
+            {
+              "name": "icon_button",
+              "qualname": "EditorPanel.icon_button",
+              "kind": "staticmethod",
+              "signature": "(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton",
+              "summary": "Build a square, flat, icon-only button for table cells / toolbars.",
+              "line": 375,
               "deprecated": false
             }
           ]
@@ -1528,9 +2372,16 @@
       "functions": [],
       "classes": [
         {
+          "name": "CollisionConflict",
+          "summary": "A single conflict reported by a collision checker.",
+          "line": 20,
+          "bases": [],
+          "members": []
+        },
+        {
           "name": "KeyCaptureDialog",
           "summary": "Modal dialog to capture a key sequence.",
-          "line": 9,
+          "line": 56,
           "bases": [
             "QtWidgets.QDialog"
           ],
@@ -1541,7 +2392,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Capture key press event.",
-              "line": 55,
+              "line": 102,
               "deprecated": false
             },
             {
@@ -1550,7 +2401,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 74,
+              "line": 121,
               "deprecated": false
             },
             {
@@ -1559,7 +2410,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 78,
+              "line": 125,
               "deprecated": false
             }
           ]
@@ -1567,7 +2418,7 @@
         {
           "name": "HotkeyEditor",
           "summary": "UI for editing global shortcuts with preset support.",
-          "line": 82,
+          "line": 129,
           "bases": [
             "EditorPanel"
           ],
@@ -1578,7 +2429,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 153,
+              "line": 223,
               "deprecated": false
             },
             {
@@ -1587,7 +2438,7 @@
               "kind": "method",
               "signature": "(self, data)",
               "summary": "",
-              "line": 156,
+              "line": 226,
               "deprecated": false
             },
             {
@@ -1596,7 +2447,7 @@
               "kind": "method",
               "signature": "(self) -> dict",
               "summary": "Export all user-customised shortcuts across loaded UIs.",
-              "line": 164,
+              "line": 234,
               "deprecated": false
             },
             {
@@ -1605,7 +2456,7 @@
               "kind": "method",
               "signature": "(self, data: dict) -> int",
               "summary": "Bulk-apply shortcut bindings from a preset dict.",
-              "line": 193,
+              "line": 268,
               "deprecated": false
             },
             {
@@ -1614,7 +2465,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Refresh data each time the editor is shown.",
-              "line": 218,
+              "line": 304,
               "deprecated": false
             },
             {
@@ -1622,8 +2473,8 @@
               "qualname": "HotkeyEditor.refresh_ui_list",
               "kind": "method",
               "signature": "(self)",
-              "summary": "Populate the UI combobox from all registered UIs.",
-              "line": 231,
+              "summary": "Populate the UI combobox with every registered UI.",
+              "line": 317,
               "deprecated": false
             },
             {
@@ -1631,8 +2482,8 @@
               "qualname": "HotkeyEditor.populate",
               "kind": "method",
               "signature": "(self)",
-              "summary": "Populate the table with shortcuts for selected UI.",
-              "line": 269,
+              "summary": "Populate the table with shortcuts for the selected UI.",
+              "line": 338,
               "deprecated": false
             },
             {
@@ -1641,16 +2492,106 @@
               "kind": "method",
               "signature": "(self, row, column)",
               "summary": "Handle editing the shortcut.",
-              "line": 364,
+              "line": 439,
               "deprecated": false
             },
             {
               "name": "reset_shortcut",
               "qualname": "HotkeyEditor.reset_shortcut",
               "kind": "method",
-              "signature": "(self, ui, method_name, default_seq)",
-              "summary": "Reset to default.",
-              "line": 394,
+              "signature": "(self, ui, method_name, default_seq, default_scope='window')",
+              "summary": "Reset sequence and scope to decorator defaults.",
+              "line": 478,
+              "deprecated": false
+            },
+            {
+              "name": "add_collision_checker",
+              "qualname": "HotkeyEditor.add_collision_checker",
+              "kind": "method",
+              "signature": "(self, checker: Callable) -> None",
+              "summary": "Register a collision checker.",
+              "line": 547,
+              "deprecated": false
+            },
+            {
+              "name": "remove_collision_checker",
+              "qualname": "HotkeyEditor.remove_collision_checker",
+              "kind": "method",
+              "signature": "(self, checker: Callable) -> None",
+              "summary": "Unregister a previously added collision checker.",
+              "line": 562,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "widgets/editors/shortcut_editor.py",
+      "summary": "Editor windows used by :meth:`ShortcutManager.show_editor`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "KeyCaptureDialog",
+          "summary": "Modal dialog that captures a single key combination.",
+          "line": 19,
+          "bases": [
+            "QtWidgets.QDialog"
+          ],
+          "members": [
+            {
+              "name": "keyPressEvent",
+              "qualname": "KeyCaptureDialog.keyPressEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 47,
+              "deprecated": false
+            },
+            {
+              "name": "get_sequence",
+              "qualname": "KeyCaptureDialog.get_sequence",
+              "kind": "method",
+              "signature": "(self) -> str",
+              "summary": "",
+              "line": 70,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "ShortcutEditorDialog",
+          "summary": "Editor panel for viewing and remapping ShortcutManager bindings.",
+          "line": 74,
+          "bases": [
+            "QtWidgets.QWidget"
+          ],
+          "members": [
+            {
+              "name": "panel",
+              "qualname": "ShortcutEditorDialog.panel",
+              "kind": "property",
+              "signature": "(self)",
+              "summary": "The :class:`EditorPanel` widget.",
+              "line": 114,
+              "deprecated": false
+            },
+            {
+              "name": "show",
+              "qualname": "ShortcutEditorDialog.show",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "",
+              "line": 118,
+              "deprecated": false
+            },
+            {
+              "name": "close",
+              "qualname": "ShortcutEditorDialog.close",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "",
+              "line": 122,
               "deprecated": false
             }
           ]
@@ -1676,7 +2617,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 72,
+              "line": 85,
               "deprecated": false
             },
             {
@@ -1685,7 +2626,7 @@
               "kind": "method",
               "signature": "(self, data)",
               "summary": "",
-              "line": 75,
+              "line": 88,
               "deprecated": false
             },
             {
@@ -1694,7 +2635,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Populate the table with variables for the current theme.",
-              "line": 83,
+              "line": 96,
               "deprecated": false
             },
             {
@@ -1703,7 +2644,7 @@
               "kind": "method",
               "signature": "(self, name, color)",
               "summary": "Handle color change from swatch.",
-              "line": 127,
+              "line": 140,
               "deprecated": false
             },
             {
@@ -1712,7 +2653,7 @@
               "kind": "method",
               "signature": "(self, name)",
               "summary": "Reset a single variable.",
-              "line": 135,
+              "line": 148,
               "deprecated": false
             },
             {
@@ -1721,7 +2662,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Reset all overrides.",
-              "line": 142,
+              "line": 155,
               "deprecated": false
             },
             {
@@ -1730,7 +2671,195 @@
               "kind": "method",
               "signature": "(self, name)",
               "summary": "Update the swatch for a specific variable name.",
-              "line": 148,
+              "line": 161,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "widgets/editors/switchboard_browser.py",
+      "summary": "Searchable, tag-filtered launcher for any UI registered with a Switchboard.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "LaunchOptions",
+          "summary": "",
+          "line": 41,
+          "bases": [],
+          "members": []
+        },
+        {
+          "name": "SwitchboardBrowserModel",
+          "summary": "Table model over a Switchboard's UI registry.",
+          "line": 52,
+          "bases": [
+            "QtCore.QAbstractTableModel"
+          ],
+          "members": [
+            {
+              "name": "refresh_after_launch",
+              "qualname": "SwitchboardBrowserModel.refresh_after_launch",
+              "kind": "method",
+              "signature": "(self, name: str) -> None",
+              "summary": "Public hook: caller invokes this after launching to wire signals.",
+              "line": 151,
+              "deprecated": false
+            },
+            {
+              "name": "rowCount",
+              "qualname": "SwitchboardBrowserModel.rowCount",
+              "kind": "method",
+              "signature": "(self, parent=QtCore.QModelIndex()) -> int",
+              "summary": "",
+              "line": 162,
+              "deprecated": false
+            },
+            {
+              "name": "columnCount",
+              "qualname": "SwitchboardBrowserModel.columnCount",
+              "kind": "method",
+              "signature": "(self, parent=QtCore.QModelIndex()) -> int",
+              "summary": "",
+              "line": 165,
+              "deprecated": false
+            },
+            {
+              "name": "headerData",
+              "qualname": "SwitchboardBrowserModel.headerData",
+              "kind": "method",
+              "signature": "(self, section, orientation, role=QtCore.Qt.DisplayRole)",
+              "summary": "",
+              "line": 168,
+              "deprecated": false
+            },
+            {
+              "name": "data",
+              "qualname": "SwitchboardBrowserModel.data",
+              "kind": "method",
+              "signature": "(self, index, role=QtCore.Qt.DisplayRole)",
+              "summary": "",
+              "line": 184,
+              "deprecated": false
+            },
+            {
+              "name": "flags",
+              "qualname": "SwitchboardBrowserModel.flags",
+              "kind": "method",
+              "signature": "(self, index)",
+              "summary": "",
+              "line": 217,
+              "deprecated": false
+            },
+            {
+              "name": "setData",
+              "qualname": "SwitchboardBrowserModel.setData",
+              "kind": "method",
+              "signature": "(self, index, value, role=QtCore.Qt.EditRole)",
+              "summary": "",
+              "line": 225,
+              "deprecated": false
+            },
+            {
+              "name": "all_unique_tags",
+              "qualname": "SwitchboardBrowserModel.all_unique_tags",
+              "kind": "method",
+              "signature": "(self) -> List[str]",
+              "summary": "",
+              "line": 277,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "TagEditDialog",
+          "summary": "Modal for editing the file-level tags of a single UI.",
+          "line": 287,
+          "bases": [
+            "QtWidgets.QDialog"
+          ],
+          "members": [
+            {
+              "name": "tags",
+              "qualname": "TagEditDialog.tags",
+              "kind": "method",
+              "signature": "(self) -> Set[str]",
+              "summary": "",
+              "line": 395,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "SwitchboardBrowser",
+          "summary": "Searchable launcher for every UI registered with a Switchboard.",
+          "line": 635,
+          "bases": [
+            "EditorPanel"
+          ],
+          "members": [
+            {
+              "name": "hidden_uis",
+              "qualname": "SwitchboardBrowser.hidden_uis",
+              "kind": "property",
+              "signature": "(self) -> Set[str]",
+              "summary": "",
+              "line": 858,
+              "deprecated": false
+            },
+            {
+              "name": "hidden_uis",
+              "qualname": "SwitchboardBrowser.hidden_uis",
+              "kind": "method",
+              "signature": "(self, value: Iterable[str]) -> None",
+              "summary": "",
+              "line": 863,
+              "deprecated": false
+            },
+            {
+              "name": "hidden_tags",
+              "qualname": "SwitchboardBrowser.hidden_tags",
+              "kind": "property",
+              "signature": "(self) -> Set[str]",
+              "summary": "",
+              "line": 867,
+              "deprecated": false
+            },
+            {
+              "name": "hidden_tags",
+              "qualname": "SwitchboardBrowser.hidden_tags",
+              "kind": "method",
+              "signature": "(self, value: Iterable[str]) -> None",
+              "summary": "",
+              "line": 872,
+              "deprecated": false
+            },
+            {
+              "name": "set_search_scope",
+              "qualname": "SwitchboardBrowser.set_search_scope",
+              "kind": "method",
+              "signature": "(self, value: str) -> None",
+              "summary": "Public helper: set the search-line-edit scope to ``value``.",
+              "line": 1017,
+              "deprecated": false
+            },
+            {
+              "name": "set_exclude_scope",
+              "qualname": "SwitchboardBrowser.set_exclude_scope",
+              "kind": "method",
+              "signature": "(self, value: str) -> None",
+              "summary": "Public helper: set the exclude-line-edit scope to ``value``.",
+              "line": 1021,
+              "deprecated": false
+            },
+            {
+              "name": "launch_options",
+              "qualname": "SwitchboardBrowser.launch_options",
+              "kind": "method",
+              "signature": "(self) -> LaunchOptions",
+              "summary": "",
+              "line": 1343,
               "deprecated": false
             }
           ]
@@ -2457,10 +3586,11 @@
         {
           "name": "Label",
           "summary": "Enhanced QLabel with click signals and context menu support.",
-          "line": 8,
+          "line": 9,
           "bases": [
             "QtWidgets.QLabel",
             "MenuMixin",
+            "OptionBoxMixin",
             "AttributesMixin"
           ],
           "members": [
@@ -2470,7 +3600,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle mouse press events to emit clicked signal.",
-              "line": 50,
+              "line": 51,
               "deprecated": false
             },
             {
@@ -2479,7 +3609,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle mouse release events to emit released signal.",
-              "line": 61,
+              "line": 62,
               "deprecated": false
             }
           ]
@@ -2582,7 +3712,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or…",
-              "line": 173,
+              "line": 164,
               "deprecated": false
             },
             {
@@ -2591,7 +3721,7 @@
               "kind": "method",
               "signature": "(self, central_widget: QtWidgets.QWidget) -> None",
               "summary": "Initializes the window flags based on the central widget.",
-              "line": 184,
+              "line": 175,
               "deprecated": false
             },
             {
@@ -2600,7 +3730,7 @@
               "kind": "method",
               "signature": "(self, target: Union[str, QtWidgets.QWidget] = None, add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
               "summary": "Edit tags on a widget or a tag string.",
-              "line": 192,
+              "line": 183,
               "deprecated": false
             },
             {
@@ -2609,7 +3739,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the window is pinned (resists hide requests).",
-              "line": 249,
+              "line": 240,
               "deprecated": false
             },
             {
@@ -2618,7 +3748,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 254,
+              "line": 245,
               "deprecated": false
             },
             {
@@ -2627,7 +3757,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set pin state (method form for signal connections).",
-              "line": 258,
+              "line": 249,
               "deprecated": false
             },
             {
@@ -2636,7 +3766,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Alias for pinned property.",
-              "line": 263,
+              "line": 254,
               "deprecated": false
             },
             {
@@ -2645,7 +3775,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Request to hide, respecting pin state.",
-              "line": 275,
+              "line": 266,
               "deprecated": false
             },
             {
@@ -2654,7 +3784,7 @@
               "kind": "property",
               "signature": "(self) -> list",
               "summary": "Returns a list of the slots connected to the widget's signals.",
-              "line": 293,
+              "line": 284,
               "deprecated": false
             },
             {
@@ -2663,7 +3793,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-initialized PresetManager for saving/loading named presets.",
-              "line": 302,
+              "line": 293,
               "deprecated": false
             },
             {
@@ -2672,7 +3802,7 @@
               "kind": "method",
               "signature": "(self, _)",
               "summary": "No-op setter so the switchboard can harmlessly reassign.",
-              "line": 315,
+              "line": 306,
               "deprecated": false
             },
             {
@@ -2681,7 +3811,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Checks if the parent of the widget is a QStackedWidget.",
-              "line": 320,
+              "line": 311,
               "deprecated": false
             },
             {
@@ -2690,7 +3820,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Returns True if the widget is the currently active UI, False otherwise.",
-              "line": 325,
+              "line": 316,
               "deprecated": false
             },
             {
@@ -2699,7 +3829,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Sets the widget as the currently active UI if value is True.",
-              "line": 330,
+              "line": 321,
               "deprecated": false
             },
             {
@@ -2708,7 +3838,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None",
               "summary": "Registers a widget with the main window, initializing it and connecting its signals.",
-              "line": 343,
+              "line": 334,
               "deprecated": false
             },
             {
@@ -2717,7 +3847,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Executes all deferred methods, in priority order.",
-              "line": 462,
+              "line": 453,
               "deprecated": false
             },
             {
@@ -2726,7 +3856,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, force=False) -> None",
               "summary": "Restores the state of a given widget if it has a restore_state attribute.",
-              "line": 474,
+              "line": 465,
               "deprecated": false
             },
             {
@@ -2735,7 +3865,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Sync a widget's state value across related UIs and apply the value using StateManager.",
-              "line": 486,
+              "line": 477,
               "deprecated": false
             },
             {
@@ -2744,7 +3874,7 @@
               "kind": "method",
               "signature": "(self, watched, event) -> bool",
               "summary": "Override the event filter to register widgets when they are polished.",
-              "line": 518,
+              "line": 509,
               "deprecated": false
             },
             {
@@ -2753,7 +3883,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Save the current window geometry (size and position) to settings.",
-              "line": 527,
+              "line": 518,
               "deprecated": false
             },
             {
@@ -2762,7 +3892,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore the window geometry (size and position) from settings.",
-              "line": 547,
+              "line": 538,
               "deprecated": false
             },
             {
@@ -2771,7 +3901,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear any saved window geometry from settings.",
-              "line": 582,
+              "line": 573,
               "deprecated": false
             },
             {
@@ -2780,7 +3910,7 @@
               "kind": "method",
               "signature": "(self, visible: bool) -> None",
               "summary": "Override setVisible to respect pin state when hiding.",
-              "line": 640,
+              "line": 631,
               "deprecated": false
             },
             {
@@ -2789,7 +3919,7 @@
               "kind": "method",
               "signature": "(self, pos=None, app_exec=False) -> None",
               "summary": "Show the MainWindow.",
-              "line": 646,
+              "line": 637,
               "deprecated": false
             },
             {
@@ -2798,7 +3928,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the show event to initialize untracked widgets and restore their states.",
-              "line": 667,
+              "line": 658,
               "deprecated": false
             },
             {
@@ -2807,7 +3937,7 @@
               "kind": "method",
               "signature": "(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None",
               "summary": "Registers all child widgets starting from the given widget (or central widget if None).",
-              "line": 705,
+              "line": 696,
               "deprecated": false
             },
             {
@@ -2816,7 +3946,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the focus event to set the current UI when this window gains focus.",
-              "line": 722,
+              "line": 713,
               "deprecated": false
             },
             {
@@ -2825,7 +3955,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 728,
+              "line": 719,
               "deprecated": false
             },
             {
@@ -2834,7 +3964,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on resize so pinned/non-hidden windows persist size.",
-              "line": 732,
+              "line": 723,
               "deprecated": false
             },
             {
@@ -2843,7 +3973,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on move so pinned/non-hidden windows persist position.",
-              "line": 738,
+              "line": 729,
               "deprecated": false
             },
             {
@@ -2852,7 +3982,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement hideEvent to emit custom signal when window is hidden.",
-              "line": 744,
+              "line": 735,
               "deprecated": false
             },
             {
@@ -2861,7 +3991,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement closeEvent to save window geometry and emit custom signal.",
-              "line": 768,
+              "line": 759,
               "deprecated": false
             },
             {
@@ -2870,7 +4000,7 @@
               "kind": "method",
               "signature": "(self, style: str) -> None",
               "summary": "Overrides the setStyleSheet method to respect locking.",
-              "line": 776,
+              "line": 767,
               "deprecated": false
             },
             {
@@ -2879,7 +4009,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Resets the window's stylesheet to its original state.",
-              "line": 790,
+              "line": 781,
               "deprecated": false
             }
           ]
@@ -2908,7 +4038,7 @@
               "kind": "classmethod",
               "signature": "(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'",
               "summary": "",
-              "line": 321,
+              "line": 322,
               "deprecated": false
             },
             {
@@ -2917,7 +4047,7 @@
               "kind": "property",
               "signature": "(self) -> dict",
               "summary": "The original bindings passed at construction time.",
-              "line": 329,
+              "line": 330,
               "deprecated": false
             },
             {
@@ -2926,7 +4056,7 @@
               "kind": "property",
               "signature": "(self) -> dict",
               "summary": "Get bindings from persistent storage.",
-              "line": 334,
+              "line": 335,
               "deprecated": false
             },
             {
@@ -2935,7 +4065,7 @@
               "kind": "method",
               "signature": "(self, value: dict)",
               "summary": "Set bindings (auto-persists and triggers rebuild via callback).",
-              "line": 339,
+              "line": 340,
               "deprecated": false
             },
             {
@@ -2944,7 +4074,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Accessor for the UI handler.",
-              "line": 344,
+              "line": 345,
               "deprecated": false
             },
             {
@@ -2953,7 +4083,7 @@
               "kind": "method",
               "signature": "(self, name: str, **kwargs) -> QtWidgets.QWidget",
               "summary": "Get a UI widget by name.",
-              "line": 348,
+              "line": 349,
               "deprecated": false
             },
             {
@@ -2962,7 +4092,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Add a widget to the MarkingMenu window.",
-              "line": 438,
+              "line": 439,
               "deprecated": false
             },
             {
@@ -2971,7 +4101,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Get the currently active widget.",
-              "line": 446,
+              "line": 447,
               "deprecated": false
             },
             {
@@ -2980,7 +4110,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Set the current widget and position it at the cursor.",
-              "line": 454,
+              "line": 455,
               "deprecated": false
             },
             {
@@ -2989,7 +4119,7 @@
               "kind": "method",
               "signature": "(self, index: int) -> None",
               "summary": "Set the current widget index (compatibility method).",
-              "line": 484,
+              "line": 485,
               "deprecated": false
             },
             {
@@ -2998,7 +4128,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse press: route through the central state-sync.",
-              "line": 868,
+              "line": 881,
               "deprecated": false
             },
             {
@@ -3007,7 +4137,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle key press for non-activation key bindings.",
-              "line": 891,
+              "line": 904,
               "deprecated": false
             },
             {
@@ -3016,7 +4146,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 915,
+              "line": 928,
               "deprecated": false
             },
             {
@@ -3025,7 +4155,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 936,
+              "line": 949,
               "deprecated": false
             },
             {
@@ -3034,7 +4164,7 @@
               "kind": "method",
               "signature": "(self, ui: Optional[str] = None, pos=None, force: bool = False, **kwargs) -> QtWidgets.QWidget",
               "summary": "Central hub for showing any UI component.",
-              "line": 991,
+              "line": 1004,
               "deprecated": false
             },
             {
@@ -3043,7 +4173,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 1130,
+              "line": 1143,
               "deprecated": false
             },
             {
@@ -3052,7 +4182,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - ensures mouse grab is released even if hide() was bypassed.",
-              "line": 1179,
+              "line": 1192,
               "deprecated": false
             },
             {
@@ -3061,7 +4191,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Dim all visible windows except the current one.",
-              "line": 1199,
+              "line": 1212,
               "deprecated": false
             },
             {
@@ -3070,7 +4200,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore all previously dimmed windows.",
-              "line": 1213,
+              "line": 1226,
               "deprecated": false
             },
             {
@@ -3079,7 +4209,7 @@
               "kind": "method",
               "signature": "(self, widgets) -> None",
               "summary": "Initialize child widgets with an event filter.",
-              "line": 1226,
+              "line": 1239,
               "deprecated": false
             },
             {
@@ -3088,7 +4218,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 1266,
+              "line": 1279,
               "deprecated": false
             },
             {
@@ -3097,7 +4227,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 1293,
+              "line": 1306,
               "deprecated": false
             },
             {
@@ -3106,7 +4236,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Forward release events to the child's normal handler.",
-              "line": 1302,
+              "line": 1315,
               "deprecated": false
             }
           ]
@@ -3614,7 +4744,7 @@
               "kind": "classmethod",
               "signature": "(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)",
               "summary": "Factory method: Create a standalone context menu with sensible defaults.",
-              "line": 646,
+              "line": 670,
               "deprecated": false
             },
             {
@@ -3623,7 +4753,7 @@
               "kind": "classmethod",
               "signature": "(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)",
               "summary": "Factory method: Create a dropdown menu for option boxes.",
-              "line": 667,
+              "line": 691,
               "deprecated": false
             },
             {
@@ -3632,7 +4762,7 @@
               "kind": "classmethod",
               "signature": "(cls, config: MenuConfig)",
               "summary": "Create a Menu from a MenuConfig object.",
-              "line": 681,
+              "line": 705,
               "deprecated": false
             },
             {
@@ -3641,7 +4771,7 @@
               "kind": "staticmethod",
               "signature": "(content_fn, parent=None, title='', buttons=None, size=None, min_size=None, center=True, **menu_kwargs)",
               "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 712,
+              "line": 736,
               "deprecated": false
             },
             {
@@ -3650,7 +4780,7 @@
               "kind": "property",
               "signature": "(self) -> Union[QtCore.Qt.MouseButton, tuple, None, bool]",
               "summary": "Get the current trigger button(s).",
-              "line": 916,
+              "line": 940,
               "deprecated": false
             },
             {
@@ -3659,7 +4789,7 @@
               "kind": "method",
               "signature": "(self, value: Union[QtCore.Qt.MouseButton, str, tuple, list, None]) -> None",
               "summary": "Set the trigger button(s).",
-              "line": 928,
+              "line": 952,
               "deprecated": false
             },
             {
@@ -3668,7 +4798,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-initialized PresetManager namespace for saving/loading named presets.",
-              "line": 964,
+              "line": 988,
               "deprecated": false
             },
             {
@@ -3677,7 +4807,7 @@
               "kind": "method",
               "signature": "(self, _)",
               "summary": "No-op setter so the switchboard can harmlessly reassign.",
-              "line": 986,
+              "line": 1010,
               "deprecated": false
             },
             {
@@ -3686,7 +4816,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Get whether menu auto-hides when mouse leaves.",
-              "line": 991,
+              "line": 1015,
               "deprecated": false
             },
             {
@@ -3695,7 +4825,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set whether menu auto-hides when mouse leaves.",
-              "line": 1000,
+              "line": 1024,
               "deprecated": false
             },
             {
@@ -3704,7 +4834,7 @@
               "kind": "method",
               "signature": "(self, hide_button_tooltip: str = 'Hide menu') -> None",
               "summary": "Keep the menu visible until the user explicitly hides it.",
-              "line": 1021,
+              "line": 1045,
               "deprecated": false
             },
             {
@@ -3713,7 +4843,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore default hide behaviour after persistent mode.",
-              "line": 1058,
+              "line": 1082,
               "deprecated": false
             },
             {
@@ -3722,7 +4852,16 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Return True when persistent mode is active.",
-              "line": 1084,
+              "line": 1108,
+              "deprecated": false
+            },
+            {
+              "name": "setVisible",
+              "qualname": "Menu.setVisible",
+              "kind": "method",
+              "signature": "(self, visible: bool) -> None",
+              "summary": "Override to apply deferred popup setup before becoming visible.",
+              "line": 1440,
               "deprecated": false
             },
             {
@@ -3731,7 +4870,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Show the menu.",
-              "line": 1416,
+              "line": 1511,
               "deprecated": false
             },
             {
@@ -3740,7 +4879,7 @@
               "kind": "method",
               "signature": "(self, anchor_widget: Optional[QtWidgets.QWidget] = None, position: Union[str, QtCore.QPoint, tuple, list] = 'bottom') -> None",
               "summary": "Show this menu as a popup at the specified position.",
-              "line": 1423,
+              "line": 1531,
               "deprecated": false
             },
             {
@@ -3749,7 +4888,7 @@
               "kind": "method",
               "signature": "(self, widget, overwrite=False)",
               "summary": "",
-              "line": 1466,
+              "line": 1591,
               "deprecated": false
             },
             {
@@ -3758,7 +4897,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the central widget.",
-              "line": 1478,
+              "line": 1603,
               "deprecated": false
             },
             {
@@ -3767,7 +4906,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Initialize the menu layout.",
-              "line": 1482,
+              "line": 1607,
               "deprecated": false
             },
             {
@@ -3776,7 +4915,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the 'Restore Defaults' button is enabled.",
-              "line": 1819,
+              "line": 1987,
               "deprecated": false
             },
             {
@@ -3785,7 +4924,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 1828,
+              "line": 1996,
               "deprecated": false
             },
             {
@@ -3794,7 +4933,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the presets combo is enabled.",
-              "line": 1838,
+              "line": 2006,
               "deprecated": false
             },
             {
@@ -3803,7 +4942,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 1857,
+              "line": 2025,
               "deprecated": false
             },
             {
@@ -3812,7 +4951,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 1933,
+              "line": 2101,
               "deprecated": false
             },
             {
@@ -3821,7 +4960,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Check if the menu is pinned (should not auto-hide).",
-              "line": 1938,
+              "line": 2106,
               "deprecated": false
             },
             {
@@ -3830,7 +4969,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Check if the QMenu contains any items.",
-              "line": 1958,
+              "line": 2126,
               "deprecated": false
             },
             {
@@ -3839,7 +4978,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the menu's title text.",
-              "line": 1965,
+              "line": 2133,
               "deprecated": false
             },
             {
@@ -3848,7 +4987,7 @@
               "kind": "method",
               "signature": "(self, title='') -> None",
               "summary": "Set the menu's title to the given string.",
-              "line": 1971,
+              "line": 2139,
               "deprecated": false
             },
             {
@@ -3857,7 +4996,7 @@
               "kind": "method",
               "signature": "(self, types=None)",
               "summary": "Get all items in the list, optionally filtered by type.",
-              "line": 1983,
+              "line": 2151,
               "deprecated": false
             },
             {
@@ -3866,7 +5005,7 @@
               "kind": "method",
               "signature": "(self, identifier)",
               "summary": "Return a QAction or QWidgetAction by index or text.",
-              "line": 2019,
+              "line": 2187,
               "deprecated": false
             },
             {
@@ -3875,7 +5014,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> Optional[str]",
               "summary": "Get the textual representation of a widget.",
-              "line": 2051,
+              "line": 2219,
               "deprecated": false
             },
             {
@@ -3884,7 +5023,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Get data associated with a widget in the list or its sublists.",
-              "line": 2081,
+              "line": 2249,
               "deprecated": false
             },
             {
@@ -3893,7 +5032,7 @@
               "kind": "method",
               "signature": "(self, widget, data)",
               "summary": "Set data associated with a widget in the list or its sublists.",
-              "line": 2097,
+              "line": 2265,
               "deprecated": false
             },
             {
@@ -3902,7 +5041,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Remove a widget from the layout.",
-              "line": 2109,
+              "line": 2277,
               "deprecated": false
             },
             {
@@ -3911,7 +5050,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear all items in the list.",
-              "line": 2129,
+              "line": 2297,
               "deprecated": false
             },
             {
@@ -3920,7 +5059,7 @@
               "kind": "method",
               "signature": "(self, x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map], data: Any = None, row: Optional[int] = None, col: int = 0, rowSpan: int = 1, colSpan: Optional[int] = None, **kwargs) -> Union[QtWidgets.QWidget, list]",
               "summary": "Add an item or multiple items to the list.",
-              "line": 2155,
+              "line": 2323,
               "deprecated": false
             },
             {
@@ -3929,7 +5068,7 @@
               "kind": "method",
               "signature": "(widget)",
               "summary": "Get the padding values around a widget.",
-              "line": 2372,
+              "line": 2542,
               "deprecated": false
             },
             {
@@ -3938,7 +5077,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 2393,
+              "line": 2563,
               "deprecated": false
             },
             {
@@ -3947,7 +5086,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle show event with positioning (optimized for performance).",
-              "line": 2424,
+              "line": 2594,
               "deprecated": false
             },
             {
@@ -3956,7 +5095,7 @@
               "kind": "method",
               "signature": "(self, force: bool = False) -> bool",
               "summary": "Hide the menu, respecting the pinned state.",
-              "line": 2520,
+              "line": 2694,
               "deprecated": false
             },
             {
@@ -3965,7 +5104,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle hide event.",
-              "line": 2541,
+              "line": 2715,
               "deprecated": false
             },
             {
@@ -3974,7 +5113,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Handle events for the menu and its children.",
-              "line": 2642,
+              "line": 2816,
               "deprecated": false
             },
             {
@@ -3983,7 +5122,7 @@
               "kind": "method",
               "signature": "(self, widget: Optional[QtWidgets.QWidget] = None, *, button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton) -> None",
               "summary": "Toggle visibility using the same rules as the parent click event.",
-              "line": 2682,
+              "line": 2856,
               "deprecated": false
             }
           ]
@@ -4768,15 +5907,33 @@
     },
     {
       "relpath": "widgets/mixins/shortcuts.py",
-      "summary": "",
+      "summary": "Generic keyboard-shortcut primitives, usable by any Qt widget.",
       "functions": [
+        {
+          "name": "context_to_scope_name",
+          "qualname": "context_to_scope_name",
+          "kind": "function",
+          "signature": "(context: QtCore.Qt.ShortcutContext) -> str",
+          "summary": "Convert a Qt.ShortcutContext to its persistence string.",
+          "line": 34,
+          "deprecated": false
+        },
+        {
+          "name": "scope_name_to_context",
+          "qualname": "scope_name_to_context",
+          "kind": "function",
+          "signature": "(name: str) -> QtCore.Qt.ShortcutContext",
+          "summary": "Convert a persisted scope string to a Qt.ShortcutContext.",
+          "line": 39,
+          "deprecated": false
+        },
         {
           "name": "create_standard_shortcuts_config",
           "qualname": "create_standard_shortcuts_config",
           "kind": "function",
           "signature": "() -> List[Tuple[QtGui.QKeySequence, str, str]]",
           "summary": "Create a standard set of shortcut configurations",
-          "line": 778,
+          "line": 642,
           "deprecated": false
         },
         {
@@ -4785,7 +5942,7 @@
           "kind": "function",
           "signature": "(widget, shortcuts_to_apply: Optional[List[str]] = None)",
           "summary": "Apply standard shortcuts to a widget that has corresponding methods",
-          "line": 801,
+          "line": 665,
           "deprecated": false
         }
       ],
@@ -4793,7 +5950,7 @@
         {
           "name": "GlobalShortcut",
           "summary": "A robust global shortcut handler that detects both press and release events.",
-          "line": 9,
+          "line": 44,
           "bases": [
             "QtCore.QObject"
           ],
@@ -4804,7 +5961,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Monitor global events for the specific key release.",
-              "line": 113,
+              "line": 148,
               "deprecated": false
             },
             {
@@ -4813,7 +5970,7 @@
               "kind": "method",
               "signature": "(self, enabled: bool)",
               "summary": "",
-              "line": 144,
+              "line": 179,
               "deprecated": false
             },
             {
@@ -4822,7 +5979,16 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence])",
               "summary": "",
-              "line": 150,
+              "line": 185,
+              "deprecated": false
+            },
+            {
+              "name": "setContext",
+              "qualname": "GlobalShortcut.setContext",
+              "kind": "method",
+              "signature": "(self, context: QtCore.Qt.ShortcutContext)",
+              "summary": "Live-update the underlying QShortcut's context.",
+              "line": 194,
               "deprecated": false
             }
           ]
@@ -4830,7 +5996,7 @@
         {
           "name": "ShortcutManager",
           "summary": "Centralized shortcut management with clear separation of concerns",
-          "line": 160,
+          "line": 203,
           "bases": [],
           "members": [
             {
@@ -4839,7 +6005,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut) -> QtWidgets.QShortcut",
               "summary": "Add a keyboard shortcut with optional description and context",
-              "line": 168,
+              "line": 211,
               "deprecated": false
             },
             {
@@ -4848,7 +6014,7 @@
               "kind": "method",
               "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
               "summary": "Add multiple shortcuts from a configuration list",
-              "line": 208,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -4857,7 +6023,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut",
               "summary": "Add a global shortcut (robust press/release detection).",
-              "line": 239,
+              "line": 282,
               "deprecated": false
             },
             {
@@ -4866,7 +6032,7 @@
               "kind": "method",
               "signature": "(self, key_label: str, description: str) -> None",
               "summary": "Register a display-only entry (e.g.",
-              "line": 272,
+              "line": 315,
               "deprecated": false
             },
             {
@@ -4875,7 +6041,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Remove a specific shortcut",
-              "line": 289,
+              "line": 332,
               "deprecated": false
             },
             {
@@ -4884,7 +6050,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove all shortcuts",
-              "line": 318,
+              "line": 361,
               "deprecated": false
             },
             {
@@ -4893,7 +6059,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable) -> None",
               "summary": "Register a callback invoked after any shortcut is rebound.",
-              "line": 328,
+              "line": 371,
               "deprecated": false
             },
             {
@@ -4902,7 +6068,7 @@
               "kind": "method",
               "signature": "(self, old_key: str, new_key: str) -> bool",
               "summary": "Change the key sequence for an existing shortcut.",
-              "line": 338,
+              "line": 381,
               "deprecated": false
             },
             {
@@ -4911,7 +6077,7 @@
               "kind": "method",
               "signature": "(self, parent=None, title: str = 'Shortcuts') -> None",
               "summary": "Open an editor window for viewing and editing registered shortcuts.",
-              "line": 363,
+              "line": 406,
               "deprecated": false
             },
             {
@@ -4920,7 +6086,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Get information about all registered shortcuts",
-              "line": 376,
+              "line": 424,
               "deprecated": false
             },
             {
@@ -4929,7 +6095,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Check if a shortcut is registered",
-              "line": 384,
+              "line": 432,
               "deprecated": false
             },
             {
@@ -4938,7 +6104,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]",
               "summary": "Get a specific shortcut object",
-              "line": 399,
+              "line": 447,
               "deprecated": false
             }
           ]
@@ -4946,7 +6112,7 @@
         {
           "name": "ShortcutMixin",
           "summary": "Mixin class that provides easy shortcut management for any Qt widget",
-          "line": 604,
+          "line": 468,
           "bases": [],
           "members": [
             {
@@ -4955,7 +6121,7 @@
               "kind": "property",
               "signature": "(self) -> ShortcutManager",
               "summary": "Lazy initialization of shortcut manager",
-              "line": 626,
+              "line": 490,
               "deprecated": false
             },
             {
@@ -4964,7 +6130,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut) -> QtWidgets.QShortcut",
               "summary": "Add a keyboard shortcut",
-              "line": 632,
+              "line": 496,
               "deprecated": false
             },
             {
@@ -4973,7 +6139,7 @@
               "kind": "method",
               "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
               "summary": "Add multiple shortcuts from configuration",
-              "line": 654,
+              "line": 518,
               "deprecated": false
             },
             {
@@ -4982,7 +6148,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Remove a shortcut",
-              "line": 668,
+              "line": 532,
               "deprecated": false
             },
             {
@@ -4991,7 +6157,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear all shortcuts",
-              "line": 672,
+              "line": 536,
               "deprecated": false
             },
             {
@@ -5000,7 +6166,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Get all shortcuts information",
-              "line": 677,
+              "line": 541,
               "deprecated": false
             },
             {
@@ -5009,7 +6175,7 @@
               "kind": "method",
               "signature": "(self, menu: QtWidgets.QMenu, submenu_title: str = 'Keyboard Shortcuts') -> QtWidgets.QMenu",
               "summary": "Add shortcuts information to a context menu",
-              "line": 683,
+              "line": 547,
               "deprecated": false
             },
             {
@@ -5018,7 +6184,7 @@
               "kind": "method",
               "signature": "(self, menu: Optional[QtWidgets.QMenu] = None, actions_config: Optional[List[Tuple[str, Callable, Optional[Union[str, QtGui.QKeySequence]]]]] = None, auto_match_shortcuts: bool = True) -> QtWidgets.QMenu",
               "summary": "Add menu actions with inline shortcut display",
-              "line": 708,
+              "line": 572,
               "deprecated": false
             },
             {
@@ -5027,7 +6193,7 @@
               "kind": "method",
               "signature": "(self, actions_config, **kwargs)",
               "summary": "Convenience method to create a new context menu with shortcuts",
-              "line": 768,
+              "line": 632,
               "deprecated": false
             },
             {
@@ -5036,49 +6202,7 @@
               "kind": "method",
               "signature": "(self, menu, actions_config, **kwargs)",
               "summary": "Convenience method to add actions to an existing menu",
-              "line": 772,
-              "deprecated": false
-            }
-          ]
-        },
-        {
-          "name": "Shortcut",
-          "summary": "Decorator to assign a keyboard shortcut to a slot method.",
-          "line": 823,
-          "bases": [],
-          "members": []
-        },
-        {
-          "name": "SwitchboardShortcutMixin",
-          "summary": "Mixin for managing keyboard shortcuts for Switchboard Slots.",
-          "line": 867,
-          "bases": [],
-          "members": [
-            {
-              "name": "register_slots_shortcuts",
-              "qualname": "SwitchboardShortcutMixin.register_slots_shortcuts",
-              "kind": "method",
-              "signature": "(self, ui: QtWidgets.QWidget, slots_instance: object) -> None",
-              "summary": "Scan a Slots instance and register shortcuts for decorated methods.",
-              "line": 870,
-              "deprecated": false
-            },
-            {
-              "name": "get_shortcut_registry",
-              "qualname": "SwitchboardShortcutMixin.get_shortcut_registry",
-              "kind": "method",
-              "signature": "(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]",
-              "summary": "Get a registry of all assignable slots and their shortcut status.",
-              "line": 1011,
-              "deprecated": false
-            },
-            {
-              "name": "set_user_shortcut",
-              "qualname": "SwitchboardShortcutMixin.set_user_shortcut",
-              "kind": "method",
-              "signature": "(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str) -> None",
-              "summary": "Update a shortcut setting dynamically and live-update the active QShortcut.",
-              "line": 1096,
+              "line": 636,
               "deprecated": false
             }
           ]
@@ -5418,567 +6542,6 @@
               "signature": "(cls, widget: QtWidgets.QWidget = None)",
               "summary": "Clear overrides.",
               "line": 309,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/switchboard_names.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardNameMixin",
-          "summary": "Mixin for Switchboard name and tag management.",
-          "line": 9,
-          "bases": [],
-          "members": [
-            {
-              "name": "convert_to_legal_name",
-              "qualname": "SwitchboardNameMixin.convert_to_legal_name",
-              "kind": "staticmethod",
-              "signature": "(name: str) -> str",
-              "summary": "Convert a name to a legal format by replacing non-alphanumeric characters with underscores.",
-              "line": 19,
-              "deprecated": false
-            },
-            {
-              "name": "get_slot_class_names",
-              "qualname": "SwitchboardNameMixin.get_slot_class_names",
-              "kind": "method",
-              "signature": "(self, base_name: str) -> List[str]",
-              "summary": "Generate potential slot class names from a base name.",
-              "line": 33,
-              "deprecated": false
-            },
-            {
-              "name": "get_slot_file_names",
-              "qualname": "SwitchboardNameMixin.get_slot_file_names",
-              "kind": "method",
-              "signature": "(self, base_name: str) -> List[str]",
-              "summary": "Generate potential slot file names from a base name.",
-              "line": 46,
-              "deprecated": false
-            },
-            {
-              "name": "get_base_name",
-              "qualname": "SwitchboardNameMixin.get_base_name",
-              "kind": "method",
-              "signature": "(self, name: str) -> str",
-              "summary": "",
-              "line": 69,
-              "deprecated": false
-            },
-            {
-              "name": "get_tags_from_name",
-              "qualname": "SwitchboardNameMixin.get_tags_from_name",
-              "kind": "method",
-              "signature": "(self, name: str) -> set[str]",
-              "summary": "Extract tags from a UI name string.",
-              "line": 79,
-              "deprecated": false
-            },
-            {
-              "name": "has_tags",
-              "qualname": "SwitchboardNameMixin.has_tags",
-              "kind": "method",
-              "signature": "(self, ui, tags=None) -> bool",
-              "summary": "Check if any of the given tag(s) are present in the UI's tags set.",
-              "line": 91,
-              "deprecated": false
-            },
-            {
-              "name": "edit_tags",
-              "qualname": "SwitchboardNameMixin.edit_tags",
-              "kind": "method",
-              "signature": "(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
-              "summary": "Edit tags on a widget or a tag string.",
-              "line": 116,
-              "deprecated": false
-            },
-            {
-              "name": "filter_tags",
-              "qualname": "SwitchboardNameMixin.filter_tags",
-              "kind": "method",
-              "signature": "(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str",
-              "summary": "Filter tags from a tag string - either keep only specified tags or remove specified tags.",
-              "line": 173,
-              "deprecated": false
-            },
-            {
-              "name": "get_unknown_tags",
-              "qualname": "SwitchboardNameMixin.get_unknown_tags",
-              "kind": "method",
-              "signature": "(self, tag_string: str, known_tags: list[str]) -> list[str]",
-              "summary": "Get tags that are not in the known_tags list.",
-              "line": 210,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/switchboard_slots.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "Signals",
-          "summary": "Decorator to specify which signals a slot should connect to.",
-          "line": 11,
-          "bases": [],
-          "members": [
-            {
-              "name": "blockSignals",
-              "qualname": "Signals.blockSignals",
-              "kind": "classmethod",
-              "signature": "(cls, func)",
-              "summary": "Decorator that blocks widget signals during method execution.",
-              "line": 48,
-              "deprecated": false
-            }
-          ]
-        },
-        {
-          "name": "SlotWrapper",
-          "summary": "Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…",
-          "line": 62,
-          "bases": [],
-          "members": []
-        },
-        {
-          "name": "SwitchboardSlotsMixin",
-          "summary": "Mixin for managing slot connections and signal-slot handling in the Switchboard.",
-          "line": 179,
-          "bases": [],
-          "members": [
-            {
-              "name": "get_default_signals",
-              "qualname": "SwitchboardSlotsMixin.get_default_signals",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget) -> set",
-              "summary": "Retrieves the default signals for a given widget type.",
-              "line": 211,
-              "deprecated": false
-            },
-            {
-              "name": "get_available_signals",
-              "qualname": "SwitchboardSlotsMixin.get_available_signals",
-              "kind": "method",
-              "signature": "(self, widget, derived=True, exc=[])",
-              "summary": "Get all available signals for a type of widget.",
-              "line": 234,
-              "deprecated": false
-            },
-            {
-              "name": "slots_instantiated",
-              "qualname": "SwitchboardSlotsMixin.slots_instantiated",
-              "kind": "method",
-              "signature": "(self, key: str) -> bool",
-              "summary": "",
-              "line": 309,
-              "deprecated": false
-            },
-            {
-              "name": "get_slots_instance",
-              "qualname": "SwitchboardSlotsMixin.get_slots_instance",
-              "kind": "method",
-              "signature": "(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]",
-              "summary": "Get or create a slots instance for the given UI.",
-              "line": 314,
-              "deprecated": false
-            },
-            {
-              "name": "init_slot",
-              "qualname": "SwitchboardSlotsMixin.init_slot",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None",
-              "summary": "",
-              "line": 594,
-              "deprecated": false
-            },
-            {
-              "name": "call_slot",
-              "qualname": "SwitchboardSlotsMixin.call_slot",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget, *args, **kwargs)",
-              "summary": "Call a slot method for a widget.",
-              "line": 623,
-              "deprecated": false
-            },
-            {
-              "name": "get_slot",
-              "qualname": "SwitchboardSlotsMixin.get_slot",
-              "kind": "method",
-              "signature": "(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]",
-              "summary": "",
-              "line": 652,
-              "deprecated": false
-            },
-            {
-              "name": "get_slot_from_widget",
-              "qualname": "SwitchboardSlotsMixin.get_slot_from_widget",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]",
-              "summary": "",
-              "line": 687,
-              "deprecated": false
-            },
-            {
-              "name": "connect_slot",
-              "qualname": "SwitchboardSlotsMixin.connect_slot",
-              "kind": "method",
-              "signature": "(self, widget, slot=None)",
-              "summary": "Connect a widget's signals to its slot.",
-              "line": 697,
-              "deprecated": false
-            },
-            {
-              "name": "disconnect_slot",
-              "qualname": "SwitchboardSlotsMixin.disconnect_slot",
-              "kind": "method",
-              "signature": "(self, widget, slot=None)",
-              "summary": "Disconnects a slot from a widget.",
-              "line": 763,
-              "deprecated": false
-            },
-            {
-              "name": "slot_history",
-              "qualname": "SwitchboardSlotsMixin.slot_history",
-              "kind": "method",
-              "signature": "(self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[], length=200)",
-              "summary": "Get the slot history.",
-              "line": 790,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/switchboard_utils.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardUtilsMixin",
-          "summary": "Utility methods for widget positioning, centering, and screen geometry.",
-          "line": 10,
-          "bases": [],
-          "members": [
-            {
-              "name": "get_cursor_offset_from_center",
-              "qualname": "SwitchboardUtilsMixin.get_cursor_offset_from_center",
-              "kind": "staticmethod",
-              "signature": "(widget)",
-              "summary": "Get the relative position of the cursor with respect to the center of a given widget.",
-              "line": 14,
-              "deprecated": false
-            },
-            {
-              "name": "center_widget",
-              "qualname": "SwitchboardUtilsMixin.center_widget",
-              "kind": "staticmethod",
-              "signature": "(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)",
-              "summary": "Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…",
-              "line": 26,
-              "deprecated": false
-            },
-            {
-              "name": "unpack_names",
-              "qualname": "SwitchboardUtilsMixin.unpack_names",
-              "kind": "classmethod",
-              "signature": "(cls, name_string)",
-              "summary": "Unpacks a comma-separated string of names and returns a list of individual names.",
-              "line": 85,
-              "deprecated": false
-            },
-            {
-              "name": "get_widgets_by_string_pattern",
-              "qualname": "SwitchboardUtilsMixin.get_widgets_by_string_pattern",
-              "kind": "method",
-              "signature": "(self, ui, name_string)",
-              "summary": "Get a list of corresponding widgets from a single shorthand formatted string.",
-              "line": 125,
-              "deprecated": false
-            },
-            {
-              "name": "get_methods_by_string_pattern",
-              "qualname": "SwitchboardUtilsMixin.get_methods_by_string_pattern",
-              "kind": "method",
-              "signature": "(self, clss, name_string)",
-              "summary": "Get a list of corresponding methods from a single shorthand formatted string.",
-              "line": 152,
-              "deprecated": false
-            },
-            {
-              "name": "create_button_groups",
-              "qualname": "SwitchboardUtilsMixin.create_button_groups",
-              "kind": "method",
-              "signature": "(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]",
-              "summary": "Create button groups for a set of widgets.",
-              "line": 177,
-              "deprecated": false
-            },
-            {
-              "name": "toggle_multi",
-              "qualname": "SwitchboardUtilsMixin.toggle_multi",
-              "kind": "method",
-              "signature": "(self, ui, trigger=None, signal=None, **kwargs)",
-              "summary": "Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…",
-              "line": 242,
-              "deprecated": false
-            },
-            {
-              "name": "connect_multi",
-              "qualname": "SwitchboardUtilsMixin.connect_multi",
-              "kind": "method",
-              "signature": "(self, ui, widgets, signals, slots)",
-              "summary": "Connect multiple signals to multiple slots at once.",
-              "line": 352,
-              "deprecated": false
-            },
-            {
-              "name": "set_axis_for_checkboxes",
-              "qualname": "SwitchboardUtilsMixin.set_axis_for_checkboxes",
-              "kind": "method",
-              "signature": "(self, checkboxes, axis, ui=None)",
-              "summary": "Set the given checkbox's check states to reflect the specified axis.",
-              "line": 405,
-              "deprecated": false
-            },
-            {
-              "name": "get_axis_from_checkboxes",
-              "qualname": "SwitchboardUtilsMixin.get_axis_from_checkboxes",
-              "kind": "method",
-              "signature": "(self, checkboxes, ui=None, return_type='str')",
-              "summary": "Get the intended axis value as a string or integer by reading the multiple checkbox's check states.",
-              "line": 433,
-              "deprecated": false
-            },
-            {
-              "name": "hide_unmatched_groupboxes",
-              "qualname": "SwitchboardUtilsMixin.hide_unmatched_groupboxes",
-              "kind": "method",
-              "signature": "(self, ui, unknown_tags) -> None",
-              "summary": "Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted",
-              "line": 476,
-              "deprecated": false
-            },
-            {
-              "name": "invert_on_modifier",
-              "qualname": "SwitchboardUtilsMixin.invert_on_modifier",
-              "kind": "staticmethod",
-              "signature": "(value)",
-              "summary": "Invert a numerical or boolean value if the alt key is pressed.",
-              "line": 509,
-              "deprecated": false
-            },
-            {
-              "name": "message_box",
-              "qualname": "SwitchboardUtilsMixin.message_box",
-              "kind": "method",
-              "signature": "(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)",
-              "summary": "Spawns a message box with the given text and optionally sets buttons.",
-              "line": 532,
-              "deprecated": false
-            },
-            {
-              "name": "file_dialog",
-              "qualname": "SwitchboardUtilsMixin.file_dialog",
-              "kind": "staticmethod",
-              "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]",
-              "summary": "Open a file dialog to select files of the given type(s) using qtpy.",
-              "line": 577,
-              "deprecated": false
-            },
-            {
-              "name": "dir_dialog",
-              "qualname": "SwitchboardUtilsMixin.dir_dialog",
-              "kind": "staticmethod",
-              "signature": "(title: str = 'Select a directory', start_dir: str = '/home') -> str",
-              "summary": "Open a directory dialog to select a directory using qtpy.",
-              "line": 613,
-              "deprecated": false
-            },
-            {
-              "name": "save_file_dialog",
-              "qualname": "SwitchboardUtilsMixin.save_file_dialog",
-              "kind": "staticmethod",
-              "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]",
-              "summary": "Open a save-file dialog to choose a destination path.",
-              "line": 634,
-              "deprecated": false
-            },
-            {
-              "name": "input_dialog",
-              "qualname": "SwitchboardUtilsMixin.input_dialog",
-              "kind": "staticmethod",
-              "signature": "(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str",
-              "summary": "Show a modal text-input dialog and return the entered string.",
-              "line": 671,
-              "deprecated": false
-            },
-            {
-              "name": "simulate_key_press",
-              "qualname": "SwitchboardUtilsMixin.simulate_key_press",
-              "kind": "staticmethod",
-              "signature": "(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)",
-              "summary": "Simulate a key press event for the given UI and optionally release the keyboard.",
-              "line": 762,
-              "deprecated": false
-            },
-            {
-              "name": "defer_with_timer",
-              "qualname": "SwitchboardUtilsMixin.defer_with_timer",
-              "kind": "method",
-              "signature": "(self, func: callable, *args, ms: int = 300, **kwargs) -> None",
-              "summary": "Defer execution of any callable with arguments after a delay.",
-              "line": 785,
-              "deprecated": false
-            },
-            {
-              "name": "gc_protect",
-              "qualname": "SwitchboardUtilsMixin.gc_protect",
-              "kind": "method",
-              "signature": "(self, obj=None, clear=False)",
-              "summary": "Protect the given object(s) from garbage collection by holding a strong reference.",
-              "line": 825,
-              "deprecated": false
-            },
-            {
-              "name": "modal_menu",
-              "qualname": "SwitchboardUtilsMixin.modal_menu",
-              "kind": "staticmethod",
-              "signature": "(content_fn, parent=None, **kwargs)",
-              "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 858,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/switchboard_widgets.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardWidgetMixin",
-          "summary": "Widget registration, resolution, and dynamic class loading for Switchboard.",
-          "line": 8,
-          "bases": [],
-          "members": [
-            {
-              "name": "resolve_widget_class",
-              "qualname": "SwitchboardWidgetMixin.resolve_widget_class",
-              "kind": "method",
-              "signature": "(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]",
-              "summary": "Return the widget class registered under the given name.",
-              "line": 11,
-              "deprecated": false
-            },
-            {
-              "name": "get_icon",
-              "qualname": "SwitchboardWidgetMixin.get_icon",
-              "kind": "method",
-              "signature": "(self, icon_name: str) -> QtGui.QIcon",
-              "summary": "Get a registered icon by name.",
-              "line": 68,
-              "deprecated": false
-            },
-            {
-              "name": "register_widget",
-              "qualname": "SwitchboardWidgetMixin.register_widget",
-              "kind": "method",
-              "signature": "(self, widget)",
-              "summary": "Register any custom widgets using the module names.",
-              "line": 123,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget",
-              "qualname": "SwitchboardWidgetMixin.get_widget",
-              "kind": "method",
-              "signature": "(self, name, ui=None)",
-              "summary": "Case insensitive.",
-              "line": 138,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget_from_slot",
-              "qualname": "SwitchboardWidgetMixin.get_widget_from_slot",
-              "kind": "method",
-              "signature": "(self, method)",
-              "summary": "Get the corresponding widget from a given method.",
-              "line": 155,
-              "deprecated": false
-            },
-            {
-              "name": "set_widget_attrs",
-              "qualname": "SwitchboardWidgetMixin.set_widget_attrs",
-              "kind": "method",
-              "signature": "(self, ui, widget_names, **kwargs)",
-              "summary": "Set multiple properties, for multiple widgets, on multiple UI's at once.",
-              "line": 177,
-              "deprecated": false
-            },
-            {
-              "name": "is_widget",
-              "qualname": "SwitchboardWidgetMixin.is_widget",
-              "kind": "method",
-              "signature": "(self, obj)",
-              "summary": "Returns True if the given obj is a valid widget.",
-              "line": 198,
-              "deprecated": false
-            },
-            {
-              "name": "get_parent_widgets",
-              "qualname": "SwitchboardWidgetMixin.get_parent_widgets",
-              "kind": "staticmethod",
-              "signature": "(widget, object_names=False)",
-              "summary": "Get the all parent widgets of the given widget.",
-              "line": 213,
-              "deprecated": false
-            },
-            {
-              "name": "get_top_level_parent",
-              "qualname": "SwitchboardWidgetMixin.get_top_level_parent",
-              "kind": "classmethod",
-              "signature": "(cls, widget, index=-1)",
-              "summary": "Get the parent widget at the top of the hierarchy for the given widget.",
-              "line": 233,
-              "deprecated": false
-            },
-            {
-              "name": "get_all_windows",
-              "qualname": "SwitchboardWidgetMixin.get_all_windows",
-              "kind": "staticmethod",
-              "signature": "(name=None)",
-              "summary": "Get Qt windows.",
-              "line": 246,
-              "deprecated": false
-            },
-            {
-              "name": "get_all_widgets",
-              "qualname": "SwitchboardWidgetMixin.get_all_widgets",
-              "kind": "staticmethod",
-              "signature": "(name=None)",
-              "summary": "Get Qt widgets.",
-              "line": 262,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget_at",
-              "qualname": "SwitchboardWidgetMixin.get_widget_at",
-              "kind": "staticmethod",
-              "signature": "(pos, top_widget_only=True)",
-              "summary": "Get visible and enabled widget(s) located at the given position.",
-              "line": 278,
               "deprecated": false
             }
           ]
@@ -7312,7 +7875,7 @@
           "kind": "function",
           "signature": "(widget, show_clear=False, options=None, **kwargs)",
           "summary": "Add an option box to any widget with one function call.",
-          "line": 843,
+          "line": 878,
           "deprecated": false
         },
         {
@@ -7321,7 +7884,7 @@
           "kind": "function",
           "signature": "(widget, **kwargs)",
           "summary": "Add just a clear button to a text widget.",
-          "line": 866,
+          "line": 901,
           "deprecated": false
         },
         {
@@ -7330,7 +7893,7 @@
           "kind": "function",
           "signature": "(widget, menu, **kwargs)",
           "summary": "Add a menu option to any widget.",
-          "line": 879,
+          "line": 914,
           "deprecated": false
         },
         {
@@ -7339,7 +7902,7 @@
           "kind": "function",
           "signature": "(widget_class)",
           "summary": "Add option_box attribute to a widget class.",
-          "line": 898,
+          "line": 933,
           "deprecated": false
         },
         {
@@ -7348,7 +7911,7 @@
           "kind": "function",
           "signature": "()",
           "summary": "Patch common Qt widgets with option box support.",
-          "line": 913,
+          "line": 948,
           "deprecated": false
         }
       ],
@@ -7574,7 +8137,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the container widget (for layout management).",
-              "line": 646,
+              "line": 681,
               "deprecated": false
             },
             {
@@ -7583,7 +8146,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove option box completely",
-              "line": 818,
+              "line": 853,
               "deprecated": false
             }
           ]
@@ -10065,7 +10628,7 @@
         {
           "name": "TableActions",
           "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 50,
+          "line": 121,
           "bases": [],
           "members": [
             {
@@ -10074,7 +10637,7 @@
               "kind": "method",
               "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
               "summary": "Register an action column.",
-              "line": 71,
+              "line": 145,
               "deprecated": false
             },
             {
@@ -10083,7 +10646,7 @@
               "kind": "method",
               "signature": "(self, row: int, col: int, state_name: str) -> None",
               "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 116,
+              "line": 191,
               "deprecated": false
             },
             {
@@ -10092,7 +10655,16 @@
               "kind": "method",
               "signature": "(self, row: int, col: int) -> Optional[str]",
               "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 174,
+              "line": 255,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 320,
               "deprecated": false
             }
           ]
@@ -10180,7 +10752,7 @@
               "kind": "method",
               "signature": "(self, color, color_type, item, row, col)",
               "summary": "Ensure a valid QColor, using fallback if needed.",
-              "line": 116,
+              "line": 125,
               "deprecated": false
             },
             {
@@ -10189,7 +10761,7 @@
               "kind": "method",
               "signature": "(self, item: QtWidgets.QTableWidgetItem, key: str = None, italic: bool = None, bold: bool = None, fg: Any = None, bg: Any = None)",
               "summary": "Apply formatting to a table item.",
-              "line": 134,
+              "line": 143,
               "deprecated": false
             },
             {
@@ -10198,7 +10770,7 @@
               "kind": "method",
               "signature": "(self, item: QtWidgets.QTableWidgetItem, key: str, row: int = -1, col: int = -1, use_bg: bool = False)",
               "summary": "Apply semantic color, but skip reset if nothing defined.",
-              "line": 210,
+              "line": 219,
               "deprecated": false
             },
             {
@@ -10207,7 +10779,7 @@
               "kind": "method",
               "signature": "(self, item, value, *_)",
               "summary": "",
-              "line": 252,
+              "line": 261,
               "deprecated": false
             },
             {
@@ -10216,7 +10788,7 @@
               "kind": "method",
               "signature": "(self, color_map: dict)",
               "summary": "",
-              "line": 260,
+              "line": 269,
               "deprecated": false
             },
             {
@@ -10225,7 +10797,7 @@
               "kind": "staticmethod",
               "signature": "(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int",
               "summary": "Insert a non-selectable section header that spans all columns.",
-              "line": 276,
+              "line": 285,
               "deprecated": false
             },
             {
@@ -10234,7 +10806,7 @@
               "kind": "staticmethod",
               "signature": "(table: QtWidgets.QTableWidget, row: int) -> bool",
               "summary": "Return ``True`` if *row* is a section header.",
-              "line": 357,
+              "line": 366,
               "deprecated": false
             }
           ]
@@ -10242,7 +10814,7 @@
         {
           "name": "TableSelection",
           "summary": "Immutable representation of a single selected row.",
-          "line": 412,
+          "line": 421,
           "bases": [],
           "members": [
             {
@@ -10251,7 +10823,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: Any = None)",
               "summary": "",
-              "line": 422,
+              "line": 431,
               "deprecated": false
             },
             {
@@ -10260,7 +10832,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]",
               "summary": "",
-              "line": 425,
+              "line": 434,
               "deprecated": false
             },
             {
@@ -10269,7 +10841,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: str = '') -> str",
               "summary": "",
-              "line": 428,
+              "line": 437,
               "deprecated": false
             }
           ]
@@ -10277,7 +10849,7 @@
         {
           "name": "TableWidget",
           "summary": "Enhanced QTableWidget with cell formatting, sorting, and context menu support.",
-          "line": 433,
+          "line": 467,
           "bases": [
             "QtWidgets.QTableWidget",
             "MenuMixin",
@@ -10287,12 +10859,102 @@
           ],
           "members": [
             {
+              "name": "set_scrub_columns",
+              "qualname": "TableWidget.set_scrub_columns",
+              "kind": "method",
+              "signature": "(self, columns: Iterable[int]) -> None",
+              "summary": "Enable MMB-drag value scrubbing for *columns*.",
+              "line": 572,
+              "deprecated": false
+            },
+            {
+              "name": "add_scrub_column",
+              "qualname": "TableWidget.add_scrub_column",
+              "kind": "method",
+              "signature": "(self, column: int) -> None",
+              "summary": "Add a single column to the MMB-scrub set.",
+              "line": 584,
+              "deprecated": false
+            },
+            {
+              "name": "remove_scrub_column",
+              "qualname": "TableWidget.remove_scrub_column",
+              "kind": "method",
+              "signature": "(self, column: int) -> None",
+              "summary": "Remove a column from the MMB-scrub set.",
+              "line": 588,
+              "deprecated": false
+            },
+            {
+              "name": "is_scrubbing",
+              "qualname": "TableWidget.is_scrubbing",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "``True`` while an MMB scrub-drag is in progress.",
+              "line": 592,
+              "deprecated": false
+            },
+            {
+              "name": "set_wheel_scrub_columns",
+              "qualname": "TableWidget.set_wheel_scrub_columns",
+              "kind": "method",
+              "signature": "(self, columns: Iterable[int]) -> None",
+              "summary": "Enable mouse-wheel value adjustment for *columns*.",
+              "line": 600,
+              "deprecated": false
+            },
+            {
+              "name": "add_wheel_scrub_column",
+              "qualname": "TableWidget.add_wheel_scrub_column",
+              "kind": "method",
+              "signature": "(self, column: int) -> None",
+              "summary": "Add a single column to the wheel-scrub set.",
+              "line": 610,
+              "deprecated": false
+            },
+            {
+              "name": "remove_wheel_scrub_column",
+              "qualname": "TableWidget.remove_wheel_scrub_column",
+              "kind": "method",
+              "signature": "(self, column: int) -> None",
+              "summary": "Remove a column from the wheel-scrub set.",
+              "line": 614,
+              "deprecated": false
+            },
+            {
+              "name": "set_single_click_edit_columns",
+              "qualname": "TableWidget.set_single_click_edit_columns",
+              "kind": "method",
+              "signature": "(self, columns: Iterable[int]) -> None",
+              "summary": "Enable click-to-edit for *columns* (no double-click required).",
+              "line": 622,
+              "deprecated": false
+            },
+            {
+              "name": "add_single_click_edit_column",
+              "qualname": "TableWidget.add_single_click_edit_column",
+              "kind": "method",
+              "signature": "(self, column: int) -> None",
+              "summary": "Add a single column to the single-click-edit set.",
+              "line": 632,
+              "deprecated": false
+            },
+            {
+              "name": "remove_single_click_edit_column",
+              "qualname": "TableWidget.remove_single_click_edit_column",
+              "kind": "method",
+              "signature": "(self, column: int) -> None",
+              "summary": "Remove a column from the single-click-edit set.",
+              "line": 636,
+              "deprecated": false
+            },
+            {
               "name": "mousePressEvent",
               "qualname": "TableWidget.mousePressEvent",
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 512,
+              "line": 653,
               "deprecated": false
             },
             {
@@ -10301,7 +10963,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 536,
+              "line": 697,
               "deprecated": false
             },
             {
@@ -10310,7 +10972,43 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 557,
+              "line": 730,
+              "deprecated": false
+            },
+            {
+              "name": "wheelEvent",
+              "qualname": "TableWidget.wheelEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "Consume wheel events on wheel-scrub columns;",
+              "line": 801,
+              "deprecated": false
+            },
+            {
+              "name": "eventFilter",
+              "qualname": "TableWidget.eventFilter",
+              "kind": "method",
+              "signature": "(self, obj, event)",
+              "summary": "Catch wheel events on editors so wheel-scrub also works in",
+              "line": 821,
+              "deprecated": false
+            },
+            {
+              "name": "active_editor",
+              "qualname": "TableWidget.active_editor",
+              "kind": "method",
+              "signature": "(self) -> Optional[QtWidgets.QWidget]",
+              "summary": "Return the currently-open cell editor widget, or ``None``.",
+              "line": 858,
+              "deprecated": false
+            },
+            {
+              "name": "refresh_active_editor",
+              "qualname": "TableWidget.refresh_active_editor",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "If a cell editor is currently open, refresh its display from",
+              "line": 872,
               "deprecated": false
             },
             {
@@ -10319,7 +11017,7 @@
               "kind": "method",
               "signature": "(self, editor, hint)",
               "summary": "Propagate committed value to all drag-selected cells.",
-              "line": 589,
+              "line": 919,
               "deprecated": false
             },
             {
@@ -10328,7 +11026,7 @@
               "kind": "method",
               "signature": "(self, index, event=None)",
               "summary": "Optionally restrict selection changes.",
-              "line": 628,
+              "line": 958,
               "deprecated": false
             },
             {
@@ -10337,7 +11035,7 @@
               "kind": "method",
               "signature": "(self, column: int, selectable: bool)",
               "summary": "Set whether a specific column can trigger selection changes.",
-              "line": 648,
+              "line": 978,
               "deprecated": false
             },
             {
@@ -10346,7 +11044,7 @@
               "kind": "method",
               "signature": "(self, validator: Callable[[QtCore.QModelIndex], bool])",
               "summary": "Set a function to validate if an index can be selected.",
-              "line": 655,
+              "line": 985,
               "deprecated": false
             },
             {
@@ -10355,7 +11053,7 @@
               "kind": "method",
               "signature": "(self, column: int, action: Callable[[int, int], None])",
               "summary": "Set a callback for when a cell in a specific column is clicked.",
-              "line": 663,
+              "line": 993,
               "deprecated": false
             },
             {
@@ -10364,7 +11062,7 @@
               "kind": "method",
               "signature": "(self, enabled: bool)",
               "summary": "Toggle whether non-left clicks can change selection.",
-              "line": 677,
+              "line": 1007,
               "deprecated": false
             },
             {
@@ -10373,7 +11071,7 @@
               "kind": "method",
               "signature": "(self, mode_str)",
               "summary": "Change the selection mode after initialization.",
-              "line": 696,
+              "line": 1026,
               "deprecated": false
             },
             {
@@ -10382,7 +11080,7 @@
               "kind": "method",
               "signature": "(self, row: int, column: int)",
               "summary": "",
-              "line": 709,
+              "line": 1039,
               "deprecated": false
             },
             {
@@ -10391,7 +11089,7 @@
               "kind": "method",
               "signature": "(self, row: int, column: int, value, user_data=None)",
               "summary": "",
-              "line": 716,
+              "line": 1046,
               "deprecated": false
             },
             {
@@ -10400,7 +11098,7 @@
               "kind": "method",
               "signature": "(self, data, clear: bool = True, headers: list = None, **kwargs)",
               "summary": "",
-              "line": 723,
+              "line": 1053,
               "deprecated": false
             },
             {
@@ -10409,7 +11107,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 803,
+              "line": 1133,
               "deprecated": false
             },
             {
@@ -10418,7 +11116,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 810,
+              "line": 1140,
               "deprecated": false
             },
             {
@@ -10427,7 +11125,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all selected nodes (UserRole data from column 1)",
-              "line": 817,
+              "line": 1147,
               "deprecated": false
             },
             {
@@ -10436,7 +11134,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all selected labels (text from column 0)",
-              "line": 834,
+              "line": 1164,
               "deprecated": false
             },
             {
@@ -10445,7 +11143,7 @@
               "kind": "method",
               "signature": "(self, include_current=False)",
               "summary": "Get all selected row numbers",
-              "line": 849,
+              "line": 1179,
               "deprecated": false
             },
             {
@@ -10454,7 +11152,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 859,
+              "line": 1189,
               "deprecated": false
             },
             {
@@ -10463,7 +11161,7 @@
               "kind": "method",
               "signature": "(self, col: int)",
               "summary": "Set a column to automatically stretch to fill the available space.",
-              "line": 862,
+              "line": 1192,
               "deprecated": false
             },
             {
@@ -10472,7 +11170,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 867,
+              "line": 1197,
               "deprecated": false
             },
             {
@@ -10481,7 +11179,7 @@
               "kind": "method",
               "signature": "(self, stretch_col: int)",
               "summary": "",
-              "line": 872,
+              "line": 1202,
               "deprecated": false
             },
             {
@@ -10490,7 +11188,7 @@
               "kind": "method",
               "signature": "(self, columns=None, include_current=True)",
               "summary": "Get data from selected rows for specified columns.",
-              "line": 895,
+              "line": 1225,
               "deprecated": false
             },
             {
@@ -10499,7 +11197,7 @@
               "kind": "method",
               "signature": "(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]",
               "summary": "Return detailed selection payload keyed by column aliases.",
-              "line": 923,
+              "line": 1253,
               "deprecated": false
             },
             {
@@ -10508,7 +11206,7 @@
               "kind": "method",
               "signature": "(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)",
               "summary": "Attach a context-menu item to a callable that receives selection data.",
-              "line": 935,
+              "line": 1265,
               "deprecated": false
             },
             {
@@ -10517,7 +11215,7 @@
               "kind": "method",
               "signature": "(self, object_name: str)",
               "summary": "",
-              "line": 966,
+              "line": 1296,
               "deprecated": false
             }
           ]

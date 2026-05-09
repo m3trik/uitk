@@ -13,6 +13,8 @@ from .overlay import Overlay
 from ._resolver import parse_binding_keys, resolve_target_menu
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.mixins.shortcuts import GlobalShortcut
+from uitk.compile import precompile_async
+from uitk.loaders import CompiledLoader
 
 
 class MarkingMenu(
@@ -64,6 +66,7 @@ class MarkingMenu(
         switchboard: Optional[Switchboard] = None,
         log_level: str = "DEBUG",
         suppress_default_on_reentry: bool = False,
+        precompile: bool = False,
         **kwargs,
     ):
         """ """
@@ -117,6 +120,24 @@ class MarkingMenu(
 
         # Initialize the Handler Ecosystem
         self._setup_registry()
+
+        # Optional background pre-compile of any stale/missing _ui.py files
+        # so the first marking-menu activation doesn't pay per-UI uic
+        # subprocess costs. Daemon thread; lazy ensure_compiled remains the
+        # fallback if the user beats it to a particular UI.
+        # Off by default to keep test environments clean (no daemon threads
+        # leaking across MarkingMenu construction in test suites). Production
+        # consumers (e.g. tentacle.tcl_maya) opt in with ``precompile=True``.
+        # Gated on the active loader: only the CompiledLoader actually
+        # consumes _ui.py artifacts, so under the (default) RuntimeLoader
+        # there's nothing to precompile and the call would be wasted uic
+        # work writing artifacts no one reads.
+        if precompile and isinstance(self.sb._loader, CompiledLoader):
+            ui_paths = [
+                entry.filepath for entry in self.sb.registry.ui_registry.named_tuples
+            ]
+            if ui_paths:
+                precompile_async(*ui_paths)
 
         # Initialize bindings: explicit arg > stored > empty
         if self._initial_bindings:

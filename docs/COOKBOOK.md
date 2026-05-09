@@ -170,7 +170,7 @@ Or UI-wide:
 ui.default_slot_timeout = 360.0   # applies to all slots unless widget overrides
 ```
 
-Implementation in [SlotWrapper._invoke](../uitk/widgets/mixins/switchboard_slots.py).
+Implementation in [SlotWrapper._invoke](../uitk/switchboard/_slots.py).
 
 ---
 

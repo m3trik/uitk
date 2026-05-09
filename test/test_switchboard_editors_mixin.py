@@ -21,7 +21,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets
 from uitk.switchboard import Switchboard
-from uitk.widgets.mixins.switchboard_editors import _EditorRegistry
+from uitk.switchboard.editors import _EditorRegistry
 
 
 def _write_ui(path, name):
@@ -125,7 +125,7 @@ class EditorsAutoRecovery(_Base):
         # Some shiboken builds raise AttributeError instead of RuntimeError
         # for partially-disposed wrappers — the probe must treat that as
         # "dead" rather than letting it propagate.
-        from uitk.widgets.mixins.switchboard_editors import _EditorRegistry
+        from uitk.switchboard.editors import _EditorRegistry
 
         class _BadlyDisposed:
             def objectName(self):
@@ -208,7 +208,7 @@ class PopupContextRecovery(_Base):
     """
 
     def test_no_popup_context_when_no_active_popup(self):
-        from uitk.widgets.mixins.switchboard_editors import _EditorRegistry
+        from uitk.switchboard.editors import _EditorRegistry
 
         widget = QtWidgets.QWidget()
         try:
@@ -218,7 +218,7 @@ class PopupContextRecovery(_Base):
 
     def test_popup_context_true_when_other_popup_active(self):
         from unittest.mock import patch
-        from uitk.widgets.mixins.switchboard_editors import _EditorRegistry
+        from uitk.switchboard.editors import _EditorRegistry
 
         editor = QtWidgets.QWidget()
         sentinel = QtWidgets.QWidget()
@@ -237,7 +237,7 @@ class PopupContextRecovery(_Base):
         # spawned), we don't want to defer a self-raise — there's
         # nothing to lose focus to.
         from unittest.mock import patch
-        from uitk.widgets.mixins.switchboard_editors import _EditorRegistry
+        from uitk.switchboard.editors import _EditorRegistry
 
         editor = QtWidgets.QWidget()
         try:

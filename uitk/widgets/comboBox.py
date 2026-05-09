@@ -3,7 +3,7 @@
 import re
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
-from uitk.widgets.mixins.switchboard_slots import Signals
+from uitk.switchboard import Signals
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.menu_mixin import MenuMixin
@@ -289,7 +289,11 @@ class ComboBox(
             lineEdit.deselect()
         else:
             lineEdit = self.lineEdit()
-            new_text = lineEdit.text()
+            # QComboBox.lineEdit() returns None when the combo is not editable.
+            # Fall back to currentText() so calling setEditable(False) on an
+            # already-non-editable combo (e.g. from a .ui setting editable=False)
+            # is a no-op rather than an AttributeError.
+            new_text = lineEdit.text() if lineEdit is not None else self.currentText()
             super().setEditable(False)
             self.setCurrentText(new_text)
             if emit_signal:
