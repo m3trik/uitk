@@ -22,6 +22,7 @@ concurrency:
 jobs:
   drift:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
@@ -41,18 +42,10 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          python /tmp/m3trik/scripts/check_doc_line_refs.py \
-            --root . \
-            README.md \
-            docs/README.md \
-            docs/USER_GUIDE.md \
-            docs/SLOTS.md \
-            docs/MARKING_MENU.md \
-            docs/WIDGETS.md \
-            docs/ARCHITECTURE.md \
-            docs/COOKBOOK.md \
-            docs/EXAMPLES.md \
-            docs/API_REFERENCE.md \
+          # No explicit doc list: the script picks up README.md and docs/**/*.md
+          # automatically, with the auto-generated registries excluded by default.
+          # That way new docs get covered without needing a workflow edit.
+          python /tmp/m3trik/scripts/check_doc_line_refs.py --root . \
             > drift-report.txt 2>&1
           rc=$?
           cat drift-report.txt
