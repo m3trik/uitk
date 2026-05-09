@@ -30,7 +30,13 @@ jobs:
           # in test_switchboard_browser.py crashes inside menu.py eventFilter
           # when chip buttons are deleteLater()'d during processEvents()).
           # 6.10.x is the last stable line on the headless runner.
-          pip install pytest qtpy 'PySide6<6.11' pythontk mayatk
+          pip install pytest qtpy 'PySide6<6.11'
+          # --no-cache-dir + --upgrade forces a fresh resolution from PyPI for
+          # in-house deps. Without this, pip's wheel cache can return a stale
+          # pythontk that lacks newly-shipped APIs (the canonical-module-path
+          # logic), making CI fail on tests the editable uitk source expects
+          # to work.
+          pip install --no-cache-dir --upgrade pythontk mayatk
           pip install -e . --no-deps
 
       - name: Run tests
