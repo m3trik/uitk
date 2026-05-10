@@ -98,6 +98,13 @@ class Switchboard(
         """ """
         self.logger.setLevel(log_level)
 
+        # Ensure plain QtWidgets (e.g. unpromoted QLineEdit in .ui files) expose
+        # `widget.option_box`. patch_widget_class is idempotent (no-op if the
+        # class already has the property), so repeated Switchboard inits are safe.
+        from uitk.widgets.optionBox.utils import patch_common_widgets
+
+        patch_common_widgets()
+
         self._loader = self._build_loader(loader)
 
         self.tag_delimiter = tag_delimiter or self.TAG_DELIMITER
