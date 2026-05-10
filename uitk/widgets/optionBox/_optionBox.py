@@ -297,6 +297,13 @@ class OptionBox:
                 option.widget.setVisible(value)
                 return
 
+        # Self-heal when show_clear is enabled after wrap (e.g. `.menu.add(...)`
+        # then `.clear_option = True` — the synchronous wrap has already run).
+        if value and self.wrapped_widget and self._is_text_widget(self.wrapped_widget):
+            clear_option = ClearOption(self.wrapped_widget)
+            clear_option.set_wrapped_widget(self.wrapped_widget)
+            self.add_option(clear_option)
+
     def set_clear_button_visible(self, visible=True):
         """Enable or disable the clear button."""
         self.show_clear = visible

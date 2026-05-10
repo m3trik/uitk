@@ -2,6 +2,7 @@
 # coding=utf-8
 import sys
 import os
+import time
 from typing import Optional
 from qtpy import QtCore, QtWidgets, QtGui
 import pythontk as ptk
@@ -15,6 +16,98 @@ from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.mixins.shortcuts import GlobalShortcut
 from uitk.compile import precompile_async
 from uitk.loaders import CompiledLoader
+
+
+# Crash diagnostic (opt-in via TENTACLE_MM_CRASH_DIAG=1).
+# Writes line-buffered log so the last entry survives a hard segfault.
+_CRASH_DIAG_FH = None
+_CRASH_DIAG_INIT_TRIED = False
+
+# Cache the validity probe at import time (hot path during gestures).
+_IS_VALID = None
+try:
+    from shiboken6 import isValid as _IS_VALID  # type: ignore
+except Exception:
+    try:
+        from shiboken2 import isValid as _IS_VALID  # type: ignore
+    except Exception:
+        _IS_VALID = None
+
+
+def _diag(tag, **kw):
+    """Append one diagnostic record. Lazy-initializes file handle on first call,
+    so the env var can be set after import (e.g. from Maya's Script Editor).
+    Never raises.
+    """
+    global _CRASH_DIAG_FH, _CRASH_DIAG_INIT_TRIED
+    if _CRASH_DIAG_FH is None:
+        if _CRASH_DIAG_INIT_TRIED and not os.environ.get("TENTACLE_MM_CRASH_DIAG"):
+            return
+        _CRASH_DIAG_INIT_TRIED = True
+        if not os.environ.get("TENTACLE_MM_CRASH_DIAG"):
+            return
+        try:
+            path = os.path.expanduser("~/tentacle_marking_menu_crash.log")
+            _CRASH_DIAG_FH = open(path, "a", buffering=1, encoding="utf-8")
+            _CRASH_DIAG_FH.write(
+                f"\n===== session start pid={os.getpid()} "
+                f"t={time.time():.3f} =====\n"
+            )
+        except Exception:
+            _CRASH_DIAG_FH = None
+            return
+    try:
+        parts = [f"{time.time():.6f}", tag]
+        for k, v in kw.items():
+            parts.append(f"{k}={v!r}")
+        _CRASH_DIAG_FH.write(" | ".join(parts) + "\n")
+    except Exception:
+        pass
+
+
+def _safe_int(v):
+    """Coerce Qt enum/flag/int to int without raising. Returns -1 on failure."""
+    try:
+        if isinstance(v, int):
+            return v
+        return int(v)
+    except Exception:
+        try:
+            return int(v.value)
+        except Exception:
+            return -1
+
+
+def _widget_id(w):
+    """Safe widget identity string — survives deleted C++ underneath."""
+    if w is None:
+        return "None"
+    try:
+        if _IS_VALID is not None and not _IS_VALID(w):
+            return f"<DELETED {type(w).__name__} id={id(w):#x}>"
+        cls = type(w).__name__
+        try:
+            name = w.objectName() or "<noname>"
+        except Exception:
+            name = "<err>"
+        try:
+            is_win = w.isWindow()
+        except Exception:
+            is_win = "?"
+        try:
+            visible = w.isVisible()
+        except Exception:
+            visible = "?"
+        try:
+            wflags = _safe_int(w.windowFlags())
+        except Exception:
+            wflags = "?"
+        return (
+            f"<{cls} name={name!r} id={id(w):#x} "
+            f"win={is_win} vis={visible} flags={wflags}>"
+        )
+    except Exception as e:
+        return f"<id-err {e!r}>"
 
 
 class MarkingMenu(
@@ -196,10 +289,22 @@ class MarkingMenu(
 
     def _on_activation_press(self):
         """Handle the global shortcut press event."""
+        _diag(
+            "ACT_PRESS_ENTER",
+            held=self._activation_key_held,
+            suppress=self._standalone_suppress,
+            non_default=self._non_default_shown,
+            self_visible=self.isVisible(),
+            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
+            grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()),
+            current_widget=_widget_id(self._current_widget),
+            buttons=_safe_int(QtWidgets.QApplication.mouseButtons()),
+        )
         try:
             # If a standalone window was opened during this key-hold cycle,
             # ignore re-press until the key is genuinely released and pressed again.
             if self._standalone_suppress:
+                _diag("ACT_PRESS_SUPPRESSED")
                 return
 
             self._activation_key_held = True
@@ -208,13 +313,20 @@ class MarkingMenu(
 
             buttons = QtWidgets.QApplication.mouseButtons()
 
+            _diag("ACT_PRESS_BEFORE_DISMISS", buttons=_safe_int(buttons))
             # Clean external UIs, passing current state to avoid race/re-query
             self._dismiss_external_popups(buttons)
+            _diag("ACT_PRESS_AFTER_DISMISS")
 
             # Single source of truth: pick a menu from the current input state.
             self._sync_menu_to_state(
                 buttons=self._to_int(buttons),
                 modifiers=self._to_int(QtWidgets.QApplication.keyboardModifiers()),
+            )
+            _diag(
+                "ACT_PRESS_AFTER_SYNC",
+                self_visible=self.isVisible(),
+                current_widget=_widget_id(self._current_widget),
             )
 
             # Hand over mouse control if a button is already held at activation.
@@ -225,8 +337,10 @@ class MarkingMenu(
             QtCore.QTimer.singleShot(0, self.dim_other_windows)
 
         except Exception as e:
+            _diag("ACT_PRESS_EXC", err=repr(e))
             self.logger.error(f"Error in _on_activation_press: {e}")
             self._activation_key_held = False
+        _diag("ACT_PRESS_EXIT")
 
     def _sync_menu_to_state(self, *, buttons=None, modifiers=None, extra_key=None):
         """Single source of truth — make the visible menu match input state.
@@ -293,6 +407,14 @@ class MarkingMenu(
 
     def _on_activation_release(self):
         """Handle the global shortcut release event."""
+        _diag(
+            "ACT_RELEASE_ENTER",
+            held=self._activation_key_held,
+            self_visible=self.isVisible(),
+            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
+            grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()),
+            current_widget=_widget_id(self._current_widget),
+        )
         self._activation_key_held = False
         self._standalone_suppress = False
         self._non_default_shown = False
@@ -754,22 +876,38 @@ class MarkingMenu(
             if btn != QtCore.Qt.NoButton:
                 # Find target
                 target = QtWidgets.QWidget.mouseGrabber()
+                target_src = "grabber"
                 if not target:
                     target = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+                    target_src = "widgetAt"
+
+                _diag(
+                    "DISMISS_TARGET",
+                    src=target_src,
+                    target=_widget_id(target),
+                    is_ancestor=(self.isAncestorOf(target) if target else None),
+                    btn=_safe_int(btn),
+                )
 
                 # Should not send to self or children if we are somehow active (unlikely at this stage)
                 if target and not self.isAncestorOf(target):
-                    local_pos = target.mapFromGlobal(QtGui.QCursor.pos())
-                    # QMouseEvent(type, localPos, globalPos, button, buttons, modifiers)
-                    event = QtGui.QMouseEvent(
-                        QtCore.QEvent.MouseButtonRelease,
-                        QtCore.QPointF(local_pos),
-                        QtCore.QPointF(QtGui.QCursor.pos()),
-                        btn,
-                        QtCore.Qt.NoButton,
-                        QtCore.Qt.KeyboardModifier(),
-                    )
-                    QtWidgets.QApplication.sendEvent(target, event)
+                    try:
+                        local_pos = target.mapFromGlobal(QtGui.QCursor.pos())
+                        # QMouseEvent(type, localPos, globalPos, button, buttons, modifiers)
+                        event = QtGui.QMouseEvent(
+                            QtCore.QEvent.MouseButtonRelease,
+                            QtCore.QPointF(local_pos),
+                            QtCore.QPointF(QtGui.QCursor.pos()),
+                            btn,
+                            QtCore.Qt.NoButton,
+                            QtCore.Qt.KeyboardModifier(),
+                        )
+                        _diag("DISMISS_BEFORE_SENDEVENT", target=_widget_id(target))
+                        QtWidgets.QApplication.sendEvent(target, event)
+                        _diag("DISMISS_AFTER_SENDEVENT")
+                    except Exception as e:
+                        _diag("DISMISS_SENDEVENT_EXC", err=repr(e))
+                        raise
 
         # 2. Close active popup chain
         popup = QtWidgets.QApplication.activePopupWidget()
@@ -881,9 +1019,19 @@ class MarkingMenu(
         self.logger.debug(
             f"_transfer_mouse_control: button={button}, buttons_mask={buttons_mask}"
         )
+        _diag(
+            "XFER_ENTER",
+            button=_safe_int(button),
+            buttons_mask=_safe_int(buttons_mask),
+            self_visible=self.isVisible(),
+            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
+            grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()),
+        )
 
         # Force grab mouse to ensure MarkingMenu receives subsequent move events
+        _diag("XFER_BEFORE_GRAB")
         self.grabMouse()
+        _diag("XFER_AFTER_GRAB", grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()))
 
         local_pos = self.mapFromGlobal(QtGui.QCursor.pos())
         event = QtGui.QMouseEvent(
@@ -894,7 +1042,9 @@ class MarkingMenu(
             buttons_mask,
             QtCore.Qt.KeyboardModifier(),
         )
+        _diag("XFER_BEFORE_SENDEVENT")
         QtWidgets.QApplication.sendEvent(self, event)
+        _diag("XFER_AFTER_SENDEVENT")
 
     # ---------------------------------------------------------------------------------------------
     #   Stacked Widget Event handling:
@@ -902,6 +1052,14 @@ class MarkingMenu(
     def mousePressEvent(self, event) -> None:
         """Handle mouse press: route through the central state-sync."""
         self.logger.debug(f"mousePressEvent: {event.buttons()} {event.modifiers()}")
+        _diag(
+            "MM_PRESS_ENTER",
+            held=self._activation_key_held,
+            self_visible=self.isVisible(),
+            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
+            buttons=_safe_int(event.buttons()),
+            current_widget=_widget_id(self._current_widget),
+        )
 
         # Cancel any pending suppress-hide so we don't yank the menu away
         # right after showing it.
@@ -910,6 +1068,7 @@ class MarkingMenu(
         # Defensive: re-establish mouse grab if it was lost (e.g. after a
         # deferred child-hide caused the host app to claim focus).
         if self._activation_key_held and self.mouseGrabber() is not self:
+            _diag("MM_PRESS_REGRAB", self_visible=self.isVisible())
             self.grabMouse()
 
         current_ui = self.sb.active_ui
@@ -970,9 +1129,18 @@ class MarkingMenu(
     def mouseReleaseEvent(self, event) -> None:
         """Handle mouse release: dispatch click action or sync menu state."""
         current_ui = self.sb.active_ui
+        _diag(
+            "MM_RELEASE_ENTER",
+            held=self._activation_key_held,
+            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
+            current_ui=_widget_id(current_ui),
+            button=_safe_int(event.button()),
+            buttons=_safe_int(event.buttons()),
+        )
 
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+            _diag("MM_RELEASE_WIDGETAT", widget=_widget_id(widget))
 
             self.logger.debug(
                 f"[mouseReleaseEvent] current_ui={current_ui.objectName()}, "
@@ -991,6 +1159,10 @@ class MarkingMenu(
                     # Non-interactive widget — fall through to normal sync.
                 else:
                     # Cursor over an unrelated widget — leave menu state alone.
+                    _diag(
+                        "MM_RELEASE_UNRELATED_RETURN",
+                        self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
+                    )
                     event.accept()
                     return
 
@@ -1084,6 +1256,13 @@ class MarkingMenu(
         """
         widget = self._pending_hide_widget
         self._pending_hide_widget = None
+        _diag(
+            "PENDING_HIDE_ENTER",
+            widget=_widget_id(widget),
+            current_widget=_widget_id(self._current_widget),
+            held=self._activation_key_held,
+            self_visible=self.isVisible(),
+        )
         if widget is not None and widget is self._current_widget and widget.isVisible():
             widget.hide()
             self._current_widget = None
@@ -1091,7 +1270,9 @@ class MarkingMenu(
                 self.raise_()
                 self.activateWindow()
                 if self.mouseGrabber() is not self:
+                    _diag("PENDING_HIDE_BEFORE_GRAB", self_visible=self.isVisible())
                     self.grabMouse()
+                    _diag("PENDING_HIDE_AFTER_GRAB")
 
     def _show_marking_menu(self, widget, **kwargs):
         """Internal handler for showing marking menus."""
