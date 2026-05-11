@@ -104,45 +104,44 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             self.setMaximumHeight(collapsed)
             new_group_height = collapsed
 
-        # Let Qt handle the layout
+        # Let Qt handle the layout, then delegate the window-side resize to
+        # MainWindow's central API so all "my content changed by N px" cases
+        # share one implementation. Falls back to a local resize for non-
+        # MainWindow hosts (e.g. when CollapsableGroup is used in a plain
+        # QMainWindow / QDialog test harness).
         self.updateGeometry()
         if self.parent():
             self.parent().updateGeometry()
 
-        # Activate every layout from this widget up to the window so that
-        # minimum-size constraints propagate before we attempt to resize.
         delta = new_group_height - old_group_height
-        if window and delta != 0:
-            w = self.parentWidget()
-            while w is not None:
-                # Use callable check to guard against widgets that shadow
-                # Qt's layout() method with a layout instance attribute
-                # (e.g. self.layout = QVBoxLayout()).
-                layout_attr = getattr(w, "layout", None)
-                if callable(layout_attr):
-                    wl = layout_attr()
-                elif isinstance(layout_attr, QtWidgets.QLayout):
-                    wl = layout_attr
-                else:
-                    wl = None
-                if wl:
-                    wl.activate()
-                if w is window:
-                    break
-                w = w.parentWidget()
-            self._apply_window_resize(old_window_height, delta)
+        if window and delta != 0 and not self._suppress_window_resize:
+            adjust = getattr(window, "adjust_height_by", None)
+            if callable(adjust):
+                adjust(delta)
+            else:
+                self._fallback_window_resize(window, old_window_height, delta)
 
-    def _apply_window_resize(self, old_window_height, delta):
-        """Apply the computed delta to the window after the layout settles."""
-        if self._suppress_window_resize:
-            return
-        window = self.window()
-        if not window:
-            return
+    @staticmethod
+    def _fallback_window_resize(window, old_window_height, delta):
+        """Mirror MainWindow.adjust_height_by for non-MainWindow hosts."""
+        # Activate the window's own layout and every descendant's layout so
+        # minimumSizeHint reflects the new state. Walking ancestors is wrong
+        # for a top-level window (it has none); the chain that matters is
+        # the descendant tree underneath us.
+        own_layout = window.layout() if callable(getattr(window, "layout", None)) else None
+        if own_layout:
+            own_layout.activate()
+        for child in window.findChildren(QtWidgets.QWidget):
+            layout_attr = getattr(child, "layout", None)
+            if callable(layout_attr):
+                wl = layout_attr()
+            elif isinstance(layout_attr, QtWidgets.QLayout):
+                wl = layout_attr
+            else:
+                wl = None
+            if wl:
+                wl.activate()
         new_height = old_window_height + delta
-        # Use minimumSizeHint (reflects the just-activated layout) rather
-        # than minimumHeight() which may still hold the stale pre-collapse
-        # constraint and would clamp the shrink to zero.
         min_h = window.minimumSizeHint().height()
         new_height = max(new_height, min_h)
         window.resize(window.width(), new_height)

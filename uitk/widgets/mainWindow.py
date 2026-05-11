@@ -515,6 +515,79 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                     self.register_widget(child)
         return super().eventFilter(watched, event)
 
+    # -------------------------------------------------------------------------
+    # Dynamic resize API (used by widgets whose visible content changes)
+    # -------------------------------------------------------------------------
+
+    def _activate_descendant_layouts(self) -> None:
+        """Invalidate + re-activate every layout in this window's tree so
+        size hints reflect the latest visibility/content state before we
+        resize. Pure ``activate()`` is not enough on its own -- Qt caches
+        sizeHints aggressively and visibility changes on form layouts
+        won't propagate without an explicit invalidate."""
+        layouts = []
+        own_layout = self.layout()
+        if own_layout:
+            layouts.append(own_layout)
+        # Walk descendants and collect each owned layout. callable() check
+        # guards against widgets that shadowed Qt's layout() method with an
+        # instance attribute (legacy pattern in some uitk widgets).
+        for w in self.findChildren(QtWidgets.QWidget):
+            layout_attr = getattr(w, "layout", None)
+            if callable(layout_attr):
+                wl = layout_attr()
+            elif isinstance(layout_attr, QtWidgets.QLayout):
+                wl = layout_attr
+            else:
+                wl = None
+            if wl:
+                layouts.append(wl)
+        # Two-pass: invalidate first (drops cached sizes everywhere), then
+        # activate (recomputes from leaves up).
+        for layout in layouts:
+            layout.invalidate()
+        for layout in layouts:
+            layout.activate()
+        # Mark this window's size hint dirty so the next call returns the
+        # recomputed value, not the cached one.
+        self.updateGeometry()
+
+    def adjust_height_by(self, delta: int) -> None:
+        """Apply a signed pixel delta to the window's height.
+
+        Use when a widget knows the before/after change in pixels and
+        wants the window to follow gracefully -- preserving any extra
+        height the user previously expanded into. Width is preserved.
+        Result is clamped to ``minimumSizeHint().height()``.
+
+        Parameters:
+            delta: Signed pixel delta. Positive grows, negative shrinks.
+        """
+        if delta == 0:
+            return
+        self._activate_descendant_layouts()
+        new_height = self.height() + delta
+        min_h = self.minimumSizeHint().height()
+        new_height = max(new_height, min_h)
+        self.resize(self.width(), new_height)
+
+    def fit_height_to_content(self) -> None:
+        """Snap the window's height to its layout's natural content size.
+
+        Use after bulk visibility changes (dynamic form rows, populated
+        lists, ...) where computing a delta is awkward. Width is preserved.
+
+        Loses any "extra" vertical space the user had manually expanded
+        into. Use ``adjust_height_by`` when that preservation matters.
+        """
+        self._activate_descendant_layouts()
+        target = self.minimumSizeHint().height()
+        if target <= 0:
+            target = self.sizeHint().height()
+        if target <= 0:
+            return
+        self.resize(self.width(), target)
+
     def save_window_geometry(self) -> None:
         """Save the current window geometry (size and position) to settings."""
         if not self.restore_window_size or not self.is_initialized:

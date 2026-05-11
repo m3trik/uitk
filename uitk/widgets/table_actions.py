@@ -77,6 +77,12 @@ class _CenteredIconDelegate(QtWidgets.QStyledItemDelegate):
         opt = QtWidgets.QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
 
+        # Action cells visually opt out of the row-selection highlight.
+        # In SelectRows mode Qt sets State_Selected on every column of
+        # a selected row, which paints over the icon's own background
+        # and makes non-selectable action cells look interactive.
+        opt.state &= ~QtWidgets.QStyle.State_Selected
+
         # Clear icon/text and the corresponding feature flags so the
         # style only paints the cell background + selection state.
         # ``super().paint()`` would re-run ``initStyleOption`` on its
@@ -113,6 +119,18 @@ class _CenteredIconDelegate(QtWidgets.QStyledItemDelegate):
         )
 
         pixmap = icon.pixmap(actual)
+
+        # Hover feedback: brighten the icon's own pixels (not the
+        # surrounding cell) so faint "deactivated" tones don't blend
+        # into a row-wide highlight. SourceAtop fills only opaque
+        # pixels, leaving the cell background untouched.
+        if option.state & QtWidgets.QStyle.State_MouseOver:
+            pixmap = pixmap.copy()
+            p = QtGui.QPainter(pixmap)
+            p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceAtop)
+            p.fillRect(pixmap.rect(), QtGui.QColor(255, 255, 255, 110))
+            p.end()
+
         x = cell.x() + (cell.width() - pixmap.width()) // 2
         y = cell.y() + (cell.height() - pixmap.height()) // 2
         painter.drawPixmap(x, y, pixmap)
