@@ -552,6 +552,10 @@ class TableWidget(
         self.setItemDelegate(_ZeroSpacingEditorDelegate(self))
 
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
+        # Hover tracking on the viewport so item delegates receive
+        # State_MouseOver in their paint option (action-column hover
+        # tint depends on this).
+        self.viewport().setAttribute(QtCore.Qt.WA_Hover, True)
         self.verticalHeader().setVisible(False)
         compact_row_height = max(self.fontMetrics().height() + 4, 18)
         self.verticalHeader().setDefaultSectionSize(compact_row_height)

@@ -480,6 +480,58 @@ class MenuPositioner:
         )
 
 
+class _DismissOnAncestorMove(QtCore.QObject):
+    """Hide a popup menu when any window-ancestor of its anchor moves.
+
+    Mirrors the existing ``_install_visibility_filters`` pattern used by
+    ``RecentValuesPopup`` / ``PinnedValuesPopup``: walks the anchor's
+    parent chain at install time and installs itself as an event filter
+    on each ancestor.  On any ``QEvent.Move`` from a top-level window
+    ancestor (gated by ``obj.isWindow()`` so layout-driven moves of
+    intermediate child widgets don't trigger), the target's ``hide()``
+    is invoked.  Pin semantics are honored automatically because
+    ``Menu.hide(force=False)`` no-ops when the menu is pinned.
+    """
+
+    def __init__(self, target_menu: QtWidgets.QWidget, anchor_widget: QtWidgets.QWidget):
+        super().__init__(target_menu)
+        self._target = target_menu
+        self._watched: list = []
+        w = anchor_widget
+        while w is not None:
+            try:
+                w.installEventFilter(self)
+                self._watched.append(w)
+            except RuntimeError:
+                # Widget already deleted; skip.
+                pass
+            w = w.parentWidget()
+
+    def eventFilter(self, obj, event):
+        if (
+            event.type() == QtCore.QEvent.Move
+            and self._target is not None
+            and self._target.isVisible()
+            and not getattr(self._target, "is_pinned", False)
+        ):
+            try:
+                if obj.isWindow():
+                    self._target.hide()
+            except RuntimeError:
+                pass
+        return False
+
+    def detach(self) -> None:
+        """Remove the filter from every watched ancestor and drop refs."""
+        for w in self._watched:
+            try:
+                w.removeEventFilter(self)
+            except RuntimeError:
+                pass
+        self._watched.clear()
+        self._target = None
+
+
 class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     """A custom Qt Widget that serves as a popup menu with additional features.
 
@@ -613,6 +665,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._last_parent_geometry = None
         self._cached_menu_position = None
         self._popup_configured = False  # Track if popup setup has been done
+        self._dismiss_on_move_filter: Optional[_DismissOnAncestorMove] = None
 
         # Data containers and flags
         self.widget_data: Dict[QtWidgets.QWidget, Any] = {}
@@ -1348,6 +1401,29 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     # Alias for backward compatibility
     _install_event_filters = _ensure_trigger_hook
 
+    def _install_dismiss_on_move_filter(self, anchor_widget) -> None:
+        """Install (or replace) the dismiss-on-ancestor-move filter.
+
+        Detaches any previous filter first so re-shows don't accumulate
+        watchers.  Bound to ``anchor_widget``'s parent chain; safe to call
+        with ``None`` (no-op) if the menu has no anchor.
+        """
+        existing = getattr(self, "_dismiss_on_move_filter", None)
+        if existing is not None:
+            existing.detach()
+            self._dismiss_on_move_filter = None
+        if anchor_widget is None:
+            return
+        self._dismiss_on_move_filter = _DismissOnAncestorMove(
+            target_menu=self, anchor_widget=anchor_widget
+        )
+
+    def _detach_dismiss_on_move_filter(self) -> None:
+        existing = getattr(self, "_dismiss_on_move_filter", None)
+        if existing is not None:
+            existing.detach()
+            self._dismiss_on_move_filter = None
+
     def _setup_as_popup(self):
         """Configure this menu as a popup window.
 
@@ -1557,6 +1633,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # 1. Configure as popup (Qt.Tool | FramelessWindowHint).
         self._setup_as_popup()
         self._current_anchor_widget = anchor_widget
+
+        # Dismiss-on-ancestor-move: if a previous filter survived (e.g. from
+        # a re-show without an intervening hide), detach it before installing
+        # a fresh one bound to the current anchor.
+        self._install_dismiss_on_move_filter(anchor_widget or self.parent())
 
         # 2. Finalize layout (apply/defaults buttons, presets, trigger
         #    hooks, style, height-fit) — must run BEFORE positioning so
@@ -2726,6 +2807,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if self._leave_timer and self._leave_timer.isActive():
             self._leave_timer.stop()
             self.logger.debug("hideEvent: Leave timer stopped")
+
+        # Detach the dismiss-on-move filter (if any) so we don't accumulate
+        # watchers across re-shows and don't keep stale references to
+        # ancestors that may be torn down independently.
+        self._detach_dismiss_on_move_filter()
 
         # CRITICAL FIX: Restore focus to prevent application focus loss
         # Qt.Tool windows can cause focus loss when hidden

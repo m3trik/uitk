@@ -120,9 +120,16 @@ class RecentValuesPopup(QtCore.QObject):
         self._watched_widgets.clear()
 
     def eventFilter(self, watched, event):
-        """Close popup when any parent widget is hidden."""
-        if event.type() == QtCore.QEvent.Hide:
+        """Close popup when any parent widget is hidden or a window-ancestor moves."""
+        et = event.type()
+        if et == QtCore.QEvent.Hide:
             self.close()
+        elif et == QtCore.QEvent.Move:
+            try:
+                if watched.isWindow():
+                    self.close()
+            except RuntimeError:
+                pass
         return False
 
     def connect_signals(self, on_value_selected=None, on_value_removed=None):
