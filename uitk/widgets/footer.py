@@ -15,20 +15,24 @@ except ImportError:  # Optional dependency; controller will fall back to simple 
 
 
 class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
-    """Footer is a widget that acts as a status bar with integrated progress bar.
+    """Footer is a widget that acts as a status bar with an integrated
+    thin progress indicator across the bottom edge.
 
-    It provides a customizable footer bar with:
-        - Status text display
-        - Integrated progress bar (shown during tasks)
-        - Optional size grip for window resizing
-
-    The footer uses a stacked widget to switch between status text and progress bar,
-    providing a clean interface for both static status and progress feedback.
+    Layout: a QStackedWidget hosts the visible page (extensible for
+    future modes like search/filter). Page 0 stacks the status label
+    above a slim QProgressBar (textless, hidden when idle). The status
+    label carries all human-readable text — including the "Hold Esc to
+    cancel…" hint relayed from the progress bar via signals. The
+    progress affordance stays minimal while the footer remains the
+    single source of truth for text.
 
     Attributes:
         progress_bar (ProgressBar): The embedded progress bar widget
         status_label (QLabel): The status text label
     """
+
+    # Pixel height of the slim progress indicator at the bottom edge.
+    PROGRESS_BAR_HEIGHT = 3
 
     def __init__(
         self,
@@ -49,12 +53,17 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._default_status_text = ""
         self._size_grip = None
 
-        # Main layout
+        # Hold-to-cancel relay: ProgressBar emits holdStarted/holdEnded;
+        # we swap the status text and restore it on release.
+        self._status_before_hold: Optional[str] = None
+
+        # Main outer layout (horizontal — leaves room for the size grip on the right)
         self.main_layout = QtWidgets.QHBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 2)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        # Stacked widget for status/progress
+        # Stacked widget keeps room for future alternate pages (search,
+        # filter, etc.) without restructuring the footer.
         self._stacked_widget = QtWidgets.QStackedWidget()
         self._stacked_widget.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred
@@ -62,23 +71,34 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._stacked_widget.setFrameShape(QtWidgets.QFrame.NoFrame)
         self._stacked_widget.setContentsMargins(0, 0, 0, 0)
 
-        # Status label (page 0)
+        # Page 0 — status label (top, fills available space) + slim
+        # progress bar pinned to the bottom edge.
+        content = QtWidgets.QWidget()
+        content_layout = QtWidgets.QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
         self._status_label = QtWidgets.QLabel()
         self._status_label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self._status_label.setIndent(8)
-        # Prevent the label's text from dictating the widget's minimum width
         self._status_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred
+            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding
         )
-        self._stacked_widget.addWidget(self._status_label)
+        content_layout.addWidget(self._status_label)
 
-        # Progress bar (page 1)
-        self._progress_bar = ProgressBar(auto_hide=False)
-        self._progress_bar.setTextVisible(True)
+        self._progress_bar = ProgressBar(auto_hide=True)
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setFixedHeight(self.PROGRESS_BAR_HEIGHT)
+        self._progress_bar.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
         self._progress_bar.finished.connect(self._on_progress_finished)
         self._progress_bar.cancelled.connect(self._on_progress_finished)
-        self._stacked_widget.addWidget(self._progress_bar)
+        self._progress_bar.holdStarted.connect(self._on_hold_started)
+        self._progress_bar.holdEnded.connect(self._on_hold_ended)
+        content_layout.addWidget(self._progress_bar)
 
+        self._stacked_widget.addWidget(content)
         self.main_layout.addWidget(self._stacked_widget)
 
         # Style children to blend with footer background (transparent, no borders, no hover)
@@ -275,18 +295,11 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._status_text = text or ""
         self._elide_status_text()
 
-        # Switch to status view if not showing progress
-        if self._stacked_widget.currentIndex() != 1:
-            self._stacked_widget.setCurrentIndex(0)
-
     def setDefaultStatusText(self, text: str | None = None) -> None:
         """Set fallback text shown when no explicit status is provided."""
         self._default_status_text = text or ""
         if not self._status_text:
             self._elide_status_text()
-            # Ensure we're showing the status view
-            if self._stacked_widget.currentIndex() != 1:
-                self._stacked_widget.setCurrentIndex(0)
 
     def statusText(self) -> str:
         """Get the status text of the footer.
@@ -298,7 +311,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
     def start_progress(
         self,
-        total: int = 100,
+        total: Optional[int] = 100,
         text: str = "",
     ) -> Callable[[int, Optional[str]], bool]:
         """Start showing progress in the footer.
@@ -317,40 +330,47 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
                     break  # Cancelled
             footer.finish_progress()
         """
-        self._stacked_widget.setCurrentIndex(1)
-        self._progress_bar.start_task(total, text, show=True)
-        return self._progress_bar.update_progress
+        # Status text lives on the footer's label; the slim bar itself
+        # carries no visible text (setTextVisible=False).
+        if text:
+            self.setStatusText(text)
+        self._progress_bar.start_task(total, text="", show=True)
+        return self.update_progress
 
     def update_progress(self, value: int, text: Optional[str] = None) -> bool:
-        """Update the progress value.
+        """Update the progress value and optionally the status text.
 
         Parameters:
             value: Current progress value
-            text: Optional new status text
+            text: Optional new status text (shown in the footer label,
+                not on the bar itself).
 
         Returns:
             False if cancelled, True otherwise
         """
-        return self._progress_bar.update_progress(value, text)
+        if text is not None and self._status_before_hold is None:
+            # Skip status updates during a hold; the held hint stays put,
+            # and we restore the pre-hold text on release.
+            self.setStatusText(text)
+        return self._progress_bar.update_progress(value)
 
     def finish_progress(self, text: Optional[str] = None, delay_ms: int = 1000):
-        """Finish the progress and switch back to status text.
+        """Finish the progress and hide the bar.
 
         Parameters:
-            text: Optional completion message to show briefly
-            delay_ms: Delay before switching back to status (default 1000ms)
+            text: Optional completion message to show briefly in the
+                footer label.
+            delay_ms: Delay before hiding the bar (default 1000ms).
         """
         if text:
-            self._progress_bar.setFormat(text)
-            self._progress_bar.setValue(self._progress_bar.maximum())
-
+            self.setStatusText(text)
         QtCore.QTimer.singleShot(delay_ms, self._on_progress_finished)
 
     def cancel_progress(self):
         """Cancel the current progress operation."""
         self._progress_bar.cancel()
 
-    def progress(self, total: int = 100, text: str = "") -> "FooterProgressContext":
+    def progress(self, total: Optional[int] = 100, text: str = "") -> "FooterProgressContext":
         """Context manager for progress tracking.
 
         Parameters:
@@ -370,9 +390,23 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         return FooterProgressContext(self, total, text)
 
     def _on_progress_finished(self):
-        """Handle progress completion - switch back to status."""
-        self._stacked_widget.setCurrentIndex(0)
+        """Handle progress completion - hide the slim bar."""
+        self._progress_bar.hide()
         self._progress_bar.reset()
+
+    def _on_hold_started(self, hold_ms: int):
+        """Relay the bar's hold hint into the status label."""
+        if self._status_before_hold is None:
+            self._status_before_hold = self._status_text
+        self.setStatusText(f"Hold Esc to cancel… ({hold_ms} ms)")
+
+    def _on_hold_ended(self):
+        """Restore the pre-hold status text when Escape is released."""
+        if self._status_before_hold is None:
+            return
+        prior = self._status_before_hold
+        self._status_before_hold = None
+        self.setStatusText(prior)
 
     def resizeEvent(self, event):
         """Debounce resize: restart timer on each event so we only
@@ -422,31 +456,31 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._status_label.setText(elided)
 
     def _apply_transparent_style(self):
-        """Style stacked widget and children to blend seamlessly with footer."""
-        # Transparent background, no border, no hover effects
-        transparent_style = """
-            QStackedWidget {
-                background: transparent;
-                border: none;
-            }
-            QLabel {
-                background: transparent;
-                border: none;
-            }
-            QProgressBar {
-                background: transparent;
-                border: none;
-            }
-            QProgressBar::chunk {
-                border: none;
-            }
+        """Style children to blend seamlessly with the footer.
+
+        The theme stylesheet (style.qss) sets `padding-right: 10000px`
+        and `text-align: right` on horizontal QProgressBars, which
+        collapses the chunk's drawable area to zero. The slim indicator
+        carries no text and only needs the chunk visible, so we override
+        padding/margin and let the theme's chunk color come through.
         """
-        self._stacked_widget.setStyleSheet(transparent_style)
-        self._status_label.setStyleSheet("background: transparent; border: none;")
-        self._progress_bar.setStyleSheet(
-            "QProgressBar { background: transparent; border: none; }"
-            "QProgressBar::chunk { border: none; }"
+        bar_style = (
+            "QProgressBar {"
+            "  background: transparent;"
+            "  border: none;"
+            "  padding: 0;"
+            "  margin: 0;"
+            "}"
+            "QProgressBar::chunk {"
+            "  border: none;"
+            "  margin: 0;"
+            "}"
         )
+        self._stacked_widget.setStyleSheet(
+            "QStackedWidget { background: transparent; border: none; }"
+        )
+        self._status_label.setStyleSheet("background: transparent; border: none;")
+        self._progress_bar.setStyleSheet(bar_style)
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:
         """Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget."""
@@ -469,7 +503,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 class FooterProgressContext:
     """Context manager for footer progress tracking."""
 
-    def __init__(self, footer: Footer, total: int, text: str):
+    def __init__(self, footer: Footer, total: Optional[int], text: str):
         self._footer = footer
         self._total = total
         self._text = text

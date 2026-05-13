@@ -89,10 +89,10 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
 
         colorValue = self.settings.value(f"colorSwatch/{self.objectName()}/color", None)
 
-        # If colorValue is None (indicating no value was previously stored),
-        # use a default QColor object instead of QtCore.Qt.white
+        # Nothing persisted yet — leave _color unset so initializeColor's
+        # fallback path picks up _initialColor instead of clobbering it.
         if colorValue is None:
-            colorValue = QtGui.QColor(QtCore.Qt.white)
+            return
 
         self.color = colorValue
 

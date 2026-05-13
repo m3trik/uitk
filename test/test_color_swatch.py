@@ -208,6 +208,7 @@ class TestColorSwatchSettings(QtBaseTestCase):
         # Clear test keys before each test
         self.settings.remove("colorSwatch/test_persist")
         self.settings.remove("colorSwatch/test_initial")
+        self.settings.remove("colorSwatch/test_initial_hex")
         self.settings.sync()
 
     def test_save_and_load_color(self):
@@ -257,15 +258,30 @@ class TestColorSwatchSettings(QtBaseTestCase):
                 setObjectName="test_initial",
             )
         )
+        # Drain the deferred initializeRequested QTimer.singleShot.
         app.processEvents()
-        # loadColor finds nothing saved, so initializeColor falls back to _initialColor
-        # Note: loadColor sets color to white default when nothing saved,
-        # but the _initialColor only applies if _color is invalid after load.
-        # Actually loadColor with no saved value sets self.color = QColor(Qt.white).
-        # So the fallback in initializeColor won't trigger since _color is set.
-        # This means we need to check the actual behavior.
-        self.assertIsInstance(swatch.color, QtGui.QColor)
-        self.assertTrue(swatch.color.isValid())
+        app.processEvents()
+        self.assertEqual(swatch.color.red(), 180)
+        self.assertEqual(swatch.color.green(), 120)
+        self.assertEqual(swatch.color.blue(), 120)
+
+    def test_initial_color_from_hex_string_when_no_saved_settings(self):
+        """Should accept a hex string as initial color and not fall back to white."""
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        self.settings.remove("colorSwatch/test_initial_hex")
+        swatch = self.track_widget(
+            ColorSwatch(
+                color="#88B8D0",
+                settings=self.settings,
+                setObjectName="test_initial_hex",
+            )
+        )
+        app.processEvents()
+        app.processEvents()
+        self.assertEqual(swatch.color.red(), 0x88)
+        self.assertEqual(swatch.color.green(), 0xB8)
+        self.assertEqual(swatch.color.blue(), 0xD0)
 
 
 # =============================================================================
