@@ -20,6 +20,7 @@ Example
 ... )
 >>> editor.show()
 """
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 from qtpy import QtWidgets, QtCore, QtGui
@@ -28,8 +29,10 @@ from uitk.widgets.colorSwatch import ColorSwatch
 from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.widgets.mixins.preset_manager import PresetManager
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
+from uitk.widgets.widgetComboBox import WidgetComboBox
 
 ColorValue = Union[str, Tuple[str, str]]
 
@@ -338,6 +341,35 @@ class ColorMappingEditor(QtWidgets.QWidget):
             result[key] = self._current_color(key)
         return result
 
+    def apply_color_map(
+        self,
+        cmap: Dict[str, ColorValue],
+        save_to_settings: bool = True,
+    ) -> None:
+        """Apply *cmap* to the swatches and (optionally) persist to settings.
+
+        Used by the preset loader: the dict comes from a preset file and
+        contains hex strings (single) or ``[fg_hex, bg_hex]`` lists (pair).
+        Unknown keys are ignored so a preset saved with an older schema
+        still loads cleanly.  Writes follow the **default** shape for each
+        key (which is what ``_current_color`` reads back), broadcasting a
+        scalar to both ``/fg`` and ``/bg`` slots when the default is a pair,
+        and collapsing a pair to its foreground when the default is scalar.
+        """
+        for key, value in cmap.items():
+            if key not in self._swatches:
+                continue
+            self._apply_color(key, value)
+            if save_to_settings and self._settings is not None:
+                if self._is_pair(self._default_for(key)):
+                    fg, bg = value if self._is_pair(value) else (value, value)
+                    self._settings.setValue(f"{key}/fg", fg)
+                    self._settings.setValue(f"{key}/bg", bg)
+                else:
+                    val = value[0] if self._is_pair(value) else value
+                    self._settings.setValue(key, val)
+        self.colors_changed.emit(self.color_map())
+
 
 class ColorMappingDialog(QtWidgets.QDialog):
     """``QDialog`` wrapper around :class:`ColorMappingEditor`.
@@ -351,8 +383,14 @@ class ColorMappingDialog(QtWidgets.QDialog):
         Forwarded to ``ColorMappingEditor``.
     title : str
         Window title.
+    preset_dir : str or Path, optional
+        When set, a preset combobox is added to the footer with
+        Save/Rename/Delete/Open Folder actions.  A ``"default"`` preset
+        is auto-written from *defaults* on first use if missing.
     parent : QWidget, optional
     """
+
+    DEFAULT_PRESET_NAME = "default"
 
     colors_changed = QtCore.Signal(dict)
 
@@ -364,6 +402,7 @@ class ColorMappingDialog(QtWidgets.QDialog):
         settings_ns=None,
         swatch_size: int = 22,
         title: str = "Color Mapping",
+        preset_dir: Optional[Union[str, Path]] = None,
         parent=None,
     ):
         super().__init__(None)
@@ -407,6 +446,12 @@ class ColorMappingDialog(QtWidgets.QDialog):
         self._footer.setDefaultStatusText(
             f"{len(defaults)} color{'s' if len(defaults) != 1 else ''}"
         )
+
+        self._preset_manager: Optional[PresetManager] = None
+        self._preset_combo: Optional[WidgetComboBox] = None
+        if preset_dir is not None:
+            self._setup_presets(preset_dir)
+
         self._footer.add_action_button(
             icon_name="undo",
             tooltip="Restore all colors to defaults",
@@ -420,6 +465,44 @@ class ColorMappingDialog(QtWidgets.QDialog):
         self.style = StyleSheet(self)
         self.style.set(theme="dark")
         self._size_initialized = False
+
+    def _setup_presets(self, preset_dir: Union[str, Path]) -> None:
+        """Build a :class:`PresetManager` and footer combo for *preset_dir*.
+
+        The preset stores no widget values — colors are carried in the
+        ``_meta`` block via *metadata_provider* / *on_metadata_loaded*.
+        A "default" preset is auto-written from the editor's defaults
+        on first use so users always have a one-click revert path.
+        """
+        self._preset_manager = PresetManager(preset_dir=preset_dir, widgets=[])
+        self._preset_manager.metadata_provider = lambda: {
+            "colors": self._editor.color_map()
+        }
+        self._preset_manager.on_metadata_loaded = self._on_preset_loaded
+
+        if not self._preset_manager.exists(self.DEFAULT_PRESET_NAME):
+            # Save defaults (not user overrides) as the canonical baseline
+            saved_provider = self._preset_manager.metadata_provider
+            self._preset_manager.metadata_provider = lambda: {
+                "colors": dict(self._editor._defaults)
+            }
+            try:
+                self._preset_manager.save(self.DEFAULT_PRESET_NAME)
+            finally:
+                self._preset_manager.metadata_provider = saved_provider
+
+        self._preset_combo = WidgetComboBox(self._footer)
+        self._preset_combo.setObjectName("cmb_color_presets")
+        self._preset_combo.setToolTip("Load a saved color preset.")
+        self._preset_combo.setMinimumWidth(140)
+        self._footer.add_widget(self._preset_combo, side="left")
+        self._preset_manager.wire_combo(self._preset_combo)
+
+    def _on_preset_loaded(self, meta: dict) -> None:
+        """``PresetManager.on_metadata_loaded`` callback — applies colors."""
+        colors = meta.get("colors") if isinstance(meta, dict) else None
+        if colors:
+            self._editor.apply_color_map(colors)
 
     def showEvent(self, event):
         super().showEvent(event)

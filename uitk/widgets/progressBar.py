@@ -3,15 +3,18 @@
 from typing import Optional, Callable
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.shortcuts import GlobalShortcut
 
 
 class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     """A feature-rich progress bar with task execution support.
 
     Features:
-        - Cancellable operations via Escape key
+        - Hold Escape to cancel an active task (routed through
+          uitk's GlobalShortcut so focus is not required)
         - Context manager support for easy task wrapping
         - Callback-based progress updates
+        - Indeterminate / busy mode for tasks without progress signal
         - Auto-hide when complete
         - Optional status text display
 
@@ -38,14 +41,30 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     started = QtCore.Signal()
     finished = QtCore.Signal()
     progressChanged = QtCore.Signal(int, int)  # current, total
+    # Hold-to-cancel signals — let containers (e.g. Footer) display the
+    # "Hold Esc to cancel…" hint somewhere visible since this bar might
+    # have setTextVisible(False) when used as a thin indicator.
+    holdStarted = QtCore.Signal(int)  # cancel_hold_ms
+    holdEnded = QtCore.Signal()
 
-    def __init__(self, parent=None, auto_hide=True, **kwargs):
+    def __init__(
+        self,
+        parent=None,
+        auto_hide=True,
+        cancel_hold_ms: int = 500,
+        **kwargs,
+    ):
         """Initialize the progress bar.
 
         Parameters:
             parent: Parent widget
             auto_hide: Whether to hide when complete (default True)
+            cancel_hold_ms: Time the user must hold Escape to cancel
+                an active task. 0 disables hold-to-cancel.
             **kwargs: Additional widget attributes
+
+        Thread-safety: all methods must be called from the main (GUI)
+        thread. Touching a QProgressBar from a worker thread will crash.
         """
         super().__init__(parent)
 
@@ -53,6 +72,19 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         self._is_cancelled = False
         self._task_text = ""
         self._total = 100
+        self._indeterminate = False
+
+        # Hold-to-cancel state. The bar can't reliably receive keyboard
+        # focus (especially when embedded in a footer), so we use
+        # GlobalShortcut — the same primitive used by marking menus to
+        # detect press/release reliably under hosts like Maya.
+        self._cancel_hold_ms = max(0, int(cancel_hold_ms))
+        self._cancel_timer = QtCore.QTimer(self)
+        self._cancel_timer.setSingleShot(True)
+        self._cancel_timer.timeout.connect(self._on_cancel_held)
+        self._escape_held = False
+        self._format_before_hold: Optional[str] = None
+        self._cancel_shortcut: Optional[GlobalShortcut] = None  # lazy
 
         self.setVisible(False)
         self.setTextVisible(True)
@@ -80,9 +112,65 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     def cancel(self):
         """Cancel the current operation."""
         self._is_cancelled = True
+        self._disable_cancel_shortcut()
         self.cancelled.emit()
         if self._auto_hide:
             self.hide()
+
+    # ------------------------------------------------------------------
+    # Hold-to-cancel (Esc) — routed through uitk's GlobalShortcut so the
+    # bar doesn't need keyboard focus and press/release is detected
+    # reliably even inside Maya.
+    # ------------------------------------------------------------------
+    def _enable_cancel_shortcut(self):
+        if self._cancel_hold_ms <= 0:
+            return
+        if self._cancel_shortcut is None:
+            self._cancel_shortcut = GlobalShortcut(
+                "Esc",
+                parent=self,
+                context=QtCore.Qt.ApplicationShortcut,
+            )
+            self._cancel_shortcut.pressed.connect(self._on_escape_pressed)
+            self._cancel_shortcut.released.connect(self._on_escape_released)
+        self._cancel_shortcut.setEnabled(True)
+
+    def _disable_cancel_shortcut(self):
+        if self._cancel_shortcut is not None:
+            self._cancel_shortcut.setEnabled(False)
+        if self._cancel_timer.isActive():
+            self._cancel_timer.stop()
+        if self._escape_held and self._format_before_hold is not None:
+            self.setFormat(self._format_before_hold)
+        self._escape_held = False
+        self._format_before_hold = None
+
+    def _on_escape_pressed(self):
+        if self._escape_held:
+            return
+        self._escape_held = True
+        self._format_before_hold = self.format()
+        # Local format hint (visible only when textVisible=True). Containers
+        # using a thin bar without text should listen to holdStarted and
+        # display the hint themselves (e.g. in a sibling status label).
+        self.setFormat(f"Hold Esc to cancel… ({self._cancel_hold_ms} ms)")
+        QtWidgets.QApplication.processEvents()
+        self._cancel_timer.start(self._cancel_hold_ms)
+        self.holdStarted.emit(self._cancel_hold_ms)
+
+    def _on_escape_released(self):
+        if not self._escape_held:
+            return
+        self._escape_held = False
+        self._cancel_timer.stop()
+        if self._format_before_hold is not None:
+            self.setFormat(self._format_before_hold)
+            self._format_before_hold = None
+        self.holdEnded.emit()
+
+    def _on_cancel_held(self):
+        if self._escape_held:
+            self.cancel()
 
     def reset(self):
         """Reset the progress bar state."""
@@ -93,29 +181,42 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
 
     def start_task(
         self,
-        total: int = 100,
+        total: Optional[int] = 100,
         text: str = "",
         show: bool = True,
     ) -> None:
         """Start a new task.
 
         Parameters:
-            total: Total number of steps
+            total: Total number of steps. Pass None (or <= 0) for an
+                indeterminate / busy task — the bar shows a pulsing
+                animation and update_progress only affects status text.
             text: Optional status text to display
             show: Whether to show the progress bar
         """
         self.reset()
-        self._total = max(1, total)
         self._task_text = text
-        self.setMaximum(self._total)
 
-        if text:
-            self.setFormat(f"{text} - %p%")
+        if total is None or total <= 0:
+            # Qt's busy-indicator mode: min == max == 0.
+            self._indeterminate = True
+            self._total = 0
+            self.setMinimum(0)
+            self.setMaximum(0)
+            self.setFormat(text if text else "")
         else:
-            self.setFormat("%p%")
+            self._indeterminate = False
+            self._total = total
+            self.setMinimum(0)
+            self.setMaximum(self._total)
+            if text:
+                self.setFormat(f"{text} - %p%")
+            else:
+                self.setFormat("%p%")
 
         if show:
             self.show()
+        self._enable_cancel_shortcut()
         self.started.emit()
 
     def update_progress(
@@ -126,7 +227,8 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         """Update progress value.
 
         Parameters:
-            value: Current progress value
+            value: Current progress value (ignored in indeterminate mode
+                except as a step counter for the emitted signal).
             text: Optional new status text
 
         Returns:
@@ -135,11 +237,18 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         if self._is_cancelled:
             return False
 
-        self.setValue(min(value, self._total))
+        if not self._indeterminate:
+            self.setValue(min(value, self._total))
 
         if text is not None:
             self._task_text = text
-            self.setFormat(f"{text} - %p%")
+            # Skip the hold-to-cancel format swap while the user is
+            # mid-hold; the override is restored on key release.
+            if not self._escape_held:
+                if self._indeterminate:
+                    self.setFormat(text)
+                else:
+                    self.setFormat(f"{text} - %p%")
 
         self.progressChanged.emit(value, self._total)
         QtWidgets.QApplication.processEvents()
@@ -151,7 +260,15 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         Parameters:
             text: Optional completion message
         """
-        self.setValue(self._total)
+        self._disable_cancel_shortcut()
+        if self._indeterminate:
+            # Snap to a full determinate bar so the completion message
+            # has somewhere to live (Qt's busy mode hides the format).
+            self.setMaximum(1)
+            self.setValue(1)
+            self._indeterminate = False
+
+        self.setValue(self._total if self._total > 0 else 1)
 
         if text:
             self.setFormat(text)
@@ -191,13 +308,13 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
 
     def task(
         self,
-        total: int = 100,
+        total: Optional[int] = 100,
         text: str = "",
     ) -> "ProgressTaskContext":
         """Context manager for progress tracking.
 
         Parameters:
-            total: Total number of steps
+            total: Total number of steps. None (or <= 0) → indeterminate.
             text: Optional status text
 
         Returns:
@@ -216,18 +333,15 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         self._is_cancelled = False
         super().showEvent(event)
 
-    def keyPressEvent(self, event):
-        """Handle key press - Escape to cancel."""
-        if event.key() == QtCore.Qt.Key_Escape:
-            self.cancel()
-        else:
-            super().keyPressEvent(event)
+    # NOTE: Escape is handled by the GlobalShortcut enabled during
+    # start_task(), so keyPressEvent doesn't need to special-case it.
+    # Local key handling is left to the base class.
 
 
 class ProgressTaskContext:
     """Context manager for progress bar tasks."""
 
-    def __init__(self, progress_bar: ProgressBar, total: int, text: str):
+    def __init__(self, progress_bar: ProgressBar, total: Optional[int], text: str):
         self._progress_bar = progress_bar
         self._total = total
         self._text = text
@@ -241,7 +355,7 @@ class ProgressTaskContext:
         """Finish the task."""
         if exc_type is None and not self._progress_bar.is_cancelled:
             self._progress_bar.finish_task()
-        elif self._progress_bar._auto_hide:
+        elif self._progress_bar.auto_hide:
             self._progress_bar.hide()
         return False
 

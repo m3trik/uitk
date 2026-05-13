@@ -339,8 +339,7 @@ QAbstractSpinBox:disabled {
     border: 1px solid {DISABLED_BACKGROUND};
 }
 QAbstractSpinBox:hover {
-    border: 2px solid {BUTTON_HOVER};
-    color: {TEXT_HOVER};
+    border: 1px solid rgba(255,255,255,110);
 }
 QScrollBar:left-arrow,
 QScrollBar::right-arrow,
@@ -384,8 +383,7 @@ QComboBox:disabled {
     border: 1px solid {DISABLED_BACKGROUND};
 }
 QComboBox:hover {
-    border: 2px solid {BUTTON_HOVER};
-    color: {TEXT_HOVER};
+    border: 1px solid rgba(255,255,255,110);
 }
 QComboBox::open {
     selection-background-color: {WIDGET_BACKGROUND};
@@ -471,8 +469,7 @@ QLineEdit {
     padding: 0 8px;
 }
 QLineEdit:hover {
-    border: 2px solid {BUTTON_HOVER};
-    color: {TEXT_HOVER};
+    border: 1px solid rgba(255,255,255,110);
 }
 QLineEdit:disabled {
     color: {TEXT_DISABLED};
@@ -520,7 +517,7 @@ QTextEdit {
     background-color: {WIDGET_BACKGROUND};
 }
 QTextEdit:hover {
-    border: 1px solid rgba(255,255,255,45);
+    border: 1px solid rgba(255,255,255,110);
 }
 QTextEdit:disabled {
     color: {TEXT_DISABLED};
@@ -543,7 +540,7 @@ QPlainTextEdit {
     color: {TEXT_COLOR};
 }
 QPlainTextEdit:hover {
-    border: 1px solid rgba(255,255,255,45);
+    border: 1px solid rgba(255,255,255,110);
 }
 QPlainTextEdit:disabled {
     color: {TEXT_DISABLED};
@@ -556,6 +553,7 @@ QAbstractItemView {
     alternate-background-color: {ALTERNATE_BACKGROUND};
     background-attachment: fixed;
     color: {TEXT_COLOR};
+    outline: 0;
 }
 QAbstractItemView::item:alternate {
     background-color: {ALTERNATE_BACKGROUND};
@@ -683,7 +681,7 @@ QFrame {
     border-radius: 1px;
 }
 QFrame:hover {
-    border: 1px solid rgba(255,255,255,45);
+    border: 1px solid rgba(255,255,255,110);
 }
 
 /* -- Scroll Areas -- */
@@ -694,7 +692,7 @@ QAbstractScrollArea {
     selection-color: {TEXT_COLOR};
 }
 QAbstractScrollArea:hover {
-    border: 1px solid rgba(255,255,255,45);
+    border: 1px solid rgba(255,255,255,110);
 }
 QAbstractScrollArea:disabled {
     color: {TEXT_DISABLED};
@@ -711,7 +709,7 @@ QAbstractSlider {
     background-color: {WIDGET_BACKGROUND};
 }
 QAbstractSlider:hover {
-    border: 1px solid rgba(255,255,255,45);
+    border: 1px solid rgba(255,255,255,110);
 }
 QAbstractSlider:disabled {
     color: {TEXT_DISABLED};
@@ -811,7 +809,7 @@ QProgressBar {
     background-color: {PANEL_BACKGROUND};
 }
 QProgressBar:hover {
-    border: 1px solid rgba(255,255,255,45);
+    border: 1px solid rgba(255,255,255,110);
 }
 QProgressBar:disabled {
     color: {TEXT_DISABLED};

@@ -529,6 +529,41 @@ class SwitchboardUtilsMixin:
 
         return result
 
+    def progress(
+        self,
+        ui=None,
+        total: Optional[int] = 100,
+        text: str = "",
+    ):
+        """Context manager that runs a long task with progress feedback.
+
+        Routes to the UI's footer.progress() if the active (or given) UI
+        has a footer widget; otherwise returns a no-op context so callers
+        can run unmodified on UIs without a footer.
+
+        Parameters:
+            ui: The UI to host the progress bar. Defaults to current_ui.
+            total: Total number of steps (max value). None (or <= 0) →
+                indeterminate / busy mode.
+            text: Optional status text shown alongside the bar.
+
+        Yields:
+            update(value, text=None) -> bool — returns False if cancelled.
+
+        Example:
+            with self.sb.progress(self.ui, total=len(items), text="Copying") as update:
+                for i, item in enumerate(items):
+                    process(item)
+                    if not update(i + 1):
+                        break  # user cancelled
+        """
+        if ui is None:
+            ui = getattr(self, "current_ui", None)
+        footer = getattr(ui, "footer", None) if ui is not None else None
+        if footer is not None and hasattr(footer, "progress"):
+            return footer.progress(total=total, text=text)
+        return _NoOpProgressContext()
+
     def message_box(
         self,
         string,
@@ -874,6 +909,23 @@ class SwitchboardUtilsMixin:
         from uitk.widgets.menu import Menu
 
         return Menu.run_modal(content_fn, parent=parent, **kwargs)
+
+
+class _NoOpProgressContext:
+    """Fallback context for SwitchboardUtilsMixin.progress() when no footer
+    is available. Yields a no-op update callable so caller code runs
+    unmodified — just without visible progress feedback.
+    """
+
+    def __enter__(self):
+        return self._noop
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+    @staticmethod
+    def _noop(value, text=None):
+        return True
 
 
 # --------------------------------------------------------------------------------------------
