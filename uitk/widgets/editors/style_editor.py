@@ -118,7 +118,7 @@ class StyleEditor(EditorPanel):
             swatch_layout.setAlignment(QtCore.Qt.AlignCenter)
 
             swatch = ColorSwatch(color=current_val)
-            swatch.setFixedSize(50, 20)
+            swatch.setFixedSize(50, 19)
             swatch_layout.addWidget(swatch)
 
             self.table.setCellWidget(i, 1, swatch_container)

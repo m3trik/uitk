@@ -25,11 +25,31 @@ _WIDGET_TYPE_CACHE: Dict[str, type] = {
     "QTextEdit": QtWidgets.QTextEdit,
     "QSpinBox": QtWidgets.QSpinBox,
     "QDoubleSpinBox": QtWidgets.QDoubleSpinBox,
-    "QComboBox": QtWidgets.QComboBox,
     "QSlider": QtWidgets.QSlider,
     "Separator": Separator,
     "QSeparator": Separator,  # Alias for consistency with Qt naming
 }
+
+# Names whose target class would create an import cycle at module load
+# (e.g. ComboBox transitively imports this module via MenuMixin). Resolved
+# and cached on first use by _resolve_widget_class.
+_LAZY_WIDGET_TYPES: Dict[str, Tuple[str, str]] = {
+    "QComboBox": ("uitk.widgets.comboBox", "ComboBox"),
+}
+
+
+def _resolve_widget_class(name: str):
+    cls = _WIDGET_TYPE_CACHE.get(name)
+    if cls is not None:
+        return cls
+    spec = _LAZY_WIDGET_TYPES.get(name)
+    if spec is None:
+        return None
+    import importlib
+
+    cls = getattr(importlib.import_module(spec[0]), spec[1])
+    _WIDGET_TYPE_CACHE[name] = cls
+    return cls
 
 # Widget types that should have item height constraints applied
 # (includes derived classes via isinstance check)
@@ -2469,7 +2489,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             if isinstance(x, str):
                 # OPTIMIZATION: Create widgets WITHOUT parent to avoid Qt tree overhead
                 # Parent will be assigned implicitly when added to gridLayout
-                widget_class = _WIDGET_TYPE_CACHE.get(x)
+                widget_class = _resolve_widget_class(x)
                 if widget_class:
                     widget = widget_class()
                 else:
