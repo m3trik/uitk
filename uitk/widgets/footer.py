@@ -106,7 +106,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         # Set up size grip
         self.setProperty("class", self.__class__.__name__)
-        self.setFixedHeight(20)
+        self.setFixedHeight(19)
 
         if add_size_grip:
             self._setup_size_grip()

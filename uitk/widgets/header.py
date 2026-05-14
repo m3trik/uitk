@@ -79,6 +79,7 @@ class Header(
         )
         self.__mousePressPos = None
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
+        self._full_title = ""  # Untruncated title for elision
 
         self.container_layout = QtWidgets.QHBoxLayout(self)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
@@ -95,7 +96,7 @@ class Header(
 
         self.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self.setIndent(8)  # adds left-side indentation to the text
-        self.setFixedHeight(20)
+        self.setFixedHeight(19)
 
         if config_buttons:
             # Unpack the list when calling the method
@@ -239,6 +240,7 @@ class Header(
     def resizeEvent(self, event):
         self.resize_buttons()
         self.update_font_size()
+        self._apply_elided_title()
         super().resizeEvent(event)
 
     def resize_buttons(self):
@@ -279,7 +281,37 @@ class Header(
         Returns:
             str: The current title.
         """
-        return self.text()
+        return self._full_title or self.text()
+
+    def setText(self, text):
+        """Override to remember the untruncated title for elision."""
+        self._full_title = text or ""
+        self._apply_elided_title()
+
+    def _apply_elided_title(self):
+        """Truncate the displayed title with an ellipsis when buttons would overlap."""
+        full = getattr(self, "_full_title", "")
+        # Rich text and pre-layout (width unknown): show the raw string so
+        # tags survive and sizeHint reflects the real content.
+        if not full or self.width() <= 0 or getattr(self, "has_rich_text", False):
+            if super().text() != full:
+                super().setText(full)
+            return
+        spacing = self.container_layout.spacing()
+        buttons_width = 0
+        visible_count = 0
+        for button in self.buttons.values():
+            if button.isVisible():
+                buttons_width += button.width()
+                visible_count += 1
+        if visible_count > 0:
+            buttons_width += spacing * visible_count
+        margins = self.container_layout.contentsMargins()
+        reserved = buttons_width + margins.left() + margins.right() + self.indent() + 4
+        available = max(0, self.width() - reserved)
+        elided = self.fontMetrics().elidedText(full, QtCore.Qt.ElideRight, available)
+        if elided != super().text():
+            super().setText(elided)
 
     def minimize_window(self):
         """Minimize the window: collapse to header-only, narrow to a fixed width,
@@ -552,8 +584,9 @@ class Header(
             margins = parent.layout().contentsMargins()
             new_height += margins.top() + margins.bottom()
 
-        # Save position for right-edge anchoring
-        if fixed_width is not None and fixed_width < window.width():
+        # Save position so we can anchor the right edge in place — keeps the
+        # collapse button under the cursor regardless of which way width changes.
+        if fixed_width is not None:
             self._collapse_saved_pos = window.pos()
 
         # Use setFixedHeight to force the exact collapsed height.
@@ -709,6 +742,10 @@ class Header(
         super().mouseReleaseEvent(event)
 
     def showEvent(self, event):
+        if self._minimized:
+            self.restore_window()
+        elif self._collapsed:
+            self.expand_window()
         super().showEvent(event)
         QtCore.QTimer.singleShot(0, self._finalize_menu_button_visibility)
 
