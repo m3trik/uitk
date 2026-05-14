@@ -171,23 +171,32 @@ class TagChipFilter(BrowserBase):
 
 
 class HideSystem(BrowserBase):
+    def _set_show_mode(self, mode):
+        # uitk's custom ComboBox.setCurrentText is decorated with
+        # @Signals.blockSignals to suppress in-flight emissions, so
+        # programmatic text-set won't fire currentTextChanged. Real user
+        # interaction goes through setCurrentIndex (no decorator), which
+        # is what we mimic here.
+        idx = self.browser._show.findText(mode)
+        self.browser._show.setCurrentIndex(idx)
+
     def test_hide_ui(self):
         self.browser._toggle_hide_ui("alpha", hide=True)
         self.assertEqual(self.proxy_names(), ["beta", "gamma"])
         # Switch to hidden mode
-        self.browser._show.setCurrentText(SHOW_HIDDEN)
+        self._set_show_mode(SHOW_HIDDEN)
         self.assertEqual(self.proxy_names(), ["alpha"])
 
     def test_hide_by_tag(self):
         self.browser._toggle_hide_tag("anim", hide=True)
         # alpha and beta both have anim tag → hidden
         self.assertEqual(self.proxy_names(), ["gamma"])
-        self.browser._show.setCurrentText(SHOW_HIDDEN)
+        self._set_show_mode(SHOW_HIDDEN)
         self.assertEqual(sorted(self.proxy_names()), ["alpha", "beta"])
 
     def test_show_all(self):
         self.browser._toggle_hide_ui("alpha", hide=True)
-        self.browser._show.setCurrentText(SHOW_ALL)
+        self._set_show_mode(SHOW_ALL)
         self.assertEqual(self.proxy_names(), ["alpha", "beta", "gamma"])
 
     def test_unhide_all(self):

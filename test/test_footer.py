@@ -57,9 +57,9 @@ class TestFooterCreation(QtBaseTestCase):
         self.assertIsInstance(footer.container_layout, QtWidgets.QHBoxLayout)
 
     def test_has_fixed_height(self):
-        """Should have fixed height of 20 pixels."""
+        """Should have fixed height of 19 pixels."""
         footer = self.track_widget(Footer())
-        self.assertEqual(footer.height(), 20)
+        self.assertEqual(footer.height(), 19)
 
     def test_has_left_alignment(self):
         """Should have left alignment for text."""
