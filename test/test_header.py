@@ -58,9 +58,9 @@ class TestHeaderCreation(QtBaseTestCase):
         self.assertEqual(header.cursor().shape(), QtCore.Qt.OpenHandCursor)
 
     def test_has_fixed_height(self):
-        """Should have fixed height of 20 pixels."""
+        """Should have fixed height of 19 pixels."""
         header = self.track_widget(Header())
-        self.assertEqual(header.height(), 20)
+        self.assertEqual(header.height(), 19)
 
     def test_has_bold_font(self):
         """Should have bold font."""
