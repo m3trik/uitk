@@ -73,6 +73,11 @@ jobs:
             -q ".[] | select(.title == \"$TITLE\") | .number" \
             | head -1)
 
+          # Ensure the 'docs' label exists. ``gh issue create --label`` errors
+          # if the label is missing, which would mask the actual drift report
+          # behind a workflow failure. Idempotent create-or-noop.
+          gh label create docs --color 0075ca --description "Documentation" 2>/dev/null || true
+
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$BODY"
           else

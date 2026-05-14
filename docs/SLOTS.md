@@ -53,7 +53,7 @@ def btn_save_init(self, widget):
 
 ## 3. Default signals
 
-UITK auto-connects the slot method to the widget's default signal, chosen by base Qt type in [_slots.py:182](../uitk/switchboard/_slots.py#L182):
+UITK auto-connects the slot method to the widget's default signal, chosen by base Qt type in [slots.py:182](../uitk/switchboard/slots.py#L182):
 
 | Base type | Default signal | Callback args |
 |:---|:---|:---|
@@ -88,7 +88,7 @@ Custom UITK widgets inherit these by base type (a `uitk.PushButton` is a `QPushB
 
 ## 4. Parameter injection
 
-UITK introspects your slot's signature ([_slots.py:87](../uitk/switchboard/_slots.py#L87)) and injects `widget` as a kwarg if the name is present. The signal's own args are passed positionally as usual.
+UITK introspects your slot's signature ([slots.py:87](../uitk/switchboard/slots.py#L87)) and injects `widget` as a kwarg if the name is present. The signal's own args are passed positionally as usual.
 
 ```python
 def btn_save(self): ...                       # no params
@@ -157,7 +157,7 @@ def spn_start_init(self, widget):
     widget.debounce = 400   # coalesce rapid clicks into one call
 ```
 
-Implementation: [_slots.py:125](../uitk/switchboard/_slots.py#L125).
+Implementation: [slots.py:125](../uitk/switchboard/slots.py#L125).
 
 ### `widget.slot_timeout: float`
 

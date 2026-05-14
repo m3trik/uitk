@@ -365,7 +365,7 @@ Monochrome SVG icons are auto-colored by the `IconManager` mixin, reading `ICON_
 
 ## 10. UI hierarchy via tag depth
 
-`get_ui_relatives(ui, upstream=False, exact=False, downstream=False, reverse=False)` in [switchboard.py:549](../uitk/switchboard.py#L549).
+`get_ui_relatives(ui, upstream=False, exact=False, downstream=False, reverse=False)` in [_core.py:639](../uitk/switchboard/_core.py#L639).
 
 1. Resolve target to base name (`get_base_name("menu#file") == "menu"`).
 2. Find all UIs in `ui_registry` sharing that base name.
@@ -383,7 +383,7 @@ Returns names or loaded widgets depending on input type. Enables:
 
 ## 11. Resolution order for `sb.loaded_ui.xxx`
 
-From [switchboard.py:254](../uitk/switchboard.py#L254):
+From [_core.py:342](../uitk/switchboard/_core.py#L342):
 
 ```
 sb.loaded_ui.editor

@@ -541,7 +541,7 @@ Mixin-provided properties:
 
 ## Default signals table
 
-From [_slots.py:182](../uitk/switchboard/_slots.py#L182):
+From [slots.py:182](../uitk/switchboard/slots.py#L182):
 
 | Qt class | Default signal |
 |:---|:---|
