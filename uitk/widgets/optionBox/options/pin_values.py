@@ -688,16 +688,18 @@ class PinValuesOption(ButtonOption):
         current_value = self._get_widget_value()
         current_is_pinned = self._get_entry_for_value(current_value) is not None
 
+        # Preserve the size set by the parent OptionBox so swapping pinned
+        # state doesn't oscillate the icon size.
         if current_is_pinned:
-            IconManager.set_icon(self._widget, "radio", size=(17, 17))
+            IconManager.swap_icon(self._widget, "radio", fallback_size=(17, 17))
             self._widget.setToolTip(
                 f"Pinned values ({len(self._pinned_entries)}) - current value is pinned"
             )
         elif self._pinned_entries:
-            IconManager.set_icon(self._widget, "radio_empty", size=(17, 17))
+            IconManager.swap_icon(self._widget, "radio_empty", fallback_size=(17, 17))
             self._widget.setToolTip(f"Pinned values ({len(self._pinned_entries)})")
         else:
-            IconManager.set_icon(self._widget, "radio_empty", size=(17, 17))
+            IconManager.swap_icon(self._widget, "radio_empty", fallback_size=(17, 17))
             self._widget.setToolTip("Pin values")
 
     @property

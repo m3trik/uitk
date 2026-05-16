@@ -213,6 +213,70 @@ class TestHeaderTitle(QtBaseTestCase):
         header.setText("Current Text")
         self.assertEqual(header.title(), "Current Text")
 
+    def test_set_version_composes_with_title(self):
+        """setVersion should append ' v<version>' after the title."""
+        header = self.track_widget(Header())
+        header.setTitle("Map Compositor")
+        header.setVersion("1.2.3")
+        self.assertEqual(header.version(), "1.2.3")
+        self.assertEqual(header.title(), "Map Compositor")
+        # The displayed text composes both
+        self.assertIn("Map Compositor", header._composed_title())
+        self.assertIn("v1.2.3", header._composed_title())
+
+    def test_clearing_version_removes_suffix(self):
+        """Passing an empty version should drop the suffix."""
+        header = self.track_widget(Header())
+        header.setTitle("App")
+        header.setVersion("0.1.0")
+        header.setVersion("")
+        self.assertEqual(header._composed_title(), "App")
+
+
+class TestHeaderAutoHideWithOsFrame(QtBaseTestCase):
+    """When the top-level window has a native OS title bar, the header hides itself.
+
+    Feature: avoids stacking two title bars in the same window.
+    Added: 2026-05-16
+    """
+
+    def test_hides_when_window_has_os_frame(self):
+        """Default auto_hide_with_os_frame=True should hide on non-frameless windows."""
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window)  # OS frame
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window)
+        layout.addWidget(header)
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        # The auto-hide is deferred via QTimer.singleShot(0, ...); flush it
+        QtCore.QCoreApplication.processEvents()
+        self.assertFalse(header.isVisible())
+
+    def test_visible_when_window_is_frameless(self):
+        """Frameless windows should leave the header visible."""
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window)
+        layout.addWidget(header)
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        QtCore.QCoreApplication.processEvents()
+        self.assertTrue(header.isVisible())
+
+    def test_opt_out_keeps_header_visible(self):
+        """auto_hide_with_os_frame=False should keep the header visible on framed windows."""
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window)
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window, auto_hide_with_os_frame=False)
+        layout.addWidget(header)
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        QtCore.QCoreApplication.processEvents()
+        self.assertTrue(header.isVisible())
+
 
 class TestHeaderMenu(QtBaseTestCase):
     """Tests for Header menu integration."""
@@ -259,11 +323,41 @@ class TestHeaderButtonDefinitions(QtBaseTestCase):
         """Should have refresh definition."""
         self.assertIn("refresh", Header.button_definitions)
 
+    def test_button_definitions_has_fullscreen_button(self):
+        """Should have fullscreen definition."""
+        self.assertIn("fullscreen", Header.button_definitions)
+
     def test_button_definition_contains_icon_and_method(self):
         """Should have (icon, method) tuple for each button."""
         for name, definition in Header.button_definitions.items():
             self.assertIsInstance(definition, tuple)
             self.assertEqual(len(definition), 2)
+
+
+class TestHeaderFullscreenButton(QtBaseTestCase):
+    """Tests for the fullscreen toggle button.
+
+    Added: 2026-05-16
+    """
+
+    def test_config_buttons_adds_fullscreen_button(self):
+        header = self.track_widget(Header(config_buttons=["fullscreen"]))
+        self.assertIn("fullscreen", header.buttons)
+
+    def test_toggle_fullscreen_calls_window_full_then_normal(self):
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window)
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window, config_buttons=["fullscreen"])
+        layout.addWidget(header)
+        window.showFullScreen = MagicMock()
+        window.showNormal = MagicMock()
+        window.isFullScreen = MagicMock(return_value=False)
+        header.toggle_fullscreen()
+        window.showFullScreen.assert_called_once()
+        window.isFullScreen.return_value = True
+        header.toggle_fullscreen()
+        window.showNormal.assert_called_once()
 
 
 class TestHeaderRefreshButton(QtBaseTestCase):

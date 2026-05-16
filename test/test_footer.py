@@ -354,6 +354,36 @@ class TestFooterClass(QtBaseTestCase):
         self.assertEqual(class_prop, "Footer")
 
 
+class TestFooterWidgetRounding(QtBaseTestCase):
+    """Tests for the footerRounded style property on added widgets.
+
+    Feature: footer widgets get slightly rounded corners by default.
+    Added: 2026-05-16
+    """
+
+    def test_add_widget_defaults_to_rounded(self):
+        footer = self.track_widget(Footer())
+        widget = QtWidgets.QPushButton("X")
+        footer.add_widget(widget)
+        self.assertTrue(widget.property("footerRounded"))
+
+    def test_add_widget_can_opt_out_of_rounded(self):
+        footer = self.track_widget(Footer())
+        widget = QtWidgets.QPushButton("X")
+        footer.add_widget(widget, rounded=False)
+        self.assertFalse(widget.property("footerRounded"))
+
+    def test_add_action_button_defaults_to_rounded(self):
+        footer = self.track_widget(Footer())
+        btn = footer.add_action_button(text="X")
+        self.assertTrue(btn.property("footerRounded"))
+
+    def test_add_action_button_can_opt_out_of_rounded(self):
+        footer = self.track_widget(Footer())
+        btn = footer.add_action_button(text="X", rounded=False)
+        self.assertFalse(btn.property("footerRounded"))
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

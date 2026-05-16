@@ -367,6 +367,79 @@ class IconManager:
 
         return QtGui.QIcon()
 
+    @staticmethod
+    def fit_size(container_size, margin: int = 4, min_size: int = 8) -> int:
+        """Compute a square icon extent that fits inside ``container_size`` px.
+
+        Leaves ``margin`` pixels of breathing room around the glyph (so the
+        same formula works for cell decorations, header buttons, footer
+        buttons and option-box buttons regardless of their host height).
+
+        Parameters:
+            container_size: Pixel size of the square hosting widget/cell.
+            margin: Total padding to subtract (i.e. the result is
+                ``container_size - margin``, clamped to ``min_size``).
+            min_size: Lower bound for the returned extent.
+
+        Returns:
+            int: The computed icon edge length in pixels.
+        """
+        return max(int(min_size), int(container_size) - int(margin))
+
+    @classmethod
+    def fit_icon(
+        cls,
+        widget,
+        name: str,
+        container_size,
+        margin: int = 4,
+        min_size: int = 8,
+        color: str = None,
+        auto_theme: bool = True,
+    ) -> int:
+        """Render *name* onto *widget* sized to fit a square container.
+
+        Convenience wrapper combining :meth:`fit_size` and :meth:`set_icon`:
+        rasterizes the SVG at the computed extent (so it stays crisp instead
+        of being scaled from a placeholder) and sets both ``setIcon`` and
+        ``setIconSize`` in one call.  Use this anywhere an icon should track
+        the size of its host widget.
+
+        Returns the resolved icon extent.
+        """
+        extent = cls.fit_size(container_size, margin=margin, min_size=min_size)
+        cls.set_icon(
+            widget, name, size=(extent, extent), color=color, auto_theme=auto_theme
+        )
+        return extent
+
+    @classmethod
+    def swap_icon(
+        cls,
+        widget,
+        name: str,
+        color: str = None,
+        auto_theme: bool = True,
+        fallback_size=(16, 16),
+    ) -> None:
+        """Replace the icon on *widget* without changing its display size.
+
+        Use this for state-cycling buttons (active/inactive, pinned/unpinned,
+        play/pause) where the host was already sized by something else
+        (typically :meth:`fit_icon`) and only the glyph should change.
+        Reads ``widget.iconSize()`` and re-rasterizes at that extent, falling
+        back to the previously-registered size and finally *fallback_size*.
+        """
+        size = None
+        if hasattr(widget, "iconSize"):
+            qs = widget.iconSize()
+            if qs.isValid() and qs.width() > 0:
+                size = (qs.width(), qs.height())
+        if size is None:
+            info = cls._widget_icon_info.get(id(widget))
+            size = info["size"] if info else fallback_size
+        cls.set_icon(widget, name, size=size, color=color, auto_theme=auto_theme)
+
     @classmethod
     def set_icon(
         cls,

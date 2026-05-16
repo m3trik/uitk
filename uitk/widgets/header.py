@@ -38,6 +38,7 @@ class Header(
         "collapse": ("chevron_up.svg", "toggle_collapse"),
         "minimize": ("minimize.svg", "minimize_window"),
         "maximize": ("maximize.svg", "toggle_maximize"),
+        "fullscreen": ("screen.svg", "toggle_fullscreen"),
         "hide": ("close.svg", "hide_window"),
         "pin": ("radio_empty.svg", "toggle_pin"),
     }
@@ -47,6 +48,7 @@ class Header(
         parent=None,
         config_buttons=None,
         pin_on_drag_only=True,
+        auto_hide_with_os_frame=True,
         **kwargs,
     ):
         """Initialize the Header with buttons and layout.
@@ -61,11 +63,17 @@ class Header(
                 the window, and only dragging the header pins it. If False, clicking the pin
                 button toggles traditional pin/unpin behavior.
                 Defaults to True.
+            auto_hide_with_os_frame (bool, optional): If True (default), the
+                header hides itself when its top-level window has a native
+                OS title bar (i.e. is not frameless), so the two title bars
+                don't stack. Set False to force the header to always show.
             **kwargs: Additional attributes for the header (e.g., setTitle="My Title").
         """
         super().__init__(parent)
         self.pinned = False  # unpinned, pinned
         self.pin_on_drag_only = pin_on_drag_only
+        self._auto_hide_with_os_frame = auto_hide_with_os_frame
+        self._auto_hide_checked = False
         self._collapsed = False
         self._minimized = False
         self._saved_size = None
@@ -80,6 +88,7 @@ class Header(
         self.__mousePressPos = None
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
         self._full_title = ""  # Untruncated title for elision
+        self._version = ""  # Optional version suffix appended to title
 
         self.container_layout = QtWidgets.QHBoxLayout(self)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
@@ -149,6 +158,10 @@ class Header(
             # Fallback to empty icon if file not found
             return QtGui.QIcon()
 
+    # Pixel padding subtracted from header height to size header-button icons.
+    # 3 px (= 16 px icon inside a 19 px button) preserves the historical look.
+    _ICON_MARGIN = 3
+
     def create_button(self, icon_filename, callback, button_type=None):
         """Create a button with the given icon and callback."""
         button = QtWidgets.QPushButton(self)
@@ -157,13 +170,26 @@ class Header(
             # when MainWindow's __getattr__ searches for widgets by name
             button.setObjectName(f"hdr_{button_type}")
 
-        # Set the icon using IconManager for theme support
+        # Set the icon using IconManager for theme support; sized to the
+        # header's current height so it tracks the widget on resize.
         icon_name = icon_filename.replace(".svg", "")
-        IconManager.set_icon(button, icon_name, size=(16, 16))
+        self._set_button_icon(button, icon_name)
 
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
         button.clicked.connect(callback)
         return button
+
+    def _set_button_icon(self, button, icon_name):
+        """Render *icon_name* onto *button* at the header's current size.
+
+        All header-button icons share one sizing rule (track the header
+        height, leave ``_ICON_MARGIN`` px of breathing room) — route every
+        icon swap through this helper so toggle states stay consistent
+        with the initial render.
+        """
+        IconManager.fit_icon(
+            button, icon_name, self.height(), margin=self._ICON_MARGIN
+        )
 
     def has_buttons(self, button_type=None):
         """Check if the header has a specific button type or any button.
@@ -276,12 +302,42 @@ class Header(
         self.setText(title)
 
     def title(self):
-        """Get the title of the header.
+        """Get the title of the header (without any version suffix).
 
         Returns:
             str: The current title.
         """
         return self._full_title or self.text()
+
+    def setVersion(self, version):
+        """Set an optional version string appended to the title.
+
+        The displayed text becomes ``"<title> v<version>"`` when both are set.
+        Pass ``""`` or ``None`` to clear.
+
+        Parameters:
+            version (str): The version string (e.g. ``"0.1.0"``).
+        """
+        self._version = (version or "").strip()
+        self._apply_elided_title()
+
+    def version(self):
+        """Return the current version suffix (without the ``v`` prefix)."""
+        return self._version
+
+    def _composed_title(self):
+        """Return title + version formatted for display.
+
+        When a version is set, the version segment is wrapped in an inline
+        ``<span>`` that forces ``font-weight: normal`` so the version reads as
+        a quiet suffix even though the header label itself renders bold.
+        """
+        title = self._full_title or ""
+        if self._version:
+            return (
+                f"{title} <span style=\"font-weight:normal\">v{self._version}</span>"
+            ).strip()
+        return title
 
     def setText(self, text):
         """Override to remember the untruncated title for elision."""
@@ -290,9 +346,17 @@ class Header(
 
     def _apply_elided_title(self):
         """Truncate the displayed title with an ellipsis when buttons would overlap."""
-        full = getattr(self, "_full_title", "")
-        # Rich text and pre-layout (width unknown): show the raw string so
-        # tags survive and sizeHint reflects the real content.
+        # Keep _full_title in sync when text arrived via setProperty("text", ...)
+        # (e.g. uic-generated stdset="0" forms) rather than through setText().
+        if not self._full_title:
+            raw = super().text()
+            if raw and not getattr(self, "_version", ""):
+                self._full_title = raw
+        title = self._full_title or ""
+        version = self._version
+        full = self._composed_title()
+        # Pre-layout (width unknown) or RichText mixin in play: show the raw
+        # composed string so tags survive and sizeHint reflects real content.
         if not full or self.width() <= 0 or getattr(self, "has_rich_text", False):
             if super().text() != full:
                 super().setText(full)
@@ -309,9 +373,25 @@ class Header(
         margins = self.container_layout.contentsMargins()
         reserved = buttons_width + margins.left() + margins.right() + self.indent() + 4
         available = max(0, self.width() - reserved)
-        elided = self.fontMetrics().elidedText(full, QtCore.Qt.ElideRight, available)
-        if elided != super().text():
-            super().setText(elided)
+        fm = self.fontMetrics()
+        if version:
+            # Measure version using the non-bold variant so the reserved width
+            # matches the rendered (lighter-weight) glyphs.
+            version_text = f" v{version}"
+            normal_font = QtGui.QFont(self.font())
+            normal_font.setBold(False)
+            version_width = QtGui.QFontMetrics(normal_font).horizontalAdvance(
+                version_text
+            )
+            title_available = max(0, available - version_width)
+            elided_title = fm.elidedText(title, QtCore.Qt.ElideRight, title_available)
+            displayed = (
+                f"{elided_title} <span style=\"font-weight:normal\">v{version}</span>"
+            )
+        else:
+            displayed = fm.elidedText(title, QtCore.Qt.ElideRight, available)
+        if displayed != super().text():
+            super().setText(displayed)
 
     def minimize_window(self):
         """Minimize the window: collapse to header-only, narrow to a fixed width,
@@ -365,7 +445,7 @@ class Header(
 
         # Update icon
         if "minimize" in self.buttons:
-            IconManager.set_icon(self.buttons["minimize"], "maximize", size=(16, 16))
+            self._set_button_icon(self.buttons["minimize"], "maximize")
 
         self._minimized = True
 
@@ -395,7 +475,7 @@ class Header(
 
         # Update icon
         if "minimize" in self.buttons:
-            IconManager.set_icon(self.buttons["minimize"], "minimize", size=(16, 16))
+            self._set_button_icon(self.buttons["minimize"], "minimize")
 
         self._minimized = False
 
@@ -454,14 +534,24 @@ class Header(
             window.showNormal()
             # Update icon to maximize
             if "maximize" in self.buttons:
-                IconManager.set_icon(
-                    self.buttons["maximize"], "maximize", size=(16, 16)
-                )
+                self._set_button_icon(self.buttons["maximize"], "maximize")
         else:
             window.showMaximized()
             # Update icon to restore (overlapping windows)
             if "maximize" in self.buttons:
-                IconManager.set_icon(self.buttons["maximize"], "restore", size=(16, 16))
+                self._set_button_icon(self.buttons["maximize"], "restore")
+
+    def toggle_fullscreen(self):
+        """Toggle between fullscreen and normal window state."""
+        window = self.window()
+        if window.isFullScreen():
+            window.showNormal()
+            if "fullscreen" in self.buttons:
+                self._set_button_icon(self.buttons["fullscreen"], "screen")
+        else:
+            window.showFullScreen()
+            if "fullscreen" in self.buttons:
+                self._set_button_icon(self.buttons["fullscreen"], "restore")
 
     def hide_window(self):
         """Hide the parent window."""
@@ -606,9 +696,7 @@ class Header(
 
         # Update icon to expand (chevron down)
         if "collapse" in self.buttons:
-            IconManager.set_icon(
-                self.buttons["collapse"], "chevron_down", size=(16, 16)
-            )
+            self._set_button_icon(self.buttons["collapse"], "chevron_down")
 
         self._collapsed = True
 
@@ -661,7 +749,7 @@ class Header(
 
         # Update icon to collapse (chevron up)
         if "collapse" in self.buttons:
-            IconManager.set_icon(self.buttons["collapse"], "chevron_up", size=(16, 16))
+            self._set_button_icon(self.buttons["collapse"], "chevron_up")
 
         self._collapsed = False
 
@@ -701,7 +789,7 @@ class Header(
         icon_name = "radio" if pinned else "radio_empty"
         pin_button = self.buttons.get("pin")
         if pin_button:
-            IconManager.set_icon(pin_button, icon_name, size=(16, 16))
+            self._set_button_icon(pin_button, icon_name)
 
         self.toggled.emit(pinned)
 
@@ -748,12 +836,34 @@ class Header(
             self.expand_window()
         super().showEvent(event)
         QtCore.QTimer.singleShot(0, self._finalize_menu_button_visibility)
+        if self._auto_hide_with_os_frame and not self._auto_hide_checked:
+            self._auto_hide_checked = True
+            QtCore.QTimer.singleShot(0, self._apply_auto_hide_with_os_frame)
+
+    def _apply_auto_hide_with_os_frame(self):
+        """Hide the header if the top-level window draws a native OS title bar.
+
+        Two title bars stacked is almost never what callers want; this keeps
+        the header useful as a fallback when the window is frameless and
+        invisible otherwise.
+        """
+        if not self._auto_hide_with_os_frame:
+            return
+        window = self.window()
+        if window is None:
+            return
+        flags = window.windowFlags()
+        is_frameless = bool(flags & QtCore.Qt.FramelessWindowHint)
+        if not is_frameless:
+            self.hide()
 
     def _finalize_menu_button_visibility(self):
+        # Always show the menu button when configured. Empty menus
+        # surface a transient "no options" message via Menu's empty-state
+        # behavior, so the button stays useful even before items are added.
         menu_button = self.buttons.get("menu")
         if menu_button:
-            visible = self.menu.contains_items
-            menu_button.setVisible(visible)
+            menu_button.setVisible(True)
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:
         """Attach this header to the top of a QWidget or QMainWindow's centralWidget if appropriate."""

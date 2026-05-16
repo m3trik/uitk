@@ -322,6 +322,68 @@ class TestMenuContainsItems(QtBaseTestCase):
         self.assertTrue(menu.contains_items)
 
 
+class TestMenuEmptyState(QtBaseTestCase):
+    """Tests for empty-state placeholder + auto-hide.
+
+    Feature: an empty menu briefly shows a "No options" label, then
+    hides itself, so the user sees feedback that the click registered.
+    Added: 2026-05-16
+    """
+
+    def test_empty_placeholder_appears_on_show(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        # Real-item count must stay 0 even with placeholder present.
+        self.assertFalse(menu.contains_items)
+        menu.hide()
+
+    def test_placeholder_removed_on_hide(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        menu.hide()
+        self.assertIsNone(menu._empty_placeholder)
+
+    def test_placeholder_uses_configured_message(self):
+        menu = self.track_widget(Menu(empty_message="Nothing here", empty_timeout_ms=0))
+        menu.show()
+        self.assertEqual(menu._empty_placeholder.text(), "Nothing here")
+        menu.hide()
+
+    def test_no_placeholder_when_message_is_none(self):
+        menu = self.track_widget(Menu(empty_message=None, empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNone(menu._empty_placeholder)
+        menu.hide()
+
+    def test_no_placeholder_when_items_present(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.add("QLabel", setText="Real Item")
+        menu.show()
+        self.assertIsNone(menu._empty_placeholder)
+        menu.hide()
+
+    def test_add_clears_existing_placeholder(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        menu.add("QLabel", setText="Late arrival")
+        self.assertIsNone(menu._empty_placeholder)
+        self.assertTrue(menu.contains_items)
+        menu.hide()
+
+    def test_timer_hides_menu_when_still_empty(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=30))
+        menu.show()
+        self.assertTrue(menu.isVisible())
+        # Spin the event loop until the singleshot fires (~30ms + slack).
+        deadline = QtCore.QElapsedTimer()
+        deadline.start()
+        while menu.isVisible() and deadline.elapsed() < 1000:
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 30)
+        self.assertFalse(menu.isVisible())
+
+
 class TestMenuTitle(QtBaseTestCase):
     """Tests for Menu title methods."""
 

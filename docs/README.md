@@ -2,7 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/tests-1343%20passed-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/tests-1396%20passed%2C%204%20failed-red.svg)](test/)
 
 # uitk
 

@@ -586,6 +586,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         hide_on_leave: bool = False,
         match_parent_width: bool = True,
         ensure_on_screen: bool = True,
+        empty_message: Optional[str] = "No options",
+        empty_timeout_ms: int = 1500,
         log_level: Optional[Union[int, str]] = "WARNING",
         **kwargs,
     ):
@@ -710,6 +712,14 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._hide_on_leave = False
         self.hide_on_leave = hide_on_leave
         self.ensure_on_screen = ensure_on_screen
+
+        # Empty-state behavior: when shown with no items, display a brief
+        # message ("No options" by default) then auto-hide.  Set
+        # ``empty_message=None`` or ``empty_timeout_ms=0`` to disable.
+        self._empty_message = empty_message
+        self._empty_timeout_ms = max(0, int(empty_timeout_ms))
+        self._empty_placeholder: Optional[QtWidgets.QLabel] = None
+        self._empty_timer: Optional[QtCore.QTimer] = None
 
         # Base styling handled via QSS type selectors
         self.setSizePolicy(
@@ -1565,7 +1575,19 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """
         if visible:
             self._setup_as_popup()
+            if not self.contains_items:
+                self._add_empty_placeholder()
+                if self._empty_timeout_ms > 0:
+                    if self._empty_timer is None:
+                        self._empty_timer = QtCore.QTimer(self)
+                        self._empty_timer.setSingleShot(True)
+                        self._empty_timer.timeout.connect(self._on_empty_timeout)
+                    self._empty_timer.start(self._empty_timeout_ms)
             self._prepare_for_show()
+        else:
+            if self._empty_timer is not None:
+                self._empty_timer.stop()
+            self._remove_empty_placeholder()
         super().setVisible(visible)
 
     def _prepare_for_show(self) -> None:
@@ -2229,11 +2251,56 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
     @property
     def contains_items(self) -> bool:
-        """Check if the QMenu contains any items."""
+        """Check if the QMenu contains any genuine items.
+
+        The transient empty-state placeholder (see :meth:`_add_empty_placeholder`)
+        is intentionally excluded — callers asking "does this menu have
+        anything to offer?" should get False while only the placeholder
+        is on screen.
+        """
         # Handle lazy initialization - gridLayout may not exist yet
         if self.gridLayout is None:
             return False
-        return bool(self.gridLayout.count())
+        count = self.gridLayout.count()
+        if self._empty_placeholder is not None:
+            count -= 1
+        return count > 0
+
+    def _add_empty_placeholder(self) -> None:
+        """Insert the transient "No options" message when shown with no items."""
+        if self._empty_placeholder is not None or not self._empty_message:
+            return
+        if self.gridLayout is None:
+            return
+        label = QtWidgets.QLabel(self._empty_message)
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        label.setObjectName("menuEmptyMessage")
+        label.setProperty("class", "menuEmptyMessage")
+        if self.min_item_height:
+            label.setMinimumHeight(self.min_item_height)
+        # Bypass add() — this widget is purely informational and must not
+        # be counted by contains_items, registered with the main window,
+        # or get the usual item event-filter treatment.
+        self.gridLayout.addWidget(label, 0, 0, 1, max(1, self.gridLayout.columnCount()))
+        self._empty_placeholder = label
+
+    def _remove_empty_placeholder(self) -> None:
+        """Tear down the empty placeholder if present."""
+        label = self._empty_placeholder
+        self._empty_placeholder = None
+        if label is None:
+            return
+        if self.gridLayout is not None:
+            self.gridLayout.removeWidget(label)
+        label.setParent(None)
+        label.deleteLater()
+
+    def _on_empty_timeout(self) -> None:
+        """Hide the menu when the empty-state timer fires (unless items arrived)."""
+        if self._empty_placeholder is None:
+            return  # Real items appeared while shown — leave the menu open.
+        if self.isVisible():
+            self.hide()
 
     def title(self) -> str:
         """Get the menu's title text."""
@@ -2458,6 +2525,14 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         # Block signals to prevent cascading updates
         was_blocked = self.blockSignals(True)
+
+        # If a transient empty-state placeholder is on screen, drop it now —
+        # a real item is arriving and should take its place without leaving
+        # the "No options" label behind.
+        if self._empty_placeholder is not None:
+            if self._empty_timer is not None:
+                self._empty_timer.stop()
+            self._remove_empty_placeholder()
 
         # Suspend layout activation if layout exists
         layout_was_enabled = False

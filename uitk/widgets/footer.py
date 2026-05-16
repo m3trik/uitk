@@ -148,6 +148,42 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             alignment=QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight,
         )
 
+    @staticmethod
+    def _refresh_style(widget: QtWidgets.QWidget) -> None:
+        """Re-evaluate stylesheet rules that depend on dynamic properties.
+
+        Qt does not re-cascade selectors like ``[footerRounded="true"]``
+        when properties are changed after the widget is already polished.
+        Triggering unpolish+polish forces fresh evaluation.
+        """
+        style = widget.style()
+        if style is not None:
+            style.unpolish(widget)
+            style.polish(widget)
+
+    _ROUNDED_QSS_MARKER = "/* footerRounded */"
+
+    @classmethod
+    def _apply_rounded_style(cls, widget: QtWidgets.QWidget, rounded: bool) -> None:
+        """Apply rounded-corner styling inline on the widget.
+
+        Class/attribute-selector rules in the theme QSS can lose specificity
+        races against ``QAbstractButton``'s ``border-radius: 1px``. Setting
+        the rule directly on the widget always wins, and we strip the previous
+        marker on re-application so callers can flip the flag at runtime.
+        """
+        existing = widget.styleSheet() or ""
+        if cls._ROUNDED_QSS_MARKER in existing:
+            # Strip previous injection (everything from marker to end of line).
+            lines = [
+                ln for ln in existing.splitlines()
+                if cls._ROUNDED_QSS_MARKER not in ln
+            ]
+            existing = "\n".join(lines).rstrip()
+        radius = "3px" if rounded else "0"
+        addition = f"border-radius: {radius}; {cls._ROUNDED_QSS_MARKER}"
+        widget.setStyleSheet((existing + "\n" if existing else "") + addition)
+
     # ── Action buttons ───────────────────────────────────────────
 
     def add_widget(
@@ -155,6 +191,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         widget: QtWidgets.QWidget,
         side: str = "right",
         background: bool = False,
+        rounded: bool = True,
     ) -> QtWidgets.QWidget:
         """Insert an arbitrary widget into the footer on the given side.
 
@@ -164,12 +201,23 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         ``background=False`` (default) makes the widget transparent so it
         blends with the footer; set to ``True`` for normal styled background.
+
+        ``rounded=True`` (default) gives the widget slightly rounded
+        corners via the ``footerRounded`` style property; set ``False``
+        for hard square edges.
         """
         if side not in ("left", "right"):
             raise ValueError(f"side must be 'left' or 'right', got {side!r}")
 
         widget.setProperty("footerWidget", not background)
+        widget.setProperty("footerRounded", bool(rounded))
         widget.setParent(self)
+        # QSS selectors that read dynamic properties only re-evaluate
+        # on an explicit unpolish/polish cycle.
+        self._refresh_style(widget)
+        # Apply the radius inline so it always beats theme QSS regardless
+        # of selector-specificity quirks across Qt versions.
+        self._apply_rounded_style(widget, rounded)
         if side == "left":
             self.main_layout.insertWidget(0, widget)
         else:
@@ -195,6 +243,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         icon_name: str = None,
         tooltip: str = "",
         callback=None,
+        rounded: bool = True,
     ) -> QtWidgets.QPushButton:
         """Add an action button to the right side of the footer.
 
@@ -207,12 +256,17 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             icon_name: Icon name (without extension) for ``IconManager``.
             tooltip: Tooltip text.
             callback: Callable connected to the button's ``clicked`` signal.
+            rounded: When True (default), the button gets slightly rounded
+                corners. Set False for hard square edges.
 
         Returns:
             The created QPushButton.
         """
         btn = QtWidgets.QPushButton(text, self)
         btn.setProperty("footerWidget", True)
+        btn.setProperty("footerRounded", bool(rounded))
+        self._refresh_style(btn)
+        self._apply_rounded_style(btn, rounded)
         h = self.height()
         btn_h = max(h - 2, 1)  # 1px clearance top and bottom
         if icon_name and not text:
@@ -224,8 +278,9 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         if icon_name:
             from uitk.widgets.mixins.icon_manager import IconManager
 
-            icon_size = int(h * 0.7)
-            IconManager.set_icon(btn, icon_name, size=(icon_size, icon_size))
+            # Margin 6 keeps the historical h*0.7 sizing (13 px on a 19 px
+            # footer) while delegating the math to IconManager.
+            IconManager.fit_icon(btn, icon_name, h, margin=6)
 
         if tooltip:
             btn.setToolTip(tooltip)

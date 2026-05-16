@@ -3,7 +3,7 @@
 """Recent Values option for OptionBox — shows a selectable history list."""
 
 import os
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from ._options import ButtonOption
 
@@ -270,6 +270,7 @@ class RecentValuesOption(ButtonOption):
         display_format="auto",
         popup_align="right",
         text_align="center",
+        auto_record=False,
     ):
         """Initialize the recent values option.
 
@@ -291,6 +292,16 @@ class RecentValuesOption(ButtonOption):
                 ``"left"`` — align popup's left edge to the wrapped widget.
             text_align: Text alignment for value labels in the popup.
                 ``"center"`` (default), ``"left"``, or ``"right"``.
+            auto_record: When True, automatically call ``record()`` when
+                the wrapped widget commits a value:
+                  - ``QLineEdit``: on ``editingFinished``
+                  - widgets exposing a ``validated(bool, str)`` signal
+                    (e.g. ``uitk.LineEdit`` with ``set_validator()``):
+                    only when ``is_valid`` is True
+                  - ``QComboBox``: on ``editTextChanged`` only when the
+                    text matches an item (avoids per-keystroke noise).
+                Off by default — callers must invoke ``record()`` from
+                their own commit path (e.g. browse success, action).
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -307,10 +318,15 @@ class RecentValuesOption(ButtonOption):
         self._text_align = text_align
         self._popup = None
         self._settings = None
+        self._auto_record = bool(auto_record)
+        self._auto_record_connected = False
 
         if self._settings_key:
             self._init_settings()
             self._load_recent_values()
+
+        if self._auto_record and wrapped_widget is not None:
+            self._install_auto_record(wrapped_widget)
 
     # ------------------------------------------------------------------
     # Persistence
@@ -392,24 +408,10 @@ class RecentValuesOption(ButtonOption):
 
         self._populate_popup()
 
-        # Size popup to fit content, capped to parent window width
+        # Let the menu size to its natural sizeHint, clamped to the screen so
+        # it can't run off-screen for very long values.
         window = self._find_parent_window()
-        self._popup.adjustSize()
-        # Ensure minimum width accommodates the longest display text
-        fm = self._popup.menu.fontMetrics()
-        display_map = self._resolve_display_map(list(self._recent_values))
-        max_text_w = 0
-        for v in self._recent_values:
-            dt = display_map.get(v, str(v))
-            max_text_w = max(max_text_w, fm.horizontalAdvance(dt))
-        # Account for remove button (18px), spacing, margins
-        content_w = max_text_w + 18 + 4 + 1 + 8 + 24  # btn + spacing + margins + pad
-        if window:
-            max_w = window.width() - 16
-            self._popup.menu.setMinimumWidth(min(content_w, max_w))
-            self._popup.menu.setMaximumWidth(max_w)
-        else:
-            self._popup.menu.setMinimumWidth(content_w)
+        self._popup.menu.setMaximumWidth(self._screen_width_cap(window))
         self._popup.adjustSize()
 
         if self._widget:
@@ -435,9 +437,39 @@ class RecentValuesOption(ButtonOption):
                 )
                 global_pos.setX(global_pos.x() - self._popup.width())
 
-            self._popup.move(global_pos)
+            self._popup.move(self._clamp_to_screen(global_pos, window))
 
         self._popup.show()
+
+    def _screen_for_window(self, window):
+        """Return the QScreen the popup will appear on (best effort)."""
+        if window is not None:
+            handle = window.windowHandle()
+            if handle is not None and handle.screen() is not None:
+                return handle.screen()
+            screen = QtGui.QGuiApplication.screenAt(window.mapToGlobal(window.rect().center()))
+            if screen is not None:
+                return screen
+        return QtGui.QGuiApplication.primaryScreen()
+
+    def _screen_width_cap(self, window):
+        """Maximum popup width — a little less than the target screen's width."""
+        screen = self._screen_for_window(window)
+        if screen is None:
+            return 16777215  # Qt's QWIDGETSIZE_MAX
+        return max(150, screen.availableGeometry().width() - 32)
+
+    def _clamp_to_screen(self, global_pos, window):
+        """Keep the popup inside the screen's available geometry."""
+        screen = self._screen_for_window(window)
+        if screen is None:
+            return global_pos
+        geo = screen.availableGeometry()
+        w = self._popup.width()
+        h = self._popup.menu.sizeHint().height()
+        x = max(geo.left() + 4, min(global_pos.x(), geo.right() - w - 4))
+        y = max(geo.top() + 4, min(global_pos.y(), geo.bottom() - h - 4))
+        return QtCore.QPoint(x, y)
 
     def _populate_popup(self):
         if not self._popup:
@@ -555,6 +587,65 @@ class RecentValuesOption(ButtonOption):
             self._recent_values = self._recent_values[-self._max_recent :]
         self._save_recent_values()
         self._update_button_tooltip()
+
+    def set_wrapped_widget(self, widget):
+        """Set or update the wrapped widget, re-installing auto-record if enabled."""
+        super().set_wrapped_widget(widget)
+        if self._auto_record and widget is not None and not self._auto_record_connected:
+            self._install_auto_record(widget)
+
+    def _install_auto_record(self, widget):
+        """Wire up commit-time auto-recording for *widget*.
+
+        Always prefers a true commit signal (``editingFinished`` or
+        equivalent) over the live ``validated`` signal — recording on
+        ``validated`` would still produce one entry per valid prefix as
+        the user types (e.g. ``C:/Users``, ``C:/Users/foo``, ...).
+
+        When the widget also exposes an ``is_valid`` property (e.g.
+        ``uitk.LineEdit`` with a validator installed) the value is only
+        recorded when it is not ``False``.  ``True`` and ``None`` (no
+        validator set) both pass.
+
+        Signals tried, in order:
+            - ``editingFinished()`` (QLineEdit/QSpinBox/...)
+            - ``activated(str)`` (QComboBox — fired on user selection)
+        """
+        if self._auto_record_connected:
+            return
+
+        editing_finished = getattr(widget, "editingFinished", None)
+        if editing_finished is not None and hasattr(editing_finished, "connect"):
+            editing_finished.connect(self._on_editing_finished_record)
+            self._auto_record_connected = True
+            return
+
+        activated = getattr(widget, "activated", None)
+        if activated is not None and hasattr(activated, "connect"):
+            activated.connect(self._on_combo_activated_record)
+            self._auto_record_connected = True
+            return
+
+    def _on_editing_finished_record(self):
+        widget = self.wrapped_widget
+        if widget is None:
+            return
+        # Flush any pending validator debounce so is_valid reflects current text
+        validate_now = getattr(widget, "validate_now", None)
+        if callable(validate_now):
+            validate_now()
+        if getattr(widget, "is_valid", None) is False:
+            return
+        self.record()
+
+    def _on_combo_activated_record(self, *args):
+        widget = self.wrapped_widget
+        if widget is None:
+            return
+        # activated emits str in newer Qt, int in older; just use widget text
+        text = widget.currentText() if hasattr(widget, "currentText") else None
+        if text:
+            self.record(text)
 
     @property
     def recent_values(self):
