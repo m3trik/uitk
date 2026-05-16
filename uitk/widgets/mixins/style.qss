@@ -245,7 +245,12 @@ QPushButton#pinButton::menu-indicator,
 QPushButton#clearButton::menu-indicator,
 QPushButton#actionButton::menu-indicator,
 QPushButton#optionMenuButton::menu-indicator,
-QPushButton#optionBox::menu-indicator {
+QPushButton#optionBox::menu-indicator,
+QPushButton[class~="ActionButton"]::menu-indicator,
+QPushButton[class~="BrowseButton"]::menu-indicator,
+QPushButton[class~="RecentButton"]::menu-indicator,
+QPushButton[class~="ClearButton"]::menu-indicator,
+QPushButton[class~="PinButton"]::menu-indicator {
     image: none;
     width: 0px;
     height: 0px;
@@ -253,6 +258,18 @@ QPushButton#optionBox::menu-indicator {
     margin: 0px;
     border: none;
     background: transparent;
+}
+
+/* Option-box buttons — keep icon centered inside the 19x19 button.
+   Class-based selectors survive _assign_option_object_name's rename. */
+QPushButton[class~="ActionButton"],
+QPushButton[class~="BrowseButton"],
+QPushButton[class~="RecentButton"],
+QPushButton[class~="ClearButton"],
+QPushButton[class~="PinButton"] {
+    padding: 0;
+    margin: 0;
+    text-align: center;
 }
 
 /* Within the option box container, suppress any menu indicators on buttons */
@@ -946,6 +963,16 @@ QWidget#optionBoxContainer {
     margin: 0px;
 }
 
+/* Unified hover frame: the wrapped widget's right border is stripped (see
+   _apply_border_styling), so the container owns the right edge. Color matches
+   the per-widget :hover (QLineEdit, QTextEdit, etc.) so the row reads as one
+   control on hover. Scoped to withBorder so frameless variants stay borderless,
+   and gated by wrappedEnabled (synced in _sync_option_buttons_enabled) so the
+   row doesn't highlight when the wrapped widget or container is disabled. */
+QWidget#optionBoxContainer[class~="withBorder"][wrappedEnabled="true"]:hover {
+    border: 1px solid rgba(255,255,255,110) !important;
+}
+
 QPushButton#optionBox {
     border: 1px solid {BORDER_COLOR};
     border-left-width: 0px; /* remove internal left divider */
@@ -1042,6 +1069,18 @@ Header > QPushButton#hdr_hide:hover {
 [footerWidget="true"]:pressed {
     background-color: {BUTTON_HOVER};
     border: none;
+}
+/* Footer widgets are slightly rounded by default; opt out with footerRounded="false".
+   Selectors include the parent type to beat QAbstractButton (border-radius: 1px). */
+Footer > QPushButton[footerRounded="true"],
+Footer > QToolButton[footerRounded="true"],
+Footer > QAbstractButton[footerRounded="true"],
+Footer > QWidget[footerRounded="true"] {
+    border-radius: 3px;
+}
+Footer > [footerRounded="false"],
+Footer > QAbstractButton[footerRounded="false"] {
+    border-radius: 0;
 }
 
 /* Menu & MainWindow custom widgets inherit translucent border styling */

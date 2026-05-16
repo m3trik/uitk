@@ -133,12 +133,14 @@ class ActionOption(ButtonOption):
         state = self._states[self._current_state]
         if "icon" in state:
             color = state.get("color")
-            IconManager.set_icon(
+            # Preserve the size set by the parent OptionBox (via fit_icon)
+            # so cycling states doesn't oscillate the icon size.
+            IconManager.swap_icon(
                 self._widget,
                 state["icon"],
-                size=(15, 15),
                 color=color,
                 auto_theme=color is None,
+                fallback_size=(15, 15),
             )
         if "tooltip" in state:
             self._widget.setToolTip(state["tooltip"])

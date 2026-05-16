@@ -352,7 +352,7 @@ class TableActions:
         row_h = self._table.verticalHeader().defaultSectionSize()
         # Leave 4 px of padding so the icon never butts the row edge —
         # Qt's style draws ~2 px of focus/decoration margin around items.
-        icon_dim = max(8, row_h - 4)
+        icon_dim = IconManager.fit_size(row_h, margin=4)
         icon_size = (icon_dim, icon_dim)
 
         # The view-wide ``iconSize`` controls the decoration rect Qt

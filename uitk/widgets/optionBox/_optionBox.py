@@ -18,6 +18,11 @@ class OptionBoxContainer(QtWidgets.QWidget):
         if not self.objectName():
             self.setObjectName("optionBoxContainer")
         self.setProperty("class", "withBorder")
+        # Mirrors the effective enabled state of the wrapped widget so QSS
+        # can suppress :hover highlighting when the row is disabled. Synced
+        # by _sync_option_buttons_enabled; initialized true for the pre-wrap
+        # window before the first sync runs.
+        self.setProperty("wrappedEnabled", "true")
 
     def setPassThrough(self, enabled: bool):
         """Enable pass-through mode where only opaque children intercept mouse events."""
@@ -44,6 +49,11 @@ class OptionBoxContainer(QtWidgets.QWidget):
         if not wrapped:
             return
         enabled = wrapped.isEnabled() and self.isEnabled()
+        prop_val = "true" if enabled else "false"
+        if self.property("wrappedEnabled") != prop_val:
+            self.setProperty("wrappedEnabled", prop_val)
+            self.style().unpolish(self)
+            self.style().polish(self)
         for i in range(1, layout.count()):
             btn = layout.itemAt(i).widget()
             if btn:
@@ -214,14 +224,42 @@ class OptionBox:
 
         return sorted(self._options, key=get_priority)
 
+    # Pixel padding subtracted from the host height to size option-button
+    # icons. 6 px leaves more breathing room than the table's default
+    # margin (4) because option-boxes sit flush against text-edit borders
+    # and benefit from a quieter glyph.
+    _ICON_MARGIN = 6
+
     def _update_sizing(self):
-        """Update sizing for all option widgets."""
+        """Update sizing for all option widgets.
+
+        Each option button is forced to a height-square (h x h). Icons are
+        re-rendered via :meth:`IconManager.fit_icon` so the SVG rasterizes
+        crisply at the displayed size (instead of being scaled down from a
+        fixed placeholder).
+        """
         if not self.wrapped_widget:
             return
+        from uitk.widgets.mixins.icon_manager import IconManager
+
         h = self.wrapped_widget.height() or self.wrapped_widget.sizeHint().height()
         for option in self._options:
-            if hasattr(option, "widget"):
-                option.widget.setFixedSize(h, h)
+            if not hasattr(option, "widget"):
+                continue
+            w = option.widget
+            w.setFixedSize(h, h)
+            if not hasattr(w, "setIcon"):
+                continue
+            # Use whatever icon name IconManager has on record (handles
+            # state-cycling ActionOptions that swapped the icon after
+            # creation); fall back to the option's initial icon.
+            info = IconManager._widget_icon_info.get(id(w))
+            icon_name = info["name"] if info else getattr(option, "icon", None)
+            if icon_name:
+                IconManager.fit_icon(w, icon_name, h, margin=self._ICON_MARGIN)
+            elif not w.icon().isNull():
+                extent = IconManager.fit_size(h, margin=self._ICON_MARGIN)
+                w.setIconSize(QtCore.QSize(extent, extent))
         if self.container:
             self.container.adjustSize()
 
@@ -388,14 +426,10 @@ class OptionBox:
 
             # Finalize
             h = wrapped_widget.height() or wrapped_widget.sizeHint().height()
-
-            for option in self._options:
-                if hasattr(option, "widget"):
-                    option.widget.setFixedSize(h, h)
-
             wrapped_widget.setMinimumHeight(h)
-            container.adjustSize()
             self.container = container
+            # Render icons at their display size now that final geometry is known.
+            self._update_sizing()
             # Propagate wrapped widget disabled state to option buttons
             wrapped_widget.installEventFilter(container)
             container._sync_option_buttons_enabled()

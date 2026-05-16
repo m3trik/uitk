@@ -141,7 +141,7 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
         """Adjust the step size dynamically based on the Alt modifier key."""
         current_step = self.singleStep()
         decimals = self.decimals()
-        if event.delta() > 0:
+        if event.angleDelta().y() > 0:
             new_step = max(
                 min(current_step / 10, self.maximum() - self.value()), 10**-decimals
             )
@@ -157,7 +157,7 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
         adjustment = current_step * 10
         self.setValue(
             self.value() + adjustment
-            if event.delta() > 0
+            if event.angleDelta().y() > 0
             else self.value() - adjustment
         )
         self.message(f"Step: <font color='yellow'>{adjustment}</font>")
@@ -169,7 +169,7 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
         adjustment = max(current_step / 10, 10**-decimals)
         self.setValue(
             self.value() + adjustment
-            if event.delta() > 0
+            if event.angleDelta().y() > 0
             else self.value() - adjustment
         )
         self.message(f"Step: <font color='yellow'>{adjustment}</font>")

@@ -14,6 +14,21 @@ class LineEditFormatMixin:
     Provides ``set_action_color(key)`` / ``reset_action_color()`` for
     signaling validation state.  Styling is driven by a ``actionState``
     dynamic property and defined in style.qss.
+
+    Also provides an optional ``set_validator()`` API that wires up
+    debounced ``textChanged`` → user-supplied predicate → visual feedback
+    (``actionState`` color + tooltip) → ``validated(bool, str)`` signal.
+
+    Built-in string shortcuts for ``set_validator()``:
+        - ``"file"``  — ``ptk.is_valid(text, "file")``
+        - ``"dir"``   — ``ptk.is_valid(text, "dir")``
+        - ``"path"``  — ``ptk.is_valid(text)`` (file or dir)
+
+    Or pass any ``callable(text) -> bool`` for arbitrary validation.
+
+    The host class must declare ``validated = QtCore.Signal(bool, str)``
+    for the signal to be available; ``set_validator()`` still functions
+    (color + tooltip updates) when no such signal exists.
     """
 
     def set_action_color(self, key: str) -> None:
@@ -26,6 +41,163 @@ class LineEditFormatMixin:
         self.style().unpolish(self)
         self.style().polish(self)
 
+    # ------------------------------------------------------------------
+    # Validator API
+    # ------------------------------------------------------------------
+
+    _VALIDATOR_PRESETS = ("file", "dir", "path")
+
+    @staticmethod
+    def _resolve_validator(validator):
+        """Convert a preset string into a callable, or return *validator* as-is."""
+        if callable(validator):
+            return validator
+        if validator in LineEditFormatMixin._VALIDATOR_PRESETS:
+            import pythontk as ptk
+
+            kind = None if validator == "path" else validator
+            return lambda text, _k=kind: bool(text) and ptk.is_valid(text, _k)
+        raise ValueError(
+            f"validator must be callable or one of "
+            f"{LineEditFormatMixin._VALIDATOR_PRESETS!r}, got {validator!r}"
+        )
+
+    def set_validator(
+        self,
+        validator,
+        *,
+        debounce_ms: int = 300,
+        invalid_tooltip: str = "Invalid",
+        valid_tooltip=None,
+        empty_tooltip=None,
+        empty_is_valid: bool = True,
+    ):
+        """Install a debounced text validator with visual feedback.
+
+        Parameters:
+            validator: A callable ``(text) -> bool`` or a preset string
+                (``"file"``, ``"dir"``, ``"path"``).
+            debounce_ms: Delay before validating after the last keystroke.
+                Set to 0 to validate immediately (typically only useful
+                in tests).
+            invalid_tooltip: Tooltip shown when validation fails.
+            valid_tooltip: Tooltip shown when validation passes.  Can be
+                a string, a callable ``(text) -> str``, or ``None`` to
+                show the text itself.
+            empty_tooltip: Tooltip shown when text is empty.  ``None``
+                (default) preserves whatever tooltip was set on the
+                widget before ``set_validator`` was called.
+            empty_is_valid: When True (default), empty text resets the
+                color and emits ``validated(True, "")``.  When False,
+                empty text is treated as invalid.
+        """
+        callable_validator = self._resolve_validator(validator)
+
+        # Capture pre-install tooltip so empty-text state can restore it
+        prior_tooltip = self.toolTip()
+
+        # Idempotent install — disconnect any prior wiring first
+        self.clear_validator()
+
+        # QTimer-based debouncer (replaces any pending validation)
+        timer = QtCore.QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._run_validation)
+
+        self._validator_callable = callable_validator
+        self._validator_timer = timer
+        self._validator_debounce_ms = max(0, int(debounce_ms))
+        self._validator_invalid_tooltip = invalid_tooltip
+        self._validator_valid_tooltip = valid_tooltip
+        self._validator_empty_tooltip = (
+            empty_tooltip if empty_tooltip is not None else prior_tooltip
+        )
+        self._validator_empty_is_valid = empty_is_valid
+        self._last_validation_text = None
+        self._last_validation_result = None
+
+        self.textChanged.connect(self._on_text_changed_validate)
+
+        # Run once now so the initial color/tooltip reflect current state
+        self._run_validation()
+
+    def clear_validator(self):
+        """Remove any installed validator and reset visual state."""
+        timer = getattr(self, "_validator_timer", None)
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+        if getattr(self, "_validator_callable", None) is not None:
+            try:
+                self.textChanged.disconnect(self._on_text_changed_validate)
+            except (TypeError, RuntimeError):
+                pass
+        self._validator_callable = None
+        self._validator_timer = None
+        self._last_validation_text = None
+        self._last_validation_result = None
+        self.reset_action_color()
+
+    @property
+    def is_valid(self):
+        """Last validation result, or ``None`` if no validator is set."""
+        return getattr(self, "_last_validation_result", None)
+
+    def validate_now(self):
+        """Cancel any pending debounce and validate the current text now.
+
+        Useful from commit handlers (``editingFinished``) where stale
+        ``is_valid`` would be wrong if the user pressed Enter before the
+        debounce timer fired.
+        """
+        timer = getattr(self, "_validator_timer", None)
+        if timer is not None:
+            timer.stop()
+        if getattr(self, "_validator_callable", None) is not None:
+            self._run_validation()
+
+    def _on_text_changed_validate(self, _text):
+        timer = getattr(self, "_validator_timer", None)
+        if timer is None:
+            return
+        if self._validator_debounce_ms <= 0:
+            self._run_validation()
+            return
+        timer.start(self._validator_debounce_ms)
+
+    def _run_validation(self):
+        validator = getattr(self, "_validator_callable", None)
+        if validator is None:
+            return
+        text = self.text()
+
+        if not text and self._validator_empty_is_valid:
+            ok = True
+            self.reset_action_color()
+            self.setToolTip(self._validator_empty_tooltip or "")
+        else:
+            try:
+                ok = bool(validator(text))
+            except Exception:
+                ok = False
+
+            if ok:
+                self.set_action_color("reset")
+                tip = self._validator_valid_tooltip
+                if callable(tip):
+                    tip = tip(text)
+                self.setToolTip(tip if tip is not None else text)
+            else:
+                self.set_action_color("invalid")
+                self.setToolTip(self._validator_invalid_tooltip)
+
+        self._last_validation_text = text
+        self._last_validation_result = ok
+
+        emitter = getattr(self, "validated", None)
+        if emitter is not None and hasattr(emitter, "emit"):
+            emitter.emit(ok, text)
+
 
 class LineEdit(
     QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin
@@ -37,6 +209,8 @@ class LineEdit(
     - self.option_box: OptionBox functionality (via OptionBoxMixin)
     - self.option_box.menu: Separate option box menu
     - self.option_box.clear_option: Enable/disable clear button
+    - self.set_validator(...): Optional debounced text validation with
+      visual feedback (via LineEditFormatMixin). Emits ``validated``.
 
     Usage Examples:
         # Basic LineEdit
@@ -53,10 +227,16 @@ class LineEdit(
 
         # Standalone context menu
         line_edit.menu.add("Context Item")
+
+        # Validate as a directory path with debounced feedback
+        line_edit.set_validator("dir", debounce_ms=300)
+        line_edit.validated.connect(lambda ok, text: ...)
     """
 
     shown = QtCore.Signal()
     hidden = QtCore.Signal()
+    validated = QtCore.Signal(bool, str)
+    """Emitted after debounced validation. (is_valid, text)."""
 
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
