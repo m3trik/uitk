@@ -353,9 +353,9 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         return sb
 
     def _make_wheel_event(self, delta=120):
-        """Create a mock wheel event with the given delta."""
+        """Create a mock wheel event with the given delta on angleDelta().y()."""
         event = MagicMock()
-        event.delta.return_value = delta
+        event.angleDelta.return_value.y.return_value = delta
         return event
 
     def test_ctrl_wheel_up_steps_by_10x(self):
