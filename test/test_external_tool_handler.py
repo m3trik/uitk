@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Tests for ExternalToolHandler — mock-only, no real subprocess / network."""
+import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -282,7 +283,10 @@ class TestDefaultPython(unittest.TestCase):
     def test_falls_back_to_mayapy_sibling(self):
         from uitk.handlers import external_tool_handler as eth
 
-        fake_maya = "C:\\Program Files\\Autodesk\\Maya2025\\bin\\maya.exe"
+        # Construct with os.sep so basename splits correctly on both
+        # platforms — hardcoded backslashes look like a single filename
+        # to posixpath on the Linux CI runner.
+        fake_maya = os.path.join(os.sep + "fake", "bin", "maya.exe")
         with patch.object(eth.shutil, "which", return_value=None), patch.object(
             eth.sys, "executable", fake_maya
         ), patch.object(eth.os.path, "isfile", return_value=True):
