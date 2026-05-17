@@ -444,6 +444,69 @@
       ]
     },
     {
+      "relpath": "handlers/external_tool_handler.py",
+      "summary": "Register, install-on-demand, and launch external Python tools as subprocesses.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "ExternalToolHandler",
+          "summary": "Switchboard handler for launching external Python tools.",
+          "line": 65,
+          "bases": [
+            "ptk.SingletonMixin",
+            "ptk.LoggingMixin"
+          ],
+          "members": [
+            {
+              "name": "instance",
+              "qualname": "ExternalToolHandler.instance",
+              "kind": "classmethod",
+              "signature": "(cls, switchboard: Switchboard = None, **kwargs)",
+              "summary": "",
+              "line": 95,
+              "deprecated": false
+            },
+            {
+              "name": "config",
+              "qualname": "ExternalToolHandler.config",
+              "kind": "property",
+              "signature": "(self)",
+              "summary": "",
+              "line": 101,
+              "deprecated": false
+            },
+            {
+              "name": "register",
+              "qualname": "ExternalToolHandler.register",
+              "kind": "method",
+              "signature": "(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess') -> None",
+              "summary": "Pre-register a tool so it can be launched by name.",
+              "line": 104,
+              "deprecated": false
+            },
+            {
+              "name": "is_registered",
+              "qualname": "ExternalToolHandler.is_registered",
+              "kind": "method",
+              "signature": "(self, name: str) -> bool",
+              "summary": "",
+              "line": 150,
+              "deprecated": false
+            },
+            {
+              "name": "launch",
+              "qualname": "ExternalToolHandler.launch",
+              "kind": "method",
+              "signature": "(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None)",
+              "summary": "Launch a registered tool, or an ad-hoc tool from kwargs.",
+              "line": 153,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "handlers/ui_handler.py",
       "summary": "",
       "functions": [],
@@ -1917,14 +1980,14 @@
       ]
     },
     {
-      "relpath": "widgets/attributeWindow.py",
+      "relpath": "widgets/attributeWindow/_attributeWindow.py",
       "summary": "",
       "functions": [],
       "classes": [
         {
           "name": "AttributeWindow",
           "summary": "Dynamic popup editor for inspecting and modifying object attributes.",
-          "line": 8,
+          "line": 11,
           "bases": [
             "Menu"
           ],
@@ -1935,7 +1998,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Initializes the user interface components of the AttributeWindow.",
-              "line": 87,
+              "line": 85,
               "deprecated": false
             },
             {
@@ -1944,7 +2007,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Refreshes the window with the latest attributes.",
-              "line": 108,
+              "line": 103,
               "deprecated": false
             },
             {
@@ -1953,7 +2016,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clears existing labels and widgets from the UI.",
-              "line": 123,
+              "line": 118,
               "deprecated": false
             },
             {
@@ -1962,7 +2025,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 135,
+              "line": 130,
               "deprecated": false
             },
             {
@@ -1971,7 +2034,7 @@
               "kind": "method",
               "signature": "(self, set_attribute_func)",
               "summary": "",
-              "line": 143,
+              "line": 138,
               "deprecated": false
             },
             {
@@ -1980,7 +2043,7 @@
               "kind": "method",
               "signature": "(self, name, value)",
               "summary": "",
-              "line": 166,
+              "line": 161,
               "deprecated": false
             },
             {
@@ -1989,7 +2052,7 @@
               "kind": "staticmethod",
               "signature": "(attr_name)",
               "summary": "",
-              "line": 174,
+              "line": 169,
               "deprecated": false
             },
             {
@@ -1997,44 +2060,8 @@
               "qualname": "AttributeWindow.is_type_supported",
               "kind": "staticmethod",
               "signature": "(attribute_type)",
-              "summary": "",
-              "line": 179,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget_info",
-              "qualname": "AttributeWindow.get_widget_info",
-              "kind": "method",
-              "signature": "(self, attribute_value)",
-              "summary": "Get the widget class and methods based on the attribute value type.",
-              "line": 182,
-              "deprecated": false
-            },
-            {
-              "name": "create_widget",
-              "qualname": "AttributeWindow.create_widget",
-              "kind": "method",
-              "signature": "(self, widget_class, attribute_value)",
-              "summary": "Create an instance of a widget.",
-              "line": 200,
-              "deprecated": false
-            },
-            {
-              "name": "configure_widget",
-              "qualname": "AttributeWindow.configure_widget",
-              "kind": "method",
-              "signature": "(self, widget, set_value_method, get_value_method, signal_name, attribute_name)",
-              "summary": "Configure a widget for the attribute.",
-              "line": 220,
-              "deprecated": false
-            },
-            {
-              "name": "setup_widget",
-              "qualname": "AttributeWindow.setup_widget",
-              "kind": "method",
-              "signature": "(self, widget_class, set_value_method, attribute_value, get_value_method, signal_name, attribute_name)",
-              "summary": "Set up the widget for the attribute.",
-              "line": 270,
+              "summary": "Return True if AttributeWindow can auto-build a widget for *attribute_type*.",
+              "line": 174,
               "deprecated": false
             },
             {
@@ -2042,8 +2069,17 @@
               "qualname": "AttributeWindow.add_attributes",
               "kind": "method",
               "signature": "(self, attributes, value=None)",
-              "summary": "Adds a single attribute or multiple attributes to the attribute window for display and interaction.",
-              "line": 291,
+              "summary": "Adds a single attribute or multiple attributes to the attribute window.",
+              "line": 183,
+              "deprecated": false
+            },
+            {
+              "name": "add_attribute_spec",
+              "qualname": "AttributeWindow.add_attribute_spec",
+              "kind": "method",
+              "signature": "(self, spec)",
+              "summary": "Add one attribute via an explicit :class:`uitk.AttributeSpec`.",
+              "line": 221,
               "deprecated": false
             },
             {
@@ -2051,8 +2087,8 @@
               "qualname": "AttributeWindow.emit_value_changed",
               "kind": "method",
               "signature": "(self, widget)",
-              "summary": "Emit the valueChanged signal for a widget.",
-              "line": 381,
+              "summary": "Emit the valueChanged signal for a widget (or composite-aware).",
+              "line": 278,
               "deprecated": false
             },
             {
@@ -2061,7 +2097,7 @@
               "kind": "method",
               "signature": "(self, attribute_name)",
               "summary": "Construct and emit the full attribute value for a composite attribute.",
-              "line": 393,
+              "line": 289,
               "deprecated": false
             },
             {
@@ -2070,7 +2106,7 @@
               "kind": "method",
               "signature": "(self, attribute_name)",
               "summary": "Set up the label for the attribute.",
-              "line": 401,
+              "line": 297,
               "deprecated": false
             },
             {
@@ -2079,7 +2115,7 @@
               "kind": "method",
               "signature": "(self, label)",
               "summary": "Slot to be called when a label is toggled.",
-              "line": 414,
+              "line": 310,
               "deprecated": false
             },
             {
@@ -2088,7 +2124,7 @@
               "kind": "method",
               "signature": "(self, button, checked)",
               "summary": "Slot for buttonClicked signal of QButtonGroup.",
-              "line": 420,
+              "line": 316,
               "deprecated": false
             },
             {
@@ -2097,7 +2133,7 @@
               "kind": "method",
               "signature": "(self, label, widget)",
               "summary": "Add the label and widget to the layout.",
-              "line": 435,
+              "line": 331,
               "deprecated": false
             },
             {
@@ -2106,10 +2142,114 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the show event for the window.",
-              "line": 469,
+              "line": 365,
               "deprecated": false
             }
           ]
+        }
+      ]
+    },
+    {
+      "relpath": "widgets/attributeWindow/_factory.py",
+      "summary": "Factory for building / reading / writing dynamic-attribute editor widgets.",
+      "functions": [
+        {
+          "name": "infer_kind",
+          "qualname": "infer_kind",
+          "kind": "function",
+          "signature": "(value: Any) -> str",
+          "summary": "Map a Python value to one of the built-in kinds.",
+          "line": 142,
+          "deprecated": false
+        },
+        {
+          "name": "register_kind",
+          "qualname": "register_kind",
+          "kind": "function",
+          "signature": "(name: str, handler: KindHandler) -> None",
+          "summary": "Register a new kind (or override an existing one).",
+          "line": 162,
+          "deprecated": false
+        },
+        {
+          "name": "get_handler",
+          "qualname": "get_handler",
+          "kind": "function",
+          "signature": "(kind: str) -> KindHandler",
+          "summary": "Return the handler for *kind* (raises KeyError if unregistered).",
+          "line": 172,
+          "deprecated": false
+        },
+        {
+          "name": "make_widget",
+          "qualname": "make_widget",
+          "kind": "function",
+          "signature": "(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget",
+          "summary": "Build a Qt widget for *spec*.",
+          "line": 182,
+          "deprecated": false
+        },
+        {
+          "name": "read_value",
+          "qualname": "read_value",
+          "kind": "function",
+          "signature": "(widget: QtWidgets.QWidget) -> Any",
+          "summary": "Return the current value of a factory-built widget.",
+          "line": 206,
+          "deprecated": false
+        },
+        {
+          "name": "set_value",
+          "qualname": "set_value",
+          "kind": "function",
+          "signature": "(widget: QtWidgets.QWidget, value: Any) -> None",
+          "summary": "Set the value of a factory-built widget.",
+          "line": 211,
+          "deprecated": false
+        },
+        {
+          "name": "connect_changed",
+          "qualname": "connect_changed",
+          "kind": "function",
+          "signature": "(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None",
+          "summary": "Wire the widget's value-change signal to ``callback(new_value)``.",
+          "line": 216,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "AttributeSpec",
+          "summary": "Description of one editable attribute / parameter.",
+          "line": 59,
+          "bases": [],
+          "members": [
+            {
+              "name": "from_value",
+              "qualname": "AttributeSpec.from_value",
+              "kind": "classmethod",
+              "signature": "(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'",
+              "summary": "Build a minimal spec from a Python value (AttributeWindow style).",
+              "line": 96,
+              "deprecated": false
+            },
+            {
+              "name": "display_label",
+              "qualname": "AttributeSpec.display_label",
+              "kind": "property",
+              "signature": "(self) -> str",
+              "summary": "",
+              "line": 106,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "KindHandler",
+          "summary": "Bundle of callables that build / read / write a widget kind.",
+          "line": 111,
+          "bases": [],
+          "members": []
         }
       ]
     },
