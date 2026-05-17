@@ -2,7 +2,10 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.menu import Menu
-from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+# Alias the sibling factory module so every `factory.<...>` call site
+# below reads naturally without dragging in the package name.
+from . import _factory as factory
 
 
 class AttributeWindow(Menu):
@@ -29,11 +32,6 @@ class AttributeWindow(Menu):
 
     This class is designed to offer a user-friendly interface for attribute editing, prioritizing clarity, ease of use, and adaptability to various usage scenarios.
     """
-
-    INT_MIN = -2147483648
-    INT_MAX = 2147483647
-    FLOAT_MIN = -1e100
-    FLOAT_MAX = 1e100
 
     labelToggled = QtCore.Signal(str, bool)
     valueChanged = QtCore.Signal(str, object)
@@ -85,19 +83,16 @@ class AttributeWindow(Menu):
         self.initialize_ui()
 
     def initialize_ui(self):
-        """Initializes the user interface components of the AttributeWindow."""
+        """Initializes the user interface components of the AttributeWindow.
+
+        Widget construction is delegated to :mod:`uitk.widgets.attributeWindow._factory`;
+        AttributeWindow only orchestrates layout, labels, and signal routing.
+        """
         self.label_group = None
         if self.single_check:
             self.label_group = QtWidgets.QButtonGroup(self)
             self.label_group.setExclusive(False)  # Allow all checkboxes to be unchecked
             self.label_group.buttonToggled.connect(self.on_button_clicked)
-
-        self.type_to_widget = {
-            bool: (QtWidgets.QCheckBox, "setChecked", "isChecked", "stateChanged"),
-            int: (QtWidgets.QSpinBox, "setValue", "value", "valueChanged"),
-            float: (DoubleSpinBox, "setValue", "value", "valueChanged"),
-            str: (QtWidgets.QLineEdit, "setText", "text", "textChanged"),
-        }
 
         self.setTitle(self.window_title)
         self.position = "cursorPos"
@@ -177,224 +172,125 @@ class AttributeWindow(Menu):
 
     @staticmethod
     def is_type_supported(attribute_type):
-        return attribute_type in [bool, int, float, str]
+        """Return True if AttributeWindow can auto-build a widget for *attribute_type*.
 
-    def get_widget_info(self, attribute_value):
-        """Get the widget class and methods based on the attribute value type."""
-        if (
-            not self.allow_unsupported_types
-            and type(attribute_value) not in self.type_to_widget
-        ):
-            raise ValueError(f"Unknown data type: {type(attribute_value)}")
-        elif (
-            self.allow_unsupported_types
-            and type(attribute_value) not in self.type_to_widget
-        ):
-            return None
-        else:
-            return self.type_to_widget.get(
-                type(attribute_value),
-                (QtWidgets.QLineEdit, "setText", "text", "textChanged"),
-            )
-
-    def create_widget(self, widget_class, attribute_value):
-        """Create an instance of a widget.
-
-        Parameters:
-            widget_class (type): The class of the widget to create.
-            attribute_value (type): The initial value of the attribute.
-
-        Returns:
-            QtWidgets.QWidget: The created widget.
+        Kept as a static method on the class for backward compat. The list
+        matches the kinds auto-derived by :func:`uitk.infer_kind` from a
+        Python value of that type.
         """
-        widget = widget_class(self)
-        widget.original_value = attribute_value  # Store the original value
-        # Convert the attribute value to a string if it's not a boolean
-        if widget_class is QtWidgets.QLineEdit and not isinstance(
-            attribute_value, bool
-        ):
-            attribute_value = str(attribute_value)
-
-        return widget
-
-    def configure_widget(
-        self,
-        widget,
-        set_value_method,
-        get_value_method,
-        signal_name,
-        attribute_name,
-    ):
-        """Configure a widget for the attribute.
-
-        Parameters:
-            widget (QtWidgets.QWidget): The widget to configure.
-            set_value_method (str): The name of the method to set the value on the widget.
-            get_value_method (str): The name of the method to get the value from the widget.
-            signal_name (str): The name of the signal to connect to the valueChanged slot.
-            attribute_name (str): The name of the attribute the widget is associated with.
-        """
-        # Configure QCheckBox
-        if isinstance(widget, QtWidgets.QCheckBox):
-            widget.setText(str(widget.original_value))  # Set the text for QCheckBox
-            # Update text on state change
-            widget.stateChanged.connect(lambda: widget.setText(str(widget.isChecked())))
-
-        # Configure QSpinBox (for integer values)
-        if isinstance(widget, QtWidgets.QSpinBox):
-            widget.setRange(self.INT_MIN, self.INT_MAX)
-            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
-
-        # Configure QDoubleSpinBox
-        if isinstance(widget, QtWidgets.QDoubleSpinBox):
-            widget.setRange(self.FLOAT_MIN, self.FLOAT_MAX)
-            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
-            widget.setDecimals(self.float_precision)
-
-        # Connect signals for value changes
-        if isinstance(widget.original_value, (list, set, tuple)):
-            getattr(widget, signal_name).connect(
-                lambda: self.emit_composite_value_changed(attribute_name)
-            )
-        else:
-            getattr(widget, signal_name).connect(
-                lambda: self.emit_value_changed(widget)
-            )
-
-        widget.get_value_method = get_value_method  # Store the get_value_method
-        widget.setProperty("attribute_name", attribute_name)  # Store the attribute_name
-
-        # Set the original value
-        getattr(widget, set_value_method)(widget.original_value)
-
-    def setup_widget(
-        self,
-        widget_class,
-        set_value_method,
-        attribute_value,
-        get_value_method,
-        signal_name,
-        attribute_name,
-    ):
-        """Set up the widget for the attribute."""
-        widget = self.create_widget(widget_class, attribute_value)
-        self.configure_widget(
-            widget,
-            set_value_method,
-            get_value_method,
-            signal_name,
-            attribute_name,
-        )
-
-        return widget
+        return attribute_type in (bool, int, float, str)
 
     def add_attributes(self, attributes, value=None):
-        """Adds a single attribute or multiple attributes to the attribute window for display and interaction.
-        This method supports both direct attribute-value pairs and dictionary inputs for bulk additions.
+        """Adds a single attribute or multiple attributes to the attribute window.
 
-        If `attributes` is a dictionary, it iterates over its items, treating each key-value pair as an attribute name
-        and its corresponding value. This allows for bulk attribute additions in a single call.
+        Supports three input forms:
+            * ``add_attributes({name: value, ...})`` — bulk add via dict.
+            * ``add_attributes(name, value)`` — single attribute; widget kind
+              is inferred from ``type(value)``.
+            * ``add_attributes(spec)`` where *spec* is an
+              :class:`uitk.AttributeSpec` — spec-driven add
+              (equivalent to :meth:`add_attribute_spec`).
 
-        For individual attribute additions, `attributes` is expected to be the attribute's name with its `value`.
-        The method checks if the attribute's type is supported or if unsupported types are allowed
-        (based on `allow_unsupported_types`). It then proceeds to create a widget based on the attribute's type and value,
-        adding it to the UI layout for user interaction.
+        Composite attributes (whose values are lists, sets, or tuples) get
+        one widget per element stacked vertically; any element change emits
+        the full composite list via ``valueChanged``.
 
-        Composite attributes (those whose values are lists, sets, or tuples) are handled by creating multiple widgets,
-        one for each composite value, and arranging them within a vertical layout.
-
-        Parameters:
-            attributes (str, dict): The name of the attribute to add, or a dictionary of attribute names and values for bulk addition.
-            value (optional): The value of the attribute if `attributes` is a string. Defaults to None.
-
-        Returns:
-            None: This method does not return a value but updates the UI elements of the attribute window.
-
-        Raises:
-            ValueError: If an unsupported attribute type is encountered and `allow_unsupported_types` is False.
+        Values whose type is not in :meth:`is_type_supported` are dropped
+        silently unless ``allow_unsupported_types=True`` was passed to
+        ``__init__``, in which case they're rendered as their ``str()``
+        repr in a QLineEdit.
         """
         if isinstance(attributes, dict):
             for k, v in attributes.items():
                 self.add_attributes(k, v)
+            return
 
-        # Check the type of the value here
+        if isinstance(attributes, factory.AttributeSpec):
+            self.add_attribute_spec(attributes)
+            return
+
         if not self.allow_unsupported_types and not self.is_type_supported(type(value)):
             return
 
-        # If attribute is a composite one
         if isinstance(value, (list, set, tuple)):
-            widget_layout = QtWidgets.QVBoxLayout()
-            widget_layout.setSpacing(1)
-            widget_layout.setMargin(0)
-            widgets = []
-            for value in value:
-                widget_info = self.get_widget_info(value)
-                if widget_info is not None:
-                    (
-                        widget_class,
-                        set_value_method,
-                        get_value_method,
-                        signal_name,
-                    ) = widget_info
-                    # Skip this iteration if any value in widget_info is None
-                    if None in widget_info:
-                        continue
-                    widget = self.setup_widget(
-                        widget_class,
-                        set_value_method,
-                        value,
-                        get_value_method,
-                        signal_name,
-                        attributes,
-                    )
-                    widgets.append(widget)
-                    widget_layout.addWidget(widget)
-            if widgets:
-                self.attribute_to_widgets[attributes] = widgets
-                label = self.setup_label(attributes)
-                self.add_to_layout(label, widget_layout)
+            self._add_composite(attributes, value)
+            return
 
-        else:  # Single value attribute
-            widget_info = self.get_widget_info(value)
-            if widget_info is not None:
-                (
-                    widget_class,
-                    set_value_method,
-                    get_value_method,
-                    signal_name,
-                ) = widget_info
-                # Return from the method if any value in widget_info is None
-                if None in widget_info:
-                    return
-                widget = self.setup_widget(
-                    widget_class,
-                    set_value_method,
-                    value,
-                    get_value_method,
-                    signal_name,
-                    attributes,
-                )
-                self.attribute_to_widgets[attributes] = [widget]
-                label = self.setup_label(attributes)
-                self.add_to_layout(label, widget)
+        self._add_scalar(attributes, value)
+
+    def add_attribute_spec(self, spec):
+        """Add one attribute via an explicit :class:`uitk.AttributeSpec`.
+
+        Use this when you need min/max/step/choices/path semantics that the
+        type-driven :meth:`add_attributes` form can't express. The spec's
+        ``key`` becomes the attribute name; the displayed label uses
+        ``spec.label`` (falling back to ``spec.key``).
+        """
+        widget = factory.make_widget(spec, self)
+        widget.setProperty("attribute_name", spec.key)
+        factory.connect_changed(
+            widget, lambda _v, _w=widget: self.emit_value_changed(_w)
+        )
+        self.attribute_to_widgets[spec.key] = [widget]
+        label = self.setup_label(spec.display_label)
+        self.add_to_layout(label, widget)
+
+    def _add_scalar(self, name, value):
+        """Build + wire a single-value widget via the factory.
+
+        Called after the :meth:`add_attributes` gate has already accepted
+        *value* (either supported type, or unsupported with the flag set).
+        ``infer_kind`` always returns a built-in kind, so the factory call
+        cannot KeyError here.
+        """
+        spec = factory.AttributeSpec.from_value(name, value)
+        widget = factory.make_widget(spec, self)
+        widget.setProperty("attribute_name", spec.key)
+        factory.connect_changed(
+            widget, lambda _v, _w=widget: self.emit_value_changed(_w)
+        )
+        self.attribute_to_widgets[spec.key] = [widget]
+        label = self.setup_label(spec.display_label)
+        self.add_to_layout(label, widget)
+
+    def _add_composite(self, name, values):
+        """Build one widget per element; any change emits the full composite list."""
+        widget_layout = QtWidgets.QVBoxLayout()
+        widget_layout.setSpacing(1)
+        widget_layout.setContentsMargins(0, 0, 0, 0)
+        widgets = []
+        for element in values:
+            if not self.allow_unsupported_types and not self.is_type_supported(type(element)):
+                continue
+            spec = factory.AttributeSpec.from_value(name, element)
+            w = factory.make_widget(spec, self)
+            w.setProperty("attribute_name", spec.key)
+            factory.connect_changed(
+                w, lambda _v, _n=spec.key: self.emit_composite_value_changed(_n)
+            )
+            widgets.append(w)
+            widget_layout.addWidget(w)
+        if widgets:
+            self.attribute_to_widgets[name] = widgets
+            label = self.setup_label(name)
+            self.add_to_layout(label, widget_layout)
 
     def emit_value_changed(self, widget):
-        """Emit the valueChanged signal for a widget."""
+        """Emit the valueChanged signal for a widget (or composite-aware)."""
         attribute_name = widget.property("attribute_name")
         if (
             attribute_name in self.attribute_to_widgets
             and len(self.attribute_to_widgets[attribute_name]) > 1
         ):
             self.emit_composite_value_changed(attribute_name)
-        else:
-            attribute_value = getattr(widget, widget.get_value_method)()
-            self.valueChanged.emit(attribute_name, attribute_value)
+            return
+        self.valueChanged.emit(attribute_name, factory.read_value(widget))
 
     def emit_composite_value_changed(self, attribute_name):
         """Construct and emit the full attribute value for a composite attribute."""
         attribute_value = [
-            getattr(widget, widget.get_value_method)()
-            for widget in self.attribute_to_widgets[attribute_name]
+            factory.read_value(w)
+            for w in self.attribute_to_widgets[attribute_name]
         ]
         self.valueChanged.emit(attribute_name, attribute_value)
 
