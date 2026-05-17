@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.1.101"
+__version__ = "1.2.3"
 
 
 DEFAULT_INCLUDE = {
@@ -57,7 +57,18 @@ DEFAULT_INCLUDE = {
     "widgets.marking_menu._marking_menu": "MarkingMenu",
     "managers.window_manager": "WindowManager",
     # Widgets
-    "widgets.attributeWindow": "AttributeWindow",
+    "widgets.attributeWindow._attributeWindow": "AttributeWindow",
+    "widgets.attributeWindow._factory": [
+        "AttributeSpec",
+        "KindHandler",
+        "make_widget",
+        "read_value",
+        "set_value",
+        "connect_changed",
+        "infer_kind",
+        "register_kind",
+        "get_handler",
+    ],
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
     "widgets.colorSwatch": "ColorSwatch",

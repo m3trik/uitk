@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-05-14_
+_Generated: 2026-05-17_
 
 ## Index
 
@@ -641,8 +641,8 @@ Searchable, tag-filtered launcher for any UI registered with a Switchboard.
   - `Footer.alignment(self) -> QtCore.Qt.Alignment` — Get alignment of the status label (backward compatibility).
   - `Footer.update_font_size(self)` — Public method for updating font size (backward compatibility).
   - `Footer.font(self) -> QtGui.QFont` — Get font from status label (backward compatibility).
-  - `Footer.add_widget(self, widget: QtWidgets.QWidget, side: str = 'right', background: bool = False) -> QtWidgets.QWidget` — Insert an arbitrary widget into the footer on the given side.
-  - `Footer.add_action_button(self, text: str = '', icon_name: str = None, tooltip: str = '', callback=None) -> QtWidgets.QPushButton` — Add an action button to the right side of the footer.
+  - `Footer.add_widget(self, widget: QtWidgets.QWidget, side: str = 'right', background: bool = False, rounded: bool = True) -> QtWidgets.QWidget` — Insert an arbitrary widget into the footer on the given side.
+  - `Footer.add_action_button(self, text: str = '', icon_name: str = None, tooltip: str = '', callback=None, rounded: bool = True) -> QtWidgets.QPushButton` — Add an action button to the right side of the footer.
   - `Footer.progress_bar(self) -> ProgressBar` *(property)* — Get the embedded progress bar.
   - `Footer.status_label(self) -> QtWidgets.QLabel` *(property)* — Get the status label.
   - `Footer.size_grip(self) -> Optional[QtWidgets.QSizeGrip]` *(property)* — Get the size grip widget if it exists.
@@ -660,8 +660,8 @@ Searchable, tag-filtered launcher for any UI registered with a Switchboard.
   - `Footer.resizeEvent(self, event)` — Debounce resize: restart timer on each event so we only
   - `Footer.showEvent(self, event)` — Ensure text is properly sized and elided on first show.
   - `Footer.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.
-- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L503)** — Context manager for footer progress tracking.
-- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L524)** — Helper that keeps a footer in sync with a resolver function.
+- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L558)** — Context manager for footer progress tracking.
+- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L579)** — Helper that keeps a footer in sync with a resolver function.
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
@@ -681,11 +681,14 @@ Searchable, tag-filtered launcher for any UI registered with a Switchboard.
   - `Header.resize_buttons(self)`
   - `Header.update_font_size(self)`
   - `Header.setTitle(self, title)` — Set the title of the header.
-  - `Header.title(self)` — Get the title of the header.
+  - `Header.title(self)` — Get the title of the header (without any version suffix).
+  - `Header.setVersion(self, version)` — Set an optional version string appended to the title.
+  - `Header.version(self)` — Return the current version suffix (without the ``v`` prefix).
   - `Header.setText(self, text)` — Override to remember the untruncated title for elision.
   - `Header.minimize_window(self)` — Minimize the window: collapse to header-only, narrow to a fixed width,
   - `Header.restore_window(self)` — Restore a minimized window to its original size and position.
   - `Header.toggle_maximize(self)` — Toggle between maximized and normal window state.
+  - `Header.toggle_fullscreen(self)` — Toggle between fullscreen and normal window state.
   - `Header.hide_window(self)` — Hide the parent window.
   - `Header.unhide_window(self)` — Unhide the parent window.
   - `Header.trigger_refresh(self)` — Emit the refresh_requested signal.
@@ -715,7 +718,11 @@ Searchable, tag-filtered launcher for any UI registered with a Switchboard.
 - **[`class LineEditFormatMixin`](uitk/uitk/widgets/lineEdit.py#L11)** — Lazily formats QLineEdit with reversible visual state feedback.
   - `LineEditFormatMixin.set_action_color(self, key: str) -> None`
   - `LineEditFormatMixin.reset_action_color(self) -> None`
-- **[`class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L30)** — LineEdit with automatic Menu and OptionBox integration.
+  - `LineEditFormatMixin.set_validator(self, validator, *, debounce_ms: int = 300, invalid_tooltip: str = 'Invalid', valid_tooltip=None, empty_tooltip=None, empty_is_valid: bool = True)` — Install a debounced text validator with visual feedback.
+  - `LineEditFormatMixin.clear_validator(self)` — Remove any installed validator and reset visual state.
+  - `LineEditFormatMixin.is_valid(self)` *(property)* — Last validation result, or ``None`` if no validator is set.
+  - `LineEditFormatMixin.validate_now(self)` — Cancel any pending debounce and validate the current text now.
+- **[`class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L202)** — LineEdit with automatic Menu and OptionBox integration.
   - `LineEdit.contextMenuEvent(self, event)` — Override the standard context menu if there is a custom one.
   - `LineEdit.showEvent(self, event)` — Handle show event.
   - `LineEdit.hideEvent(self, event)` — Handle hide event.
@@ -880,7 +887,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Menu.add_presets(self, value: bool) -> None`
   - `Menu.get_all_children(self)`
   - `Menu.is_pinned(self) -> bool` *(property)* — Check if the menu is pinned (should not auto-hide).
-  - `Menu.contains_items(self) -> bool` *(property)* — Check if the QMenu contains any items.
+  - `Menu.contains_items(self) -> bool` *(property)* — Check if the QMenu contains any genuine items.
   - `Menu.title(self) -> str` — Get the menu's title text.
   - `Menu.setTitle(self, title='') -> None` — Set the menu's title to the given string.
   - `Menu.get_items(self, types=None)` — Get all items in the list, optionally filtered by type.
@@ -959,6 +966,9 @@ Pure menu-resolution logic for the MarkingMenu.
   - `IconManager.set_default_color(cls, color: str)` *(class)* — Set the default icon color for icons created without explicit color.
   - `IconManager.register_icon_dir(cls, path)` *(class)* — Register an additional icon directory (searched first).
   - `IconManager.get(cls, name: str, size=(16, 16), color: str = None, use_theme: bool = True) -> QtGui.QIcon` *(class)* — Get an icon, optionally colorized.
+  - `IconManager.fit_size(container_size, margin: int = 4, min_size: int = 8) -> int` *(static)* — Compute a square icon extent that fits inside ``container_size`` px.
+  - `IconManager.fit_icon(cls, widget, name: str, container_size, margin: int = 4, min_size: int = 8, color: str = None, auto_theme: bool = True) -> int` *(class)* — Render *name* onto *widget* sized to fit a square container.
+  - `IconManager.swap_icon(cls, widget, name: str, color: str = None, auto_theme: bool = True, fallback_size=(16, 16)) -> None` *(class)* — Replace the icon on *widget* without changing its display size.
   - `IconManager.set_icon(cls, widget, name: str, size=(16, 16), color: str = None, auto_theme: bool = True)` *(class)* — Set an icon on a widget.
   - `IconManager.update_widget_icons(cls, root_widget: QtWidgets.QWidget, color: str)` *(class)* — Update all registered icons under a widget tree with a new color.
   - `IconManager.clear_cache(cls)` *(class)* — Clear all cached icons and SVG content.
@@ -1173,7 +1183,7 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled-state changes.
   - `OptionBoxContainer.resizeEvent(self, event)`
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L77)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L87)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
@@ -1209,7 +1219,7 @@ Action option for OptionBox - provides customizable action buttons.
   - `ActionOption.current_state(self)` *(property)* — The current state index (0-based).
   - `ActionOption.current_state(self, index)`
   - `ActionOption.set_states(self, states)` — Set multiple cycling states.
-- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L232)** — A menu action option specifically for showing menus.
+- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L234)** — A menu action option specifically for showing menus.
   - `MenuOption.set_menu(self, menu)` — Set or update the menu.
   - `MenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
 
@@ -1301,6 +1311,7 @@ Recent Values option for OptionBox — shows a selectable history list.
   - `RecentValuesOption.create_widget(self)`
   - `RecentValuesOption.record(self, value=None)` — Record a value into the recent list.
   - `RecentValuesOption.add_recent_value(self, value)` — Programmatically seed a recent value (appends if not duplicate).
+  - `RecentValuesOption.set_wrapped_widget(self, widget)` — Set or update the wrapped widget, re-installing auto-record if enabled.
   - `RecentValuesOption.recent_values(self)` *(property)* — Return a copy of the recent values list (most-recent first).
   - `RecentValuesOption.clear_recent_values(self)` — Clear all recent values.
 
