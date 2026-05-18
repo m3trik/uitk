@@ -141,9 +141,15 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
                 wl = None
             if wl:
                 wl.activate()
-        new_height = old_window_height + delta
         min_h = window.minimumSizeHint().height()
-        new_height = max(new_height, min_h)
+        new_height = max(old_window_height + delta, min_h)
+        # Mirror MainWindow._sync_min_height_to_hint: track the layout hint
+        # explicitly so a stale-high cached minimum can't clamp the resize.
+        # Must track in both directions: once we set an explicit min, Qt
+        # stops auto-raising it on grow, so subsequent expands need us to
+        # raise it back too.
+        if min_h >= 0 and window.minimumHeight() != min_h:
+            window.setMinimumHeight(min_h)
         window.resize(window.width(), new_height)
 
     def _set_content_visible(self, visible):

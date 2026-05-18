@@ -24,10 +24,11 @@ class OptionBoxManager(ptk.LoggingMixin):
             "clear",
             "recent",
             "pin",
+            "toggle",
             "action",
             "browse",
             "menu",
-        ]  # Default order: clear, recent, pin, action, browse, then menu
+        ]  # Default order: clear, recent, pin, toggle, action, browse, then menu
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -59,7 +60,15 @@ class OptionBoxManager(ptk.LoggingMixin):
         if not isinstance(order, (list, tuple)):
             raise ValueError("Option order must be a list or tuple")
 
-        valid_options = {"clear", "recent", "pin", "action", "browse", "menu"}
+        valid_options = {
+            "clear",
+            "recent",
+            "pin",
+            "toggle",
+            "action",
+            "browse",
+            "menu",
+        }
         if not all(opt in valid_options for opt in order):
             raise ValueError(
                 f"Invalid options in order. Valid options: {valid_options}"
@@ -220,6 +229,83 @@ class OptionBoxManager(ptk.LoggingMixin):
             states=states,
             settings_key=settings_key,
         )
+
+    def set_toggle(
+        self,
+        *,
+        icon: str = "filter",
+        icon_off: Optional[str] = None,
+        tooltip_on: str = "Enabled. Click to disable.",
+        tooltip_off: str = "Disabled. Click to enable.",
+        initial: bool = True,
+        disabled_color: Optional[str] = None,
+        gated_widgets=(),
+        settings_key=None,
+        replace: bool = True,
+        on_toggled=None,
+    ):
+        """Add a persisted binary toggle button (fluent interface).
+
+        Args:
+            icon: Icon name. Same icon is used for on and off states unless
+                ``icon_off`` is provided.
+            icon_off: Optional alternate icon for the off state.
+            tooltip_on: Tooltip while on.
+            tooltip_off: Tooltip while off.
+            initial: Starting state. Overridden by any persisted value.
+            disabled_color: Hex tint for the off state. ``None`` uses the
+                project's default error red (``Palette.status()["error"]``).
+            gated_widgets: Optional widgets to disable while the toggle is
+                off. Caller owns lifecycle.
+            settings_key: Persistence namespace. ``str`` for explicit key,
+                ``None`` to auto-derive from wrapped widget's objectName,
+                ``False`` to opt out.
+            replace: When ``True`` (default), removes any existing
+                ToggleOption first. Pass ``False`` to stack multiple toggles.
+            on_toggled: Optional callable connected to the toggle's
+                ``toggled(bool)`` signal as a convenience.
+
+        Returns:
+            self: For fluent chaining. Access the option via
+            ``find_option(ToggleOption)``.
+        """
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        if replace:
+            self._pending_options = [
+                opt for opt in self._pending_options if not isinstance(opt, ToggleOption)
+            ]
+            if self._option_box:
+                for opt in [
+                    o for o in self._option_box.get_options() if isinstance(o, ToggleOption)
+                ]:
+                    self._option_box.remove_option(opt)
+
+        kwargs = dict(
+            wrapped_widget=self._widget,
+            icon=icon,
+            icon_off=icon_off,
+            tooltip_on=tooltip_on,
+            tooltip_off=tooltip_off,
+            initial=initial,
+            gated_widgets=gated_widgets,
+            settings_key=settings_key,
+        )
+        if disabled_color is not None:
+            kwargs["disabled_color"] = disabled_color
+        toggle = ToggleOption(**kwargs)
+        if on_toggled is not None:
+            toggle.toggled.connect(on_toggled)
+        self.add_option(toggle)
+        return self
+
+    def add_toggle(self, **kwargs):
+        """Add a toggle without replacing existing ones.
+
+        Convenience wrapper around ``set_toggle(replace=False)``.
+        """
+        kwargs.setdefault("replace", False)
+        return self.set_toggle(**kwargs)
 
     def browse(
         self,

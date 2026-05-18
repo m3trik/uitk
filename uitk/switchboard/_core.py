@@ -79,6 +79,22 @@ class Switchboard(
     on_ui_registered = QtCore.Signal(str)
     # Emitted after save_ui_tags() persists XML tags for an existing UI.
     on_ui_tags_changed = QtCore.Signal(str)
+    # Emitted from ``_resolve_ui`` after a UI has been loaded and added
+    # to ``loaded_ui``. Distinct from ``on_ui_registered`` (registry
+    # population) — this one fires once per UI when it actually
+    # materialises, regardless of which code path triggered the load
+    # (browser launch button, marking menu, direct loaded_ui access).
+    # UiHandler uses it to wire visibility-change tracking centrally,
+    # so a UI shown via *any* path participates in row-state refresh.
+    on_ui_loaded = QtCore.Signal(str)
+    # Emitted when a launchable handler's full entry set may have changed
+    # (registration / unregistration). Payload: handler attr name on
+    # ``self.handlers``. Subscribers should re-pull entries for that handler.
+    on_handler_entries_changed = QtCore.Signal(str)
+    # Emitted when one entry's live state changed (visibility, status).
+    # Payload: (handler_attr_name, entry_name). Lets subscribers refresh
+    # a single row instead of rebuilding the handler's full entry list.
+    on_handler_entry_changed = QtCore.Signal(str, str)
 
     def __init__(
         self,
@@ -115,6 +131,20 @@ class Switchboard(
 
         # Initialize handlers namespace
         self.handlers = type("Handlers", (), {})()
+        # Subset of handlers exposing the launchable contract; populated
+        # by ``register_handler`` and consumed by ``iter_handler_entries``.
+        self._launchable_handlers: dict = {}
+
+        # Forward the pre-existing UI-specific signals into the new
+        # unified ones so subscribers can listen on the unified pair
+        # alone. The UI-specific signals remain emitted for backward
+        # compat with code already wired to them.
+        self.on_ui_registered.connect(
+            lambda n: self.on_handler_entry_changed.emit("ui", n)
+        )
+        self.on_ui_tags_changed.connect(
+            lambda n: self.on_handler_entry_changed.emit("ui", n)
+        )
 
         # Store handlers for registration after configurable is initialized
         self._pending_handlers = handlers
@@ -203,12 +233,75 @@ class Switchboard(
                 self.register_handler(name, instance, defaults)
             self._pending_handlers = None
 
+        # Auto-register a default UiHandler so any code that consumes the
+        # unified launcher surface (``iter_handler_entries``) sees the
+        # ui_registry without forcing every caller to wire UiHandler
+        # themselves. Subclasses passed via ``handlers={"ui": MyUiHandler}``
+        # already populate this slot and are preserved. Lazy-imported here
+        # to avoid an import cycle (UiHandler imports Switchboard).
+        if not getattr(self.handlers, "ui", None):
+            from uitk.handlers.ui_handler import UiHandler
+
+            self.register_handler(
+                "ui",
+                UiHandler.instance(switchboard=self),
+                getattr(UiHandler, "DEFAULTS", {}),
+            )
+
+    # Methods every launchable handler must expose. Validated by
+    # ``register_handler`` (duck-typed; subclassing
+    # ``LaunchableHandlerProtocol`` is optional). Mirrors
+    # ``_LOADER_CONTRACT`` so the same enforcement pattern shows up in
+    # one place for both extension points.
+    _LAUNCHABLE_CONTRACT = ("entries", "launch", "close", "is_visible")
+
     def register_handler(self, name: str, instance, defaults: dict = None):
-        """Register a handler instance and apply defaults to its config."""
+        """Register a handler instance and apply defaults to its config.
+
+        If *instance* implements the launchable contract
+        (:attr:`_LAUNCHABLE_CONTRACT`) it's also added to the unified
+        entry surface — :meth:`iter_handler_entries` will yield from it
+        and the browser will list its entries.
+        """
         setattr(self.handlers, name, instance)
         if defaults:
             # Apply defaults to the configuration branch matching the handler name
             self.configurable.branch(name).set_defaults(defaults)
+        if self._is_launchable(instance):
+            self._launchable_handlers[name] = instance
+            # Coarse re-read so any browser already wired to the signal
+            # picks up the new handler's entries without manual refresh.
+            self.on_handler_entries_changed.emit(name)
+
+    @classmethod
+    def _is_launchable(cls, instance) -> bool:
+        """Return True iff *instance* exposes the full launchable contract.
+
+        Each contract method must exist and be callable on the instance.
+        A partial implementation is rejected: a handler that ships
+        ``entries()`` but not ``close()`` would crash the browser when
+        the user tried to dismiss a row.
+        """
+        return all(
+            callable(getattr(instance, m, None)) for m in cls._LAUNCHABLE_CONTRACT
+        )
+
+    def iter_handler_entries(self):
+        """Yield every :class:`HandlerEntry` from every launchable handler.
+
+        Single iteration point for clients (browser, marking menu, …)
+        that need a unified view across handler boundaries. Errors from
+        an individual handler are logged and skipped so one broken
+        handler doesn't blank the launcher.
+        """
+        for handler_name, handler in self._launchable_handlers.items():
+            try:
+                yield from handler.entries()
+            except Exception:
+                self.logger.warning(
+                    f"[iter_handler_entries] {handler_name}.entries() failed",
+                    exc_info=True,
+                )
 
     _LOADER_CLASSES = {
         "compiled": CompiledLoader,
@@ -358,6 +451,13 @@ class Switchboard(
         ui = self.add_ui(name, widget=loaded_ui, path=ui_filepath)
 
         self.logger.debug(f"[{name}] UI loaded successfully from {ui_filepath}")
+        try:
+            self.on_ui_loaded.emit(name)
+        except Exception:
+            # Signal emission must not block the load — log and move on.
+            self.logger.debug(
+                f"[on_ui_loaded] emit failed for {name!r}", exc_info=True
+            )
         return ui
 
     def _resolve_ui_using_slots(self, attr_name) -> QtWidgets.QWidget:
@@ -430,6 +530,7 @@ class Switchboard(
                   When a UI file from this location is loaded via add_ui(), these
                   tags are automatically merged into its tag set.
         """
+        source_tags_changed = False
         if tags and ui_location:
             tag_set = set(ptk.make_iterable(tags))
             for loc in ptk.make_iterable(ui_location):
@@ -437,7 +538,9 @@ class Switchboard(
                     loc = os.path.dirname(loc.__file__)
                 if isinstance(loc, str):
                     resolved = os.path.normpath(os.path.abspath(loc))
-                    self._source_tags[resolved] = tag_set
+                    if self._source_tags.get(resolved) != tag_set:
+                        self._source_tags[resolved] = tag_set
+                        source_tags_changed = True
         locations = {
             "ui_registry": (ui_location, "UI"),
             "slot_registry": (slot_location, "Slot"),
@@ -502,6 +605,12 @@ class Switchboard(
 
             if registry_name == "ui_registry":
                 self._ingest_new_ui_entries(prev_ui_names)
+                # Source tags shifted but no new filenames added — the
+                # per-entry signal didn't fire for existing rows. Fire
+                # the coarse signal so subscribers (browser model) re-pull
+                # entries and pick up the updated inherited_tags.
+                if source_tags_changed:
+                    self.on_handler_entries_changed.emit("ui")
 
     def load_all_ui(self) -> list:
         """Extends the 'load_ui' method to load all UI from a given path.
@@ -800,7 +909,14 @@ class Switchboard(
         if not path or not os.path.isfile(path):
             raise FileNotFoundError(f"UI file not found: {path}")
 
-        tag_set = {t.strip() for t in tags if t and t.strip()}
+        # Strip leading "#" — the prefix is display-only formatting added
+        # by the browser's delegate. Storing "#foo" would round-trip to
+        # "##foo" the next time the row renders.
+        tag_set = set()
+        for t in tags:
+            cleaned = t.strip().lstrip("#").strip() if t else ""
+            if cleaned:
+                tag_set.add(cleaned)
 
         tree = ElementTree()
         tree.parse(path)

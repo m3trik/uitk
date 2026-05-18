@@ -21,7 +21,8 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 ```
                      ┌─────────────────────────────────────┐
                      │           Switchboard                │
-                     │ (QUiLoader + 5 mixins + FileManager) │
+                     │ (loader delegate + 7 partials +      │
+                     │  FileManager)                        │
                      └─────────────────────────────────────┘
                                        │
           ┌────────────────┬───────────┼─────────────┬──────────────────┐
@@ -70,10 +71,11 @@ class Switchboard(
 ): ...
 ```
 
-Each partial lives in `uitk/switchboard/_<name>.py` (e.g. `_slots.py`,
-`_shortcuts.py`). The leading underscore signals these are not
-standalone mixins — they exist only as composition pieces of
-`Switchboard` and aren't intended for reuse outside this package.
+Each partial lives in `uitk/switchboard/<name>.py` (e.g. `slots.py`,
+`shortcuts.py`, `widgets.py`, `utils.py`, `names.py`, `editors.py`,
+`style.py`). These are implementation pieces, not standalone mixins —
+the `switchboard` subpackage is the encapsulation boundary, not the
+individual partials.
 
 The companion module [uitk/widgets/mixins/shortcuts.py](../uitk/widgets/mixins/shortcuts.py)
 holds the *generic* shortcut primitives (``GlobalShortcut``,
@@ -127,7 +129,7 @@ sb.handlers.ui                    # instance
 sb.handlers.my_svc.do_something()
 ```
 
-Handler class attribute `DEFAULTS = {...}` is merged into `sb.configurable.<handler_name>` so handler config is automatically persistent and reactive. See [handlers/ui_handler.py:30](../uitk/handlers/ui_handler.py#L30) for the `UiHandler.DEFAULTS` example.
+Handler class attribute `DEFAULTS = {...}` is merged into `sb.configurable.<handler_name>` so handler config is automatically persistent and reactive. See [handlers/ui_handler.py](../uitk/handlers/ui_handler.py) for the `UiHandler.DEFAULTS` example.
 
 ---
 
@@ -151,7 +153,7 @@ This matters because UITK is used inside DCCs (Maya, Blender) where import-time 
 
 ## 5. MainWindow — the UI wrapper
 
-[uitk/widgets/mainWindow.py](../uitk/widgets/mainWindow.py), 837 lines. Every loaded `.ui` file is wrapped in a `MainWindow` (not the `QMainWindow` from the `.ui` — UITK wraps it).
+[uitk/widgets/mainWindow.py](../uitk/widgets/mainWindow.py). Every loaded `.ui` file is wrapped in a `MainWindow` (not the `QMainWindow` from the `.ui` — UITK wraps it).
 
 ### Responsibilities
 
@@ -222,7 +224,7 @@ When a widget's default signal fires, `MainWindow._add_child_changed_signal` for
 
 ## 6. Slot system — how `btn_save()` actually gets called
 
-Implementation: [switchboard/_slots.py](../uitk/switchboard/_slots.py).
+Implementation: [switchboard/slots.py](../uitk/switchboard/slots.py).
 
 ### Resolution
 
@@ -365,7 +367,7 @@ Monochrome SVG icons are auto-colored by the `IconManager` mixin, reading `ICON_
 
 ## 10. UI hierarchy via tag depth
 
-`get_ui_relatives(ui, upstream=False, exact=False, downstream=False, reverse=False)` in [_core.py:639](../uitk/switchboard/_core.py#L639).
+`get_ui_relatives(ui, upstream=False, exact=False, downstream=False, reverse=False)` in [_core.py](../uitk/switchboard/_core.py).
 
 1. Resolve target to base name (`get_base_name("menu#file") == "menu"`).
 2. Find all UIs in `ui_registry` sharing that base name.
@@ -383,7 +385,7 @@ Returns names or loaded widgets depending on input type. Enables:
 
 ## 11. Resolution order for `sb.loaded_ui.xxx`
 
-From [_core.py:342](../uitk/switchboard/_core.py#L342):
+From `_resolve_ui` in [_core.py](../uitk/switchboard/_core.py):
 
 ```
 sb.loaded_ui.editor
@@ -438,29 +440,45 @@ Source tags come from `sb.register(ui_location=..., tags={"menu"})` — tag all 
 ```
 uitk/
 ├── __init__.py                # DEFAULT_INCLUDE + bootstrap_package
-├── switchboard.py             # orchestrator (729 lines)
-├── file_manager.py            # typed registries (563 lines)
+├── compile.py                 # pyside6-uic-backed .ui → _ui.py compiler
+├── file_manager.py            # typed registries
 ├── events.py                  # EventFactoryFilter, MouseTracking
 │
+├── switchboard/               # orchestrator package
+│   ├── _core.py               # Switchboard class (composes the partials below)
+│   ├── slots.py               # slot resolution, Signals, SlotWrapper, default_signals
+│   ├── widgets.py             # widget resolution + registration
+│   ├── utils.py               # center_widget, unpack_names, dialogs
+│   ├── names.py               # tag/base name parsing, legal-name conversion
+│   ├── shortcuts.py           # keyboard shortcut registration
+│   ├── editors.py             # sb.editors registry
+│   └── style.py               # sb.style — lazy StyleSheet accessor
+│
+├── loaders/                   # RuntimeLoader (default, QUiLoader), CompiledLoader (pyside6-uic)
+│
 ├── handlers/
-│   └── ui_handler.py          # UiHandler (sb.handlers.ui)
+│   ├── ui_handler.py          # UiHandler (sb.handlers.ui)
+│   ├── base_handler.py        # shared lifecycle for handler subclasses
+│   ├── external_tool_handler.py
+│   └── handler_entry.py
 │
 ├── widgets/
-│   ├── mainWindow.py          # UI wrapper (837 lines)
-│   ├── menu.py                # Menu (2762 lines)
+│   ├── mainWindow.py          # MainWindow (UI wrapper)
+│   ├── menu.py                # Menu (the workhorse — largest single class)
 │   ├── header.py, footer.py   # frameless window chrome
 │   ├── pushButton.py, checkBox.py, comboBox.py, lineEdit.py, ...
 │   ├── marking_menu/
-│   │   ├── _marking_menu.py   # MarkingMenu (1385 lines)
+│   │   ├── _marking_menu.py   # MarkingMenu
+│   │   ├── _resolver.py
 │   │   └── overlay.py         # gesture trail + widget cloning
 │   ├── optionBox/
 │   │   ├── _optionBox.py      # OptionBox, OptionBoxContainer
 │   │   ├── utils.py           # OptionBoxManager + widget patching
 │   │   └── options/           # ClearOption, BrowseOption, PinValuesOption, ...
+│   ├── attributeWindow/       # generic attribute editor + kind handlers
 │   ├── sequencer/             # full animation timeline
-│   ├── editors/               # ColorMappingEditor, HotkeyEditor, StyleEditor
+│   ├── editors/               # ColorMappingEditor, HotkeyEditor, StyleEditor, EditorPanel, SwitchboardBrowser
 │   └── mixins/
-│       ├── switchboard_*.py   # slots / widgets / utils / names mixins
 │       ├── attributes.py      # set_attributes / set_flags
 │       ├── menu_mixin.py      # .menu descriptor
 │       ├── option_box_mixin.py # .option_box descriptor
@@ -469,10 +487,11 @@ uitk/
 │       ├── value_manager.py   # get/set widget value by signal
 │       ├── style_sheet.py     # themes + QSS template
 │       ├── icon_manager.py    # theme-aware icon coloring
-│       ├── shortcuts.py       # keyboard shortcuts
+│       ├── shortcuts.py       # GlobalShortcut, ShortcutManager, ShortcutMixin
 │       ├── preset_manager.py  # named preset save/load
 │       ├── tasks.py           # WorkIndicator, TasksMixin
 │       ├── text.py            # RichText, TextOverlay, TextTruncation
+│       ├── tooltip_mixin.py    # lazy-refreshed tooltips via event filter
 │       ├── convert.py, docking.py, size_grip.py, style.qss
 │
 ├── icons/                     # monochrome SVGs (auto-colored)

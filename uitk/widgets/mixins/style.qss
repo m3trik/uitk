@@ -565,7 +565,13 @@ QPlainTextEdit:disabled {
     border: 1px solid {DISABLED_BACKGROUND};
 }
 
-/* -- Item Views -- */
+/* -- Item Views --
+   Default: standard blue selection fill (matches the theme's BUTTON_HOVER
+   so it reads as the canonical "active" accent) and a white-tint hover.
+   Editors whose cells carry colour-coded backgrounds — color swatches,
+   tag chips, status palettes — can opt out by installing
+   RowSelectionBorderDelegate, which mutes ``State_Selected`` and draws a
+   row-spanning border so the cell colour bleeds through underneath. */
 QAbstractItemView {
     alternate-background-color: {ALTERNATE_BACKGROUND};
     background-attachment: fixed;
@@ -575,24 +581,28 @@ QAbstractItemView {
 QAbstractItemView::item:alternate {
     background-color: {ALTERNATE_BACKGROUND};
 }
+QAbstractItemView::item:hover {
+    background-color: rgba(255,255,255,30);
+    color: {TEXT_HOVER};
+}
 QAbstractItemView::item:selected {
-    border: 1px solid {BORDER_COLOR};
     background-color: {BUTTON_HOVER};
-    color: {TEXT_COLOR};
+    color: {TEXT_HOVER};
+    border: 1px solid {BUTTON_HOVER};
+}
+QAbstractItemView::item:selected:hover {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+    border: 1px solid {BUTTON_HOVER};
 }
 QAbstractItemView::item:checked {
-    border: 1px solid {BORDER_COLOR};
     background-color: {BUTTON_CHECKED};
     color: {TEXT_COLOR};
 }
 QAbstractItemView::item:checked:selected {
-    border: 1px solid {BORDER_COLOR};
     background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
-}
-QAbstractItemView::item:hover {
-    background-color: {BUTTON_HOVER};
-    color: {TEXT_HOVER};
+    border: 1px solid {BUTTON_HOVER};
 }
 QAbstractItemView:disabled {
     color: {TEXT_DISABLED};
@@ -632,26 +642,39 @@ QTableCornerButton::section {
     border: none;
 }
 
-/* QTableWidget hierarchy support */
+/* Default QTableWidget — solid base background like TreeWidget, standard
+   blue selection fill, and a white-tint hover. More specific than the
+   QAbstractItemView rules above, so it overrides without affecting other
+   item views. Editors that want the row-spanning outline style (with
+   transparent selection so colour-coded cell backgrounds bleed through)
+   replace the item delegate with RowSelectionBorderDelegate. */
+QTableWidget {
+    background-color: {WIDGET_BACKGROUND};
+    alternate-background-color: {ALTERNATE_BACKGROUND};
+    color: {TEXT_COLOR};
+    selection-background-color: {BUTTON_HOVER};
+    selection-color: {TEXT_HOVER};
+    gridline-color: transparent;
+    outline: 0;
+}
 QTableWidget::item {
     padding: 2px 5px;
     border: 1px solid transparent;
 }
 QTableWidget::item:hover {
-    border: 1px solid rgba(255,255,255,45);
+    background-color: rgba(255, 255, 255, 30);
+    color: {TEXT_HOVER};
+    border: 1px solid transparent;
 }
 QTableWidget::item:selected {
-    background-color: {TABLE_ITEM_SELECTED};
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+    border: 1px solid {BUTTON_HOVER};
 }
 QTableWidget::item:selected:hover {
-    background-color: {TABLE_ITEM_SELECTED};
-    border: 1px solid rgba(255,255,255,70);
-}
-QTableWidget::item:checked {
-    background-color: {BUTTON_CHECKED};
-}
-QTableWidget::item:checked:selected {
-    background-color: {TABLE_ITEM_SELECTED};
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+    border: 1px solid {BUTTON_HOVER};
 }
 
 QTreeView::branch {
@@ -845,7 +868,7 @@ QProgressBar[orientation="Qt::Vertical"] {
     text-align: top;
 }
 QProgressBar::chunk {
-    background-color: {BUTTON_HOVER};
+    background-color: {PROGRESS_BAR_COLOR};
     width: 10px;
     margin: 0.5px;
 }

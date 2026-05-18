@@ -225,7 +225,7 @@ See `uitk/widgets/table_actions.py` for bulk action helpers.
 
 ## Menu
 
-The workhorse — a full standalone widget, not just a `QMenu`. 2700+ lines; see [uitk/widgets/menu.py](../uitk/widgets/menu.py).
+The workhorse — a full standalone widget, not just a `QMenu`. See [uitk/widgets/menu.py](../uitk/widgets/menu.py) for the full surface.
 
 ### `.add()` is the universal entry
 

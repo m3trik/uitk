@@ -589,6 +589,103 @@ class TestMouseTrackingWithStackedWidget(QtBaseTestCase):
         self.assertIn(button1, tracker._widgets)
 
 
+class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
+    """End-to-end regression: while a parent widget holds ``grabMouse()``,
+    a simulated drag across child buttons must hand the grab off to the
+    button under the cursor, set ``WA_UnderMouse`` on it, and clear it
+    on the previous button.
+
+    This is the failure mode that broke marking-menu hover styling
+    during drag: an earlier guard in ``_handle_mouse_grab`` blocked the
+    handoff when the parent already owned the grab, so buttons never
+    became grabbers, Qt's native enter/leave dispatch never fired on
+    them, and QSS ``:hover`` never repainted.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.parent = self.track_widget(QtWidgets.QWidget())
+        self.parent.setObjectName("mm_parent")
+        self.parent.resize(400, 200)
+        self.btn_a = self.track_widget(QtWidgets.QPushButton("A", self.parent))
+        self.btn_a.setObjectName("A")
+        self.btn_a.resize(80, 30); self.btn_a.move(50, 50)
+        self.btn_b = self.track_widget(QtWidgets.QPushButton("B", self.parent))
+        self.btn_b.setObjectName("B")
+        self.btn_b.resize(80, 30); self.btn_b.move(200, 50)
+        self.parent.show()
+        QtWidgets.QApplication.processEvents()
+        self.tracker = MouseTracking(self.parent, auto_update=False)
+        self.tracker.update_child_widgets()
+
+    def tearDown(self):
+        g = QtWidgets.QWidget.mouseGrabber()
+        if g is not None:
+            try:
+                g.releaseMouse()
+            except RuntimeError:
+                pass
+        super().tearDown()
+
+    def _move(self, target, cursor_pos):
+        """Send a MouseMove with the mocked cursor at ``cursor_pos``."""
+        cur = QtWidgets.QWidget.mouseGrabber() or self.parent
+        with patch.object(QtWidgets.QApplication, "widgetAt", return_value=target), \
+             patch.object(QtGui.QCursor, "pos", staticmethod(lambda: cursor_pos)), \
+             patch.object(
+                 QtWidgets.QApplication, "mouseButtons", return_value=QtCore.Qt.LeftButton
+             ):
+            ev = QtGui.QMouseEvent(
+                QtCore.QEvent.Type.MouseMove,
+                QtCore.QPointF(cur.mapFromGlobal(cursor_pos)),
+                QtCore.QPointF(cursor_pos),
+                QtCore.Qt.NoButton,
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+            )
+            QtWidgets.QApplication.sendEvent(cur, ev)
+            QtWidgets.QApplication.processEvents()
+
+    def test_grab_hands_off_to_button_under_cursor_during_drag(self):
+        """Parent grabs first; a MouseMove that resolves to btn_a must
+        transfer the grab to btn_a and set WA_UnderMouse on it.
+        Without that, Qt's native enter dispatch never fires on btn_a
+        and QSS ``:hover`` doesn't repaint.
+        """
+        self.parent.grabMouse()
+        self.assertIs(QtWidgets.QWidget.mouseGrabber(), self.parent)
+
+        a_global = self.btn_a.mapToGlobal(self.btn_a.rect().center())
+        self._move(self.btn_a, a_global)
+
+        self.assertIs(QtWidgets.QWidget.mouseGrabber(), self.btn_a,
+                      "Grab must transfer to the button under the cursor.")
+        self.assertTrue(self.btn_a.testAttribute(QtCore.Qt.WA_UnderMouse),
+                        "WA_UnderMouse must be set on the new grabber.")
+        self.assertTrue(self.btn_a.underMouse())
+
+    def test_grab_re_hands_off_when_cursor_moves_to_sibling(self):
+        """After btn_a holds the grab, dragging onto btn_b must transfer
+        the grab to btn_b and clear WA_UnderMouse on btn_a.
+        """
+        # First handoff: parent → btn_a
+        self.parent.grabMouse()
+        a_global = self.btn_a.mapToGlobal(self.btn_a.rect().center())
+        self._move(self.btn_a, a_global)
+        self.assertIs(QtWidgets.QWidget.mouseGrabber(), self.btn_a)
+
+        # Second handoff: btn_a → btn_b
+        b_global = self.btn_b.mapToGlobal(self.btn_b.rect().center())
+        self._move(self.btn_b, b_global)
+
+        self.assertIs(QtWidgets.QWidget.mouseGrabber(), self.btn_b,
+                      "Grab must re-transfer to the new top widget.")
+        self.assertTrue(self.btn_b.testAttribute(QtCore.Qt.WA_UnderMouse),
+                        "New top widget must have WA_UnderMouse=True.")
+        self.assertFalse(self.btn_a.testAttribute(QtCore.Qt.WA_UnderMouse),
+                         "Previous grabber must have WA_UnderMouse=False.")
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

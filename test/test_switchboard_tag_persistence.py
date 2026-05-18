@@ -153,6 +153,17 @@ class SaveUiTags(QtBaseTestCase):
         first_prop = widget.find("property")
         self.assertEqual(first_prop.get("name"), "uitk_tags")
 
+    def test_strips_leading_hash_from_input(self):
+        """The "#" prefix is display-only — the browser's delegate adds
+        it when rendering chips. Storing "#tag" would round-trip to
+        "##tag" the next time the row paints. save_ui_tags must strip
+        any leading "#" (and incidental whitespace) before persisting."""
+        self.sb.save_ui_tags(self.path, ["#alpha", "##doublebug", "  #beta "])
+        self.assertEqual(
+            _read_ui_tags(self.path),
+            {"alpha", "doublebug", "beta"},
+        )
+
     def test_finds_root_widget_with_leading_class_sibling(self):
         # _write_ui already places <class> before <widget> — sanity
         self.sb.save_ui_tags(self.path, ["x"])

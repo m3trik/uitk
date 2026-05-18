@@ -552,6 +552,27 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         # recomputed value, not the cached one.
         self.updateGeometry()
 
+    def _sync_min_height_to_hint(self, hint: int) -> None:
+        """Align ``minimumHeight`` with the freshly-computed layout hint.
+
+        QMainWindow's auto-cached ``minimumSize`` follows ``minimumSizeHint``
+        UP automatically when content grows, but does NOT follow it BACK
+        DOWN when content shrinks (e.g. a CollapsableGroup hides its body).
+        The stale-high minimum then clamps the next ``resize()`` and masks
+        the requested shrink.
+
+        The first explicit ``setMinimumHeight()`` we make also disables Qt's
+        auto-grow on the *same* widget — so once we've taken over the min,
+        we have to keep it in sync in BOTH directions, not just lower it on
+        shrink. Always tracking the hint is what Qt was trying to do
+        automatically; we're just doing it deterministically and in the same
+        call-frame as the resize that needs it.
+        """
+        if hint < 0:
+            return
+        if self.minimumHeight() != hint:
+            self.setMinimumHeight(hint)
+
     def adjust_height_by(self, delta: int) -> None:
         """Apply a signed pixel delta to the window's height.
 
@@ -566,9 +587,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if delta == 0:
             return
         self._activate_descendant_layouts()
-        new_height = self.height() + delta
         min_h = self.minimumSizeHint().height()
-        new_height = max(new_height, min_h)
+        new_height = max(self.height() + delta, min_h)
+        self._sync_min_height_to_hint(min_h)
         self.resize(self.width(), new_height)
 
     def fit_height_to_content(self) -> None:
@@ -581,11 +602,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         into. Use ``adjust_height_by`` when that preservation matters.
         """
         self._activate_descendant_layouts()
-        target = self.minimumSizeHint().height()
+        min_h = self.minimumSizeHint().height()
+        target = min_h
         if target <= 0:
             target = self.sizeHint().height()
         if target <= 0:
             return
+        self._sync_min_height_to_hint(min_h)
         self.resize(self.width(), target)
 
     def save_window_geometry(self) -> None:

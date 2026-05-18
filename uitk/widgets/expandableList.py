@@ -44,6 +44,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     VALID_POSITIONS = {"right", "left", "top", "bottom", "center"}
     DEFAULT_LAYOUT_SPACING = 0.5
 
+    # Grace period after the cursor leaves a sublist's trigger item or
+    # the sublist itself before the sublist is actually hidden. The
+    # engagement check at fire time keeps the menu open as long as the
+    # cursor returns to anywhere in the sublist's hierarchy within this
+    # window — tolerates brief overshoots and the gap between an item
+    # and its newly-shown sublist.
+    HIDE_DELAY_MS = 180
+
     # Preset configurations for common layout patterns.
     # Each preset defines:
     #   root_position:      Direction the first sublist expands from the root widget.
@@ -360,14 +368,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.set_attributes(widget, **kwargs)
         widget.installEventFilter(self)
 
-        # If this list is itself a registered sublist, the parent's
-        # MouseTracking cache was snapshotted before this item existed.
-        # Register the item directly so it receives synthesized hover
-        # events during a button-held drag without waiting for the next
-        # update_child_widgets cycle. For root-level lists this is
-        # redundant with the UI's findChildren scan but harmless.
+        # Sublists are reparented to the window so they sit outside the
+        # tracked parent's findChildren scope.  Register this list with
+        # MouseTracking on its first populated item — empty leaf sublists
+        # are never registered (the dominant cost in the previous design
+        # was iterating ~100 empty sublists on every Enter/Press).  The
+        # call is idempotent, so subsequent adds short-circuit.
         if hasattr(self, "parent_list"):
-            self._register_for_drag_tracking(widget)
+            self._register_for_drag_tracking(self)
 
         # Resize only when already visible. During bulk population, sizing
         # is deferred to a single resize in showEvent on the root list, and
@@ -503,7 +511,6 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         sublist.on_item_added.connect(self.on_item_added.emit)
 
         self._setup_sublist_relationships(widget, sublist)
-        self._register_for_drag_tracking(sublist)
         return sublist
 
     def _register_for_drag_tracking(self, target):
@@ -577,9 +584,16 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         seen = set()
         for item in self.get_items():
             sub = getattr(item, "sublist", None)
-            if sub is not None and id(sub) not in seen:
-                seen.add(id(sub))
-                sublists.append(sub)
+            if sub is None or id(sub) in seen:
+                continue
+            # Skip empty leaf sublists — registering them costs a
+            # findChildren scan per update_child_widgets() call with
+            # nothing to gain.  They'll register themselves lazily on
+            # their first item add.
+            if not sub.get_items():
+                continue
+            seen.add(id(sub))
+            sublists.append(sub)
         if sublists:
             try:
                 mt.register_external_widgets(sublists)
@@ -594,7 +608,6 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         persist across show/hide cycles.
         """
         self._force_hide_all()
-        self._stop_hide_watchdog()
         super().hideEvent(event)
 
     def _is_cursor_in_hierarchy(self, cursor_pos):
@@ -626,47 +639,50 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 if w.sublist.isVisible():
                     super(ExpandableList, w.sublist).hide()
 
-    def _start_hide_watchdog(self):
-        """Start a periodic check that hides everything once the cursor
-        leaves the entire expandable-list hierarchy.  Runs on the root
-        list only.
+    def _schedule_sublist_hide(self, item):
+        """Start (or restart) a deferred hide of ``item.sublist``.
+
+        Called from ``Leave`` events on triggering items and from the
+        sublist's own ``leaveEvent``.  The actual hide is gated by an
+        engagement re-check at fire time, so a cursor that returns
+        anywhere into the sublist's hierarchy within ``HIDE_DELAY_MS``
+        keeps it open.
         """
-        if not hasattr(self, "_watchdog"):
-            self._watchdog = QtCore.QTimer(self)
-            self._watchdog.setInterval(200)
-            self._watchdog.timeout.connect(self._watchdog_check)
-        if not self._watchdog.isActive():
-            self._watchdog.start()
+        if not (item and hasattr(item, "sublist") and item.sublist.isVisible()):
+            return
+        timer = getattr(item, "_pending_hide_timer", None)
+        if timer is None:
+            timer = QtCore.QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda w=item: self._maybe_hide_sublist(w))
+            item._pending_hide_timer = timer
+        timer.start(self.HIDE_DELAY_MS)
 
-    def _stop_hide_watchdog(self):
-        """Stop the watchdog timer."""
-        if hasattr(self, "_watchdog") and self._watchdog.isActive():
-            self._watchdog.stop()
+    def _cancel_sublist_hide(self, item):
+        """Cancel any pending deferred hide for ``item.sublist``."""
+        timer = getattr(item, "_pending_hide_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
 
-    def _watchdog_check(self):
-        """Periodic poll: if cursor is outside every visible list in the
-        hierarchy, force-hide everything.
+    def _maybe_hide_sublist(self, item):
+        """Engagement re-check: hide ``item.sublist`` only if the cursor
+        is not currently on the trigger item, the sublist, or anywhere
+        in its visible descendant tree.  Cascades to nested sublists.
         """
-        if not self._is_cursor_in_hierarchy(QtGui.QCursor.pos()):
-            self._force_hide_all()
-            self._stop_hide_watchdog()
-
-    def _hide_sublists(self, sublist, force=False):
-        """Hide the given list and all previous lists in its hierarchy.
-
-        This method hides the given list and all previous lists in its hierarchy, up to the point where the cursor
-        is within the list's boundaries.
-
-        Parameters:
-            sublist (obj): A sublist object to start hiding from.
-        """
-        while hasattr(sublist, "parent_list"):
-            if (not force) and sublist.rect().contains(
-                sublist.mapFromGlobal(QtGui.QCursor.pos())
-            ):
-                break
-            sublist.hide()
-            sublist = sublist.parent_list
+        if not item or not hasattr(item, "sublist"):
+            return
+        sublist = item.sublist
+        if not sublist.isVisible():
+            return
+        cursor_pos = QtGui.QCursor.pos()
+        try:
+            on_item = item.rect().contains(item.mapFromGlobal(cursor_pos))
+        except RuntimeError:
+            return
+        if on_item or sublist._is_cursor_in_hierarchy(cursor_pos):
+            return
+        sublist._force_hide_all()
+        super(ExpandableList, sublist).hide()
 
     @staticmethod
     def get_padding(widget):
@@ -770,23 +786,65 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         return position_configs[self.position]
 
+    def _cancel_pending_hides_up_chain(self):
+        """Cancel deferred sublist-hide timers for every ancestor trigger
+        in this list's chain.  Called when the cursor (re-)engages any
+        item or sublist in the hierarchy so brief excursions outside a
+        sublist's bounds don't collapse the ancestor menu after delay.
+        """
+        cur = self
+        while hasattr(cur, "parent_item"):
+            trigger = cur.parent_item
+            timer = getattr(trigger, "_pending_hide_timer", None)
+            if timer is not None and timer.isActive():
+                timer.stop()
+            cur = getattr(cur, "parent_list", None)
+            if cur is None:
+                return
+
+    def _close_sibling_sublists(self, keep_widget):
+        """Force-hide every visible sublist in this list whose trigger is
+        not ``keep_widget``.  Called when Enter fires on a sibling item
+        so the previously-open sublist disappears as the new one shows,
+        rather than lingering for the full hide-delay window.
+        """
+        for i in range(self._layout.count()):
+            sibling = self._layout.itemAt(i).widget()
+            if sibling is None or sibling is keep_widget:
+                continue
+            if not (hasattr(sibling, "sublist") and sibling.sublist.isVisible()):
+                continue
+            self._cancel_sublist_hide(sibling)
+            sibling.sublist._force_hide_all()
+            super(ExpandableList, sibling.sublist).hide()
+
     def _handle_widget_enter_event(self, widget):
         """Handle the enter event for a widget with a sublist.
 
         Parameters:
             widget: The widget that was entered.
         """
+        # Any Enter inside this list's chain cancels pending hides for
+        # all ancestor triggers — keeps parent menus open while the user
+        # navigates into a child sublist or returns from an overshoot.
+        self._cancel_pending_hides_up_chain()
+
+        # Immediately close any sibling sublist that's still visible.
+        # Without this, when the cursor moves from item A → item B, A's
+        # sublist lingers until its delayed-hide timer fires (180ms),
+        # appearing as old-still-visible-after-new-shown lag.
+        self._close_sibling_sublists(widget)
+
         if not (hasattr(widget, "sublist") and widget.sublist.get_items()):
             return
+
+        # Re-entering an item with a sublist cancels its own pending hide
+        # (left over from a previous Leave on the same item).
+        self._cancel_sublist_hide(widget)
 
         # Ensure correct size before positioning
         widget.sublist.resize(widget.sublist.sizeHint())
         widget.updateGeometry()
-
-        # Ensure the root list's watchdog is running so that
-        # sublists are reliably hidden when the cursor exits.
-        root = getattr(self, "root_list", self)
-        root._start_hide_watchdog()
 
         # Get dimensions
         parent_list_width = self.width()
@@ -837,47 +895,34 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         if event_type == QtCore.QEvent.Enter:
             self._handle_widget_enter_event(widget)
 
+        elif event_type == QtCore.QEvent.Leave:
+            # Schedule a deferred hide of this item's sublist (if any),
+            # plus the sublist that owns this item (if we're inside one).
+            # The engagement re-check at fire time prevents the close
+            # when the cursor returns into the hierarchy.
+            if hasattr(widget, "sublist") and widget.sublist.isVisible():
+                self._schedule_sublist_hide(widget)
+            if hasattr(self, "parent_item"):
+                self._schedule_sublist_hide(self.parent_item)
+
         elif event_type == QtCore.QEvent.MouseButtonRelease:
             # Check if widget is a child of this ExpandableList
             if widget in self.get_items():
                 self.on_item_interacted.emit(widget)
                 return True  # Consume event to prevent double-firing
 
-        elif event_type == QtCore.QEvent.MouseMove:
-            # Check if the mouse left the list widget
-            if not self.rect().contains(self.mapFromGlobal(QtGui.QCursor.pos())):
-                if hasattr(widget, "parent_list"):
-                    self.hide()
-
-        elif event_type == QtCore.QEvent.Leave:
-            if hasattr(widget, "sublist"):
-                cursor_pos = QtGui.QCursor.pos()
-                if not widget.sublist.rect().contains(
-                    widget.sublist.mapFromGlobal(cursor_pos)
-                ):
-                    widget.sublist.hide()
-
         return super().eventFilter(widget, event)
 
     def leaveEvent(self, event):
-        """Handle the event when the cursor leaves the ExpandableList.
+        """Handle the cursor leaving this list widget.
 
-        Hides child sublists unless the cursor moved into one of them.
-
-        Parameters:
-            event (obj): The event that occurred.
+        If this list is itself a sublist (has ``parent_item``), schedule
+        a deferred hide of itself.  The engagement check at fire time
+        keeps it open if the cursor returned into the hierarchy.
         """
-        cursor_pos = QtGui.QCursor.pos()
-        in_child = False
-        for i in range(self._layout.count()):
-            w = self._layout.itemAt(i).widget()
-            if w and hasattr(w, "sublist") and w.sublist.isVisible():
-                if w.sublist._is_cursor_in_hierarchy(cursor_pos):
-                    in_child = True
-                    break
-        if not in_child:
-            self._force_hide_all()
-        self._hide_sublists(self)
+        if hasattr(self, "parent_item"):
+            top = self.root_list if hasattr(self, "root_list") else self
+            top._schedule_sublist_hide(self.parent_item)
         super().leaveEvent(event)
 
 

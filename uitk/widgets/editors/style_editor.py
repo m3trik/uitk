@@ -63,13 +63,9 @@ class StyleEditor(EditorPanel):
         self.table.verticalHeader().setDefaultSectionSize(22)
         self.body_layout.addWidget(self.table, 1)
 
-        # Tighten spacing: central body layout sits at 2, every sub-row
-        # layout (preset row, theme row) drops to 1 for a denser editor.
-        self.body_layout.setSpacing(2)
-        for i in range(self.body_layout.count()):
-            sublayout = self.body_layout.itemAt(i).layout()
-            if sublayout is not None:
-                sublayout.setSpacing(1)
+        # Body layout spacing (2px) is set by EditorPanel; tighten every
+        # nested control row (preset row, theme row) to 1px for density.
+        self.tighten_sublayouts(1)
 
         # Footer actions
         self.footer.add_action_button(

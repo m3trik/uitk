@@ -18,11 +18,13 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional, Set
 
 import pythontk as ptk
 
 from uitk.switchboard import Switchboard
+from uitk.handlers.base_handler import BaseHandler
+from uitk.handlers.handler_entry import HandlerEntry
 
 
 # Host executables whose `-c` flag does NOT mean "run Python code" —
@@ -62,44 +64,160 @@ def _default_python() -> str:
     return exe
 
 
-class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin):
+class _VisibilityForwarder:
+    """Event filter that forwards a widget's Show/Hide events to a handler.
+
+    Lives as a child of the watched widget — Qt owns its lifetime; when
+    the widget is destroyed, this object goes with it. Holds only a
+    weak reference to the handler to avoid keeping the Switchboard
+    alive past its natural lifetime.
+
+    Qt's QEvent.Show / QEvent.Hide fire on every QWidget regardless of
+    inheritance, so this works for uitk MainWindows, plain QWidgets,
+    and anything in between — important because external tools can
+    return arbitrary widget classes.
+    """
+
+    def __new__(cls, handler, name, parent=None):
+        # Defer the QObject base class binding until first use to avoid
+        # importing qtpy at module-load time (this file is imported
+        # before qtpy is guaranteed to be on sys.path in some headless
+        # test setups).
+        from qtpy import QtCore
+        import weakref
+
+        # Build a one-off subclass that mixes our forwarder logic into
+        # QObject. Cached on the class so we don't rebuild per widget.
+        if not hasattr(cls, "_qt_class"):
+
+            class _Forwarder(QtCore.QObject):
+                def __init__(self, handler, entry_name, parent=None):
+                    super().__init__(parent)
+                    self._handler_ref = weakref.ref(handler)
+                    self._name = entry_name
+
+                def eventFilter(self, obj, event):
+                    t = event.type()
+                    if t in (QtCore.QEvent.Show, QtCore.QEvent.Hide):
+                        handler = self._handler_ref()
+                        if handler is not None:
+                            try:
+                                handler._notify_entries_changed(self._name)
+                            except Exception:
+                                pass
+                    return False  # never consume — let the widget handle normally
+
+            cls._qt_class = _Forwarder
+        return cls._qt_class(handler, name, parent)
+
+
+class ExternalToolHandler(BaseHandler):
     """Switchboard handler for launching external Python tools.
 
     Resolves the tool's importability in a target Python interpreter,
     installs the package via :class:`pythontk.PackageManager` when
     missing, and launches the UI in a detached subprocess via
     :class:`pythontk.AppLauncher`.
+
+    Implements the launchable contract so registered tools appear
+    alongside .ui-backed UIs in the unified launcher (e.g. browser).
     """
 
+    CONFIG_BRANCH = "external_tool"
     DEFAULTS: dict = {}
+
+    # Entry-point groups consulted by :meth:`discover` to find
+    # self-describing tools installed in the current environment.
+    # Mapping is group -> default mode. The tool's pyproject.toml
+    # declares which group it belongs to; hosts don't need to know.
+    DISCOVERY_GROUPS: Dict[str, str] = {
+        "uitk.external_tools": "subprocess",
+        "uitk.external_tools.in_process": "in_process",
+    }
 
     def __init__(
         self,
         switchboard: Switchboard,
         log_level: str = "WARNING",
+        auto_discover: bool = True,
         **kwargs,
     ):
-        if switchboard is None:
-            raise ValueError(
-                f"{self.__class__.__name__} requires a Switchboard instance."
-            )
-        self.sb = switchboard
-        self.logger.setLevel(log_level)
+        super().__init__(switchboard=switchboard, log_level=log_level)
         self._tools: Dict[str, dict] = {}
         # Cache of widgets returned in in-process mode, keyed by tool name.
         # Re-launching by name returns the cached widget so close-and-reopen
         # via the same button doesn't create duplicate windows.
         self._in_process_widgets: Dict[str, object] = {}
+        # Cache of Popen handles for subprocess-mode launches so
+        # ``is_visible`` can report "running" without re-polling the OS
+        # process table.
+        self._subprocesses: Dict[str, "subprocess.Popen"] = {}
+        if auto_discover:
+            self.discover()
 
-    @classmethod
-    def instance(cls, switchboard: Switchboard = None, **kwargs):
-        kwargs.setdefault("switchboard", switchboard)
-        kwargs["singleton_key"] = (cls, id(switchboard))
-        return super().instance(**kwargs)
+    def discover(self, groups: Optional[Iterable[str]] = None) -> int:
+        """Auto-register every tool advertised under a uitk entry-point group.
 
-    @property
-    def config(self):
-        return self.sb.configurable.branch("external_tool")
+        Tools opt in by declaring an entry point in their own package
+        metadata — no host edits required to surface a new tool. Two
+        groups are recognised by default:
+
+        * ``uitk.external_tools`` — launched in a subprocess (safe default).
+        * ``uitk.external_tools.in_process`` — launched in the current
+          interpreter (for Qt-clean tools that want to be parented under
+          a DCC host like Maya).
+
+        Example (in a tool's ``pyproject.toml``)::
+
+            [project.entry-points."uitk.external_tools.in_process"]
+            metashape_workflow = "metashape_workflow:MetashapeWorkflowUI [photogrammetry,materials]"
+
+        ``name = module:Class [tag1,tag2,...]`` — name becomes the
+        registration key, ``module:Class`` becomes module + entry,
+        bracketed extras become tags.
+
+        Returns the count of tools newly registered. Re-registers
+        existing entries on each call (idempotent).
+        """
+        try:
+            from importlib.metadata import entry_points
+        except ImportError:  # pragma: no cover — covered by all 3.8+ runtimes
+            return 0
+        scan = dict(self.DISCOVERY_GROUPS) if groups is None else {
+            g: self.DISCOVERY_GROUPS.get(g, "subprocess") for g in groups
+        }
+        count = 0
+        for group, mode in scan.items():
+            try:
+                # Python 3.10+: entry_points(group=...) selector.
+                eps = entry_points(group=group)
+            except TypeError:  # pragma: no cover — Python 3.8/3.9 path
+                eps = entry_points().get(group, [])
+            for ep in eps:
+                try:
+                    module = ep.module  # left of ':' — never imports
+                    attr = ep.attr      # right of ':'
+                    extras = list(ep.extras) if getattr(ep, "extras", None) else []
+                except Exception:
+                    self.logger.warning(
+                        f"[discover] could not parse entry point {ep!r}",
+                        exc_info=True,
+                    )
+                    continue
+                self.register(
+                    ep.name,
+                    module=module,
+                    entry=attr,
+                    tags=set(extras) if extras else None,
+                    mode=mode,
+                )
+                count += 1
+        if count:
+            self.logger.debug(
+                f"[discover] registered {count} tool(s) "
+                f"from groups {list(scan)}"
+            )
+        return count
 
     def register(
         self,
@@ -111,6 +229,7 @@ class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         python: Optional[str] = None,
         show_kwargs: Optional[dict] = None,
         mode: str = "subprocess",
+        tags: Optional[Iterable[str]] = None,
     ) -> None:
         """Pre-register a tool so it can be launched by name.
 
@@ -137,6 +256,9 @@ class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin):
                 imports into the current interpreter and returns the UI
                 widget so the caller can parent / show / dock it
                 (e.g. under a Maya main window).
+            tags: Optional iterable of tags applied to this tool's
+                :class:`HandlerEntry`. Surfaces in the browser's tag
+                filter just like .ui-backed tags.
         """
         self._tools[name] = {
             "module": module,
@@ -145,10 +267,160 @@ class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin):
             "python": python,
             "show_kwargs": show_kwargs,
             "mode": mode,
+            "tags": frozenset(tags or ()),
         }
+        self._notify_entries_changed()
 
     def is_registered(self, name: str) -> bool:
         return name in self._tools
+
+    def unregister(self, name: str) -> None:
+        """Remove a tool. No-op if not registered."""
+        if self._tools.pop(name, None) is not None:
+            self._in_process_widgets.pop(name, None)
+            self._subprocesses.pop(name, None)
+            self._notify_entries_changed()
+
+    # ── Launchable contract ──────────────────────────────────────────────
+
+    def entries(self) -> Iterable[HandlerEntry]:
+        """Yield one :class:`HandlerEntry` per registered tool.
+
+        Kind reflects the launch mode so the browser can render a
+        distinguishing chip.
+
+        Two tag stores, mirroring the .ui semantic:
+          * ``inherited_tags`` — declared at registration (manual
+            ``register(tags=...)``) or in the entry-point's bracketed
+            ``[extras]``. Read-only; surfaces as the same dimmed chips
+            .ui filename/source-directory tags use.
+          * ``file_tags`` — user-curated tags persisted in the handler's
+            config branch via :meth:`save_tags`. Editable inline (the
+            browser's QLineEdit delegate calls back into us). Always a
+            (possibly empty) frozenset — never ``None`` — so every
+            external-tool row is editable, just like .ui rows.
+        """
+        user_tags = self._user_tags()
+        for name, cfg in self._tools.items():
+            mode = cfg.get("mode", "subprocess")
+            kind = (
+                "external_in_process"
+                if mode == "in_process"
+                else "external_subprocess"
+            )
+            yield HandlerEntry(
+                name=name,
+                kind=kind,
+                handler=self,
+                inherited_tags=frozenset(cfg.get("tags") or ()),
+                file_tags=frozenset(user_tags.get(name, ())),
+                # No on-disk file — the editable_tags property checks
+                # ``filepath is not None``, so we expose a synthetic
+                # config:// URI to mark "editable, but not file-backed".
+                filepath=f"config://external_tool/{name}",
+            )
+
+    # ── Editable tags via the handler's config branch ────────────────────
+
+    _USER_TAGS_KEY = "user_tags"
+
+    def _user_tags(self) -> Dict[str, list]:
+        """Return the persisted {tool_name: [tag, …]} dict.
+
+        Stored under a single key so the whole mapping round-trips
+        through QSettings as one value (avoids per-key fan-out and the
+        delete-keys-not-in-dict bookkeeping that comes with that).
+
+        Strips any leading "#" from stored values on read so existing
+        data with a leftover prefix (from a pre-fix session) heals
+        itself the first time it's rendered — no migration step
+        required.
+        """
+        raw = self.config.value(self._USER_TAGS_KEY, {}) or {}
+        if not isinstance(raw, dict):
+            return {}
+        cleaned: Dict[str, list] = {}
+        for tool_name, tags in raw.items():
+            if not isinstance(tags, (list, tuple)):
+                continue
+            kept = sorted({
+                stripped
+                for t in tags
+                if isinstance(t, str)
+                and (stripped := t.strip().lstrip("#").strip())
+            })
+            if kept:
+                cleaned[tool_name] = kept
+        return cleaned
+
+    def save_tags(self, name: str, tags: Iterable[str]) -> None:
+        """Persist *tags* for *name* in the handler's config branch.
+
+        This is the launchable contract's optional ``save_tags`` method —
+        the browser's inline editor calls it on commit. Tags persist
+        across sessions via :class:`SettingsManager` so the user's
+        curation isn't lost on app restart.
+        """
+        if name not in self._tools:
+            raise ValueError(f"No such external tool: {name!r}")
+        # Strip leading "#" too — that prefix is display formatting,
+        # not part of the tag identity. Stored values stay "clean" so
+        # filtering / set-comparison works without double-hashing.
+        clean = sorted({
+            stripped
+            for t in tags
+            if (stripped := t.strip().lstrip("#").strip())
+        })
+        store = dict(self._user_tags())
+        if clean:
+            store[name] = clean
+        else:
+            store.pop(name, None)
+        self.config.setValue(self._USER_TAGS_KEY, store)
+        self._notify_entries_changed(name)
+
+    def close(self, name: str) -> None:
+        """Hide an in-process widget; terminate a subprocess.
+
+        ``close`` is best-effort for subprocesses — sends ``terminate``
+        and clears the handle. The OS does the rest.
+        """
+        widget = self._in_process_widgets.get(name)
+        if widget is not None:
+            try:
+                if hasattr(widget, "hide"):
+                    widget.hide()
+            except RuntimeError:
+                # C++ object already deleted.
+                pass
+            self._notify_entries_changed(name)
+            return
+        proc = self._subprocesses.get(name)
+        if proc is not None:
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+            except Exception:
+                pass
+            self._subprocesses.pop(name, None)
+            self._notify_entries_changed(name)
+
+    def is_visible(self, name: str) -> bool:
+        widget = self._in_process_widgets.get(name)
+        if widget is not None:
+            try:
+                return bool(widget.isVisible())
+            except RuntimeError:
+                return False
+        proc = self._subprocesses.get(name)
+        if proc is not None:
+            still_running = proc.poll() is None
+            if not still_running:
+                # Process has exited; drop the stale handle so the row
+                # reverts to "launchable" on the next refresh.
+                self._subprocesses.pop(name, None)
+            return still_running
+        return False
 
     def launch(
         self,
@@ -160,6 +432,7 @@ class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         python: Optional[str] = None,
         show_kwargs: Optional[dict] = None,
         mode: Optional[str] = None,
+        **_options,
     ):
         """Launch a registered tool, or an ad-hoc tool from kwargs.
 
@@ -168,8 +441,10 @@ class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin):
 
         Returns:
             ``subprocess.Popen`` in ``mode="subprocess"``, or the UI
-            widget in ``mode="in_process"``. Caller is responsible for
-            parent/show in the in-process case.
+            widget in ``mode="in_process"`` (already parented under
+            the Switchboard's parent — typically the host DCC's main
+            window — and shown/raised/activated). Caller may
+            re-parent or re-show but no longer has to.
         """
         cfg = dict(self._tools.get(name, {})) if name else {}
         for k, v in (
@@ -211,20 +486,90 @@ class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         if run_mode == "in_process":
             cached = self._in_process_widgets.get(name) if name else None
             if cached is not None and self._widget_alive(cached):
-                return cached
-            widget = self._import_entry(cfg["module"], cfg.get("entry"))
+                widget = cached
+            else:
+                widget = self._import_entry(cfg["module"], cfg.get("entry"))
+                if name:
+                    self._in_process_widgets[name] = widget
+            self._show_in_process(widget, name=name)
             if name:
-                self._in_process_widgets[name] = widget
+                self._notify_entries_changed(name)
             return widget
 
-        return self._spawn(
+        proc = self._spawn(
             python=py,
             module=cfg["module"],
             entry=cfg.get("entry"),
             show_kwargs=cfg.get("show_kwargs"),
         )
+        if name and proc is not None:
+            self._subprocesses[name] = proc
+            self._notify_entries_changed(name)
+        return proc
 
     # ------------------------------------------------------------------
+
+    def _show_in_process(self, widget, name: Optional[str] = None) -> None:
+        """Parent the widget under the host (Switchboard's parent), then show + raise.
+
+        Centralised so every launch path produces a visible window —
+        the browser, a slot's launch button, an `instance.launch(...)`
+        call from a Python console all behave the same.
+
+        Re-parenting preserves the widget's own ``windowFlags`` (external
+        tools come fully-styled — frameless, translucent, etc.); passing
+        a bare ``Qt.Window`` to ``setParent`` would replace flags wholesale
+        and break the look. The ``| Qt.Window`` is required because Qt
+        only treats a child as a top-level window when that flag is set;
+        without it, the tool would dock as an inline child of the host.
+
+        Also installs a visibility-tracking event filter on the widget
+        (idempotent) so the row-state refresh signal fires when the user
+        hides the tool by any path — its own header X, ALT+F4, a
+        programmatic ``widget.hide()``. Without this, the browser's row
+        icon stays stuck on "Focus" because no entries-changed signal
+        ever fires on hide.
+        """
+        try:
+            from qtpy import QtCore as _QtCore
+
+            host_parent = self.sb.parent() if hasattr(self.sb, "parent") else None
+            if host_parent is not None:
+                widget.setParent(host_parent, widget.windowFlags() | _QtCore.Qt.Window)
+            if name is not None:
+                self._wire_widget_visibility(widget, name)
+            widget.show()
+            widget.raise_()
+            widget.activateWindow()
+        except Exception:
+            # Best-effort. If the widget is a non-Qt object (mock in tests,
+            # custom launcher returning a plain Python object), the caller
+            # still gets the instance back and can handle display itself.
+            self.logger.debug(
+                f"[_show_in_process] could not display widget {widget!r}",
+                exc_info=True,
+            )
+
+    def _wire_widget_visibility(self, widget, name: str) -> None:
+        """Install a Show/Hide event filter so the row refreshes on any hide path.
+
+        Idempotent — guarded by a per-widget flag attribute. The filter
+        is kept alive by being a child of the widget itself, so it stays
+        in scope as long as the widget does.
+
+        Event filter is preferred over signal hookup because external
+        tools may or may not be uitk MainWindows; ``QEvent.Show``/
+        ``QEvent.Hide`` fire on every QWidget regardless of inheritance.
+        """
+        if getattr(widget, "_uitk_external_visibility_wired", False):
+            return
+        try:
+            from qtpy import QtCore as _QtCore
+        except ImportError:
+            return
+        filt = _VisibilityForwarder(self, name, parent=widget)
+        widget.installEventFilter(filt)
+        widget._uitk_external_visibility_wired = True
 
     @staticmethod
     def _is_importable(module: str, python: str) -> bool:

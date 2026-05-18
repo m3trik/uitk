@@ -12,7 +12,7 @@ Hold a key (e.g. `F12`). A radial menu appears centered at the cursor. Flick the
 
 The same system also launches standalone windows — any UI without the `#startmenu` / `#submenu` tag is treated as a regular `MainWindow` that the marking menu shows on demand.
 
-Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) (1385 lines — the largest single class in the package). Subclasses `QWidget + SingletonMixin + LoggingMixin + HelpMixin`.
+Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package. Subclasses `QWidget + SingletonMixin + LoggingMixin + HelpMixin`.
 
 ---
 
@@ -74,7 +74,7 @@ cameras#startmenu.ui      # Alt radial reached via F12|LeftButton
 texture_editor.ui         # Standalone window launched from a menu button
 ```
 
-Tag detection: `ui.has_tags(["startmenu", "submenu"])` in [_marking_menu.py:540](../uitk/widgets/marking_menu/_marking_menu.py#L540).
+Tag detection: `ui.has_tags(["startmenu", "submenu"])` in [_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py).
 
 ---
 
@@ -223,7 +223,7 @@ This lets you build nested radial menus entirely in Qt Designer — no Python wi
 
 ## Widget centering
 
-Within a `#startmenu` / `#submenu`, interactable widgets (`QPushButton`, `QLabel`, `QCheckBox`, `QRadioButton`) are automatically centered around the cursor when the menu opens, and given a `padding_x` of 25. This is done in `add_child_event_filter` ([_marking_menu.py:1280](../uitk/widgets/marking_menu/_marking_menu.py#L1280)).
+Within a `#startmenu` / `#submenu`, interactable widgets (`QPushButton`, `QLabel`, `QCheckBox`, `QRadioButton`) are automatically centered around the cursor when the menu opens, and given a `padding_x` of 25. This is done in `add_child_event_filter` ([_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py)).
 
 `Region` widgets (from `uitk.Region`) inside menus get `visible_on_mouse_over = True` — they act as invisible reveal zones that can contain arbitrary content.
 

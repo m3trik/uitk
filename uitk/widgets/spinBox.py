@@ -94,18 +94,25 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
         super().setPrefix(formatted_prefix)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
-        """Handle wheel events with modifier keys."""
-        modifiers = QtGui.QGuiApplication.keyboardModifiers()
+        """Handle wheel events with modifier keys.
 
-        if modifiers == QtCore.Qt.AltModifier:
-            self.adjustStepSize(event)
-        elif modifiers == QtCore.Qt.ControlModifier:
-            if modifiers & QtCore.Qt.AltModifier:  # Ctrl+Alt
-                self.decreaseValueWithSmallStep(event)
-            else:  # Ctrl only
-                self.increaseValueWithLargeStep(event)
-        elif modifiers == (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier):
+        Read modifiers from the event (not QGuiApplication) so the dispatch
+        reflects the actual event state and is unit-testable. Use bitwise
+        ``&`` rather than ``==``: in PySide6, ``Qt.ControlModifier |
+        Qt.AltModifier`` is a ``KeyboardModifier`` value while
+        ``event.modifiers()`` is a ``KeyboardModifiers`` flag set, so ``==``
+        between them is false even when both bits match.
+        """
+        modifiers = event.modifiers()
+        ctrl = bool(modifiers & QtCore.Qt.ControlModifier)
+        alt = bool(modifiers & QtCore.Qt.AltModifier)
+
+        if ctrl and alt:
             self.decreaseValueWithSmallStep(event)
+        elif ctrl:
+            self.increaseValueWithLargeStep(event)
+        elif alt:
+            self.adjustStepSize(event)
         else:
             super().wheelEvent(event)
 
@@ -163,10 +170,14 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
         self.message(f"Step: <font color='yellow'>{adjustment}</font>")
 
     def decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None:
-        """Decrease the spin box value by a smaller step when Ctrl+Alt is pressed."""
-        current_step = self.singleStep()
-        decimals = self.decimals()
-        adjustment = max(current_step / 10, 10**-decimals)
+        """Move the value by the lowest decimal place (Ctrl+Alt).
+
+        Independent of ``singleStep`` — Ctrl+Alt is the precision modifier
+        and should always step by 10^-decimals so users can dial in the
+        least-significant digit regardless of how coarse the current step
+        size is.
+        """
+        adjustment = 10 ** -self.decimals()
         self.setValue(
             self.value() + adjustment
             if event.angleDelta().y() > 0

@@ -2,6 +2,25 @@
 
 ## 2026
 
+- **SpinBox / DoubleSpinBox Ctrl+Alt wheel fix** — Ctrl+Alt+scroll on either widget now steps the value by the lowest decimal place (10⁻ᵈᵉᶜⁱᵐᵃˡˢ), as intended; previously it did nothing on PySide6.
+  - **Root cause**: `wheelEvent` polled `QGuiApplication.keyboardModifiers()` and dispatched with strict `==`. In PySide6, `Qt.ControlModifier | Qt.AltModifier` evaluates to a `KeyboardModifier` value while the live modifier state is a `KeyboardModifiers` flag set — `==` between them is false even when bits match, so the Ctrl+Alt branch never fired. `SpinBox` also had unreachable dead code inside the Ctrl-only branch claiming to handle Ctrl+Alt. `DoubleSpinBox` additionally had Ctrl-alone and Ctrl+Alt bindings swapped relative to `SpinBox`.
+  - **Fix**: read modifiers from `event.modifiers()` (event-time, also unit-testable) and detect with bitwise `&`. `decreaseValueWithSmallStep` now always uses `10 ** -decimals` instead of `max(step/10, 10**-decimals)`, so Ctrl+Alt truly targets the lowest decimal place regardless of `singleStep`. `DoubleSpinBox` bindings aligned to `SpinBox`.
+  - 5 new wheelEvent dispatcher tests in `test_spinbox.py` plus a new `test_double_spin_box.py`.
+
+- **CollapsableGroup ↔ MainWindow resize fix** — collapsing a `CollapsableGroup` inside a uitk `MainWindow` no longer leaves the window oversized.
+  - **Root cause**: QMainWindow's auto-cached `minimumSize` follows `minimumSizeHint` UP when content grows but does NOT follow it back DOWN when content shrinks. After a collapse, `minimumSizeHint` correctly dropped to e.g. 156 but the explicit `minimumSize` cache stayed at the pre-collapse 279 — so the subsequent `resize()` got clamped above the requested shrink. Observed in tentacle: window shrunk by ~10px when the group lost ~120px of content.
+  - **Fix**: `MainWindow._sync_min_height_to_hint()` aligns `minimumHeight` with the freshly-computed hint before each `resize()` in `adjust_height_by` and `fit_height_to_content`. `CollapsableGroup._fallback_window_resize` does the same for non-MainWindow hosts. Tracks in both directions: once we take over the explicit min, Qt stops auto-raising it on grow, so subsequent expands need us to raise it back too.
+  - Added 5 end-to-end regression tests in `test_main_window_resize.py` exercising a tentacle-style layout (nested QVBoxLayouts, multiple `CollapsableGroup`s, trailing `Expanding` spacer, footer).
+
+- **ToggleOption** — new OptionBox plugin (`uitk/widgets/optionBox/options/toggle.py`) for persisted binary on/off buttons. Icon dims to the project's "error" red (`pythontk.Palette.status()["error"]`) when off, so the user can see which control caused a dependent filter / widget to stop.
+  - Emits `toggled(bool)` on user clicks and on `set_on(v)` (suppress with `emit=False`).
+  - Optional `gated_widgets=[…]` disables listed widgets in sync with the toggle. Does not auto-restore on destruction — caller owns widget lifecycle.
+  - `OptionBoxManager.set_toggle()` / `add_toggle()` for fluent setup, including `on_toggled=` to wire the signal in one line.
+  - Persistence: pass `settings_key=str` for explicit namespacing, omit to auto-derive from the wrapped widget's `objectName`, or `False` to opt out (consumer owns storage).
+  - Default `_option_order` now includes a `"toggle"` slot between `"pin"` and `"action"`.
+- **Persistence mixin** — extracted shared `settings_key` resolution + lazy `SettingsManager` construction into `optionBox/options/_persistence.py` (`PersistedOption`). Currently consumed by `ToggleOption`; `ActionOption`, `PinValuesOption`, and `RecentValuesOption` keep their existing ad-hoc copies and will be migrated in a follow-up.
+- **switchboard_browser filter button migration** — `_build_filter_lineedit` now uses `ToggleOption` instead of a hand-rolled two-state `ActionOption`. The fragile `find_option(ActionOption)` lookup at the end of the factory ("the first action that isn't the scope action") is gone — the toggle reference is held directly from construction. Preset restore now syncs the toggle's visual state via `set_on(..., emit=False)` so the icon reflects the restored `filter_enabled` flag.
+
 - **Menu popup fixes** — fixed option menus not opening and flashing during init.
   - **Root cause**: `_register_with_main_window()` called synchronously inside `Menu.add()` triggered `mainWindow.register_widget()` → `widget.init_slot()` → `tb###_init()` recursively during menu population. Fixed by deferring via `QTimer.singleShot(0)`.
   - `showEvent`: skip `_apply_position()` when `show_as_popup()` already handled positioning (check `_current_anchor_widget`).

@@ -106,6 +106,7 @@ class OptionBox:
             "clear",
             "recent",
             "pin",
+            "toggle",
             "action",
             "browse",
             "menu",
@@ -185,11 +186,13 @@ class OptionBox:
         from .options.clear import ClearOption
         from .options.pin_values import PinValuesOption
         from .options.recent_values import RecentValuesOption
+        from .options.toggle import ToggleOption
 
         _type_to_key = {
             ClearOption: "clear",
             RecentValuesOption: "recent",
             PinValuesOption: "pin",
+            ToggleOption: "toggle",
             BrowseOption: "browse",
         }
         _fallback = len(self._option_order)

@@ -281,7 +281,28 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._widgets: set[QtWidgets.QWidget] = set(widgets) | extras
 
     def track(self):
-        """Efficiently updates tracking data and sends enter and leave events to widgets."""
+        """Drive enter/leave + grab handoff for whatever's under the cursor.
+
+        Two mechanisms run in parallel:
+
+          1. Synthetic ``QEnterEvent`` / ``QEvent.Leave`` dispatched here.
+             This is the fallback path for non-grabbable widgets (e.g.
+             :class:`Region`, ExpandableList sublists) which need hover
+             notifications but can't take ``grabMouse``.
+
+          2. Native enter/leave dispatched by Qt when
+             :meth:`_handle_mouse_grab` transfers the grab to the cursor's
+             top widget.  This path is what drives ``QStyleSheetStyle``'s
+             ``:hover`` repaint — QSS subscribes to ``QHoverEvent`` (which
+             Qt fires alongside the native enter/leave on a grab handoff),
+             *not* to the synthetic ``QEnterEvent`` we send in (1).
+
+        Both paths fire for grabbable widgets (the synthetic dispatch
+        is harmless redundancy there), only path (1) for non-grabbable.
+        Removing the grab handoff in (2) — even keeping (1) — silently
+        breaks QSS ``:hover`` during a parent-grab drag (the marking-menu
+        failure mode).
+        """
         cursor_pos = QtGui.QCursor.pos()
         top_widget = QtWidgets.QApplication.widgetAt(cursor_pos)
 
@@ -330,7 +351,20 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                     self._mouse_owner = None
 
     def _send_enter_event(self, widget):
-        """Sends an enter event to a widget."""
+        """Synthesize a ``QEnterEvent`` — fallback notification for
+        non-grabbable widgets.
+
+        For widgets that take the grab in :meth:`_handle_mouse_grab`,
+        Qt's native dispatch on the grab handoff fires its own
+        ``QEnterEvent`` + ``QHoverEvent``, which is what
+        ``QStyleSheetStyle`` listens to for ``:hover`` repaint. This
+        synthetic event is redundant for those widgets but harmless.
+
+        For non-grabbable widgets (e.g. :class:`Region`, ExpandableList
+        sublists) it's the ONLY hover signal they receive — relied on
+        by code that observes ``enterEvent`` directly (custom tooltips,
+        visibility-on-hover regions, etc.).
+        """
         try:
             pos = QtGui.QCursor.pos()
             local_pos = widget.mapFromGlobal(pos)
@@ -344,7 +378,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             self.logger.debug("Widget deleted before enter event could be sent.")
 
     def _send_leave_event(self, widget):
-        """Sends a leave event to a widget."""
+        """Synthesize a ``QEvent.Leave``.  Mirror of
+        :meth:`_send_enter_event` — see that docstring for why this is
+        a fallback rather than the primary hover signal.
+        """
         try:
             event = QtCore.QEvent(QtCore.QEvent.Type.Leave)
             QtWidgets.QApplication.sendEvent(widget, event)
@@ -369,7 +406,24 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             self.logger.debug("Widget deleted before release event could be sent.")
 
     def _handle_mouse_grab(self, top_widget: QtWidgets.QWidget):
-        """Handles mouse grabbing depending on the widget currently under the cursor."""
+        """Transfer the mouse grab to the widget under the cursor.
+
+        **Load-bearing for QSS ``:hover``.**  Calling ``grabMouse()``
+        on the new top widget makes Qt fire its native enter/leave
+        dispatch (Leave on the previous grabber, Enter + ``QHoverEvent``
+        on the new one).  ``QStyleSheetStyle`` listens for that
+        ``QHoverEvent`` to invalidate its rule cache and repaint with
+        the ``:hover`` pseudostate.  Without this handoff, QSS hover
+        styling silently dies during any parent-grab drag — the
+        synthetic ``QEnterEvent`` from :meth:`_send_enter_event`
+        doesn't substitute for it.
+
+        Subsequent ``MouseMove`` events still reach the parent's
+        :meth:`eventFilter` because the new grabber's default
+        ``mouseMoveEvent`` ignores → propagates up to the parent.
+        That's what keeps :meth:`track` firing as the cursor drags
+        across sibling buttons.
+        """
         try:
             if (
                 top_widget
@@ -389,8 +443,12 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             self.logger.debug("Could not grab mouse: widget may have been deleted.")
 
     def _grab_widget(self, widget: QtWidgets.QWidget):
-        """Grab the mouse for a widget only when ownership changes."""
+        """Transfer the grab to ``widget`` when ownership changes.
 
+        Releases the previous owner first so Qt sees a clean handoff;
+        the new ``grabMouse()`` then triggers the native enter/leave +
+        ``QHoverEvent`` dispatch described in :meth:`_handle_mouse_grab`.
+        """
         if widget is self._mouse_owner or not self.is_widget_valid(widget):
             return
 
