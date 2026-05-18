@@ -1,11 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Searchable, tag-filtered launcher for any UI registered with a Switchboard.
+"""Searchable, tag-filtered launcher for any handler-exposed entry.
 
-Listed UIs are pulled from ``switchboard._file_manager.ui_registry`` and never
-instantiated until the user clicks Launch. Tags are read from the compiled
-_ui.py header at register time (see ``Switchboard.save_ui_tags``) so they
-are knowable for every entry without breaking lazy loading.
+Listed entries come from :meth:`Switchboard.iter_handler_entries`, which
+unifies every launchable handler's items (e.g. .ui files from UiHandler,
+registered external tools from ExternalToolHandler). Nothing is loaded
+until the user clicks Launch — the browser only inspects entry metadata.
 
 The browser itself is unregistered — a plain ``EditorPanel`` instantiated
 directly by user code, consistent with ``StyleEditor`` and ``ColorMappingDialog``.
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, List, Optional, Set
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set
 
 from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
@@ -26,6 +26,7 @@ import pythontk as ptk
 # ``StyleSheet`` is reachable via ``sb.style`` at use sites — no direct
 # import needed.
 from uitk.compile import precompile_async
+from uitk.handlers.handler_entry import HandlerEntry
 from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.widgets.pushButton import PushButton
 
@@ -80,89 +81,85 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
     VisibleRole = QtCore.Qt.UserRole + 5
     FileTagsRole = QtCore.Qt.UserRole + 6
     InheritedTagsRole = QtCore.Qt.UserRole + 7
+    KindRole = QtCore.Qt.UserRole + 8
+    EntryRole = QtCore.Qt.UserRole + 9
 
     def __init__(self, switchboard: Switchboard, parent=None):
         super().__init__(parent)
         self.sb: Switchboard = switchboard
-        self._names: List[str] = []
-        self._tracked: Set[str] = set()  # UIs whose on_show/on_hide we've connected to
+        self._entries: List[HandlerEntry] = []
+        # Index for O(1) lookup by name. When two handlers register the
+        # same name the later one wins (logged); see _refresh.
+        self._by_name: Dict[str, HandlerEntry] = {}
         self._refresh()
-        self.sb.on_ui_registered.connect(self._on_ui_registered)
-        self.sb.on_ui_tags_changed.connect(self._on_ui_tags_changed)
+        # Unified signals — fire on any handler. UiHandler-specific signals
+        # are forwarded into these by the Switchboard constructor.
+        self.sb.on_handler_entries_changed.connect(self._on_entries_changed)
+        self.sb.on_handler_entry_changed.connect(self._on_entry_changed)
 
     # ---- registry → rows ----
 
     def _refresh(self) -> None:
         self.beginResetModel()
-        self._names = sorted(self.sb.registry.ui_registry.get("filename") or [])
+        entries = list(self.sb.iter_handler_entries())
+        entries.sort(key=lambda e: e.name.lower())
+        self._entries = entries
+        seen: Dict[str, HandlerEntry] = {}
+        for e in entries:
+            if e.name in seen:
+                # Name collision across handlers: last write wins, log once.
+                self.sb.logger.warning(
+                    f"[SwitchboardBrowserModel] duplicate entry name "
+                    f"{e.name!r}; later handler shadows earlier."
+                )
+            seen[e.name] = e
+        self._by_name = seen
         self.endResetModel()
-        for name in self._names:
-            self._track_visibility(name)
 
-    def _on_ui_registered(self, name: str) -> None:
-        if name in self._names:
+    def _on_entries_changed(self, _handler_name: str) -> None:
+        # Coarse: a handler's full entry set may have changed
+        # (registration / unregistration). Recompute everything; cheap
+        # vs. diffing two sorted lists for the row counts we deal with.
+        self._refresh()
+
+    def _on_entry_changed(self, _handler_name: str, entry_name: str) -> None:
+        # Fine-grained: one entry's live state (visibility) changed.
+        # File-backed entries also re-emit on save_ui_tags, so refresh
+        # the entry payload (tags may have changed) before firing
+        # dataChanged.
+        if entry_name not in self._by_name:
+            # Could be a brand-new entry — fall back to coarse refresh.
+            self._refresh()
             return
-        # Insert in sorted position
-        pos = 0
-        for i, existing in enumerate(self._names):
-            if name < existing:
-                pos = i
-                break
-            pos = i + 1
-        self.beginInsertRows(QtCore.QModelIndex(), pos, pos)
-        self._names.insert(pos, name)
-        self.endInsertRows()
-        self._track_visibility(name)
-
-    def _on_ui_tags_changed(self, name: str) -> None:
-        if name in self._names:
-            row = self._names.index(name)
-            top = self.index(row, 0)
-            bot = self.index(row, self.COLUMN_COUNT - 1)
-            self.dataChanged.emit(top, bot)
-
-    # ---- visibility tracking via MainWindow signals ----
-
-    def _track_visibility(self, name: str) -> None:
-        """Lazily connect to a loaded UI's on_show/on_hide signals."""
-        if name in self._tracked:
-            return
-        ui = self.sb.loaded_ui.peek(name)
-        if ui is None:
-            return
-
-        on_show = getattr(ui, "on_show", None)
-        on_hide = getattr(ui, "on_hide", None)
-        if on_show is None or on_hide is None:
-            return
-
-        def _refresh_row(_name=name):
-            if _name in self._names:
-                row = self._names.index(_name)
-                top = self.index(row, 0)
-                bot = self.index(row, self.COLUMN_COUNT - 1)
-                self.dataChanged.emit(top, bot)
-
+        old = self._by_name[entry_name]
+        # Re-pull just this entry from its owning handler.
         try:
-            on_show.connect(_refresh_row)
-            on_hide.connect(_refresh_row)
-            self._tracked.add(name)
+            new = next(
+                (e for e in old.handler.entries() if e.name == entry_name),
+                None,
+            )
         except Exception:
-            pass
+            new = None
+        if new is None:
+            # Entry vanished from its handler — full refresh handles removal.
+            self._refresh()
+            return
+        row = self._entries.index(old)
+        self._entries[row] = new
+        self._by_name[entry_name] = new
+        top = self.index(row, 0)
+        bot = self.index(row, self.COLUMN_COUNT - 1)
+        self.dataChanged.emit(top, bot)
 
     def refresh_after_launch(self, name: str) -> None:
-        """Public hook: caller invokes this after launching to wire signals."""
-        self._track_visibility(name)
-        if name in self._names:
-            row = self._names.index(name)
-            top = self.index(row, 0)
-            bot = self.index(row, self.COLUMN_COUNT - 1)
-            self.dataChanged.emit(top, bot)
+        """Public hook: caller invokes this after launching to refresh the row."""
+        if name in self._by_name:
+            self._on_entry_changed("", name)
 
     # ---- QAbstractTableModel ----
 
     def rowCount(self, parent=QtCore.QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self._names)
+        return 0 if parent.isValid() else len(self._entries)
 
     def columnCount(self, parent=QtCore.QModelIndex()) -> int:
         return 0 if parent.isValid() else self.COLUMN_COUNT
@@ -184,31 +181,35 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
         return None
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
-        if not index.isValid() or index.row() >= len(self._names):
+        if not index.isValid() or index.row() >= len(self._entries):
             return None
-        name = self._names[index.row()]
+        entry = self._entries[index.row()]
 
-        # Custom roles are column-independent — always describe the row's UI.
+        # Custom roles are column-independent — always describe the row.
         if role == self.NameRole:
-            return name
+            return entry.name
+        if role == self.EntryRole:
+            return entry
         if role == self.PathRole:
-            return self._path_for(name)
+            return entry.filepath
+        if role == self.KindRole:
+            return entry.kind
         if role == self.TagsRole:
-            return sorted(self._all_tags_for(name))
+            return sorted(entry.all_tags)
         if role == self.FileTagsRole:
-            return sorted(self.sb._get_ui_tags(name))
+            return sorted(entry.file_tags) if entry.file_tags is not None else []
         if role == self.InheritedTagsRole:
-            return sorted(self._inherited_tags_for(name))
+            return sorted(entry.inherited_tags)
         if role == self.LoadedRole:
-            return name in self.sb.loaded_ui
+            return entry.handler.is_visible(entry.name) if entry.kind == "ui_file" else False
         if role == self.VisibleRole:
-            return self._is_visible(name)
+            return self._is_visible(entry)
 
         # Display role: only Name and Tags columns produce text via the
         # delegate's HTML renderer; the action columns hold widgets.
         if role == QtCore.Qt.DisplayRole:
             if index.column() == self.COL_NAME:
-                return name
+                return entry.name
             # Tags column has no plain-text representation; the delegate
             # paints HTML. Returning empty string suppresses the default
             # text painter from drawing over our paint.
@@ -218,10 +219,13 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
 
     def flags(self, index):
         base = super().flags(index)
-        # Tags column accepts inline editing; commit goes through the
-        # delegate's setEditorData / setModelData.
+        # Tags column accepts inline editing — but only for entries whose
+        # backing store supports it. Non-editable rows still render fine,
+        # they just don't expose the editor delegate.
         if index.isValid() and index.column() == self.COL_TAGS:
-            return base | QtCore.Qt.ItemIsEditable
+            entry = self._entries[index.row()]
+            if entry.editable_tags:
+                return base | QtCore.Qt.ItemIsEditable
         return base
 
     def setData(self, index, value, role=QtCore.Qt.EditRole):
@@ -229,173 +233,63 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
             return False
         if index.column() != self.COL_TAGS:
             return False
-        name = self._names[index.row()]
-        path = self._path_for(name)
-        if not path:
+        entry = self._entries[index.row()]
+        if not entry.editable_tags:
             return False
-        # value is a comma-separated string of file tags entered by the user
-        new_tags = {t.strip() for t in str(value).split(",") if t.strip()}
+        save_tags = getattr(entry.handler, "save_tags", None)
+        if not callable(save_tags):
+            return False
+        # value is a comma-separated string of file tags entered by the user.
+        # Strip any leading "#" — the prefix is display-only formatting
+        # (added by the delegate). Users who type "#photogrammetry"
+        # expect the same tag as "photogrammetry", not "##photogrammetry".
+        new_tags = set()
+        for t in str(value).split(","):
+            stripped = t.strip().lstrip("#").strip()
+            if stripped:
+                new_tags.add(stripped)
         try:
-            self.sb.save_ui_tags(path, new_tags)
+            save_tags(entry.name, new_tags)
         except Exception:
             return False
         return True
 
     # ---- helpers ----
 
-    def _path_for(self, name: str) -> Optional[str]:
-        return self.sb.registry.ui_registry.get(filename=name, return_field="filepath")
+    def entry_for_name(self, name: str) -> Optional[HandlerEntry]:
+        return self._by_name.get(name)
 
-    def _inherited_tags_for(self, name: str) -> Set[str]:
-        """Filename + source-directory tags (the non-XML inherited ones)."""
-        tags = set(self.sb.get_tags_from_name(name) or set())
-        path = self._path_for(name)
-        if path and self.sb._source_tags:
-            norm = os.path.normpath(os.path.abspath(path))
-            for src_dir, src_tags in self.sb._source_tags.items():
-                if norm.startswith(src_dir + os.sep) or norm == src_dir:
-                    tags.update(src_tags)
-                    break
-        return tags
+    # Compat shims for existing callers (mostly tests) that probed the
+    # pre-handler-refactor private fields. Cheap to keep and let the
+    # test bed continue to exercise behavior by name rather than entry
+    # object. New code should prefer ``entry_for_name`` / ``_entries``.
+    @property
+    def _names(self) -> List[str]:
+        return [e.name for e in self._entries]
 
     def _all_tags_for(self, name: str) -> Set[str]:
-        tags = self._inherited_tags_for(name)
-        tags |= set(self.sb._get_ui_tags(name))
-        ui = self.sb.loaded_ui.peek(name)
-        if ui is not None:
-            try:
-                tags |= set(ui.tags or set())
-            except Exception:
-                pass
-        return tags
+        entry = self._by_name.get(name)
+        return set(entry.all_tags) if entry is not None else set()
 
-    def _is_visible(self, name: str) -> bool:
-        ui = self.sb.loaded_ui.peek(name)
+    def _inherited_tags_for(self, name: str) -> Set[str]:
+        entry = self._by_name.get(name)
+        return set(entry.inherited_tags) if entry is not None else set()
+
+    def _path_for(self, name: str) -> Optional[str]:
+        entry = self._by_name.get(name)
+        return entry.filepath if entry is not None else None
+
+    def _is_visible(self, entry: HandlerEntry) -> bool:
         try:
-            return bool(ui and ui.isVisible())
+            return bool(entry.handler.is_visible(entry.name))
         except Exception:
             return False
 
     def all_unique_tags(self) -> List[str]:
         seen: Set[str] = set()
-        for name in self._names:
-            seen |= self._all_tags_for(name)
+        for entry in self._entries:
+            seen |= entry.all_tags
         return sorted(seen)
-
-
-# ── Tag editor dialog ─────────────────────────────────────────────────────────
-
-
-class TagEditDialog(QtWidgets.QDialog):
-    """Modal for editing the file-level tags of a single UI.
-
-    Inherited tags (filename + source-directory) are shown as read-only chips
-    for context. Only file tags are editable here; saving calls
-    ``Switchboard.save_ui_tags``.
-    """
-
-    def __init__(self, ui_name, inherited_tags, file_tags, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"Edit tags — {ui_name}")
-        self.setModal(True)
-        self.resize(360, 300)
-
-        self._tags: Set[str] = set(file_tags or set())
-
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # Inherited (read-only): from the .ui filename or the directory the
-        # UI was registered from. Edit those at the source, not here.
-        if inherited_tags:
-            inherited_lbl = QtWidgets.QLabel("Inherited (read-only):")
-            inherited_lbl.setToolTip(
-                "These tags come from the .ui filename (e.g. 'name#tag.ui')\n"
-                "or from the directory passed to switchboard.register(...).\n"
-                "They're not stored in this file, so they can't be edited here."
-            )
-            layout.addWidget(inherited_lbl)
-            inh_row = QtWidgets.QHBoxLayout()
-            inh_row.setSpacing(4)
-            for t in sorted(inherited_tags):
-                chip = QtWidgets.QLabel(f"#{t}")
-                chip.setStyleSheet(
-                    "padding: 2px 6px; border-radius: 8px;"
-                    " background: #444; color: #aaa;"
-                )
-                chip.setToolTip(
-                    f"#{t} — inherited; not editable here.\n"
-                    "Custom tags added below are stored in the .ui file."
-                )
-                inh_row.addWidget(chip)
-            inh_row.addStretch(1)
-            layout.addLayout(inh_row)
-
-        # File tags — these are the ones written into the .ui XML by
-        # save_ui_tags. Adding a tag here works alongside any inherited tags.
-        file_lbl = QtWidgets.QLabel("File tags (stored in this .ui):")
-        file_lbl.setToolTip(
-            "Tags written into the .ui file as <property name='uitk_tags'>.\n"
-            "Travels with the file; visible and editable in Qt Designer."
-        )
-        layout.addWidget(file_lbl)
-        self._list = QtWidgets.QListWidget()
-        self._list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        for t in sorted(self._tags):
-            self._list.addItem(t)
-        layout.addWidget(self._list, 1)
-
-        add_row = QtWidgets.QHBoxLayout()
-        self._line = QtWidgets.QLineEdit()
-        self._line.setPlaceholderText("Add tag and press Enter")
-        self._line.returnPressed.connect(self._on_add)
-        btn_add = QtWidgets.QPushButton("Add")
-        btn_add.clicked.connect(self._on_add)
-        btn_remove = QtWidgets.QPushButton("Remove")
-        btn_remove.clicked.connect(self._on_remove)
-        add_row.addWidget(self._line, 1)
-        add_row.addWidget(btn_add)
-        add_row.addWidget(btn_remove)
-        layout.addLayout(add_row)
-
-        # Buttons
-        bb = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel
-        )
-        bb.accepted.connect(self.accept)
-        bb.rejected.connect(self.reject)
-        layout.addWidget(bb)
-
-    def _on_add(self):
-        text = self._line.text().strip().lstrip("#")
-        if not text or "," in text:
-            self._line.clear()
-            return
-        if text in self._tags:
-            self._line.clear()
-            return
-        self._tags.add(text)
-        self._refresh_list(select=text)
-        self._line.clear()
-
-    def _on_remove(self):
-        item = self._list.currentItem()
-        if not item:
-            return
-        self._tags.discard(item.text())
-        self._refresh_list()
-
-    def _refresh_list(self, select: Optional[str] = None):
-        self._list.clear()
-        for t in sorted(self._tags):
-            self._list.addItem(t)
-        if select:
-            for i in range(self._list.count()):
-                if self._list.item(i).text() == select:
-                    self._list.setCurrentRow(i)
-                    break
-
-    def tags(self) -> Set[str]:
-        return set(self._tags)
 
 
 # ── Row delegate ──────────────────────────────────────────────────────────────
@@ -410,6 +304,16 @@ _NAME_COLOR = _UI_PALETTE["text"].hex  # neutral text
 _NAME_VISIBLE_COLOR = _STATUS_PALETTE["warn"].fg.hex  # warm gold (visible)
 _INHERITED_TAG_COLOR = _STATUS_PALETTE["locked"].fg.hex  # dimmed grey
 _FILE_TAG_COLOR = _STATUS_PALETTE["info"].fg.hex  # soft steel-blue
+_KIND_CHIP_COLOR = _STATUS_PALETTE["info"].fg.hex  # same family as file tags
+
+# Kind chips suppress the default "ui_file" chip — it's the dominant
+# population and rendering one for every row would be visual noise.
+# External / future kinds get an explicit chip so users can tell rows
+# apart at a glance and filter on the kind via the tag search.
+_KIND_CHIP_LABELS = {
+    "external_subprocess": "external",
+    "external_in_process": "external:in-proc",
+}
 
 
 class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
@@ -424,6 +328,12 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
     Inline editing on the Tags column edits only the file-tags portion as
     a comma-separated string. Inherited tags are not shown in the editor —
     they live elsewhere and editing them here would be misleading.
+
+    Selection / hover styling comes from the global QSS
+    (``QAbstractItemView::item:selected`` / ``:hover``) — the delegate
+    deliberately does *not* mute ``State_Selected`` so the standard blue
+    fill paints through behind the HTML chips, the same as a default
+    item view would render.
     """
 
     _MARGIN = 4
@@ -432,6 +342,15 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
         super().__init__(parent)
         self._doc = QtGui.QTextDocument()
         self._doc.setDocumentMargin(0)
+        # No line wrapping in cells — long tag strings should clip
+        # horizontally (and scroll on column resize), not wrap into a
+        # second line that gets cropped by the 22px row height. Default
+        # QTextDocument wraps at the set textWidth; turn that off here
+        # once. The textWidth set in paint() still controls the painted
+        # extent for clipping, just without forcing a line break.
+        _opt = QtGui.QTextOption()
+        _opt.setWrapMode(QtGui.QTextOption.NoWrap)
+        self._doc.setDefaultTextOption(_opt)
 
     def _name_html(self, index) -> str:
         from html import escape
@@ -453,8 +372,26 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
 
         inherited = index.data(SwitchboardBrowserModel.InheritedTagsRole) or []
         file_tags = index.data(SwitchboardBrowserModel.FileTagsRole) or []
+        kind = index.data(SwitchboardBrowserModel.KindRole) or ""
+        # "Hide inherited tags" lives on the owning browser. The delegate
+        # is parented to it, so a quick parent walk reaches the toggle
+        # without coupling the delegate to a Switchboard import.
+        browser = self.parent()
+        hide_inherited = bool(getattr(browser, "hide_inherited_tags", False))
+        if hide_inherited:
+            inherited = []
         chips = []
-        # Inherited first — italic to signal "not editable here"
+        # Kind chip first when the kind has an explicit label — lets the
+        # eye anchor "what kind of thing am I looking at" before scanning
+        # tags. .ui-backed entries get no chip (they're the default and
+        # rendering one for every row is noise).
+        kind_label = _KIND_CHIP_LABELS.get(kind)
+        if kind_label:
+            chips.append(
+                f'<span style="color:{_KIND_CHIP_COLOR};font-weight:bold">'
+                f"⟨{escape(kind_label)}⟩</span>"
+            )
+        # Inherited tags — italic to signal "not editable here"
         for t in sorted(inherited):
             chips.append(
                 f'<span style="color:{_INHERITED_TAG_COLOR};font-style:italic">'
@@ -474,31 +411,29 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         html = self._build_html(index)
-        if html is None:
-            # Action columns are filled via setIndexWidget; let the default
-            # paint handle them (background, etc.).
-            super().paint(painter, option, index)
-            return
-
-        # Default selection / hover background
         opt = QtWidgets.QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
-        opt.text = ""
+        if html is not None:
+            # Suppress the default text — we draw our own HTML on top of
+            # the cell background.  Leaving ``opt.text`` populated would
+            # render the plain string under the HTML chips.
+            opt.text = ""
+
         style = opt.widget.style() if opt.widget else QtWidgets.QApplication.style()
         style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, opt.widget)
 
-        self._doc.setHtml(html)
-        self._doc.setTextWidth(option.rect.width() - 2 * self._MARGIN)
-
-        painter.save()
-        painter.translate(
-            option.rect.left() + self._MARGIN, option.rect.top() + self._MARGIN
-        )
-        clip = QtCore.QRectF(
-            0, 0, option.rect.width() - 2 * self._MARGIN, option.rect.height()
-        )
-        self._doc.drawContents(painter, clip)
-        painter.restore()
+        if html is not None:
+            self._doc.setHtml(html)
+            self._doc.setTextWidth(option.rect.width() - 2 * self._MARGIN)
+            painter.save()
+            painter.translate(
+                option.rect.left() + self._MARGIN, option.rect.top() + self._MARGIN
+            )
+            clip = QtCore.QRectF(
+                0, 0, option.rect.width() - 2 * self._MARGIN, option.rect.height()
+            )
+            self._doc.drawContents(painter, clip)
+            painter.restore()
 
     def sizeHint(self, option, index):
         html = self._build_html(index)
@@ -542,6 +477,33 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
         if index.column() != SwitchboardBrowserModel.COL_TAGS:
             return super().setModelData(editor, model, index)
         model.setData(index, editor.text(), QtCore.Qt.EditRole)
+
+    def eventFilter(self, editor, event):
+        """Make Esc always dismiss the editor (cancel without commit).
+
+        QLineEdit in modern Qt swallows Esc to revert an undoable
+        change — so a user who types and then changes their mind
+        sees the text clear but the editor stays open, forcing them
+        to commit-or-keep-typing. That reads as "I can't exit edit
+        mode without making an entry."
+
+        Intercept Esc here and emit ``closeEditor`` with NoHint so
+        the view tears the editor down regardless of QLineEdit's
+        internal undo state. Other keys (Tab, Enter, Return,
+        Backtab) keep their default handling from
+        QStyledItemDelegate.
+        """
+        if (
+            isinstance(editor, QtWidgets.QLineEdit)
+            and event.type() == QtCore.QEvent.KeyPress
+            and event.key() == QtCore.Qt.Key_Escape
+        ):
+            # NoHint = cancel; commit path is via Enter/Return only.
+            self.closeEditor.emit(
+                editor, QtWidgets.QAbstractItemDelegate.NoHint
+            )
+            return True
+        return super().eventFilter(editor, event)
 
 
 # ── Filter proxy ──────────────────────────────────────────────────────────────
@@ -678,14 +640,24 @@ class SwitchboardBrowser(EditorPanel):
 
             switchboard = Switchboard(**switchboard_kwargs)
 
-        # ``menu`` button gives us a header dropdown that hosts the preset
-        # combo and global browser options (Refresh, presets, …).
-        # ``minimize`` gives the same window-management affordance we
-        # configure on launched UIs.
+        # ``refresh`` is a built-in header button that emits
+        # ``refresh_requested`` — we wire it post-construction (see below)
+        # to drive the same re-pull as the old menu entry, but as a
+        # one-click affordance instead of a buried menu item. Matches
+        # the pattern used by mayatk.reference_manager.
+        # ``menu`` hosts global browser options (presets, theme, hide
+        # lists, …); ``minimize`` is the standard window control.
+        #
+        # ``on_top=False`` matches EditorPanel's default but is kept
+        # explicit at the construction site as load-bearing intent: the
+        # browser is a *launcher*, not a config surface for another
+        # window, and mayatk's UIs (e.g. reference_manager) parent to
+        # Maya without forcing themselves above every other window.
         super().__init__(
             title="UI Browser",
-            header_buttons=["menu", "minimize", "hide"],
+            header_buttons=["refresh", "menu", "minimize", "hide"],
             parent=parent,
+            on_top=False,
         )
         self.sb: Switchboard = switchboard
         self.resize(420, 560)
@@ -825,7 +797,17 @@ class SwitchboardBrowser(EditorPanel):
         h.setMinimumSectionSize(22)
         self._view.setColumnWidth(SwitchboardBrowserModel.COL_ACTION, 22)
         self._view.setColumnWidth(SwitchboardBrowserModel.COL_CLOSE, 22)
+        # Selection / hover styling lives entirely in the global QSS
+        # (uitk/widgets/mixins/style.qss).  The only per-view override the
+        # browser still needs is zero item padding — the action columns
+        # are exactly 22px wide and any inherited cell padding would
+        # squeeze the icon buttons.
         self._view.setStyleSheet("QTableView::item { padding: 0; }")
+        # Mouse tracking is required for ``QStyle::State_MouseOver`` (and
+        # therefore QSS ``:hover``) to fire on cursor moves without a
+        # button held — the default is off, so item hover tints silently
+        # never render.
+        self._view.setMouseTracking(True)
         self._view.verticalHeader().setVisible(False)
         self._view.verticalHeader().setDefaultSectionSize(22)
         self._view.setShowGrid(False)
@@ -904,6 +886,7 @@ class SwitchboardBrowser(EditorPanel):
         right edge of the LineEdit clean.
         """
         from uitk.widgets.optionBox.options.action import ActionOption
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
 
         le = self.sb.registered_widgets.LineEdit()
         le.setObjectName(object_name)
@@ -920,26 +903,21 @@ class SwitchboardBrowser(EditorPanel):
         )
         le.textChanged.connect(lambda _v: on_text_changed())
 
-        # ── Filter on/off button (cycles two states) ──────────────────
-        # State 0 = enabled (full-color icon); state 1 = disabled (dimmed).
-        # Click in state 0 calls back with False (will-be-disabled), then
-        # cycles visually to state 1. Symmetric for state 1.
-        le.option_box.set_action(
-            states=[
-                {
-                    "icon": "filter",
-                    "tooltip": "Filter enabled. Click to disable.",
-                    "callback": lambda: on_filter_toggle(False),
-                },
-                {
-                    "icon": "filter",
-                    "color": "#555555",
-                    "tooltip": "Filter disabled. Click to enable.",
-                    "callback": lambda: on_filter_toggle(True),
-                },
-            ],
-            settings_key=False,  # We persist via _settings so presets see it.
+        # ── Filter on/off toggle ──────────────────────────────────────
+        # ToggleOption owns the on/off visuals (theme-coloured icon when on,
+        # error-red when off) so the user can see which control caused the
+        # filter to stop. Persistence stays in self._settings (presets need
+        # to see it), so settings_key=False.
+        filter_toggle = ToggleOption(
+            wrapped_widget=le,
+            icon="filter",
+            tooltip_on="Filter enabled. Click to disable.",
+            tooltip_off="Filter disabled. Click to enable.",
+            initial=initial_filter_enabled,
+            settings_key=False,
         )
+        filter_toggle.toggled.connect(on_filter_toggle)
+        le.option_box.add_option(filter_toggle)
 
         # ── Scope tri-state action button ──────────────────────────────
         # Icon = SCOPE_ICONS[currently active scope]. Click cycles to
@@ -974,20 +952,12 @@ class SwitchboardBrowser(EditorPanel):
         scope_action._current_state = SCOPES.index(saved_scope)
         le.option_box.add_option(scope_action)
 
-        # Stash the action reference and the filter-enabled flag's getter on
-        # the LineEdit so other call sites (filter predicate, presets) read
-        # current values from a single source.
+        # Stash references on the LineEdit so other call sites (filter
+        # predicate, presets) read current values from a single source.
+        le._filter_toggle = filter_toggle
         le._scope_action = scope_action
         le._scope_settings_key = scope_settings_key
         le._text_settings_key = text_settings_key
-
-        # Reflect the persisted filter-enabled state on the action button:
-        # state 0 = enabled, state 1 = disabled. The filter-on/off action is
-        # the *first* ActionOption added (above), so find_option will return
-        # it (the scope action is added second).
-        filter_action = le.option_box.find_option(ActionOption)
-        if filter_action is not None and filter_action is not scope_action:
-            filter_action._current_state = 0 if initial_filter_enabled else 1
 
         return le
 
@@ -1063,13 +1033,12 @@ class SwitchboardBrowser(EditorPanel):
         # the browser (see :class:`_BrowserState`) it would silently no-op.
         menu.add_defaults_button = True
 
-        self._btn_refresh = menu.add(
-            "QPushButton",
-            setText="Refresh",
-            setObjectName="btn_refresh",
-            setToolTip="Re-read the switchboard registry and rebuild the list.",
-        )
-        self._btn_refresh.clicked.connect(self._on_refresh_clicked)
+        # Refresh is wired as a top-level header button (see
+        # ``header_buttons`` in __init__) — the ``refresh_requested``
+        # signal drives the same re-pull. Mirrors mayatk's reference
+        # manager pattern; promotes Refresh from a buried menu entry
+        # to a single-click affordance.
+        self._header.refresh_requested.connect(self._on_refresh_clicked)
 
         # Use uitk's PushButton (not QPushButton) so the button has
         # `option_box` available for the force-compile toggle below.
@@ -1147,6 +1116,28 @@ class SwitchboardBrowser(EditorPanel):
             setToolTip="Clear the hidden-UI and hidden-tag lists.",
         )
         self._unhide_all_btn.clicked.connect(self._on_unhide_all)
+
+        # Hide inherited tags — those declared at registration time
+        # (filename ``#tag`` suffix, source-directory tag passed to
+        # ``register(tags=...)``, entry-point ``[extras]``) rather than
+        # user-curated. Helps users focus on tags they've actually added.
+        # Off by default to preserve current visual behavior.
+        self._cb_hide_inherited_tags = menu.add(
+            "QCheckBox",
+            setObjectName="cb_hide_inherited_tags",
+            setText="Hide inherited tags",
+            setToolTip=(
+                "Hide tags declared at registration time (filename "
+                "suffix, source-dir tag, entry-point extras). Only "
+                "user-added tags remain visible — both in row chips "
+                "and in the tag chip-filter strip."
+            ),
+            setChecked=bool(self._settings.value("hide_inherited_tags", False)),
+        )
+        self._cb_hide_inherited_tags.toggled.connect(
+            self._on_hide_inherited_tags_toggled
+        )
+        self.state.capture(self._cb_hide_inherited_tags, False)
 
         # ── Launch options ──
         menu.add("Separator", setTitle="Launch options:")
@@ -1290,16 +1281,25 @@ class SwitchboardBrowser(EditorPanel):
                         action._apply_state()
 
         # ── Filter-enabled flags ──
+        # Sync the ToggleOption visuals via set_on(..., emit=False) so the
+        # restored icon state reflects the preset without re-firing the
+        # toggled callback (which would write to settings again).
         if "search" in data and "filter_enabled" in data["search"]:
             self._search_filter_enabled = bool(data["search"]["filter_enabled"])
             self._settings.setValue(
                 "search.filter_enabled", self._search_filter_enabled
             )
+            toggle = getattr(self._search, "_filter_toggle", None)
+            if toggle is not None:
+                toggle.set_on(self._search_filter_enabled, emit=False)
         if "exclude" in data and "filter_enabled" in data["exclude"]:
             self._exclude_filter_enabled = bool(data["exclude"]["filter_enabled"])
             self._settings.setValue(
                 "exclude.filter_enabled", self._exclude_filter_enabled
             )
+            toggle = getattr(self._exclude, "_filter_toggle", None)
+            if toggle is not None:
+                toggle.set_on(self._exclude_filter_enabled, emit=False)
 
         # ── Show combo + theme combo ──
         for combo, val in [
@@ -1459,7 +1459,7 @@ class SwitchboardBrowser(EditorPanel):
         else:
             registered = self._model.rowCount()
             visible_count = sum(
-                1 for n in self._model._names if self._model._is_visible(n)
+                1 for e in self._model._entries if self._model._is_visible(e)
             )
             shown = self._proxy.rowCount()
             text = (
@@ -1495,17 +1495,42 @@ class SwitchboardBrowser(EditorPanel):
         self._refresh_chips()
         self._apply_filter()
 
+    def _on_hide_inherited_tags_toggled(self, checked: bool) -> None:
+        self._settings.setValue("hide_inherited_tags", bool(checked))
+        # Repaint rows (tag chips re-render) and refresh chip strip.
+        if hasattr(self, "_view") and self._view.model() is not None:
+            top = self._model.index(0, 0)
+            bot = self._model.index(
+                self._model.rowCount() - 1, self._model.COLUMN_COUNT - 1
+            )
+            if top.isValid() and bot.isValid():
+                self._model.dataChanged.emit(top, bot)
+        self._refresh_chips()
+
+    @property
+    def hide_inherited_tags(self) -> bool:
+        return bool(self._settings.value("hide_inherited_tags", False))
+
     def _visible_tags(self) -> List[str]:
         """Tags from currently visible (post-filter) rows.
 
         Active tag filters are forcibly included so the user can always toggle
         them off — otherwise an active chip with no remaining matches would
         vanish from the strip and become un-removable.
+
+        Honors the "Hide inherited tags" toggle — those tags are dropped
+        from the chip strip but remain in the underlying row data
+        (so filters set programmatically still work).
         """
         seen: Set[str] = set(self._active_tag_filters)
+        hide_inherited = self.hide_inherited_tags
         for r in range(self._proxy.rowCount()):
             idx = self._proxy.index(r, 0)
-            tags = idx.data(SwitchboardBrowserModel.TagsRole) or []
+            if hide_inherited:
+                # Only user-added file tags surface in the chip strip.
+                tags = idx.data(SwitchboardBrowserModel.FileTagsRole) or []
+            else:
+                tags = idx.data(SwitchboardBrowserModel.TagsRole) or []
             seen.update(tags)
         return sorted(seen)
 
@@ -1569,10 +1594,16 @@ class SwitchboardBrowser(EditorPanel):
         tags = idx.data(SwitchboardBrowserModel.TagsRole) or []
 
         menu = QtWidgets.QMenu(self)
-        edit_act = menu.addAction("Edit tags…")
-        edit_act.triggered.connect(lambda: self._edit_tags_for(name))
-
-        menu.addSeparator()
+        # Tag editing happens inline — double-click the Tags cell, or
+        # pick this entry to open the same inline editor programmatically.
+        # No modal popup: the QLineEdit delegate is the single edit path.
+        tags_idx = self._proxy.index(idx.row(), SwitchboardBrowserModel.COL_TAGS)
+        if self._model.flags(self._proxy.mapToSource(tags_idx)) & QtCore.Qt.ItemIsEditable:
+            edit_act = menu.addAction("Edit tags")
+            edit_act.triggered.connect(
+                lambda _=False, i=tags_idx: self._view.edit(i)
+            )
+            menu.addSeparator()
         if name in self.hidden_uis:
             unh = menu.addAction("Unhide this UI")
             unh.triggered.connect(lambda: self._toggle_hide_ui(name, hide=False))
@@ -1605,26 +1636,6 @@ class SwitchboardBrowser(EditorPanel):
         self.hidden_uis = s
         self._apply_filter()
 
-    def _edit_tags_for(self, name: str) -> None:
-        path = self.sb.registry.ui_registry.get(filename=name, return_field="filepath")
-        if not path:
-            QtWidgets.QMessageBox.warning(
-                self, "Edit tags", f"No file path for '{name}'."
-            )
-            return
-        inherited = self._model._inherited_tags_for(name)
-        file_tags = set(self.sb._get_ui_tags(name))
-        dlg = TagEditDialog(name, inherited, file_tags, parent=self)
-        if dlg.exec_() == QtWidgets.QDialog.Accepted:
-            new_tags = dlg.tags()
-            try:
-                self.sb.save_ui_tags(path, new_tags)
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(self, "Save tags failed", str(e))
-                return
-            self._refresh_chips()
-            self._apply_filter()
-
     def _on_double_click(self, index) -> None:
         # Double-click on Tags column kicks off inline editing — handled by
         # the view's edit triggers; don't launch in that case.
@@ -1652,118 +1663,57 @@ class SwitchboardBrowser(EditorPanel):
             self._launch(name)
 
     def _close_ui(self, name: str) -> None:
-        """Hide a currently-loaded UI.
+        """Dismiss the entry via its owning handler.
 
-        Routes through the launched UI's own ``Header.hide_window`` when
-        present — that's the same code path the launched window's own hide
-        button uses, so collapse / minimize state is reset cleanly
-        and any header-level hide hooks (subclasses, signals) fire as if
-        the user had clicked the in-window button. Falls back to a direct
-        ``ui.hide()`` for UIs that don't have a uitk Header.
-
-        ``request_hide()`` is intentionally **not** used here: it checks
-        pin state and refuses to hide pinned windows or windows without
-        a pin button, which is wrong for an explicit user gesture.
+        The handler decides what "close" means — hide a window, terminate
+        a subprocess, etc. Browser stays kind-agnostic.
         """
-        ui = self.sb.loaded_ui.peek(name)
-        if not isinstance(ui, QtWidgets.QWidget):
+        entry = self._model.entry_for_name(name)
+        if entry is None:
             return
-
-        header = getattr(ui, "header", None)
-        if header is None or not hasattr(header, "hide_window"):
-            header = (
-                ui.findChild(QtWidgets.QWidget, "header")
-                if hasattr(ui, "findChild")
-                else None
-            )
-        hidden_via_header = False
-        if header is not None and hasattr(header, "hide_window"):
-            try:
-                header.hide_window()
-                hidden_via_header = True
-            except Exception:
-                # Fall through to the plain hide() below
-                pass
-        if not hidden_via_header:
-            ui.hide()
-
-        # Externally-launched UIs may not be tracked yet — calling this
-        # ensures the row's visibility state refreshes even when our
-        # ``on_show``/``on_hide`` listeners weren't wired up at launch.
+        try:
+            entry.handler.close(name)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Close failed", f"{name}: {e}")
+            return
         self._model.refresh_after_launch(name)
 
     def _launch(self, name: str) -> None:
+        """Launch the entry through its owning handler.
+
+        Browser passes the current launch options (frameless/translucent/
+        restore_geometry/on_top/theme) as **kwargs; handlers that don't
+        care about UI styling discard the unknown keys.
+        """
+        entry = self._model.entry_for_name(name)
+        if entry is None:
+            return
         opts = self.launch_options()
         try:
-            ui = getattr(self.sb.loaded_ui, name)
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Launch failed", f"{name}: {e}")
-            return
-
-        try:
-            # Parent to the switchboard's own parent (typically the host
-            # DCC's main window — Maya, etc. — set by tentacle's TclMaya).
-            # Mirrors MarkingMenu._init_ui: setParent(self.parent(), Qt.Window).
-            sb_parent = self.sb.parent() if hasattr(self.sb, "parent") else None
-            if sb_parent is not None:
-                ui.setParent(sb_parent, QtCore.Qt.Window)
-
-            ui.set_flags(
-                FramelessWindowHint=opts.frameless,
-                Tool=opts.frameless,
-                WindowStaysOnTopHint=opts.on_top,
+            entry.handler.launch(
+                name,
+                frameless=opts.frameless,
+                translucent=opts.translucent,
+                restore_geometry=opts.restore_geometry,
+                on_top=opts.on_top,
+                theme=opts.theme,
             )
-            ui.setAttribute(QtCore.Qt.WA_TranslucentBackground, opts.translucent)
-
-            if hasattr(ui, "style"):
-                try:
-                    ui.style.set(theme=opts.theme)
-                except Exception:
-                    pass
-
-            # Configure the launched window's header to expose hide / collapse
-            # / menu buttons (no pin — the hide button is the canonical
-            # dismiss action in this UX). Only apply when the header has not
-            # already been configured, mirroring UiHandler.apply_styles.
-            self._configure_launched_header(ui)
-
-            if not opts.restore_geometry and hasattr(ui, "clear_saved_geometry"):
-                ui.clear_saved_geometry()
-            ui.show(pos="screen")
-            ui.raise_()
-            ui.activateWindow()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Launch failed", f"{name}: {e}")
             return
-
         self._model.refresh_after_launch(name)
 
-    @staticmethod
-    def _configure_launched_header(ui) -> None:
-        """Add hide/collapse/menu buttons to a launched UI's header.
-
-        Skips if the header already has buttons (a UI with a deliberate
-        custom set should keep it). Falls back to ``findChild`` because
-        ``ui.header`` may not be a ready Header instance yet. Failure to
-        find or configure a header is non-fatal — the window still launches.
-        """
-        header = getattr(ui, "header", None)
-        if header is None or not hasattr(header, "config_buttons"):
-            header = (
-                ui.findChild(QtWidgets.QWidget, "header")
-                if hasattr(ui, "findChild")
-                else None
-            )
-        if header is None or not hasattr(header, "config_buttons"):
-            return
-        if getattr(header, "buttons", None):
-            return
-        try:
-            header.config_buttons("menu", "collapse", "hide")
-        except Exception:
-            pass
-
     def _focus(self, name: str) -> None:
+        """Raise a currently-visible entry. UI-file entries support this;
+        external tools generally don't (we'd need a window handle), so we
+        no-op gracefully when the handler can't raise.
+        """
+        entry = self._model.entry_for_name(name)
+        if entry is None:
+            return
+        # Only ui_file entries have a loaded_ui peek path with raise_().
+        if entry.kind != "ui_file":
+            return
         try:
             ui = self.sb.loaded_ui[name]
         except Exception:
@@ -1782,6 +1732,15 @@ class SwitchboardBrowser(EditorPanel):
         # Coalesce multiple updates within an event-loop turn into one
         # rebuild. Guard prevents stacking timers when many signals fire
         # back-to-back.
+        #
+        # When the browser is hidden, the work is invisible — but the
+        # full refresh chain (re-pull entries, recreate every row's
+        # buttons via setIndexWidget) is expensive enough to be felt
+        # across the host app. Mark dirty + bail; showEvent does one
+        # consolidated refresh when the user next opens us.
+        if not self.isVisible():
+            self._dirty_while_hidden = True
+            return
         if getattr(self, "_full_refresh_pending", False):
             return
         self._full_refresh_pending = True
@@ -1792,6 +1751,15 @@ class SwitchboardBrowser(EditorPanel):
         self._refresh_chips()
         self._refresh_row_widgets()
         self._update_footer_status()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # While hidden the model might have processed entries-changed
+        # signals without triggering row rebuilds (see ``_defer_full_refresh``).
+        # Bring the view fully up to date on show.
+        if getattr(self, "_dirty_while_hidden", False):
+            self._dirty_while_hidden = False
+            self._do_full_refresh()
 
     def _select_first_row(self) -> None:
         if self._proxy.rowCount() == 0:

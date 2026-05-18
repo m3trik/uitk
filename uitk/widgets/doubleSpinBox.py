@@ -32,15 +32,24 @@ class DoubleSpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin):
         super().setPrefix(formatted_prefix)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
-        """Handle wheel events with modifier keys to adjust the step size or value dynamically."""
-        modifiers = QtGui.QGuiApplication.keyboardModifiers()
+        """Handle wheel events with modifier keys.
 
-        if modifiers == QtCore.Qt.AltModifier:
-            self.adjustStepSize(event)
-        elif modifiers == QtCore.Qt.ControlModifier:
+        Modifiers come from the event (not QGuiApplication) so dispatch
+        reflects the event's own state and is unit-testable. ``&`` rather
+        than ``==`` because in PySide6 the ``KeyboardModifier`` value and
+        the ``KeyboardModifiers`` flag set don't compare equal even when
+        bits match.
+        """
+        modifiers = event.modifiers()
+        ctrl = bool(modifiers & QtCore.Qt.ControlModifier)
+        alt = bool(modifiers & QtCore.Qt.AltModifier)
+
+        if ctrl and alt:
             self.decreaseValueWithSmallStep(event)
-        elif modifiers == (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier):
+        elif ctrl:
             self.increaseValueWithLargeStep(event)
+        elif alt:
+            self.adjustStepSize(event)
         else:
             super().wheelEvent(event)
 
@@ -70,10 +79,12 @@ class DoubleSpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin):
         self.message(f"Step: <font color='yellow'>{adjustment}</font>")
 
     def decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None:
-        """Decrease the spin box value by a smaller step when Ctrl+Alt is pressed, fine-tuning the adjustment."""
-        current_step = self.singleStep()
-        decimals = self.decimals()
-        adjustment = max(current_step / 10, 10**-decimals)
+        """Move the value by the lowest decimal place (Ctrl+Alt).
+
+        Independent of ``singleStep`` — Ctrl+Alt is the precision modifier
+        and should always step by 10^-decimals.
+        """
+        adjustment = 10 ** -self.decimals()
         self.setValue(
             self.value() + adjustment
             if event.angleDelta().y() > 0

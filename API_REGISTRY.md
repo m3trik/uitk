@@ -10,6 +10,7 @@ _Generated: 2026-05-17_
 - [`events.py`](#events) — Event handling utilities for Qt applications.
 - [`examples/example.py`](#examples--example) — UITK Example — a polished tour of the framework.
 - [`file_manager.py`](#file_manager) — File and directory management utilities for UITK.
+- [`handlers/external_tool_handler.py`](#handlers--external_tool_handler) — Register, install-on-demand, and launch external Python tools as subprocesses.
 - [`handlers/ui_handler.py`](#handlers--ui_handler)
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - [`loaders/runtime.py`](#loaders--runtime) — Switchboard delegate that loads UIs at runtime via QUiLoader.
@@ -26,7 +27,8 @@ _Generated: 2026-05-17_
 - [`switchboard/style.py`](#switchboard--style) — Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 - [`switchboard/utils.py`](#switchboard--utils)
 - [`switchboard/widgets.py`](#switchboard--widgets)
-- [`widgets/attributeWindow.py`](#widgets--attributeWindow)
+- [`widgets/attributeWindow/_attributeWindow.py`](#widgets--attributeWindow--_attributeWindow)
+- [`widgets/attributeWindow/_factory.py`](#widgets--attributeWindow--_factory) — Factory for building / reading / writing dynamic-attribute editor widgets.
 - [`widgets/checkBox.py`](#widgets--checkBox)
 - [`widgets/collapsableGroup.py`](#widgets--collapsableGroup)
 - [`widgets/colorSwatch.py`](#widgets--colorSwatch)
@@ -170,6 +172,18 @@ File and directory management utilities for UITK.
   - `FileManager.get_container(self, descriptor: str) -> Optional[ptk.NamedTupleContainer]` — Get a container by its descriptor name.
   - `FileManager.list_containers(self) -> List[str]` — List all container descriptors.
   - `FileManager.remove_container(self, descriptor: str) -> bool` — Remove a container by its descriptor name.
+
+<a id="handlers--external_tool_handler"></a>
+### `handlers/external_tool_handler.py`
+
+Register, install-on-demand, and launch external Python tools as subprocesses.
+
+- **[`class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin)`](uitk/uitk/handlers/external_tool_handler.py#L65)** — Switchboard handler for launching external Python tools.
+  - `ExternalToolHandler.instance(cls, switchboard: Switchboard = None, **kwargs)` *(class)*
+  - `ExternalToolHandler.config(self)` *(property)*
+  - `ExternalToolHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess') -> None` — Pre-register a tool so it can be launched by name.
+  - `ExternalToolHandler.is_registered(self, name: str) -> bool`
+  - `ExternalToolHandler.launch(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None)` — Launch a registered tool, or an ad-hoc tool from kwargs.
 
 <a id="handlers--ui_handler"></a>
 ### `handlers/ui_handler.py`
@@ -401,10 +415,10 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardWidgetMixin.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
   - `SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
 
-<a id="widgets--attributeWindow"></a>
-### `widgets/attributeWindow.py`
+<a id="widgets--attributeWindow--_attributeWindow"></a>
+### `widgets/attributeWindow/_attributeWindow.py`
 
-- **[`class AttributeWindow(Menu)`](uitk/uitk/widgets/attributeWindow.py#L8)** — Dynamic popup editor for inspecting and modifying object attributes.
+- **[`class AttributeWindow(Menu)`](uitk/uitk/widgets/attributeWindow/_attributeWindow.py#L11)** — Dynamic popup editor for inspecting and modifying object attributes.
   - `AttributeWindow.initialize_ui(self)` — Initializes the user interface components of the AttributeWindow.
   - `AttributeWindow.refresh_attributes(self)` — Refreshes the window with the latest attributes.
   - `AttributeWindow.clear_ui_elements(self)` — Clears existing labels and widgets from the UI.
@@ -412,19 +426,33 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `AttributeWindow.create_set_attribute_func_wrapper(self, set_attribute_func)`
   - `AttributeWindow.default_set_attribute_func(self, name, value)`
   - `AttributeWindow.is_valid_attribute(attr_name)` *(static)*
-  - `AttributeWindow.is_type_supported(attribute_type)` *(static)*
-  - `AttributeWindow.get_widget_info(self, attribute_value)` — Get the widget class and methods based on the attribute value type.
-  - `AttributeWindow.create_widget(self, widget_class, attribute_value)` — Create an instance of a widget.
-  - `AttributeWindow.configure_widget(self, widget, set_value_method, get_value_method, signal_name, attribute_name)` — Configure a widget for the attribute.
-  - `AttributeWindow.setup_widget(self, widget_class, set_value_method, attribute_value, get_value_method, signal_name, attribute_name)` — Set up the widget for the attribute.
-  - `AttributeWindow.add_attributes(self, attributes, value=None)` — Adds a single attribute or multiple attributes to the attribute window for display and interaction.
-  - `AttributeWindow.emit_value_changed(self, widget)` — Emit the valueChanged signal for a widget.
+  - `AttributeWindow.is_type_supported(attribute_type)` *(static)* — Return True if AttributeWindow can auto-build a widget for *attribute_type*.
+  - `AttributeWindow.add_attributes(self, attributes, value=None)` — Adds a single attribute or multiple attributes to the attribute window.
+  - `AttributeWindow.add_attribute_spec(self, spec)` — Add one attribute via an explicit :class:`uitk.AttributeSpec`.
+  - `AttributeWindow.emit_value_changed(self, widget)` — Emit the valueChanged signal for a widget (or composite-aware).
   - `AttributeWindow.emit_composite_value_changed(self, attribute_name)` — Construct and emit the full attribute value for a composite attribute.
   - `AttributeWindow.setup_label(self, attribute_name)` — Set up the label for the attribute.
   - `AttributeWindow.on_label_toggled(self, label)` — Slot to be called when a label is toggled.
   - `AttributeWindow.on_button_clicked(self, button, checked)` — Slot for buttonClicked signal of QButtonGroup.
   - `AttributeWindow.add_to_layout(self, label, widget)` — Add the label and widget to the layout.
   - `AttributeWindow.showEvent(self, event)` — Handle the show event for the window.
+
+<a id="widgets--attributeWindow--_factory"></a>
+### `widgets/attributeWindow/_factory.py`
+
+Factory for building / reading / writing dynamic-attribute editor widgets.
+
+- [`infer_kind(value: Any) -> str`](uitk/uitk/widgets/attributeWindow/_factory.py#L142) — Map a Python value to one of the built-in kinds.
+- [`register_kind(name: str, handler: KindHandler) -> None`](uitk/uitk/widgets/attributeWindow/_factory.py#L162) — Register a new kind (or override an existing one).
+- [`get_handler(kind: str) -> KindHandler`](uitk/uitk/widgets/attributeWindow/_factory.py#L172) — Return the handler for *kind* (raises KeyError if unregistered).
+- [`make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`](uitk/uitk/widgets/attributeWindow/_factory.py#L182) — Build a Qt widget for *spec*.
+- [`read_value(widget: QtWidgets.QWidget) -> Any`](uitk/uitk/widgets/attributeWindow/_factory.py#L206) — Return the current value of a factory-built widget.
+- [`set_value(widget: QtWidgets.QWidget, value: Any) -> None`](uitk/uitk/widgets/attributeWindow/_factory.py#L211) — Set the value of a factory-built widget.
+- [`connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`](uitk/uitk/widgets/attributeWindow/_factory.py#L216) — Wire the widget's value-change signal to ``callback(new_value)``.
+- **[`class AttributeSpec`](uitk/uitk/widgets/attributeWindow/_factory.py#L59)** — Description of one editable attribute / parameter.
+  - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
+  - `AttributeSpec.display_label(self) -> str` *(property)*
+- **[`class KindHandler`](uitk/uitk/widgets/attributeWindow/_factory.py#L111)** — Bundle of callables that build / read / write a widget kind.
 
 <a id="widgets--checkBox"></a>
 ### `widgets/checkBox.py`

@@ -12,6 +12,8 @@ mixed into a host class.
 from typing import TYPE_CHECKING
 from qtpy import QtCore, QtGui, QtWidgets
 
+from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
+
 if TYPE_CHECKING:  # pragma: no cover
     from uitk.widgets.mixins.shortcuts import ShortcutManager
 
@@ -87,11 +89,15 @@ class ShortcutEditorDialog(QtWidgets.QWidget):
 
         self._IconManager = IconManager
 
-        # Use EditorPanel as the internal layout host
+        # Use EditorPanel as the internal layout host. Forward the
+        # caller's ``parent`` so the panel anchors to the host window
+        # (EditorPanel reparents to ``parent.window()`` internally) —
+        # matches the centralized-parenting pattern used by every other
+        # editor in the toolset.
         self._panel = EditorPanel(
             title=title,
             status_text="Double-click the Shortcut column to reassign.",
-            parent=None,
+            parent=parent,
         )
 
         self._table = QtWidgets.QTableWidget()
@@ -105,6 +111,10 @@ class ShortcutEditorDialog(QtWidgets.QWidget):
         header.resizeSection(2, 30)
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        # See hotkey_editor.py — row-spanning selection border via shared
+        # delegate so the per-cell QSS :selected outline doesn't break
+        # the row visual.
+        self._table.setItemDelegate(RowSelectionBorderDelegate(self._table))
         self._table.cellDoubleClicked.connect(self._on_double_click)
         self._panel.body_layout.addWidget(self._table)
 

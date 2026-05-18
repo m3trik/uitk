@@ -26,20 +26,42 @@ class EditorPanel(QtWidgets.QWidget):
     title : str
         Text displayed in the header bar.
     header_buttons : list, optional
-        Button names for the header (default ``["pin"]``).
+        Button names for the header (default ``["hide"]``).
+    status_text : str, optional
+        Default text shown in the footer status label.
     parent : QWidget, optional
+        Anchor widget. The panel reparents to ``parent.window()`` so
+        it survives a transient invoker hiding while remaining a real
+        top-level window via ``Qt.Window``.
+    on_top : bool, optional
+        Apply ``WindowStaysOnTopHint``. Defaults to ``False`` so editors
+        behave like normal app windows (matches UI Browser, mayatk's
+        reference_manager). Opt in for transient surfaces that must
+        float above their host.
     """
 
-    def __init__(self, title="", header_buttons=None, status_text="", parent=None):
+    def __init__(
+        self,
+        title="",
+        header_buttons=None,
+        status_text="",
+        parent=None,
+        on_top=False,
+    ):
         super().__init__(None)
-        # Stay-on-top is part of the panel contract — editors are utility
-        # surfaces that should sit above the windows they're configuring.
-        # Subclasses that don't want this can clear the flag themselves.
+        # Editors behave like normal app windows parented to the host —
+        # matching SwitchboardBrowser and mayatk's reference_manager. A
+        # subclass that genuinely needs to float above its host (a
+        # transient picker, a tool palette) can opt in with on_top=True.
+        # Carrying this as an explicit constructor arg — rather than
+        # a flag-manipulation done post-super() — keeps the choice
+        # visible at every subclass's construction site.
         _panel_flags = (
             QtCore.Qt.Window
             | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowStaysOnTopHint
         )
+        if on_top:
+            _panel_flags |= QtCore.Qt.WindowStaysOnTopHint
         self.setWindowFlags(_panel_flags)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
 
@@ -75,11 +97,15 @@ class EditorPanel(QtWidgets.QWidget):
         self._header.setText(title.upper())
         frame_layout.addWidget(self._header)
 
-        # Body (main content area with margins)
+        # Body (main content area with margins).
+        # Defaults to the dense 2px margins / 2px spacing used by every
+        # production editor in the toolset (matches mayatk's reference
+        # manager and tentacle's main windows). Subclasses that need a
+        # looser layout can override via ``body_layout`` post-init.
         body = QtWidgets.QWidget()
         self._body_layout = QtWidgets.QVBoxLayout(body)
-        self._body_layout.setContentsMargins(4, 4, 4, 4)
-        self._body_layout.setSpacing(4)
+        self._body_layout.setContentsMargins(2, 2, 2, 2)
+        self._body_layout.setSpacing(2)
         frame_layout.addWidget(body, 1)
 
         # Footer
@@ -181,6 +207,21 @@ class EditorPanel(QtWidgets.QWidget):
     def body_layout(self):
         """``QVBoxLayout`` for editor controls and content."""
         return self._body_layout
+
+    def tighten_sublayouts(self, spacing: int = 1) -> None:
+        """Set every nested sub-layout inside ``body_layout`` to *spacing*.
+
+        Editors often build the body as: one or two horizontal control
+        rows (preset row, theme row, ui-picker row) above a table. The
+        outer ``body_layout`` spacing controls the gap *between* those
+        rows; this helper controls the spacing *inside* each row so the
+        controls in a single row pack tightly. Call once at the end of
+        the subclass constructor after the rows have been added.
+        """
+        for i in range(self._body_layout.count()):
+            sublayout = self._body_layout.itemAt(i).layout()
+            if sublayout is not None:
+                sublayout.setSpacing(spacing)
 
     # ── Preset management (opt-in) ───────────────────────────────
 

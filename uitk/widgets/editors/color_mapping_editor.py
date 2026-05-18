@@ -32,6 +32,7 @@ from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.widgets.mixins.preset_manager import PresetManager
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
+from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
 from uitk.widgets.widgetComboBox import WidgetComboBox
 
 ColorValue = Union[str, Tuple[str, str]]
@@ -166,6 +167,10 @@ class ColorMappingEditor(QtWidgets.QWidget):
         )
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        # Row-spanning selection border via shared delegate — see
+        # row_selection_delegate.py. Color swatches in the cells make the
+        # per-cell QSS :selected outline read as broken row chrome.
+        self._table.setItemDelegate(RowSelectionBorderDelegate(self._table))
         layout.addWidget(self._table, 1)
 
         # Populate rows
@@ -406,12 +411,18 @@ class ColorMappingDialog(QtWidgets.QDialog):
         parent=None,
     ):
         super().__init__(None)
-        self.setWindowFlags(
-            QtCore.Qt.Dialog
-            | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowStaysOnTopHint
-        )
+        # Mirrors EditorPanel's centralized parenting: anchor to a
+        # stable top-level so the dialog survives a transient invoker
+        # hiding, while ``Qt.Dialog`` keeps us a real window despite
+        # having a Qt parent. ``setParent(parent, flags)`` replaces
+        # window flags wholesale, so re-pass the full set.
+        _dialog_flags = QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint
+        self.setWindowFlags(_dialog_flags)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        if parent is not None:
+            anchor = parent.window() or parent
+            self.setParent(anchor, _dialog_flags)
+            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setMinimumWidth(280)
 
         # Inner frame paints the semi-transparent background

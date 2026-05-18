@@ -91,6 +91,43 @@ option_box = OptionBox(options=[menu_opt])
 option_box.wrap(my_widget)
 ```
 
+### ToggleOption
+A persisted binary on/off button. The icon goes theme-coloured when on and
+red (`pythontk.Palette.status()["error"]`) when off, so the user can see at a
+glance which control caused a dependent filter / widget / process to stop.
+
+```python
+from uitk.widgets.optionBox.options import ToggleOption
+
+toggle = ToggleOption(
+    wrapped_widget=line_edit,
+    icon="filter",
+    tooltip_on="Filter enabled. Click to disable.",
+    tooltip_off="Filter disabled. Click to enable.",
+    initial=True,
+)
+toggle.toggled.connect(lambda on: print("filter is now", on))
+option_box = OptionBox(options=[toggle])
+option_box.wrap(line_edit)
+```
+
+Or via the fluent manager:
+
+```python
+line_edit.option_box.set_toggle(
+    icon="filter",
+    initial=current_flag,
+    on_toggled=on_filter_changed,
+)
+```
+
+`gated_widgets=[widget, ...]` will disable the listed widgets while the
+toggle is off. The toggle does **not** clear or disable its `wrapped_widget`
+by default — that loses typed input.
+
+`set_on(value, emit=False)` flips state silently (preset restore, tests).
+Use `find_option(ToggleOption)` to retrieve it from an OptionBoxManager.
+
 ### PinValuesOption
 Allows pinning/saving and restoring widget values.
 

@@ -5,6 +5,7 @@ from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
 
 
 # End-user-facing scopes. Widget/widget_children remain decorator-only.
@@ -202,17 +203,16 @@ class HotkeyEditor(EditorPanel):
         # Match the UI Browser table's row height for a consistent look.
         self.table.verticalHeader().setDefaultSectionSize(22)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        # SelectRows + the global QSS per-cell ``:selected`` border would
+        # draw inner seams between adjacent cells of a selected row; the
+        # row-spanning delegate paints one continuous outline instead.
+        self.table.setItemDelegate(RowSelectionBorderDelegate(self.table))
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
         self.body_layout.addWidget(self.table, 1)
 
-        # Tighten spacing: central body layout sits at 2, every sub-row
-        # layout (preset row, ui_layout, etc.) drops to 1 for a denser
-        # editor without changing the row layout files themselves.
-        self.body_layout.setSpacing(2)
-        for i in range(self.body_layout.count()):
-            sublayout = self.body_layout.itemAt(i).layout()
-            if sublayout is not None:
-                sublayout.setSpacing(1)
+        # Body layout spacing (2px) is set by EditorPanel; tighten every
+        # nested control row (preset row, ui_layout) to 1px for density.
+        self.tighten_sublayouts(1)
 
         self.refresh_ui_list()
 

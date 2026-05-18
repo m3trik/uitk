@@ -448,6 +448,12 @@ class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
     sum visibly offsets the text from where the cell display rendered
     it.  Zeroing all three keeps the editor flush with the cell's
     text rect.
+
+    Does not suppress ``State_Selected`` — the QSS-defined selection
+    fill (blue ``BUTTON_HOVER`` by default) paints normally. Tables that
+    want the row-spanning border with transparent selection (so colour-
+    coded cell backgrounds remain visible) should set
+    :class:`RowSelectionBorderDelegate` as their item delegate instead.
     """
 
     def createEditor(self, parent, option, index):

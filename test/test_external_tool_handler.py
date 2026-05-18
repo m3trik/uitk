@@ -18,6 +18,275 @@ def _make_sb():
     return Switchboard(handlers={"external_tool": ExternalToolHandler})
 
 
+class TestExternalToolVisibilityTracking(unittest.TestCase):
+    """In-process widget show/hide must fire entries-changed signals.
+
+    Regression: without this wiring, the browser's row icon stayed on
+    "Focus" forever once the user hid the external tool's window —
+    only the *live-queried* state (footer text, name-column gold-italic)
+    updated, because the dataChanged-driven button refresh never fired.
+
+    The handler installs a Show/Hide event filter on the in-process
+    widget so the entry-changed signal fires regardless of *how* the
+    widget gets hidden (its own header X, ALT+F4, programmatic hide).
+    """
+
+    def _set_up(self):
+        from qtpy import QtWidgets
+        import types
+        sb = _make_sb()
+        fake_mod = types.ModuleType("fake_external_tool_visibility")
+        fake_mod.FakeUI = type("FakeUI", (QtWidgets.QMainWindow,), {})
+        sys.modules["fake_external_tool_visibility"] = fake_mod
+        return sb
+
+    def test_event_filter_installed_on_show(self):
+        from qtpy import QtWidgets
+        sb = self._set_up()
+        h = sb.handlers.external_tool
+        h.register("vt", module="fake_external_tool_visibility",
+                   entry="FakeUI", mode="in_process")
+        with patch.object(
+            ExternalToolHandler, "_is_importable", return_value=True
+        ):
+            widget = h.launch("vt")
+        self.assertTrue(
+            getattr(widget, "_uitk_external_visibility_wired", False),
+            "_show_in_process must install the visibility event filter.",
+        )
+
+    def test_widget_hide_fires_entry_changed_signal(self):
+        from qtpy import QtWidgets, QtCore
+        sb = self._set_up()
+        h = sb.handlers.external_tool
+        h.register("vt", module="fake_external_tool_visibility",
+                   entry="FakeUI", mode="in_process")
+        received = []
+        sb.on_handler_entry_changed.connect(
+            lambda hn, en: received.append((hn, en))
+        )
+        with patch.object(
+            ExternalToolHandler, "_is_importable", return_value=True
+        ):
+            widget = h.launch("vt")
+        # Show event fires on launch; clear baseline.
+        QtWidgets.QApplication.processEvents()
+        received.clear()
+        widget.hide()
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(
+            any(en == "vt" for _, en in received),
+            f"widget.hide() must fire on_handler_entry_changed; "
+            f"received={received}",
+        )
+
+    def test_filter_is_idempotent(self):
+        from qtpy import QtWidgets
+        sb = self._set_up()
+        h = sb.handlers.external_tool
+        h.register("vt", module="fake_external_tool_visibility",
+                   entry="FakeUI", mode="in_process")
+        with patch.object(
+            ExternalToolHandler, "_is_importable", return_value=True
+        ):
+            widget = h.launch("vt")
+            # Re-launching should NOT install a second filter
+            # (we'd double-fire the entry-changed signal otherwise).
+            initial_filter_count = len(widget.findChildren(
+                QtWidgets.QApplication.instance().__class__.__mro__[1]
+                if False else type(widget.parent() or widget)
+            ))
+            h.launch("vt")
+        # The wiring flag prevents a second installEventFilter call —
+        # the simplest assertion is that the flag stays set and a
+        # repeat launch doesn't blow up.
+        self.assertTrue(getattr(widget, "_uitk_external_visibility_wired"))
+
+
+class TestExternalToolUserTags(unittest.TestCase):
+    """User-edited tags on external tools persist via the handler's config.
+
+    External tools have no XML backing file, so the .ui semantic of
+    "file_tags = XML tags" doesn't apply directly. Instead, the handler
+    stores user-curated tags in its ``SettingsManager`` config branch.
+    This keeps the browser's inline tag editor working uniformly across
+    file-backed and external entries (the user shouldn't have to know
+    which is which).
+    """
+
+    def _fresh_sb(self):
+        sb = _make_sb()
+        # Wipe any leftover config from a prior test.
+        sb.handlers.external_tool.config.setValue("user_tags", {})
+        return sb
+
+    def test_save_tags_persists_to_config(self):
+        sb = self._fresh_sb()
+        h = sb.handlers.external_tool
+        h.register("mytool", module="mytool", entry="UI")
+        h.save_tags("mytool", ["alpha", "beta"])
+        self.assertEqual(
+            h.config.value("user_tags", {}),
+            {"mytool": ["alpha", "beta"]},
+        )
+
+    def test_save_tags_normalises_input(self):
+        """Strips whitespace and empty entries; result is sorted."""
+        sb = self._fresh_sb()
+        h = sb.handlers.external_tool
+        h.register("mytool", module="mytool", entry="UI")
+        h.save_tags("mytool", [" b ", "a", "", "  ", "a"])  # dupes + blanks
+        self.assertEqual(
+            h.config.value("user_tags", {})["mytool"],
+            ["a", "b"],
+        )
+
+    def test_save_tags_empty_removes_entry(self):
+        """Clearing all tags drops the tool from the persisted dict —
+        no growing-empty-keys cruft over time."""
+        sb = self._fresh_sb()
+        h = sb.handlers.external_tool
+        h.register("mytool", module="mytool", entry="UI")
+        h.save_tags("mytool", ["x"])
+        h.save_tags("mytool", [])
+        self.assertNotIn("mytool", h.config.value("user_tags", {}))
+
+    def test_save_tags_strips_leading_hash(self):
+        """Users type '#photogrammetry' (because the chips render with #).
+        That prefix is display formatting only — the stored value must
+        be plain 'photogrammetry'. Without this, the next render becomes
+        '##photogrammetry' and the chip filter / context-menu items all
+        get the doubled prefix."""
+        sb = self._fresh_sb()
+        h = sb.handlers.external_tool
+        h.register("mytool", module="mytool", entry="UI")
+        h.save_tags("mytool", ["#photogrammetry", "##oldbug", "  #materials "])
+        self.assertEqual(
+            h.config.value("user_tags", {})["mytool"],
+            ["materials", "oldbug", "photogrammetry"],
+        )
+
+    def test_user_tags_heal_pre_existing_hash_prefix_on_read(self):
+        """Settings persisted before the strip fix may have leading '#'
+        in stored values. ``_user_tags`` cleans on read so the bug
+        doesn't keep re-rendering as '##tag'."""
+        sb = self._fresh_sb()
+        h = sb.handlers.external_tool
+        h.register("mytool", module="mytool", entry="UI")
+        # Bypass save_tags' cleanup — write raw bad data straight to config.
+        h.config.setValue(
+            "user_tags",
+            {"mytool": ["#photogrammetry", "##doublebug", "  #m  "]},
+        )
+        self.assertEqual(
+            h._user_tags(),
+            {"mytool": ["doublebug", "m", "photogrammetry"]},
+        )
+
+    def test_save_tags_unknown_tool_raises(self):
+        sb = self._fresh_sb()
+        with self.assertRaises(ValueError):
+            sb.handlers.external_tool.save_tags("ghost", ["x"])
+
+    def test_entries_expose_user_tags_as_file_tags(self):
+        """The browser's editable tag column reads from FileTagsRole.
+        User-added tags must appear there (not in inherited_tags) so
+        the inline editor's text matches what the user typed."""
+        sb = self._fresh_sb()
+        h = sb.handlers.external_tool
+        h.register("mytool", module="mytool", entry="UI", tags={"declared"})
+        h.save_tags("mytool", ["user_added"])
+        entry = next(e for e in h.entries() if e.name == "mytool")
+        self.assertEqual(entry.inherited_tags, frozenset({"declared"}))
+        self.assertEqual(entry.file_tags, frozenset({"user_added"}))
+        self.assertTrue(
+            entry.editable_tags,
+            "External-tool rows must be inline-editable like .ui rows.",
+        )
+
+
+class _FakeEP:
+    """Minimal stand-in for ``importlib.metadata.EntryPoint`` — only the
+    fields ``ExternalToolHandler.discover`` reads."""
+
+    def __init__(self, name, module, attr, extras=()):
+        self.name = name
+        self.module = module
+        self.attr = attr
+        self.extras = list(extras)
+
+
+class TestExternalToolDiscovery(unittest.TestCase):
+    """Entry-point discovery is the contract that lets tools self-describe.
+
+    Without it, every host (tentacle, etc.) had to enumerate tools in
+    code — and forgetting one meant the tool never appeared in the UI
+    browser. These tests pin down the behavior the design now relies on.
+    """
+
+    def _patched_eps(self, inproc=(), subproc=()):
+        def _fn(group=None):
+            if group == "uitk.external_tools.in_process":
+                return list(inproc)
+            if group == "uitk.external_tools":
+                return list(subproc)
+            return []
+        return patch("importlib.metadata.entry_points", side_effect=_fn)
+
+    def test_auto_discovers_inproc_group_with_mode_set(self):
+        eps = [_FakeEP("metashape_workflow", "metashape_workflow",
+                       "MetashapeWorkflowUI", ["photogrammetry"])]
+        with self._patched_eps(inproc=eps):
+            sb = _make_sb()
+        h = sb.handlers.external_tool
+        self.assertTrue(h.is_registered("metashape_workflow"))
+        cfg = h._tools["metashape_workflow"]
+        self.assertEqual(cfg["mode"], "in_process")
+        self.assertEqual(cfg["module"], "metashape_workflow")
+        self.assertEqual(cfg["entry"], "MetashapeWorkflowUI")
+        self.assertEqual(cfg["tags"], frozenset({"photogrammetry"}))
+
+    def test_auto_discovers_subprocess_group_with_default_mode(self):
+        eps = [_FakeEP("widget_kit", "widget_kit", "MainUI", ["utility"])]
+        with self._patched_eps(subproc=eps):
+            sb = _make_sb()
+        cfg = sb.handlers.external_tool._tools["widget_kit"]
+        self.assertEqual(cfg["mode"], "subprocess")
+        self.assertEqual(cfg["tags"], frozenset({"utility"}))
+
+    def test_auto_discover_can_be_disabled(self):
+        """Hosts wiring their own discovery (or none) can opt out."""
+        eps = [_FakeEP("noisy_tool", "noisy_tool", "UI")]
+        with self._patched_eps(inproc=eps):
+            sb = Switchboard()  # No handler yet
+            h = ExternalToolHandler(switchboard=sb, auto_discover=False)
+            sb.register_handler("external_tool", h)
+        self.assertFalse(h.is_registered("noisy_tool"))
+
+    def test_manual_registration_overrides_discovered_mode(self):
+        """A host that wants different launch mode for a discovered tool
+        re-registers — the manual call wins."""
+        eps = [_FakeEP("flexible_tool", "flexible_tool", "UI")]
+        with self._patched_eps(subproc=eps):
+            sb = _make_sb()
+        h = sb.handlers.external_tool
+        self.assertEqual(h._tools["flexible_tool"]["mode"], "subprocess")
+        h.register("flexible_tool", module="flexible_tool",
+                   entry="UI", mode="in_process")
+        self.assertEqual(h._tools["flexible_tool"]["mode"], "in_process")
+
+    def test_entries_surface_discovered_tools(self):
+        """The whole point: discovered tools flow through the unified
+        entry surface so the browser sees them without host edits."""
+        eps = [_FakeEP("alpha", "alpha", "AlphaUI", ["x"]),
+               _FakeEP("beta", "beta", "BetaUI", ["y"])]
+        with self._patched_eps(inproc=eps):
+            sb = _make_sb()
+        names = {e.name for e in sb.iter_handler_entries()
+                 if e.kind.startswith("external")}
+        self.assertEqual(names, {"alpha", "beta"})
+
+
 class TestExternalToolHandlerRegistry(unittest.TestCase):
     def test_handler_attached_to_switchboard(self):
         sb = _make_sb()

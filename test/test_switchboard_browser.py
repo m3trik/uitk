@@ -26,7 +26,6 @@ from uitk.switchboard import Switchboard
 from uitk.widgets.editors.switchboard_browser import (
     SwitchboardBrowser,
     SwitchboardBrowserModel,
-    TagEditDialog,
     SHOW_VISIBLE,
     SHOW_HIDDEN,
     SHOW_ALL,
@@ -70,6 +69,14 @@ class BrowserBase(QtBaseTestCase):
         self.sb = Switchboard(ui_source=self.dir, log_level="WARNING")
         self.sb.settings.branch("ui_browser").clear()
         self.browser = SwitchboardBrowser(self.sb)
+        # Match production: the browser is meant to be shown. When hidden,
+        # the optimisation in ``_defer_full_refresh`` short-circuits the
+        # row-widget rebuild — that's correct for the "browser is closed"
+        # case but would make tests of post-signal updates fail since the
+        # test harness never opens a window.
+        self.browser.resize(500, 300)
+        self.browser.show()
+        QtWidgets.QApplication.processEvents()
 
     def tearDown(self):
         # Disconnect any signal-driven slots that would fire on parent
@@ -397,24 +404,24 @@ class DoubleClickLaunch(BrowserBase):
 
 class TableLayout(BrowserBase):
     def test_model_has_four_columns(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         self.assertEqual(self.browser._model.columnCount(), SwitchboardBrowserModel.COLUMN_COUNT)
         self.assertEqual(self.browser._model.columnCount(), 4)
 
     def test_tags_column_is_editable(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_TAGS)
         self.assertTrue(bool(self.browser._model.flags(idx) & QtCore.Qt.ItemIsEditable))
 
     def test_name_column_is_not_editable(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_NAME)
         self.assertFalse(bool(self.browser._model.flags(idx) & QtCore.Qt.ItemIsEditable))
 
 
 class InlineTagEdit(BrowserBase):
     def test_set_data_writes_tags_to_ui_file(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         # alpha had file tags {"foo"}; rewrite via setData on the tags column
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_TAGS)
         self.assertTrue(self.browser._model.setData(idx, "alpha_tag, beta_tag", QtCore.Qt.EditRole))
@@ -429,7 +436,7 @@ class InlineTagEdit(BrowserBase):
         self.assertEqual(tags, {"alpha_tag", "beta_tag"})
 
     def test_set_data_rejects_non_tags_columns(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_NAME)
         self.assertFalse(self.browser._model.setData(idx, "renamed", QtCore.Qt.EditRole))
 
@@ -442,44 +449,44 @@ class ConfigureLaunchedHeader(QtBaseTestCase):
     """
 
     def test_skips_when_no_header_attr(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
+        from uitk.handlers.ui_handler import UiHandler
 
         ui = QtWidgets.QWidget()  # no `header` attr, no `findChild` match
         # Should not raise even though there's nothing to configure
-        SwitchboardBrowser._configure_launched_header(ui)
+        UiHandler._configure_launched_header(ui)
 
     def test_skips_when_header_has_existing_buttons(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
+        from uitk.handlers.ui_handler import UiHandler
         from uitk.widgets.header import Header
 
         ui = QtWidgets.QWidget()
         ui.header = Header(parent=ui, config_buttons=["pin"])  # already configured
         existing = tuple(ui.header.buttons.keys())
-        SwitchboardBrowser._configure_launched_header(ui)
+        UiHandler._configure_launched_header(ui)
         # Existing config preserved, not replaced
         self.assertEqual(tuple(ui.header.buttons.keys()), existing)
 
     def test_configures_when_header_buttons_empty(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
+        from uitk.handlers.ui_handler import UiHandler
         from uitk.widgets.header import Header
 
         ui = QtWidgets.QWidget()
         ui.header = Header(parent=ui, config_buttons=[])  # empty
-        SwitchboardBrowser._configure_launched_header(ui)
+        UiHandler._configure_launched_header(ui)
         # The three browser-launched defaults: hide / collapse / menu
         self.assertEqual(
             set(ui.header.buttons.keys()), {"menu", "collapse", "hide"}
         )
 
     def test_falls_back_to_findChild(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
+        from uitk.handlers.ui_handler import UiHandler
         from uitk.widgets.header import Header
 
         ui = QtWidgets.QWidget()
         # No `.header` attribute, but findChild("header") will match
         h = Header(parent=ui, config_buttons=[])
         h.setObjectName("header")
-        SwitchboardBrowser._configure_launched_header(ui)
+        UiHandler._configure_launched_header(ui)
         self.assertEqual(
             set(h.buttons.keys()), {"menu", "collapse", "hide"}
         )
@@ -507,7 +514,7 @@ class CloseButton(BrowserBase):
 class TagsRenderingHtml(BrowserBase):
     def test_inherited_tags_rendered_italic(self):
         # Register a directory with a source-tag that becomes inherited
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         # alpha's existing tags are file-only ("foo"); we add a source tag.
         self.sb.register(ui_location=self.dir, tags={"src_tag"})
         QtWidgets.QApplication.processEvents()
@@ -532,19 +539,33 @@ class HeaderMenuAndPresets(BrowserBase):
         self.assertIn("menu", self.browser._header.buttons)
         self.assertIn("hide", self.browser._header.buttons)
 
-    def test_no_always_on_top_toggle(self):
-        # The "Always on top" toggle was removed — the symptom it was
-        # working around (browser disappearing when the launching popup
-        # closed) is fixed at the registry level instead. The browser
-        # just inherits ``EditorPanel``'s default on-top flag.
+    def test_browser_is_not_always_on_top(self):
+        # Regression guard. The browser is a *launcher*, not a config
+        # surface that needs to sit above the windows it edits — so it
+        # must not force itself above every other window. Matches
+        # mayatk.reference_manager's behavior: parented to the host,
+        # but not on-top.
+        #
+        # SwitchboardBrowser passes ``on_top=False`` explicitly at
+        # construction; this test pins that decision.
         self.assertFalse(hasattr(self.browser, "_chk_always_on_top"))
         self.assertFalse(hasattr(self.browser, "_apply_always_on_top"))
         self.assertFalse(hasattr(self.browser, "_on_always_on_top_toggled"))
         flags = self.browser.windowFlags()
-        self.assertTrue(bool(flags & QtCore.Qt.WindowStaysOnTopHint))
+        self.assertFalse(
+            bool(flags & QtCore.Qt.WindowStaysOnTopHint),
+            "Browser must not set WindowStaysOnTopHint — it's a launcher, "
+            "not an on-top utility. See SwitchboardBrowser.__init__'s "
+            "on_top=False rationale.",
+        )
 
-    def test_refresh_button_exists(self):
-        self.assertTrue(hasattr(self.browser, "_btn_refresh"))
+    def test_refresh_button_is_in_header(self):
+        # Refresh moved from a menu entry to a top-level header button —
+        # one click instead of opening the menu first. Matches mayatk
+        # reference_manager's pattern.
+        self.assertIn("refresh", self.browser._header.buttons)
+        # The old menu button is gone.
+        self.assertFalse(hasattr(self.browser, "_btn_refresh"))
 
     def test_export_preset_data_round_trip(self):
         # Mutate state, export, reset, import — should round-trip.
@@ -807,26 +828,304 @@ class FooterStatus(BrowserBase):
         self.assertIn("beta", text_beta)
 
 
-class TagEditDialogTest(QtBaseTestCase):
-    def test_add_and_remove(self):
-        dlg = TagEditDialog("x", inherited_tags={"i1"}, file_tags={"f1"})
-        self.assertEqual(dlg.tags(), {"f1"})
-        dlg._line.setText("new")
-        dlg._on_add()
-        self.assertEqual(dlg.tags(), {"f1", "new"})
-        # Select first item and remove
-        dlg._list.setCurrentRow(0)
-        dlg._on_remove()
-        self.assertEqual(len(dlg.tags()), 1)
+class RowFollowsVisibilityFromAnyShowPath(BrowserBase):
+    """The row's action icon must track ``ui.isVisible()`` regardless of
+    *which* code path showed or hid the UI.
 
-    def test_no_duplicates_no_commas(self):
-        dlg = TagEditDialog("x", inherited_tags=set(), file_tags={"a"})
-        dlg._line.setText("a")
-        dlg._on_add()
-        self.assertEqual(dlg.tags(), {"a"})  # unchanged
-        dlg._line.setText("has,comma")
-        dlg._on_add()
-        self.assertEqual(dlg.tags(), {"a"})  # rejected
+    Regression context: the icon used to flip to "Focus" only when the UI
+    was launched via the browser's own action button (because that's
+    where ``_wire_visibility`` ran). UIs shown by other paths — marking
+    menu, ``sb.loaded_ui.<name>.show()``, slot code calling
+    ``UiHandler.show()`` — never had on_show/on_hide piped through, so
+    the row stayed stuck on its initial icon. Especially visible after
+    closing the UI via its own header X: the model never heard about
+    the hide, action button kept showing "Focus".
+
+    The fix wires visibility centrally on ``Switchboard.on_ui_loaded``
+    so every loaded UI — regardless of launch path — drives row state.
+    """
+
+    def _action_tooltip(self, name: str) -> str:
+        row = next(
+            i for i in range(self.browser._model.rowCount())
+            if self.browser._model.index(i, 0).data(SwitchboardBrowserModel.NameRole) == name
+        )
+        src = self.browser._model.index(row, SwitchboardBrowserModel.COL_ACTION)
+        proxy = self.browser._proxy.mapFromSource(src)
+        container = self.browser._view.indexWidget(proxy)
+        btn = container.findChild(QtWidgets.QPushButton) if container else None
+        return btn.toolTip() if btn else ""
+
+    def test_show_outside_browser_flips_row_to_focus(self):
+        # Load + show via direct loaded_ui access (mimics what a marking
+        # menu does — UiHandler.launch is never called).
+        ui = self.sb.loaded_ui.alpha
+        ui.show()
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+        self.assertEqual(self._action_tooltip("alpha"), "Focus alpha")
+
+    def test_hide_outside_browser_flips_row_back_to_launch(self):
+        # The user's exact symptom: after the UI is hidden by a non-browser
+        # path, the row must revert to "Launch ...".
+        ui = self.sb.loaded_ui.alpha
+        ui.show()
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+        ui.hide()
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+        self.assertEqual(self._action_tooltip("alpha"), "Launch alpha")
+
+
+class TagCellRenderingAndPerf(BrowserBase):
+    """Pin three independent fixes that together polish the table UX:
+
+    1. Tag chips don't wrap — long content clips horizontally so the
+       fixed 22px row height doesn't crop a half-rendered second line.
+    2. Selection style: 1px white border, transparent background — no
+       dark-theme blue overlay washing out the chip colors.
+    3. While the browser is hidden, per-event ``_do_full_refresh``
+       calls are skipped. Previously these fired on every UI show/hide
+       in the host app, building new row buttons no one could see —
+       the source of the post-browser sluggishness in tentacle.
+    """
+
+    def test_tag_doc_has_nowrap(self):
+        from qtpy import QtGui
+        wrap = self.browser._row_delegate._doc.defaultTextOption().wrapMode()
+        self.assertEqual(wrap, QtGui.QTextOption.NoWrap)
+
+    def test_view_inline_stylesheet_is_minimal(self):
+        """Selection / hover styling lives in the global QSS now; the
+        only per-view override is zero item padding so the 22px action
+        cells fit their icon buttons tightly. The pre-2026 inline
+        override (hardcoded background + selection colors) hid custom
+        cell color coding — guard against its return."""
+        ss = self.browser._view.styleSheet()
+        self.assertIn("padding: 0", ss)
+        self.assertNotIn("background", ss,
+                         "Background should come from the theme, not inline QSS.")
+        self.assertNotIn("selected", ss,
+                         "Selection styling should come from the global QSS "
+                         "(QAbstractItemView::item:selected), not inline.")
+
+    def test_delegate_does_not_strip_selection_state(self):
+        """The browser delegate must let the global QSS ``:selected``
+        styling paint through.  Stripping ``State_Selected`` (the
+        ``RowSelectionBorderDelegate`` opt-in pattern, for editors with
+        colour-coded cells like ``ColorMappingEditor``) would hide the
+        standard blue selection fill the user expects on the browser.
+        Locked in to catch a future re-inheritance.
+        """
+        from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
+        self.assertNotIsInstance(
+            self.browser._row_delegate, RowSelectionBorderDelegate,
+            "Browser delegate must NOT inherit RowSelectionBorderDelegate "
+            "— the browser uses the standard blue-fill selection from QSS, "
+            "not the transparent-with-border opt-in for colour-cell editors.",
+        )
+
+    def test_view_has_mouse_tracking_for_hover_qss(self):
+        """``QStyle::State_MouseOver`` (and therefore QSS ``:hover``)
+        only fires on cursor moves when the view has mouse tracking
+        enabled.  Without it the hover tint silently never renders —
+        a regression that's invisible until you actually look at the
+        browser, so lock it in here.
+        """
+        self.assertTrue(
+            self.browser._view.hasMouseTracking(),
+            "Browser view must have mouseTracking enabled for QSS "
+            "item :hover styling to fire on cursor moves.",
+        )
+
+    def test_hidden_browser_skips_full_refresh(self):
+        # Track refresh calls.
+        calls = []
+        orig = self.browser._do_full_refresh
+        self.browser._do_full_refresh = lambda: calls.append(1) or orig()
+        # Visible: signal -> deferred -> one refresh.
+        self.browser.show()
+        QtWidgets.QApplication.processEvents()
+        calls.clear()
+        self.sb.handlers.ui._notify_entries_changed("alpha")
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+        self.assertGreaterEqual(len(calls), 1)
+        # Hidden: signals batched into the dirty flag, zero refreshes.
+        self.browser.hide()
+        QtWidgets.QApplication.processEvents()
+        calls.clear()
+        for _ in range(3):
+            self.sb.handlers.ui._notify_entries_changed("alpha")
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+        self.assertEqual(
+            len(calls), 0,
+            "While hidden, the browser must not run full-refresh work.",
+        )
+        self.assertTrue(self.browser._dirty_while_hidden)
+        # Re-show: exactly one consolidated refresh.
+        self.browser.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertGreaterEqual(len(calls), 1)
+        self.assertFalse(self.browser._dirty_while_hidden)
+
+
+class HideInheritedTagsToggle(BrowserBase):
+    """The "Hide inherited tags" menu option drops registration-time
+    tags (filename suffix, source-dir tag, entry-point extras) from
+    both the row chips and the top tag-filter chip strip. Off by
+    default; setting persists.
+    """
+
+    def _alpha_tags_html(self) -> str:
+        row = next(
+            i for i in range(self.browser._model.rowCount())
+            if self.browser._model.index(i, 0).data(
+                SwitchboardBrowserModel.NameRole
+            ) == "alpha"
+        )
+        idx = self.browser._model.index(row, SwitchboardBrowserModel.COL_TAGS)
+        return self.browser._row_delegate._tags_html(idx)
+
+    def test_toggle_exists_and_off_by_default(self):
+        self.assertTrue(hasattr(self.browser, "_cb_hide_inherited_tags"))
+        self.assertFalse(self.browser._cb_hide_inherited_tags.isChecked())
+
+    def test_toggle_drops_inherited_tags_from_row_chips(self):
+        # alpha has file tags {"anim","rig"} from setUp. Mark them as
+        # *inherited* by setting source-directory tags.
+        self.sb.register(ui_location=self.dir, tags={"src_inherited"})
+        QtWidgets.QApplication.processEvents()
+        # Off: inherited visible.
+        html = self._alpha_tags_html()
+        self.assertIn("src_inherited", html)
+        # On: inherited dropped.
+        self.browser._cb_hide_inherited_tags.setChecked(True)
+        QtWidgets.QApplication.processEvents()
+        html = self._alpha_tags_html()
+        self.assertNotIn("src_inherited", html)
+
+
+class TagEditorEscape(BrowserBase):
+    """Esc must always dismiss the tag inline editor.
+
+    Default Qt behavior: QLineEdit consumes Esc when it has an undoable
+    change (typed text) — reverting the text but *not* closing the
+    editor. From the user's view that's "I can't exit edit mode
+    without making an entry": they type, change their mind, hit Esc,
+    text clears but the editor stays open.
+
+    The delegate's eventFilter intercepts Esc and emits
+    ``closeEditor(NoHint)`` so the editor goes away regardless of
+    QLineEdit's undo state.
+    """
+
+    def _open_editor(self):
+        # Showing the browser ensures the view has a real geometry, so
+        # edit() actually creates the delegate's editor. Without show()
+        # the view's layout is empty and QApplication.focusWidget()
+        # never sees the editor.
+        self.browser.resize(500, 300)
+        self.browser.show()
+        QtWidgets.QApplication.processEvents()
+        row = next(
+            i for i in range(self.browser._model.rowCount())
+            if self.browser._model.index(i, 0).data(SwitchboardBrowserModel.NameRole) == "alpha"
+        )
+        src = self.browser._model.index(row, SwitchboardBrowserModel.COL_TAGS)
+        proxy = self.browser._proxy.mapFromSource(src)
+        self.browser._view.edit(proxy)
+        QtWidgets.QApplication.processEvents()
+        # The editor is the QLineEdit child of the view's viewport.
+        return self.browser._view.viewport().findChild(QtWidgets.QLineEdit)
+
+    def _send_escape(self, editor):
+        from qtpy import QtGui
+        ev = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_Escape, QtCore.Qt.NoModifier
+        )
+        QtWidgets.QApplication.sendEvent(editor, ev)
+        QtWidgets.QApplication.processEvents()
+
+    def test_escape_closes_editor_when_empty(self):
+        editor = self._open_editor()
+        self.assertIsInstance(editor, QtWidgets.QLineEdit)
+        self._send_escape(editor)
+        self.assertEqual(
+            self.browser._view.state(),
+            QtWidgets.QAbstractItemView.NoState,
+        )
+
+    def test_escape_closes_editor_after_typing(self):
+        # The user's specific scenario: they type, change their mind,
+        # press Esc — editor must close (without committing the typed
+        # change). Pre-fix: QLineEdit consumed Esc to revert, leaving
+        # editor open.
+        editor = self._open_editor()
+        editor.setText("partial typing that won't be saved")
+        self._send_escape(editor)
+        self.assertEqual(
+            self.browser._view.state(),
+            QtWidgets.QAbstractItemView.NoState,
+            "Esc with an undoable change must still close the editor.",
+        )
+
+
+class InlineTagEditingIsTheOnlyPath(BrowserBase):
+    """Tag editing is exclusively inline — no modal popup.
+
+    Regression guards:
+      * ``TagEditDialog`` class was deleted (no longer imported).
+      * Right-click ``Edit tags`` triggers ``QTableView.edit`` on the
+        Tags cell, which opens the same inline QLineEdit delegate that
+        double-click uses. One UX path, not two.
+      * External-tool rows aren't editable (no file-backing) — the
+        context-menu item simply isn't offered for those rows.
+    """
+
+    def test_tag_edit_dialog_class_removed(self):
+        import uitk.widgets.editors.switchboard_browser as mod
+        self.assertFalse(
+            hasattr(mod, "TagEditDialog"),
+            "TagEditDialog must stay deleted — inline edit is the only path.",
+        )
+        self.assertFalse(
+            hasattr(self.browser, "_edit_tags_for"),
+            "_edit_tags_for invoked the popup; it should no longer exist.",
+        )
+
+    def test_double_click_tags_cell_opens_inline_editor(self):
+        # File-backed entries' tag cells must be ItemIsEditable so the
+        # view's DoubleClicked trigger spawns the delegate's QLineEdit.
+        src_idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_TAGS)
+        self.assertTrue(
+            bool(self.browser._model.flags(src_idx) & QtCore.Qt.ItemIsEditable),
+            "File-backed entries' tag cells must be ItemIsEditable.",
+        )
+        # Programmatically call edit() and verify the view entered editing
+        # state. (PySide's edit() slot returns None — we check state instead.)
+        proxy_idx = self.browser._proxy.mapFromSource(src_idx)
+        self.browser._view.edit(proxy_idx)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(
+            self.browser._view.state(),
+            QtWidgets.QAbstractItemView.EditingState,
+            "View should be in EditingState after edit() on the Tags cell.",
+        )
+
+    def test_view_edit_triggers_include_double_click(self):
+        # The view's edit-triggers must include DoubleClicked so the user
+        # gesture actually fires the inline editor (vs. requiring F2).
+        # PySide6 returns flag enums that don't coerce to int; use the
+        # flag bitwise-AND operation directly.
+        triggers = self.browser._view.editTriggers()
+        self.assertTrue(
+            bool(triggers & QtWidgets.QAbstractItemView.DoubleClicked),
+            "DoubleClicked must be in editTriggers — the canonical "
+            "tag-editing gesture is double-click on the Tags cell.",
+        )
 
 
 if __name__ == "__main__":

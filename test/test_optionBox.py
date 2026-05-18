@@ -964,6 +964,226 @@ class TestOptionBoxManagerFindOption(QtBaseTestCase):
         self.assertIsInstance(found, BrowseOption)
 
 
+class TestToggleOption(QtBaseTestCase):
+    """Tests for ToggleOption — persisted binary on/off button."""
+
+    def _make_toggle(self, **kwargs):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        # Default to settings_key=False so unit tests never touch QSettings.
+        kwargs.setdefault("settings_key", False)
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        toggle = ToggleOption(wrapped_widget=widget, **kwargs)
+        return widget, toggle
+
+    def test_defaults_to_on(self):
+        _, toggle = self._make_toggle()
+        self.assertTrue(toggle.is_on)
+
+    def test_initial_false_starts_off(self):
+        _, toggle = self._make_toggle(initial=False)
+        self.assertFalse(toggle.is_on)
+
+    def test_set_on_emits_toggled_when_state_changes(self):
+        _, toggle = self._make_toggle(initial=True)
+        seen = []
+        toggle.toggled.connect(seen.append)
+
+        toggle.set_on(False)
+        self.assertEqual(seen, [False])
+        # Same value → no emission
+        toggle.set_on(False)
+        self.assertEqual(seen, [False])
+        toggle.set_on(True)
+        self.assertEqual(seen, [False, True])
+
+    def test_set_on_emit_false_is_silent(self):
+        _, toggle = self._make_toggle(initial=True)
+        seen = []
+        toggle.toggled.connect(seen.append)
+
+        toggle.set_on(False, emit=False)
+        self.assertFalse(toggle.is_on)
+        self.assertEqual(seen, [])
+
+    def test_user_click_flips_state_and_emits(self):
+        _, toggle = self._make_toggle(initial=True)
+        # Force widget creation so the click handler is wired.
+        _ = toggle.widget
+        seen = []
+        toggle.toggled.connect(seen.append)
+
+        toggle._widget.click()
+        self.assertFalse(toggle.is_on)
+        self.assertEqual(seen, [False])
+
+        toggle._widget.click()
+        self.assertTrue(toggle.is_on)
+        self.assertEqual(seen, [False, True])
+
+    def test_gated_widgets_disable_in_sync(self):
+        gated = self.track_widget(QtWidgets.QLineEdit())
+        gated.setEnabled(True)
+        _, toggle = self._make_toggle(initial=True, gated_widgets=[gated])
+        # Trigger setup_widget which applies initial gating state
+        _ = toggle.widget
+        self.assertTrue(gated.isEnabled(), "Gated widget should be enabled when toggle is on")
+
+        toggle.set_on(False)
+        self.assertFalse(gated.isEnabled(), "Gated widget should be disabled when toggle is off")
+
+        toggle.set_on(True)
+        self.assertTrue(gated.isEnabled())
+
+    def test_gated_widgets_respect_initial_false(self):
+        gated = self.track_widget(QtWidgets.QLineEdit())
+        gated.setEnabled(True)
+        _, toggle = self._make_toggle(initial=False, gated_widgets=[gated])
+        _ = toggle.widget  # trigger setup_widget
+        self.assertFalse(
+            gated.isEnabled(),
+            "Gated widget should already be disabled when toggle starts off",
+        )
+
+    def test_tooltip_swaps_on_state_change(self):
+        _, toggle = self._make_toggle(
+            initial=True,
+            tooltip_on="ON-LABEL",
+            tooltip_off="OFF-LABEL",
+        )
+        _ = toggle.widget  # trigger setup_widget → _apply_visuals
+        self.assertEqual(toggle._widget.toolTip(), "ON-LABEL")
+        toggle.set_on(False)
+        self.assertEqual(toggle._widget.toolTip(), "OFF-LABEL")
+        toggle.set_on(True)
+        self.assertEqual(toggle._widget.toolTip(), "ON-LABEL")
+
+    def test_initial_false_applies_off_tooltip_immediately(self):
+        """Regression: initial=False must produce the off tooltip on first render,
+        not the on tooltip (would happen if create_widget's setText overrode setup_widget)."""
+        _, toggle = self._make_toggle(
+            initial=False,
+            tooltip_on="ON-LABEL",
+            tooltip_off="OFF-LABEL",
+        )
+        _ = toggle.widget
+        self.assertEqual(toggle._widget.toolTip(), "OFF-LABEL")
+
+    def test_click_does_not_store_bound_method_callback(self):
+        """Regression: __init__ must not stash _handle_click on self.callback —
+        that path created a needless reference cycle and confused readers."""
+        _, toggle = self._make_toggle()
+        self.assertIsNone(
+            toggle.callback,
+            "ToggleOption should leave ButtonOption.callback as None and wire "
+            "the click connection directly.",
+        )
+
+    def test_disabled_color_defaults_to_palette_error(self):
+        import pythontk as ptk
+        from uitk.widgets.optionBox.options.toggle import (
+            _DEFAULT_DISABLED_COLOR,
+        )
+
+        expected = ptk.Palette.status()["error"][0]
+        self.assertEqual(_DEFAULT_DISABLED_COLOR, expected)
+
+        _, toggle = self._make_toggle()
+        self.assertEqual(toggle._disabled_color, expected)
+
+    def test_persistence_round_trip(self):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        # Use an in-memory-ish settings key unique to this test run
+        key = "test_toggle_round_trip"
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        toggle = ToggleOption(
+            wrapped_widget=widget, initial=True, settings_key=key
+        )
+        toggle.set_on(False)  # writes is_on=False to QSettings under `key`
+
+        widget2 = self.track_widget(QtWidgets.QLineEdit())
+        # `initial=True` would normally win, but persisted False should override.
+        toggle2 = ToggleOption(
+            wrapped_widget=widget2, initial=True, settings_key=key
+        )
+        self.assertFalse(toggle2.is_on, "Persisted state must override initial=True")
+
+        # Clean up so subsequent runs start fresh.
+        if toggle2._settings is not None:
+            toggle2._settings.clear()
+            toggle2._settings.sync()
+
+
+class TestOptionBoxManagerToggle(QtBaseTestCase):
+    """Tests for the OptionBoxManager.set_toggle() / add_toggle() fluent API."""
+
+    def _make_manager(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        mgr = OptionBoxManager(widget)
+        widget._option_box_manager = mgr
+        return widget, mgr
+
+    def test_set_toggle_returns_self(self):
+        _, mgr = self._make_manager()
+        result = mgr.set_toggle(settings_key=False)
+        self.assertIs(result, mgr)
+
+    def test_set_toggle_adds_toggle_option(self):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        _, mgr = self._make_manager()
+        mgr.set_toggle(settings_key=False)
+
+        toggles = [
+            o for o in mgr._pending_options if isinstance(o, ToggleOption)
+        ]
+        self.assertEqual(len(toggles), 1)
+
+    def test_set_toggle_replaces_existing_by_default(self):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        _, mgr = self._make_manager()
+        mgr.set_toggle(icon="filter", settings_key=False)
+        mgr.set_toggle(icon="lock", settings_key=False)
+
+        toggles = [
+            o for o in mgr._pending_options if isinstance(o, ToggleOption)
+        ]
+        self.assertEqual(len(toggles), 1, "Second set_toggle should replace the first")
+        self.assertEqual(toggles[0]._icon_on, "lock")
+
+    def test_add_toggle_stacks(self):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        _, mgr = self._make_manager()
+        mgr.set_toggle(icon="filter", settings_key=False)
+        mgr.add_toggle(icon="lock", settings_key=False)
+
+        toggles = [
+            o for o in mgr._pending_options if isinstance(o, ToggleOption)
+        ]
+        self.assertEqual(len(toggles), 2)
+
+    def test_set_toggle_on_toggled_wires_signal(self):
+        _, mgr = self._make_manager()
+        seen = []
+        mgr.set_toggle(
+            initial=True,
+            settings_key=False,
+            on_toggled=seen.append,
+        )
+
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        toggle = mgr.find_option(ToggleOption)
+        self.assertIsNotNone(toggle)
+        toggle.set_on(False)
+        self.assertEqual(seen, [False])
+
+
 # -----------------------------------------------------------------------------
 # Interactive Demo (Legacy)
 # -----------------------------------------------------------------------------

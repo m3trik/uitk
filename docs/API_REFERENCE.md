@@ -10,7 +10,7 @@ Line references link to the current source.
 
 ## `uitk.Switchboard`
 
-Source: [switchboard.py](../uitk/switchboard.py)
+Source: [switchboard/_core.py](../uitk/switchboard/_core.py) (composes partials from sibling modules — `slots.py`, `widgets.py`, `utils.py`, `names.py`, `editors.py`, `style.py`, `shortcuts.py`)
 
 ```python
 Switchboard(
@@ -198,7 +198,7 @@ MainWindow(
 
 ## `uitk.Signals`
 
-Source: [switchboard/_slots.py](../uitk/switchboard/_slots.py)
+Source: [switchboard/slots.py](../uitk/switchboard/slots.py)
 
 ### Decorator form
 
@@ -541,7 +541,7 @@ Mixin-provided properties:
 
 ## Default signals table
 
-From [slots.py:182](../uitk/switchboard/slots.py#L182):
+From `default_signals` in [switchboard/slots.py](../uitk/switchboard/slots.py):
 
 | Qt class | Default signal |
 |:---|:---|

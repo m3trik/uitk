@@ -358,7 +358,7 @@ scene.ui         has chk_lock
 scene#submenu.ui has chk_lock       # kept in sync automatically
 ```
 
-See `MainWindow.sync_widget_values` in [mainWindow.py:483](../uitk/widgets/mainWindow.py#L483).
+See `MainWindow.sync_widget_values` in [mainWindow.py](../uitk/widgets/mainWindow.py).
 
 ---
 
