@@ -1,0 +1,611 @@
+# !/usr/bin/python
+# coding=utf-8
+"""Generic DCC-bridge slot base class.
+
+Centralizes the panel machinery shared by the marmoset / substance /
+rizom (and any future) DCC bridges:
+
+* Parameter widget construction via :class:`uitk.bridge.spec.KindHandler`
+  -- a single shared registry powers AttributeWindow, the bridges, and
+  any other consumer.
+* User-preset combo + reset button (via :class:`PresetManager`).
+* Log-panel redirect with clickable ``action://`` URIs.
+* Optional required "Output Dir" row with browse button + fallback hook.
+* Bridge-level ``STARTUP_INFO`` displayed once on load (opt-in).
+* Per-template description displayed whenever the template combo changes.
+
+Per-bridge slot subclasses contribute only DCC-specific bits:
+
+* Their ``params_module`` (exposes ``PARAMS``, ``referenced_keys``, ``defaults``).
+* Their bridge class (must expose ``.logger``, ``.send(...)``, optionally
+  ``.STARTUP_INFO``).
+* Their template directory + ``list_template_modes``.
+* The :meth:`b000` action that wires DCC selection + bridge handoff.
+
+Custom widget kinds (e.g. an HSV picker) plug in via the shared
+:func:`uitk.bridge.spec.register_kind`; new bridges inherit every kind
+the registry knows about.
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from qtpy import QtCore, QtWidgets
+
+from uitk.widgets.pushButton import PushButton
+from uitk.widgets.widgetComboBox import WidgetComboBox
+from uitk.widgets.mixins.preset_manager import PresetManager
+
+from uitk.bridge.spec import (
+    AttributeSpec,
+    get_handler,
+    make_widget,
+    read_value,
+    set_value,
+)
+from uitk.bridge.tooltip import format_param_tooltip, template_description
+
+
+# ----------------------------------------------------------------------
+# Module-level utilities
+# ----------------------------------------------------------------------
+
+
+def _open_in_file_manager(path: str) -> None:
+    """Best-effort reveal of *path* in the platform's file manager."""
+    if sys.platform == "win32":
+        os.startfile(path)  # noqa: S606 — Windows-only API
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
+def _pick_dir(line_edit: QtWidgets.QLineEdit) -> None:
+    """Directory picker; writes the chosen path back into *line_edit*."""
+    start = line_edit.text() or str(Path.home())
+    path = QtWidgets.QFileDialog.getExistingDirectory(
+        line_edit, "Select directory", start
+    )
+    if path:
+        line_edit.setText(path)
+
+
+# ----------------------------------------------------------------------
+# BridgeSlotsBase
+# ----------------------------------------------------------------------
+
+
+class BridgeSlotsBase:
+    """Base class for DCC-bridge slot panels.
+
+    Subclasses **must** set:
+
+    * :attr:`UI_NAME` -- ``self.sb.loaded_ui.<UI_NAME>`` resolves to the panel.
+    * :attr:`PRESETS_ROOT` -- per-bridge preset storage root.
+    * :attr:`params_module` (class attr or property) -- the per-bridge
+      ``parameters`` module exposing ``PARAMS`` / ``referenced_keys`` /
+      ``defaults``.
+    * :attr:`template_dir` (class attr or property) -- per-bridge
+      template directory.
+    * :meth:`make_bridge` -- factory returning the per-bridge bridge instance.
+    * :meth:`list_template_modes` -- ``[(stem, mode), ...]`` for the combo.
+    * :meth:`b000` -- the DCC-specific send action.
+
+    Optional overrides:
+
+    * :meth:`select_initial_template_index` -- bias toward a default
+      starting template entry.
+    * :meth:`default_output_dir` -- DCC-side fallback used when the
+      user leaves the Output Dir field blank.
+    * :attr:`REQUIRE_OUTPUT_DIR` -- set False for bridges with no
+      user-visible output (e.g. rizom's in-place UV roundtrip).
+    * :attr:`TEMPLATE_EXTENSION` -- ``.py`` (default), ``.lua``, etc.
+    """
+
+    # ------------------ Required class attrs --------------------------
+
+    UI_NAME: str = ""
+    PRESETS_ROOT: Optional[Path] = None
+    LOG_TAG: str = "bridge"
+
+    # File extension of the per-template/script files under :attr:`template_dir`.
+    # ``.py`` for marmoset / substance, ``.lua`` for rizom. Used by
+    # :meth:`_refresh_param_visibility` to locate the placeholder source
+    # and by :meth:`_log_template_description` to dispatch the extractor.
+    TEMPLATE_EXTENSION: str = ".py"
+
+    # Whether the panel exposes a required "Output Dir" row above the
+    # parameter group. Disable for bridges whose roundtrip is in-place
+    # (rizom transfers UVs back onto the originals without writing
+    # artifacts the user needs to locate) -- the row is then never built,
+    # and ``require_output_dir()`` returns ``""`` so subclasses can call
+    # it unconditionally without a None guard.
+    REQUIRE_OUTPUT_DIR: bool = True
+
+    # ------------------ Cosmetics -------------------------------------
+
+    LABEL_MIN_WIDTH = 90
+    OUTPUT_DIR_LABEL = "Output Dir:"
+    OUTPUT_DIR_PLACEHOLDER = "(defaults to scene dir / workspace)"
+    OUTPUT_DIR_TOOLTIP = (
+        "Directory where the export artifacts (FBX, manifest, rendered\n"
+        "scripts, baked maps) all land. Leave blank to default to the\n"
+        "current scene's directory (or the active workspace if the\n"
+        "scene hasn't been saved)."
+    )
+
+    # ------------------ Widget kind -- composite types ----------------
+    # Kinds whose widgets are composite (line edit + button, list +
+    # buttons, ...) and must NOT have their parent row clamped to 19px
+    # because the embedded layout is taller than one input line.
+    PATH_LIKE_KINDS: Tuple[str, ...] = ("path", "file_list")
+
+    # ------------------ Subclass hooks --------------------------------
+
+    @property
+    def params_module(self):  # pragma: no cover - subclass contract
+        raise NotImplementedError
+
+    @property
+    def template_dir(self) -> Path:  # pragma: no cover - subclass contract
+        raise NotImplementedError
+
+    def make_bridge(self):  # pragma: no cover - subclass contract
+        """Return a fresh bridge instance. Called once, lazily."""
+        raise NotImplementedError
+
+    def list_template_modes(self) -> List[Tuple[str, str]]:  # pragma: no cover
+        raise NotImplementedError
+
+    def b000(self):  # pragma: no cover - subclass contract
+        """Implement the per-bridge send action."""
+        raise NotImplementedError
+
+    def select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int:
+        """Return the index of the preferred initial entry in *pairs*.
+
+        Default: 0 (first entry). Subclasses override to bias toward
+        e.g. ``("bake", "roundtrip")``.
+        """
+        return 0
+
+    def default_output_dir(self) -> str:
+        """Hook: fallback path when the user leaves Output Dir blank.
+
+        Returns the empty string by default. DCC-specific subclasses
+        override -- e.g. ``MayaBridgeSlotsBase`` returns
+        ``EnvUtils.default_artifact_dir()`` (scene dir, then workspace).
+        """
+        return ""
+
+    def template_description(self, template_path: Path) -> Optional[str]:
+        """Hook: extract a brief description from a template file."""
+        return template_description(template_path)
+
+    def format_param_tooltip(self, spec: AttributeSpec) -> str:
+        """Hook: build the rich-text tooltip for one parameter spec."""
+        return format_param_tooltip(spec)
+
+    # ------------------ Init flow -------------------------------------
+
+    def __init__(self, switchboard):
+        self.sb = switchboard
+        if not self.UI_NAME:
+            raise ValueError(
+                f"{type(self).__name__} must set UI_NAME (e.g. 'marmoset_bridge')."
+            )
+        self.ui = getattr(self.sb.loaded_ui, self.UI_NAME)
+
+        self._bridge = None
+        self._param_widgets: Dict[str, QtWidgets.QWidget] = {}
+        self._param_rows: Dict[str, QtWidgets.QWidget] = {}
+        self._preset_mgr: Optional[PresetManager] = None
+        self._preset_combo: Optional[WidgetComboBox] = None
+        self._output_dir_edit: Optional[QtWidgets.QLineEdit] = None
+        self._param_visibility_settled = False
+        self._param_group: Optional[QtWidgets.QGroupBox] = None
+
+        if self.REQUIRE_OUTPUT_DIR:
+            self._build_output_dir_row()
+        self._build_param_widgets()
+        self._build_preset_controls()
+
+        try:
+            self._redirect_log_to_panel()
+            if hasattr(self.ui.txt000, "anchorClicked"):
+                self.ui.txt000.anchorClicked.connect(self._on_log_link_clicked)
+        except Exception as e:  # noqa: BLE001
+            print(f"[{self.LOG_TAG}] log panel wiring failed (ignored): {e}")
+
+        self._show_startup_info()
+
+    @property
+    def bridge(self):
+        """Lazy-instantiated bridge (caches a single instance per slot)."""
+        if self._bridge is None:
+            self._bridge = self.make_bridge()
+        return self._bridge
+
+    # ------------------ Output Dir row --------------------------------
+
+    def _build_output_dir_row(self) -> None:
+        """Insert a persistent 'Output Dir' line edit + browse above the params."""
+        layout = self.ui.grp_process.layout()
+
+        row = QtWidgets.QWidget(self.ui.grp_process)
+        hbox = QtWidgets.QHBoxLayout(row)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(2)
+
+        label = QtWidgets.QLabel(self.OUTPUT_DIR_LABEL, row)
+        label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+        label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+
+        edit = QtWidgets.QLineEdit(row)
+        edit.setPlaceholderText(self.OUTPUT_DIR_PLACEHOLDER)
+        edit.setMinimumHeight(19)
+        edit.setMaximumHeight(19)
+        edit.setToolTip(self.OUTPUT_DIR_TOOLTIP)
+
+        browse = QtWidgets.QPushButton("...", row)
+        browse.setFixedWidth(22)
+        browse.setMinimumHeight(19)
+        browse.setMaximumHeight(19)
+        browse.clicked.connect(lambda: _pick_dir(edit))
+
+        hbox.addWidget(label)
+        hbox.addWidget(edit, 1)
+        hbox.addWidget(browse)
+
+        insert_at = layout.indexOf(self.ui.cmb000) + 1
+        layout.insertWidget(insert_at, row)
+        self._output_dir_edit = edit
+        self._output_dir_row = row
+
+    def resolved_output_dir(self) -> str:
+        """Return the current Output Dir text trimmed of whitespace.
+
+        Returns the empty string when :attr:`REQUIRE_OUTPUT_DIR` is False
+        (the row was never built) so subclasses can call this unconditionally.
+        """
+        if self._output_dir_edit is None:
+            return ""
+        return self._output_dir_edit.text().strip()
+
+    def require_output_dir(self) -> Optional[str]:
+        """Return the Output Dir or log an error on empty.
+
+        Resolution order:
+
+        1. The user's typed value in the line edit.
+        2. :meth:`default_output_dir` (DCC-side fallback) -- on hit, the
+           chosen path is written back into the line edit and announced
+           in the log panel so the user sees where files landed.
+        3. Log an error + focus the field, return ``None`` to signal
+           the caller to abort.
+
+        When :attr:`REQUIRE_OUTPUT_DIR` is False, returns ``""``
+        unconditionally so the caller can pass the result through to
+        bridges that tolerate empty output dirs.
+        """
+        if not self.REQUIRE_OUTPUT_DIR:
+            return ""
+        output_dir = self.resolved_output_dir()
+        if output_dir:
+            return output_dir
+
+        fallback = self.default_output_dir()
+        if fallback:
+            if self._output_dir_edit is not None:
+                self._output_dir_edit.setText(fallback)
+            try:
+                self.bridge.logger.info(
+                    f"Output Dir not set; using scene/workspace default: "
+                    f'<a href="action://open?path={fallback}">{fallback}</a>'
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return fallback
+
+        self.bridge.logger.error(
+            "Output Dir is required and no scene/workspace default could "
+            "be resolved. Click '...' next to the Output Dir field to "
+            "choose where the export artifacts land."
+        )
+        if self._output_dir_edit is not None:
+            self._output_dir_edit.setFocus()
+        return None
+
+    # ------------------ Parameter widgets -----------------------------
+
+    def _build_param_widgets(self) -> None:
+        """Inject a 'Parameters' group between the Output Dir row and Send.
+
+        Builds one row widget per registered :class:`AttributeSpec` via
+        :func:`uitk.bridge.spec.make_widget` -- the shared registry powers
+        every kind including custom ones the bridge registered.
+        """
+        grp = QtWidgets.QGroupBox("Parameters", self.ui.grp_process)
+        vbox = QtWidgets.QVBoxLayout(grp)
+        vbox.setContentsMargins(2, 4, 2, 2)
+        vbox.setSpacing(0)
+
+        for key, spec in self.params_module.PARAMS.items():
+            row = QtWidgets.QWidget(grp)
+            hbox = QtWidgets.QHBoxLayout(row)
+            hbox.setContentsMargins(0, 0, 0, 0)
+            hbox.setSpacing(2)
+
+            tooltip_html = self.format_param_tooltip(spec)
+
+            label = QtWidgets.QLabel(spec.display_label + ":", row)
+            label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+            label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            label.setToolTip(tooltip_html)
+
+            widget = make_widget(spec, row)
+            # Prefix the registry key so two panels in the same window
+            # can host the same AttributeSpec without objectName clashes.
+            widget.setObjectName(f"param_{key.lower()}")
+            if spec.kind not in self.PATH_LIKE_KINDS:
+                widget.setMinimumHeight(19)
+                widget.setMaximumHeight(19)
+            widget.setToolTip(tooltip_html)
+
+            hbox.addWidget(label)
+            hbox.addWidget(widget, 1)
+            vbox.addWidget(row)
+
+            self._param_widgets[key] = widget
+            self._param_rows[key] = row
+
+        parent_layout = self.ui.grp_process.layout()
+        insert_at = parent_layout.indexOf(self.ui.b000)
+        parent_layout.insertWidget(insert_at, grp)
+        self._param_group = grp
+
+    def _read_param(self, key: str) -> Any:
+        """Extract the current value via the registered KindHandler."""
+        return read_value(self._param_widgets[key])
+
+    def _write_param(self, key: str, value: Any) -> None:
+        """Push *value* into the widget for *key* via the KindHandler."""
+        set_value(self._param_widgets[key], value)
+
+    def collect_param_values(self) -> Dict[str, Any]:
+        """Snapshot every widget's current value, regardless of visibility."""
+        return {key: self._read_param(key) for key in self._param_widgets}
+
+    def _refresh_param_visibility(self) -> None:
+        """Show only the rows whose placeholder appears in the active template."""
+        pair = self._selected_template_mode()
+        if not pair:
+            return
+        template, _mode = pair
+        path = self.template_dir / f"{template}{self.TEMPLATE_EXTENSION}"
+        if not path.is_file():
+            return
+        used = self.params_module.referenced_keys(path.read_text(encoding="utf-8"))
+
+        for key, row in self._param_rows.items():
+            row.setVisible(key in used)
+        if self._param_group is not None:
+            self._param_group.setVisible(bool(used))
+
+        if self._param_visibility_settled:
+            fit = getattr(self.ui, "fit_height_to_content", None)
+            if callable(fit):
+                QtCore.QTimer.singleShot(0, fit)
+        self._param_visibility_settled = True
+
+    # ------------------ Preset controls -------------------------------
+
+    def _build_preset_controls(self) -> None:
+        """Insert a user-preset combobox + 'Reset to Defaults' button above b000."""
+        layout = self.ui.grp_process.layout()
+
+        combo = WidgetComboBox(self.ui.grp_process)
+        combo.setObjectName("cmb_user_presets")
+        combo.setMinimumHeight(19)
+        combo.setMaximumHeight(19)
+        combo.setToolTip(
+            "Saved user presets for the active template.\n"
+            "Open the side menu to Save / Rename / Delete the current values."
+        )
+
+        reset_btn = PushButton(self.ui.grp_process)
+        reset_btn.setObjectName("btn_reset_defaults")
+        reset_btn.setText("Reset to Defaults")
+        reset_btn.setMinimumHeight(19)
+        reset_btn.setMaximumHeight(19)
+        reset_btn.setToolTip("Restore every parameter widget to its registry default.")
+        reset_btn.clicked.connect(self._reset_to_defaults)
+
+        insert_at = layout.indexOf(self.ui.b000)
+        layout.insertWidget(insert_at, combo)
+        layout.insertWidget(insert_at + 1, reset_btn)
+
+        managed = [
+            getattr(w, "_line_edit", w) for w in self._param_widgets.values()
+        ]
+        if self.PRESETS_ROOT is None:
+            raise ValueError(
+                f"{type(self).__name__} must set PRESETS_ROOT."
+            )
+        self._preset_mgr = PresetManager.from_widgets(
+            preset_dir=self.PRESETS_ROOT / self._active_template(),
+            widgets=managed,
+        )
+        self._preset_mgr.wire_combo(combo)
+
+        self._preset_combo = combo
+        self._reset_btn = reset_btn
+
+    def _active_template(self) -> str:
+        """Active template stem (mode-agnostic preset key)."""
+        pair = self._selected_template_mode()
+        if pair:
+            return pair[0]
+        pairs = self.list_template_modes()
+        return pairs[0][0] if pairs else "default"
+
+    def _reset_to_defaults(self) -> None:
+        """Restore every parameter widget to its registry default via KindHandler."""
+        for key, spec in self.params_module.PARAMS.items():
+            if key not in self._param_widgets:
+                continue
+            try:
+                self._write_param(key, spec.default)
+            except Exception:  # noqa: BLE001
+                # A bad handler shouldn't poison the rest of the reset --
+                # keep going so the user gets as close to "defaults" as
+                # possible even if one kind misbehaves.
+                continue
+
+        if self._preset_combo is not None:
+            self._preset_combo.blockSignals(True)
+            try:
+                self._preset_combo.setCurrentIndex(-1)
+            finally:
+                self._preset_combo.blockSignals(False)
+
+    # ------------------ Template combo --------------------------------
+
+    @staticmethod
+    def _format_combo_label(template: str, mode: str) -> str:
+        """Display string for one (template, mode) combo entry.
+
+        Single-mode bridges (rizom) pass ``mode=""`` so the parens are
+        elided -- the combo just shows the template stem.
+        """
+        return f"{template} ({mode})" if mode else template
+
+    def cmb000_init(self, widget) -> None:
+        """Switchboard hook: populate the template combobox + wire change handler."""
+        self._populate_template_combo(widget)
+        widget.currentIndexChanged.connect(lambda _: self._on_template_changed())
+        self._on_template_changed()
+
+    def _populate_template_combo(self, widget) -> None:
+        """Fill cmb000 with ``"<template> (<mode>)"`` entries."""
+        pairs = self.list_template_modes()
+        widget.blockSignals(True)
+        try:
+            widget.clear()
+            for template, mode in pairs:
+                widget.addItem(
+                    self._format_combo_label(template, mode), (template, mode)
+                )
+            if pairs:
+                widget.setCurrentIndex(self.select_initial_template_index(pairs))
+        finally:
+            widget.blockSignals(False)
+
+    def refresh_templates(self) -> None:
+        """Re-scan disk and rebuild the template combo + parameter UI."""
+        self._populate_template_combo(self.ui.cmb000)
+        self._on_template_changed()
+
+    def _selected_template_mode(self) -> Optional[Tuple[str, str]]:
+        """``(template, mode)`` for the active combo entry, or *None*."""
+        idx = self.ui.cmb000.currentIndex()
+        if idx < 0:
+            return None
+        data = self.ui.cmb000.itemData(idx)
+        if isinstance(data, tuple) and len(data) == 2:
+            return data
+        return None
+
+    def _on_template_changed(self) -> None:
+        """Re-show rows + re-point preset dir + log description on combo change."""
+        self._refresh_param_visibility()
+        if self._preset_mgr is not None:
+            self._preset_mgr.preset_dir = (
+                self.PRESETS_ROOT / self._active_template()
+            )
+            refresh = getattr(self._preset_mgr, "_refresh_combo", None)
+            if callable(refresh):
+                refresh()
+        self._log_template_description()
+
+    def _log_template_description(self) -> None:
+        """Surface the active template's docstring in the log panel."""
+        pair = self._selected_template_mode()
+        if not pair:
+            return
+        template, mode = pair
+        path = self.template_dir / f"{template}{self.TEMPLATE_EXTENSION}"
+        desc = self.template_description(path)
+        if not desc:
+            return
+        label = self._format_combo_label(template, mode)
+        try:
+            self.bridge.logger.info(f"[{label}] {desc}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ------------------ Log panel -------------------------------------
+
+    def _redirect_log_to_panel(self) -> None:
+        """Pipe the bridge logger into ``txt000``, no-op if redirect unavailable."""
+        try:
+            handler_cls = self.sb.registered_widgets.TextEditLogHandler
+        except AttributeError:
+            return
+        try:
+            logger = self.bridge.logger
+            logger.hide_logger_name(True)
+            logger.set_text_handler(handler_cls)
+            logger.setup_logging_redirect(self.ui.txt000)
+        except AttributeError:
+            pass
+
+    def _on_log_link_clicked(self, url) -> None:
+        """Route ``action://`` URIs to the shared dispatcher (Maya-side helper)."""
+        # Imported lazily because the dispatcher lives in mayatk and uitk
+        # must remain DCC-agnostic at module-import time.
+        try:
+            from mayatk.ui_utils._ui_utils import UiUtils
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            UiUtils.dispatch_log_link(url, self.bridge.logger)
+        except Exception as e:  # noqa: BLE001
+            self.bridge.logger.error(f"Could not open link: {e}")
+
+    def _show_startup_info(self) -> None:
+        """Pipe the bridge's ``STARTUP_INFO`` into the log panel once.
+
+        No-op when the bridge doesn't declare a ``STARTUP_INFO`` constant
+        (marmoset / substance / rizom all rely on per-template docstrings
+        and leave this empty). Preserved as an opt-in hook for future
+        bridges that want a panel-level intro.
+        """
+        info = getattr(self.bridge, "STARTUP_INFO", "")
+        if not info:
+            return
+        try:
+            self.bridge.logger.info(info)
+        except Exception:  # noqa: BLE001
+            try:
+                self.ui.txt000.append(info)
+            except Exception:  # noqa: BLE001
+                pass
+
+    # ------------------ Header menu utilities -------------------------
+
+    def open_templates_folder(self) -> None:
+        """Reveal :attr:`template_dir` in the OS file manager."""
+        try:
+            _open_in_file_manager(str(self.template_dir))
+        except Exception as e:  # noqa: BLE001
+            self.bridge.logger.error(f"Could not open templates folder: {e}")
+
+    def clear_log(self) -> None:
+        """Clear the log panel (wired by subclass header menus)."""
+        self.ui.txt000.clear()

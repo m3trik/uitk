@@ -80,66 +80,6 @@ class OptionBoxMixin:
         mgr = self.option_box
         return None if mgr is None else mgr.container
 
-    def has_pin_values(self) -> bool:
-        """Return True if a pin-values system is attached to this widget.
-
-        Checks via the OptionBox manager first, then falls back to scanning the
-        parent option box container for a pin button.
-        """
-        service = self.get_pin_values_service()
-        if service is not None:
-            return True
-
-        # Fallback container scan (legacy/defensive)
-        try:
-            parent = getattr(self, "parent", lambda: None)()
-            if (
-                parent
-                and hasattr(parent, "objectName")
-                and parent.objectName() == "optionBoxContainer"
-            ):
-                for child in parent.children():
-                    obj_name = getattr(child, "objectName", lambda: "")()
-                    if obj_name == "pinButton":
-                        return True
-        except Exception:
-            pass
-
-        return False
-
-    def get_pin_values_service(self):
-        """Return the pin values service for this widget if available.
-
-        Looks up the controller via the OptionBox manager, otherwise searches
-        the parent option box container for a controller exposing a `service`.
-        """
-        # Preferred: via OptionBox manager
-        try:
-            mgr = self.option_box
-            if mgr is not None and hasattr(mgr, "_pin_values_controller"):
-                controller = getattr(mgr, "_pin_values_controller")
-                if controller and hasattr(controller, "service"):
-                    return controller.service
-        except Exception:
-            pass
-
-        # Fallback: scan parent container
-        try:
-            parent = getattr(self, "parent", lambda: None)()
-            if (
-                parent
-                and hasattr(parent, "objectName")
-                and parent.objectName() == "optionBoxContainer"
-            ):
-                for child in parent.children():
-                    controller = getattr(child, "_pin_values_controller", None)
-                    if controller and hasattr(controller, "service"):
-                        return controller.service
-        except Exception:
-            pass
-
-        return None
-
     class _OptionsWrapper:
         """Thin, chainable wrapper proxying to OptionBoxManager.
 

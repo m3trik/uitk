@@ -884,24 +884,10 @@ class OptionBoxManager(ptk.LoggingMixin):
 
     def _find_existing_option_box(self):
         """Find existing option box created by menu or other systems"""
-        from ._optionBox import OptionBox
-
-        # Check if widget has a menu with an option box
         if hasattr(self._widget, "menu") and hasattr(self._widget.menu, "option_box"):
             menu_option_box = self._widget.menu.option_box
             if menu_option_box and hasattr(menu_option_box, "container"):
                 return menu_option_box
-
-        # Check if widget is already wrapped in an option box container
-        parent = self._widget.parent()
-        if (
-            parent
-            and hasattr(parent, "objectName")
-            and parent.objectName() == "optionBoxContainer"
-        ):
-            # Widget is already wrapped - return None, the OptionBoxManager
-            # will handle this case in _update_option_box
-            return None
 
         return None
 

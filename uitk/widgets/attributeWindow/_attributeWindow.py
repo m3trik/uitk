@@ -85,7 +85,8 @@ class AttributeWindow(Menu):
     def initialize_ui(self):
         """Initializes the user interface components of the AttributeWindow.
 
-        Widget construction is delegated to :mod:`uitk.widgets.attributeWindow._factory`;
+        Widget construction is delegated to :mod:`uitk.bridge.spec`
+        (re-exported through the back-compat ``_factory`` shim);
         AttributeWindow only orchestrates layout, labels, and signal routing.
         """
         self.label_group = None

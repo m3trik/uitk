@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.2.21"
+__version__ = "1.2.24"
 
 
 DEFAULT_INCLUDE = {
@@ -58,7 +58,11 @@ DEFAULT_INCLUDE = {
     "managers.window_manager": "WindowManager",
     # Widgets
     "widgets.attributeWindow._attributeWindow": "AttributeWindow",
-    "widgets.attributeWindow._factory": [
+    # AttributeSpec + the kind-handler registry live in ``uitk.bridge.spec``
+    # so the AttributeWindow panels and the DCC bridges share one source of
+    # truth. ``widgets.attributeWindow._factory`` remains as a back-compat
+    # shim; the registration here points at the canonical home.
+    "bridge.spec": [
         "AttributeSpec",
         "KindHandler",
         "make_widget",
@@ -166,4 +170,3 @@ bootstrap_package(
     include=DEFAULT_INCLUDE,
     custom_getattr=_uitk_getattr,
 )
-# Test: 222117

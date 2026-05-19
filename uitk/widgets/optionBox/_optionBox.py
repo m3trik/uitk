@@ -2,7 +2,7 @@
 # coding=utf-8
 """OptionBox - Plugin-based container for wrapping widgets with action buttons."""
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets, QtCore
 
 
 class OptionBoxContainer(QtWidgets.QWidget):
@@ -14,7 +14,6 @@ class OptionBoxContainer(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
-        self._pass_through = False
         if not self.objectName():
             self.setObjectName("optionBoxContainer")
         self.setProperty("class", "withBorder")
@@ -23,11 +22,6 @@ class OptionBoxContainer(QtWidgets.QWidget):
         # by _sync_option_buttons_enabled; initialized true for the pre-wrap
         # window before the first sync runs.
         self.setProperty("wrappedEnabled", "true")
-
-    def setPassThrough(self, enabled: bool):
-        """Enable pass-through mode where only opaque children intercept mouse events."""
-        self._pass_through = enabled
-        self._update_mask()
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -58,30 +52,6 @@ class OptionBoxContainer(QtWidgets.QWidget):
             btn = layout.itemAt(i).widget()
             if btn:
                 btn.setEnabled(enabled)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self._pass_through:
-            self._update_mask()
-
-    def _update_mask(self):
-        if not self._pass_through:
-            self.clearMask()
-            return
-
-        region = QtGui.QRegion()
-        layout = self.layout()
-        if layout:
-            for i in range(layout.count()):
-                item = layout.itemAt(i)
-                w = item.widget()
-                if (
-                    w
-                    and w.isVisible()
-                    and not w.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-                ):
-                    region = region.united(w.geometry())
-        self.setMask(region)
 
 
 class OptionBox:

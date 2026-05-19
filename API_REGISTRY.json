@@ -3187,8 +3187,17 @@
               "qualname": "EditorPanel.preset_dir",
               "kind": "property",
               "signature": "(self) -> Path",
-              "summary": "Auto-derived preset directory under AppConfigLocation.",
-              "line": 291,
+              "summary": "The directory where this editor's preset files live.",
+              "line": 296,
+              "deprecated": false
+            },
+            {
+              "name": "preset_dir",
+              "qualname": "EditorPanel.preset_dir",
+              "kind": "method",
+              "signature": "(self, value) -> None",
+              "summary": "Redirect this editor's preset directory.",
+              "line": 310,
               "deprecated": false
             },
             {
@@ -3197,7 +3206,7 @@
               "kind": "method",
               "signature": "(self) -> dict",
               "summary": "Override to provide data for preset saving.",
-              "line": 308,
+              "line": 334,
               "deprecated": false
             },
             {
@@ -3206,7 +3215,7 @@
               "kind": "method",
               "signature": "(self, data: dict)",
               "summary": "Override to apply data from a loaded preset.",
-              "line": 312,
+              "line": 338,
               "deprecated": false
             },
             {
@@ -3215,7 +3224,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Path",
               "summary": "Save current state to a named preset.",
-              "line": 317,
+              "line": 343,
               "deprecated": false
             },
             {
@@ -3224,7 +3233,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Load a preset and apply it.",
-              "line": 326,
+              "line": 352,
               "deprecated": false
             },
             {
@@ -3233,7 +3242,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 340,
+              "line": 366,
               "deprecated": false
             },
             {
@@ -3242,7 +3251,7 @@
               "kind": "method",
               "signature": "(self, old: str, new: str) -> bool",
               "summary": "",
-              "line": 347,
+              "line": 373,
               "deprecated": false
             },
             {
@@ -3251,7 +3260,7 @@
               "kind": "staticmethod",
               "signature": "(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton",
               "summary": "Build a square, flat, icon-only button for table cells / toolbars.",
-              "line": 416,
+              "line": 442,
               "deprecated": false
             }
           ]
@@ -6661,30 +6670,12 @@
               "deprecated": false
             },
             {
-              "name": "has_pin_values",
-              "qualname": "OptionBoxMixin.has_pin_values",
-              "kind": "method",
-              "signature": "(self) -> bool",
-              "summary": "Return True if a pin-values system is attached to this widget.",
-              "line": 83,
-              "deprecated": false
-            },
-            {
-              "name": "get_pin_values_service",
-              "qualname": "OptionBoxMixin.get_pin_values_service",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "Return the pin values service for this widget if available.",
-              "line": 110,
-              "deprecated": false
-            },
-            {
               "name": "options",
               "qualname": "OptionBoxMixin.options",
               "kind": "property",
               "signature": "(self) -> 'OptionBoxMixin._OptionsWrapper'",
               "summary": "",
-              "line": 242,
+              "line": 182,
               "deprecated": false
             }
           ]
@@ -6701,7 +6692,16 @@
           "kind": "function",
           "signature": "() -> str",
           "summary": "Return the platform-appropriate writable config directory.",
-          "line": 705,
+          "line": 713,
+          "deprecated": false
+        },
+        {
+          "name": "get_presets_root",
+          "qualname": "get_presets_root",
+          "kind": "function",
+          "signature": "() -> Path",
+          "summary": "Root directory under which every relative ``preset_dir`` is resolved.",
+          "line": 765,
           "deprecated": false
         }
       ],
@@ -6709,7 +6709,7 @@
         {
           "name": "PresetManager",
           "summary": "Manages named presets for widget state, stored as external JSON files.",
-          "line": 13,
+          "line": 14,
           "bases": [
             "ptk.LoggingMixin"
           ],
@@ -6720,7 +6720,7 @@
               "kind": "classmethod",
               "signature": "(cls, preset_dir, widgets: List[QtWidgets.QWidget]) -> 'PresetManager'",
               "summary": "Create a standalone PresetManager for an explicit list of widgets.",
-              "line": 122,
+              "line": 123,
               "deprecated": false
             },
             {
@@ -6729,7 +6729,7 @@
               "kind": "method",
               "signature": "(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None) -> 'PresetManager'",
               "summary": "Configure and optionally auto-wire a preset combo.",
-              "line": 141,
+              "line": 142,
               "deprecated": false
             },
             {
@@ -6738,7 +6738,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "The directory where preset files are stored.",
-              "line": 201,
+              "line": 202,
               "deprecated": false
             },
             {
@@ -6747,7 +6747,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "Set the preset directory (accepts str, Path, or None for auto-derive).",
-              "line": 236,
+              "line": 244,
               "deprecated": false
             },
             {
@@ -6756,7 +6756,7 @@
               "kind": "method",
               "signature": "(self, callback) -> None",
               "summary": "Register a callback invoked when presets are modified.",
-              "line": 243,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -6765,7 +6765,7 @@
               "kind": "method",
               "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path",
               "summary": "Save the current widget values as a named preset.",
-              "line": 263,
+              "line": 271,
               "deprecated": false
             },
             {
@@ -6774,7 +6774,7 @@
               "kind": "method",
               "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int",
               "summary": "Load a named preset and apply its values to the matching widgets.",
-              "line": 309,
+              "line": 317,
               "deprecated": false
             },
             {
@@ -6783,7 +6783,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "Return a sorted list of available preset names.",
-              "line": 398,
+              "line": 406,
               "deprecated": false
             },
             {
@@ -6792,7 +6792,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Delete a named preset file.",
-              "line": 408,
+              "line": 416,
               "deprecated": false
             },
             {
@@ -6801,7 +6801,7 @@
               "kind": "method",
               "signature": "(self, old_name: str, new_name: str) -> bool",
               "summary": "Rename an existing preset.",
-              "line": 426,
+              "line": 434,
               "deprecated": false
             },
             {
@@ -6810,7 +6810,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Check whether a named preset exists on disk.",
-              "line": 451,
+              "line": 459,
               "deprecated": false
             },
             {
@@ -6819,7 +6819,7 @@
               "kind": "method",
               "signature": "(self, combo, on_loaded=None) -> None",
               "summary": "Wire a ``WidgetComboBox`` as a fully-functional preset selector.",
-              "line": 567,
+              "line": 575,
               "deprecated": false
             }
           ]
@@ -7981,21 +7981,12 @@
           ],
           "members": [
             {
-              "name": "setPassThrough",
-              "qualname": "OptionBoxContainer.setPassThrough",
-              "kind": "method",
-              "signature": "(self, enabled: bool)",
-              "summary": "Enable pass-through mode where only opaque children intercept mouse events.",
-              "line": 27,
-              "deprecated": false
-            },
-            {
               "name": "changeEvent",
               "qualname": "OptionBoxContainer.changeEvent",
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 32,
+              "line": 26,
               "deprecated": false
             },
             {
@@ -8004,16 +7995,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Watch the wrapped widget for enabled-state changes.",
-              "line": 37,
-              "deprecated": false
-            },
-            {
-              "name": "resizeEvent",
-              "qualname": "OptionBoxContainer.resizeEvent",
-              "kind": "method",
-              "signature": "(self, event)",
-              "summary": "",
-              "line": 62,
+              "line": 31,
               "deprecated": false
             }
           ]
@@ -8021,7 +8003,7 @@
         {
           "name": "OptionBox",
           "summary": "Plugin-based option manager that wraps widgets with action buttons.",
-          "line": 87,
+          "line": 57,
           "bases": [],
           "members": [
             {
@@ -8030,7 +8012,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin instance.",
-              "line": 126,
+              "line": 96,
               "deprecated": false
             },
             {
@@ -8039,7 +8021,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Remove an option plugin instance.",
-              "line": 137,
+              "line": 107,
               "deprecated": false
             },
             {
@@ -8048,7 +8030,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all registered option plugins.",
-              "line": 144,
+              "line": 114,
               "deprecated": false
             },
             {
@@ -8057,7 +8039,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get clear button state.",
-              "line": 326,
+              "line": 296,
               "deprecated": false
             },
             {
@@ -8066,7 +8048,7 @@
               "kind": "method",
               "signature": "(self, value)",
               "summary": "Set clear button visibility.",
-              "line": 331,
+              "line": 301,
               "deprecated": false
             },
             {
@@ -8075,7 +8057,7 @@
               "kind": "method",
               "signature": "(self, visible=True)",
               "summary": "Enable or disable the clear button.",
-              "line": 348,
+              "line": 318,
               "deprecated": false
             },
             {
@@ -8084,7 +8066,7 @@
               "kind": "method",
               "signature": "(self, wrapped_widget: QtWidgets.QWidget, frameless=False)",
               "summary": "Wrap target widget with option buttons.",
-              "line": 368,
+              "line": 338,
               "deprecated": false
             }
           ]
@@ -8969,7 +8951,7 @@
           "kind": "function",
           "signature": "(widget, show_clear=False, options=None, **kwargs)",
           "summary": "Add an option box to any widget with one function call.",
-          "line": 964,
+          "line": 950,
           "deprecated": false
         },
         {
@@ -8978,7 +8960,7 @@
           "kind": "function",
           "signature": "(widget, **kwargs)",
           "summary": "Add just a clear button to a text widget.",
-          "line": 987,
+          "line": 973,
           "deprecated": false
         },
         {
@@ -8987,7 +8969,7 @@
           "kind": "function",
           "signature": "(widget, menu, **kwargs)",
           "summary": "Add a menu option to any widget.",
-          "line": 1000,
+          "line": 986,
           "deprecated": false
         },
         {
@@ -8996,7 +8978,7 @@
           "kind": "function",
           "signature": "(widget_class)",
           "summary": "Add option_box attribute to a widget class.",
-          "line": 1019,
+          "line": 1005,
           "deprecated": false
         },
         {
@@ -9005,7 +8987,7 @@
           "kind": "function",
           "signature": "()",
           "summary": "Patch common Qt widgets with option box support.",
-          "line": 1034,
+          "line": 1020,
           "deprecated": false
         }
       ],
@@ -9258,7 +9240,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove option box completely",
-              "line": 939,
+              "line": 925,
               "deprecated": false
             }
           ]
@@ -11759,6 +11741,57 @@
       ]
     },
     {
+      "relpath": "widgets/table_actions.py",
+      "summary": "Reusable action-column management for :class:`TableWidget`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TableActions",
+          "summary": "Manages action columns on a :class:`TableWidget`.",
+          "line": 139,
+          "bases": [],
+          "members": [
+            {
+              "name": "add",
+              "qualname": "TableActions.add",
+              "kind": "method",
+              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
+              "summary": "Register an action column.",
+              "line": 163,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "TableActions.set",
+              "kind": "method",
+              "signature": "(self, row: int, col: int, state_name: str) -> None",
+              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
+              "line": 209,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "TableActions.get",
+              "kind": "method",
+              "signature": "(self, row: int, col: int) -> Optional[str]",
+              "summary": "Return the current state name for a cell, or ``None``.",
+              "line": 273,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 338,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "widgets/tableWidget.py",
       "summary": "",
       "functions": [],
@@ -12303,57 +12336,6 @@
               "signature": "(self, object_name: str)",
               "summary": "",
               "line": 1306,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/table_actions.py",
-      "summary": "Reusable action-column management for :class:`TableWidget`.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "TableActions",
-          "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 139,
-          "bases": [],
-          "members": [
-            {
-              "name": "add",
-              "qualname": "TableActions.add",
-              "kind": "method",
-              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
-              "summary": "Register an action column.",
-              "line": 163,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "TableActions.set",
-              "kind": "method",
-              "signature": "(self, row: int, col: int, state_name: str) -> None",
-              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 209,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "TableActions.get",
-              "kind": "method",
-              "signature": "(self, row: int, col: int) -> Optional[str]",
-              "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 273,
-              "deprecated": false
-            },
-            {
-              "name": "update_for_row_height",
-              "qualname": "TableActions.update_for_row_height",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Re-size action columns and icons to fit the current row height.",
-              "line": 338,
               "deprecated": false
             }
           ]
