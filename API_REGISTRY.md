@@ -596,7 +596,8 @@ Base panel for editor windows with Header, body, Footer, and optional presets.
   - `EditorPanel.body_layout(self)` *(property)* — ``QVBoxLayout`` for editor controls and content.
   - `EditorPanel.tighten_sublayouts(self, spacing: int = 1) -> None` — Set every nested sub-layout inside ``body_layout`` to *spacing*.
   - `EditorPanel.init_preset_row(self, dir_name)` — Add a preset management row to the body layout.
-  - `EditorPanel.preset_dir(self) -> Path` *(property)* — Auto-derived preset directory under AppConfigLocation.
+  - `EditorPanel.preset_dir(self) -> Path` *(property)* — The directory where this editor's preset files live.
+  - `EditorPanel.preset_dir(self, value) -> None` — Redirect this editor's preset directory.
   - `EditorPanel.export_preset_data(self) -> dict` — Override to provide data for preset saving.
   - `EditorPanel.import_preset_data(self, data: dict)` — Override to apply data from a loaded preset.
   - `EditorPanel.save_preset(self, name: str) -> Path` — Save current state to a named preset.
@@ -1064,8 +1065,9 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L705) — Return the platform-appropriate writable config directory.
-- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L13)** — Manages named presets for widget state, stored as external JSON files.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L713) — Return the platform-appropriate writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L765) — Root directory under which every relative ``preset_dir`` is resolved.
+- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L14)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget]) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
   - `PresetManager.preset_dir(self) -> Path` *(property)* — The directory where preset files are stored.
