@@ -459,7 +459,7 @@ uitk/
 ├── handlers/
 │   ├── ui_handler.py          # UiHandler (sb.handlers.ui)
 │   ├── base_handler.py        # shared lifecycle for handler subclasses
-│   ├── external_tool_handler.py
+│   ├── external_app_handler.py
 │   └── handler_entry.py
 │
 ├── widgets/

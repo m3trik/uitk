@@ -4,7 +4,7 @@
 
 Listed entries come from :meth:`Switchboard.iter_handler_entries`, which
 unifies every launchable handler's items (e.g. .ui files from UiHandler,
-registered external tools from ExternalToolHandler). Nothing is loaded
+registered external apps from ExternalAppHandler). Nothing is loaded
 until the user clicks Launch — the browser only inspects entry metadata.
 
 The browser itself is unregistered — a plain ``EditorPanel`` instantiated
