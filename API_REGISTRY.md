@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-05-17_
+_Generated: 2026-05-19_
 
 ## Index
 
@@ -10,7 +10,9 @@ _Generated: 2026-05-17_
 - [`events.py`](#events) — Event handling utilities for Qt applications.
 - [`examples/example.py`](#examples--example) — UITK Example — a polished tour of the framework.
 - [`file_manager.py`](#file_manager) — File and directory management utilities for UITK.
+- [`handlers/base_handler.py`](#handlers--base_handler) — Common infrastructure for Switchboard handlers.
 - [`handlers/external_tool_handler.py`](#handlers--external_tool_handler) — Register, install-on-demand, and launch external Python tools as subprocesses.
+- [`handlers/handler_entry.py`](#handlers--handler_entry) — Unified launchable-entry data class shared by all Switchboard handlers.
 - [`handlers/ui_handler.py`](#handlers--ui_handler)
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - [`loaders/runtime.py`](#loaders--runtime) — Switchboard delegate that loads UIs at runtime via QUiLoader.
@@ -39,7 +41,7 @@ _Generated: 2026-05-17_
 - [`widgets/editors/hotkey_editor.py`](#widgets--editors--hotkey_editor)
 - [`widgets/editors/shortcut_editor.py`](#widgets--editors--shortcut_editor) — Editor windows used by :meth:`ShortcutManager.show_editor`.
 - [`widgets/editors/style_editor.py`](#widgets--editors--style_editor)
-- [`widgets/editors/switchboard_browser.py`](#widgets--editors--switchboard_browser) — Searchable, tag-filtered launcher for any UI registered with a Switchboard.
+- [`widgets/editors/switchboard_browser.py`](#widgets--editors--switchboard_browser) — Searchable, tag-filtered launcher for any handler-exposed entry.
 - [`widgets/expandableList.py`](#widgets--expandableList)
 - [`widgets/footer.py`](#widgets--footer)
 - [`widgets/header.py`](#widgets--header)
@@ -69,16 +71,19 @@ _Generated: 2026-05-17_
 - [`widgets/mixins/value_manager.py`](#widgets--mixins--value_manager)
 - [`widgets/optionBox/_optionBox.py`](#widgets--optionBox--_optionBox) — OptionBox - Plugin-based container for wrapping widgets with action buttons.
 - [`widgets/optionBox/options/_options.py`](#widgets--optionBox--options--_options)
+- [`widgets/optionBox/options/_persistence.py`](#widgets--optionBox--options--_persistence) — Shared persistence wiring for OptionBox plugins.
 - [`widgets/optionBox/options/action.py`](#widgets--optionBox--options--action) — Action option for OptionBox - provides customizable action buttons.
 - [`widgets/optionBox/options/browse.py`](#widgets--optionBox--options--browse) — Browse option for OptionBox - provides file/folder browsing buttons.
 - [`widgets/optionBox/options/clear.py`](#widgets--optionBox--options--clear) — Clear option for OptionBox - provides a clear button for text widgets.
 - [`widgets/optionBox/options/option_menu.py`](#widgets--optionBox--options--option_menu) — Option Menu - A dropdown menu option for OptionBox.
 - [`widgets/optionBox/options/pin_values.py`](#widgets--optionBox--options--pin_values) — Pin Values option for OptionBox - allows pinning/saving widget values.
 - [`widgets/optionBox/options/recent_values.py`](#widgets--optionBox--options--recent_values) — Recent Values option for OptionBox — shows a selectable history list.
+- [`widgets/optionBox/options/toggle.py`](#widgets--optionBox--options--toggle) — Toggle option for OptionBox — a persisted binary on/off button.
 - [`widgets/optionBox/utils.py`](#widgets--optionBox--utils) — Utilities and helper functions for OptionBox.
 - [`widgets/progressBar.py`](#widgets--progressBar)
 - [`widgets/pushButton.py`](#widgets--pushButton)
 - [`widgets/region.py`](#widgets--region)
+- [`widgets/row_selection_delegate.py`](#widgets--row_selection_delegate) — Opt-in delegate for views whose cells carry their own background.
 - [`widgets/separator.py`](#widgets--separator)
 - [`widgets/sequencer/_clip.py`](#widgets--sequencer--_clip) — ClipItem — draggable, resizable clip rectangle on the timeline.
 - [`widgets/sequencer/_data.py`](#widgets--sequencer--_data) — Data models and shared constants for the sequencer widget.
@@ -138,7 +143,7 @@ Event handling utilities for Qt applications.
   - `MouseTracking.should_capture_mouse(self, widget)` — Checks if a widget should capture the mouse.
   - `MouseTracking.register_external_widgets(self, widgets)` — Register widgets that should receive synthesized Enter/Leave events
   - `MouseTracking.update_child_widgets(self)` — Updates the set of child widgets of the parent.
-  - `MouseTracking.track(self)` — Efficiently updates tracking data and sends enter and leave events to widgets.
+  - `MouseTracking.track(self)` — Drive enter/leave + grab handoff for whatever's under the cursor.
   - `MouseTracking.is_widget_valid(widget)` *(static)* — Return True if the Qt widget and its C++ object still exist.
   - `MouseTracking.eventFilter(self, widget, event)` — Filter mouse move and release events.
 
@@ -173,29 +178,59 @@ File and directory management utilities for UITK.
   - `FileManager.list_containers(self) -> List[str]` — List all container descriptors.
   - `FileManager.remove_container(self, descriptor: str) -> bool` — Remove a container by its descriptor name.
 
+<a id="handlers--base_handler"></a>
+### `handlers/base_handler.py`
+
+Common infrastructure for Switchboard handlers.
+
+- **[`class BaseHandler(ptk.SingletonMixin, ptk.LoggingMixin)`](uitk/uitk/handlers/base_handler.py#L31)** — Common base for Switchboard handlers.
+  - `BaseHandler.instance(cls, switchboard: 'Switchboard' = None, **kwargs)` *(class)*
+  - `BaseHandler.config(self)` *(property)*
+- **[`class LaunchableHandlerProtocol(Protocol)`](uitk/uitk/handlers/base_handler.py#L114)** — Structural type for handlers that participate in the launcher surface.
+  - `LaunchableHandlerProtocol.entries(self) -> Iterable['HandlerEntry']`
+  - `LaunchableHandlerProtocol.launch(self, name: str, **options)`
+  - `LaunchableHandlerProtocol.close(self, name: str) -> None`
+  - `LaunchableHandlerProtocol.is_visible(self, name: str) -> bool`
+
 <a id="handlers--external_tool_handler"></a>
 ### `handlers/external_tool_handler.py`
 
 Register, install-on-demand, and launch external Python tools as subprocesses.
 
-- **[`class ExternalToolHandler(ptk.SingletonMixin, ptk.LoggingMixin)`](uitk/uitk/handlers/external_tool_handler.py#L65)** — Switchboard handler for launching external Python tools.
-  - `ExternalToolHandler.instance(cls, switchboard: Switchboard = None, **kwargs)` *(class)*
-  - `ExternalToolHandler.config(self)` *(property)*
-  - `ExternalToolHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess') -> None` — Pre-register a tool so it can be launched by name.
+- **[`class ExternalToolHandler(BaseHandler)`](uitk/uitk/handlers/external_tool_handler.py#L114)** — Switchboard handler for launching external Python tools.
+  - `ExternalToolHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every tool advertised under a uitk entry-point group.
+  - `ExternalToolHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None) -> None` — Pre-register a tool so it can be launched by name.
   - `ExternalToolHandler.is_registered(self, name: str) -> bool`
-  - `ExternalToolHandler.launch(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None)` — Launch a registered tool, or an ad-hoc tool from kwargs.
+  - `ExternalToolHandler.unregister(self, name: str) -> None` — Remove a tool.
+  - `ExternalToolHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per registered tool.
+  - `ExternalToolHandler.save_tags(self, name: str, tags: Iterable[str]) -> None` — Persist *tags* for *name* in the handler's config branch.
+  - `ExternalToolHandler.close(self, name: str) -> None` — Hide an in-process widget;
+  - `ExternalToolHandler.is_visible(self, name: str) -> bool`
+  - `ExternalToolHandler.launch(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, **_options)` — Launch a registered tool, or an ad-hoc tool from kwargs.
+
+<a id="handlers--handler_entry"></a>
+### `handlers/handler_entry.py`
+
+Unified launchable-entry data class shared by all Switchboard handlers.
+
+- **[`class HandlerEntry`](uitk/uitk/handlers/handler_entry.py#L24)** — One launchable item exposed by a Switchboard handler.
+  - `HandlerEntry.all_tags(self) -> FrozenSet[str]` *(property)*
+  - `HandlerEntry.editable_tags(self) -> bool` *(property)*
 
 <a id="handlers--ui_handler"></a>
 ### `handlers/ui_handler.py`
 
-- **[`class UiHandler(ptk.SingletonMixin, ptk.LoggingMixin)`](uitk/uitk/handlers/ui_handler.py#L10)** — A generic, dynamic UI Handler that supports recursive discovery of UI and Slot files.
-  - `UiHandler.config(self)` *(property)* — Access configuration branch for this handler.
+- **[`class UiHandler(BaseHandler)`](uitk/uitk/handlers/ui_handler.py#L12)** — A generic, dynamic UI Handler that supports recursive discovery of UI and Slot files.
   - `UiHandler.editors(self)` *(property)* — Shortcut to the bound switchboard's editor registry.
-  - `UiHandler.instance(cls, switchboard: Switchboard = None, **kwargs) -> 'UiHandler'` *(class)*
   - `UiHandler.get(self, name: str, reload: bool = False, **kwargs)` — Retrieve a standalone UI by name and apply default styling.
   - `UiHandler.show(self, ui, pos: Union[str, Tuple[int, int], QtCore.QPoint, None] = None, force: bool = False, **kwargs)` — Show a UI by name or widget reference.
   - `UiHandler.setup_lifecycle(self, ui, hide_signal=None)` — Connect a window to a hide signal, respecting its pin state.
   - `UiHandler.apply_styles(self, ui, style: Dict = None)` — Apply default styles to the UI instance.
+  - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
+  - `UiHandler.launch(self, name: str, **options)` — Launch the named UI applying the browser's per-launch style options.
+  - `UiHandler.close(self, name: str) -> None` — Hide the named UI via its header (matches the in-window hide button).
+  - `UiHandler.is_visible(self, name: str) -> bool`
+  - `UiHandler.save_tags(self, name: str, tags: Iterable[str]) -> None` — Persist ``<uitk_tags>`` XML for the named UI.
 
 <a id="loaders--compiled"></a>
 ### `loaders/compiled.py`
@@ -222,6 +257,7 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
 
 - **[`class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin)`](uitk/uitk/switchboard/_core.py#L29)** — Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
   - `Switchboard.register_handler(self, name: str, instance, defaults: dict = None)` — Register a handler instance and apply defaults to its config.
+  - `Switchboard.iter_handler_entries(self)` — Yield every :class:`HandlerEntry` from every launchable handler.
   - `Switchboard.active_ui(self) -> Optional[QtWidgets.QWidget]` *(property)* — Return the currently set UI, or None — no auto-load, no warning.
   - `Switchboard.current_ui(self) -> QtWidgets.QWidget` *(property)* — Get or load the current UI if not already set.
   - `Switchboard.current_ui(self, ui: QtWidgets.QWidget) -> None` — Set the current UI and record it in UI history.
@@ -525,10 +561,10 @@ Factory for building / reading / writing dynamic-attribute editor widgets.
 - **[`class DoubleSpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L9)** — Custom QDoubleSpinBox with enhanced step size adjustment capabilities.
   - `DoubleSpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box, removing trailing zeros and unnecessary decimal points.
   - `DoubleSpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
-  - `DoubleSpinBox.wheelEvent(self, event: QtGui.QWheelEvent) -> None` — Handle wheel events with modifier keys to adjust the step size or value dynamically.
+  - `DoubleSpinBox.wheelEvent(self, event: QtGui.QWheelEvent) -> None` — Handle wheel events with modifier keys.
   - `DoubleSpinBox.adjustStepSize(self, event: QtGui.QWheelEvent) -> None` — Adjust the step size dynamically based on the Alt modifier key.
   - `DoubleSpinBox.increaseValueWithLargeStep(self, event: QtGui.QWheelEvent) -> None` — Increase the spin box value by a larger step when Ctrl is pressed.
-  - `DoubleSpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Decrease the spin box value by a smaller step when Ctrl+Alt is pressed, fine-tuning the adjustment.
+  - `DoubleSpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Move the value by the lowest decimal place (Ctrl+Alt).
   - `DoubleSpinBox.message(self, text: str) -> None` — Display a temporary message box with the given text.
 
 <a id="widgets--editors--color_mapping_editor"></a>
@@ -536,12 +572,12 @@ Factory for building / reading / writing dynamic-attribute editor widgets.
 
 Reusable color-mapping editor widget.
 
-- **[`class ColorMappingEditor(QtWidgets.QWidget)`](uitk/uitk/widgets/editors/color_mapping_editor.py#L40)** — Reusable widget for editing named color mappings with optional sections.
+- **[`class ColorMappingEditor(QtWidgets.QWidget)`](uitk/uitk/widgets/editors/color_mapping_editor.py#L41)** — Reusable widget for editing named color mappings with optional sections.
   - `ColorMappingEditor.add_action_button(self, button: QtWidgets.QPushButton)` — Append *button* to the footer action row.
   - `ColorMappingEditor.restore_defaults(self)` — Clear overrides for keys owned by this editor and revert to defaults.
   - `ColorMappingEditor.color_map(self) -> Dict[str, ColorValue]` — Return the full mapping with user overrides applied.
   - `ColorMappingEditor.apply_color_map(self, cmap: Dict[str, ColorValue], save_to_settings: bool = True) -> None` — Apply *cmap* to the swatches and (optionally) persist to settings.
-- **[`class ColorMappingDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/color_mapping_editor.py#L374)** — ``QDialog`` wrapper around :class:`ColorMappingEditor`.
+- **[`class ColorMappingDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/color_mapping_editor.py#L379)** — ``QDialog`` wrapper around :class:`ColorMappingEditor`.
   - `ColorMappingDialog.showEvent(self, event)`
   - `ColorMappingDialog.header(self)` *(property)* — The :class:`Header` widget at the top.
   - `ColorMappingDialog.footer(self)` *(property)* — The :class:`Footer` widget at the bottom.
@@ -558,6 +594,7 @@ Base panel for editor windows with Header, body, Footer, and optional presets.
   - `EditorPanel.header(self)` *(property)* — The :class:`Header` widget at the top.
   - `EditorPanel.footer(self)` *(property)* — The :class:`Footer` widget at the bottom.
   - `EditorPanel.body_layout(self)` *(property)* — ``QVBoxLayout`` for editor controls and content.
+  - `EditorPanel.tighten_sublayouts(self, spacing: int = 1) -> None` — Set every nested sub-layout inside ``body_layout`` to *spacing*.
   - `EditorPanel.init_preset_row(self, dir_name)` — Add a preset management row to the body layout.
   - `EditorPanel.preset_dir(self) -> Path` *(property)* — Auto-derived preset directory under AppConfigLocation.
   - `EditorPanel.export_preset_data(self) -> dict` — Override to provide data for preset saving.
@@ -571,12 +608,12 @@ Base panel for editor windows with Header, body, Footer, and optional presets.
 <a id="widgets--editors--hotkey_editor"></a>
 ### `widgets/editors/hotkey_editor.py`
 
-- **[`class CollisionConflict`](uitk/uitk/widgets/editors/hotkey_editor.py#L20)** — A single conflict reported by a collision checker.
-- **[`class KeyCaptureDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/hotkey_editor.py#L56)** — Modal dialog to capture a key sequence.
+- **[`class CollisionConflict`](uitk/uitk/widgets/editors/hotkey_editor.py#L21)** — A single conflict reported by a collision checker.
+- **[`class KeyCaptureDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/hotkey_editor.py#L57)** — Modal dialog to capture a key sequence.
   - `KeyCaptureDialog.keyPressEvent(self, event)` — Capture key press event.
   - `KeyCaptureDialog.clear_key(self)`
   - `KeyCaptureDialog.get_sequence(self)`
-- **[`class HotkeyEditor(EditorPanel)`](uitk/uitk/widgets/editors/hotkey_editor.py#L129)** — UI for editing global shortcuts with preset support.
+- **[`class HotkeyEditor(EditorPanel)`](uitk/uitk/widgets/editors/hotkey_editor.py#L130)** — UI for editing global shortcuts with preset support.
   - `HotkeyEditor.export_preset_data(self)`
   - `HotkeyEditor.import_preset_data(self, data)`
   - `HotkeyEditor.export_shortcuts(self) -> dict` — Export all user-customised shortcuts across loaded UIs.
@@ -594,10 +631,10 @@ Base panel for editor windows with Header, body, Footer, and optional presets.
 
 Editor windows used by :meth:`ShortcutManager.show_editor`.
 
-- **[`class KeyCaptureDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/shortcut_editor.py#L19)** — Modal dialog that captures a single key combination.
+- **[`class KeyCaptureDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/shortcut_editor.py#L21)** — Modal dialog that captures a single key combination.
   - `KeyCaptureDialog.keyPressEvent(self, event)`
   - `KeyCaptureDialog.get_sequence(self) -> str`
-- **[`class ShortcutEditorDialog(QtWidgets.QWidget)`](uitk/uitk/widgets/editors/shortcut_editor.py#L74)** — Editor panel for viewing and remapping ShortcutManager bindings.
+- **[`class ShortcutEditorDialog(QtWidgets.QWidget)`](uitk/uitk/widgets/editors/shortcut_editor.py#L76)** — Editor panel for viewing and remapping ShortcutManager bindings.
   - `ShortcutEditorDialog.panel(self)` *(property)* — The :class:`EditorPanel` widget.
   - `ShortcutEditorDialog.show(self)`
   - `ShortcutEditorDialog.close(self)`
@@ -617,21 +654,20 @@ Editor windows used by :meth:`ShortcutManager.show_editor`.
 <a id="widgets--editors--switchboard_browser"></a>
 ### `widgets/editors/switchboard_browser.py`
 
-Searchable, tag-filtered launcher for any UI registered with a Switchboard.
+Searchable, tag-filtered launcher for any handler-exposed entry.
 
-- **[`class LaunchOptions`](uitk/uitk/widgets/editors/switchboard_browser.py#L43)**
-- **[`class SwitchboardBrowserModel(QtCore.QAbstractTableModel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L54)** — Table model over a Switchboard's UI registry.
-  - `SwitchboardBrowserModel.refresh_after_launch(self, name: str) -> None` — Public hook: caller invokes this after launching to wire signals.
+- **[`class LaunchOptions`](uitk/uitk/widgets/editors/switchboard_browser.py#L44)**
+- **[`class SwitchboardBrowserModel(QtCore.QAbstractTableModel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L55)** — Table model over a Switchboard's UI registry.
+  - `SwitchboardBrowserModel.refresh_after_launch(self, name: str) -> None` — Public hook: caller invokes this after launching to refresh the row.
   - `SwitchboardBrowserModel.rowCount(self, parent=QtCore.QModelIndex()) -> int`
   - `SwitchboardBrowserModel.columnCount(self, parent=QtCore.QModelIndex()) -> int`
   - `SwitchboardBrowserModel.headerData(self, section, orientation, role=QtCore.Qt.DisplayRole)`
   - `SwitchboardBrowserModel.data(self, index, role=QtCore.Qt.DisplayRole)`
   - `SwitchboardBrowserModel.flags(self, index)`
   - `SwitchboardBrowserModel.setData(self, index, value, role=QtCore.Qt.EditRole)`
+  - `SwitchboardBrowserModel.entry_for_name(self, name: str) -> Optional[HandlerEntry]`
   - `SwitchboardBrowserModel.all_unique_tags(self) -> List[str]`
-- **[`class TagEditDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/switchboard_browser.py#L289)** — Modal for editing the file-level tags of a single UI.
-  - `TagEditDialog.tags(self) -> Set[str]`
-- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L637)** — Searchable launcher for every UI registered with a Switchboard.
+- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L599)** — Searchable launcher for every UI registered with a Switchboard.
   - `SwitchboardBrowser.hidden_uis(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.hidden_uis(self, value: Iterable[str]) -> None`
   - `SwitchboardBrowser.hidden_tags(self) -> Set[str]` *(property)*
@@ -639,6 +675,8 @@ Searchable, tag-filtered launcher for any UI registered with a Switchboard.
   - `SwitchboardBrowser.set_search_scope(self, value: str) -> None` — Public helper: set the search-line-edit scope to ``value``.
   - `SwitchboardBrowser.set_exclude_scope(self, value: str) -> None` — Public helper: set the exclude-line-edit scope to ``value``.
   - `SwitchboardBrowser.launch_options(self) -> LaunchOptions`
+  - `SwitchboardBrowser.hide_inherited_tags(self) -> bool` *(property)*
+  - `SwitchboardBrowser.showEvent(self, event) -> None`
 
 <a id="widgets--expandableList"></a>
 ### `widgets/expandableList.py`
@@ -659,7 +697,7 @@ Searchable, tag-filtered launcher for any UI registered with a Switchboard.
   - `ExpandableList.get_padding(widget)` *(static)* — Get the padding values around a widget.
   - `ExpandableList.sizeHint(self)` — Return the recommended size for the widget.
   - `ExpandableList.eventFilter(self, widget, event)` — Filter events for the ExpandableList.
-  - `ExpandableList.leaveEvent(self, event)` — Handle the event when the cursor leaves the ExpandableList.
+  - `ExpandableList.leaveEvent(self, event)` — Handle the cursor leaving this list widget.
 
 <a id="widgets--footer"></a>
 ### `widgets/footer.py`
@@ -1236,6 +1274,13 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `ButtonOption.block_next_click(self)` — Block the next click event (used when popup closes to prevent immediate reopen).
   - `ButtonOption.set_checked(self, checked)` — Set the checked state of the button.
 
+<a id="widgets--optionBox--options--_persistence"></a>
+### `widgets/optionBox/options/_persistence.py`
+
+Shared persistence wiring for OptionBox plugins.
+
+- **[`class PersistedOption`](uitk/uitk/widgets/optionBox/options/_persistence.py#L15)** — Mixin that adds ``settings_key`` resolution + lazy SettingsManager.
+
 <a id="widgets--optionBox--options--action"></a>
 ### `widgets/optionBox/options/action.py`
 
@@ -1343,16 +1388,26 @@ Recent Values option for OptionBox — shows a selectable history list.
   - `RecentValuesOption.recent_values(self)` *(property)* — Return a copy of the recent values list (most-recent first).
   - `RecentValuesOption.clear_recent_values(self)` — Clear all recent values.
 
+<a id="widgets--optionBox--options--toggle"></a>
+### `widgets/optionBox/options/toggle.py`
+
+Toggle option for OptionBox — a persisted binary on/off button.
+
+- **[`class ToggleOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/toggle.py#L37)** — Persisted binary toggle button.
+  - `ToggleOption.is_on(self) -> bool` *(property)* — Current state.
+  - `ToggleOption.set_on(self, value: bool, *, emit: bool = True) -> None` — Programmatically set the toggle state.
+  - `ToggleOption.setup_widget(self)`
+
 <a id="widgets--optionBox--utils"></a>
 ### `widgets/optionBox/utils.py`
 
 Utilities and helper functions for OptionBox.
 
-- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L878) — Add an option box to any widget with one function call.
-- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L901) — Add just a clear button to a text widget.
-- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L914) — Add a menu option to any widget.
-- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L933) — Add option_box attribute to a widget class.
-- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L948) — Patch common Qt widgets with option box support.
+- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L964) — Add an option box to any widget with one function call.
+- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L987) — Add just a clear button to a text widget.
+- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1000) — Add a menu option to any widget.
+- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1019) — Add option_box attribute to a widget class.
+- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1034) — Patch common Qt widgets with option box support.
 - **[`class OptionBoxManager(ptk.LoggingMixin)`](uitk/uitk/widgets/optionBox/utils.py#L10)** — Elegant manager for option box functionality accessible as widget.option_box
   - `OptionBoxManager.clear_option(self)` *(property)* — Get/set clear option state
   - `OptionBoxManager.clear_option(self, enabled)` — Enable/disable clear option
@@ -1362,6 +1417,8 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.recent(self, settings_key: Optional[str] = None, *, max_recent: int = 10, **kwargs)` — Enable recent values option (fluent interface).
   - `OptionBoxManager.set_action(self, callback=None, icon='option_box', tooltip='Options', text=None, replace=True, states=None, settings_key=None)` — Set the action handler (fluent interface).
   - `OptionBoxManager.add_action(self, callback=None, icon='option_box', tooltip='Options', text=None, states=None, settings_key=None)` — Add an action button without replacing existing ones.
+  - `OptionBoxManager.set_toggle(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, gated_widgets=(), settings_key=None, replace: bool = True, on_toggled=None)` — Add a persisted binary toggle button (fluent interface).
+  - `OptionBoxManager.add_toggle(self, **kwargs)` — Add a toggle without replacing existing ones.
   - `OptionBoxManager.browse(self, file_types=None, title='Browse', start_dir=None, mode='file', icon='folder', tooltip='Browse...', callback=None)` — Enable file/folder browse button (fluent interface).
   - `OptionBoxManager.enable_clear(self)` — Enable clear option (fluent interface)
   - `OptionBoxManager.disable_clear(self)` — Disable clear option (fluent interface)
@@ -1414,6 +1471,15 @@ Utilities and helper functions for OptionBox.
   - `Region.leaveEvent(self, event)` — Overrides the QWidget.leaveEvent method.
   - `Region.hideEvent(self, event)` — Overrides the QWidget.hideEvent method.
   - `Region.childEvent(self, event)` — Overrides the QWidget.childEvent method.
+
+<a id="widgets--row_selection_delegate"></a>
+### `widgets/row_selection_delegate.py`
+
+Opt-in delegate for views whose cells carry their own background.
+
+- **[`class RowSelectionBorderDelegate(QtWidgets.QStyledItemDelegate)`](uitk/uitk/widgets/row_selection_delegate.py#L28)** — Paints a 1 px row-spanning selection border.
+  - `RowSelectionBorderDelegate.paint(self, painter, option, index)`
+  - `RowSelectionBorderDelegate.paint_row_selection_border(self, painter, option, index)` — Paint this cell's share of a row-spanning selection border.
 
 <a id="widgets--separator"></a>
 ### `widgets/separator.py`
@@ -1731,7 +1797,7 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
   - `SpinBox.adjustStepSize(self, event: QtGui.QWheelEvent) -> None` — Adjust the step size dynamically based on the Alt modifier key.
   - `SpinBox.increaseValueWithLargeStep(self, event: QtGui.QWheelEvent) -> None` — Increase the spin box value by a larger step when Ctrl is pressed.
-  - `SpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Decrease the spin box value by a smaller step when Ctrl+Alt is pressed.
+  - `SpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Move the value by the lowest decimal place (Ctrl+Alt).
   - `SpinBox.message(self, text: str) -> None` — Display a temporary message box with the given text.
 
 <a id="widgets--tableWidget"></a>
@@ -1756,7 +1822,7 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableSelection.get(self, key: str, default: Any = None)`
   - `TableSelection.item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]`
   - `TableSelection.text(self, key: str, default: str = '') -> str`
-- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L467)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L473)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
   - `TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None` — Enable MMB-drag value scrubbing for *columns*.
   - `TableWidget.add_scrub_column(self, column: int) -> None` — Add a single column to the MMB-scrub set.
   - `TableWidget.remove_scrub_column(self, column: int) -> None` — Remove a column from the MMB-scrub set.
