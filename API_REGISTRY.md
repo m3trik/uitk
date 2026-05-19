@@ -6,6 +6,11 @@ _Generated: 2026-05-19_
 
 ## Index
 
+- [`bridge/formatters.py`](#bridge--formatters) — Per-target-language value formatters for bridge parameter rendering.
+- [`bridge/parameters.py`](#bridge--parameters) — Registry helpers for bridge parameter dicts.
+- [`bridge/slots.py`](#bridge--slots) — Generic DCC-bridge slot base class.
+- [`bridge/spec.py`](#bridge--spec) — Attribute spec + kind-handler registry for parameterised forms.
+- [`bridge/tooltip.py`](#bridge--tooltip) — Rich-text tooltip + template-description helpers for bridge panels.
 - [`compile.py`](#compile) — Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.
 - [`events.py`](#events) — Event handling utilities for Qt applications.
 - [`examples/example.py`](#examples--example) — UITK Example — a polished tour of the framework.
@@ -30,7 +35,6 @@ _Generated: 2026-05-19_
 - [`switchboard/utils.py`](#switchboard--utils)
 - [`switchboard/widgets.py`](#switchboard--widgets)
 - [`widgets/attributeWindow/_attributeWindow.py`](#widgets--attributeWindow--_attributeWindow)
-- [`widgets/attributeWindow/_factory.py`](#widgets--attributeWindow--_factory) — Factory for building / reading / writing dynamic-attribute editor widgets.
 - [`widgets/checkBox.py`](#widgets--checkBox)
 - [`widgets/collapsableGroup.py`](#widgets--collapsableGroup)
 - [`widgets/colorSwatch.py`](#widgets--colorSwatch)
@@ -99,8 +103,8 @@ _Generated: 2026-05-19_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/tableWidget.py`](#widgets--tableWidget)
+- [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/toolBox.py`](#widgets--toolBox)
@@ -108,6 +112,74 @@ _Generated: 2026-05-19_
 - [`widgets/widgetComboBox.py`](#widgets--widgetComboBox)
 
 ---
+
+<a id="bridge--formatters"></a>
+### `bridge/formatters.py`
+
+Per-target-language value formatters for bridge parameter rendering.
+
+- [`python_literal(spec, value: Any) -> str`](uitk/uitk/bridge/formatters.py#L29) — Render *value* as a Python source literal.
+- [`lua_literal(spec, value: Any) -> str`](uitk/uitk/bridge/formatters.py#L44) — Render *value* as a Lua source literal.
+- [`js_literal(spec, value: Any) -> str`](uitk/uitk/bridge/formatters.py#L59) — Render *value* as a JavaScript literal.
+- [`cli_raw(spec, value: Any) -> str`](uitk/uitk/bridge/formatters.py#L75) — Render *value* as a raw command-line argv token (no quoting).
+
+<a id="bridge--parameters"></a>
+### `bridge/parameters.py`
+
+Registry helpers for bridge parameter dicts.
+
+- [`referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]`](uitk/uitk/bridge/parameters.py#L34) — Return registry keys whose ``__KEY__`` token appears in *script_text*.
+- [`defaults(params: Dict[str, AttributeSpec]) -> Dict[str, Any]`](uitk/uitk/bridge/parameters.py#L48) — Return ``{key: default}`` for every registered parameter.
+- [`render_context(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = python_literal) -> Dict[str, str]`](uitk/uitk/bridge/parameters.py#L53) — Format *values* through *formatter* for ``StrUtils.replace_delimited``.
+
+<a id="bridge--slots"></a>
+### `bridge/slots.py`
+
+Generic DCC-bridge slot base class.
+
+- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L83)** — Base class for DCC-bridge slot panels.
+  - `BridgeSlotsBase.params_module(self)` *(property)*
+  - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
+  - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
+  - `BridgeSlotsBase.list_template_modes(self) -> List[Tuple[str, str]]`
+  - `BridgeSlotsBase.b000(self)` — Implement the per-bridge send action.
+  - `BridgeSlotsBase.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int` — Return the index of the preferred initial entry in *pairs*.
+  - `BridgeSlotsBase.default_output_dir(self) -> str` — Hook: fallback path when the user leaves Output Dir blank.
+  - `BridgeSlotsBase.template_description(self, template_path: Path) -> Optional[str]` — Hook: extract a brief description from a template file.
+  - `BridgeSlotsBase.format_param_tooltip(self, spec: AttributeSpec) -> str` — Hook: build the rich-text tooltip for one parameter spec.
+  - `BridgeSlotsBase.bridge(self)` *(property)* — Lazy-instantiated bridge (caches a single instance per slot).
+  - `BridgeSlotsBase.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
+  - `BridgeSlotsBase.require_output_dir(self) -> Optional[str]` — Return the Output Dir or log an error on empty.
+  - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
+  - `BridgeSlotsBase.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
+  - `BridgeSlotsBase.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
+  - `BridgeSlotsBase.open_templates_folder(self) -> None` — Reveal :attr:`template_dir` in the OS file manager.
+  - `BridgeSlotsBase.clear_log(self) -> None` — Clear the log panel (wired by subclass header menus).
+
+<a id="bridge--spec"></a>
+### `bridge/spec.py`
+
+Attribute spec + kind-handler registry for parameterised forms.
+
+- [`infer_kind(value: Any) -> str`](uitk/uitk/bridge/spec.py#L136) — Map a Python value to one of the built-in kinds.
+- [`register_kind(name: str, handler: KindHandler) -> None`](uitk/uitk/bridge/spec.py#L161) — Register a new kind (or override an existing one).
+- [`get_handler(kind: str) -> KindHandler`](uitk/uitk/bridge/spec.py#L166) — Return the handler for *kind* (raises KeyError if unregistered).
+- [`make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`](uitk/uitk/bridge/spec.py#L176) — Build a Qt widget for *spec*.
+- [`read_value(widget: QtWidgets.QWidget) -> Any`](uitk/uitk/bridge/spec.py#L200) — Return the current value of a factory-built widget.
+- [`set_value(widget: QtWidgets.QWidget, value: Any) -> None`](uitk/uitk/bridge/spec.py#L205) — Set the value of a factory-built widget.
+- [`connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`](uitk/uitk/bridge/spec.py#L210) — Wire the widget's value-change signal to ``callback(new_value)``.
+- **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L45)** — Description of one editable attribute / bridge parameter.
+  - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
+  - `AttributeSpec.display_label(self) -> str` *(property)*
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L105)** — Bundle of callables that build / read / write a widget kind.
+
+<a id="bridge--tooltip"></a>
+### `bridge/tooltip.py`
+
+Rich-text tooltip + template-description helpers for bridge panels.
+
+- [`format_param_tooltip(spec: AttributeSpec) -> str`](uitk/uitk/bridge/tooltip.py#L24) — Build a rich-text tooltip for one :class:`AttributeSpec`.
+- [`template_description(template_path: Path) -> Optional[str]`](uitk/uitk/bridge/tooltip.py#L77) — Return *template_path*'s leading docstring / comment block, or *None*.
 
 <a id="compile"></a>
 ### `compile.py`
@@ -472,23 +544,6 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `AttributeWindow.on_button_clicked(self, button, checked)` — Slot for buttonClicked signal of QButtonGroup.
   - `AttributeWindow.add_to_layout(self, label, widget)` — Add the label and widget to the layout.
   - `AttributeWindow.showEvent(self, event)` — Handle the show event for the window.
-
-<a id="widgets--attributeWindow--_factory"></a>
-### `widgets/attributeWindow/_factory.py`
-
-Factory for building / reading / writing dynamic-attribute editor widgets.
-
-- [`infer_kind(value: Any) -> str`](uitk/uitk/widgets/attributeWindow/_factory.py#L142) — Map a Python value to one of the built-in kinds.
-- [`register_kind(name: str, handler: KindHandler) -> None`](uitk/uitk/widgets/attributeWindow/_factory.py#L162) — Register a new kind (or override an existing one).
-- [`get_handler(kind: str) -> KindHandler`](uitk/uitk/widgets/attributeWindow/_factory.py#L172) — Return the handler for *kind* (raises KeyError if unregistered).
-- [`make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`](uitk/uitk/widgets/attributeWindow/_factory.py#L182) — Build a Qt widget for *spec*.
-- [`read_value(widget: QtWidgets.QWidget) -> Any`](uitk/uitk/widgets/attributeWindow/_factory.py#L206) — Return the current value of a factory-built widget.
-- [`set_value(widget: QtWidgets.QWidget, value: Any) -> None`](uitk/uitk/widgets/attributeWindow/_factory.py#L211) — Set the value of a factory-built widget.
-- [`connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`](uitk/uitk/widgets/attributeWindow/_factory.py#L216) — Wire the widget's value-change signal to ``callback(new_value)``.
-- **[`class AttributeSpec`](uitk/uitk/widgets/attributeWindow/_factory.py#L59)** — Description of one editable attribute / parameter.
-  - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
-  - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/widgets/attributeWindow/_factory.py#L111)** — Bundle of callables that build / read / write a widget kind.
 
 <a id="widgets--checkBox"></a>
 ### `widgets/checkBox.py`
@@ -1798,17 +1853,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Move the value by the lowest decimal place (Ctrl+Alt).
   - `SpinBox.message(self, text: str) -> None` — Display a temporary message box with the given text.
 
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
-
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
@@ -1872,6 +1916,17 @@ Reusable action-column management for :class:`TableWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
+
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`

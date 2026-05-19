@@ -4,6 +4,380 @@
   "generated_at": "2026-05-19",
   "modules": [
     {
+      "relpath": "bridge/formatters.py",
+      "summary": "Per-target-language value formatters for bridge parameter rendering.",
+      "functions": [
+        {
+          "name": "python_literal",
+          "qualname": "python_literal",
+          "kind": "function",
+          "signature": "(spec, value: Any) -> str",
+          "summary": "Render *value* as a Python source literal.",
+          "line": 29,
+          "deprecated": false
+        },
+        {
+          "name": "lua_literal",
+          "qualname": "lua_literal",
+          "kind": "function",
+          "signature": "(spec, value: Any) -> str",
+          "summary": "Render *value* as a Lua source literal.",
+          "line": 44,
+          "deprecated": false
+        },
+        {
+          "name": "js_literal",
+          "qualname": "js_literal",
+          "kind": "function",
+          "signature": "(spec, value: Any) -> str",
+          "summary": "Render *value* as a JavaScript literal.",
+          "line": 59,
+          "deprecated": false
+        },
+        {
+          "name": "cli_raw",
+          "qualname": "cli_raw",
+          "kind": "function",
+          "signature": "(spec, value: Any) -> str",
+          "summary": "Render *value* as a raw command-line argv token (no quoting).",
+          "line": 75,
+          "deprecated": false
+        }
+      ],
+      "classes": []
+    },
+    {
+      "relpath": "bridge/parameters.py",
+      "summary": "Registry helpers for bridge parameter dicts.",
+      "functions": [
+        {
+          "name": "referenced_keys",
+          "qualname": "referenced_keys",
+          "kind": "function",
+          "signature": "(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]",
+          "summary": "Return registry keys whose ``__KEY__`` token appears in *script_text*.",
+          "line": 34,
+          "deprecated": false
+        },
+        {
+          "name": "defaults",
+          "qualname": "defaults",
+          "kind": "function",
+          "signature": "(params: Dict[str, AttributeSpec]) -> Dict[str, Any]",
+          "summary": "Return ``{key: default}`` for every registered parameter.",
+          "line": 48,
+          "deprecated": false
+        },
+        {
+          "name": "render_context",
+          "qualname": "render_context",
+          "kind": "function",
+          "signature": "(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = python_literal) -> Dict[str, str]",
+          "summary": "Format *values* through *formatter* for ``StrUtils.replace_delimited``.",
+          "line": 53,
+          "deprecated": false
+        }
+      ],
+      "classes": []
+    },
+    {
+      "relpath": "bridge/slots.py",
+      "summary": "Generic DCC-bridge slot base class.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "BridgeSlotsBase",
+          "summary": "Base class for DCC-bridge slot panels.",
+          "line": 83,
+          "bases": [],
+          "members": [
+            {
+              "name": "params_module",
+              "qualname": "BridgeSlotsBase.params_module",
+              "kind": "property",
+              "signature": "(self)",
+              "summary": "",
+              "line": 151,
+              "deprecated": false
+            },
+            {
+              "name": "template_dir",
+              "qualname": "BridgeSlotsBase.template_dir",
+              "kind": "property",
+              "signature": "(self) -> Path",
+              "summary": "",
+              "line": 155,
+              "deprecated": false
+            },
+            {
+              "name": "make_bridge",
+              "qualname": "BridgeSlotsBase.make_bridge",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Return a fresh bridge instance.",
+              "line": 158,
+              "deprecated": false
+            },
+            {
+              "name": "list_template_modes",
+              "qualname": "BridgeSlotsBase.list_template_modes",
+              "kind": "method",
+              "signature": "(self) -> List[Tuple[str, str]]",
+              "summary": "",
+              "line": 162,
+              "deprecated": false
+            },
+            {
+              "name": "b000",
+              "qualname": "BridgeSlotsBase.b000",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Implement the per-bridge send action.",
+              "line": 165,
+              "deprecated": false
+            },
+            {
+              "name": "select_initial_template_index",
+              "qualname": "BridgeSlotsBase.select_initial_template_index",
+              "kind": "method",
+              "signature": "(self, pairs: List[Tuple[str, str]]) -> int",
+              "summary": "Return the index of the preferred initial entry in *pairs*.",
+              "line": 169,
+              "deprecated": false
+            },
+            {
+              "name": "default_output_dir",
+              "qualname": "BridgeSlotsBase.default_output_dir",
+              "kind": "method",
+              "signature": "(self) -> str",
+              "summary": "Hook: fallback path when the user leaves Output Dir blank.",
+              "line": 177,
+              "deprecated": false
+            },
+            {
+              "name": "template_description",
+              "qualname": "BridgeSlotsBase.template_description",
+              "kind": "method",
+              "signature": "(self, template_path: Path) -> Optional[str]",
+              "summary": "Hook: extract a brief description from a template file.",
+              "line": 186,
+              "deprecated": false
+            },
+            {
+              "name": "format_param_tooltip",
+              "qualname": "BridgeSlotsBase.format_param_tooltip",
+              "kind": "method",
+              "signature": "(self, spec: AttributeSpec) -> str",
+              "summary": "Hook: build the rich-text tooltip for one parameter spec.",
+              "line": 190,
+              "deprecated": false
+            },
+            {
+              "name": "bridge",
+              "qualname": "BridgeSlotsBase.bridge",
+              "kind": "property",
+              "signature": "(self)",
+              "summary": "Lazy-instantiated bridge (caches a single instance per slot).",
+              "line": 228,
+              "deprecated": false
+            },
+            {
+              "name": "resolved_output_dir",
+              "qualname": "BridgeSlotsBase.resolved_output_dir",
+              "kind": "method",
+              "signature": "(self) -> str",
+              "summary": "Return the current Output Dir text trimmed of whitespace.",
+              "line": 270,
+              "deprecated": false
+            },
+            {
+              "name": "require_output_dir",
+              "qualname": "BridgeSlotsBase.require_output_dir",
+              "kind": "method",
+              "signature": "(self) -> Optional[str]",
+              "summary": "Return the Output Dir or log an error on empty.",
+              "line": 280,
+              "deprecated": false
+            },
+            {
+              "name": "collect_param_values",
+              "qualname": "BridgeSlotsBase.collect_param_values",
+              "kind": "method",
+              "signature": "(self) -> Dict[str, Any]",
+              "summary": "Snapshot every widget's current value, regardless of visibility.",
+              "line": 380,
+              "deprecated": false
+            },
+            {
+              "name": "cmb000_init",
+              "qualname": "BridgeSlotsBase.cmb000_init",
+              "kind": "method",
+              "signature": "(self, widget) -> None",
+              "summary": "Switchboard hook: populate the template combobox + wire change handler.",
+              "line": 488,
+              "deprecated": false
+            },
+            {
+              "name": "refresh_templates",
+              "qualname": "BridgeSlotsBase.refresh_templates",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-scan disk and rebuild the template combo + parameter UI.",
+              "line": 509,
+              "deprecated": false
+            },
+            {
+              "name": "open_templates_folder",
+              "qualname": "BridgeSlotsBase.open_templates_folder",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Reveal :attr:`template_dir` in the OS file manager.",
+              "line": 602,
+              "deprecated": false
+            },
+            {
+              "name": "clear_log",
+              "qualname": "BridgeSlotsBase.clear_log",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Clear the log panel (wired by subclass header menus).",
+              "line": 609,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "bridge/spec.py",
+      "summary": "Attribute spec + kind-handler registry for parameterised forms.",
+      "functions": [
+        {
+          "name": "infer_kind",
+          "qualname": "infer_kind",
+          "kind": "function",
+          "signature": "(value: Any) -> str",
+          "summary": "Map a Python value to one of the built-in kinds.",
+          "line": 136,
+          "deprecated": false
+        },
+        {
+          "name": "register_kind",
+          "qualname": "register_kind",
+          "kind": "function",
+          "signature": "(name: str, handler: KindHandler) -> None",
+          "summary": "Register a new kind (or override an existing one).",
+          "line": 161,
+          "deprecated": false
+        },
+        {
+          "name": "get_handler",
+          "qualname": "get_handler",
+          "kind": "function",
+          "signature": "(kind: str) -> KindHandler",
+          "summary": "Return the handler for *kind* (raises KeyError if unregistered).",
+          "line": 166,
+          "deprecated": false
+        },
+        {
+          "name": "make_widget",
+          "qualname": "make_widget",
+          "kind": "function",
+          "signature": "(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget",
+          "summary": "Build a Qt widget for *spec*.",
+          "line": 176,
+          "deprecated": false
+        },
+        {
+          "name": "read_value",
+          "qualname": "read_value",
+          "kind": "function",
+          "signature": "(widget: QtWidgets.QWidget) -> Any",
+          "summary": "Return the current value of a factory-built widget.",
+          "line": 200,
+          "deprecated": false
+        },
+        {
+          "name": "set_value",
+          "qualname": "set_value",
+          "kind": "function",
+          "signature": "(widget: QtWidgets.QWidget, value: Any) -> None",
+          "summary": "Set the value of a factory-built widget.",
+          "line": 205,
+          "deprecated": false
+        },
+        {
+          "name": "connect_changed",
+          "qualname": "connect_changed",
+          "kind": "function",
+          "signature": "(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None",
+          "summary": "Wire the widget's value-change signal to ``callback(new_value)``.",
+          "line": 210,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "AttributeSpec",
+          "summary": "Description of one editable attribute / bridge parameter.",
+          "line": 45,
+          "bases": [],
+          "members": [
+            {
+              "name": "from_value",
+              "qualname": "AttributeSpec.from_value",
+              "kind": "classmethod",
+              "signature": "(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'",
+              "summary": "Build a minimal spec from a Python value (AttributeWindow style).",
+              "line": 90,
+              "deprecated": false
+            },
+            {
+              "name": "display_label",
+              "qualname": "AttributeSpec.display_label",
+              "kind": "property",
+              "signature": "(self) -> str",
+              "summary": "",
+              "line": 100,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "KindHandler",
+          "summary": "Bundle of callables that build / read / write a widget kind.",
+          "line": 105,
+          "bases": [],
+          "members": []
+        }
+      ]
+    },
+    {
+      "relpath": "bridge/tooltip.py",
+      "summary": "Rich-text tooltip + template-description helpers for bridge panels.",
+      "functions": [
+        {
+          "name": "format_param_tooltip",
+          "qualname": "format_param_tooltip",
+          "kind": "function",
+          "signature": "(spec: AttributeSpec) -> str",
+          "summary": "Build a rich-text tooltip for one :class:`AttributeSpec`.",
+          "line": 24,
+          "deprecated": false
+        },
+        {
+          "name": "template_description",
+          "qualname": "template_description",
+          "kind": "function",
+          "signature": "(template_path: Path) -> Optional[str]",
+          "summary": "Return *template_path*'s leading docstring / comment block, or *None*.",
+          "line": 77,
+          "deprecated": false
+        }
+      ],
+      "classes": []
+    },
+    {
       "relpath": "compile.py",
       "summary": "Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.",
       "functions": [
@@ -2192,7 +2566,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Refreshes the window with the latest attributes.",
-              "line": 103,
+              "line": 104,
               "deprecated": false
             },
             {
@@ -2201,7 +2575,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clears existing labels and widgets from the UI.",
-              "line": 118,
+              "line": 119,
               "deprecated": false
             },
             {
@@ -2210,7 +2584,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 130,
+              "line": 131,
               "deprecated": false
             },
             {
@@ -2219,7 +2593,7 @@
               "kind": "method",
               "signature": "(self, set_attribute_func)",
               "summary": "",
-              "line": 138,
+              "line": 139,
               "deprecated": false
             },
             {
@@ -2228,7 +2602,7 @@
               "kind": "method",
               "signature": "(self, name, value)",
               "summary": "",
-              "line": 161,
+              "line": 162,
               "deprecated": false
             },
             {
@@ -2237,7 +2611,7 @@
               "kind": "staticmethod",
               "signature": "(attr_name)",
               "summary": "",
-              "line": 169,
+              "line": 170,
               "deprecated": false
             },
             {
@@ -2246,7 +2620,7 @@
               "kind": "staticmethod",
               "signature": "(attribute_type)",
               "summary": "Return True if AttributeWindow can auto-build a widget for *attribute_type*.",
-              "line": 174,
+              "line": 175,
               "deprecated": false
             },
             {
@@ -2255,7 +2629,7 @@
               "kind": "method",
               "signature": "(self, attributes, value=None)",
               "summary": "Adds a single attribute or multiple attributes to the attribute window.",
-              "line": 183,
+              "line": 184,
               "deprecated": false
             },
             {
@@ -2264,7 +2638,7 @@
               "kind": "method",
               "signature": "(self, spec)",
               "summary": "Add one attribute via an explicit :class:`uitk.AttributeSpec`.",
-              "line": 221,
+              "line": 222,
               "deprecated": false
             },
             {
@@ -2273,7 +2647,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Emit the valueChanged signal for a widget (or composite-aware).",
-              "line": 278,
+              "line": 279,
               "deprecated": false
             },
             {
@@ -2282,7 +2656,7 @@
               "kind": "method",
               "signature": "(self, attribute_name)",
               "summary": "Construct and emit the full attribute value for a composite attribute.",
-              "line": 289,
+              "line": 290,
               "deprecated": false
             },
             {
@@ -2291,7 +2665,7 @@
               "kind": "method",
               "signature": "(self, attribute_name)",
               "summary": "Set up the label for the attribute.",
-              "line": 297,
+              "line": 298,
               "deprecated": false
             },
             {
@@ -2300,7 +2674,7 @@
               "kind": "method",
               "signature": "(self, label)",
               "summary": "Slot to be called when a label is toggled.",
-              "line": 310,
+              "line": 311,
               "deprecated": false
             },
             {
@@ -2309,7 +2683,7 @@
               "kind": "method",
               "signature": "(self, button, checked)",
               "summary": "Slot for buttonClicked signal of QButtonGroup.",
-              "line": 316,
+              "line": 317,
               "deprecated": false
             },
             {
@@ -2318,7 +2692,7 @@
               "kind": "method",
               "signature": "(self, label, widget)",
               "summary": "Add the label and widget to the layout.",
-              "line": 331,
+              "line": 332,
               "deprecated": false
             },
             {
@@ -2327,114 +2701,10 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the show event for the window.",
-              "line": 365,
+              "line": 366,
               "deprecated": false
             }
           ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/attributeWindow/_factory.py",
-      "summary": "Factory for building / reading / writing dynamic-attribute editor widgets.",
-      "functions": [
-        {
-          "name": "infer_kind",
-          "qualname": "infer_kind",
-          "kind": "function",
-          "signature": "(value: Any) -> str",
-          "summary": "Map a Python value to one of the built-in kinds.",
-          "line": 142,
-          "deprecated": false
-        },
-        {
-          "name": "register_kind",
-          "qualname": "register_kind",
-          "kind": "function",
-          "signature": "(name: str, handler: KindHandler) -> None",
-          "summary": "Register a new kind (or override an existing one).",
-          "line": 162,
-          "deprecated": false
-        },
-        {
-          "name": "get_handler",
-          "qualname": "get_handler",
-          "kind": "function",
-          "signature": "(kind: str) -> KindHandler",
-          "summary": "Return the handler for *kind* (raises KeyError if unregistered).",
-          "line": 172,
-          "deprecated": false
-        },
-        {
-          "name": "make_widget",
-          "qualname": "make_widget",
-          "kind": "function",
-          "signature": "(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget",
-          "summary": "Build a Qt widget for *spec*.",
-          "line": 182,
-          "deprecated": false
-        },
-        {
-          "name": "read_value",
-          "qualname": "read_value",
-          "kind": "function",
-          "signature": "(widget: QtWidgets.QWidget) -> Any",
-          "summary": "Return the current value of a factory-built widget.",
-          "line": 206,
-          "deprecated": false
-        },
-        {
-          "name": "set_value",
-          "qualname": "set_value",
-          "kind": "function",
-          "signature": "(widget: QtWidgets.QWidget, value: Any) -> None",
-          "summary": "Set the value of a factory-built widget.",
-          "line": 211,
-          "deprecated": false
-        },
-        {
-          "name": "connect_changed",
-          "qualname": "connect_changed",
-          "kind": "function",
-          "signature": "(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None",
-          "summary": "Wire the widget's value-change signal to ``callback(new_value)``.",
-          "line": 216,
-          "deprecated": false
-        }
-      ],
-      "classes": [
-        {
-          "name": "AttributeSpec",
-          "summary": "Description of one editable attribute / parameter.",
-          "line": 59,
-          "bases": [],
-          "members": [
-            {
-              "name": "from_value",
-              "qualname": "AttributeSpec.from_value",
-              "kind": "classmethod",
-              "signature": "(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'",
-              "summary": "Build a minimal spec from a Python value (AttributeWindow style).",
-              "line": 96,
-              "deprecated": false
-            },
-            {
-              "name": "display_label",
-              "qualname": "AttributeSpec.display_label",
-              "kind": "property",
-              "signature": "(self) -> str",
-              "summary": "",
-              "line": 106,
-              "deprecated": false
-            }
-          ]
-        },
-        {
-          "name": "KindHandler",
-          "summary": "Bundle of callables that build / read / write a widget kind.",
-          "line": 111,
-          "bases": [],
-          "members": []
         }
       ]
     },
@@ -11741,57 +12011,6 @@
       ]
     },
     {
-      "relpath": "widgets/table_actions.py",
-      "summary": "Reusable action-column management for :class:`TableWidget`.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "TableActions",
-          "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 139,
-          "bases": [],
-          "members": [
-            {
-              "name": "add",
-              "qualname": "TableActions.add",
-              "kind": "method",
-              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
-              "summary": "Register an action column.",
-              "line": 163,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "TableActions.set",
-              "kind": "method",
-              "signature": "(self, row: int, col: int, state_name: str) -> None",
-              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 209,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "TableActions.get",
-              "kind": "method",
-              "signature": "(self, row: int, col: int) -> Optional[str]",
-              "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 273,
-              "deprecated": false
-            },
-            {
-              "name": "update_for_row_height",
-              "qualname": "TableActions.update_for_row_height",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Re-size action columns and icons to fit the current row height.",
-              "line": 338,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
       "relpath": "widgets/tableWidget.py",
       "summary": "",
       "functions": [],
@@ -12336,6 +12555,57 @@
               "signature": "(self, object_name: str)",
               "summary": "",
               "line": 1306,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "widgets/table_actions.py",
+      "summary": "Reusable action-column management for :class:`TableWidget`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TableActions",
+          "summary": "Manages action columns on a :class:`TableWidget`.",
+          "line": 139,
+          "bases": [],
+          "members": [
+            {
+              "name": "add",
+              "qualname": "TableActions.add",
+              "kind": "method",
+              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
+              "summary": "Register an action column.",
+              "line": 163,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "TableActions.set",
+              "kind": "method",
+              "signature": "(self, row: int, col: int, state_name: str) -> None",
+              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
+              "line": 209,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "TableActions.get",
+              "kind": "method",
+              "signature": "(self, row: int, col: int) -> Optional[str]",
+              "summary": "Return the current state name for a cell, or ``None``.",
+              "line": 273,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 338,
               "deprecated": false
             }
           ]
