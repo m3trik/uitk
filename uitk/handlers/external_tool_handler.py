@@ -432,6 +432,7 @@ class ExternalToolHandler(BaseHandler):
         python: Optional[str] = None,
         show_kwargs: Optional[dict] = None,
         mode: Optional[str] = None,
+        show: bool = True,
         **_options,
     ):
         """Launch a registered tool, or an ad-hoc tool from kwargs.
@@ -439,12 +440,21 @@ class ExternalToolHandler(BaseHandler):
         Kwargs override any value supplied at :meth:`register` time. The
         combined config must at minimum provide *module*.
 
+        ``show=False`` (in-process mode only) returns the widget after
+        install + import + reparent + visibility wiring, but does NOT
+        call ``show()/raise_()/activateWindow()``. Use this when the
+        caller wants to inject host context (e.g. set
+        ``ui.slots.texture_provider``) and then route the widget through
+        a custom show path (such as the marking menu's cursor-relative
+        positioning). Ignored in subprocess mode — the launch always
+        starts the process.
+
         Returns:
             ``subprocess.Popen`` in ``mode="subprocess"``, or the UI
             widget in ``mode="in_process"`` (already parented under
             the Switchboard's parent — typically the host DCC's main
-            window — and shown/raised/activated). Caller may
-            re-parent or re-show but no longer has to.
+            window — and shown/raised/activated when ``show=True``).
+            Caller may re-parent or re-show but no longer has to.
         """
         cfg = dict(self._tools.get(name, {})) if name else {}
         for k, v in (
@@ -476,7 +486,12 @@ class ExternalToolHandler(BaseHandler):
                     f"{py} and no install_spec was provided."
                 )
             self.logger.info(f"Installing {spec!r} into {py}")
-            ptk.PackageManager(python_path=py).install(spec)
+            try:
+                ptk.PackageManager(python_path=py).install(spec)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to install {spec!r} into {py}: {e}"
+                ) from e
             if not self._is_importable(cfg["module"], py):
                 raise RuntimeError(
                     f"Install of {spec!r} completed but {cfg['module']!r} "
@@ -491,7 +506,10 @@ class ExternalToolHandler(BaseHandler):
                 widget = self._import_entry(cfg["module"], cfg.get("entry"))
                 if name:
                     self._in_process_widgets[name] = widget
-            self._show_in_process(widget, name=name)
+            if show:
+                self._show_in_process(widget, name=name)
+            else:
+                self._prepare_in_process(widget, name=name)
             if name:
                 self._notify_entries_changed(name)
             return widget
@@ -509,12 +527,12 @@ class ExternalToolHandler(BaseHandler):
 
     # ------------------------------------------------------------------
 
-    def _show_in_process(self, widget, name: Optional[str] = None) -> None:
-        """Parent the widget under the host (Switchboard's parent), then show + raise.
+    def _prepare_in_process(self, widget, name: Optional[str] = None) -> None:
+        """Reparent under the host and wire visibility tracking, but do NOT show.
 
-        Centralised so every launch path produces a visible window —
-        the browser, a slot's launch button, an `instance.launch(...)`
-        call from a Python console all behave the same.
+        Use this when the caller plans to route the widget through a
+        custom show path (e.g. ``marking_menu.show()`` for cursor-
+        relative positioning) and just needs the widget primed.
 
         Re-parenting preserves the widget's own ``windowFlags`` (external
         tools come fully-styled — frameless, translucent, etc.); passing
@@ -534,17 +552,32 @@ class ExternalToolHandler(BaseHandler):
             from qtpy import QtCore as _QtCore
 
             host_parent = self.sb.parent() if hasattr(self.sb, "parent") else None
-            if host_parent is not None:
+            if host_parent is not None and widget.parent() is not host_parent:
                 widget.setParent(host_parent, widget.windowFlags() | _QtCore.Qt.Window)
             if name is not None:
                 self._wire_widget_visibility(widget, name)
-            widget.show()
-            widget.raise_()
-            widget.activateWindow()
         except Exception:
             # Best-effort. If the widget is a non-Qt object (mock in tests,
             # custom launcher returning a plain Python object), the caller
             # still gets the instance back and can handle display itself.
+            self.logger.debug(
+                f"[_prepare_in_process] could not prepare widget {widget!r}",
+                exc_info=True,
+            )
+
+    def _show_in_process(self, widget, name: Optional[str] = None) -> None:
+        """Prepare the widget then show + raise + activate.
+
+        Centralised so every launch path produces a visible window —
+        the browser, a slot's launch button, an ``instance.launch(...)``
+        call from a Python console all behave the same.
+        """
+        self._prepare_in_process(widget, name=name)
+        try:
+            widget.show()
+            widget.raise_()
+            widget.activateWindow()
+        except Exception:
             self.logger.debug(
                 f"[_show_in_process] could not display widget {widget!r}",
                 exc_info=True,

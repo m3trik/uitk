@@ -505,6 +505,96 @@ class TestInProcessMode(unittest.TestCase):
         pm_cls.assert_called_once_with(python_path=sys.executable)
 
 
+class TestInProcessShowOptOut(unittest.TestCase):
+    """``show=False`` returns the prepared widget without showing it.
+
+    Hosts that want to route a freshly-launched in-process widget through
+    a custom show path (e.g. the marking menu's cursor-relative
+    positioning) need a way to get the widget back primed but invisible.
+    Without this, ``launch()`` always called ``widget.show()`` and the
+    custom show path either competed with it or had to hide-then-show
+    (double flash).
+    """
+
+    def _set_up(self):
+        from qtpy import QtWidgets
+        import types
+        sb = _make_sb()
+        fake_mod = types.ModuleType("fake_external_tool_show_optout")
+        fake_mod.FakeUI = type("FakeUI", (QtWidgets.QMainWindow,), {})
+        sys.modules["fake_external_tool_show_optout"] = fake_mod
+        return sb
+
+    def test_show_false_does_not_show_widget(self):
+        sb = self._set_up()
+        h = sb.handlers.external_tool
+        h.register("so", module="fake_external_tool_show_optout",
+                   entry="FakeUI", mode="in_process")
+        with patch.object(
+            ExternalToolHandler, "_is_importable", return_value=True
+        ):
+            widget = h.launch("so", show=False)
+        self.assertFalse(
+            widget.isVisible(),
+            "show=False must return a non-visible widget.",
+        )
+
+    def test_show_false_still_wires_visibility_filter(self):
+        """Even without showing, the visibility forwarder must be
+        installed so the eventual show (via marking_menu or otherwise)
+        still drives the entries-changed signal."""
+        sb = self._set_up()
+        h = sb.handlers.external_tool
+        h.register("so", module="fake_external_tool_show_optout",
+                   entry="FakeUI", mode="in_process")
+        with patch.object(
+            ExternalToolHandler, "_is_importable", return_value=True
+        ):
+            widget = h.launch("so", show=False)
+        self.assertTrue(
+            getattr(widget, "_uitk_external_visibility_wired", False),
+            "show=False must still install the visibility event filter.",
+        )
+
+    def test_show_default_true_shows_widget(self):
+        """The default contract (show=True) is preserved."""
+        sb = self._set_up()
+        h = sb.handlers.external_tool
+        h.register("so", module="fake_external_tool_show_optout",
+                   entry="FakeUI", mode="in_process")
+        with patch.object(
+            ExternalToolHandler, "_is_importable", return_value=True
+        ):
+            widget = h.launch("so")
+        self.assertTrue(widget.isVisible())
+
+
+class TestInstallFailureSurfaces(unittest.TestCase):
+    """PackageManager exceptions must propagate as RuntimeError.
+
+    The original implementation let the underlying pip / install error
+    bubble unchanged, which made it hard for hosts to catch ``RuntimeError``
+    as the single "tool unavailable" signal. Wrap the failure so callers
+    get a consistent exception type.
+    """
+
+    def test_pm_install_exception_becomes_runtime_error(self):
+        sb = _make_sb()
+        h = sb.handlers.external_tool
+        pm_instance = MagicMock()
+        pm_instance.install.side_effect = OSError("network down")
+        with patch.object(
+            ExternalToolHandler, "_is_importable", return_value=False
+        ), patch(
+            "pythontk.PackageManager", return_value=pm_instance
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                h.launch(
+                    module="missing", entry="UI", install_spec="missing"
+                )
+        self.assertIn("Failed to install", str(ctx.exception))
+
+
 class TestSpawnSnippet(unittest.TestCase):
     """Verify the subprocess invocation shape without running it."""
 
