@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
-from uitk.widgets.mixins.preset_manager import QStandardPaths_writableLocation
+from uitk.widgets.mixins.preset_manager import PresetManager
 
 if TYPE_CHECKING:  # pragma: no cover
     from uitk.widgets.mixins.style_sheet import StyleSheet
@@ -225,7 +225,7 @@ class EditorPanel(QtWidgets.QWidget):
 
     # ── Preset management (opt-in) ───────────────────────────────
 
-    _preset_dir_name = None
+    _preset_mgr: "PresetManager | None" = None
     _cmb_preset = None
 
     def init_preset_row(self, dir_name):
@@ -239,9 +239,14 @@ class EditorPanel(QtWidgets.QWidget):
         Parameters
         ----------
         dir_name : str
-            Subdirectory name under ``AppConfigLocation/uitk/``.
+            Relative subdirectory under :func:`get_presets_root` (the
+            ecosystem-wide preset root). The editor's presets live in
+            ``<presets_root>/uitk/<dir_name>/``. ``PresetManager``
+            handles root resolution, ``M3TRIK_PRESETS_ROOT`` override,
+            and legacy migration from older locations like
+            ``<AppConfigLocation>/uitk/<dir_name>``.
         """
-        self._preset_dir_name = dir_name
+        self._preset_mgr = PresetManager(preset_dir=f"uitk/{dir_name}")
 
         FIXED_H = 20
         preset_layout = QtWidgets.QHBoxLayout()
@@ -289,10 +294,31 @@ class EditorPanel(QtWidgets.QWidget):
 
     @property
     def preset_dir(self) -> Path:
-        """Auto-derived preset directory under AppConfigLocation."""
-        d = Path(QStandardPaths_writableLocation()) / "uitk" / self._preset_dir_name
-        d.mkdir(parents=True, exist_ok=True)
-        return d
+        """The directory where this editor's preset files live.
+
+        Delegates to the underlying :class:`PresetManager`, which handles
+        consolidated-root resolution (``M3TRIK_PRESETS_ROOT`` override),
+        legacy migration, and directory creation.
+        """
+        if self._preset_mgr is None:
+            raise RuntimeError(
+                "preset_dir is unavailable until init_preset_row() runs."
+            )
+        return self._preset_mgr.preset_dir
+
+    @preset_dir.setter
+    def preset_dir(self, value) -> None:
+        """Redirect this editor's preset directory.
+
+        Accepts anything :attr:`PresetManager.preset_dir` accepts: a
+        full path, a tilde string, an env-var expression, or a path
+        relative to :func:`get_presets_root`.
+        """
+        if self._preset_mgr is None:
+            raise RuntimeError(
+                "preset_dir cannot be set before init_preset_row() runs."
+            )
+        self._preset_mgr.preset_dir = value
 
     def _preset_path(self, name: str) -> Path:
         safe = "".join(c if c.isalnum() or c in ("-", "_", " ") else "_" for c in name)

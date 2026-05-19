@@ -2,6 +2,7 @@
 # coding=utf-8
 import json
 import os
+import shutil
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional, Set, Union
@@ -107,15 +108,15 @@ class PresetManager(ptk.LoggingMixin):
           ``"%APPDATA%/myapp/presets"`` — expanded via
           `os.path.expandvars`.
         - **Relative / short name**: ``"mayatk/reference_manager"`` —
-          resolved under `QStandardPaths.writableLocation(AppConfigLocation)`.
+          resolved under :func:`get_presets_root` (default:
+          ``<AppConfigLocation>/m3trik/presets``).
 
         Returns:
             An absolute `Path`.
         """
         p = Path(os.path.expandvars(str(raw))).expanduser()
         if not p.is_absolute():
-            base = QStandardPaths_writableLocation()
-            p = Path(base) / p
+            p = get_presets_root() / p
         return p
 
     @classmethod
@@ -201,12 +202,19 @@ class PresetManager(ptk.LoggingMixin):
     def preset_dir(self) -> Path:
         """The directory where preset files are stored.
 
-        Defaults to ``<AppConfigLocation>/<window_name>/presets/``.
-        Created on first access.  When no *parent* is set (standalone
-        mode), *preset_dir* **must** be provided explicitly.
+        Defaults to ``<presets_root>/uitk/<window_name>/`` where
+        *presets_root* is :func:`get_presets_root`. Created on first
+        access. When no *parent* is set (standalone mode), *preset_dir*
+        **must** be provided explicitly.
 
         Can also be set to a ``str`` or ``Path``; tilde and
-        environment-variable expansion are applied automatically.
+        environment-variable expansion are applied automatically, and
+        relative values resolve under :func:`get_presets_root`.
+
+        On first access, if the resolved directory maps to a known
+        legacy location (see :data:`_LEGACY_PRESET_PATHS`), existing
+        presets are copied in once so the consolidation is invisible
+        to long-time users.
         """
         if self._preset_dir is None:
             if self.parent is not None:
@@ -222,13 +230,13 @@ class PresetManager(ptk.LoggingMixin):
                 )
                 # Strip switchboard instance suffixes (e.g. "name#1")
                 name = name.split("#")[0]
-                base = QStandardPaths_writableLocation()
-                self._preset_dir = Path(base) / name / "presets"
+                self._preset_dir = get_presets_root() / "uitk" / name
             else:
                 raise ValueError(
                     "preset_dir must be provided for standalone PresetManager"
                 )
 
+        _maybe_migrate_legacy(self._preset_dir)
         self._preset_dir.mkdir(parents=True, exist_ok=True)
         return self._preset_dir
 
@@ -707,6 +715,153 @@ def QStandardPaths_writableLocation() -> str:
     return QtCore.QStandardPaths.writableLocation(
         QtCore.QStandardPaths.AppConfigLocation
     )
+
+
+# ---------------------------------------------------------------------------
+# Consolidated preset root
+# ---------------------------------------------------------------------------
+#
+# All relative ``preset_dir`` values across the ecosystem resolve under a
+# single root, so a user looking for their saved data finds it in one place
+# instead of three (``~/.mayatk/presets``, ``~/.pythontk/presets``,
+# ``%LOCALAPPDATA%/uitk/*-presets``). The default lives under Qt's
+# AppConfigLocation (platform-native, not sync'd) and can be redirected
+# wholesale by setting ``M3TRIK_PRESETS_ROOT``.
+#
+# Existing presets from the legacy locations are copied in on first access
+# (see ``_maybe_migrate_legacy``). Completion is recorded by writing an
+# empty sentinel file per migrated package under ``<root>/.migration/`` —
+# per-key files avoid the read-modify-write race that a shared state file
+# would have when multiple host processes (Maya + Painter + CLI) start at
+# once.
+
+PRESETS_ROOT_ENV_VAR = "M3TRIK_PRESETS_ROOT"
+_PRESETS_ROOT_DEFAULT_SUBDIR = ("m3trik", "presets")
+_MIGRATION_DIR_NAME = ".migration"
+
+# Map: new relative path under the consolidated root → legacy absolute path
+# template. ``{APPCONFIG}`` is substituted with QStandardPaths.AppConfigLocation
+# at resolution time so the table itself stays declarative.
+#
+# Each entry represents a *package boundary*: when a request resolves to a
+# path under one of these keys (e.g. ``mayatk/substance_bridge/<template>``),
+# the *entire* legacy tree for that key is copied so sibling subdirs (other
+# bridge templates) come along for the ride — not just the requested leaf.
+_LEGACY_PRESET_PATHS: Dict[str, str] = {
+    "mayatk/substance_bridge": "~/.mayatk/presets/substance_bridge",
+    "mayatk/marmoset_bridge": "~/.mayatk/presets/marmoset_bridge",
+    "mayatk/rizom_bridge": "~/.mayatk/presets/rizom_bridge",
+    "mayatk/scene_exporter": "~/.mayatk/presets/scene_exporter",
+    "mayatk/reference_manager": "~/.mayatk/presets/reference_manager",
+    "mayatk/color_manager": "~/.mayatk/presets/color_manager",
+    "mayatk/shot_manifest_colors": "~/.mayatk/presets/shot_manifest_colors",
+    "extapps/map_packer": "~/.pythontk/presets/map_packer",
+    "uitk/style_presets": "{APPCONFIG}/uitk/style_presets",
+    "uitk/hotkey_presets": "{APPCONFIG}/uitk/hotkey_presets",
+    "uitk/switchboard_browser/presets": "{APPCONFIG}/uitk/switchboard_browser/presets",
+}
+
+
+def get_presets_root() -> Path:
+    """Root directory under which every relative ``preset_dir`` is resolved.
+
+    Defaults to ``<QStandardPaths.AppConfigLocation>/m3trik/presets``
+    (e.g. ``%LOCALAPPDATA%/m3trik/presets`` on Windows). Set the
+    ``M3TRIK_PRESETS_ROOT`` environment variable to redirect every
+    relative preset path wholesale (network share, alternate drive,
+    Documents subfolder, etc.). The override accepts ``~`` and
+    ``%ENVVAR%`` syntax; relative overrides are resolved against the
+    process working directory at access time so the return is always
+    absolute.
+    """
+    override = os.environ.get(PRESETS_ROOT_ENV_VAR)
+    if override:
+        p = Path(os.path.expandvars(override)).expanduser()
+    else:
+        p = Path(QStandardPaths_writableLocation()).joinpath(
+            *_PRESETS_ROOT_DEFAULT_SUBDIR
+        )
+    return p if p.is_absolute() else p.absolute()
+
+
+def _resolve_legacy_template(template: str) -> Path:
+    """Expand ``{APPCONFIG}``, environment variables, and ``~`` in *template*."""
+    if "{APPCONFIG}" in template:
+        template = template.replace("{APPCONFIG}", QStandardPaths_writableLocation())
+    return Path(os.path.expandvars(template)).expanduser()
+
+
+def _migration_sentinel_path(key: str) -> Path:
+    """Path to the per-key sentinel file marking a completed migration."""
+    safe = key.replace("/", "__").replace("\\", "__")
+    return get_presets_root() / _MIGRATION_DIR_NAME / safe
+
+
+def _has_migrated(key: str) -> bool:
+    return _migration_sentinel_path(key).exists()
+
+
+def _mark_migrated(key: str) -> None:
+    p = _migration_sentinel_path(key)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch(exist_ok=True)
+    except OSError:
+        pass
+
+
+def _maybe_migrate_legacy(new_dir: Path) -> None:
+    """Copy a legacy preset tree into the consolidated root once.
+
+    Finds the longest prefix of *new_dir*'s relative path that maps to a
+    known legacy location in :data:`_LEGACY_PRESET_PATHS`. When such a
+    package boundary is found and the migration sentinel does not yet
+    exist, copies the *entire* legacy tree (every subdir, every preset)
+    so sibling subdirs not yet requested are present too — this matters
+    for bridges that switch active template at runtime.
+
+    Existing files at the destination are never overwritten; if the user
+    already has presets in the new location, the legacy contents merge
+    in beside them. Marks the package migrated either way so subsequent
+    accesses are no-ops. Best-effort: I/O failures swallow rather than
+    propagate to keep preset loading robust at runtime.
+    """
+    presets_root = get_presets_root()
+    try:
+        rel = new_dir.relative_to(presets_root)
+    except ValueError:
+        return  # absolute path outside the consolidated root
+
+    matched_key: Optional[str] = None
+    for length in range(len(rel.parts), 0, -1):
+        candidate = "/".join(rel.parts[:length])
+        if candidate in _LEGACY_PRESET_PATHS:
+            matched_key = candidate
+            break
+    if matched_key is None or _has_migrated(matched_key):
+        return
+
+    # Migrate the whole package, not the requested leaf — sibling subdirs
+    # (e.g. other bridge templates) would otherwise be silently orphaned
+    # once the package is marked migrated.
+    legacy_pkg_root = _resolve_legacy_template(_LEGACY_PRESET_PATHS[matched_key])
+    new_pkg_root = presets_root.joinpath(*matched_key.split("/"))
+
+    if legacy_pkg_root.exists() and legacy_pkg_root.is_dir():
+        try:
+            new_pkg_root.mkdir(parents=True, exist_ok=True)
+            for item in legacy_pkg_root.iterdir():
+                dest = new_pkg_root / item.name
+                if dest.exists():
+                    continue
+                if item.is_dir():
+                    shutil.copytree(item, dest)
+                else:
+                    shutil.copy2(item, dest)
+        except (OSError, shutil.Error):
+            pass  # see docstring: best-effort
+
+    _mark_migrated(matched_key)
 
 
 # -----------------------------------------------------------------------------

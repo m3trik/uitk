@@ -526,13 +526,13 @@
       ]
     },
     {
-      "relpath": "handlers/external_tool_handler.py",
-      "summary": "Register, install-on-demand, and launch external Python tools as subprocesses.",
+      "relpath": "handlers/external_app_handler.py",
+      "summary": "Register, install-on-demand, and launch external Python apps as subprocesses.",
       "functions": [],
       "classes": [
         {
-          "name": "ExternalToolHandler",
-          "summary": "Switchboard handler for launching external Python tools.",
+          "name": "ExternalAppHandler",
+          "summary": "Switchboard handler for launching external Python apps.",
           "line": 114,
           "bases": [
             "BaseHandler"
@@ -540,25 +540,25 @@
           "members": [
             {
               "name": "discover",
-              "qualname": "ExternalToolHandler.discover",
+              "qualname": "ExternalAppHandler.discover",
               "kind": "method",
               "signature": "(self, groups: Optional[Iterable[str]] = None) -> int",
-              "summary": "Auto-register every tool advertised under a uitk entry-point group.",
+              "summary": "Auto-register every app advertised under a uitk entry-point group.",
               "line": 158,
               "deprecated": false
             },
             {
               "name": "register",
-              "qualname": "ExternalToolHandler.register",
+              "qualname": "ExternalAppHandler.register",
               "kind": "method",
               "signature": "(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None) -> None",
-              "summary": "Pre-register a tool so it can be launched by name.",
+              "summary": "Pre-register an app so it can be launched by name.",
               "line": 222,
               "deprecated": false
             },
             {
               "name": "is_registered",
-              "qualname": "ExternalToolHandler.is_registered",
+              "qualname": "ExternalAppHandler.is_registered",
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
@@ -567,25 +567,25 @@
             },
             {
               "name": "unregister",
-              "qualname": "ExternalToolHandler.unregister",
+              "qualname": "ExternalAppHandler.unregister",
               "kind": "method",
               "signature": "(self, name: str) -> None",
-              "summary": "Remove a tool.",
+              "summary": "Remove an app.",
               "line": 277,
               "deprecated": false
             },
             {
               "name": "entries",
-              "qualname": "ExternalToolHandler.entries",
+              "qualname": "ExternalAppHandler.entries",
               "kind": "method",
               "signature": "(self) -> Iterable[HandlerEntry]",
-              "summary": "Yield one :class:`HandlerEntry` per registered tool.",
+              "summary": "Yield one :class:`HandlerEntry` per registered app.",
               "line": 286,
               "deprecated": false
             },
             {
               "name": "save_tags",
-              "qualname": "ExternalToolHandler.save_tags",
+              "qualname": "ExternalAppHandler.save_tags",
               "kind": "method",
               "signature": "(self, name: str, tags: Iterable[str]) -> None",
               "summary": "Persist *tags* for *name* in the handler's config branch.",
@@ -594,7 +594,7 @@
             },
             {
               "name": "close",
-              "qualname": "ExternalToolHandler.close",
+              "qualname": "ExternalAppHandler.close",
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Hide an in-process widget;",
@@ -603,7 +603,7 @@
             },
             {
               "name": "is_visible",
-              "qualname": "ExternalToolHandler.is_visible",
+              "qualname": "ExternalAppHandler.is_visible",
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
@@ -612,10 +612,10 @@
             },
             {
               "name": "launch",
-              "qualname": "ExternalToolHandler.launch",
+              "qualname": "ExternalAppHandler.launch",
               "kind": "method",
               "signature": "(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, show: bool = True, **_options)",
-              "summary": "Launch a registered tool, or an ad-hoc tool from kwargs.",
+              "summary": "Launch a registered app, or an ad-hoc app from kwargs.",
               "line": 425,
               "deprecated": false
             }
