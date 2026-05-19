@@ -12,8 +12,11 @@ Public symbols are lazy-loaded via the root ``uitk`` package's
         infer_kind, register_kind, get_handler,
     )
 
-Implementation lives in the underscored sibling modules:
+Implementation lives in:
 
 * :mod:`uitk.widgets.attributeWindow._attributeWindow` — the popup widget.
-* :mod:`uitk.widgets.attributeWindow._factory` — declarative widget factory.
+* :mod:`uitk.bridge.spec` — canonical home of the :class:`AttributeSpec`
+  dataclass and the kind-handler registry shared with the DCC bridges.
+  The sibling ``_factory.py`` is a back-compat shim that re-exports from
+  :mod:`uitk.bridge.spec` for existing call sites.
 """
