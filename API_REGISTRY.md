@@ -11,7 +11,7 @@ _Generated: 2026-05-19_
 - [`examples/example.py`](#examples--example) — UITK Example — a polished tour of the framework.
 - [`file_manager.py`](#file_manager) — File and directory management utilities for UITK.
 - [`handlers/base_handler.py`](#handlers--base_handler) — Common infrastructure for Switchboard handlers.
-- [`handlers/external_tool_handler.py`](#handlers--external_tool_handler) — Register, install-on-demand, and launch external Python tools as subprocesses.
+- [`handlers/external_app_handler.py`](#handlers--external_app_handler) — Register, install-on-demand, and launch external Python apps as subprocesses.
 - [`handlers/handler_entry.py`](#handlers--handler_entry) — Unified launchable-entry data class shared by all Switchboard handlers.
 - [`handlers/ui_handler.py`](#handlers--ui_handler)
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
@@ -192,21 +192,21 @@ Common infrastructure for Switchboard handlers.
   - `LaunchableHandlerProtocol.close(self, name: str) -> None`
   - `LaunchableHandlerProtocol.is_visible(self, name: str) -> bool`
 
-<a id="handlers--external_tool_handler"></a>
-### `handlers/external_tool_handler.py`
+<a id="handlers--external_app_handler"></a>
+### `handlers/external_app_handler.py`
 
-Register, install-on-demand, and launch external Python tools as subprocesses.
+Register, install-on-demand, and launch external Python apps as subprocesses.
 
-- **[`class ExternalToolHandler(BaseHandler)`](uitk/uitk/handlers/external_tool_handler.py#L114)** — Switchboard handler for launching external Python tools.
-  - `ExternalToolHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every tool advertised under a uitk entry-point group.
-  - `ExternalToolHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None) -> None` — Pre-register a tool so it can be launched by name.
-  - `ExternalToolHandler.is_registered(self, name: str) -> bool`
-  - `ExternalToolHandler.unregister(self, name: str) -> None` — Remove a tool.
-  - `ExternalToolHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per registered tool.
-  - `ExternalToolHandler.save_tags(self, name: str, tags: Iterable[str]) -> None` — Persist *tags* for *name* in the handler's config branch.
-  - `ExternalToolHandler.close(self, name: str) -> None` — Hide an in-process widget;
-  - `ExternalToolHandler.is_visible(self, name: str) -> bool`
-  - `ExternalToolHandler.launch(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, show: bool = True, **_options)` — Launch a registered tool, or an ad-hoc tool from kwargs.
+- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L114)** — Switchboard handler for launching external Python apps.
+  - `ExternalAppHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every app advertised under a uitk entry-point group.
+  - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None) -> None` — Pre-register an app so it can be launched by name.
+  - `ExternalAppHandler.is_registered(self, name: str) -> bool`
+  - `ExternalAppHandler.unregister(self, name: str) -> None` — Remove an app.
+  - `ExternalAppHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per registered app.
+  - `ExternalAppHandler.save_tags(self, name: str, tags: Iterable[str]) -> None` — Persist *tags* for *name* in the handler's config branch.
+  - `ExternalAppHandler.close(self, name: str) -> None` — Hide an in-process widget;
+  - `ExternalAppHandler.is_visible(self, name: str) -> bool`
+  - `ExternalAppHandler.launch(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, show: bool = True, **_options)` — Launch a registered app, or an ad-hoc app from kwargs.
 
 <a id="handlers--handler_entry"></a>
 ### `handlers/handler_entry.py`
