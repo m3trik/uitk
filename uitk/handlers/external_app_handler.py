@@ -1,18 +1,18 @@
-"""Register, install-on-demand, and launch external Python tools as subprocesses.
+"""Register, install-on-demand, and launch external Python apps as subprocesses.
 
-Each tool is a pip-installable Python package whose UI is exposed via a
-class (entry point). Tools run in a fresh interpreter so they don't share
+Each app is a pip-installable Python package whose UI is exposed via a
+class (entry point). Apps run in a fresh interpreter so they don't share
 the host process's Qt event loop or block Maya / Blender / Max on errors.
 
 Typical usage::
 
-    sb.handlers.external_tool.register(
+    sb.handlers.external_app.register(
         "map_compositor",
-        module="map_compositor",
+        module="extapps.map_compositor",
         entry="MapCompositorUI",
-        install_spec="map_compositor",
+        install_spec="extapps",
     )
-    sb.handlers.external_tool.launch("map_compositor")
+    sb.handlers.external_app.launch("map_compositor")
 """
 import os
 import shutil
@@ -74,7 +74,7 @@ class _VisibilityForwarder:
 
     Qt's QEvent.Show / QEvent.Hide fire on every QWidget regardless of
     inheritance, so this works for uitk MainWindows, plain QWidgets,
-    and anything in between — important because external tools can
+    and anything in between — important because external apps can
     return arbitrary widget classes.
     """
 
@@ -111,28 +111,28 @@ class _VisibilityForwarder:
         return cls._qt_class(handler, name, parent)
 
 
-class ExternalToolHandler(BaseHandler):
-    """Switchboard handler for launching external Python tools.
+class ExternalAppHandler(BaseHandler):
+    """Switchboard handler for launching external Python apps.
 
-    Resolves the tool's importability in a target Python interpreter,
+    Resolves the app's importability in a target Python interpreter,
     installs the package via :class:`pythontk.PackageManager` when
     missing, and launches the UI in a detached subprocess via
     :class:`pythontk.AppLauncher`.
 
-    Implements the launchable contract so registered tools appear
+    Implements the launchable contract so registered apps appear
     alongside .ui-backed UIs in the unified launcher (e.g. browser).
     """
 
-    CONFIG_BRANCH = "external_tool"
+    CONFIG_BRANCH = "external_app"
     DEFAULTS: dict = {}
 
     # Entry-point groups consulted by :meth:`discover` to find
-    # self-describing tools installed in the current environment.
-    # Mapping is group -> default mode. The tool's pyproject.toml
+    # self-describing apps installed in the current environment.
+    # Mapping is group -> default mode. The app's pyproject.toml
     # declares which group it belongs to; hosts don't need to know.
     DISCOVERY_GROUPS: Dict[str, str] = {
-        "uitk.external_tools": "subprocess",
-        "uitk.external_tools.in_process": "in_process",
+        "uitk.external_apps": "subprocess",
+        "uitk.external_apps.in_process": "in_process",
     }
 
     def __init__(
@@ -143,8 +143,8 @@ class ExternalToolHandler(BaseHandler):
         **kwargs,
     ):
         super().__init__(switchboard=switchboard, log_level=log_level)
-        self._tools: Dict[str, dict] = {}
-        # Cache of widgets returned in in-process mode, keyed by tool name.
+        self._apps: Dict[str, dict] = {}
+        # Cache of widgets returned in in-process mode, keyed by app name.
         # Re-launching by name returns the cached widget so close-and-reopen
         # via the same button doesn't create duplicate windows.
         self._in_process_widgets: Dict[str, object] = {}
@@ -156,27 +156,27 @@ class ExternalToolHandler(BaseHandler):
             self.discover()
 
     def discover(self, groups: Optional[Iterable[str]] = None) -> int:
-        """Auto-register every tool advertised under a uitk entry-point group.
+        """Auto-register every app advertised under a uitk entry-point group.
 
-        Tools opt in by declaring an entry point in their own package
-        metadata — no host edits required to surface a new tool. Two
+        Apps opt in by declaring an entry point in their own package
+        metadata — no host edits required to surface a new app. Two
         groups are recognised by default:
 
-        * ``uitk.external_tools`` — launched in a subprocess (safe default).
-        * ``uitk.external_tools.in_process`` — launched in the current
-          interpreter (for Qt-clean tools that want to be parented under
+        * ``uitk.external_apps`` — launched in a subprocess (safe default).
+        * ``uitk.external_apps.in_process`` — launched in the current
+          interpreter (for Qt-clean apps that want to be parented under
           a DCC host like Maya).
 
-        Example (in a tool's ``pyproject.toml``)::
+        Example (in an app's ``pyproject.toml``)::
 
-            [project.entry-points."uitk.external_tools.in_process"]
+            [project.entry-points."uitk.external_apps.in_process"]
             metashape_workflow = "metashape_workflow:MetashapeWorkflowUI [photogrammetry,materials]"
 
         ``name = module:Class [tag1,tag2,...]`` — name becomes the
         registration key, ``module:Class`` becomes module + entry,
         bracketed extras become tags.
 
-        Returns the count of tools newly registered. Re-registers
+        Returns the count of apps newly registered. Re-registers
         existing entries on each call (idempotent).
         """
         try:
@@ -214,7 +214,7 @@ class ExternalToolHandler(BaseHandler):
                 count += 1
         if count:
             self.logger.debug(
-                f"[discover] registered {count} tool(s) "
+                f"[discover] registered {count} app(s) "
                 f"from groups {list(scan)}"
             )
         return count
@@ -231,15 +231,15 @@ class ExternalToolHandler(BaseHandler):
         mode: str = "subprocess",
         tags: Optional[Iterable[str]] = None,
     ) -> None:
-        """Pre-register a tool so it can be launched by name.
+        """Pre-register an app so it can be launched by name.
 
         Parameters:
             name: Unique identifier used with :meth:`launch`.
-            module: Importable module name (e.g. ``"map_compositor"``).
+            module: Importable module name (e.g. ``"extapps.map_compositor"``).
             entry: Class/callable inside *module* that returns a uitk
                 MainWindow when invoked. Required for ``mode="in_process"``.
                 In ``mode="subprocess"`` it's optional — if omitted the
-                tool is launched via ``python -m <module>``.
+                app is launched via ``python -m <module>``.
             install_spec: ``pip install`` target used when *module* is
                 not importable. PyPI name, ``git+https://...`` URL, or
                 any value pip accepts. If *None*, a missing module
@@ -256,11 +256,11 @@ class ExternalToolHandler(BaseHandler):
                 imports into the current interpreter and returns the UI
                 widget so the caller can parent / show / dock it
                 (e.g. under a Maya main window).
-            tags: Optional iterable of tags applied to this tool's
+            tags: Optional iterable of tags applied to this app's
                 :class:`HandlerEntry`. Surfaces in the browser's tag
                 filter just like .ui-backed tags.
         """
-        self._tools[name] = {
+        self._apps[name] = {
             "module": module,
             "entry": entry,
             "install_spec": install_spec,
@@ -272,11 +272,11 @@ class ExternalToolHandler(BaseHandler):
         self._notify_entries_changed()
 
     def is_registered(self, name: str) -> bool:
-        return name in self._tools
+        return name in self._apps
 
     def unregister(self, name: str) -> None:
-        """Remove a tool. No-op if not registered."""
-        if self._tools.pop(name, None) is not None:
+        """Remove an app. No-op if not registered."""
+        if self._apps.pop(name, None) is not None:
             self._in_process_widgets.pop(name, None)
             self._subprocesses.pop(name, None)
             self._notify_entries_changed()
@@ -284,7 +284,7 @@ class ExternalToolHandler(BaseHandler):
     # ── Launchable contract ──────────────────────────────────────────────
 
     def entries(self) -> Iterable[HandlerEntry]:
-        """Yield one :class:`HandlerEntry` per registered tool.
+        """Yield one :class:`HandlerEntry` per registered app.
 
         Kind reflects the launch mode so the browser can render a
         distinguishing chip.
@@ -298,10 +298,10 @@ class ExternalToolHandler(BaseHandler):
             config branch via :meth:`save_tags`. Editable inline (the
             browser's QLineEdit delegate calls back into us). Always a
             (possibly empty) frozenset — never ``None`` — so every
-            external-tool row is editable, just like .ui rows.
+            external-app row is editable, just like .ui rows.
         """
         user_tags = self._user_tags()
-        for name, cfg in self._tools.items():
+        for name, cfg in self._apps.items():
             mode = cfg.get("mode", "subprocess")
             kind = (
                 "external_in_process"
@@ -317,7 +317,7 @@ class ExternalToolHandler(BaseHandler):
                 # No on-disk file — the editable_tags property checks
                 # ``filepath is not None``, so we expose a synthetic
                 # config:// URI to mark "editable, but not file-backed".
-                filepath=f"config://external_tool/{name}",
+                filepath=f"config://external_app/{name}",
             )
 
     # ── Editable tags via the handler's config branch ────────────────────
@@ -325,7 +325,7 @@ class ExternalToolHandler(BaseHandler):
     _USER_TAGS_KEY = "user_tags"
 
     def _user_tags(self) -> Dict[str, list]:
-        """Return the persisted {tool_name: [tag, …]} dict.
+        """Return the persisted {app_name: [tag, …]} dict.
 
         Stored under a single key so the whole mapping round-trips
         through QSettings as one value (avoids per-key fan-out and the
@@ -340,7 +340,7 @@ class ExternalToolHandler(BaseHandler):
         if not isinstance(raw, dict):
             return {}
         cleaned: Dict[str, list] = {}
-        for tool_name, tags in raw.items():
+        for app_name, tags in raw.items():
             if not isinstance(tags, (list, tuple)):
                 continue
             kept = sorted({
@@ -350,7 +350,7 @@ class ExternalToolHandler(BaseHandler):
                 and (stripped := t.strip().lstrip("#").strip())
             })
             if kept:
-                cleaned[tool_name] = kept
+                cleaned[app_name] = kept
         return cleaned
 
     def save_tags(self, name: str, tags: Iterable[str]) -> None:
@@ -361,8 +361,8 @@ class ExternalToolHandler(BaseHandler):
         across sessions via :class:`SettingsManager` so the user's
         curation isn't lost on app restart.
         """
-        if name not in self._tools:
-            raise ValueError(f"No such external tool: {name!r}")
+        if name not in self._apps:
+            raise ValueError(f"No such external app: {name!r}")
         # Strip leading "#" too — that prefix is display formatting,
         # not part of the tag identity. Stored values stay "clean" so
         # filtering / set-comparison works without double-hashing.
@@ -435,7 +435,7 @@ class ExternalToolHandler(BaseHandler):
         show: bool = True,
         **_options,
     ):
-        """Launch a registered tool, or an ad-hoc tool from kwargs.
+        """Launch a registered app, or an ad-hoc app from kwargs.
 
         Kwargs override any value supplied at :meth:`register` time. The
         combined config must at minimum provide *module*.
@@ -456,7 +456,7 @@ class ExternalToolHandler(BaseHandler):
             window — and shown/raised/activated when ``show=True``).
             Caller may re-parent or re-show but no longer has to.
         """
-        cfg = dict(self._tools.get(name, {})) if name else {}
+        cfg = dict(self._apps.get(name, {})) if name else {}
         for k, v in (
             ("module", module),
             ("entry", entry),
@@ -535,15 +535,15 @@ class ExternalToolHandler(BaseHandler):
         relative positioning) and just needs the widget primed.
 
         Re-parenting preserves the widget's own ``windowFlags`` (external
-        tools come fully-styled — frameless, translucent, etc.); passing
+        apps come fully-styled — frameless, translucent, etc.); passing
         a bare ``Qt.Window`` to ``setParent`` would replace flags wholesale
         and break the look. The ``| Qt.Window`` is required because Qt
         only treats a child as a top-level window when that flag is set;
-        without it, the tool would dock as an inline child of the host.
+        without it, the app would dock as an inline child of the host.
 
         Also installs a visibility-tracking event filter on the widget
         (idempotent) so the row-state refresh signal fires when the user
-        hides the tool by any path — its own header X, ALT+F4, a
+        hides the app by any path — its own header X, ALT+F4, a
         programmatic ``widget.hide()``. Without this, the browser's row
         icon stays stuck on "Focus" because no entries-changed signal
         ever fires on hide.
@@ -591,7 +591,7 @@ class ExternalToolHandler(BaseHandler):
         in scope as long as the widget does.
 
         Event filter is preferred over signal hookup because external
-        tools may or may not be uitk MainWindows; ``QEvent.Show``/
+        apps may or may not be uitk MainWindows; ``QEvent.Show``/
         ``QEvent.Hide`` fire on every QWidget regardless of inheritance.
         """
         if getattr(widget, "_uitk_external_visibility_wired", False):

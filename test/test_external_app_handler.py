@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for ExternalToolHandler — mock-only, no real subprocess / network."""
+"""Tests for ExternalAppHandler — mock-only, no real subprocess / network."""
 import os
 import sys
 import unittest
@@ -11,18 +11,18 @@ from conftest import setup_qt_application
 setup_qt_application()
 
 from uitk import Switchboard
-from uitk.handlers.external_tool_handler import ExternalToolHandler
+from uitk.handlers.external_app_handler import ExternalAppHandler
 
 
 def _make_sb():
-    return Switchboard(handlers={"external_tool": ExternalToolHandler})
+    return Switchboard(handlers={"external_app": ExternalAppHandler})
 
 
-class TestExternalToolVisibilityTracking(unittest.TestCase):
+class TestExternalAppVisibilityTracking(unittest.TestCase):
     """In-process widget show/hide must fire entries-changed signals.
 
     Regression: without this wiring, the browser's row icon stayed on
-    "Focus" forever once the user hid the external tool's window —
+    "Focus" forever once the user hid the external app's window —
     only the *live-queried* state (footer text, name-column gold-italic)
     updated, because the dataChanged-driven button refresh never fired.
 
@@ -35,19 +35,19 @@ class TestExternalToolVisibilityTracking(unittest.TestCase):
         from qtpy import QtWidgets
         import types
         sb = _make_sb()
-        fake_mod = types.ModuleType("fake_external_tool_visibility")
+        fake_mod = types.ModuleType("fake_external_app_visibility")
         fake_mod.FakeUI = type("FakeUI", (QtWidgets.QMainWindow,), {})
-        sys.modules["fake_external_tool_visibility"] = fake_mod
+        sys.modules["fake_external_app_visibility"] = fake_mod
         return sb
 
     def test_event_filter_installed_on_show(self):
         from qtpy import QtWidgets
         sb = self._set_up()
-        h = sb.handlers.external_tool
-        h.register("vt", module="fake_external_tool_visibility",
+        h = sb.handlers.external_app
+        h.register("vt", module="fake_external_app_visibility",
                    entry="FakeUI", mode="in_process")
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ):
             widget = h.launch("vt")
         self.assertTrue(
@@ -58,15 +58,15 @@ class TestExternalToolVisibilityTracking(unittest.TestCase):
     def test_widget_hide_fires_entry_changed_signal(self):
         from qtpy import QtWidgets, QtCore
         sb = self._set_up()
-        h = sb.handlers.external_tool
-        h.register("vt", module="fake_external_tool_visibility",
+        h = sb.handlers.external_app
+        h.register("vt", module="fake_external_app_visibility",
                    entry="FakeUI", mode="in_process")
         received = []
         sb.on_handler_entry_changed.connect(
             lambda hn, en: received.append((hn, en))
         )
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ):
             widget = h.launch("vt")
         # Show event fires on launch; clear baseline.
@@ -83,11 +83,11 @@ class TestExternalToolVisibilityTracking(unittest.TestCase):
     def test_filter_is_idempotent(self):
         from qtpy import QtWidgets
         sb = self._set_up()
-        h = sb.handlers.external_tool
-        h.register("vt", module="fake_external_tool_visibility",
+        h = sb.handlers.external_app
+        h.register("vt", module="fake_external_app_visibility",
                    entry="FakeUI", mode="in_process")
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ):
             widget = h.launch("vt")
             # Re-launching should NOT install a second filter
@@ -103,8 +103,8 @@ class TestExternalToolVisibilityTracking(unittest.TestCase):
         self.assertTrue(getattr(widget, "_uitk_external_visibility_wired"))
 
 
-class TestExternalToolUserTags(unittest.TestCase):
-    """User-edited tags on external tools persist via the handler's config.
+class TestExternalAppUserTags(unittest.TestCase):
+    """User-edited tags on external apps persist via the handler's config.
 
     External tools have no XML backing file, so the .ui semantic of
     "file_tags = XML tags" doesn't apply directly. Instead, the handler
@@ -117,12 +117,12 @@ class TestExternalToolUserTags(unittest.TestCase):
     def _fresh_sb(self):
         sb = _make_sb()
         # Wipe any leftover config from a prior test.
-        sb.handlers.external_tool.config.setValue("user_tags", {})
+        sb.handlers.external_app.config.setValue("user_tags", {})
         return sb
 
     def test_save_tags_persists_to_config(self):
         sb = self._fresh_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         h.register("mytool", module="mytool", entry="UI")
         h.save_tags("mytool", ["alpha", "beta"])
         self.assertEqual(
@@ -133,7 +133,7 @@ class TestExternalToolUserTags(unittest.TestCase):
     def test_save_tags_normalises_input(self):
         """Strips whitespace and empty entries; result is sorted."""
         sb = self._fresh_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         h.register("mytool", module="mytool", entry="UI")
         h.save_tags("mytool", [" b ", "a", "", "  ", "a"])  # dupes + blanks
         self.assertEqual(
@@ -145,7 +145,7 @@ class TestExternalToolUserTags(unittest.TestCase):
         """Clearing all tags drops the tool from the persisted dict —
         no growing-empty-keys cruft over time."""
         sb = self._fresh_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         h.register("mytool", module="mytool", entry="UI")
         h.save_tags("mytool", ["x"])
         h.save_tags("mytool", [])
@@ -158,7 +158,7 @@ class TestExternalToolUserTags(unittest.TestCase):
         '##photogrammetry' and the chip filter / context-menu items all
         get the doubled prefix."""
         sb = self._fresh_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         h.register("mytool", module="mytool", entry="UI")
         h.save_tags("mytool", ["#photogrammetry", "##oldbug", "  #materials "])
         self.assertEqual(
@@ -171,7 +171,7 @@ class TestExternalToolUserTags(unittest.TestCase):
         in stored values. ``_user_tags`` cleans on read so the bug
         doesn't keep re-rendering as '##tag'."""
         sb = self._fresh_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         h.register("mytool", module="mytool", entry="UI")
         # Bypass save_tags' cleanup — write raw bad data straight to config.
         h.config.setValue(
@@ -186,14 +186,14 @@ class TestExternalToolUserTags(unittest.TestCase):
     def test_save_tags_unknown_tool_raises(self):
         sb = self._fresh_sb()
         with self.assertRaises(ValueError):
-            sb.handlers.external_tool.save_tags("ghost", ["x"])
+            sb.handlers.external_app.save_tags("ghost", ["x"])
 
     def test_entries_expose_user_tags_as_file_tags(self):
         """The browser's editable tag column reads from FileTagsRole.
         User-added tags must appear there (not in inherited_tags) so
         the inline editor's text matches what the user typed."""
         sb = self._fresh_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         h.register("mytool", module="mytool", entry="UI", tags={"declared"})
         h.save_tags("mytool", ["user_added"])
         entry = next(e for e in h.entries() if e.name == "mytool")
@@ -207,7 +207,7 @@ class TestExternalToolUserTags(unittest.TestCase):
 
 class _FakeEP:
     """Minimal stand-in for ``importlib.metadata.EntryPoint`` — only the
-    fields ``ExternalToolHandler.discover`` reads."""
+    fields ``ExternalAppHandler.discover`` reads."""
 
     def __init__(self, name, module, attr, extras=()):
         self.name = name
@@ -216,7 +216,7 @@ class _FakeEP:
         self.extras = list(extras)
 
 
-class TestExternalToolDiscovery(unittest.TestCase):
+class TestExternalAppDiscovery(unittest.TestCase):
     """Entry-point discovery is the contract that lets tools self-describe.
 
     Without it, every host (tentacle, etc.) had to enumerate tools in
@@ -226,9 +226,9 @@ class TestExternalToolDiscovery(unittest.TestCase):
 
     def _patched_eps(self, inproc=(), subproc=()):
         def _fn(group=None):
-            if group == "uitk.external_tools.in_process":
+            if group == "uitk.external_apps.in_process":
                 return list(inproc)
-            if group == "uitk.external_tools":
+            if group == "uitk.external_apps":
                 return list(subproc)
             return []
         return patch("importlib.metadata.entry_points", side_effect=_fn)
@@ -238,9 +238,9 @@ class TestExternalToolDiscovery(unittest.TestCase):
                        "MetashapeWorkflowUI", ["photogrammetry"])]
         with self._patched_eps(inproc=eps):
             sb = _make_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         self.assertTrue(h.is_registered("metashape_workflow"))
-        cfg = h._tools["metashape_workflow"]
+        cfg = h._apps["metashape_workflow"]
         self.assertEqual(cfg["mode"], "in_process")
         self.assertEqual(cfg["module"], "metashape_workflow")
         self.assertEqual(cfg["entry"], "MetashapeWorkflowUI")
@@ -250,7 +250,7 @@ class TestExternalToolDiscovery(unittest.TestCase):
         eps = [_FakeEP("widget_kit", "widget_kit", "MainUI", ["utility"])]
         with self._patched_eps(subproc=eps):
             sb = _make_sb()
-        cfg = sb.handlers.external_tool._tools["widget_kit"]
+        cfg = sb.handlers.external_app._apps["widget_kit"]
         self.assertEqual(cfg["mode"], "subprocess")
         self.assertEqual(cfg["tags"], frozenset({"utility"}))
 
@@ -259,8 +259,8 @@ class TestExternalToolDiscovery(unittest.TestCase):
         eps = [_FakeEP("noisy_tool", "noisy_tool", "UI")]
         with self._patched_eps(inproc=eps):
             sb = Switchboard()  # No handler yet
-            h = ExternalToolHandler(switchboard=sb, auto_discover=False)
-            sb.register_handler("external_tool", h)
+            h = ExternalAppHandler(switchboard=sb, auto_discover=False)
+            sb.register_handler("external_app", h)
         self.assertFalse(h.is_registered("noisy_tool"))
 
     def test_manual_registration_overrides_discovered_mode(self):
@@ -269,11 +269,11 @@ class TestExternalToolDiscovery(unittest.TestCase):
         eps = [_FakeEP("flexible_tool", "flexible_tool", "UI")]
         with self._patched_eps(subproc=eps):
             sb = _make_sb()
-        h = sb.handlers.external_tool
-        self.assertEqual(h._tools["flexible_tool"]["mode"], "subprocess")
+        h = sb.handlers.external_app
+        self.assertEqual(h._apps["flexible_tool"]["mode"], "subprocess")
         h.register("flexible_tool", module="flexible_tool",
                    entry="UI", mode="in_process")
-        self.assertEqual(h._tools["flexible_tool"]["mode"], "in_process")
+        self.assertEqual(h._apps["flexible_tool"]["mode"], "in_process")
 
     def test_entries_surface_discovered_tools(self):
         """The whole point: discovered tools flow through the unified
@@ -287,52 +287,52 @@ class TestExternalToolDiscovery(unittest.TestCase):
         self.assertEqual(names, {"alpha", "beta"})
 
 
-class TestExternalToolHandlerRegistry(unittest.TestCase):
+class TestExternalAppHandlerRegistry(unittest.TestCase):
     def test_handler_attached_to_switchboard(self):
         sb = _make_sb()
-        self.assertIsInstance(sb.handlers.external_tool, ExternalToolHandler)
+        self.assertIsInstance(sb.handlers.external_app, ExternalAppHandler)
 
     def test_singleton_key_does_not_collide_with_other_handlers(self):
         """Regression: SingletonMixin._instances is shared across subclasses,
         so two handlers using `singleton_key=id(switchboard)` would collide and
         the second registration would silently return the first handler's
-        instance. ExternalToolHandler must scope its key by class."""
+        instance. ExternalAppHandler must scope its key by class."""
         from uitk.handlers.ui_handler import UiHandler
 
         sb = Switchboard(
-            handlers={"ui": UiHandler, "external_tool": ExternalToolHandler}
+            handlers={"ui": UiHandler, "external_app": ExternalAppHandler}
         )
         self.assertIsInstance(sb.handlers.ui, UiHandler)
-        self.assertIsInstance(sb.handlers.external_tool, ExternalToolHandler)
-        self.assertIsNot(sb.handlers.ui, sb.handlers.external_tool)
+        self.assertIsInstance(sb.handlers.external_app, ExternalAppHandler)
+        self.assertIsNot(sb.handlers.ui, sb.handlers.external_app)
 
     def test_register_stores_config(self):
         sb = _make_sb()
-        sb.handlers.external_tool.register(
+        sb.handlers.external_app.register(
             "mytool",
             module="mytool",
             entry="MyToolUI",
             install_spec="mytool==1.0",
         )
-        self.assertTrue(sb.handlers.external_tool.is_registered("mytool"))
+        self.assertTrue(sb.handlers.external_app.is_registered("mytool"))
 
     def test_launch_unknown_name_without_module_raises(self):
         sb = _make_sb()
         with self.assertRaises(ValueError):
-            sb.handlers.external_tool.launch("nonexistent")
+            sb.handlers.external_app.launch("nonexistent")
 
 
-class TestExternalToolHandlerLaunch(unittest.TestCase):
+class TestExternalAppHandlerLaunch(unittest.TestCase):
     def setUp(self):
         self.sb = _make_sb()
-        self.handler = self.sb.handlers.external_tool
+        self.handler = self.sb.handlers.external_app
 
     def test_importable_module_skips_install(self):
         """When module is importable, no install should run."""
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ) as is_imp, patch("pythontk.PackageManager") as pm, patch.object(
-            ExternalToolHandler, "_spawn", return_value=MagicMock()
+            ExternalAppHandler, "_spawn", return_value=MagicMock()
         ) as spawn:
             self.handler.launch(module="anymod", entry="UI")
         is_imp.assert_called_once()
@@ -343,11 +343,11 @@ class TestExternalToolHandlerLaunch(unittest.TestCase):
         """When module is not importable but install_spec is set, install runs."""
         pm_instance = MagicMock()
         with patch.object(
-            ExternalToolHandler,
+            ExternalAppHandler,
             "_is_importable",
             side_effect=[False, True],
         ), patch("pythontk.PackageManager", return_value=pm_instance), patch.object(
-            ExternalToolHandler, "_spawn", return_value=MagicMock()
+            ExternalAppHandler, "_spawn", return_value=MagicMock()
         ) as spawn:
             self.handler.launch(
                 module="anymod", entry="UI", install_spec="anymod"
@@ -357,7 +357,7 @@ class TestExternalToolHandlerLaunch(unittest.TestCase):
 
     def test_missing_module_without_install_spec_raises(self):
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=False
+            ExternalAppHandler, "_is_importable", return_value=False
         ):
             with self.assertRaises(RuntimeError):
                 self.handler.launch(module="missingmod", entry="UI")
@@ -365,7 +365,7 @@ class TestExternalToolHandlerLaunch(unittest.TestCase):
     def test_install_that_does_not_make_module_importable_raises(self):
         pm_instance = MagicMock()
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=False
+            ExternalAppHandler, "_is_importable", return_value=False
         ), patch("pythontk.PackageManager", return_value=pm_instance):
             with self.assertRaises(RuntimeError) as ctx:
                 self.handler.launch(
@@ -387,8 +387,8 @@ class TestExternalToolHandlerLaunch(unittest.TestCase):
             return MagicMock()
 
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
-        ), patch.object(ExternalToolHandler, "_spawn", side_effect=fake_spawn):
+            ExternalAppHandler, "_is_importable", return_value=True
+        ), patch.object(ExternalAppHandler, "_spawn", side_effect=fake_spawn):
             self.handler.launch("tool", module="overridemod", entry="OverrideEntry")
         self.assertEqual(captured["module"], "overridemod")
         self.assertEqual(captured["entry"], "OverrideEntry")
@@ -397,7 +397,7 @@ class TestExternalToolHandlerLaunch(unittest.TestCase):
 class TestInProcessMode(unittest.TestCase):
     def setUp(self):
         self.sb = _make_sb()
-        self.handler = self.sb.handlers.external_tool
+        self.handler = self.sb.handlers.external_app
 
     def test_in_process_returns_widget_from_entry(self):
         """In in_process mode, launch() returns whatever entry() returns."""
@@ -405,7 +405,7 @@ class TestInProcessMode(unittest.TestCase):
         fake_mod = MagicMock()
         fake_mod.FakeEntry = MagicMock(return_value=sentinel)
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ), patch(
             "importlib.import_module", return_value=fake_mod
         ) as import_mod:
@@ -419,7 +419,7 @@ class TestInProcessMode(unittest.TestCase):
     def test_in_process_without_entry_raises(self):
         """in_process mode has no `python -m` fallback — entry is required."""
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ):
             with self.assertRaises(ValueError):
                 self.handler.launch(module="fakemod", mode="in_process")
@@ -437,7 +437,7 @@ class TestInProcessMode(unittest.TestCase):
         fake_mod.E = MagicMock(return_value=first_widget)
 
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ), patch("importlib.import_module", return_value=fake_mod):
             a = self.handler.launch("tool")
             b = self.handler.launch("tool")
@@ -461,7 +461,7 @@ class TestInProcessMode(unittest.TestCase):
         fake_mod.E = MagicMock(side_effect=[dead_widget, new_widget])
 
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ), patch("importlib.import_module", return_value=fake_mod):
             self.handler.launch("tool")
             result = self.handler.launch("tool")
@@ -474,7 +474,7 @@ class TestInProcessMode(unittest.TestCase):
         fake_mod = MagicMock()
         fake_mod.E = MagicMock(return_value=MagicMock())
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ), patch("importlib.import_module", return_value=fake_mod):
             self.handler.launch(module="m", entry="E", mode="in_process")
             self.handler.launch(module="m", entry="E", mode="in_process")
@@ -487,7 +487,7 @@ class TestInProcessMode(unittest.TestCase):
         fake_mod = MagicMock()
         fake_mod.E = MagicMock(return_value="ui")
         with patch.object(
-            ExternalToolHandler,
+            ExternalAppHandler,
             "_is_importable",
             side_effect=[False, True],
         ), patch(
@@ -520,18 +520,18 @@ class TestInProcessShowOptOut(unittest.TestCase):
         from qtpy import QtWidgets
         import types
         sb = _make_sb()
-        fake_mod = types.ModuleType("fake_external_tool_show_optout")
+        fake_mod = types.ModuleType("fake_external_app_show_optout")
         fake_mod.FakeUI = type("FakeUI", (QtWidgets.QMainWindow,), {})
-        sys.modules["fake_external_tool_show_optout"] = fake_mod
+        sys.modules["fake_external_app_show_optout"] = fake_mod
         return sb
 
     def test_show_false_does_not_show_widget(self):
         sb = self._set_up()
-        h = sb.handlers.external_tool
-        h.register("so", module="fake_external_tool_show_optout",
+        h = sb.handlers.external_app
+        h.register("so", module="fake_external_app_show_optout",
                    entry="FakeUI", mode="in_process")
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ):
             widget = h.launch("so", show=False)
         self.assertFalse(
@@ -544,11 +544,11 @@ class TestInProcessShowOptOut(unittest.TestCase):
         installed so the eventual show (via marking_menu or otherwise)
         still drives the entries-changed signal."""
         sb = self._set_up()
-        h = sb.handlers.external_tool
-        h.register("so", module="fake_external_tool_show_optout",
+        h = sb.handlers.external_app
+        h.register("so", module="fake_external_app_show_optout",
                    entry="FakeUI", mode="in_process")
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ):
             widget = h.launch("so", show=False)
         self.assertTrue(
@@ -559,11 +559,11 @@ class TestInProcessShowOptOut(unittest.TestCase):
     def test_show_default_true_shows_widget(self):
         """The default contract (show=True) is preserved."""
         sb = self._set_up()
-        h = sb.handlers.external_tool
-        h.register("so", module="fake_external_tool_show_optout",
+        h = sb.handlers.external_app
+        h.register("so", module="fake_external_app_show_optout",
                    entry="FakeUI", mode="in_process")
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=True
+            ExternalAppHandler, "_is_importable", return_value=True
         ):
             widget = h.launch("so")
         self.assertTrue(widget.isVisible())
@@ -580,11 +580,11 @@ class TestInstallFailureSurfaces(unittest.TestCase):
 
     def test_pm_install_exception_becomes_runtime_error(self):
         sb = _make_sb()
-        h = sb.handlers.external_tool
+        h = sb.handlers.external_app
         pm_instance = MagicMock()
         pm_instance.install.side_effect = OSError("network down")
         with patch.object(
-            ExternalToolHandler, "_is_importable", return_value=False
+            ExternalAppHandler, "_is_importable", return_value=False
         ), patch(
             "pythontk.PackageManager", return_value=pm_instance
         ):
@@ -600,7 +600,7 @@ class TestSpawnSnippet(unittest.TestCase):
 
     def test_spawn_with_entry_uses_dash_c_snippet(self):
         with patch("pythontk.AppLauncher.launch") as launch:
-            ExternalToolHandler._spawn(
+            ExternalAppHandler._spawn(
                 python=sys.executable,
                 module="foo",
                 entry="FooUI",
@@ -617,7 +617,7 @@ class TestSpawnSnippet(unittest.TestCase):
 
     def test_spawn_without_entry_uses_dash_m(self):
         with patch("pythontk.AppLauncher.launch") as launch:
-            ExternalToolHandler._spawn(
+            ExternalAppHandler._spawn(
                 python=sys.executable,
                 module="foo",
                 entry=None,
@@ -634,13 +634,13 @@ class TestDefaultPython(unittest.TestCase):
     selection must skip DCC hosts and find a real Python."""
 
     def test_prefers_python_on_path(self):
-        from uitk.handlers import external_tool_handler as eth
+        from uitk.handlers import external_app_handler as eth
 
         with patch.object(eth.shutil, "which", return_value="/usr/bin/python"):
             self.assertEqual(eth._default_python(), "/usr/bin/python")
 
     def test_falls_back_to_mayapy_sibling(self):
-        from uitk.handlers import external_tool_handler as eth
+        from uitk.handlers import external_app_handler as eth
 
         # Construct with os.sep so basename splits correctly on both
         # platforms — hardcoded backslashes look like a single filename
@@ -653,7 +653,7 @@ class TestDefaultPython(unittest.TestCase):
         self.assertTrue(result.lower().endswith("mayapy.exe"))
 
     def test_last_resort_returns_sys_executable(self):
-        from uitk.handlers import external_tool_handler as eth
+        from uitk.handlers import external_app_handler as eth
 
         fake_exe = "/some/standalone/python"
         with patch.object(eth.shutil, "which", return_value=None), patch.object(
@@ -666,10 +666,10 @@ class TestIsImportable(unittest.TestCase):
     def test_same_interpreter_uses_find_spec(self):
         """When python == sys.executable, find_spec path is used."""
         self.assertTrue(
-            ExternalToolHandler._is_importable("sys", sys.executable)
+            ExternalAppHandler._is_importable("sys", sys.executable)
         )
         self.assertFalse(
-            ExternalToolHandler._is_importable(
+            ExternalAppHandler._is_importable(
                 "definitely_not_a_real_module_xyz", sys.executable
             )
         )
@@ -677,10 +677,10 @@ class TestIsImportable(unittest.TestCase):
     def test_different_interpreter_runs_probe(self):
         """When python differs from sys.executable, a subprocess probe runs."""
         with patch(
-            "uitk.handlers.external_tool_handler.subprocess.run"
+            "uitk.handlers.external_app_handler.subprocess.run"
         ) as run:
             run.return_value = MagicMock(returncode=0)
-            result = ExternalToolHandler._is_importable("foo", "/other/python")
+            result = ExternalAppHandler._is_importable("foo", "/other/python")
         run.assert_called_once()
         self.assertTrue(result)
 
