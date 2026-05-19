@@ -1592,8 +1592,17 @@ class SwitchboardBrowser(EditorPanel):
             return
         name = idx.data(SwitchboardBrowserModel.NameRole)
         tags = idx.data(SwitchboardBrowserModel.TagsRole) or []
+        path = idx.data(SwitchboardBrowserModel.PathRole)
 
         menu = QtWidgets.QMenu(self)
+
+        if path and path.lower().endswith(".ui") and os.path.isfile(path):
+            designer_act = menu.addAction("Open in Designer")
+            designer_act.triggered.connect(
+                lambda _=False, p=path: self._open_in_designer(p)
+            )
+            menu.addSeparator()
+
         # Tag editing happens inline — double-click the Tags cell, or
         # pick this entry to open the same inline editor programmatically.
         # No modal popup: the QLineEdit delegate is the single edit path.
@@ -1626,6 +1635,50 @@ class SwitchboardBrowser(EditorPanel):
                     )
 
         menu.exec_(self._view.viewport().mapToGlobal(pos))
+
+    def _open_in_designer(self, path: str) -> None:
+        """Launch Qt Designer with *path* preloaded.
+
+        Tries the bundled designer of the currently-imported Qt binding
+        (PySide6 / PySide2) first, then falls back to common executable
+        names resolved via :class:`pythontk.AppLauncher`.
+        """
+        candidates: List[str] = []
+        # Bundled designer next to PySide6/PySide2. Layout varies by
+        # platform: Windows wheels ship designer.exe at the package
+        # root; Linux wheels ship designer under Qt/bin/.
+        bundled_rel = (
+            "designer.exe",
+            "designer",
+            os.path.join("Qt", "bin", "designer"),
+        )
+        for mod_name in ("PySide6", "PySide2"):
+            try:
+                mod = __import__(mod_name)
+                mod_dir = os.path.dirname(getattr(mod, "__file__", "") or "")
+            except Exception:
+                continue
+            if not mod_dir:
+                continue
+            for rel in bundled_rel:
+                bundled = os.path.join(mod_dir, rel)
+                if os.path.isfile(bundled):
+                    candidates.append(bundled)
+                    break
+        candidates.extend(["pyside6-designer", "pyside2-designer", "designer"])
+
+        for app in candidates:
+            if ptk.AppLauncher.find_app(app) and ptk.AppLauncher.launch(
+                app, args=[path]
+            ):
+                return
+
+        QtWidgets.QMessageBox.warning(
+            self,
+            "Designer not found",
+            "Qt Designer could not be located or failed to launch. Install "
+            "PySide6 (which bundles pyside6-designer) or add Designer to PATH.",
+        )
 
     def _toggle_hide_ui(self, name: str, hide: bool) -> None:
         s = self.hidden_uis
