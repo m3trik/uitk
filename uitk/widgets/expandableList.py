@@ -41,7 +41,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     """
 
     # Class constants
-    VALID_POSITIONS = {"right", "left", "top", "bottom", "center"}
+    VALID_POSITIONS = {
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "center",
+        "overlay",
+        "overlay_right",
+    }
     DEFAULT_LAYOUT_SPACING = 0.5
 
     # Grace period after the cursor leaves a sublist's trigger item or
@@ -85,6 +93,24 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             "root_offset": (0, 0),
             "child_position": "right",
             "child_offset": (-1, 0),
+        },
+        # First sublist overlays the root list — its top item aligns with the
+        # triggering item, then extends downward. Deeper sublists fan out to
+        # the right in standard menu fashion.
+        "expand_overlay": {
+            "root_position": "overlay",
+            "root_offset": (0, 0),
+            "child_position": "right",
+            "child_offset": (-1, 0),
+        },
+        # Same overlay behavior as expand_overlay, but the first sublist
+        # is right-aligned with the trigger (top-right of sublist = top-right
+        # of original list) and deeper sublists fan out to the LEFT.
+        "expand_overlay_left": {
+            "root_position": "overlay_right",
+            "root_offset": (0, 0),
+            "child_position": "left",
+            "child_offset": (1, 0),
         },
     }
 
@@ -781,6 +807,21 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             "center": (
                 (child_widget_width - new_list_width) // 2 + self.sublist_x_offset,
                 (child_widget_height - new_list_height) // 2 + self.sublist_y_offset,
+            ),
+            # Sublist top-left = trigger top-left. The popup overlays the
+            # starting list with its first item aligned to the trigger item;
+            # subsequent items extend downward over whatever sits below.
+            "overlay": (
+                self.sublist_x_offset,
+                self.sublist_y_offset,
+            ),
+            # Sublist top-right = trigger top-right. Use this when the
+            # sublist is wider than the trigger and items below expand to
+            # the LEFT — keeps the right edge stable so deeper sublists
+            # appear flush against the original list's right side.
+            "overlay_right": (
+                child_widget_width - new_list_width + self.sublist_x_offset,
+                self.sublist_y_offset,
             ),
         }
 
