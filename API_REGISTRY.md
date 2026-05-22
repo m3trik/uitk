@@ -2,10 +2,11 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-05-20_
+_Generated: 2026-05-22_
 
 ## Index
 
+- [`_bootstrap.py`](#_bootstrap) — Standalone-process bootstrap helpers.
 - [`bridge/formatters.py`](#bridge--formatters) — Per-target-language value formatters for bridge parameter rendering.
 - [`bridge/parameters.py`](#bridge--parameters) — Registry helpers for bridge parameter dicts.
 - [`bridge/slots.py`](#bridge--slots) — Generic DCC-bridge slot base class.
@@ -34,6 +35,7 @@ _Generated: 2026-05-20_
 - [`switchboard/style.py`](#switchboard--style) — Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 - [`switchboard/utils.py`](#switchboard--utils)
 - [`switchboard/widgets.py`](#switchboard--widgets)
+- [`widgets/_html_style.py`](#widgets--_html_style) — HTML formatting helpers shared by uitk's rich-text widgets.
 - [`widgets/attributeWindow/_attributeWindow.py`](#widgets--attributeWindow--_attributeWindow)
 - [`widgets/checkBox.py`](#widgets--checkBox)
 - [`widgets/collapsableGroup.py`](#widgets--collapsableGroup)
@@ -41,7 +43,7 @@ _Generated: 2026-05-20_
 - [`widgets/comboBox.py`](#widgets--comboBox)
 - [`widgets/doubleSpinBox.py`](#widgets--doubleSpinBox)
 - [`widgets/editors/color_mapping_editor.py`](#widgets--editors--color_mapping_editor) — Reusable color-mapping editor widget.
-- [`widgets/editors/editor_panel.py`](#widgets--editors--editor_panel) — Base panel for editor windows with Header, body, Footer, and optional presets.
+- [`widgets/editors/editor_panel.py`](#widgets--editors--editor_panel) — Editor panel: WindowPanel + optional preset save/load row.
 - [`widgets/editors/hotkey_editor.py`](#widgets--editors--hotkey_editor)
 - [`widgets/editors/shortcut_editor.py`](#widgets--editors--shortcut_editor) — Editor windows used by :meth:`ShortcutManager.show_editor`.
 - [`widgets/editors/style_editor.py`](#widgets--editors--style_editor)
@@ -107,11 +109,20 @@ _Generated: 2026-05-20_
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
+- [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
 - [`widgets/toolBox.py`](#widgets--toolBox)
 - [`widgets/treeWidget.py`](#widgets--treeWidget)
 - [`widgets/widgetComboBox.py`](#widgets--widgetComboBox)
+- [`widgets/windowPanel.py`](#widgets--windowPanel) — Themed top-level uitk window: Header → body → Footer.
 
 ---
+
+<a id="_bootstrap"></a>
+### `_bootstrap.py`
+
+Standalone-process bootstrap helpers.
+
+- [`configure_high_dpi() -> bool`](uitk/uitk/_bootstrap.py#L13) — Configure Qt high-DPI scaling for a standalone process.
 
 <a id="bridge--formatters"></a>
 ### `bridge/formatters.py`
@@ -457,8 +468,9 @@ Switchboard-side keyboard shortcut machinery.
 
 - **[`class Signals`](uitk/uitk/switchboard/slots.py#L11)** — Decorator to specify which signals a slot should connect to.
   - `Signals.blockSignals(cls, func)` *(class)* — Decorator that blocks widget signals during method execution.
-- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L62)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
-- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L179)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
+- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L62)** — Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
+- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L142)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
+- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L327)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
   - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
   - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=[])` — Get all available signals for a type of widget.
   - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
@@ -495,8 +507,10 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.get_axis_from_checkboxes(self, checkboxes, ui=None, return_type='str')` — Get the intended axis value as a string or integer by reading the multiple checkbox's check states.
   - `SwitchboardUtilsMixin.hide_unmatched_groupboxes(self, ui, unknown_tags) -> None` — Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted
   - `SwitchboardUtilsMixin.invert_on_modifier(value)` *(static)* — Invert a numerical or boolean value if the alt key is pressed.
-  - `SwitchboardUtilsMixin.progress(self, ui=None, total: Optional[int] = 100, text: str = '')` — Context manager that runs a long task with progress feedback.
+  - `SwitchboardUtilsMixin.progress(self, ui=None, total: Optional[int] = None, text: str = '')` — Context manager for cooperative progress / task feedback.
+  - `SwitchboardUtilsMixin.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]` *(static)* — Adapt the footer ``update`` callable to the shape downstream
   - `SwitchboardUtilsMixin.message_box(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)` — Spawns a message box with the given text and optionally sets buttons.
+  - `SwitchboardUtilsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)` — Spawn a scrollable text-viewer window with optional buttons.
   - `SwitchboardUtilsMixin.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]` *(static)* — Open a file dialog to select files of the given type(s) using qtpy.
   - `SwitchboardUtilsMixin.dir_dialog(title: str = 'Select a directory', start_dir: str = '/home') -> str` *(static)* — Open a directory dialog to select a directory using qtpy.
   - `SwitchboardUtilsMixin.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]` *(static)* — Open a save-file dialog to choose a destination path.
@@ -522,6 +536,18 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardWidgetMixin.get_all_windows(name=None)` *(static)* — Get Qt windows.
   - `SwitchboardWidgetMixin.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
   - `SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
+
+<a id="widgets--_html_style"></a>
+### `widgets/_html_style.py`
+
+HTML formatting helpers shared by uitk's rich-text widgets.
+
+- [`apply_prefix_styles(string: str) -> str`](uitk/uitk/widgets/_html_style.py#L36) — Replace level-prefix tokens (``Error:``, ``Warning:`` ...) with styled spans.
+- [`apply_inline_styles(string: str) -> str`](uitk/uitk/widgets/_html_style.py#L43) — Replace bare HTML tags with style-bearing equivalents.
+- [`wrap_font_color(string: str, color: str) -> str`](uitk/uitk/widgets/_html_style.py#L50)
+- [`wrap_font_size(string: str, size) -> str`](uitk/uitk/widgets/_html_style.py#L54)
+- [`resolve_background(background) -> Optional[str]`](uitk/uitk/widgets/_html_style.py#L58) — Convert a background parameter to a CSS colour string or ``None``.
+- [`format_rich_text(string: str, *, align: str = 'left', font_color: str = 'white', font_size: Union[int, str, None] = None) -> str`](uitk/uitk/widgets/_html_style.py#L77) — Apply the standard uitk HTML pipeline to a string.
 
 <a id="widgets--attributeWindow--_attributeWindow"></a>
 ### `widgets/attributeWindow/_attributeWindow.py`
@@ -641,15 +667,9 @@ Reusable color-mapping editor widget.
 <a id="widgets--editors--editor_panel"></a>
 ### `widgets/editors/editor_panel.py`
 
-Base panel for editor windows with Header, body, Footer, and optional presets.
+Editor panel: WindowPanel + optional preset save/load row.
 
-- **[`class EditorPanel(QtWidgets.QWidget)`](uitk/uitk/widgets/editors/editor_panel.py#L17)** — Unified editor panel: Header → body → Footer.
-  - `EditorPanel.style(self) -> 'StyleSheet'` *(property)* — Lazy :class:`StyleSheet` bound to this panel.
-  - `EditorPanel.showEvent(self, event)`
-  - `EditorPanel.header(self)` *(property)* — The :class:`Header` widget at the top.
-  - `EditorPanel.footer(self)` *(property)* — The :class:`Footer` widget at the bottom.
-  - `EditorPanel.body_layout(self)` *(property)* — ``QVBoxLayout`` for editor controls and content.
-  - `EditorPanel.tighten_sublayouts(self, spacing: int = 1) -> None` — Set every nested sub-layout inside ``body_layout`` to *spacing*.
+- **[`class EditorPanel(WindowPanel)`](uitk/uitk/widgets/editors/editor_panel.py#L24)** — Windowed editor with optional preset management.
   - `EditorPanel.init_preset_row(self, dir_name)` — Add a preset management row to the body layout.
   - `EditorPanel.preset_dir(self) -> Path` *(property)* — The directory where this editor's preset files live.
   - `EditorPanel.preset_dir(self, value) -> None` — Redirect this editor's preset directory.
@@ -659,7 +679,6 @@ Base panel for editor windows with Header, body, Footer, and optional presets.
   - `EditorPanel.load_preset(self, name: str) -> bool` — Load a preset and apply it.
   - `EditorPanel.delete_preset(self, name: str) -> bool`
   - `EditorPanel.rename_preset(self, old: str, new: str) -> bool`
-  - `EditorPanel.icon_button(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton` *(static)* — Build a square, flat, icon-only button for table cells / toolbars.
 
 <a id="widgets--editors--hotkey_editor"></a>
 ### `widgets/editors/hotkey_editor.py`
@@ -774,16 +793,17 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `Footer.setStatusText(self, text: str | None = None) -> None` — Set the status text of the footer.
   - `Footer.setDefaultStatusText(self, text: str | None = None) -> None` — Set fallback text shown when no explicit status is provided.
   - `Footer.statusText(self) -> str` — Get the status text of the footer.
-  - `Footer.start_progress(self, total: Optional[int] = 100, text: str = '') -> Callable[[int, Optional[str]], bool]` — Start showing progress in the footer.
-  - `Footer.update_progress(self, value: int, text: Optional[str] = None) -> bool` — Update the progress value and optionally the status text.
+  - `Footer.start_progress(self, total: Optional[int] = None, text: str = '') -> Callable[[Optional[int], Optional[str]], bool]` — Start showing progress in the footer.
+  - `Footer.update_progress(self, value: Optional[int] = None, text: Optional[str] = None) -> bool` — Tick the progress bar and optionally update the status text.
   - `Footer.finish_progress(self, text: Optional[str] = None, delay_ms: int = 1000)` — Finish the progress and hide the bar.
   - `Footer.cancel_progress(self)` — Cancel the current progress operation.
-  - `Footer.progress(self, total: Optional[int] = 100, text: str = '') -> 'FooterProgressContext'` — Context manager for progress tracking.
+  - `Footer.set_progress_total(self, total: int) -> None` — Adjust the bar's task total mid-flight.
+  - `Footer.progress(self, total: Optional[int] = None, text: str = '') -> 'FooterProgressContext'` — Context manager for cooperative progress / task feedback.
   - `Footer.resizeEvent(self, event)` — Debounce resize: restart timer on each event so we only
   - `Footer.showEvent(self, event)` — Ensure text is properly sized and elided on first show.
   - `Footer.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.
-- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L558)** — Context manager for footer progress tracking.
-- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L579)** — Helper that keeps a footer in sync with a resolver function.
+- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L606)** — Context manager for footer progress tracking.
+- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L627)** — Helper that keeps a footer in sync with a resolver function.
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
@@ -1031,7 +1051,7 @@ Pure menu-resolution logic for the MarkingMenu.
 <a id="widgets--messageBox"></a>
 ### `widgets/messageBox.py`
 
-- **[`class MessageBox(QtWidgets.QMessageBox, AttributesMixin)`](uitk/uitk/widgets/messageBox.py#L7)** — Displays a message box with HTML formatting for a set time before closing.
+- **[`class MessageBox(QtWidgets.QMessageBox, AttributesMixin)`](uitk/uitk/widgets/messageBox.py#L8)** — Displays a message box with HTML formatting for a set time before closing.
   - `MessageBox.setStandardButtons(self, *buttons)` — Set the standard buttons for the message box.
   - `MessageBox.move_(self, location) -> None`
   - `MessageBox.setText(self, string, fontColor='white', background=0.75, fontSize=5) -> None` — Set the text to be displayed with the specified alignment unless overridden by HTML.
@@ -1118,9 +1138,10 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L713) — Return the platform-appropriate writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L765) — Root directory under which every relative ``preset_dir`` is resolved.
-- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L14)** — Manages named presets for widget state, stored as external JSON files.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L716) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L733) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L861) — Root directory under which every relative ``preset_dir`` is resolved.
+- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L17)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget]) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
   - `PresetManager.preset_dir(self) -> Path` *(property)* — The directory where preset files are stored.
@@ -1137,7 +1158,7 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--settings_manager"></a>
 ### `widgets/mixins/settings_manager.py`
 
-- **[`class SettingsManager`](uitk/uitk/widgets/mixins/settings_manager.py#L8)** — Manages persistent storage and retrieval of settings via QSettings.
+- **[`class SettingsManager`](uitk/uitk/widgets/mixins/settings_manager.py#L166)** — Manages persistent storage and retrieval of settings via QSettings.
   - `SettingsManager.branch(self, name: str) -> 'SettingsManager'` — Create a new SettingsManager instance targeted at a sub-namespace.
   - `SettingsManager.set_defaults(self, defaults: dict) -> None` — Apply default values for a set of keys if they are not already set.
   - `SettingsManager.value(self, key: str, default: Any = None) -> Any`
@@ -1499,13 +1520,14 @@ Utilities and helper functions for OptionBox.
   - `ProgressBar.auto_hide(self, value: bool)` — Set auto-hide behavior.
   - `ProgressBar.cancel(self)` — Cancel the current operation.
   - `ProgressBar.reset(self)` — Reset the progress bar state.
+  - `ProgressBar.set_total(self, total: int) -> None` — Adjust the task total mid-flight.
   - `ProgressBar.start_task(self, total: Optional[int] = 100, text: str = '', show: bool = True) -> None` — Start a new task.
   - `ProgressBar.update_progress(self, value: int, text: Optional[str] = None) -> bool` — Update progress value.
   - `ProgressBar.finish_task(self, text: Optional[str] = None)` — Complete the current task.
   - `ProgressBar.step(self, progress: int, length: int = 100) -> bool` — Legacy step method for backward compatibility.
   - `ProgressBar.task(self, total: Optional[int] = 100, text: str = '') -> 'ProgressTaskContext'` — Context manager for progress tracking.
   - `ProgressBar.showEvent(self, event)` — Handle show event.
-- **[`class ProgressTaskContext`](uitk/uitk/widgets/progressBar.py#L341)** — Context manager for progress bar tasks.
+- **[`class ProgressTaskContext`](uitk/uitk/widgets/progressBar.py#L375)** — Context manager for progress bar tasks.
 
 <a id="widgets--pushButton"></a>
 ### `widgets/pushButton.py`
@@ -1944,6 +1966,18 @@ Reusable action-column management for :class:`TableWidget`.
   - `TextEditLogHandler.get_color(self, level: str) -> str`
   - `TextEditLogHandler.available_columns(self) -> int` — Return the number of monospace columns that fit in the viewport.
 
+<a id="widgets--textViewBox"></a>
+### `widgets/textViewBox.py`
+
+Scrollable rich-text viewer window.
+
+- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L58)** — Read-only rich-text viewer with optional standard buttons.
+  - `TextViewBox.setStandardButtons(self, *buttons) -> None` — Configure the visible buttons by name.
+  - `TextViewBox.setText(self, string: str, fontColor: str = 'white', background=False, fontSize=None) -> None` — Set the body text, replacing any existing content.
+  - `TextViewBox.append_text(self, string: str, fontColor: str = 'white', fontSize=None) -> None` — Append a paragraph without clearing existing content.
+  - `TextViewBox.clear_text(self) -> None`
+  - `TextViewBox.clicked_button(self)` *(property)* — Canonical name of the last clicked button, or ``None``.
+
 <a id="widgets--toolBox"></a>
 ### `widgets/toolBox.py`
 
@@ -2025,3 +2059,17 @@ Reusable action-column management for :class:`TableWidget`.
   - `WidgetComboBox.eventFilter(self, obj, event)` — Event filter to reposition indicator on scroll and resize events.
   - `WidgetComboBox.add(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, **kwargs)` — Populate the combo box with text, widgets or actions.
   - `WidgetComboBox.clear(self) -> None`
+
+<a id="widgets--windowPanel"></a>
+### `widgets/windowPanel.py`
+
+Themed top-level uitk window: Header → body → Footer.
+
+- **[`class WindowPanel(QtWidgets.QWidget)`](uitk/uitk/widgets/windowPanel.py#L26)** — Themed top-level window with a Header / body / Footer layout.
+  - `WindowPanel.style(self) -> 'StyleSheet'` *(property)* — Lazy :class:`StyleSheet` bound to this panel.
+  - `WindowPanel.showEvent(self, event)`
+  - `WindowPanel.header(self)` *(property)* — The :class:`Header` widget at the top.
+  - `WindowPanel.footer(self)` *(property)* — The :class:`Footer` widget at the bottom.
+  - `WindowPanel.body_layout(self)` *(property)* — ``QVBoxLayout`` for panel content.
+  - `WindowPanel.tighten_sublayouts(self, spacing: int = 1) -> None` — Set every nested sub-layout inside ``body_layout`` to *spacing*.
+  - `WindowPanel.icon_button(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton` *(static)* — Build a square, flat, icon-only button for table cells / toolbars.
