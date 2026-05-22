@@ -1,8 +1,166 @@
 # !/usr/bin/python
 # coding=utf-8
-from typing import Any, Callable, Optional
-from qtpy import QtCore
 import json
+import logging
+from typing import Any, Callable, List, Optional, Set, Tuple
+from qtpy import QtCore
+
+_log = logging.getLogger(__name__)
+
+# Defaults for the (org, app) pair used to construct QSettings when the
+# caller doesn't supply them explicitly. Choosing them deliberately —
+# rather than letting them fall through to ``__package__`` — keeps every
+# uitk-managed setting under a single registry root on Windows
+# (``HKCU\Software\uitk\``) and a single config location on Mac/Linux.
+DEFAULT_ORG_NAME = "uitk"
+DEFAULT_APP_NAME = "shared"
+
+# =============================================================================
+# DEPRECATED MIGRATION LOGIC — scheduled for removal
+# =============================================================================
+#
+# Everything from ``_LEGACY_WIDGETS_ORG`` through the end of
+# ``_maybe_migrate_legacy_registry`` exists solely to drain older
+# registry / QSettings layouts into the current
+# ``HKCU\Software\uitk\<app>\`` layout. It is *not* part of the
+# current design and should be deleted once no users remain on the
+# old layouts.
+#
+# Removal candidates (delete together — they form one self-contained block):
+#
+#   - ``_LEGACY_WIDGETS_ORG``
+#   - ``_LEGACY_MIXINS_ORG``
+#   - ``_LEGACY_MIXINS_DEFAULT_APP``
+#   - ``_REGISTRY_MIGRATED_KEY``
+#   - ``_INTERNAL_KEYS``
+#   - ``_MIGRATED_REGISTRY_PAIRS``
+#   - ``_legacy_qsettings_pairs_for``
+#   - ``_maybe_migrate_legacy_registry``
+#   - The ``_maybe_migrate_legacy_registry(org, app)`` call inside
+#     ``SettingsManager.__init__``
+#   - The ``_INTERNAL_KEYS`` exclusion inside ``SettingsManager.keys``
+#     (the surrounding logic stays; only the filter goes away)
+#   - Test class ``TestRegistryMigration`` in ``test/test_settings_manager.py``
+#
+# Removal criteria (any one is sufficient):
+#
+#   1. No legacy settings data exists at the legacy registry roots on
+#      any machine that runs this code — confirmed by inspection of
+#      ``HKCU\Software\uitk.widgets\`` and
+#      ``HKCU\Software\uitk.widgets.mixins\`` (these subkeys should be
+#      empty or absent).
+#   2. The deprecation review date below has passed.
+#
+# Suggested review date: **2027-05-21** (matches the preset-migration
+# review date so both deprecations land in the same cleanup pass).
+#
+# =============================================================================
+
+_LEGACY_WIDGETS_ORG = "uitk.widgets"
+_LEGACY_MIXINS_ORG = "uitk.widgets.mixins"
+_LEGACY_MIXINS_DEFAULT_APP = "DefaultApp"
+
+# Internal marker key written inside the destination QSettings after a
+# successful migration. The prefix is deliberately library-namespaced
+# so it can't collide with arbitrary user namespaces (a user passing
+# ``namespace="Meta"`` to ``SettingsManager`` shouldn't see migration
+# bookkeeping in their ``keys()`` view).
+_REGISTRY_MIGRATED_KEY = "_uitk_internal/migration_v1_done"
+
+# Keys that ``SettingsManager.keys()`` hides from iteration. Internal
+# library bookkeeping; not part of any user namespace.
+_INTERNAL_KEYS = frozenset({_REGISTRY_MIGRATED_KEY})
+
+_MIGRATED_REGISTRY_PAIRS: Set[Tuple[str, str]] = set()
+
+
+def _legacy_qsettings_pairs_for(new_org: str, new_app: str) -> List[Tuple[str, str]]:
+    """Return ``[(old_org, old_app), ...]`` to drain into (new_org, new_app).
+
+    Returns an empty list when ``new_org`` isn't the default — an explicit
+    non-default org means the caller knows what they're doing and we
+    shouldn't second-guess their registry layout.
+
+    Pulled out as a function so tests can monkey-patch it to point at
+    test-prefixed org/app pairs and avoid touching real registry data.
+    """
+    if new_org != DEFAULT_ORG_NAME:
+        return []
+    pairs = [(_LEGACY_WIDGETS_ORG, new_app)]
+    if new_app == DEFAULT_APP_NAME:
+        # The no-arg ``SettingsManager()`` fallback used to land at
+        # ``<__package__>/DefaultApp``, where ``__package__`` resolves to
+        # ``uitk.widgets.mixins`` at this module's import time. Drain it
+        # into the new shared bucket.
+        pairs.append((_LEGACY_MIXINS_ORG, _LEGACY_MIXINS_DEFAULT_APP))
+    return pairs
+
+
+def _maybe_migrate_legacy_registry(org: str, app: str) -> None:
+    """Drain QSettings keys from legacy (org, app) pairs into (org, app).
+
+    Best-effort: each legacy pair is iterated; keys not yet present at
+    the destination are copied; existing destination keys win (no
+    overwrite). After successful copy the legacy QSettings is
+    ``clear()``-ed so the next access doesn't re-process the same keys.
+
+    Idempotency:
+
+    * Process-local — ``_MIGRATED_REGISTRY_PAIRS`` shortcuts the check
+      after the first call for a given (org, app).
+    * On-disk — a ``Meta/MigratedFromLegacy`` marker key is written
+      inside the destination QSettings, so subsequent processes see it
+      and skip.
+
+    Failure mode: I/O / permission errors are caught and logged at
+    warning level rather than propagated, so a hosed migration can't
+    break the host app's startup.
+    """
+    if (org, app) in _MIGRATED_REGISTRY_PAIRS:
+        return
+    _MIGRATED_REGISTRY_PAIRS.add((org, app))
+
+    pairs = _legacy_qsettings_pairs_for(org, app)
+    if not pairs:
+        return
+
+    try:
+        new_qs = QtCore.QSettings(org, app)
+        if new_qs.value(_REGISTRY_MIGRATED_KEY):
+            return
+    except Exception as e:  # noqa: BLE001 — defensive at process start
+        _log.warning("registry migration: could not open %s/%s: %s", org, app, e)
+        return
+
+    for old_org, old_app in pairs:
+        try:
+            old_qs = QtCore.QSettings(old_org, old_app)
+            keys = old_qs.allKeys()
+            if not keys:
+                continue
+            for key in keys:
+                if key == _REGISTRY_MIGRATED_KEY:
+                    continue  # don't carry the marker forward
+                if new_qs.contains(key):
+                    continue  # live data wins on collision
+                new_qs.setValue(key, old_qs.value(key))
+            _log.debug("registry migration: drained %s/%s -> %s/%s (%d keys)",
+                       old_org, old_app, org, app, len(keys))
+            # Empty out the legacy location after the drain. The empty
+            # registry subkey shell stays (QSettings has no API to delete
+            # the parent key itself) — visible but harmless.
+            old_qs.clear()
+            old_qs.sync()
+        except Exception as e:  # noqa: BLE001
+            _log.warning("registry migration: %s/%s -> %s/%s failed: %s",
+                         old_org, old_app, org, app, e)
+
+    try:
+        new_qs.setValue(_REGISTRY_MIGRATED_KEY, True)
+        new_qs.sync()
+    except Exception as e:  # noqa: BLE001
+        _log.warning("registry migration: could not write marker for %s/%s: %s",
+                     org, app, e)
 
 
 class SettingsManager:
@@ -90,8 +248,13 @@ class SettingsManager:
         if qsettings:
             object.__setattr__(self, "settings", qsettings)
         else:
-            org = org or __package__ or "DefaultOrg"
-            app = app or "DefaultApp"
+            org = org or DEFAULT_ORG_NAME
+            app = app or DEFAULT_APP_NAME
+            # Drain legacy registry layouts (uitk.widgets/<app>,
+            # uitk.widgets.mixins/DefaultApp) into the current location
+            # before constructing the live QSettings. One-shot per
+            # (org, app) per process; see _maybe_migrate_legacy_registry.
+            _maybe_migrate_legacy_registry(org, app)
             object.__setattr__(self, "settings", QtCore.QSettings(org, app))
         object.__setattr__(self, "namespace", namespace)
 
@@ -176,8 +339,16 @@ class SettingsManager:
         callbacks[key].append(callback)
 
     def keys(self) -> list:
-        """Return all keys in the current namespace."""
-        all_keys = self.settings.allKeys()
+        """Return all keys in the current namespace.
+
+        Library-internal keys (see :data:`_INTERNAL_KEYS`) are excluded
+        so callers iterating their own data don't see migration
+        bookkeeping or other implementation artifacts. The filter is
+        the only line tying this method to the migration system; when
+        the migration code is retired (see deprecation block above),
+        remove just that comprehension condition.
+        """
+        all_keys = [k for k in self.settings.allKeys() if k not in _INTERNAL_KEYS]
         if self.namespace:
             prefix = f"{self.namespace}/"
             return [k[len(prefix) :] for k in all_keys if k.startswith(prefix)]

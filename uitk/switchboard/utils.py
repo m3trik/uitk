@@ -2,7 +2,7 @@
 # coding=utf-8
 import re
 import traceback
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
@@ -532,37 +532,129 @@ class SwitchboardUtilsMixin:
     def progress(
         self,
         ui=None,
-        total: Optional[int] = 100,
+        total: Optional[int] = None,
         text: str = "",
     ):
-        """Context manager that runs a long task with progress feedback.
+        """Context manager for cooperative progress / task feedback.
 
-        Routes to the UI's footer.progress() if the active (or given) UI
-        has a footer widget; otherwise returns a no-op context so callers
-        can run unmodified on UIs without a footer.
+        Routes to the active UI's :meth:`Footer.progress` when a footer
+        is available; otherwise returns a no-op so callers run unchanged
+        on UIs without one.
+
+        Two modes from one entry point:
+
+        * Pass ``total=N`` for a determinate progress bar (known step
+          count). Tick with ``update(i + 1)``.
+        * Omit *total* (the default) for an indeterminate "task
+          indicator" marquee. Tick with bare ``update()`` calls between
+          work chunks to drive the animation.
+
+        Adapter-driven slots can omit *total* even for determinate
+        progress: :func:`progress_adapter` auto-syncs the bar's max
+        from the callback's ``total`` argument on the first tick, so
+        the slot doesn't need to pre-compute the loop size.
+
+        The slot dispatcher already shows a system wait cursor for the
+        duration of every slot — this is for slots that want *richer*
+        feedback in the footer.
 
         Parameters:
-            ui: The UI to host the progress bar. Defaults to current_ui.
-            total: Total number of steps (max value). None (or <= 0) →
-                indeterminate / busy mode.
+            ui: UI hosting the footer. Defaults to ``active_ui``.
+            total: Step count for determinate mode; ``None`` (default)
+                selects indeterminate / task-indicator mode.
             text: Optional status text shown alongside the bar.
 
         Yields:
-            update(value, text=None) -> bool — returns False if cancelled.
+            ``update(value=None, text=None) -> bool`` — returns ``False``
+            if the user cancelled (Esc-hold). In task-indicator mode,
+            call with no arguments to advance the marquee.
 
-        Example:
-            with self.sb.progress(self.ui, total=len(items), text="Copying") as update:
+        Determinate example::
+
+            with self.sb.progress(total=len(items), text="Copying") as update:
                 for i, item in enumerate(items):
                     process(item)
                     if not update(i + 1):
                         break  # user cancelled
+
+        Task-indicator example::
+
+            with self.sb.progress(text="Working: Get Scene Info") as tick:
+                step_one()
+                tick()       # pumps the event loop, advances the bar
+                step_two()
+                tick()
         """
         if ui is None:
-            ui = getattr(self, "current_ui", None)
+            ui = getattr(self, "active_ui", None) or getattr(self, "current_ui", None)
         footer = getattr(ui, "footer", None) if ui is not None else None
         if footer is not None and hasattr(footer, "progress"):
             return footer.progress(total=total, text=text)
         return _NoOpProgressContext()
+
+    @staticmethod
+    def progress_adapter(
+        update: Callable[..., bool],
+    ) -> Callable[..., bool]:
+        """Adapt the footer ``update`` callable to the shape downstream
+        ``progress_callback`` parameters typically expect.
+
+        Handles both ecosystem shapes with one adapter:
+
+        * ``cb(current, total, message)`` — mayatk pattern
+          (``SceneAnalyzer.analyze``, ``MatUtils.get_mat_info``…).
+        * ``cb(percent)`` — pythontk pattern
+          (``MapCompositor``; expects ``0..100``).
+
+        **Auto-syncs the bar's max from the callback's ``total``** so
+        slots don't have to pre-declare the loop size:
+
+            with self.sb.progress(text="Analyzing") as update:
+                analyzer.analyze(
+                    progress_callback=self.sb.progress_adapter(update),
+                )
+
+        On the first tick where ``total > 0``, the bar's maximum is
+        retotalled to that value (and the bar switches out of
+        indeterminate mode if it was pulsing). Subsequent ticks
+        re-sync only when ``total`` actually changes — so a single
+        adapter handles fixed-percent callbacks (``total=100``),
+        per-item count callbacks (``total=N``), and indeterminate
+        ones (``total=0``).
+
+        The returned callable forwards the bool from ``update``, so
+        downstreams that read it for cooperative cancellation get it
+        for free.
+        """
+        # The bound ``update`` carries a reference to the host footer,
+        # which exposes :meth:`set_progress_total`. Falls back to a
+        # no-op for unbound callables (``_NoOpProgressContext._noop``).
+        footer = getattr(update, "__self__", None)
+        set_total = getattr(footer, "set_progress_total", None)
+
+        def adapted(*args, **kwargs) -> bool:
+            value = None
+            text = None
+            if args and args[0] is not None:
+                try:
+                    value = int(args[0])
+                except (TypeError, ValueError):
+                    value = None
+            if len(args) >= 3 and args[2] is not None:
+                text = str(args[2])
+            # Sync bar max from callback's ``total``. ``set_progress_total``
+            # short-circuits on matching state, so the per-tick cost is
+            # one int comparison once the bar is in sync.
+            if set_total is not None and len(args) >= 2 and args[1] is not None:
+                try:
+                    cb_total = int(args[1])
+                except (TypeError, ValueError):
+                    cb_total = 0
+                if cb_total > 0:
+                    set_total(cb_total)
+            return bool(update(value, text))
+
+        return adapted
 
     def message_box(
         self,
@@ -607,6 +699,85 @@ class SwitchboardUtilsMixin:
             self._messageBox.setText(string, background=background)
             self._messageBox.show()
             return None
+
+    def text_view_dialog(
+        self,
+        text: str = "",
+        *buttons,
+        title: str = "",
+        size=(640, 400),
+        monospace: bool = False,
+        word_wrap: bool = True,
+        background=False,
+        parent=None,
+    ):
+        """Spawn a scrollable text-viewer window with optional buttons.
+
+        Sibling to :meth:`message_box` for content too long or too
+        structured for a passive popup (reports, log output, formatted
+        result dumps). The viewer is a uitk :class:`WindowPanel`
+        subclass with its own header, footer, and busy-indicator
+        integration — same theming and chrome as the rest of the
+        ecosystem's tool windows.
+
+        Always non-modal: the viewer coexists with the host application
+        (Maya, etc.) so the user can keep working while reading. The
+        viewer's footer participates in the slot dispatcher's
+        busy-indicator broadcast, so its own footer shows the
+        "Working:" indicator if a slot is dispatched while it's open.
+
+        Parameters:
+            text: HTML or plain text to display. May be empty when the
+                caller plans to populate via :meth:`TextViewBox.setText`
+                / :meth:`append_text` after the call.
+            *buttons: Standard-button name strings (``"Ok"``,
+                ``"Cancel"``, etc. — same vocabulary as
+                :meth:`message_box`). Buttons in the Accept / Reject /
+                Destructive roles close the window; Apply / Reset /
+                Help leave it open and surface their clicked name via
+                ``TextViewBox.clicked_button``.
+            title: Window title (shown in the header).
+            size: Initial ``(width, height)``. Default ``(640, 400)``.
+            monospace: Use a monospace body font. Default ``False``.
+            word_wrap: Wrap long lines. ``False`` enables horizontal
+                scrolling for tabular content. Default ``True``.
+            background: Body background colour. Same semantics as
+                :meth:`message_box`. Default ``False`` (widget default).
+            parent: Anchor widget. Defaults to ``self.parent()``. The
+                viewer reparents to ``parent.window()`` so it survives
+                a transient invoker hiding.
+
+        Returns:
+            The :class:`TextViewBox` instance — the caller can stream
+            more content via :meth:`TextViewBox.append_text` or close
+            it later via :meth:`close`.
+        """
+        # Log a stripped, length-capped preview so reports don't flood
+        # the log file the way an uncapped echo would.
+        preview = re.sub("<.*?>", "", text or "")
+        if len(preview) > 500:
+            preview = preview[:500] + "…"
+        if preview:
+            self.logger.info(f"# {preview}")
+
+        dlg = self.registered_widgets.TextViewBox(
+            parent=parent if parent is not None else self.parent(),
+            title=title,
+            monospace=monospace,
+            word_wrap=word_wrap,
+        )
+        if size:
+            dlg.resize(*size)
+        if text:
+            dlg.setText(text, background=background)
+        if buttons:
+            dlg.setStandardButtons(*buttons)
+
+        # Keep alive via the existing gc_protect helper so the caller
+        # can return without the window being collected.
+        self.gc_protect(dlg)
+        dlg.show()
+        return dlg
 
     @staticmethod
     def file_dialog(
@@ -924,7 +1095,7 @@ class _NoOpProgressContext:
         return False
 
     @staticmethod
-    def _noop(value, text=None):
+    def _noop(value=None, text=None):
         return True
 
 

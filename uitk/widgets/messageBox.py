@@ -2,6 +2,7 @@
 # coding=utf-8
 from qtpy import QtCore, QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets._html_style import format_rich_text, resolve_background
 
 
 class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
@@ -116,51 +117,6 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
         self.move(point)
 
-    def _setPrefixStyle(self, string) -> str:
-        """Set style for specific keywords in the given string."""
-        style = {
-            "Error:": '<hl style="color:red;">Error:</hl>',
-            "Warning:": '<hl style="color:yellow;">Warning:</hl>',
-            "Note:": '<hl style="color:blue;">Note:</hl>',
-            "Result:": '<hl style="color:green;">Result:</hl>',
-        }
-
-        for k, v in style.items():
-            string = string.replace(k, v)
-
-        return string
-
-    def _setHTML(self, string) -> str:
-        """<p style="font-size:160%;">text</p>
-        <p style="text-align:center;">Centered paragraph.</p>
-        <p style="font-family:courier;">This is a paragraph.</p>
-
-        Returns:
-            (str)
-        """
-        style = {
-            "<p>": '<p style="color:white;">',  # paragraph <p>' </p>'
-            "<hl>": '<hl style="color:yellow; font-weight: bold;">',  # heading <h1>' </h1>'
-            "<body>": '<body style="color;">',  # body <body> </body>
-            "<b>": '<b style="font-weight: bold;">',  # bold <b> </b>
-            "<strong>": '<strong style="font-weight: bold;">',  # <strong> </strong>
-            "<mark>": '<font style="background-color: grey;">',  # highlight
-            "</mark>": "</font>",
-        }
-
-        for k, v in style.items():
-            string = string.replace(k, v)
-
-        return string
-
-    def _setFontColor(self, string, color) -> str:
-        """ """
-        return "<font color=" + color + ">" + string + "</font>"
-
-    def _setFontSize(self, string, size) -> str:
-        """ """
-        return "<font size=" + str(size) + ">" + string + "</font>"
-
     def setText(self, string, fontColor="white", background=0.75, fontSize=5) -> None:
         """Set the text to be displayed with the specified alignment unless overridden by HTML.
 
@@ -174,18 +130,13 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
                 a CSS color ``str`` is used verbatim.
             fontSize (int): The font size of the text.
         """
-        # Apply default alignment if not overridden in the HTML
-        if "align=" not in string:
-            string = f"<div align='{self.align}'>{string}</div>"
+        s = format_rich_text(
+            string, align=self.align, font_color=fontColor, font_size=fontSize
+        )
 
-        s = self._setPrefixStyle(string)
-        s = self._setHTML(s)
-        s = self._setFontColor(s, fontColor)
-        s = self._setFontSize(s, fontSize)
-
-        # Apply background via QSS on the internal label — HTML background-color
-        # on <font>/<span> is unreliable across Qt builds (e.g. Maya's embedded Qt).
-        bg_css = self._resolve_background(background)
+        # QSS on the internal label — HTML background-color on inline tags
+        # is unreliable across Qt builds (e.g. Maya's embedded Qt).
+        bg_css = resolve_background(background)
         if bg_css:
             self.setStyleSheet(
                 f"QLabel#qt_msgbox_label {{ background-color: {bg_css}; padding: 8px; }}"
@@ -194,18 +145,6 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             self.setStyleSheet("")
 
         super().setText(s)
-
-    @staticmethod
-    def _resolve_background(background):
-        """Convert a background param to a CSS color string or None."""
-        if background is False or background == 0:
-            return None
-        if background is True:
-            return "rgba(50,50,50,255)"
-        if isinstance(background, (int, float)):
-            alpha = max(0, min(255, int(background * 255)))
-            return f"rgba(50,50,50,{alpha})"
-        return background  # str passed verbatim
 
     def autoClose(self):
         # Close the MessageBox if no standard buttons are set

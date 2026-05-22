@@ -366,48 +366,78 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
     def start_progress(
         self,
-        total: Optional[int] = 100,
+        total: Optional[int] = None,
         text: str = "",
-    ) -> Callable[[int, Optional[str]], bool]:
+    ) -> Callable[[Optional[int], Optional[str]], bool]:
         """Start showing progress in the footer.
 
+        Two modes from one entry point — pass *total* when you know the
+        step count, omit it (or pass ``None``) for an indeterminate
+        "task indicator" marquee.
+
         Parameters:
-            total: Total number of steps
-            text: Optional status text to show with progress
+            total: Total number of steps. ``None`` (default) enables
+                indeterminate / busy mode — the bar pulses and callers
+                tick it via ``update()`` without a value.
+            text: Optional status text to show with the bar.
 
         Returns:
-            Callable: Update function that takes (value, optional_text)
+            Callable: ``update(value=None, text=None) -> bool``. Returns
+            ``False`` if the user pressed Esc to cancel.
 
-        Example:
+        Example (determinate)::
+
             update = footer.start_progress(100, "Loading...")
             for i in range(100):
                 if not update(i + 1):
-                    break  # Cancelled
+                    break  # cancelled
+            footer.finish_progress()
+
+        Example (indeterminate task indicator)::
+
+            update = footer.start_progress(text="Working: ...")
+            chunk_1()
+            update()           # tick — pumps the event loop so the
+            chunk_2()          # marquee actually advances during the
+            update()           # synchronous work.
             footer.finish_progress()
         """
-        # Status text lives on the footer's label; the slim bar itself
-        # carries no visible text (setTextVisible=False).
         if text:
             self.setStatusText(text)
         self._progress_bar.start_task(total, text="", show=True)
         return self.update_progress
 
-    def update_progress(self, value: int, text: Optional[str] = None) -> bool:
-        """Update the progress value and optionally the status text.
+    def update_progress(
+        self, value: Optional[int] = None, text: Optional[str] = None
+    ) -> bool:
+        """Tick the progress bar and optionally update the status text.
 
         Parameters:
-            value: Current progress value
+            value: Determinate progress value. ``None`` (default) just
+                pumps the event loop — use this in indeterminate mode
+                to keep the marquee advancing between work chunks.
             text: Optional new status text (shown in the footer label,
                 not on the bar itself).
 
         Returns:
-            False if cancelled, True otherwise
+            ``False`` if the task was cancelled (user held Esc),
+            ``True`` otherwise.
+
+        Critical side effect: ``ProgressBar.update_progress`` calls
+        ``QApplication.processEvents()`` once per tick. That is what
+        keeps the bar (and the rest of the UI) responsive while a slot
+        runs synchronously — the slot must voluntarily call ``update()``
+        between work chunks to drive the animation.
         """
         if text is not None and self._status_before_hold is None:
             # Skip status updates during a hold; the held hint stays put,
             # and we restore the pre-hold text on release.
             self.setStatusText(text)
-        return self._progress_bar.update_progress(value)
+        # ``ProgressBar.update_progress`` requires an int; in
+        # indeterminate mode the value is only used for the emitted
+        # signal, so 0 is a safe placeholder when the caller is just
+        # ticking the marquee.
+        return self._progress_bar.update_progress(value if value is not None else 0)
 
     def finish_progress(self, text: Optional[str] = None, delay_ms: int = 1000):
         """Finish the progress and hide the bar.
@@ -425,27 +455,45 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """Cancel the current progress operation."""
         self._progress_bar.cancel()
 
-    def progress(self, total: Optional[int] = 100, text: str = "") -> "FooterProgressContext":
-        """Context manager for progress tracking.
+    def set_progress_total(self, total: int) -> None:
+        """Adjust the bar's task total mid-flight.
 
-        Parameters:
-            total: Total number of steps
-            text: Optional status text
+        Thin proxy over :meth:`ProgressBar.set_total` so adapters can
+        sync the bar from a downstream callback's ``total`` without
+        the slot pre-knowing the loop size.
+        """
+        self._progress_bar.set_total(total)
 
-        Returns:
-            Context manager that provides an update callback
+    def progress(
+        self, total: Optional[int] = None, text: str = ""
+    ) -> "FooterProgressContext":
+        """Context manager for cooperative progress / task feedback.
 
-        Example:
-            with footer.progress(100, "Processing files...") as update:
-                for i, file in enumerate(files):
-                    process(file)
+        Pass *total* for a determinate bar; omit it for an indeterminate
+        "task indicator" marquee. Callers drive the bar by ticking
+        ``update()`` between work chunks — see
+        :meth:`update_progress`.
+
+        Example (determinate)::
+
+            with footer.progress(total=len(files), text="Copying") as update:
+                for i, f in enumerate(files):
+                    copy(f)
                     if not update(i + 1):
-                        break  # Cancelled
+                        break   # cancelled
+
+        Example (indeterminate task indicator)::
+
+            with footer.progress(text="Working: Get Scene Info") as tick:
+                step_one()
+                tick()
+                step_two()
+                tick()
         """
         return FooterProgressContext(self, total, text)
 
     def _on_progress_finished(self):
-        """Handle progress completion - hide the slim bar."""
+        """Hide and reset the bar when the task completes."""
         self._progress_bar.hide()
         self._progress_bar.reset()
 
@@ -563,7 +611,7 @@ class FooterProgressContext:
         self._total = total
         self._text = text
 
-    def __enter__(self) -> Callable[[int, Optional[str]], bool]:
+    def __enter__(self) -> Callable[[Optional[int], Optional[str]], bool]:
         """Start progress and return update callback."""
         return self._footer.start_progress(self._total, self._text)
 

@@ -16,9 +16,10 @@ Switchboard class and all its dependencies):
     Signals       — slot signal-binding decorator
     SlotWrapper   — slot invocation wrapper
     Shortcut      — slot keyboard-shortcut decorator
+    Cancelable    — slot decorator enabling Esc-cancel + warning dialog
 """
 
-__all__ = ["Switchboard", "Signals", "SlotWrapper", "Shortcut"]
+__all__ = ["Switchboard", "Signals", "SlotWrapper", "Shortcut", "Cancelable"]
 
 # Map public symbol -> (submodule suffix, attribute name). Resolved on
 # first attribute access; the imported submodule is the only thing
@@ -29,6 +30,7 @@ _LAZY = {
     "Signals": ("slots", "Signals"),
     "SlotWrapper": ("slots", "SlotWrapper"),
     "Shortcut": ("shortcuts", "Shortcut"),
+    "Cancelable": ("slots", "Cancelable"),
 }
 
 

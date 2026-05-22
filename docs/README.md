@@ -2,7 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/tests-1530%20passed-brightgreen.svg)](test/)
 
 # uitk
 
@@ -155,9 +155,14 @@ Window geometry also persists automatically, debounced to 500ms on resize/move.
 
 ```python
 widget.debounce = 300          # coalesce rapid signals into one slot call after 300ms
-widget.slot_timeout = 60       # warn if slot takes > 60s; allow Esc to cancel
+widget.slot_timeout = 60       # opt this slot into Esc-cancel after 60s (runtime form)
 widget.refresh_on_show = True  # call *_init again on every subsequent show
-ui.default_slot_timeout = 360  # fallback timeout for all slots in this UI
+ui.default_slot_timeout = 360  # UI-wide opt-in fallback (not auto-set by marking menu)
+
+# Or declare at the slot site (recommended for static intent):
+from uitk.switchboard import Cancelable
+@Cancelable(60)
+def btn_heavy(self, widget): ...
 ```
 
 ---
