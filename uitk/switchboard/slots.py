@@ -4,7 +4,7 @@ import inspect
 import traceback
 from functools import wraps
 from typing import Optional, Union, Type, Callable, Any
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 
@@ -59,6 +59,86 @@ class Signals:
         return wrapper
 
 
+class Cancelable:
+    """Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
+
+    Apply to slot methods that do bulk synchronous work the user might
+    want to abort mid-flight. The Switchboard dispatcher wraps decorated
+    slots in :func:`pythontk.ExecutionMonitor.execution_monitor`, which:
+
+    * shows a "still running…" dialog (Keep Waiting / Cancel) after
+      ``timeout`` seconds,
+    * lets the user press-and-hold Esc at any time to abort,
+    * spawns a near-cursor spinner subprocess (separate process,
+      animates regardless of the main-thread event loop) after the
+      threshold lapses.
+
+    Plain (undecorated) slots run without any of this — the dispatcher's
+    universal wait cursor is the only feedback. Restricting the
+    monitor to opt-in slots avoids the per-invocation cost of spawning
+    the monitor thread for every UI interaction.
+
+    Example::
+
+        @Cancelable(60)
+        def tb016(self, widget):
+            # Heavy: scan every animated transform in the scene.
+            # User can hold Esc to abort if they picked the wrong scope.
+            mtk.SegmentKeys.format_scene_info_html(...)
+
+        @Cancelable(300, message="Texture optimization")
+        def tb022(self, widget):
+            mtk.TextureOptimizer.batch_optimize_textures(...)
+
+    Args:
+        timeout: Seconds before the warning dialog appears. Must be > 0.
+        message: Optional human-readable description used in the dialog
+            and logger output. Defaults to a generic message built from
+            the slot name.
+    """
+
+    def __init__(self, timeout: float, *, message: Optional[str] = None):
+        if not (isinstance(timeout, (int, float)) and timeout > 0):
+            raise ValueError(
+                f"Cancelable(timeout=...): timeout must be a positive number, "
+                f"got {timeout!r}"
+            )
+        self.timeout = float(timeout)
+        self.message = message
+
+    def __call__(self, func: Callable) -> Callable:
+        func._cancelable_meta = {
+            "timeout": self.timeout,
+            "message": self.message,
+        }
+        return func
+
+
+def _slot_busy_opt_out(widget, sb) -> bool:
+    """True when the slot dispatcher should skip the busy-cursor change.
+
+    Rapid-fire signals (sliders, text-changed) set
+    ``widget.no_busy_indicator = True`` to avoid flashing the cursor on
+    every event. The UI may also set ``ui.no_busy_indicator`` to
+    suppress for an entire window. Defensive: a misbehaving ``@property``
+    must not propagate into slot dispatch.
+    """
+    try:
+        if getattr(widget, "no_busy_indicator", False):
+            return True
+    except Exception:
+        pass
+    ui = getattr(sb, "active_ui", None)
+    if ui is None:
+        ui = getattr(sb, "_current_ui", None)
+    try:
+        if ui is not None and getattr(ui, "no_busy_indicator", False):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 class SlotWrapper:
     """Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monitoring.
 
@@ -93,11 +173,31 @@ class SlotWrapper:
             SlotWrapper._sig_cache[slot_id] = (self.param_names, self.wants_widget)
 
     def _get_timeout(self):
-        """Resolve the timeout value dynamically."""
-        # Check widget first
+        """Resolve the cancel-timeout for this slot, if any.
+
+        Resolution order (first wins):
+
+        1. ``widget.slot_timeout`` — per-widget runtime override.
+        2. :class:`Cancelable` decorator metadata — declared at the slot
+           definition site (``@Cancelable(timeout=N)``).
+        3. ``ui.default_slot_timeout`` — opt-in UI-wide fallback. No
+           longer set automatically by the marking menu; only honoured
+           when a UI explicitly sets it.
+
+        Returns ``None`` when no source provides a timeout — that's the
+        normal path for plain slots, which run without monitor overhead
+        and rely only on the dispatcher's wait cursor for feedback.
+        """
+        # 1. per-widget runtime override
         timeout = getattr(self.widget, "slot_timeout", None)
 
-        # Fallback to UI (MainWindow) setting if not on widget
+        # 2. decorator metadata (``@Cancelable(timeout=N)``)
+        if timeout is None:
+            meta = getattr(self.slot, "_cancelable_meta", None)
+            if isinstance(meta, dict):
+                timeout = meta.get("timeout")
+
+        # 3. UI-wide fallback (only when a host has explicitly opted in)
         if (
             timeout is None
             and hasattr(self.widget, "ui")
@@ -148,32 +248,80 @@ class SlotWrapper:
         self._invoke(*args, **kwargs)
 
     def _invoke(self, *args, **kwargs):
-        """Execute the slot with history tracking and optional timeout."""
+        """Execute the slot with history tracking and optional timeout.
+
+        Universal feedback: switches the application override-cursor to
+        :data:`Qt.WaitCursor` for the slot's duration. The cursor is
+        OS-managed and animates regardless of whether the slot blocks
+        the Qt event loop (Maya ``cmds.*``, Max maxops, etc.) — the one
+        feedback affordance that survives a frozen main thread. Slots
+        that want richer in-widget feedback (status text, progress bar,
+        indeterminate "tick" indicator) opt in cooperatively via
+        :meth:`Switchboard.progress` / :meth:`Footer.progress`, which
+        drive :meth:`ProgressBar.update_progress` — that method calls
+        ``QApplication.processEvents`` per tick to keep the bar
+        responsive between work chunks.
+
+        Per-slot opt-out via ``widget.no_busy_indicator = True`` (or on
+        the UI) is honoured for rapid-fire signals.
+        """
 
         # History Tracking
         self.sb.slot_history(add=self.slot)
 
-        # Execution Strategy
-        timeout = self._get_timeout()
-        if timeout and timeout > 0:
-            msg = f"Slot '{self.slot.__name__}' on '{self.widget.objectName()}'"
-            monitored_slot = ptk.ExecutionMonitor.execution_monitor(
-                threshold=timeout,
-                message=msg,
-                logger=self.sb.logger,
-                allow_escape_cancel=True,
-                indicator=True,
-            )(self.slot)
-
+        # Wait cursor for the slot's duration. setOverrideCursor pushes
+        # onto Qt's cursor stack; the matching restore in ``finally``
+        # pops it. The cursor is OS-driven so it animates even when
+        # Maya's cmds.* holds the Qt event loop — the dispatcher-side
+        # affordance that previously tried to drive a footer marquee
+        # could not, because Qt animations need the event loop to tick.
+        # Wrapped defensively: a cursor failure must never block slot
+        # dispatch.
+        cursor_set = False
+        if not _slot_busy_opt_out(self.widget, self.sb):
             try:
-                return monitored_slot(*args, **kwargs)
-            except KeyboardInterrupt:
-                self.sb.logger.warning(
-                    f"Execution of {self.slot.__name__} aborted by user."
+                QtWidgets.QApplication.setOverrideCursor(
+                    QtGui.QCursor(QtCore.Qt.WaitCursor)
                 )
-                return None
-        else:
-            return self.slot(*args, **kwargs)
+                cursor_set = True
+            except Exception:
+                pass
+
+        try:
+            # Execution Strategy
+            timeout = self._get_timeout()
+            if timeout and timeout > 0:
+                # Honour a custom message from @Cancelable(message=...)
+                # when one was supplied; otherwise build a generic one
+                # from the slot identity.
+                meta = getattr(self.slot, "_cancelable_meta", None)
+                custom_msg = (meta or {}).get("message") if isinstance(meta, dict) else None
+                msg = custom_msg or (
+                    f"Slot '{self.slot.__name__}' on '{self.widget.objectName()}'"
+                )
+                monitored_slot = ptk.ExecutionMonitor.execution_monitor(
+                    threshold=timeout,
+                    message=msg,
+                    logger=self.sb.logger,
+                    allow_escape_cancel=True,
+                    indicator=True,
+                )(self.slot)
+
+                try:
+                    return monitored_slot(*args, **kwargs)
+                except KeyboardInterrupt:
+                    self.sb.logger.warning(
+                        f"Execution of {self.slot.__name__} aborted by user."
+                    )
+                    return None
+            else:
+                return self.slot(*args, **kwargs)
+        finally:
+            if cursor_set:
+                try:
+                    QtWidgets.QApplication.restoreOverrideCursor()
+                except Exception:
+                    pass
 
 
 class SwitchboardSlotsMixin:

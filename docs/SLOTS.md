@@ -159,16 +159,25 @@ def spn_start_init(self, widget):
 
 Implementation: [switchboard/slots.py](../uitk/switchboard/slots.py).
 
-### `widget.slot_timeout: float`
+### `@Cancelable(timeout=N)` (recommended) and `widget.slot_timeout`
 
-Seconds. If the slot runs longer, UITK shows a progress indicator and allows Esc to cancel (via `ptk.ExecutionMonitor`).
+Two equivalent ways to opt a slot into the `ExecutionMonitor` wrapper — warning dialog + Esc-cancel + near-cursor spinner after `timeout` seconds. Plain slots skip the wrapper entirely (no per-call thread spawn).
 
 ```python
-def btn_long_job_init(self, widget):
-    widget.slot_timeout = 30.0
+from uitk.switchboard import Cancelable
+
+class MyTool(SlotsBase):
+    # Static declaration at the slot site — visible to readers.
+    @Cancelable(30)
+    def btn_long_job(self, widget):
+        ...
+
+    # Runtime override (wins over the decorator):
+    def btn_other_init(self, widget):
+        widget.slot_timeout = 60.0
 ```
 
-Fallback: `ui.default_slot_timeout` applies to all slots in the UI if a widget doesn't set its own.
+Fallback: `ui.default_slot_timeout` applies to slots without either of the above. Not auto-set by the marking menu anymore — opt-in only.
 
 ### `widget.refresh_on_show: bool`
 

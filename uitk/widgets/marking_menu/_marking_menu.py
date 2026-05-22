@@ -681,7 +681,13 @@ class MarkingMenu(
             self.ui_handler.apply_styles(ui)
             self.ui_handler.setup_lifecycle(ui, hide_signal=self.key_show_release)
 
-            ui.default_slot_timeout = 360.0
+            # No automatic slot timeout — every slot used to be wrapped in
+            # ExecutionMonitor (thread spawn + Esc-cancel listener) which
+            # paid that cost for every UI interaction even though the vast
+            # majority of slots finish in milliseconds. Heavy operations
+            # now opt in explicitly with the ``@Cancelable(timeout=N)``
+            # decorator on the slot method, or set ``widget.slot_timeout``
+            # at runtime.
 
     def _prepare_ui(self, ui) -> QtWidgets.QWidget:
         """Initialize and set the UI without showing it.

@@ -179,6 +179,40 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         self.setValue(0)
         self.setFormat("%p%")
 
+    def set_total(self, total: int) -> None:
+        """Adjust the task total mid-flight.
+
+        Used by :func:`uitk.switchboard.utils.SwitchboardUtilsMixin.progress_adapter`
+        to auto-correct the bar's max when a downstream
+        ``progress_callback(current, total, message)`` reports a
+        ``total`` that differs from what the slot set at ``start_task``
+        time. Switches out of indeterminate mode when the bar was
+        pulsing, so slots can simply ``with sb.progress(text=...)``
+        without pre-knowing the loop size.
+
+        No-op when *total* is non-positive or already matches the
+        bar's current state.
+        """
+        if total is None or total <= 0:
+            return
+        if self._total == total and not self._indeterminate:
+            return
+        self._indeterminate = False
+        self._total = total
+        self.setMinimum(0)
+        self.setMaximum(total)
+        # Skip the format swap while the user is mid-hold; the held hint
+        # owns the format until release, when ``_on_escape_released``
+        # restores ``_format_before_hold``. We update the saved format
+        # instead so release reflects the new total.
+        determinate_format = (
+            f"{self._task_text} - %p%" if self._task_text else "%p%"
+        )
+        if self._escape_held:
+            self._format_before_hold = determinate_format
+        else:
+            self.setFormat(determinate_format)
+
     def start_task(
         self,
         total: Optional[int] = 100,

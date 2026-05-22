@@ -82,7 +82,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if settings:
             self.settings = settings
         else:
-            self.settings = SettingsManager(org=__package__, app=name)
+            self.settings = SettingsManager(app=name)
 
         self.state = StateManager(self.settings)
 

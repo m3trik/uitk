@@ -44,6 +44,9 @@ __version__ = "1.2.32"
 
 
 DEFAULT_INCLUDE = {
+    # Standalone-process bootstrap (must stay importable without dragging
+    # in Switchboard, which constructs a QApplication at class-body time).
+    "_bootstrap": "configure_high_dpi",
     # Switchboard symbols are mapped to their specific composition modules
     # (rather than the package facade) to preserve per-symbol lazy loading.
     # `from uitk import Signals` should not drag in the Switchboard machinery.
@@ -120,6 +123,8 @@ DEFAULT_INCLUDE = {
     "widgets.tableWidget": "TableWidget",
     "widgets.textEdit": "TextEdit",
     "widgets.textEditLogHandler": "TextEditLogHandler",
+    "widgets.textViewBox": "TextViewBox",
+    "widgets.windowPanel": "WindowPanel",
     "widgets.toolBox": "ToolBox",
     "widgets.treeWidget": "TreeWidget",
     "widgets.widgetComboBox": "WidgetComboBox",

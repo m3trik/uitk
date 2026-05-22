@@ -196,14 +196,16 @@ def spn_start_init(self, widget):
     widget.setKeyboardTracking(False)   # don't fire valueChanged mid-edit
 ```
 
-### `widget.slot_timeout = seconds`
-Show a progress indicator + allow Esc to cancel if the slot runs long:
+### `@Cancelable(timeout=seconds)` — enable Esc-cancel for heavy slots
 ```python
-def btn_render_init(self, widget):
-    widget.slot_timeout = 300.0
+from uitk.switchboard import Cancelable
+
+@Cancelable(300)
+def btn_render(self, widget):
+    ...  # user can hold Esc to abort
 ```
 
-Or set `ui.default_slot_timeout = 360` to apply to all slots in a UI.
+Equivalent runtime override: `widget.slot_timeout = 300.0` in the `*_init`. UI-wide opt-in: `ui.default_slot_timeout = N`. Plain slots skip the monitor wrapper — opt-in keeps the per-call overhead off normal UI clicks.
 
 ### `widget.refresh_on_show = True`
 Re-run `*_init` on every subsequent show, not just the first. For UIs that reflect changing environment state (workspace folders, scene contents):

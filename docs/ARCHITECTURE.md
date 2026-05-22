@@ -242,7 +242,8 @@ The wrapper handles four concerns:
 
 1. **Parameter injection.** Caches `inspect.signature(slot)` per slot function, checks if `widget` is in the param names. If yes and caller didn't pass it, injects `widget=self.widget`.
 2. **Debounce.** If `widget.debounce > 0`, stores args in `_debounce_args`, starts/restarts a single-shot `QTimer`, defers `_invoke` until the timer fires.
-3. **Timeout.** If `widget.slot_timeout > 0` (or `ui.default_slot_timeout`), wraps the call in `ptk.ExecutionMonitor.execution_monitor(threshold=..., indicator=True, allow_escape_cancel=True)`. Shows a progress overlay and lets the user press Esc to cancel long-running slots.
+3. **Timeout (opt-in).** When the slot is decorated `@Cancelable(timeout=N)`, or the widget/UI set `slot_timeout` / `default_slot_timeout`, wraps the call in `ptk.ExecutionMonitor.execution_monitor(threshold=..., indicator=True, allow_escape_cancel=True)`. Shows a warning dialog and lets the user press Esc to cancel. Undecorated slots skip this wrapper entirely — no per-call thread spawn.
+   Plus, regardless of the above: every slot dispatch sets `Qt.WaitCursor` as the application override cursor for the slot's duration, restored in `finally`. The cursor is OS-driven so it animates even when DCC commands hold the Qt event loop.
 4. **History.** Pushes slot onto `sb.slot_history` before execution.
 
 ### `@Signals` — the decorator

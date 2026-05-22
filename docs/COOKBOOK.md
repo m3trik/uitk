@@ -150,27 +150,31 @@ From [tentacle main.py](https://github.com/m3trik/tentacle/blob/main/tentacle/sl
 
 ---
 
-## Per-widget slot timeouts
+## Esc-cancel for heavy slots
 
-**Problem**: a "Render All" button might take 5 minutes. The user should see feedback and be able to cancel.
+**Problem**: a "Render All" button might take 5 minutes. The user should be able to abort.
 
-**Solution**: `widget.slot_timeout = 300.0`. UITK shows a progress indicator via `ptk.ExecutionMonitor` and listens for Esc to cancel.
+**Solution**: decorate the slot with `@Cancelable(timeout=N)`. After the threshold the dispatcher shows a "still running…" dialog (Keep Waiting / Cancel) and listens for an Esc hold to abort. A near-cursor spinner subprocess appears after the threshold lapses.
 
 ```python
-def btn_render_init(self, widget):
-    widget.slot_timeout = 300.0
+from uitk.switchboard import Cancelable
 
-def btn_render(self):
-    for frame in range(1, 241):
-        render_frame(frame)   # user can press Esc to abort
+class MyTool(SlotsBase):
+    @Cancelable(300)
+    def btn_render(self, widget):
+        for frame in range(1, 241):
+            render_frame(frame)   # user can press Esc to abort
+
+    @Cancelable(60, message="Texture optimization")
+    def btn_optimize(self, widget):
+        ...
 ```
 
-Or UI-wide:
-```python
-ui.default_slot_timeout = 360.0   # applies to all slots unless widget overrides
-```
+Plain (undecorated) slots run without monitor overhead — the dispatcher's universal wait cursor is the only feedback. The decorator is opt-in for genuinely heavy operations so the per-invocation thread-spawn cost isn't paid for every UI click.
 
-Implementation in [SlotWrapper._invoke](../uitk/switchboard/_slots.py).
+Runtime override: `widget.slot_timeout = N` (set in a `*_init` method) takes precedence over the decorator. `ui.default_slot_timeout = N` still works as a UI-wide fallback when a host explicitly opts in.
+
+Implementation in [SlotWrapper._invoke](../uitk/switchboard/slots.py).
 
 ---
 

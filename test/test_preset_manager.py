@@ -40,6 +40,9 @@ class TestPresetsRootResolution(BaseTestCase):
         super().setUp()
         self._tmp = Path(tempfile.mkdtemp(prefix="presets_root_"))
         self._prior_env = os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
+        # Reset the process-global guard so unrelated tests can't disable
+        # legacy-cleanup behavior by running first.
+        pm._LEGACY_QT_ROOTS_CLEARED = False
 
     def tearDown(self):
         if self._prior_env is None:
@@ -78,12 +81,20 @@ class TestLegacyMigration(BaseTestCase):
 
     TEST_KEY = "uitk_test_pkg/sample_dir"
     SAVED_LEGACY_PATHS = None
+    _saved_root_candidates = None
 
     def setUp(self):
         super().setUp()
         self._tmp = Path(tempfile.mkdtemp(prefix="presets_migrate_"))
         self._new_root = self._tmp / "new"
         self._legacy_root = self._tmp / "legacy"
+        # Fake AppConfigLocation + GenericConfigLocation under the tmp
+        # dir so the legacy-root cleanup can drain them without ever
+        # touching the developer's real config dirs.
+        self._fake_appconfig = self._tmp / "fake_appconfig"
+        self._fake_generic = self._tmp / "fake_generic"
+        self._fake_appconfig.mkdir(parents=True, exist_ok=True)
+        self._fake_generic.mkdir(parents=True, exist_ok=True)
 
         # Redirect the consolidated root.
         self._prior_env = os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
@@ -93,10 +104,26 @@ class TestLegacyMigration(BaseTestCase):
         self.SAVED_LEGACY_PATHS = dict(pm._LEGACY_PRESET_PATHS)
         pm._LEGACY_PRESET_PATHS[self.TEST_KEY] = str(self._legacy_root)
 
+        # Redirect the legacy Qt-root candidates to point at the fake
+        # config dirs. Essential — without this, the cleanup would see
+        # (and potentially modify) the developer's real config dirs.
+        self._saved_root_candidates = pm._legacy_qt_root_candidates
+        pm._legacy_qt_root_candidates = lambda: [
+            self._fake_appconfig / "m3trik" / "presets",
+            self._fake_appconfig,
+            self._fake_generic,
+        ]
+
+        # Reset the process-global cleanup guard so each test exercises
+        # the cleanup branch when applicable.
+        pm._LEGACY_QT_ROOTS_CLEARED = False
+
     def tearDown(self):
         # Restore the legacy table and env var.
         pm._LEGACY_PRESET_PATHS.clear()
         pm._LEGACY_PRESET_PATHS.update(self.SAVED_LEGACY_PATHS)
+        if self._saved_root_candidates is not None:
+            pm._legacy_qt_root_candidates = self._saved_root_candidates
         if self._prior_env is None:
             os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
         else:
@@ -111,7 +138,8 @@ class TestLegacyMigration(BaseTestCase):
         full.write_text(json.dumps(payload), encoding="utf-8")
         return full
 
-    def test_flat_package_migration_copies_files(self):
+    def test_flat_package_migration_moves_files(self):
+        """Legacy data appears at the new location after migration."""
         self._write_legacy("red.json", {"_meta": {"version": 1}, "r": 255})
 
         mgr = PresetManager(preset_dir=self.TEST_KEY)
@@ -120,6 +148,30 @@ class TestLegacyMigration(BaseTestCase):
         self.assertTrue((resolved / "red.json").exists())
         with open(resolved / "red.json", "r", encoding="utf-8") as f:
             self.assertEqual(json.load(f)["r"], 255)
+
+    def test_per_package_migration_removes_legacy_source(self):
+        """Successful migration removes the legacy source — not copy+leave.
+
+        Locks in that ``_maybe_migrate_legacy`` uses move-semantics so
+        users don't end up with two copies of every preset (one live,
+        one stale in the old tilde path) after migration.
+        """
+        self._write_legacy("blue.json", {"b": 1})
+        self._write_legacy("green.json", {"g": 1})
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        resolved = mgr.preset_dir
+
+        # New location has both files.
+        self.assertTrue((resolved / "blue.json").exists())
+        self.assertTrue((resolved / "green.json").exists())
+        # Legacy source is fully drained — no files left and the dir
+        # itself rmdir'd.
+        self.assertFalse((self._legacy_root / "blue.json").exists(),
+                         "legacy source preserved instead of moved")
+        self.assertFalse((self._legacy_root / "green.json").exists())
+        self.assertFalse(self._legacy_root.exists(),
+                         "empty legacy root not cleaned up")
 
     def test_whole_package_migrated_when_leaf_requested(self):
         """The bug fix: requesting one bridge template must bring siblings along."""
@@ -177,6 +229,296 @@ class TestLegacyMigration(BaseTestCase):
         sentinel = pm._migration_sentinel_path(self.TEST_KEY)
         self.assertTrue(sentinel.exists(),
                         "sentinel not written when legacy was absent")
+
+    def test_m3trik_wrapper_data_hoisted_up(self):
+        """Data stranded in the interim ``<appconfig>/m3trik/presets/`` wrapper is rescued."""
+        stranded_pkg = (
+            self._fake_appconfig / "m3trik" / "presets" / "mayatk" / "color_manager"
+        )
+        stranded_pkg.mkdir(parents=True)
+        (stranded_pkg / "red.json").write_text(json.dumps({"r": 255}), encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        hoisted = self._new_root / "mayatk" / "color_manager" / "red.json"
+        self.assertTrue(hoisted.exists(),
+                        f"m3trik-wrapped data not hoisted to {hoisted}")
+        # The empty m3trik shell should be removed.
+        self.assertFalse((self._fake_appconfig / "m3trik").exists(),
+                         "empty m3trik subtree was not cleaned up")
+
+    def test_appconfig_wrapper_data_hoisted_up(self):
+        """Data at ``<appconfig>/<pkg>/`` (the Qt python/ wrapper layout) is rescued.
+
+        This is the layout users are on right now: their presets live at
+        ``<LOCALAPPDATA>/python/mayatk/...`` because Qt's AppConfigLocation
+        adds an exe-name segment. After switching to GenericConfigLocation
+        we need to hoist them up one level.
+        """
+        stranded_pkg = self._fake_appconfig / "mayatk" / "substance_bridge"
+        stranded_pkg.mkdir(parents=True)
+        (stranded_pkg / "matte.json").write_text(json.dumps({"r": 0.7}),
+                                                 encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        hoisted = self._new_root / "mayatk" / "substance_bridge" / "matte.json"
+        self.assertTrue(hoisted.exists(),
+                        f"appconfig-wrapped data not hoisted to {hoisted}")
+        # The fake appconfig itself is NOT removed — it may hold other apps' data.
+        self.assertTrue(self._fake_appconfig.exists())
+        # The hoisted package dir under fake appconfig should be empty / gone.
+        self.assertFalse(stranded_pkg.exists(),
+                         "source package dir not consumed by the move")
+
+    def test_appconfig_wrapper_leaves_unrelated_dirs_alone(self):
+        """Non-uitk subdirs under AppConfigLocation are not touched."""
+        # Plant a non-uitk dir (e.g., a fake "pip" cache) — cleanup must not
+        # touch it.
+        unrelated = self._fake_appconfig / "pip" / "cache"
+        unrelated.mkdir(parents=True)
+        (unrelated / "wheel.bin").write_text("binary-blob", encoding="utf-8")
+
+        # Plant uitk data alongside.
+        uitk_pkg = self._fake_appconfig / "mayatk" / "color_manager"
+        uitk_pkg.mkdir(parents=True)
+        (uitk_pkg / "red.json").write_text(json.dumps({"r": 1}), encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        # Unrelated content untouched.
+        self.assertTrue((unrelated / "wheel.bin").exists(),
+                        "cleanup disturbed unrelated AppConfigLocation content")
+        # uitk content hoisted.
+        self.assertTrue((self._new_root / "mayatk" / "color_manager" / "red.json").exists())
+
+    def test_legacy_cleanup_does_not_overwrite_user_data(self):
+        """Live data wins on collision; the stranded copy stays on disk."""
+        stranded_dir = (
+            self._fake_appconfig / "m3trik" / "presets" / "mayatk" / "color_manager"
+        )
+        stranded_dir.mkdir(parents=True)
+        stranded_file = stranded_dir / "shared.json"
+        stranded_file.write_text(json.dumps({"src": "stranded"}), encoding="utf-8")
+
+        live_dir = self._new_root / "mayatk" / "color_manager"
+        live_dir.mkdir(parents=True)
+        (live_dir / "shared.json").write_text(json.dumps({"src": "live"}),
+                                              encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        with open(live_dir / "shared.json", "r", encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["src"], "live",
+                             "legacy cleanup overwrote a live file")
+        # Collision leaves stranded data on disk for forensics; future
+        # changes that delete it would silently destroy user-visible work.
+        self.assertTrue(stranded_file.exists(),
+                        "stranded data was deleted instead of preserved")
+
+    def test_legacy_cleanup_recursive_merge(self):
+        """Deep collisions don't orphan data — recursion merges at every level."""
+        live_inner = self._new_root / "uitk" / "switchboard_browser" / "presets"
+        live_inner.mkdir(parents=True)
+        (live_inner / "keep.json").write_text(json.dumps({"src": "live"}),
+                                              encoding="utf-8")
+
+        # Stranded data four levels deep under the m3trik wrapper.
+        stranded_inner = (
+            self._fake_appconfig / "m3trik" / "presets"
+            / "uitk" / "switchboard_browser" / "presets"
+        )
+        stranded_inner.mkdir(parents=True)
+        (stranded_inner / "rescue.json").write_text(json.dumps({"src": "stranded"}),
+                                                    encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        self.assertTrue((live_inner / "keep.json").exists())
+        self.assertTrue((live_inner / "rescue.json").exists(),
+                        "recursive merge failed to rescue deeply-nested data")
+        self.assertFalse((self._fake_appconfig / "m3trik").exists(),
+                         "m3trik subtree not collapsed after recursive merge")
+
+    def test_generic_era_data_hoisted_to_wrapper(self):
+        """Data at ``<generic>/<pkg>/`` (bare generic-config era) is wrapped up."""
+        # User had data sitting as siblings of unrelated apps at the
+        # bare GenericConfigLocation level — needs to move into the new
+        # ecosystem wrapper.
+        stranded_pkg = self._fake_generic / "mayatk" / "color_manager"
+        stranded_pkg.mkdir(parents=True)
+        (stranded_pkg / "red.json").write_text(json.dumps({"r": 255}),
+                                               encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        hoisted = self._new_root / "mayatk" / "color_manager" / "red.json"
+        self.assertTrue(hoisted.exists(),
+                        f"generic-era data not hoisted to {hoisted}")
+        # Source consumed by the move.
+        self.assertFalse(stranded_pkg.exists())
+
+    def test_pre_wrap_uitk_state_restructured_in_place(self):
+        """Pre-wrap ``<new_root>/style_presets/`` becomes ``<new_root>/uitk/style_presets/``.
+
+        Before the ecosystem-wrapper layout, ``<generic>/uitk/`` held
+        uitk-package state directly. With the wrapper, ``<generic>/uitk/``
+        IS the ecosystem root and uitk's own state nests inside as
+        ``<generic>/uitk/uitk/``. This test verifies the in-place
+        restructure happens when pre-wrap data is detected at the new
+        root itself.
+        """
+        # Plant pre-wrap state at the new root — folders named like
+        # uitk-package dirs (not known-package names).
+        (self._new_root / "style_presets").mkdir(parents=True)
+        (self._new_root / "style_presets" / "dark.json").write_text(
+            json.dumps({"bg": "#000"}), encoding="utf-8"
+        )
+        (self._new_root / "hotkey_presets").mkdir()
+        (self._new_root / "hotkey_presets" / "vim.json").write_text(
+            json.dumps({"esc": "Esc"}), encoding="utf-8"
+        )
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        # Both pre-wrap dirs should now live under the inner uitk/ wrapper.
+        self.assertTrue(
+            (self._new_root / "uitk" / "style_presets" / "dark.json").exists(),
+            "pre-wrap style_presets not nested into uitk/uitk/")
+        self.assertTrue(
+            (self._new_root / "uitk" / "hotkey_presets" / "vim.json").exists(),
+            "pre-wrap hotkey_presets not nested into uitk/uitk/")
+        # Old locations are gone.
+        self.assertFalse((self._new_root / "style_presets").exists())
+        self.assertFalse((self._new_root / "hotkey_presets").exists())
+
+    def test_pre_wrap_skipped_when_already_wrapped(self):
+        """If the new root already has the wrapper layout, no in-place re-wrap."""
+        # New-style wrapper layout: known-package subdirs present.
+        (self._new_root / "uitk" / "style_presets").mkdir(parents=True)
+        (self._new_root / "uitk" / "style_presets" / "x.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (self._new_root / "mayatk").mkdir()  # known-pkg marker
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        # The wrap must NOT have nested everything one more level deep.
+        self.assertTrue((self._new_root / "uitk" / "style_presets" / "x.json").exists())
+        self.assertFalse((self._new_root / "uitk" / "uitk").exists(),
+                         "wrap ran on an already-wrapped layout")
+
+    def test_pre_wrap_resumes_partial_wrap(self):
+        """A prior wrap that was killed mid-move is resumed on the next access.
+
+        Without this, the strict-detector behavior, the inner ``uitk/`` subdir
+        would be the only known-pkg child and a lenient detector would
+        treat the dir as already-wrapped, leaving the stray sibling
+        orphaned forever.
+        """
+        # Simulate a partial wrap: inner uitk/ already created with one
+        # subdir moved in, but another sibling (style_presets) was never
+        # processed before the prior run died.
+        (self._new_root / "uitk" / "hotkey_presets").mkdir(parents=True)
+        (self._new_root / "uitk" / "hotkey_presets" / "moved.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (self._new_root / "style_presets").mkdir()
+        (self._new_root / "style_presets" / "stuck.json").write_text(
+            "{}", encoding="utf-8"
+        )
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        # Previously-moved file still in place; orphaned sibling resumed.
+        self.assertTrue((self._new_root / "uitk" / "hotkey_presets" / "moved.json").exists())
+        self.assertTrue(
+            (self._new_root / "uitk" / "style_presets" / "stuck.json").exists(),
+            "partial-wrap recovery did not pick up the orphaned sibling")
+        self.assertFalse((self._new_root / "style_presets").exists(),
+                         "orphaned sibling still at root after recovery")
+
+    def test_pre_wrap_drops_interim_artifacts(self):
+        """``.migrated`` / ``.migration/`` at root level don't get wrapped into uitk/."""
+        # Plant a real pre-wrap dir + dead-state artifacts at the same level.
+        (self._new_root / "style_presets").mkdir(parents=True)
+        (self._new_root / "style_presets" / "x.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (self._new_root / ".migrated").write_text("[]", encoding="utf-8")
+        (self._new_root / ".migration").mkdir()
+        (self._new_root / ".migration" / "ghost").touch()
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        self.assertTrue((self._new_root / "uitk" / "style_presets" / "x.json").exists())
+        # Dead-state artifacts dropped, not preserved inside the wrapper.
+        self.assertFalse((self._new_root / "uitk" / ".migrated").exists(),
+                         ".migrated artifact carried into wrapper")
+        self.assertFalse((self._new_root / "uitk" / ".migration").exists(),
+                         ".migration artifact carried into wrapper")
+        # And not at the root level either.
+        self.assertFalse((self._new_root / ".migrated").exists())
+        self.assertFalse((self._new_root / ".migration").exists())
+
+    def test_pre_wrap_and_candidate_drain_combined(self):
+        """Pass 1 (wrap) and Pass 2 (drain) cooperate in the same migration.
+
+        Realistic scenario: user has BOTH pre-wrap uitk-pkg state at the
+        new root AND legacy data at an old AppConfigLocation candidate.
+        Both end up correctly placed in a single first-access cycle.
+        """
+        # Pre-wrap state at <new_root>/style_presets/ (handled by pass 1).
+        (self._new_root / "style_presets").mkdir(parents=True)
+        (self._new_root / "style_presets" / "wrap.json").write_text(
+            json.dumps({"src": "prewrap"}), encoding="utf-8"
+        )
+        # Legacy data at <fake_appconfig>/mayatk/ (handled by pass 2).
+        (self._fake_appconfig / "mayatk" / "color_manager").mkdir(parents=True)
+        (self._fake_appconfig / "mayatk" / "color_manager" / "hoist.json").write_text(
+            json.dumps({"src": "appconfig"}), encoding="utf-8"
+        )
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        # Pass 1 result: uitk-pkg state nested.
+        self.assertTrue(
+            (self._new_root / "uitk" / "style_presets" / "wrap.json").exists(),
+            "pass 1 (wrap) did not run in combined scenario")
+        # Pass 2 result: mayatk hoisted into the wrapper sibling.
+        self.assertTrue(
+            (self._new_root / "mayatk" / "color_manager" / "hoist.json").exists(),
+            "pass 2 (candidate drain) did not run in combined scenario")
+
+    def test_legacy_cleanup_drops_interim_state_artifacts(self):
+        """Interim ``.migrated`` / ``.migration`` files don't leak up."""
+        wrapper = self._fake_appconfig / "m3trik" / "presets"
+        wrapper.mkdir(parents=True)
+        (wrapper / ".migrated").write_text("[]", encoding="utf-8")
+        (wrapper / ".migration").mkdir()
+        (wrapper / ".migration" / "uitk__style_presets").touch()
+        (wrapper / "mayatk").mkdir()
+        (wrapper / "mayatk" / "x.json").write_text("{}", encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir
+
+        self.assertTrue((self._new_root / "mayatk" / "x.json").exists())
+        self.assertFalse((self._new_root / ".migrated").exists(),
+                         "interim .migrated file leaked to root")
+        self.assertFalse((self._new_root / ".migration").exists(),
+                         "interim .migration dir leaked to root")
 
 
 if __name__ == "__main__":
