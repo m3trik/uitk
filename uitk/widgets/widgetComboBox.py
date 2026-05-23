@@ -137,7 +137,28 @@ class WidgetComboBox(ComboBox):
         list_view = QtWidgets.QListView(self)
         list_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         list_view.setSpacing(0)  # Compact layout with no spacing between items
+        # Zero item padding so embedded widgets fill the row edge-to-edge,
+        # matching standard combobox visual density. The parent QSS rule
+        # `QComboBox QAbstractItemView::item { padding: 1px; }` would otherwise
+        # add a 1px frame around every embedded widget. Hover/selection bg
+        # is suppressed per-row in ``_CurrentItemIndicatorDelegate`` only
+        # for rows that contain an embedded widget — text-only rows keep
+        # the standard BUTTON_HOVER blue.
+        list_view.setStyleSheet(
+            "QComboBox QAbstractItemView::item,"
+            " QAbstractItemView::item {"
+            "     padding: 0;"
+            "     border: none;"
+            " }"
+        )
         self.setView(list_view)
+
+        # Track the tallest embedded widget so all rows can be sized
+        # uniformly — a WidgetComboBox with mixed widgets (sliders, checkboxes,
+        # spinboxes) otherwise renders ragged rows. The actions section
+        # (separator + button container) is excluded from this tracking
+        # because its container is intentionally tall.
+        self._uniform_item_height = 0
 
         self._model = QtGui.QStandardItemModel(self)
         self.setModel(self._model)
@@ -165,6 +186,19 @@ class WidgetComboBox(ComboBox):
         list_view.viewport().installEventFilter(self)
 
         self.currentIndexChanged.connect(self._on_index_changed)
+
+        # Default theme hides QComboBox::down-arrow; paintEvent draws an
+        # arrow immediately after the displayed text instead, so the widget
+        # reads visually as a dropdown.  Direction is configurable via the
+        # ``arrow_direction`` property; size auto-scales with the font.
+        self._arrow_direction: Optional[str] = "down"
+
+        # Snapshots of embedded-widget initial values, keyed by widget id, for
+        # the optional "Restore Defaults" action.  Captured lazily on first
+        # ``_add_widget_item`` so defaults reflect the widget's seeded state.
+        self._widget_defaults: dict[int, tuple] = {}
+        self._add_defaults_button: bool = False
+        self._defaults_action_label: str = "Restore Defaults"
 
     # ------------------------------------------------------------------
     # Deferred index-widget helpers
@@ -254,9 +288,7 @@ class WidgetComboBox(ComboBox):
         row_item = QtGui.QStandardItem(label)
         payload = data if data is not None else widget
         row_item.setData(payload, QtCore.Qt.UserRole)
-        size_hint = widget.sizeHint()
-        if size_hint.isValid():
-            row_item.setSizeHint(size_hint)
+        self._apply_uniform_height(row_item, widget)
 
         self._model.appendRow(row_item)
         row = self._model.rowCount() - 1
@@ -340,9 +372,49 @@ class WidgetComboBox(ComboBox):
         layout = QtWidgets.QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(widget)
+        # Vertical-center the widget so rows sized to the uniform max-height
+        # don't vertically stretch shorter widgets (checkboxes growing tall).
+        layout.addWidget(widget, alignment=QtCore.Qt.AlignVCenter)
         container.setProperty("_embedded_widget", widget)
         return container
+
+    def _apply_uniform_height(self, row_item, widget, track=True):
+        """Set ``row_item``'s sizeHint using the uniform height policy.
+
+        When ``track`` is True (default) the widget's natural height feeds
+        the running max and may grow other rows. When False (used for the
+        actions section's tall multi-button container) the row gets its
+        own natural sizeHint and is excluded from tracking.
+        """
+        natural = widget.sizeHint()
+        if not natural.isValid():
+            return
+        if track:
+            if natural.height() > self._uniform_item_height:
+                self._uniform_item_height = natural.height()
+                self._resync_uniform_heights()
+            row_item.setSizeHint(
+                QtCore.QSize(natural.width(), self._uniform_item_height)
+            )
+        else:
+            row_item.setSizeHint(natural)
+
+    def _resync_uniform_heights(self):
+        """Re-apply the current uniform height to every tracked row."""
+        target = self._uniform_item_height
+        if target <= 0:
+            return
+        # Action rows live at the tail; iterate everything except those.
+        # `_action_row_count` is the count of separator + container rows.
+        total = self._model.rowCount()
+        last_tracked = total - self._action_row_count
+        for r in range(last_tracked):
+            item = self._model.item(r)
+            if item is None:
+                continue
+            sh = item.sizeHint()
+            if sh.height() != target:
+                item.setSizeHint(QtCore.QSize(sh.width(), target))
 
     def _rebuild_index_maps(self) -> None:
         """After row removal remap stored widgets to their new rows."""
@@ -420,8 +492,22 @@ class WidgetComboBox(ComboBox):
 
         from uitk.widgets.separator import Separator
 
+        # Default Separator HLine is too subtle against the popup background —
+        # strengthen it with a palette-aware border-top so the actions section
+        # reads as a distinct group from the items above.  Uses palette(text)
+        # so it stays visible on dark themes where palette(mid) blends in.
         sep = Separator()
-        self._add_widget_item(sep, "", None, ascending=False)
+        sep.setFrameShape(QtWidgets.QFrame.NoFrame)
+        sep.setFixedHeight(7)
+        sep.setStyleSheet(
+            "QFrame {"
+            " background: transparent;"
+            " border: none;"
+            " border-top: 1px solid palette(text);"
+            " margin: 3px 6px;"
+            "}"
+        )
+        self._add_widget_item(sep, "", None, ascending=False, track_height=False)
 
         # Build a single container holding all action buttons vertically.
         container = QtWidgets.QWidget(self.view())
@@ -441,7 +527,7 @@ class WidgetComboBox(ComboBox):
             btn.setCursor(QtCore.Qt.PointingHandCursor)
             btn.clicked.connect(action.trigger)
             btn.clicked.connect(self.hidePopup)
-            btn.setStyleSheet("text-align: left; padding-left: 4px;")
+            btn.setStyleSheet("text-align: center;")
             layout.addWidget(btn)
             # Track widest button via sizeHint (reliable for QPushButton).
             w = btn.sizeHint().width()
@@ -452,7 +538,7 @@ class WidgetComboBox(ComboBox):
         container.setMinimumWidth(max_btn_width)
         container.adjustSize()
 
-        row = self._add_widget_item(container, "", None, ascending=False)
+        row = self._add_widget_item(container, "", None, ascending=False, track_height=False)
         item = self._model.item(row)
         if item:
             item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
@@ -552,6 +638,148 @@ class WidgetComboBox(ComboBox):
         if self._overflow_indicator:
             self._overflow_indicator.hide()
         super().hidePopup()
+
+    _ARROW_DIRECTIONS = (None, "down", "up", "left", "right")
+
+    @property
+    def arrow_direction(self) -> Optional[str]:
+        """Direction of the dropdown-affordance arrow drawn after the text.
+
+        One of ``"down"`` (default), ``"up"``, ``"left"``, ``"right"`` — or
+        ``None`` to suppress drawing.  Triangle size and gap auto-scale with
+        the current font.
+        """
+        return self._arrow_direction
+
+    @arrow_direction.setter
+    def arrow_direction(self, value: Optional[str]) -> None:
+        if value not in self._ARROW_DIRECTIONS:
+            raise ValueError(
+                f"arrow_direction must be one of {self._ARROW_DIRECTIONS}, got {value!r}"
+            )
+        if value == self._arrow_direction:
+            return
+        self._arrow_direction = value
+        self.update()
+
+    def _build_arrow_polygon(
+        self, cx: float, cy: float, direction: str, em: float
+    ) -> QtGui.QPolygonF:
+        """Build a triangle polygon centred at (cx, cy) for *direction*.
+
+        ``em`` is a font-derived reference size (typically ``fontMetrics.ascent``);
+        the base of the triangle is ``em`` and the depth is ~0.57 × em, matching
+        the original 10.5×6 visual proportions and scaling with the font.
+        """
+        base = em
+        depth = em * 0.57
+
+        if direction == "down":
+            return QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(cx - base / 2.0, cy - depth / 2.0),
+                    QtCore.QPointF(cx + base / 2.0, cy - depth / 2.0),
+                    QtCore.QPointF(cx, cy + depth / 2.0),
+                ]
+            )
+        if direction == "up":
+            return QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(cx - base / 2.0, cy + depth / 2.0),
+                    QtCore.QPointF(cx + base / 2.0, cy + depth / 2.0),
+                    QtCore.QPointF(cx, cy - depth / 2.0),
+                ]
+            )
+        if direction == "right":
+            return QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(cx - depth / 2.0, cy - base / 2.0),
+                    QtCore.QPointF(cx - depth / 2.0, cy + base / 2.0),
+                    QtCore.QPointF(cx + depth / 2.0, cy),
+                ]
+            )
+        # direction == "left"
+        return QtGui.QPolygonF(
+            [
+                QtCore.QPointF(cx + depth / 2.0, cy - base / 2.0),
+                QtCore.QPointF(cx + depth / 2.0, cy + base / 2.0),
+                QtCore.QPointF(cx - depth / 2.0, cy),
+            ]
+        )
+
+    def paintEvent(self, event) -> None:
+        """Paint the base combo, then overlay an arrow immediately after the
+        displayed text so the widget reads visually as a dropdown.
+
+        Theme hides Qt's native ``QComboBox::down-arrow``; this draws a
+        triangle (direction = ``arrow_direction``) using the text palette
+        colour and scaling with the font.
+        """
+        super().paintEvent(event)
+
+        direction = self._arrow_direction
+        if direction is None:
+            return
+
+        # Displayed text mirrors AlignedComboBox.CustomStyle.drawControl:
+        # header when no item is current, otherwise current item's text.
+        if self.currentIndex() == -1 and getattr(self, "header_text", None):
+            text = self.header_text
+            alignment = getattr(self, "header_alignment", QtCore.Qt.AlignLeft)
+        else:
+            text = self.currentText() or ""
+            alignment = QtCore.Qt.AlignLeft
+
+        if not text:
+            return
+
+        # Edit-field rect via the style → honours theme padding / frame.
+        opt = QtWidgets.QStyleOptionComboBox()
+        self.initStyleOption(opt)
+        field_rect = self.style().subControlRect(
+            QtWidgets.QStyle.CC_ComboBox,
+            opt,
+            QtWidgets.QStyle.SC_ComboBoxEditField,
+            self,
+        )
+
+        fm = QtGui.QFontMetrics(self.font())
+        text_width = fm.horizontalAdvance(text)
+        em = fm.ascent()
+
+        # Font-relative sizing — bigger font → bigger arrow + gap.
+        gap = em * 0.83  # ~10 px at 12 px ascent (original hardcoded value)
+        base = em  # ~10.5 px at 12 px ascent
+        cx = (
+            self._compute_text_end_x(field_rect, text_width, alignment)
+            + gap
+            + base / 2.0
+        )
+        cy = field_rect.center().y() + 1
+
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+            color = self.palette().color(
+                QtGui.QPalette.Disabled if not self.isEnabled() else QtGui.QPalette.Active,
+                QtGui.QPalette.Text,
+            )
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawPolygon(self._build_arrow_polygon(cx, cy, direction, em))
+        finally:
+            painter.end()
+
+    @staticmethod
+    def _compute_text_end_x(
+        field_rect: QtCore.QRect, text_width: int, alignment: int
+    ) -> float:
+        if alignment & QtCore.Qt.AlignRight:
+            return float(field_rect.right())
+        if alignment & QtCore.Qt.AlignHCenter:
+            return field_rect.center().x() + text_width / 2.0
+        return float(field_rect.left() + text_width)
 
     def eventFilter(self, obj, event):
         """Event filter to reposition indicator on scroll and resize events."""
@@ -798,8 +1026,14 @@ class WidgetComboBox(ComboBox):
             return added_items[0]
         return added_items
 
-    def _add_widget_item(self, widget, label, data, ascending):
-        """Internal method to add a widget item."""
+    def _add_widget_item(self, widget, label, data, ascending, track_height=True):
+        """Internal method to add a widget item.
+
+        ``track_height`` controls uniform-height enforcement. The actions
+        section (separator + multi-button container) passes False so its
+        legitimately taller rows don't inflate the uniform height applied
+        to selectable rows above.
+        """
         if widget.parent() is not None and widget.parent() is not self.view():
             widget.setParent(None)
 
@@ -817,9 +1051,7 @@ class WidgetComboBox(ComboBox):
 
         payload = data if data is not None else widget
         row_item.setData(payload, QtCore.Qt.UserRole)
-        size_hint = widget.sizeHint()
-        if size_hint.isValid():
-            row_item.setSizeHint(size_hint)
+        self._apply_uniform_height(row_item, widget, track=track_height)
 
         if ascending:
             self._model.insertRow(0, row_item)
@@ -835,7 +1067,86 @@ class WidgetComboBox(ComboBox):
 
         self._widget_items[row] = widget
         self._row_containers[row] = container
+        self._capture_widget_default(widget)
         return row
+
+    # ------------------------------------------------------------------
+    # Defaults capture / restore
+    # ------------------------------------------------------------------
+    @property
+    def add_defaults_button(self) -> bool:
+        """When True, adds a "Restore Defaults" action at the bottom of the
+        dropdown that resets every embedded option widget (checkboxes,
+        spinboxes, combos, line edits) to the value it had when added.
+
+        Defaults are snapshotted in ``_add_widget_item``, so seed widget
+        state BEFORE calling ``add()`` if you want it preserved as the
+        reset target.
+        """
+        return self._add_defaults_button
+
+    @add_defaults_button.setter
+    def add_defaults_button(self, value: bool) -> None:
+        value = bool(value)
+        if value == self._add_defaults_button:
+            return
+        self._add_defaults_button = value
+        if value:
+            if self._defaults_action_label not in self.actions:
+                self.actions.add(self._defaults_action_label, self._restore_widget_defaults)
+        else:
+            self.actions.remove(self._defaults_action_label)
+
+    def _capture_widget_default(self, widget: QtWidgets.QWidget) -> None:
+        """Snapshot *widget*'s current value for later defaults reset.
+
+        Idempotent — the first captured value wins, so callers can re-add
+        items without losing the original default.
+        """
+        wid = id(widget)
+        if wid in self._widget_defaults:
+            return
+        snapshot = self._snapshot_value(widget)
+        if snapshot is not None:
+            self._widget_defaults[wid] = snapshot
+
+    @staticmethod
+    def _snapshot_value(widget: QtWidgets.QWidget) -> Optional[tuple]:
+        """Return a (kind, value) tuple describing the widget's current value,
+        or None if the widget has no resettable value.
+        """
+        if isinstance(widget, QtWidgets.QCheckBox):
+            return ("checked", widget.isChecked())
+        if isinstance(widget, QtWidgets.QComboBox):
+            return ("currentIndex", widget.currentIndex())
+        if isinstance(widget, QtWidgets.QLineEdit):
+            return ("text", widget.text())
+        if isinstance(widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
+            return ("value", widget.value())
+        if isinstance(widget, (QtWidgets.QSlider, QtWidgets.QDial)):
+            return ("value", widget.value())
+        if isinstance(widget, QtWidgets.QRadioButton):
+            return ("checked", widget.isChecked())
+        return None
+
+    @staticmethod
+    def _apply_snapshot(widget: QtWidgets.QWidget, snapshot: tuple) -> None:
+        kind, value = snapshot
+        if kind == "checked":
+            widget.setChecked(value)
+        elif kind == "currentIndex":
+            widget.setCurrentIndex(value)
+        elif kind == "text":
+            widget.setText(value)
+        elif kind == "value":
+            widget.setValue(value)
+
+    def _restore_widget_defaults(self) -> None:
+        """Reset every embedded option widget to its captured default."""
+        for widget in self._widget_items.values():
+            snapshot = self._widget_defaults.get(id(widget))
+            if snapshot is not None:
+                self._apply_snapshot(widget, snapshot)
 
     def _infer_label(self, widget: QtWidgets.QWidget, fallback: Optional[str]) -> str:
         """Infer a label from a widget."""
@@ -915,8 +1226,10 @@ class WidgetComboBox(ComboBox):
                 container.deleteLater()
         self._row_containers.clear()
         self._widget_items.clear()
+        self._widget_defaults.clear()
         self._pending_index_widgets.clear()
         self._action_row_count = 0
+        self._uniform_item_height = 0
         super().clear()
 
 

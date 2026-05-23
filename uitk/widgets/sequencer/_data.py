@@ -2,9 +2,35 @@
 # coding=utf-8
 """Data models and shared constants for the sequencer widget."""
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
+
+
+# ---------------------------------------------------------------------------
+#  Background-pattern spacing tiers + declarative spec
+# ---------------------------------------------------------------------------
+# Defined early so data records (ClipData, TrackData) can carry a PatternSpec
+# as a field. Registry, brush builder, and paint helper live further down.
+HATCH_DENSE = 6
+HATCH_MEDIUM = 8
+HATCH_SPARSE = 12
+
+
+@dataclass(frozen=True)
+class PatternSpec:
+    """Declarative, hashable description of a tiled background pattern."""
+
+    style: str  # "diagonal" | "crosshatch" | "vstripes" | "hstripes" | "dots" | "grid" | custom
+    color: str = "#000000"
+    alpha: int = 255
+    spacing: int = HATCH_MEDIUM
+    line_width: float = 1.0
+
+    def brush(self) -> QtGui.QBrush:
+        c = QtGui.QColor(self.color)
+        c.setAlpha(self.alpha)
+        return pattern_brush(self.style, c, self.spacing, self.line_width)
 
 
 # ---------------------------------------------------------------------------
@@ -23,6 +49,7 @@ class ClipData:
     locked: bool = False
     sub_row: str = ""  # empty = main track row, non-empty = expanded sub-row name
     data: Dict[str, Any] = field(default_factory=dict)
+    pattern: Optional[PatternSpec] = None
 
     @property
     def end(self) -> float:
@@ -38,6 +65,7 @@ class TrackData:
     color: Optional[str] = None
     text_color: Optional[str] = None
     clips: List[int] = field(default_factory=list)
+    pattern: Optional[PatternSpec] = None
 
 
 @dataclass
@@ -129,47 +157,114 @@ _DEFAULT_ATTRIBUTE_COLORS = {
 
 
 # ---------------------------------------------------------------------------
-#  Hatching / fill-pattern helpers
+#  Background fill patterns — registry + cached brushes
 # ---------------------------------------------------------------------------
-# Pre-defined spacing tiers for visual hierarchy:
-HATCH_DENSE = 6  # interpolation clips — subtle, tight
-HATCH_MEDIUM = 8  # ruler shot gaps — mid-density
-HATCH_SPARSE = 12  # main gap overlays — bold, wide
+# Spacing tiers (HATCH_DENSE / MEDIUM / SPARSE) live near the top of the file
+# so PatternSpec can reference them as defaults.
 
-_hatch_cache: Dict[tuple, QtGui.QBrush] = {}
-_HATCH_CACHE_MAX = 64
+# A pattern painter draws one tile of side ``size`` onto the given QPainter.
+PatternPainter = Callable[[QtGui.QPainter, int, QtGui.QColor, float], None]
+
+_pattern_painters: Dict[str, PatternPainter] = {}
 
 
-def hatch_brush(
+def register_pattern(name: str, painter: PatternPainter) -> None:
+    """Register (or override) a tile-painter for :func:`pattern_brush`."""
+    _pattern_painters[name] = painter
+
+
+def _paint_diagonal(p, size, color, lw):
+    p.setPen(QtGui.QPen(color, lw))
+    p.drawLine(0, size, size, 0)
+
+
+def _paint_crosshatch(p, size, color, lw):
+    pen = QtGui.QPen(color, lw)
+    p.setPen(pen)
+    p.drawLine(0, size, size, 0)
+    p.drawLine(0, 0, size, size)
+
+
+def _paint_vstripes(p, size, color, lw):
+    p.setPen(QtGui.QPen(color, lw))
+    p.drawLine(0, 0, 0, size)
+
+
+def _paint_hstripes(p, size, color, lw):
+    p.setPen(QtGui.QPen(color, lw))
+    p.drawLine(0, 0, size, 0)
+
+
+def _paint_dots(p, size, color, lw):
+    p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    p.setPen(QtCore.Qt.NoPen)
+    p.setBrush(color)
+    radius = max(0.5, lw)
+    c = size / 2.0
+    p.drawEllipse(QtCore.QPointF(c, c), radius, radius)
+
+
+def _paint_grid(p, size, color, lw):
+    p.setPen(QtGui.QPen(color, lw))
+    p.drawLine(0, 0, size, 0)
+    p.drawLine(0, 0, 0, size)
+
+
+for _name, _fn in (
+    ("diagonal", _paint_diagonal),
+    ("crosshatch", _paint_crosshatch),
+    ("vstripes", _paint_vstripes),
+    ("hstripes", _paint_hstripes),
+    ("dots", _paint_dots),
+    ("grid", _paint_grid),
+):
+    register_pattern(_name, _fn)
+
+
+_pattern_cache: Dict[tuple, QtGui.QBrush] = {}
+_PATTERN_CACHE_MAX = 128
+
+
+def pattern_brush(
+    style: str,
     color: QtGui.QColor,
-    spacing: int = HATCH_SPARSE,
+    spacing: int = HATCH_MEDIUM,
     line_width: float = 1.0,
 ) -> QtGui.QBrush:
-    """Return a tiled diagonal-hatch brush.
-
-    Results are cached by (*color key*, *spacing*, *line_width*) so
-    repeated paint calls reuse the same ``QPixmap``.
-
-    Parameters
-    ----------
-    color : QColor
-        Stroke colour for the diagonal lines.
-    spacing : int
-        Tile size in pixels (controls hatching density).
-    line_width : float
-        Pen width for each diagonal stroke.
-    """
-    key = (color.rgba(), spacing, line_width)
-    brush = _hatch_cache.get(key)
-    if brush is None:
-        tile = QtGui.QPixmap(spacing, spacing)
-        tile.fill(QtCore.Qt.transparent)
-        tp = QtGui.QPainter(tile)
-        tp.setPen(QtGui.QPen(color, line_width))
-        tp.drawLine(0, spacing, spacing, 0)
+    """Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for ``"dots"``)."""
+    key = (style, color.rgba(), spacing, line_width)
+    brush = _pattern_cache.get(key)
+    if brush is not None:
+        return brush
+    painter_fn = _pattern_painters.get(style)
+    if painter_fn is None:
+        raise KeyError(
+            f"Unknown pattern style {style!r}. "
+            f"Registered: {sorted(_pattern_painters)}"
+        )
+    tile = QtGui.QPixmap(spacing, spacing)
+    tile.fill(QtCore.Qt.transparent)
+    tp = QtGui.QPainter(tile)
+    try:
+        painter_fn(tp, spacing, color, line_width)
+    finally:
         tp.end()
-        brush = QtGui.QBrush(tile)
-        if len(_hatch_cache) >= _HATCH_CACHE_MAX:
-            _hatch_cache.pop(next(iter(_hatch_cache)))
-        _hatch_cache[key] = brush
+    brush = QtGui.QBrush(tile)
+    if len(_pattern_cache) >= _PATTERN_CACHE_MAX:
+        _pattern_cache.pop(next(iter(_pattern_cache)))
+    _pattern_cache[key] = brush
     return brush
+
+
+def paint_pattern(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRectF,
+    spec: PatternSpec,
+) -> None:
+    """Fill ``rect`` with ``spec``; tile is anchored to ``rect.topLeft()``."""
+    prev_origin = painter.brushOrigin()
+    painter.setBrushOrigin(rect.topLeft().toPoint())
+    try:
+        painter.fillRect(rect, spec.brush())
+    finally:
+        painter.setBrushOrigin(prev_origin)

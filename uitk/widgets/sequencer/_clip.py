@@ -17,7 +17,8 @@ from uitk.widgets.sequencer._data import (
     _HANDLE_WIDTH,
     _styled_menu,
     _menu_exec_pos,
-    hatch_brush,
+    pattern_brush,
+    paint_pattern,
     HATCH_DENSE,
 )
 from uitk.widgets.sequencer._keyframe import KeyframeItem
@@ -274,11 +275,14 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawRect(rect)
 
+        if self._data.pattern is not None:
+            paint_pattern(painter, rect, self._data.pattern)
+
         # Interpolated-motion overlay (no physical keys in this shot)
         if self._data.data.get("interpolated"):
             hc = QtGui.QColor(color.darker(180))
             hc.setAlpha(90)
-            painter.fillRect(rect, hatch_brush(hc, HATCH_DENSE))
+            painter.fillRect(rect, pattern_brush("diagonal", hc, HATCH_DENSE))
 
         # Status tint overlay (assessment severity from shot manifest)
         status_hex = self._data.data.get("status_color")

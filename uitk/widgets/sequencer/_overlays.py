@@ -14,7 +14,7 @@ from uitk.widgets.sequencer._data import (
     _SHOT_LANE_HEIGHT,
     _styled_menu,
     _menu_exec_pos,
-    hatch_brush,
+    pattern_brush,
     HATCH_SPARSE,
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
@@ -325,7 +325,7 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         painter.save()
         painter.setClipRect(r)
         painter.fillRect(r, self._color)
-        painter.fillRect(r, hatch_brush(self._line_color, HATCH_SPARSE))
+        painter.fillRect(r, pattern_brush("diagonal", self._line_color, HATCH_SPARSE))
         # Edge handle highlights
         w = r.width()
         hw = min(self._EDGE_WIDTH, w / 2)

@@ -16,6 +16,7 @@ from uitk.widgets.sequencer._data import (
     _RULER_HEIGHT,
     _SHOT_LANE_HEIGHT,
     _styled_menu,
+    paint_pattern,
 )
 from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._overlays import (
@@ -826,10 +827,15 @@ class TimelineView(QtWidgets.QGraphicsView):
         _BG_MAIN = (QtGui.QColor("#262626"), QtGui.QColor("#2A2A2A"))
         _BG_SUB = (QtGui.QColor("#222222"), QtGui.QColor("#252525"))
         _CENTER_LINE = QtGui.QColor("#3A3A3A")
-        for i, (y, h, is_sub) in enumerate(sq._visual_rows()):
+        for i, (y, h, is_sub, track_id) in enumerate(sq._visual_rows()):
             palette = _BG_SUB if is_sub else _BG_MAIN
             bg = palette[i % 2]
-            painter.fillRect(QtCore.QRectF(rect.left(), y, rect.width(), h), bg)
+            row_rect = QtCore.QRectF(rect.left(), y, rect.width(), h)
+            painter.fillRect(row_rect, bg)
+            if not is_sub:
+                td = sq.get_track(track_id)
+                if td is not None and td.pattern is not None:
+                    paint_pattern(painter, row_rect, td.pattern)
             if is_sub:
                 cy = y + h / 2.0
                 painter.setPen(QtGui.QPen(_CENTER_LINE, 1))

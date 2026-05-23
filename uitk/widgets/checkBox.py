@@ -49,6 +49,12 @@ class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOv
         self.setText = self.setRichText
         self.sizeHint = self.richTextSizeHint
 
+        # Expand horizontally so the click region (extended via hitButton)
+        # actually covers the full layout cell, not just indicator + text.
+        sp = self.sizePolicy()
+        sp.setHorizontalPolicy(QtWidgets.QSizePolicy.Expanding)
+        self.setSizePolicy(sp)
+
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
 

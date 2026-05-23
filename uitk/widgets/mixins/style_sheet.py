@@ -1,10 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
+import logging
+import re
 import importlib.resources
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from uitk.widgets.mixins.settings_manager import SettingsManager
+
+_logger = logging.getLogger(__name__)
 
 
 class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
@@ -15,26 +19,32 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
 
     themes = {
         "light": {
+            # Surfaces
             "PANEL_BACKGROUND": "rgb(70,70,70)",
-            "WINDOW_FOREGROUND": "rgb(127,127,127)",
             "WINDOW_BACKGROUND": "rgba(80,80,80,170)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",
-            "BUTTON_PRESSED": "rgb(120,120,120)",
-            "BUTTON_HOVER": "rgb(100,130,150)",  # Desaturated blue
-            "BUTTON_CHECKED": "rgb(165,135,110)",  # Further desaturated orange
+            "WIDGET_BACKGROUND_HOVER": "rgb(140,140,140)",
+            "DISABLED_BACKGROUND": "rgb(85,85,85)",
+            "ALTERNATE_BACKGROUND": "rgba(255,255,255,10)",
+            "TREE_ALTERNATE_BG": "rgb(127,127,127)",
+            # Text
             "TEXT_COLOR": "rgb(255,255,255)",
+            "TEXT_HOVER": "rgb(255,255,255)",
             "TEXT_CHECKED": "rgb(255,255,255)",
             "TEXT_DISABLED": "rgba(150,150,150,175)",
-            "TEXT_HOVER": "rgb(255,255,255)",
-            "TEXT_BACKGROUND": "rgba(70,70,70,100)",
-            "BORDER_COLOR": "rgb(40,40,40)",
-            "HIGHLIGHT_COLOR": "rgb(255,255,190)",
-            "DISABLED_BACKGROUND": "rgb(85,85,85)",
+            # Accents
+            "BUTTON_HOVER": "rgb(100,130,150)",  # Desaturated blue
+            "BUTTON_CHECKED": "rgb(165,135,110)",  # Further desaturated orange
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
-            "ICON_COLOR": "rgb(220,220,220)",
-            "TABLE_ITEM_HOVER": "rgba(100,130,150,225)",
-            "TABLE_ITEM_SELECTED": "rgba(127,127,127,50)",
-            "ALTERNATE_BACKGROUND": "rgba(255,255,255,10)",
+            # Borders + shape
+            "BORDER_COLOR": "rgb(40,40,40)",
+            "BORDER_HOVER": "rgba(255,255,255,110)",
+            "BORDER_W": "1px",
+            "RADIUS": "4px",
+            # Selection (text-selection inside inputs)
+            "SELECTION_BG": "rgba(70,70,70,100)",
+            "SELECTION_FG": "rgb(255,255,190)",
+            # Status (input feedback)
             "ACTION_VALID_FG": "rgb(60,141,60)",
             "ACTION_VALID_BG": "rgb(230,244,234)",
             "ACTION_INVALID_FG": "rgb(185,122,122)",
@@ -44,30 +54,38 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "ACTION_INFO_FG": "rgb(109,155,170)",
             "ACTION_INFO_BG": "rgb(226,243,249)",
             "ACTION_INACTIVE_FG": "rgb(170,170,170)",
+            # Misc (Python-consumed)
+            "ICON_COLOR": "rgb(220,220,220)",
             "LINK_COLOR": "rgb(130,170,210)",
             "LINK_VISITED_COLOR": "rgb(160,150,190)",
         },
         "dark": {
-            "PANEL_BACKGROUND": "rgb(115,115,115)",
-            "WINDOW_FOREGROUND": "rgb(70,70,70)",
+            # Surfaces
+            "PANEL_BACKGROUND": "rgba(105,105,105,100)",
             "WINDOW_BACKGROUND": "rgba(100,100,100,200)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
-            "BUTTON_PRESSED": "rgb(120,120,120)",
-            "BUTTON_HOVER": "rgba(100,130,150,225)",  # Desaturated blue
-            "BUTTON_CHECKED": "rgba(165,135,100,225)",  # Further desaturated orange
+            "WIDGET_BACKGROUND_HOVER": "rgb(78,78,78)",
+            "DISABLED_BACKGROUND": "rgb(85,85,85)",
+            "ALTERNATE_BACKGROUND": "rgba(255,255,255,8)",
+            "TREE_ALTERNATE_BG": "rgb(70,70,70)",
+            # Text
             "TEXT_COLOR": "rgb(220,220,220)",
+            "TEXT_HOVER": "rgb(255,255,255)",
             "TEXT_CHECKED": "rgb(255,255,255)",
             "TEXT_DISABLED": "rgb(150,150,150)",
-            "TEXT_HOVER": "rgb(255,255,255)",
-            "TEXT_BACKGROUND": "rgba(80,80,80,100)",
-            "BORDER_COLOR": "rgb(40,40,40)",
-            "HIGHLIGHT_COLOR": "rgb(255,255,190)",
-            "DISABLED_BACKGROUND": "rgb(85,85,85)",
+            # Accents
+            "BUTTON_HOVER": "rgba(100,130,150,225)",  # Desaturated blue
+            "BUTTON_CHECKED": "rgba(165,135,100,225)",  # Further desaturated orange
             "PROGRESS_BAR_COLOR": "rgb(0,160,208)",
-            "ICON_COLOR": "rgb(220,220,220)",
-            "TABLE_ITEM_HOVER": "rgba(100,130,150,225)",
-            "TABLE_ITEM_SELECTED": "rgba(127,127,127,50)",
-            "ALTERNATE_BACKGROUND": "rgba(255,255,255,8)",
+            # Borders + shape
+            "BORDER_COLOR": "rgb(40,40,40)",
+            "BORDER_HOVER": "rgba(255,255,255,110)",
+            "BORDER_W": "0px",  # Dark theme defaults borderless for a softer look.
+            "RADIUS": "1px",
+            # Selection (text-selection inside inputs)
+            "SELECTION_BG": "rgba(80,80,80,100)",
+            "SELECTION_FG": "rgb(255,255,190)",
+            # Status (input feedback)
             "ACTION_VALID_FG": "rgb(168,213,162)",
             "ACTION_VALID_BG": "rgb(30,46,30)",
             "ACTION_INVALID_FG": "rgb(232,165,163)",
@@ -77,12 +95,24 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "ACTION_INFO_FG": "rgb(163,203,224)",
             "ACTION_INFO_BG": "rgb(30,46,51)",
             "ACTION_INACTIVE_FG": "rgb(119,119,119)",
+            # Misc (Python-consumed)
+            "ICON_COLOR": "rgb(220,220,220)",
             "LINK_COLOR": "rgb(130,170,210)",
             "LINK_VISITED_COLOR": "rgb(160,150,190)",
         },
     }
 
+    # Token substitution: ``{TOKEN_NAME}`` where TOKEN_NAME is UPPER_SNAKE.
+    # Anchored so QSS rule-block braces ``{`` followed by whitespace/newline
+    # never match.
+    _token_pat = re.compile(r"\{([A-Z_][A-Z0-9_]*)\}")
+
     _qss_cache: dict[str, str] = {}
+    # Parsed-template cache: cache_key -> [literal, TOKEN, literal, TOKEN, ...].
+    # Built once per (package, resource) on first load; assembly is then a
+    # single ``''.join`` of dict lookups, replacing N full-string ``str.replace``
+    # passes (one per token) with one pass.
+    _template_cache: dict[str, list[str]] = {}
     # Track current theme per widget for icon color lookups
     _widget_themes: dict = {}
     # Track configuration for reloading
@@ -91,8 +121,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     _global_overrides: dict = {}
     _widget_overrides: dict = {}
     _settings = SettingsManager(
-        org="uitk", app="GlobalStyle", namespace="overrides_v2"
-    )  # Bumped namespace to avoid conflicts with old structure
+        org="uitk", app="GlobalStyle", namespace="overrides_v3"
+    )  # v3: token-set cleanup (drops + renames + adds). v2 left on disk.
     _settings_loaded = False
 
     @classmethod
@@ -157,24 +187,66 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     def reload(cls, widget: QtWidgets.QWidget = None):
         """Reload the style for a specific widget or all registered widgets.
 
+        Widgets are grouped by ``(theme, resource, package, kwargs)`` so each
+        unique configuration's QSS is assembled exactly once per call — large
+        registries with a shared theme pay the template-apply cost once, not
+        N times. Widgets with per-widget overrides take the slow path since
+        their theme_vars dict is unique.
+
         Args:
             widget: Specific widget to reload. If None, reloads all registered widgets.
         """
         targets = [widget] if widget else list(cls._widget_configs.keys())
-
-        # Use a temporary instance to apply styles since _set_style is an instance method
         styler = cls()
+        # Per-call cache: (theme, resource, package, frozenset(kwargs.items())) -> qss_final
+        assembled: dict = {}
 
         for w in targets:
-            if w in cls._widget_configs:
-                config = cls._widget_configs[w].copy()
-                kwargs = config.pop("kwargs", {})
+            if w not in cls._widget_configs:
+                continue
+            config = cls._widget_configs[w].copy()
+            kwargs = config.pop("kwargs", {})
+
+            # Per-widget overrides break sharing — fall through to the slow path.
+            if w in cls._widget_overrides:
                 try:
                     styler.set(w, **config, **kwargs)
                 except RuntimeError:
-                    # Widget likely deleted
-                    if w in cls._widget_configs:
-                        del cls._widget_configs[w]
+                    cls._widget_configs.pop(w, None)
+                continue
+
+            key = (
+                config["theme"],
+                config["resource"],
+                config["package"],
+                frozenset(kwargs.items()),
+            )
+            qss_final = assembled.get(key)
+            if qss_final is None:
+                theme_vars = cls.themes.get(config["theme"], {}).copy()
+                if config["theme"] in cls._global_overrides:
+                    theme_vars.update(cls._global_overrides[config["theme"]])
+                for k, v in kwargs.items():
+                    if k in theme_vars:
+                        theme_vars[k] = str(v)
+                parts = cls._get_template(config["resource"], config["package"])
+                qss_final = cls._apply_template(parts, theme_vars)
+                assembled[key] = qss_final
+
+            try:
+                styler.set(w, **config, **kwargs, _qss_final=qss_final)
+            except RuntimeError:
+                cls._widget_configs.pop(w, None)
+
+    @classmethod
+    def clear_caches(cls) -> None:
+        """Drop QSS + parsed-template caches.
+
+        Call after editing ``style.qss`` during a dev session so the next
+        ``reload()`` re-reads from disk and rebuilds its template.
+        """
+        cls._qss_cache.clear()
+        cls._template_cache.clear()
 
     @classmethod
     def set_variable(
@@ -325,31 +397,63 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             cls._settings.clear("global")
             cls.reload()
 
+    @classmethod
     def _load_qss_file(
-        self, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
+        cls, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
     ) -> str:
+        """Read a QSS resource from a package, caching the result.
+
+        Classmethod (not instance method) so callers like ``_get_template``
+        don't have to instantiate ``cls()`` — instance creation triggers
+        ``_ensure_settings_loaded`` and QObject init for no benefit when
+        all we need is the file contents.
+        """
         cache_key = f"{package}:{resource}"
-        if cache_key not in self._qss_cache:
+        if cache_key not in cls._qss_cache:
             try:
                 with (
                     importlib.resources.files(package)
                     .joinpath(resource)
                     .open("r", encoding="utf-8") as f
                 ):
-                    self._qss_cache[cache_key] = f.read()
-                self.logger.info(f"Loaded QSS from package: {package}/{resource}")
+                    cls._qss_cache[cache_key] = f.read()
             except Exception as e:
-                self.logger.error(f"Failed to load QSS from {package}/{resource} ({e})")
+                _logger.error(f"Failed to load QSS from {package}/{resource} ({e})")
                 raise
-        else:
-            self.logger.debug(f"Using cached QSS for: {package}/{resource}")
-        return self._qss_cache[cache_key]
+        return cls._qss_cache[cache_key]
+
+    @classmethod
+    def _get_template(
+        cls, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
+    ) -> list[str]:
+        """Return a parsed-template list for ``package/resource``.
+
+        The list alternates literal chunks and token names:
+        ``[literal, TOKEN, literal, TOKEN, ..., literal]``. Even indices are
+        literals, odd indices are token names looked up against ``theme_vars``.
+        """
+        cache_key = f"{package}:{resource}"
+        parts = cls._template_cache.get(cache_key)
+        if parts is None:
+            qss = cls._load_qss_file(resource, package)
+            parts = cls._token_pat.split(qss)
+            cls._template_cache[cache_key] = parts
+        return parts
 
     @staticmethod
-    def _apply_theme_variables(qss: str, theme_vars: dict) -> str:
-        for k, v in theme_vars.items():
-            qss = qss.replace("{" + k + "}", v)
-        return qss
+    def _apply_template(parts: list[str], theme_vars: dict) -> str:
+        """Assemble a QSS string from a parsed template and a vars dict.
+
+        Unknown tokens are left as ``{TOKEN}`` literals so missing vars are
+        visible in the applied QSS rather than silently producing an empty
+        substitution. Tokens inside commented-out QSS blocks are substituted
+        too — harmless since the surrounding ``/* ... */`` still parses as
+        a comment after substitution.
+        """
+        return "".join(
+            p if i % 2 == 0 else theme_vars.get(p, "{" + p + "}")
+            for i, p in enumerate(parts)
+        )
 
     @staticmethod
     def _set_class_property(widget: QtWidgets.QWidget, style_class: str):
@@ -366,8 +470,25 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         recursive: bool = False,
         resource: str = "style.qss",
         package: str = "uitk.widgets.mixins",
+        _qss_final: Union[str, None] = None,
         **kwargs,
     ):
+        """Apply a themed stylesheet to ``widget`` and register it for reloads.
+
+        Args:
+            widget: Target. Defaults to ``self.parent()`` if a QWidget.
+            theme: Theme name (key of :attr:`themes`).
+            style_class: Optional ``class`` property to set on the widget.
+            recursive: If True, apply to every QWidget descendant.
+            resource, package: Locate the QSS file via importlib.resources.
+            _qss_final: **Internal.** Precomputed QSS string from
+                :meth:`reload`'s group-by-config fast path. When supplied,
+                template assembly is skipped — the widget must NOT have
+                per-widget overrides (caller is responsible for filtering),
+                otherwise the precomputed QSS won't reflect them.
+            **kwargs: Per-call token overrides; keys matching theme vars
+                replace those vars for this widget only (not persisted).
+        """
         if widget is None:
             if isinstance(self.parent(), QtWidgets.QWidget):
                 widget = self.parent()
@@ -406,12 +527,16 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                 if k in theme_vars:  # treat kwargs as overrides if they match keys
                     theme_vars[k] = str(v)
 
-            qss = self._load_qss_file(resource, package)
-            qss_final = self._apply_theme_variables(qss, theme_vars)
+            # Reuse a precomputed QSS string if the caller (typically
+            # ``reload()``) has already assembled it for our config group.
+            if _qss_final is None:
+                parts = self._get_template(resource, package)
+                qss_final = self._apply_template(parts, theme_vars)
+            else:
+                qss_final = _qss_final
             self.logger.debug(
                 f"Applying QSS to widget '{widget.objectName()}':\n---BEGIN QSS---\n{qss_final}\n---END QSS---"
             )
-            widget.setStyleSheet("")  # Optional clear
             widget.setStyleSheet(qss_final)
             self.logger.info(
                 f"Applied QSS style to widget: {widget.objectName()} (theme='{theme}', class='{style_class}')"

@@ -135,5 +135,48 @@ class TestWidgetComboBoxWidgetAccess(QtBaseTestCase):
         self.assertIsNone(combo.widgetAt(99))
 
 
+class TestWidgetComboBoxUniformHeight(QtBaseTestCase):
+    """Rows must be uniform height so mixed-widget popups look like a
+    standard combobox dropdown rather than a ragged stack."""
+
+    def test_rows_resize_to_max_widget_height(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        # Add a short widget first, then a taller one. The first row must
+        # grow to match the taller sizeHint.
+        checkbox = QtWidgets.QCheckBox("c")
+        combo.add(checkbox)
+        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        combo.add(slider, clear=False)
+
+        target = max(checkbox.sizeHint().height(), slider.sizeHint().height())
+        heights = [
+            combo._model.item(r).sizeHint().height()
+            for r in range(combo._model.rowCount())
+        ]
+        self.assertEqual(
+            heights, [target, target],
+            f"All rows must use uniform height {target}; got {heights}",
+        )
+
+    def test_actions_section_does_not_inflate_uniform_height(self):
+        """The actions container is multi-button and tall; it must not push
+        uniform-height for the selectable rows above it."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        checkbox = QtWidgets.QCheckBox("c")
+        combo.add(checkbox)
+        baseline = combo._model.item(0).sizeHint().height()
+
+        combo.actions.add("Tall Action Button", lambda: None)
+        # The original (selectable) row's height must be unchanged.
+        self.assertEqual(
+            combo._model.item(0).sizeHint().height(), baseline,
+            "Selectable rows must not grow when an actions section is added",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
