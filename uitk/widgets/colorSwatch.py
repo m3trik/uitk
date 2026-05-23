@@ -128,12 +128,13 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
     def updateBackgroundColor(self):
         """Updates the widget's background color based on the check state."""
         textColor = "black" if self._color.lightness() > 127 else "white"
+        # Fixed black outline so light fills don't blend into the panel.
         self.setStyleSheet(
             f"QPushButton {{"
             f"background-color: {self._color.name()};"
             f"color: {textColor};"
             f"border-radius: 5px;"
-            f"border: 8px solid transparent;"  # Border color changes based on checked state
+            f"border: 1px solid black;"
             f"}}"
             f"QPushButton:checked {{"
             f"border-color: {self._color.name()};"

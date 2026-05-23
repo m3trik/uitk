@@ -351,6 +351,135 @@ class TestClipData(BaseTestCase):
         self.assertIsInstance(cd.data, dict)
         self.assertEqual(len(cd.data), 0)
 
+    def test_default_pattern_is_none(self):
+        cd = ClipData(clip_id=0, track_id=0, start=0, duration=1)
+        self.assertIsNone(cd.pattern)
+
+
+class TestTrackData(BaseTestCase):
+    """Unit tests for the TrackData dataclass."""
+
+    def test_default_pattern_is_none(self):
+        td = TrackData(track_id=0, name="A")
+        self.assertIsNone(td.pattern)
+
+    def test_track_pattern_honored_by_drawbackground(self):
+        from qtpy import QtGui, QtCore
+        from uitk.widgets.sequencer import SequencerWidget, PatternSpec
+
+        w = SequencerWidget()
+        try:
+            tid = w.add_track("patterned")
+            td = w.get_track(tid)
+            td.pattern = PatternSpec(style="dots", color="#FF8800", alpha=80)
+            # Directly drive drawBackground — must not raise when a track
+            # carries a PatternSpec.
+            pix = QtGui.QPixmap(400, 200)
+            pix.fill(QtCore.Qt.transparent)
+            p = QtGui.QPainter(pix)
+            try:
+                w._timeline._scene.drawBackground(
+                    p, QtCore.QRectF(0, 0, 400, 200)
+                )
+            finally:
+                p.end()
+        finally:
+            w.close()
+            w.deleteLater()
+
+
+class TestPatternRegistry(BaseTestCase):
+    """Unit tests for the background-pattern registry/brush helpers."""
+
+    def setUp(self):
+        from qtpy import QtGui
+        from uitk.widgets.sequencer import (
+            pattern_brush,
+            register_pattern,
+            PatternSpec,
+            HATCH_DENSE,
+            HATCH_MEDIUM,
+            HATCH_SPARSE,
+        )
+        from uitk.widgets.sequencer._data import _pattern_cache, _pattern_painters
+
+        self.QtGui = QtGui
+        self.pattern_brush = pattern_brush
+        self.register_pattern = register_pattern
+        self.PatternSpec = PatternSpec
+        self.HATCH_DENSE = HATCH_DENSE
+        self.HATCH_MEDIUM = HATCH_MEDIUM
+        self.HATCH_SPARSE = HATCH_SPARSE
+        self._cache = _pattern_cache
+        self._painters = _pattern_painters
+        self._builtin_painters = dict(_pattern_painters)
+        self._cache.clear()
+
+    def tearDown(self):
+        # Restore any custom-registered painters
+        self._painters.clear()
+        self._painters.update(self._builtin_painters)
+        self._cache.clear()
+
+    def test_builtin_styles_registered(self):
+        for name in ("diagonal", "crosshatch", "vstripes", "hstripes", "dots", "grid"):
+            self.assertIn(name, self._painters)
+
+    def test_pattern_brush_returns_brush(self):
+        b = self.pattern_brush("diagonal", self.QtGui.QColor("#888888"))
+        self.assertIsInstance(b, self.QtGui.QBrush)
+
+    def test_pattern_brush_caches_identical_calls(self):
+        c = self.QtGui.QColor("#888888")
+        b1 = self.pattern_brush("dots", c, self.HATCH_MEDIUM, 1.0)
+        b2 = self.pattern_brush("dots", c, self.HATCH_MEDIUM, 1.0)
+        self.assertIs(b1, b2)
+
+    def test_pattern_brush_distinct_per_style(self):
+        c = self.QtGui.QColor("#888888")
+        b_diag = self.pattern_brush("diagonal", c, self.HATCH_MEDIUM, 1.0)
+        b_grid = self.pattern_brush("grid", c, self.HATCH_MEDIUM, 1.0)
+        self.assertIsNot(b_diag, b_grid)
+
+    def test_pattern_brush_distinct_per_color(self):
+        b_a = self.pattern_brush("diagonal", self.QtGui.QColor("#111111"))
+        b_b = self.pattern_brush("diagonal", self.QtGui.QColor("#999999"))
+        self.assertIsNot(b_a, b_b)
+
+    def test_unknown_style_raises(self):
+        with self.assertRaises(KeyError):
+            self.pattern_brush("does-not-exist", self.QtGui.QColor("#888888"))
+
+    def test_register_custom_pattern(self):
+        calls = []
+
+        def custom(p, size, color, lw):
+            calls.append((size, color.name(), lw))
+            p.setPen(self.QtGui.QPen(color, lw))
+            p.drawPoint(0, 0)
+
+        self.register_pattern("test-custom", custom)
+        self.assertIn("test-custom", self._painters)
+        b = self.pattern_brush("test-custom", self.QtGui.QColor("#5BBFB4"), 6, 1.5)
+        self.assertIsInstance(b, self.QtGui.QBrush)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], 6)
+        self.assertEqual(calls[0][2], 1.5)
+
+    def test_pattern_spec_brush(self):
+        spec = self.PatternSpec(style="dots", color="#FF8800", alpha=120, spacing=10)
+        b = spec.brush()
+        self.assertIsInstance(b, self.QtGui.QBrush)
+        # Re-calling returns the same cached brush
+        self.assertIs(spec.brush(), b)
+
+    def test_pattern_spec_hashable(self):
+        spec_a = self.PatternSpec(style="dots", color="#FF8800")
+        spec_b = self.PatternSpec(style="dots", color="#FF8800")
+        # frozen=True → equal specs hash the same and can live in sets
+        self.assertEqual(hash(spec_a), hash(spec_b))
+        self.assertIn(spec_a, {spec_b})
+
 
 class TestAttributeColors(BaseTestCase):
     """Tests for the attribute color configuration system."""
@@ -714,6 +843,10 @@ class TestSubRowExpansion(BaseTestCase):
         self.assertFalse(rows[0][2])  # main row is_sub=False
         self.assertTrue(rows[1][2])  # sub-row is_sub=True
         self.assertTrue(rows[2][2])  # sub-row is_sub=True
+        # Each row carries its owning track_id at index 3
+        self.assertEqual(rows[0][3], tid)
+        self.assertEqual(rows[1][3], tid)
+        self.assertEqual(rows[2][3], tid)
 
     def test_sub_clip_default_resizable(self):
         """Sub-row clips with duration are resizable by default."""

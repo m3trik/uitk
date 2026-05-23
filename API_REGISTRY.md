@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-05-22_
+_Generated: 2026-05-23_
 
 ## Index
 
@@ -105,8 +105,8 @@ _Generated: 2026-05-22_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
+- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -717,14 +717,15 @@ Editor windows used by :meth:`ShortcutManager.show_editor`.
 <a id="widgets--editors--style_editor"></a>
 ### `widgets/editors/style_editor.py`
 
-- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L10)** — UI for editing global stylesheet variables with preset support.
+- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L42)** — UI for editing global stylesheet variables with preset support.
   - `StyleEditor.export_preset_data(self)`
   - `StyleEditor.import_preset_data(self, data)`
-  - `StyleEditor.populate(self)` — Populate the table with variables for the current theme.
+  - `StyleEditor.populate(self)` — Populate the table with variables for the current theme + tier.
   - `StyleEditor.on_color_changed(self, name, color)` — Handle color change from swatch.
+  - `StyleEditor.on_length_changed(self, name, value)` — Handle length change from spinbox.
   - `StyleEditor.reset_variable(self, name)` — Reset a single variable.
   - `StyleEditor.reset_all(self)` — Reset all overrides.
-  - `StyleEditor.refresh_row(self, name)` — Update the swatch for a specific variable name.
+  - `StyleEditor.refresh_row(self, name)` — Update the editor widget for a specific variable name.
 
 <a id="widgets--editors--switchboard_browser"></a>
 ### `widgets/editors/switchboard_browser.py`
@@ -1247,10 +1248,11 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 <a id="widgets--mixins--style_sheet"></a>
 ### `widgets/mixins/style_sheet.py`
 
-- **[`class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/style_sheet.py#L10)** — Theme and stylesheet manager with light/dark theme support.
+- **[`class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/style_sheet.py#L14)** — Theme and stylesheet manager with light/dark theme support.
   - `StyleSheet.get_icon_color(cls, widget: QtWidgets.QWidget = None) -> str` *(class)* — Get the icon color for a widget based on its current theme.
   - `StyleSheet.set_theme(cls, theme: str, widget: QtWidgets.QWidget = None)` *(class)* — Set a new theme for a specific widget or all registered widgets.
   - `StyleSheet.reload(cls, widget: QtWidgets.QWidget = None)` *(class)* — Reload the style for a specific widget or all registered widgets.
+  - `StyleSheet.clear_caches(cls) -> None` *(class)* — Drop QSS + parsed-template caches.
   - `StyleSheet.set_variable(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)` *(class)* — Set a theme variable override.
   - `StyleSheet.get_variable(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str` *(class)* — Get a theme variable value, resolving overrides.
   - `StyleSheet.get_variables(cls, theme: str = 'light') -> list[str]` *(class)* — Get list of available theme variables.
@@ -1570,7 +1572,7 @@ Opt-in delegate for views whose cells carry their own background.
 
 ClipItem — draggable, resizable clip rectangle on the timeline.
 
-- **[`class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_clip.py#L28)** — A draggable, resizable rectangle representing one clip on the timeline.
+- **[`class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_clip.py#L29)** — A draggable, resizable rectangle representing one clip on the timeline.
   - `ClipItem.clip_data(self) -> ClipData` *(property)*
   - `ClipItem.boundingRect(self)`
   - `ClipItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
@@ -1587,11 +1589,15 @@ ClipItem — draggable, resizable clip rectangle on the timeline.
 
 Data models and shared constants for the sequencer widget.
 
-- [`hatch_brush(color: QtGui.QColor, spacing: int = HATCH_SPARSE, line_width: float = 1.0) -> QtGui.QBrush`](uitk/uitk/widgets/sequencer/_data.py#L143) — Return a tiled diagonal-hatch brush.
-- **[`class ClipData`](uitk/uitk/widgets/sequencer/_data.py#L14)** — Lightweight data record for a single clip on a track.
+- [`register_pattern(name: str, painter: PatternPainter) -> None`](uitk/uitk/widgets/sequencer/_data.py#L171) — Register (or override) a tile-painter for :func:`pattern_brush`.
+- [`pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush`](uitk/uitk/widgets/sequencer/_data.py#L228) — Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…
+- [`paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None`](uitk/uitk/widgets/sequencer/_data.py#L259) — Fill ``rect`` with ``spec``;
+- **[`class PatternSpec`](uitk/uitk/widgets/sequencer/_data.py#L21)** — Declarative, hashable description of a tiled background pattern.
+  - `PatternSpec.brush(self) -> QtGui.QBrush`
+- **[`class ClipData`](uitk/uitk/widgets/sequencer/_data.py#L40)** — Lightweight data record for a single clip on a track.
   - `ClipData.end(self) -> float` *(property)*
-- **[`class TrackData`](uitk/uitk/widgets/sequencer/_data.py#L33)** — Lightweight data record for a track row.
-- **[`class MarkerData`](uitk/uitk/widgets/sequencer/_data.py#L44)** — Lightweight data record for a timeline marker.
+- **[`class TrackData`](uitk/uitk/widgets/sequencer/_data.py#L60)** — Lightweight data record for a track row.
+- **[`class MarkerData`](uitk/uitk/widgets/sequencer/_data.py#L72)** — Lightweight data record for a timeline marker.
 
 <a id="widgets--sequencer--_drag_tooltip"></a>
 ### `widgets/sequencer/_drag_tooltip.py`
@@ -1698,7 +1704,7 @@ Ruler and shot-lane items for the timeline header area.
   - `ShotLaneItem.mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent)`
   - `ShotLaneItem.boundingRect(self) -> QtCore.QRectF`
   - `ShotLaneItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
-- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L153)** — Draws the frame-number ruler at the top of the timeline.
+- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L158)** — Draws the frame-number ruler at the top of the timeline.
   - `RulerItem.set_shot_blocks(self, blocks: list) -> None`
   - `RulerItem.clear_shot_blocks(self) -> None`
   - `RulerItem.boundingRect(self)`
@@ -1806,7 +1812,7 @@ An NLE-style timeline sequencer widget.
 
 Timeline view, scene, and track-header widgets.
 
-- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L67)** — Left-pane widget showing track labels, vertically synced to the timeline.
+- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L68)** — Left-pane widget showing track labels, vertically synced to the timeline.
   - `TrackHeaderWidget.set_top_margin(self, margin: int) -> None`
   - `TrackHeaderWidget.add_track_label(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)`
   - `TrackHeaderWidget.set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int)`
@@ -1814,10 +1820,10 @@ Timeline view, scene, and track-header widgets.
   - `TrackHeaderWidget.eventFilter(self, obj, event)`
   - `TrackHeaderWidget.selected_names(self) -> List[str]`
   - `TrackHeaderWidget.clear_tracks(self)`
-- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L335)** — Scene that owns the ruler, playhead, and all clip items.
+- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L336)** — Scene that owns the ruler, playhead, and all clip items.
   - `TimelineScene.ruler(self) -> RulerItem` *(property)*
   - `TimelineScene.playhead(self) -> PlayheadItem` *(property)*
-- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L360)** — QGraphicsView providing zoom, pan, and coordinate mapping.
+- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L361)** — QGraphicsView providing zoom, pan, and coordinate mapping.
   - `TimelineView.event(self, event: QtCore.QEvent) -> bool`
   - `TimelineView.keyPressEvent(self, event)`
   - `TimelineView.keyReleaseEvent(self, event)`
@@ -1874,6 +1880,17 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.increaseValueWithLargeStep(self, event: QtGui.QWheelEvent) -> None` — Increase the spin box value by a larger step when Ctrl is pressed.
   - `SpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Move the value by the lowest decimal place (Ctrl+Alt).
   - `SpinBox.message(self, text: str) -> None` — Display a temporary message box with the given text.
+
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
@@ -1938,17 +1955,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
-
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`

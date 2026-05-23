@@ -88,7 +88,7 @@ class Cancelable:
 
         @Cancelable(300, message="Texture optimization")
         def tb022(self, widget):
-            mtk.TextureOptimizer.batch_optimize_textures(...)
+            mtk.MapOptimizer.batch_optimize_maps(...)
 
     Args:
         timeout: Seconds before the warning dialog appears. Must be > 0.

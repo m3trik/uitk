@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-05-22",
+  "generated_at": "2026-05-23",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -3816,7 +3816,7 @@
         {
           "name": "StyleEditor",
           "summary": "UI for editing global stylesheet variables with preset support.",
-          "line": 10,
+          "line": 42,
           "bases": [
             "EditorPanel"
           ],
@@ -3827,7 +3827,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 81,
+              "line": 143,
               "deprecated": false
             },
             {
@@ -3836,7 +3836,7 @@
               "kind": "method",
               "signature": "(self, data)",
               "summary": "",
-              "line": 84,
+              "line": 146,
               "deprecated": false
             },
             {
@@ -3844,8 +3844,8 @@
               "qualname": "StyleEditor.populate",
               "kind": "method",
               "signature": "(self)",
-              "summary": "Populate the table with variables for the current theme.",
-              "line": 92,
+              "summary": "Populate the table with variables for the current theme + tier.",
+              "line": 163,
               "deprecated": false
             },
             {
@@ -3854,7 +3854,16 @@
               "kind": "method",
               "signature": "(self, name, color)",
               "summary": "Handle color change from swatch.",
-              "line": 136,
+              "line": 279,
+              "deprecated": false
+            },
+            {
+              "name": "on_length_changed",
+              "qualname": "StyleEditor.on_length_changed",
+              "kind": "method",
+              "signature": "(self, name, value)",
+              "summary": "Handle length change from spinbox.",
+              "line": 287,
               "deprecated": false
             },
             {
@@ -3863,7 +3872,7 @@
               "kind": "method",
               "signature": "(self, name)",
               "summary": "Reset a single variable.",
-              "line": 144,
+              "line": 293,
               "deprecated": false
             },
             {
@@ -3872,7 +3881,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Reset all overrides.",
-              "line": 151,
+              "line": 300,
               "deprecated": false
             },
             {
@@ -3880,8 +3889,8 @@
               "qualname": "StyleEditor.refresh_row",
               "kind": "method",
               "signature": "(self, name)",
-              "summary": "Update the swatch for a specific variable name.",
-              "line": 157,
+              "summary": "Update the editor widget for a specific variable name.",
+              "line": 306,
               "deprecated": false
             }
           ]
@@ -7810,7 +7819,7 @@
         {
           "name": "StyleSheet",
           "summary": "Theme and stylesheet manager with light/dark theme support.",
-          "line": 10,
+          "line": 14,
           "bases": [
             "QtCore.QObject",
             "ptk.LoggingMixin"
@@ -7822,7 +7831,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget: QtWidgets.QWidget = None) -> str",
               "summary": "Get the icon color for a widget based on its current theme.",
-              "line": 120,
+              "line": 148,
               "deprecated": false
             },
             {
@@ -7831,7 +7840,7 @@
               "kind": "classmethod",
               "signature": "(cls, theme: str, widget: QtWidgets.QWidget = None)",
               "summary": "Set a new theme for a specific widget or all registered widgets.",
-              "line": 142,
+              "line": 170,
               "deprecated": false
             },
             {
@@ -7840,7 +7849,16 @@
               "kind": "classmethod",
               "signature": "(cls, widget: QtWidgets.QWidget = None)",
               "summary": "Reload the style for a specific widget or all registered widgets.",
-              "line": 157,
+              "line": 185,
+              "deprecated": false
+            },
+            {
+              "name": "clear_caches",
+              "qualname": "StyleSheet.clear_caches",
+              "kind": "classmethod",
+              "signature": "(cls) -> None",
+              "summary": "Drop QSS + parsed-template caches.",
+              "line": 240,
               "deprecated": false
             },
             {
@@ -7849,7 +7867,7 @@
               "kind": "classmethod",
               "signature": "(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)",
               "summary": "Set a theme variable override.",
-              "line": 180,
+              "line": 250,
               "deprecated": false
             },
             {
@@ -7858,7 +7876,7 @@
               "kind": "classmethod",
               "signature": "(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str",
               "summary": "Get a theme variable value, resolving overrides.",
-              "line": 252,
+              "line": 322,
               "deprecated": false
             },
             {
@@ -7867,7 +7885,7 @@
               "kind": "classmethod",
               "signature": "(cls, theme: str = 'light') -> list[str]",
               "summary": "Get list of available theme variables.",
-              "line": 276,
+              "line": 346,
               "deprecated": false
             },
             {
@@ -7876,7 +7894,7 @@
               "kind": "classmethod",
               "signature": "(cls) -> dict",
               "summary": "Export the current global overrides as a plain dict.",
-              "line": 281,
+              "line": 351,
               "deprecated": false
             },
             {
@@ -7885,7 +7903,7 @@
               "kind": "classmethod",
               "signature": "(cls, data: dict) -> None",
               "summary": "Bulk-replace global overrides from a dict and reload once.",
-              "line": 293,
+              "line": 363,
               "deprecated": false
             },
             {
@@ -7894,7 +7912,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget: QtWidgets.QWidget = None)",
               "summary": "Clear overrides.",
-              "line": 309,
+              "line": 379,
               "deprecated": false
             }
           ]
@@ -9916,7 +9934,7 @@
         {
           "name": "ClipItem",
           "summary": "A draggable, resizable rectangle representing one clip on the timeline.",
-          "line": 28,
+          "line": 29,
           "bases": [
             "DraggableItemMixin",
             "QtWidgets.QGraphicsRectItem"
@@ -9928,7 +9946,7 @@
               "kind": "property",
               "signature": "(self) -> ClipData",
               "summary": "",
-              "line": 69,
+              "line": 70,
               "deprecated": false
             },
             {
@@ -9937,7 +9955,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 145,
+              "line": 146,
               "deprecated": false
             },
             {
@@ -9946,7 +9964,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 244,
+              "line": 245,
               "deprecated": false
             },
             {
@@ -9955,7 +9973,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 594,
+              "line": 598,
               "deprecated": false
             },
             {
@@ -9964,7 +9982,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 606,
+              "line": 610,
               "deprecated": false
             },
             {
@@ -9973,7 +9991,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 611,
+              "line": 615,
               "deprecated": false
             },
             {
@@ -9982,7 +10000,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 647,
+              "line": 651,
               "deprecated": false
             },
             {
@@ -9991,7 +10009,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 703,
+              "line": 707,
               "deprecated": false
             },
             {
@@ -10000,7 +10018,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 735,
+              "line": 739,
               "deprecated": false
             },
             {
@@ -10009,7 +10027,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 791,
+              "line": 795,
               "deprecated": false
             }
           ]
@@ -10021,20 +10039,55 @@
       "summary": "Data models and shared constants for the sequencer widget.",
       "functions": [
         {
-          "name": "hatch_brush",
-          "qualname": "hatch_brush",
+          "name": "register_pattern",
+          "qualname": "register_pattern",
           "kind": "function",
-          "signature": "(color: QtGui.QColor, spacing: int = HATCH_SPARSE, line_width: float = 1.0) -> QtGui.QBrush",
-          "summary": "Return a tiled diagonal-hatch brush.",
-          "line": 143,
+          "signature": "(name: str, painter: PatternPainter) -> None",
+          "summary": "Register (or override) a tile-painter for :func:`pattern_brush`.",
+          "line": 171,
+          "deprecated": false
+        },
+        {
+          "name": "pattern_brush",
+          "qualname": "pattern_brush",
+          "kind": "function",
+          "signature": "(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush",
+          "summary": "Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…",
+          "line": 228,
+          "deprecated": false
+        },
+        {
+          "name": "paint_pattern",
+          "qualname": "paint_pattern",
+          "kind": "function",
+          "signature": "(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None",
+          "summary": "Fill ``rect`` with ``spec``;",
+          "line": 259,
           "deprecated": false
         }
       ],
       "classes": [
         {
+          "name": "PatternSpec",
+          "summary": "Declarative, hashable description of a tiled background pattern.",
+          "line": 21,
+          "bases": [],
+          "members": [
+            {
+              "name": "brush",
+              "qualname": "PatternSpec.brush",
+              "kind": "method",
+              "signature": "(self) -> QtGui.QBrush",
+              "summary": "",
+              "line": 30,
+              "deprecated": false
+            }
+          ]
+        },
+        {
           "name": "ClipData",
           "summary": "Lightweight data record for a single clip on a track.",
-          "line": 14,
+          "line": 40,
           "bases": [],
           "members": [
             {
@@ -10043,7 +10096,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 28,
+              "line": 55,
               "deprecated": false
             }
           ]
@@ -10051,14 +10104,14 @@
         {
           "name": "TrackData",
           "summary": "Lightweight data record for a track row.",
-          "line": 33,
+          "line": 60,
           "bases": [],
           "members": []
         },
         {
           "name": "MarkerData",
           "summary": "Lightweight data record for a timeline marker.",
-          "line": 44,
+          "line": 72,
           "bases": [],
           "members": []
         }
@@ -10697,7 +10750,7 @@
         {
           "name": "RulerItem",
           "summary": "Draws the frame-number ruler at the top of the timeline.",
-          "line": 153,
+          "line": 158,
           "bases": [
             "QtWidgets.QGraphicsItem"
           ],
@@ -10708,7 +10761,7 @@
               "kind": "method",
               "signature": "(self, blocks: list) -> None",
               "summary": "",
-              "line": 170,
+              "line": 175,
               "deprecated": false
             },
             {
@@ -10717,7 +10770,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "",
-              "line": 174,
+              "line": 179,
               "deprecated": false
             },
             {
@@ -10726,7 +10779,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 178,
+              "line": 183,
               "deprecated": false
             },
             {
@@ -10735,7 +10788,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 181,
+              "line": 186,
               "deprecated": false
             }
           ]
@@ -11533,7 +11586,7 @@
         {
           "name": "TrackHeaderWidget",
           "summary": "Left-pane widget showing track labels, vertically synced to the timeline.",
-          "line": 67,
+          "line": 68,
           "bases": [
             "QtWidgets.QWidget"
           ],
@@ -11544,7 +11597,7 @@
               "kind": "method",
               "signature": "(self, margin: int) -> None",
               "summary": "",
-              "line": 107,
+              "line": 108,
               "deprecated": false
             },
             {
@@ -11553,7 +11606,7 @@
               "kind": "method",
               "signature": "(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)",
               "summary": "",
-              "line": 111,
+              "line": 112,
               "deprecated": false
             },
             {
@@ -11562,7 +11615,7 @@
               "kind": "method",
               "signature": "(self, track_idx: int, sub_names: List[str], sub_height: int)",
               "summary": "",
-              "line": 204,
+              "line": 205,
               "deprecated": false
             },
             {
@@ -11571,7 +11624,7 @@
               "kind": "method",
               "signature": "(self, track_idx: int)",
               "summary": "",
-              "line": 220,
+              "line": 221,
               "deprecated": false
             },
             {
@@ -11580,7 +11633,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "",
-              "line": 229,
+              "line": 230,
               "deprecated": false
             },
             {
@@ -11589,7 +11642,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "",
-              "line": 271,
+              "line": 272,
               "deprecated": false
             },
             {
@@ -11598,7 +11651,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 315,
+              "line": 316,
               "deprecated": false
             }
           ]
@@ -11606,7 +11659,7 @@
         {
           "name": "TimelineScene",
           "summary": "Scene that owns the ruler, playhead, and all clip items.",
-          "line": 335,
+          "line": 336,
           "bases": [
             "QtWidgets.QGraphicsScene"
           ],
@@ -11617,7 +11670,7 @@
               "kind": "property",
               "signature": "(self) -> RulerItem",
               "summary": "",
-              "line": 347,
+              "line": 348,
               "deprecated": false
             },
             {
@@ -11626,7 +11679,7 @@
               "kind": "property",
               "signature": "(self) -> PlayheadItem",
               "summary": "",
-              "line": 351,
+              "line": 352,
               "deprecated": false
             }
           ]
@@ -11634,7 +11687,7 @@
         {
           "name": "TimelineView",
           "summary": "QGraphicsView providing zoom, pan, and coordinate mapping.",
-          "line": 360,
+          "line": 361,
           "bases": [
             "QtWidgets.QGraphicsView"
           ],
@@ -11645,7 +11698,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent) -> bool",
               "summary": "",
-              "line": 394,
+              "line": 395,
               "deprecated": false
             },
             {
@@ -11654,7 +11707,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 405,
+              "line": 406,
               "deprecated": false
             },
             {
@@ -11663,7 +11716,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 427,
+              "line": 428,
               "deprecated": false
             },
             {
@@ -11672,7 +11725,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 434,
+              "line": 435,
               "deprecated": false
             },
             {
@@ -11681,7 +11734,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 440,
+              "line": 441,
               "deprecated": false
             },
             {
@@ -11690,7 +11743,7 @@
               "kind": "method",
               "signature": "(self, value: float)",
               "summary": "",
-              "line": 444,
+              "line": 445,
               "deprecated": false
             },
             {
@@ -11699,7 +11752,7 @@
               "kind": "method",
               "signature": "(self, t: float) -> float",
               "summary": "",
-              "line": 448,
+              "line": 449,
               "deprecated": false
             },
             {
@@ -11708,7 +11761,7 @@
               "kind": "method",
               "signature": "(self, x: float) -> float",
               "summary": "",
-              "line": 451,
+              "line": 452,
               "deprecated": false
             },
             {
@@ -11717,7 +11770,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 455,
+              "line": 456,
               "deprecated": false
             },
             {
@@ -11726,7 +11779,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 461,
+              "line": 462,
               "deprecated": false
             },
             {
@@ -11735,7 +11788,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 553,
+              "line": 554,
               "deprecated": false
             },
             {
@@ -11744,7 +11797,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 633,
+              "line": 634,
               "deprecated": false
             },
             {
@@ -11753,7 +11806,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 665,
+              "line": 666,
               "deprecated": false
             },
             {
@@ -11762,7 +11815,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 679,
+              "line": 680,
               "deprecated": false
             },
             {
@@ -11771,7 +11824,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 697,
+              "line": 698,
               "deprecated": false
             },
             {
@@ -11780,7 +11833,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 711,
+              "line": 712,
               "deprecated": false
             },
             {
@@ -11789,7 +11842,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, rect: QtCore.QRectF)",
               "summary": "",
-              "line": 823,
+              "line": 824,
               "deprecated": false
             }
           ]
@@ -12070,6 +12123,57 @@
               "signature": "(self, text: str) -> None",
               "summary": "Display a temporary message box with the given text.",
               "line": 188,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "widgets/table_actions.py",
+      "summary": "Reusable action-column management for :class:`TableWidget`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TableActions",
+          "summary": "Manages action columns on a :class:`TableWidget`.",
+          "line": 139,
+          "bases": [],
+          "members": [
+            {
+              "name": "add",
+              "qualname": "TableActions.add",
+              "kind": "method",
+              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
+              "summary": "Register an action column.",
+              "line": 163,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "TableActions.set",
+              "kind": "method",
+              "signature": "(self, row: int, col: int, state_name: str) -> None",
+              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
+              "line": 209,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "TableActions.get",
+              "kind": "method",
+              "signature": "(self, row: int, col: int) -> Optional[str]",
+              "summary": "Return the current state name for a cell, or ``None``.",
+              "line": 273,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 338,
               "deprecated": false
             }
           ]
@@ -12621,57 +12725,6 @@
               "signature": "(self, object_name: str)",
               "summary": "",
               "line": 1306,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/table_actions.py",
-      "summary": "Reusable action-column management for :class:`TableWidget`.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "TableActions",
-          "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 139,
-          "bases": [],
-          "members": [
-            {
-              "name": "add",
-              "qualname": "TableActions.add",
-              "kind": "method",
-              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
-              "summary": "Register an action column.",
-              "line": 163,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "TableActions.set",
-              "kind": "method",
-              "signature": "(self, row: int, col: int, state_name: str) -> None",
-              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 209,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "TableActions.get",
-              "kind": "method",
-              "signature": "(self, row: int, col: int) -> Optional[str]",
-              "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 273,
-              "deprecated": false
-            },
-            {
-              "name": "update_for_row_height",
-              "qualname": "TableActions.update_for_row_height",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Re-size action columns and icons to fit the current row height.",
-              "line": 338,
               "deprecated": false
             }
           ]

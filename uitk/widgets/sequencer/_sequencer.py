@@ -1338,14 +1338,14 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         return h
 
     def _visual_rows(self) -> List[tuple]:
-        """Return ``[(y, height, is_sub_row), ...]`` for background painting."""
+        """Return ``[(y, height, is_sub_row, track_id), ...]`` for background painting."""
         rows = []
         y = self._content_top
         for td in self._tracks:
-            rows.append((y, _TRACK_HEIGHT, False))
+            rows.append((y, _TRACK_HEIGHT, False, td.track_id))
             y += _TRACK_HEIGHT + _TRACK_PADDING
             for sr in self._expanded_tracks.get(td.track_id, []):
-                rows.append((y, self._sub_row_height, True))
+                rows.append((y, self._sub_row_height, True, td.track_id))
                 y += self._sub_row_height + _TRACK_PADDING
         return rows
 

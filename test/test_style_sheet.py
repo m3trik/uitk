@@ -63,16 +63,16 @@ class TestStyleSheetOverrides(QtBaseTestCase):
         widget = self.track_widget(QtWidgets.QWidget())
 
         # 1. Base Theme
-        default_val = StyleSheet.get_variable("HIGHLIGHT_COLOR", theme="light")
+        default_val = StyleSheet.get_variable("SELECTION_FG", theme="light")
 
         # 2. Global Override
-        StyleSheet.set_variable("HIGHLIGHT_COLOR", "#111111")
-        val = StyleSheet.get_variable("HIGHLIGHT_COLOR", theme="light", widget=widget)
+        StyleSheet.set_variable("SELECTION_FG", "#111111")
+        val = StyleSheet.get_variable("SELECTION_FG", theme="light", widget=widget)
         self.assertEqual(val, "#111111")
 
         # 3. Widget Override (should beat global)
-        StyleSheet.set_variable("HIGHLIGHT_COLOR", "#222222", widget=widget)
-        val = StyleSheet.get_variable("HIGHLIGHT_COLOR", theme="light", widget=widget)
+        StyleSheet.set_variable("SELECTION_FG", "#222222", widget=widget)
+        val = StyleSheet.get_variable("SELECTION_FG", theme="light", widget=widget)
         self.assertEqual(val, "#222222")
 
         # Clean up
@@ -103,6 +103,106 @@ class TestStyleSheetOverrides(QtBaseTestCase):
         # Reset all
         StyleSheet.reset_overrides()
         self.assertEqual(StyleSheet.get_variable("VAR1"), "")  # Cleared
+
+
+class TestStyleSheetTemplateEngine(QtBaseTestCase):
+    """Tests for the parsed-template substitution engine."""
+
+    def test_template_caches_by_resource(self):
+        """``_get_template`` populates ``_template_cache`` once per resource."""
+        StyleSheet._template_cache.clear()
+        parts_a = StyleSheet._get_template()
+        parts_b = StyleSheet._get_template()
+        # Same list object — cache hit, not rebuilt
+        self.assertIs(parts_a, parts_b)
+        self.assertEqual(len(StyleSheet._template_cache), 1)
+
+    def test_template_alternates_literals_and_tokens(self):
+        """Even indices are literals, odd indices are UPPER_SNAKE token names."""
+        parts = StyleSheet._token_pat.split("foo {BAR} baz {QUX_2} end")
+        self.assertEqual(parts, ["foo ", "BAR", " baz ", "QUX_2", " end"])
+
+    def test_apply_template_leaves_unknown_token_as_literal(self):
+        """Missing tokens render as ``{TOKEN}`` so the gap is visible."""
+        parts = ["pre ", "MISSING", " post"]
+        out = StyleSheet._apply_template(parts, {})
+        self.assertEqual(out, "pre {MISSING} post")
+
+    def test_apply_template_substitutes_known_tokens(self):
+        parts = ["color: ", "BG", "; border: ", "BORDER_W", " solid;"]
+        out = StyleSheet._apply_template(parts, {"BG": "red", "BORDER_W": "1px"})
+        self.assertEqual(out, "color: red; border: 1px solid;")
+
+    def test_slider_handle_radius_is_literal_not_token(self):
+        """Slider handle keeps a literal radius (it's width:10px — {RADIUS} > 5 distorts it)."""
+        import re
+
+        parts = StyleSheet._get_template()
+        qss_high_radius = StyleSheet._apply_template(
+            parts, {**StyleSheet.themes["light"], "RADIUS": "10px"}
+        )
+        m = re.search(
+            r"QAbstractSlider::handle\s*\{[^}]*?border-radius:\s*([^;]+);",
+            qss_high_radius,
+        )
+        self.assertIsNotNone(m, "slider handle rule must exist")
+        self.assertNotIn(
+            "10px",
+            m.group(1),
+            "slider handle picked up the {RADIUS} override — it should be a literal",
+        )
+
+    def test_qss_has_no_unresolved_tokens(self):
+        """Every ``{TOKEN}`` in style.qss resolves against the themes dict."""
+        import re
+
+        parts = StyleSheet._get_template()
+        used = {p for i, p in enumerate(parts) if i % 2 == 1}
+        for theme_name in StyleSheet.themes:
+            known = set(StyleSheet.themes[theme_name].keys())
+            missing = used - known
+            self.assertFalse(
+                missing,
+                f"theme '{theme_name}' is missing tokens used in style.qss: {sorted(missing)}",
+            )
+
+    def test_reload_assembles_qss_once_per_config_group(self):
+        """``reload()`` should call ``_apply_template`` once per unique config,
+        not once per widget. Verifies the grouping optimization."""
+        # Register 5 widgets sharing the same config
+        widgets = [self.track_widget(QtWidgets.QWidget()) for _ in range(5)]
+        styler = StyleSheet()
+        for w in widgets:
+            styler.set(w, theme="light")
+
+        # Wrap _apply_template to count invocations. Save the descriptor
+        # itself (not the resolved attribute) so the restore puts the
+        # staticmethod wrapper back, not a plain function that would bind
+        # ``self`` on later calls and break subsequent tests.
+        original_desc = StyleSheet.__dict__["_apply_template"]
+        original = StyleSheet._apply_template
+        call_count = [0]
+
+        def counting(parts, vars):
+            call_count[0] += 1
+            return original(parts, vars)
+
+        # Isolate the registry to just our 5 widgets — other tests in the
+        # full suite leave widgets registered, which would split into
+        # multiple config groups and break this assertion.
+        saved_configs = StyleSheet._widget_configs
+        StyleSheet._widget_configs = {w: saved_configs[w] for w in widgets}
+        StyleSheet._apply_template = staticmethod(counting)
+        try:
+            StyleSheet.reload()
+            self.assertEqual(
+                call_count[0],
+                1,
+                "5 widgets sharing a config should trigger 1 template-apply, not 5",
+            )
+        finally:
+            StyleSheet._apply_template = original_desc
+            StyleSheet._widget_configs = saved_configs
 
 
 class TestStyleSheetSignals(QtBaseTestCase):

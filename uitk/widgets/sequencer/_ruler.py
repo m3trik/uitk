@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from uitk.widgets.sequencer._data import (
     _RULER_HEIGHT,
     _SHOT_LANE_HEIGHT,
-    hatch_brush,
+    pattern_brush,
     HATCH_MEDIUM,
 )
 
@@ -108,7 +108,12 @@ class ShotLaneItem(QtWidgets.QGraphicsItem):
                 painter.setClipRect(r)
                 painter.fillRect(r, gap_color)
                 painter.fillRect(
-                    r, hatch_brush(QtGui.QColor(_SHOT_GAP_LINE_COLOR), HATCH_MEDIUM)
+                    r,
+                    pattern_brush(
+                        "diagonal",
+                        QtGui.QColor(_SHOT_GAP_LINE_COLOR),
+                        HATCH_MEDIUM,
+                    ),
                 )
                 painter.restore()
 

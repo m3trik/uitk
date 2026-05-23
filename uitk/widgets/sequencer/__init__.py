@@ -29,7 +29,11 @@ from uitk.widgets.sequencer._data import (  # noqa: F401
     HATCH_DENSE,
     HATCH_MEDIUM,
     HATCH_SPARSE,
-    hatch_brush,
+    PatternSpec,
+    PatternPainter,
+    register_pattern,
+    pattern_brush,
+    paint_pattern,
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip  # noqa: F401
 from uitk.widgets.sequencer._clip import ClipItem  # noqa: F401

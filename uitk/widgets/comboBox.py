@@ -26,7 +26,10 @@ class CustomStyle(QtWidgets.QProxyStyle):
 
     def drawControl(self, element, opt, painter, widget=None):
         """Override control drawing to handle header text display."""
-        if widget is None or isinstance(widget, AlignedComboBox):
+        # Only intercept when we know we're painting our own combobox.
+        # Accepting widget=None would risk hijacking CE_ComboBoxLabel
+        # drawing in unrelated contexts (e.g., the popup view paint).
+        if isinstance(widget, AlignedComboBox):
             if element == QtWidgets.QStyle.CE_ComboBoxLabel:
                 current_index = self.combo_box.currentIndex()
                 if self.combo_box.has_header:
@@ -39,6 +42,40 @@ class CustomStyle(QtWidgets.QProxyStyle):
                     opt.text = self.combo_box.itemText(current_index)
 
         super().drawControl(element, opt, painter, widget)
+
+    @staticmethod
+    def _strip_focus_state_for_combobox(control, opt):
+        # Native Windows style paints a blue focus border on CC_ComboBox
+        # whenever State_HasFocus is set; QSS `outline: none` doesn't suppress
+        # it. Return a copied option with the flag cleared.
+        if control == QtWidgets.QStyle.CC_ComboBox:
+            opt = QtWidgets.QStyleOptionComboBox(opt)
+            opt.state &= ~QtWidgets.QStyle.State_HasFocus
+        return opt
+
+    def drawComplexControl(self, control, opt, painter, widget=None):
+        opt = self._strip_focus_state_for_combobox(control, opt)
+        super().drawComplexControl(control, opt, painter, widget)
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        # Force list-view (not menu-style) popup rendering. With Fusion's
+        # default SH_ComboBox_Popup == 1, Qt installs a menu-item delegate
+        # that reserves a ~12px checkmark column on every item; the column
+        # is what shifts text right on hover/selected. Returning 0 keeps
+        # plain QStyledItemDelegate rendering — items render edge-to-edge.
+        if hint == QtWidgets.QStyle.SH_ComboBox_Popup:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
+
+    def pixelMetric(self, metric, option=None, widget=None):
+        # Fusion's QStyledItemDelegate.sizeHint adds PM_FocusFrameVMargin
+        # (typically 1px each side = +2px vertical) on top of QSS padding,
+        # making rows appear taller than the QSS-configured 1px padding
+        # intends. We don't paint a native focus frame on popup items, so
+        # zeroing this lets QSS padding fully define row height.
+        if metric == QtWidgets.QStyle.PM_FocusFrameVMargin:
+            return 0
+        return super().pixelMetric(metric, option, widget)
 
 
 class AlignedComboBox(QtWidgets.QComboBox):
@@ -59,7 +96,14 @@ class AlignedComboBox(QtWidgets.QComboBox):
         self.header_text = None
         self.header_alignment = QtCore.Qt.AlignCenter
 
-        self.custom_style = CustomStyle(self.style())
+        # Wrap Fusion rather than the app style. Windows 11's native style
+        # paints a blue accent border on focus and has unreliable :hover
+        # delivery to combobox popup items — neither suppressible from QSS.
+        # Fusion respects QSS faithfully; the visible chrome (drop-down arrow,
+        # frame) is already QSS-painted so swapping the base is cosmetically
+        # transparent.
+        base_style = QtWidgets.QStyleFactory.create("Fusion") or self.style()
+        self.custom_style = CustomStyle(base_style)
         self.custom_style.combo_box = self  # Set the combo_box reference here
         self.setStyle(self.custom_style)
 
@@ -134,6 +178,92 @@ class AlignedComboBox(QtWidgets.QComboBox):
             alignment = self.header_alignment
             painter.drawText(rect, alignment | QtCore.Qt.AlignVCenter, self.header_text)
             painter.end()
+
+
+class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
+    """Paints a left-edge accent strip on the combobox's current item.
+
+    Replaces the menu-style checkmark column that ``SH_ComboBox_Popup``
+    suppressed (the column shifted text right on hover). The strip is
+    rendered on top of the standard item paint, so item geometry is
+    unchanged across all states.
+
+    Colour is sourced from the theme's ``BUTTON_CHECKED`` token (the same
+    accent used elsewhere for "this is the active selection"), with a
+    hardcoded orange fallback if the theme can't be resolved.
+    """
+
+    _STRIP_WIDTH = 4
+    _FALLBACK_COLOR = QtGui.QColor(165, 135, 110)  # matches BUTTON_CHECKED
+
+    def __init__(self, combo_box):
+        super().__init__(combo_box.view())
+        self._combo = combo_box
+        self._strip_color = self._resolve_strip_color()
+
+    def _resolve_strip_color(self):
+        """Resolve BUTTON_CHECKED for the combo's active theme, fall back
+        to ``_FALLBACK_COLOR`` if the theme can't be inferred or parsed."""
+        try:
+            from uitk.widgets.mixins.style_sheet import StyleSheet
+            theme = self._resolve_active_theme()
+            color_str = StyleSheet.get_variable("BUTTON_CHECKED", theme=theme)
+            if color_str:
+                parsed = self._parse_color(color_str)
+                if parsed is not None and parsed.isValid():
+                    return parsed
+        except Exception:
+            pass
+        return self._FALLBACK_COLOR
+
+    def _resolve_active_theme(self):
+        """Walk up the combobox's parent chain to find the nearest widget
+        registered with ``StyleSheet`` and return its theme."""
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+        widget = self._combo
+        while widget is not None:
+            if widget in StyleSheet._widget_configs:
+                return StyleSheet._widget_configs[widget].get("theme", "light")
+            widget = widget.parent()
+        return "light"
+
+    @staticmethod
+    def _parse_color(color_str):
+        """Parse a CSS ``rgb()``/``rgba()`` string into a ``QColor``."""
+        m = re.match(
+            r"rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*(\d+))?\)",
+            color_str.strip(),
+        )
+        if m:
+            r, g, b, a = m.groups()
+            return QtGui.QColor(int(r), int(g), int(b), int(a) if a else 255)
+        c = QtGui.QColor(color_str)
+        return c if c.isValid() else None
+
+    def paint(self, painter, option, index):
+        # Suppress hover/selection bg only for rows that host an embedded
+        # widget (WidgetComboBox). With uniform-height rows + AlignVCenter,
+        # a shorter embedded widget leaves a gap above/below where the row's
+        # BUTTON_HOVER bg would otherwise show as a blue frame. Text-only
+        # rows keep the full hover styling.
+        view = self._combo.view()
+        if view is not None and view.indexWidget(index) is not None:
+            paint_opt = QtWidgets.QStyleOptionViewItem(option)
+            paint_opt.state &= ~QtWidgets.QStyle.State_MouseOver
+            paint_opt.state &= ~QtWidgets.QStyle.State_Selected
+            super().paint(painter, paint_opt, index)
+        else:
+            super().paint(painter, option, index)
+
+        if index.row() == self._combo.currentIndex():
+            painter.save()
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(self._strip_color)
+            rect = option.rect
+            painter.drawRect(
+                rect.x(), rect.y(), self._STRIP_WIDTH, rect.height()
+            )
+            painter.restore()
 
 
 class ComboBox(
@@ -405,7 +535,18 @@ class ComboBox(
         self.item_deleted.emit(item_text)
 
     def showPopup(self):
-        self.view().setMinimumWidth(self.view().sizeHintForColumn(0))
+        view = self.view()
+        view.setMinimumWidth(view.sizeHintForColumn(0))
+        # Popup view defaults vary by Qt version / platform style; force
+        # both so QSS ``::item:hover`` fires reliably for every row.
+        view.setMouseTracking(True)
+        view.setStyle(self.custom_style)
+        # Marker for the current selection (left-edge strip). Installed
+        # once; setItemDelegate without replacing is a no-op so re-calling
+        # is cheap, but caching keeps the delegate identity stable for
+        # tests and inspection.
+        if not isinstance(view.itemDelegate(), _CurrentItemIndicatorDelegate):
+            view.setItemDelegate(_CurrentItemIndicatorDelegate(self))
         self.before_popup_shown.emit()
         super().showPopup()
 
