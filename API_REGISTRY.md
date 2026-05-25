@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-05-23_
+_Generated: 2026-05-25_
 
 ## Index
 
@@ -23,11 +23,6 @@ _Generated: 2026-05-23_
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - [`loaders/runtime.py`](#loaders--runtime) — Switchboard delegate that loads UIs at runtime via QUiLoader.
 - [`switchboard/_core.py`](#switchboard--_core)
-- [`switchboard/_editors.py`](#switchboard--_editors) — Mixin that exposes the bundled editor windows on the Switchboard.
-- [`switchboard/_names.py`](#switchboard--_names)
-- [`switchboard/_style.py`](#switchboard--_style) — Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
-- [`switchboard/_utils.py`](#switchboard--_utils)
-- [`switchboard/_widgets.py`](#switchboard--_widgets)
 - [`switchboard/editors.py`](#switchboard--editors) — Mixin that exposes the bundled editor windows on the Switchboard.
 - [`switchboard/names.py`](#switchboard--names)
 - [`switchboard/shortcuts.py`](#switchboard--shortcuts) — Switchboard-side keyboard shortcut machinery.
@@ -71,7 +66,6 @@ _Generated: 2026-05-23_
 - [`widgets/mixins/size_grip.py`](#widgets--mixins--size_grip) — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - [`widgets/mixins/state_manager.py`](#widgets--mixins--state_manager)
 - [`widgets/mixins/style_sheet.py`](#widgets--mixins--style_sheet)
-- [`widgets/mixins/tasks.py`](#widgets--mixins--tasks)
 - [`widgets/mixins/text.py`](#widgets--mixins--text)
 - [`widgets/mixins/tooltip_mixin.py`](#widgets--mixins--tooltip_mixin)
 - [`widgets/mixins/value_manager.py`](#widgets--mixins--value_manager)
@@ -355,80 +349,7 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
   - `Switchboard.get_ui_relatives(self, ui, upstream=False, exact=False, downstream=False, reverse=False)` — Get UIs related to the given UI via shared base name.
   - `Switchboard.find_ui_filename(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]` — Convert the given legal name to its original name(s) by searching the UI files.
   - `Switchboard.save_ui_tags(self, path: str, tags: Iterable[str]) -> None` — Persist tags into a .ui file as a Designer-safe dynamic property.
-  - `Switchboard.ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[])` — Get the UI history.
-
-<a id="switchboard--_editors"></a>
-### `switchboard/_editors.py`
-
-Mixin that exposes the bundled editor windows on the Switchboard.
-
-- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/_editors.py#L225)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
-  - `SwitchboardEditorsMixin.editors(self) -> _EditorRegistry` *(property)* — Cached editor registry — see :class:`_EditorRegistry`.
-
-<a id="switchboard--_names"></a>
-### `switchboard/_names.py`
-
-- **[`class SwitchboardNameMixin`](uitk/uitk/switchboard/_names.py#L9)** — Mixin for Switchboard name and tag management.
-  - `SwitchboardNameMixin.convert_to_legal_name(name: str) -> str` *(static)* — Convert a name to a legal format by replacing non-alphanumeric characters with underscores.
-  - `SwitchboardNameMixin.get_slot_class_names(self, base_name: str) -> List[str]` — Generate potential slot class names from a base name.
-  - `SwitchboardNameMixin.get_slot_file_names(self, base_name: str) -> List[str]` — Generate potential slot file names from a base name.
-  - `SwitchboardNameMixin.get_base_name(self, name: str) -> str`
-  - `SwitchboardNameMixin.get_tags_from_name(self, name: str) -> set[str]` — Extract tags from a UI name string.
-  - `SwitchboardNameMixin.has_tags(self, ui, tags=None) -> bool` — Check if any of the given tag(s) are present in the UI's tags set.
-  - `SwitchboardNameMixin.edit_tags(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]` — Edit tags on a widget or a tag string.
-  - `SwitchboardNameMixin.filter_tags(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str` — Filter tags from a tag string - either keep only specified tags or remove specified tags.
-  - `SwitchboardNameMixin.get_unknown_tags(self, tag_string: str, known_tags: list[str]) -> list[str]` — Get tags that are not in the known_tags list.
-
-<a id="switchboard--_style"></a>
-### `switchboard/_style.py`
-
-Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
-
-- **[`class SwitchboardStyleMixin`](uitk/uitk/switchboard/_style.py#L27)** — Adds a lazy ``style`` property exposing the :class:`StyleSheet` class.
-  - `SwitchboardStyleMixin.style(self)` *(property)* — The :class:`StyleSheet` class (imported lazily on first access).
-
-<a id="switchboard--_utils"></a>
-### `switchboard/_utils.py`
-
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/_utils.py#L10)** — Utility methods for widget positioning, centering, and screen geometry.
-  - `SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
-  - `SwitchboardUtilsMixin.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)` *(static)* — Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…
-  - `SwitchboardUtilsMixin.unpack_names(cls, name_string)` *(class)* — Unpacks a comma-separated string of names and returns a list of individual names.
-  - `SwitchboardUtilsMixin.get_widgets_by_string_pattern(self, ui, name_string)` — Get a list of corresponding widgets from a single shorthand formatted string.
-  - `SwitchboardUtilsMixin.get_methods_by_string_pattern(self, clss, name_string)` — Get a list of corresponding methods from a single shorthand formatted string.
-  - `SwitchboardUtilsMixin.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]` — Create button groups for a set of widgets.
-  - `SwitchboardUtilsMixin.toggle_multi(self, ui, trigger=None, signal=None, **kwargs)` — Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…
-  - `SwitchboardUtilsMixin.connect_multi(self, ui, widgets, signals, slots)` — Connect multiple signals to multiple slots at once.
-  - `SwitchboardUtilsMixin.set_axis_for_checkboxes(self, checkboxes, axis, ui=None)` — Set the given checkbox's check states to reflect the specified axis.
-  - `SwitchboardUtilsMixin.get_axis_from_checkboxes(self, checkboxes, ui=None, return_type='str')` — Get the intended axis value as a string or integer by reading the multiple checkbox's check states.
-  - `SwitchboardUtilsMixin.hide_unmatched_groupboxes(self, ui, unknown_tags) -> None` — Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted
-  - `SwitchboardUtilsMixin.invert_on_modifier(value)` *(static)* — Invert a numerical or boolean value if the alt key is pressed.
-  - `SwitchboardUtilsMixin.message_box(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)` — Spawns a message box with the given text and optionally sets buttons.
-  - `SwitchboardUtilsMixin.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]` *(static)* — Open a file dialog to select files of the given type(s) using qtpy.
-  - `SwitchboardUtilsMixin.dir_dialog(title: str = 'Select a directory', start_dir: str = '/home') -> str` *(static)* — Open a directory dialog to select a directory using qtpy.
-  - `SwitchboardUtilsMixin.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]` *(static)* — Open a save-file dialog to choose a destination path.
-  - `SwitchboardUtilsMixin.input_dialog(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str` *(static)* — Show a modal text-input dialog and return the entered string.
-  - `SwitchboardUtilsMixin.simulate_key_press(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)` *(static)* — Simulate a key press event for the given UI and optionally release the keyboard.
-  - `SwitchboardUtilsMixin.defer_with_timer(self, func: callable, *args, ms: int = 300, **kwargs) -> None` — Defer execution of any callable with arguments after a delay.
-  - `SwitchboardUtilsMixin.gc_protect(self, obj=None, clear=False)` — Protect the given object(s) from garbage collection by holding a strong reference.
-  - `SwitchboardUtilsMixin.modal_menu(content_fn, parent=None, **kwargs)` *(static)* — Show a themed modal Menu popup, block until dismissed.
-
-<a id="switchboard--_widgets"></a>
-### `switchboard/_widgets.py`
-
-- **[`class SwitchboardWidgetMixin`](uitk/uitk/switchboard/_widgets.py#L8)** — Widget registration, resolution, and dynamic class loading for Switchboard.
-  - `SwitchboardWidgetMixin.resolve_widget_class(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]` — Return the widget class registered under the given name.
-  - `SwitchboardWidgetMixin.get_icon(self, icon_name: str) -> QtGui.QIcon` — Get a registered icon by name.
-  - `SwitchboardWidgetMixin.register_widget(self, widget)` — Register any custom widgets using the module names.
-  - `SwitchboardWidgetMixin.get_widget(self, name, ui=None)` — Case insensitive.
-  - `SwitchboardWidgetMixin.get_widget_from_slot(self, method)` — Get the corresponding widget from a given method.
-  - `SwitchboardWidgetMixin.set_widget_attrs(self, ui, widget_names, **kwargs)` — Set multiple properties, for multiple widgets, on multiple UI's at once.
-  - `SwitchboardWidgetMixin.is_widget(self, obj)` — Returns True if the given obj is a valid widget.
-  - `SwitchboardWidgetMixin.get_parent_widgets(widget, object_names=False)` *(static)* — Get the all parent widgets of the given widget.
-  - `SwitchboardWidgetMixin.get_top_level_parent(cls, widget, index=-1)` *(class)* — Get the parent widget at the top of the hierarchy for the given widget.
-  - `SwitchboardWidgetMixin.get_all_windows(name=None)` *(static)* — Get Qt windows.
-  - `SwitchboardWidgetMixin.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
-  - `SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
+  - `Switchboard.ui_history(self, index=None, allow_duplicates=False, inc=None, exc=None)` — Get the UI history.
 
 <a id="switchboard--editors"></a>
 ### `switchboard/editors.py`
@@ -472,7 +393,7 @@ Switchboard-side keyboard shortcut machinery.
 - **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L142)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
 - **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L327)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
   - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
-  - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=[])` — Get all available signals for a type of widget.
+  - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
   - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
   - `SwitchboardSlotsMixin.get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]` — Get or create a slots instance for the given UI.
   - `SwitchboardSlotsMixin.init_slot(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None`
@@ -480,8 +401,7 @@ Switchboard-side keyboard shortcut machinery.
   - `SwitchboardSlotsMixin.get_slot(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]`
   - `SwitchboardSlotsMixin.get_slot_from_widget(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]`
   - `SwitchboardSlotsMixin.connect_slot(self, widget, slot=None)` — Connect a widget's signals to its slot.
-  - `SwitchboardSlotsMixin.disconnect_slot(self, widget, slot=None)` — Disconnects a slot from a widget.
-  - `SwitchboardSlotsMixin.slot_history(self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[], length=200)` — Get the slot history.
+  - `SwitchboardSlotsMixin.slot_history(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)` — Get the slot history.
 
 <a id="switchboard--style"></a>
 ### `switchboard/style.py`
@@ -532,7 +452,6 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardWidgetMixin.set_widget_attrs(self, ui, widget_names, **kwargs)` — Set multiple properties, for multiple widgets, on multiple UI's at once.
   - `SwitchboardWidgetMixin.is_widget(self, obj)` — Returns True if the given obj is a valid widget.
   - `SwitchboardWidgetMixin.get_parent_widgets(widget, object_names=False)` *(static)* — Get the all parent widgets of the given widget.
-  - `SwitchboardWidgetMixin.get_top_level_parent(cls, widget, index=-1)` *(class)* — Get the parent widget at the top of the hierarchy for the given widget.
   - `SwitchboardWidgetMixin.get_all_windows(name=None)` *(static)* — Get Qt windows.
   - `SwitchboardWidgetMixin.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
   - `SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
@@ -611,12 +530,15 @@ HTML formatting helpers shared by uitk's rich-text widgets.
 
 - **[`class CustomStyle(QtWidgets.QProxyStyle)`](uitk/uitk/widgets/comboBox.py#L13)** — Custom proxy style for ComboBox that handles header text display.
   - `CustomStyle.drawControl(self, element, opt, painter, widget=None)` — Override control drawing to handle header text display.
-- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L44)** — ComboBox with header text and alignment support.
+  - `CustomStyle.drawComplexControl(self, control, opt, painter, widget=None)`
+  - `CustomStyle.styleHint(self, hint, option=None, widget=None, returnData=None)`
+  - `CustomStyle.pixelMetric(self, metric, option=None, widget=None)`
+- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L81)** — ComboBox with header text and alignment support.
   - `AlignedComboBox.setHeaderText(self, text)` — Set the header text displayed when no item is selected.
   - `AlignedComboBox.setHeaderAlignment(self, alignment)` — Set the alignment for header text.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L139)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L269)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.items(self)` *(property)*
   - `ComboBox.currentData(self)`
   - `ComboBox.setCurrentData(self, value)`
@@ -1225,7 +1147,6 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
   - `CornerSizeGrip.paintEvent(self, event: QtGui.QPaintEvent) -> None`
 - **[`class SizeGripMixin`](uitk/uitk/widgets/mixins/size_grip.py#L98)** — Mixin that provides a consistent QSizeGrip attachment helper.
   - `SizeGripMixin.create_size_grip(self, container: Optional[QtWidgets.QWidget] = None, layout: Optional[QtWidgets.QLayout] = None, *, alignment: Optional[QtCore.Qt.Alignment] = None) -> Optional[QtWidgets.QSizeGrip]` — Create or reuse a size grip and ensure it is inserted in *layout*.
-  - `SizeGripMixin.ensure_size_grip(self, *, container: Optional[QtWidgets.QWidget] = None, layout: Optional[QtWidgets.QLayout] = None, alignment: Optional[QtCore.Qt.Alignment] = None) -> Optional[QtWidgets.QSizeGrip]` — Backward-compatible alias for :meth:`create_size_grip`.
 
 <a id="widgets--mixins--state_manager"></a>
 ### `widgets/mixins/state_manager.py`
@@ -1259,17 +1180,6 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
   - `StyleSheet.export_overrides(cls) -> dict` *(class)* — Export the current global overrides as a plain dict.
   - `StyleSheet.import_overrides(cls, data: dict) -> None` *(class)* — Bulk-replace global overrides from a dict and reload once.
   - `StyleSheet.reset_overrides(cls, widget: QtWidgets.QWidget = None)` *(class)* — Clear overrides.
-
-<a id="widgets--mixins--tasks"></a>
-### `widgets/mixins/tasks.py`
-
-- **[`class WorkIndicator(QtWidgets.QDialog)`](uitk/uitk/widgets/mixins/tasks.py#L8)**
-  - `WorkIndicator.initUI(self)`
-  - `WorkIndicator.closeEvent(self, event)`
-- **[`class TasksMixin(QtCore.QThread)`](uitk/uitk/widgets/mixins/tasks.py#L38)** — Background task runner with optional visual work indicator.
-  - `TasksMixin.run(self)`
-  - `TasksMixin.startTask(self, taskFunction)`
-  - `TasksMixin.stopTask(self)`
 
 <a id="widgets--mixins--text"></a>
 ### `widgets/mixins/text.py`
@@ -2062,8 +1972,13 @@ Scrollable rich-text viewer window.
   - `WidgetComboBox.actions(self) -> _ActionsNamespace` *(property)* — Namespace for managing persistent action buttons at the bottom of
   - `WidgetComboBox.showPopup(self) -> None` — Override to expand popup to widest widget and update overflow.
   - `WidgetComboBox.hidePopup(self) -> None` — Override to hide overflow indicator when popup is hidden.
+  - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance arrow drawn after the text.
+  - `WidgetComboBox.arrow_direction(self, value: Optional[str]) -> None`
+  - `WidgetComboBox.paintEvent(self, event) -> None` — Paint the base combo, then overlay an arrow immediately after the
   - `WidgetComboBox.eventFilter(self, obj, event)` — Event filter to reposition indicator on scroll and resize events.
   - `WidgetComboBox.add(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, **kwargs)` — Populate the combo box with text, widgets or actions.
+  - `WidgetComboBox.add_defaults_button(self) -> bool` *(property)* — When True, adds a "Restore Defaults" action at the bottom of the
+  - `WidgetComboBox.add_defaults_button(self, value: bool) -> None`
   - `WidgetComboBox.clear(self) -> None`
 
 <a id="widgets--windowPanel"></a>

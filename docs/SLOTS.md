@@ -268,7 +268,7 @@ history = self.sb.slot_history()  # full list, most recent last
 ## 9. What UITK does *not* do for slots
 
 - **No validation.** If your slot raises, UITK logs and moves on; the widget stays connected. Add your own `try/except` + user feedback (`sb.message_box`) for risky operations.
-- **No automatic thread offload.** Long-running slots block the UI thread unless you wrap them yourself. Combine `widget.slot_timeout` with `QThread` or `uitk.widgets.mixins.tasks.WorkIndicator` for background work.
+- **No automatic thread offload.** Long-running slots block the UI thread unless you wrap them yourself. Combine `widget.slot_timeout` with `QThread` / `QtConcurrent.run` for background work, and surface progress via `sb.progress(...)` (routes to the active UI's `Footer.progress`).
 - **No input-argument coercion.** Signal args are passed through as Qt delivers them. A `QSpinBox.valueChanged(int)` slot gets an `int`; a `QTreeWidget.itemClicked(item, column)` slot gets both.
 
 ---

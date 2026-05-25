@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.2.40"
+__version__ = "1.2.42"
 
 
 DEFAULT_INCLUDE = {
@@ -140,7 +140,6 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.shortcuts": ["ShortcutManager", "ShortcutMixin"],
     "widgets.mixins.state_manager": "StateManager",
     "widgets.mixins.style_sheet": "StyleSheet",
-    "widgets.mixins.tasks": ["WorkIndicator", "TasksMixin"],
     "widgets.mixins.text": ["TextTruncation", "RichText", "TextOverlay"],
     "widgets.mixins.value_manager": "ValueManager",
 }

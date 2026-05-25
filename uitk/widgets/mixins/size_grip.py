@@ -151,21 +151,6 @@ class SizeGripMixin:
 
         return size_grip
 
-    def ensure_size_grip(
-        self,
-        *,
-        container: Optional[QtWidgets.QWidget] = None,
-        layout: Optional[QtWidgets.QLayout] = None,
-        alignment: Optional[QtCore.Qt.Alignment] = None,
-    ) -> Optional[QtWidgets.QSizeGrip]:
-        """Backward-compatible alias for :meth:`create_size_grip`."""
-
-        return self.create_size_grip(
-            container=container,
-            layout=layout,
-            alignment=alignment,
-        )
-
     def _size_grip_default_container(self) -> Optional[QtWidgets.QWidget]:
         """Return the widget that should host the size grip by default."""
         central_widget = None

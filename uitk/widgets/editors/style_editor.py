@@ -151,8 +151,14 @@ class StyleEditor(EditorPanel):
     # ------------------------------------------------------------------
 
     def _on_theme_changed(self, theme):
-        """Combobox callback: re-theme the editor + repopulate the table."""
-        StyleSheet.set_theme(theme, widget=self)
+        """Combobox callback: re-theme the editor + repopulate the table.
+
+        Uses ``StyleSheet().set`` rather than ``set_theme(widget=self)``
+        so we always re-apply the QSS even if ``self`` somehow fell out
+        of ``_widget_configs`` (e.g. a prior reload hit a RuntimeError);
+        ``set_theme`` silently no-ops in that case.
+        """
+        StyleSheet().set(self, theme=theme)
         self.populate()
 
     # ------------------------------------------------------------------
