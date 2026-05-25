@@ -503,6 +503,12 @@ QLabel:disabled {
     background-color: {DISABLED_BACKGROUND};
     border: {BORDER_W} solid {DISABLED_BACKGROUND};
 }
+
+/* ExpandableList items behave like menu rows -- highlight on hover. */
+.ExpandableList QLabel:hover {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+}
 QLineEdit {
     background-color: {WIDGET_BACKGROUND};
     color: {TEXT_COLOR};

@@ -140,7 +140,6 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.shortcuts": ["ShortcutManager", "ShortcutMixin"],
     "widgets.mixins.state_manager": "StateManager",
     "widgets.mixins.style_sheet": "StyleSheet",
-    "widgets.mixins.tasks": ["WorkIndicator", "TasksMixin"],
     "widgets.mixins.text": ["TextTruncation", "RichText", "TextOverlay"],
     "widgets.mixins.value_manager": "ValueManager",
 }

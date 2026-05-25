@@ -379,7 +379,7 @@ class SwitchboardSlotsMixin:
                     signals.add(signal)
         return signals
 
-    def get_available_signals(self, widget, derived=True, exc=[]):
+    def get_available_signals(self, widget, derived=True, exc=None):
         """Get all available signals for a type of widget.
 
         Parameters:
@@ -908,41 +908,14 @@ class SwitchboardSlotsMixin:
         """
         return SlotWrapper(slot, widget, self)
 
-    def disconnect_slot(self, widget, slot=None):
-        """Disconnects a slot from a widget.
-
-        Parameters:
-            widget (QWidget): The widget to disconnect the slot from.
-            slot (callable, optional): The specific slot to disconnect. If not provided, all slots will be disconnected.
-        """
-        if not isinstance(widget, QtWidgets.QWidget):
-            raise ValueError(f"Invalid datatype: Expected QWidget, got {type(widget)}")
-
-        if slot is None:
-            # Disconnect all slots for the widget
-            for signal_name, slot in self.connected_slots.get(widget, {}).items():
-                signal = getattr(widget, signal_name, None)
-                if signal:
-                    signal.disconnect(slot)
-            widget.ui.connected_slots[widget] = {}
-        else:  # Disconnect a specific slot
-            for signal_name, connected_slot in self.connected_slots.get(
-                widget, {}
-            ).items():
-                if connected_slot == slot:
-                    signal = getattr(widget, signal_name, None)
-                    if signal:
-                        signal.disconnect(slot)
-                    break
-
     def slot_history(
         self,
         index=None,
         allow_duplicates=False,
-        inc=[],
-        exc=[],
-        add=[],
-        remove=[],
+        inc=None,
+        exc=None,
+        add=None,
+        remove=None,
         length=200,
     ):
         """Get the slot history.

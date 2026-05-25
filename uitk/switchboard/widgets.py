@@ -228,19 +228,6 @@ class SwitchboardWidgetMixin:
             return [w.objectName() for w in parentWidgets]
         return parentWidgets
 
-    @classmethod
-    def get_top_level_parent(cls, widget, index=-1):
-        """Get the parent widget at the top of the hierarchy for the given widget.
-
-        Parameters:
-            widget (QWidget): The widget to get top level parent of.
-            index (int): Last index is top level.
-
-        Returns:
-            (QWidget)
-        """
-        return cls.get_parent_widgets()[index]
-
     @staticmethod
     def get_all_windows(name=None):
         """Get Qt windows.

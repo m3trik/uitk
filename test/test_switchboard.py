@@ -15,6 +15,7 @@ Run standalone: python -m test.test_switchboard
 """
 
 import unittest
+from unittest import mock
 
 from conftest import QtBaseTestCase, setup_qt_application
 
@@ -580,6 +581,26 @@ class TestSwitchboardInvertOnModifier(unittest.TestCase):
         """Should handle boolean values."""
         result = Switchboard.invert_on_modifier(True)
         self.assertEqual(result, True)
+
+    def _with_alt_modifier(self):
+        return mock.patch.object(
+            QtWidgets.QApplication.instance(),
+            "keyboardModifiers",
+            return_value=QtCore.Qt.AltModifier,
+        )
+
+    def test_invert_with_alt_flips_bool_true_to_false(self):
+        with self._with_alt_modifier():
+            self.assertEqual(Switchboard.invert_on_modifier(True), False)
+
+    def test_invert_with_alt_flips_bool_false_to_true(self):
+        with self._with_alt_modifier():
+            self.assertEqual(Switchboard.invert_on_modifier(False), True)
+
+    def test_invert_with_alt_negates_int(self):
+        with self._with_alt_modifier():
+            self.assertEqual(Switchboard.invert_on_modifier(5), -5)
+            self.assertEqual(Switchboard.invert_on_modifier(-5), 5)
 
 
 # =============================================================================

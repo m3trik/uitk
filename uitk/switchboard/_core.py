@@ -998,7 +998,7 @@ class Switchboard(
                 f"[on_ui_tags_changed] emit failed for '{ui_name}'", exc_info=True
             )
 
-    def ui_history(self, index=None, allow_duplicates=False, inc=[], exc=[]):
+    def ui_history(self, index=None, allow_duplicates=False, inc=None, exc=None):
         """Get the UI history."""
         self._ui_history = self._ui_history[-200:]
         if not allow_duplicates:

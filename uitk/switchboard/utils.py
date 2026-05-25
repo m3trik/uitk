@@ -522,10 +522,12 @@ class SwitchboardUtilsMixin:
         ):
             return value
 
-        if type(value) in (int, float):
+        if isinstance(value, bool):
+            result = not value
+        elif isinstance(value, (int, float)):
             result = abs(value) if value < 0 else -value
-        elif type(value) == bool:
-            result = True if value else False
+        else:
+            result = value
 
         return result
 

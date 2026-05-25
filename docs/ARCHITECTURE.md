@@ -429,7 +429,7 @@ Source tags come from `sb.register(ui_location=..., tags={"menu"})` — tag all 
 | Add a DCC-specific window handler | Subclass `UiHandler`, pass via `handlers={"ui": MyUiHandler}` | Don't subclass `Switchboard` |
 | Add cross-cutting behavior | New handler with `DEFAULTS` dict, register via `handlers={...}` | Don't monkeypatch `Switchboard` |
 | Add a widget capability | New mixin in your own package, declare on your widgets | Don't edit UITK's mixins in-place |
-| Run slots in background | Wrap slot body in `QThread` or use `uitk.widgets.mixins.tasks.WorkIndicator` | Don't offload inside the SlotWrapper |
+| Run slots in background | Wrap slot body in `QThread` / `QtConcurrent.run`; surface progress via `sb.progress(...)` → `Footer.progress` | Don't offload inside the SlotWrapper |
 | Persist custom config | `sb.configurable.<namespace>.<key>.set/get/.changed.connect` | Don't bypass with raw `QSettings` |
 | React to theme change | Connect to `ui.style.theme_changed(widget, name, vars)` | Don't poll styles |
 | React to widget lifecycle | Connect to `ui.on_show`, `on_first_show`, `on_child_registered`, etc. | Don't override `showEvent` without super |
@@ -490,7 +490,6 @@ uitk/
 │       ├── icon_manager.py    # theme-aware icon coloring
 │       ├── shortcuts.py       # GlobalShortcut, ShortcutManager, ShortcutMixin
 │       ├── preset_manager.py  # named preset save/load
-│       ├── tasks.py           # WorkIndicator, TasksMixin
 │       ├── text.py            # RichText, TextOverlay, TextTruncation
 │       ├── tooltip_mixin.py    # lazy-refreshed tooltips via event filter
 │       ├── convert.py, docking.py, size_grip.py, style.qss

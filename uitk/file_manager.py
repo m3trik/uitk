@@ -121,7 +121,13 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
         """
         stack = inspect.stack()
         caller_frame = next(
-            (frame for frame in stack if "lib\\" not in frame.filename), None
+            (
+                frame
+                for frame in stack
+                if "lib" + os.sep not in frame.filename
+                and "lib/" not in frame.filename
+            ),
+            None,
         )
         if caller_frame:
             caller_filename = caller_frame.filename

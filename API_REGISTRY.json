@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-05-23",
+  "generated_at": "2026-05-25",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -772,7 +772,7 @@
               "kind": "method",
               "signature": "(self, caller_info: Union[str, int, Any] = 0) -> Optional[str]",
               "summary": "Identifies the base directory based on the caller's frame index or an object.",
-              "line": 132,
+              "line": 138,
               "deprecated": false
             },
             {
@@ -781,7 +781,7 @@
               "kind": "method",
               "signature": "(self, target_obj: Union[str, Any], validate: int = 0, path_type: str = 'Path', **metadata) -> Optional[str]",
               "summary": "Resolve a target object to an absolute path.",
-              "line": 195,
+              "line": 201,
               "deprecated": false
             },
             {
@@ -790,7 +790,7 @@
               "kind": "method",
               "signature": "(self, descriptor: str, objects: Optional[Union[str, List[str], Any]] = None, **metadata) -> ptk.NamedTupleContainer",
               "summary": "Creates a named tuple container for the specified files.",
-              "line": 245,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -799,7 +799,7 @@
               "kind": "method",
               "signature": "(self, location: Union[str, Any], container_descriptor: str) -> bool",
               "summary": "Checks if the container with the given descriptor contains a specific location.",
-              "line": 407,
+              "line": 413,
               "deprecated": false
             },
             {
@@ -808,7 +808,7 @@
               "kind": "method",
               "signature": "(self, descriptor: str) -> Optional[ptk.NamedTupleContainer]",
               "summary": "Get a container by its descriptor name.",
-              "line": 457,
+              "line": 463,
               "deprecated": false
             },
             {
@@ -817,7 +817,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "List all container descriptors.",
-              "line": 469,
+              "line": 475,
               "deprecated": false
             },
             {
@@ -826,7 +826,7 @@
               "kind": "method",
               "signature": "(self, descriptor: str) -> bool",
               "summary": "Remove a container by its descriptor name.",
-              "line": 482,
+              "line": 488,
               "deprecated": false
             }
           ]
@@ -1407,480 +1407,9 @@
               "name": "ui_history",
               "qualname": "Switchboard.ui_history",
               "kind": "method",
-              "signature": "(self, index=None, allow_duplicates=False, inc=[], exc=[])",
+              "signature": "(self, index=None, allow_duplicates=False, inc=None, exc=None)",
               "summary": "Get the UI history.",
               "line": 1001,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "switchboard/_editors.py",
-      "summary": "Mixin that exposes the bundled editor windows on the Switchboard.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardEditorsMixin",
-          "summary": "Adds an ``editors`` property to Switchboard exposing the bundled editors.",
-          "line": 225,
-          "bases": [],
-          "members": [
-            {
-              "name": "editors",
-              "qualname": "SwitchboardEditorsMixin.editors",
-              "kind": "property",
-              "signature": "(self) -> _EditorRegistry",
-              "summary": "Cached editor registry — see :class:`_EditorRegistry`.",
-              "line": 233,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "switchboard/_names.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardNameMixin",
-          "summary": "Mixin for Switchboard name and tag management.",
-          "line": 9,
-          "bases": [],
-          "members": [
-            {
-              "name": "convert_to_legal_name",
-              "qualname": "SwitchboardNameMixin.convert_to_legal_name",
-              "kind": "staticmethod",
-              "signature": "(name: str) -> str",
-              "summary": "Convert a name to a legal format by replacing non-alphanumeric characters with underscores.",
-              "line": 19,
-              "deprecated": false
-            },
-            {
-              "name": "get_slot_class_names",
-              "qualname": "SwitchboardNameMixin.get_slot_class_names",
-              "kind": "method",
-              "signature": "(self, base_name: str) -> List[str]",
-              "summary": "Generate potential slot class names from a base name.",
-              "line": 33,
-              "deprecated": false
-            },
-            {
-              "name": "get_slot_file_names",
-              "qualname": "SwitchboardNameMixin.get_slot_file_names",
-              "kind": "method",
-              "signature": "(self, base_name: str) -> List[str]",
-              "summary": "Generate potential slot file names from a base name.",
-              "line": 46,
-              "deprecated": false
-            },
-            {
-              "name": "get_base_name",
-              "qualname": "SwitchboardNameMixin.get_base_name",
-              "kind": "method",
-              "signature": "(self, name: str) -> str",
-              "summary": "",
-              "line": 69,
-              "deprecated": false
-            },
-            {
-              "name": "get_tags_from_name",
-              "qualname": "SwitchboardNameMixin.get_tags_from_name",
-              "kind": "method",
-              "signature": "(self, name: str) -> set[str]",
-              "summary": "Extract tags from a UI name string.",
-              "line": 79,
-              "deprecated": false
-            },
-            {
-              "name": "has_tags",
-              "qualname": "SwitchboardNameMixin.has_tags",
-              "kind": "method",
-              "signature": "(self, ui, tags=None) -> bool",
-              "summary": "Check if any of the given tag(s) are present in the UI's tags set.",
-              "line": 91,
-              "deprecated": false
-            },
-            {
-              "name": "edit_tags",
-              "qualname": "SwitchboardNameMixin.edit_tags",
-              "kind": "method",
-              "signature": "(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
-              "summary": "Edit tags on a widget or a tag string.",
-              "line": 116,
-              "deprecated": false
-            },
-            {
-              "name": "filter_tags",
-              "qualname": "SwitchboardNameMixin.filter_tags",
-              "kind": "method",
-              "signature": "(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str",
-              "summary": "Filter tags from a tag string - either keep only specified tags or remove specified tags.",
-              "line": 173,
-              "deprecated": false
-            },
-            {
-              "name": "get_unknown_tags",
-              "qualname": "SwitchboardNameMixin.get_unknown_tags",
-              "kind": "method",
-              "signature": "(self, tag_string: str, known_tags: list[str]) -> list[str]",
-              "summary": "Get tags that are not in the known_tags list.",
-              "line": 210,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "switchboard/_style.py",
-      "summary": "Mixin that exposes the :class:`StyleSheet` class on the Switchboard.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardStyleMixin",
-          "summary": "Adds a lazy ``style`` property exposing the :class:`StyleSheet` class.",
-          "line": 27,
-          "bases": [],
-          "members": [
-            {
-              "name": "style",
-              "qualname": "SwitchboardStyleMixin.style",
-              "kind": "property",
-              "signature": "(self)",
-              "summary": "The :class:`StyleSheet` class (imported lazily on first access).",
-              "line": 31,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "switchboard/_utils.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardUtilsMixin",
-          "summary": "Utility methods for widget positioning, centering, and screen geometry.",
-          "line": 10,
-          "bases": [],
-          "members": [
-            {
-              "name": "get_cursor_offset_from_center",
-              "qualname": "SwitchboardUtilsMixin.get_cursor_offset_from_center",
-              "kind": "staticmethod",
-              "signature": "(widget)",
-              "summary": "Get the relative position of the cursor with respect to the center of a given widget.",
-              "line": 14,
-              "deprecated": false
-            },
-            {
-              "name": "center_widget",
-              "qualname": "SwitchboardUtilsMixin.center_widget",
-              "kind": "staticmethod",
-              "signature": "(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)",
-              "summary": "Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…",
-              "line": 26,
-              "deprecated": false
-            },
-            {
-              "name": "unpack_names",
-              "qualname": "SwitchboardUtilsMixin.unpack_names",
-              "kind": "classmethod",
-              "signature": "(cls, name_string)",
-              "summary": "Unpacks a comma-separated string of names and returns a list of individual names.",
-              "line": 85,
-              "deprecated": false
-            },
-            {
-              "name": "get_widgets_by_string_pattern",
-              "qualname": "SwitchboardUtilsMixin.get_widgets_by_string_pattern",
-              "kind": "method",
-              "signature": "(self, ui, name_string)",
-              "summary": "Get a list of corresponding widgets from a single shorthand formatted string.",
-              "line": 125,
-              "deprecated": false
-            },
-            {
-              "name": "get_methods_by_string_pattern",
-              "qualname": "SwitchboardUtilsMixin.get_methods_by_string_pattern",
-              "kind": "method",
-              "signature": "(self, clss, name_string)",
-              "summary": "Get a list of corresponding methods from a single shorthand formatted string.",
-              "line": 152,
-              "deprecated": false
-            },
-            {
-              "name": "create_button_groups",
-              "qualname": "SwitchboardUtilsMixin.create_button_groups",
-              "kind": "method",
-              "signature": "(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]",
-              "summary": "Create button groups for a set of widgets.",
-              "line": 177,
-              "deprecated": false
-            },
-            {
-              "name": "toggle_multi",
-              "qualname": "SwitchboardUtilsMixin.toggle_multi",
-              "kind": "method",
-              "signature": "(self, ui, trigger=None, signal=None, **kwargs)",
-              "summary": "Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…",
-              "line": 242,
-              "deprecated": false
-            },
-            {
-              "name": "connect_multi",
-              "qualname": "SwitchboardUtilsMixin.connect_multi",
-              "kind": "method",
-              "signature": "(self, ui, widgets, signals, slots)",
-              "summary": "Connect multiple signals to multiple slots at once.",
-              "line": 352,
-              "deprecated": false
-            },
-            {
-              "name": "set_axis_for_checkboxes",
-              "qualname": "SwitchboardUtilsMixin.set_axis_for_checkboxes",
-              "kind": "method",
-              "signature": "(self, checkboxes, axis, ui=None)",
-              "summary": "Set the given checkbox's check states to reflect the specified axis.",
-              "line": 405,
-              "deprecated": false
-            },
-            {
-              "name": "get_axis_from_checkboxes",
-              "qualname": "SwitchboardUtilsMixin.get_axis_from_checkboxes",
-              "kind": "method",
-              "signature": "(self, checkboxes, ui=None, return_type='str')",
-              "summary": "Get the intended axis value as a string or integer by reading the multiple checkbox's check states.",
-              "line": 433,
-              "deprecated": false
-            },
-            {
-              "name": "hide_unmatched_groupboxes",
-              "qualname": "SwitchboardUtilsMixin.hide_unmatched_groupboxes",
-              "kind": "method",
-              "signature": "(self, ui, unknown_tags) -> None",
-              "summary": "Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted",
-              "line": 476,
-              "deprecated": false
-            },
-            {
-              "name": "invert_on_modifier",
-              "qualname": "SwitchboardUtilsMixin.invert_on_modifier",
-              "kind": "staticmethod",
-              "signature": "(value)",
-              "summary": "Invert a numerical or boolean value if the alt key is pressed.",
-              "line": 509,
-              "deprecated": false
-            },
-            {
-              "name": "message_box",
-              "qualname": "SwitchboardUtilsMixin.message_box",
-              "kind": "method",
-              "signature": "(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)",
-              "summary": "Spawns a message box with the given text and optionally sets buttons.",
-              "line": 532,
-              "deprecated": false
-            },
-            {
-              "name": "file_dialog",
-              "qualname": "SwitchboardUtilsMixin.file_dialog",
-              "kind": "staticmethod",
-              "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]",
-              "summary": "Open a file dialog to select files of the given type(s) using qtpy.",
-              "line": 577,
-              "deprecated": false
-            },
-            {
-              "name": "dir_dialog",
-              "qualname": "SwitchboardUtilsMixin.dir_dialog",
-              "kind": "staticmethod",
-              "signature": "(title: str = 'Select a directory', start_dir: str = '/home') -> str",
-              "summary": "Open a directory dialog to select a directory using qtpy.",
-              "line": 613,
-              "deprecated": false
-            },
-            {
-              "name": "save_file_dialog",
-              "qualname": "SwitchboardUtilsMixin.save_file_dialog",
-              "kind": "staticmethod",
-              "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]",
-              "summary": "Open a save-file dialog to choose a destination path.",
-              "line": 634,
-              "deprecated": false
-            },
-            {
-              "name": "input_dialog",
-              "qualname": "SwitchboardUtilsMixin.input_dialog",
-              "kind": "staticmethod",
-              "signature": "(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str",
-              "summary": "Show a modal text-input dialog and return the entered string.",
-              "line": 671,
-              "deprecated": false
-            },
-            {
-              "name": "simulate_key_press",
-              "qualname": "SwitchboardUtilsMixin.simulate_key_press",
-              "kind": "staticmethod",
-              "signature": "(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)",
-              "summary": "Simulate a key press event for the given UI and optionally release the keyboard.",
-              "line": 762,
-              "deprecated": false
-            },
-            {
-              "name": "defer_with_timer",
-              "qualname": "SwitchboardUtilsMixin.defer_with_timer",
-              "kind": "method",
-              "signature": "(self, func: callable, *args, ms: int = 300, **kwargs) -> None",
-              "summary": "Defer execution of any callable with arguments after a delay.",
-              "line": 785,
-              "deprecated": false
-            },
-            {
-              "name": "gc_protect",
-              "qualname": "SwitchboardUtilsMixin.gc_protect",
-              "kind": "method",
-              "signature": "(self, obj=None, clear=False)",
-              "summary": "Protect the given object(s) from garbage collection by holding a strong reference.",
-              "line": 825,
-              "deprecated": false
-            },
-            {
-              "name": "modal_menu",
-              "qualname": "SwitchboardUtilsMixin.modal_menu",
-              "kind": "staticmethod",
-              "signature": "(content_fn, parent=None, **kwargs)",
-              "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 858,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "switchboard/_widgets.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "SwitchboardWidgetMixin",
-          "summary": "Widget registration, resolution, and dynamic class loading for Switchboard.",
-          "line": 8,
-          "bases": [],
-          "members": [
-            {
-              "name": "resolve_widget_class",
-              "qualname": "SwitchboardWidgetMixin.resolve_widget_class",
-              "kind": "method",
-              "signature": "(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]",
-              "summary": "Return the widget class registered under the given name.",
-              "line": 11,
-              "deprecated": false
-            },
-            {
-              "name": "get_icon",
-              "qualname": "SwitchboardWidgetMixin.get_icon",
-              "kind": "method",
-              "signature": "(self, icon_name: str) -> QtGui.QIcon",
-              "summary": "Get a registered icon by name.",
-              "line": 68,
-              "deprecated": false
-            },
-            {
-              "name": "register_widget",
-              "qualname": "SwitchboardWidgetMixin.register_widget",
-              "kind": "method",
-              "signature": "(self, widget)",
-              "summary": "Register any custom widgets using the module names.",
-              "line": 123,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget",
-              "qualname": "SwitchboardWidgetMixin.get_widget",
-              "kind": "method",
-              "signature": "(self, name, ui=None)",
-              "summary": "Case insensitive.",
-              "line": 138,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget_from_slot",
-              "qualname": "SwitchboardWidgetMixin.get_widget_from_slot",
-              "kind": "method",
-              "signature": "(self, method)",
-              "summary": "Get the corresponding widget from a given method.",
-              "line": 155,
-              "deprecated": false
-            },
-            {
-              "name": "set_widget_attrs",
-              "qualname": "SwitchboardWidgetMixin.set_widget_attrs",
-              "kind": "method",
-              "signature": "(self, ui, widget_names, **kwargs)",
-              "summary": "Set multiple properties, for multiple widgets, on multiple UI's at once.",
-              "line": 177,
-              "deprecated": false
-            },
-            {
-              "name": "is_widget",
-              "qualname": "SwitchboardWidgetMixin.is_widget",
-              "kind": "method",
-              "signature": "(self, obj)",
-              "summary": "Returns True if the given obj is a valid widget.",
-              "line": 198,
-              "deprecated": false
-            },
-            {
-              "name": "get_parent_widgets",
-              "qualname": "SwitchboardWidgetMixin.get_parent_widgets",
-              "kind": "staticmethod",
-              "signature": "(widget, object_names=False)",
-              "summary": "Get the all parent widgets of the given widget.",
-              "line": 213,
-              "deprecated": false
-            },
-            {
-              "name": "get_top_level_parent",
-              "qualname": "SwitchboardWidgetMixin.get_top_level_parent",
-              "kind": "classmethod",
-              "signature": "(cls, widget, index=-1)",
-              "summary": "Get the parent widget at the top of the hierarchy for the given widget.",
-              "line": 233,
-              "deprecated": false
-            },
-            {
-              "name": "get_all_windows",
-              "qualname": "SwitchboardWidgetMixin.get_all_windows",
-              "kind": "staticmethod",
-              "signature": "(name=None)",
-              "summary": "Get Qt windows.",
-              "line": 246,
-              "deprecated": false
-            },
-            {
-              "name": "get_all_widgets",
-              "qualname": "SwitchboardWidgetMixin.get_all_widgets",
-              "kind": "staticmethod",
-              "signature": "(name=None)",
-              "summary": "Get Qt widgets.",
-              "line": 262,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget_at",
-              "qualname": "SwitchboardWidgetMixin.get_widget_at",
-              "kind": "staticmethod",
-              "signature": "(pos, top_widget_only=True)",
-              "summary": "Get visible and enabled widget(s) located at the given position.",
-              "line": 278,
               "deprecated": false
             }
           ]
@@ -2111,7 +1640,7 @@
               "name": "get_available_signals",
               "qualname": "SwitchboardSlotsMixin.get_available_signals",
               "kind": "method",
-              "signature": "(self, widget, derived=True, exc=[])",
+              "signature": "(self, widget, derived=True, exc=None)",
               "summary": "Get all available signals for a type of widget.",
               "line": 382,
               "deprecated": false
@@ -2180,21 +1709,12 @@
               "deprecated": false
             },
             {
-              "name": "disconnect_slot",
-              "qualname": "SwitchboardSlotsMixin.disconnect_slot",
-              "kind": "method",
-              "signature": "(self, widget, slot=None)",
-              "summary": "Disconnects a slot from a widget.",
-              "line": 911,
-              "deprecated": false
-            },
-            {
               "name": "slot_history",
               "qualname": "SwitchboardSlotsMixin.slot_history",
               "kind": "method",
-              "signature": "(self, index=None, allow_duplicates=False, inc=[], exc=[], add=[], remove=[], length=200)",
+              "signature": "(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)",
               "summary": "Get the slot history.",
-              "line": 938,
+              "line": 911,
               "deprecated": false
             }
           ]
@@ -2350,7 +1870,7 @@
               "kind": "method",
               "signature": "(self, ui=None, total: Optional[int] = None, text: str = '')",
               "summary": "Context manager for cooperative progress / task feedback.",
-              "line": 532,
+              "line": 534,
               "deprecated": false
             },
             {
@@ -2359,7 +1879,7 @@
               "kind": "staticmethod",
               "signature": "(update: Callable[..., bool]) -> Callable[..., bool]",
               "summary": "Adapt the footer ``update`` callable to the shape downstream",
-              "line": 596,
+              "line": 598,
               "deprecated": false
             },
             {
@@ -2368,7 +1888,7 @@
               "kind": "method",
               "signature": "(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)",
               "summary": "Spawns a message box with the given text and optionally sets buttons.",
-              "line": 659,
+              "line": 661,
               "deprecated": false
             },
             {
@@ -2377,7 +1897,7 @@
               "kind": "method",
               "signature": "(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)",
               "summary": "Spawn a scrollable text-viewer window with optional buttons.",
-              "line": 703,
+              "line": 705,
               "deprecated": false
             },
             {
@@ -2386,7 +1906,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]",
               "summary": "Open a file dialog to select files of the given type(s) using qtpy.",
-              "line": 783,
+              "line": 785,
               "deprecated": false
             },
             {
@@ -2395,7 +1915,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Select a directory', start_dir: str = '/home') -> str",
               "summary": "Open a directory dialog to select a directory using qtpy.",
-              "line": 819,
+              "line": 821,
               "deprecated": false
             },
             {
@@ -2404,7 +1924,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]",
               "summary": "Open a save-file dialog to choose a destination path.",
-              "line": 840,
+              "line": 842,
               "deprecated": false
             },
             {
@@ -2413,7 +1933,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str",
               "summary": "Show a modal text-input dialog and return the entered string.",
-              "line": 877,
+              "line": 879,
               "deprecated": false
             },
             {
@@ -2422,7 +1942,7 @@
               "kind": "staticmethod",
               "signature": "(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)",
               "summary": "Simulate a key press event for the given UI and optionally release the keyboard.",
-              "line": 968,
+              "line": 970,
               "deprecated": false
             },
             {
@@ -2431,7 +1951,7 @@
               "kind": "method",
               "signature": "(self, func: callable, *args, ms: int = 300, **kwargs) -> None",
               "summary": "Defer execution of any callable with arguments after a delay.",
-              "line": 991,
+              "line": 993,
               "deprecated": false
             },
             {
@@ -2440,7 +1960,7 @@
               "kind": "method",
               "signature": "(self, obj=None, clear=False)",
               "summary": "Protect the given object(s) from garbage collection by holding a strong reference.",
-              "line": 1031,
+              "line": 1033,
               "deprecated": false
             },
             {
@@ -2449,7 +1969,7 @@
               "kind": "staticmethod",
               "signature": "(content_fn, parent=None, **kwargs)",
               "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 1064,
+              "line": 1066,
               "deprecated": false
             }
           ]
@@ -2540,21 +2060,12 @@
               "deprecated": false
             },
             {
-              "name": "get_top_level_parent",
-              "qualname": "SwitchboardWidgetMixin.get_top_level_parent",
-              "kind": "classmethod",
-              "signature": "(cls, widget, index=-1)",
-              "summary": "Get the parent widget at the top of the hierarchy for the given widget.",
-              "line": 232,
-              "deprecated": false
-            },
-            {
               "name": "get_all_windows",
               "qualname": "SwitchboardWidgetMixin.get_all_windows",
               "kind": "staticmethod",
               "signature": "(name=None)",
               "summary": "Get Qt windows.",
-              "line": 245,
+              "line": 232,
               "deprecated": false
             },
             {
@@ -2563,7 +2074,7 @@
               "kind": "staticmethod",
               "signature": "(name=None)",
               "summary": "Get Qt widgets.",
-              "line": 261,
+              "line": 248,
               "deprecated": false
             },
             {
@@ -2572,7 +2083,7 @@
               "kind": "staticmethod",
               "signature": "(pos, top_widget_only=True)",
               "summary": "Get visible and enabled widget(s) located at the given position.",
-              "line": 277,
+              "line": 264,
               "deprecated": false
             }
           ]
@@ -3872,7 +3383,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Populate the table with variables for the current theme + tier.",
-              "line": 162,
+              "line": 168,
               "deprecated": false
             },
             {
@@ -3881,7 +3392,7 @@
               "kind": "method",
               "signature": "(self, name, color)",
               "summary": "Handle color change from swatch.",
-              "line": 281,
+              "line": 287,
               "deprecated": false
             },
             {
@@ -3890,7 +3401,7 @@
               "kind": "method",
               "signature": "(self, name, value)",
               "summary": "Handle length change from spinbox.",
-              "line": 289,
+              "line": 295,
               "deprecated": false
             },
             {
@@ -3899,7 +3410,7 @@
               "kind": "method",
               "signature": "(self, name)",
               "summary": "Reset a single variable.",
-              "line": 295,
+              "line": 301,
               "deprecated": false
             },
             {
@@ -3908,7 +3419,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Reset all overrides.",
-              "line": 302,
+              "line": 308,
               "deprecated": false
             },
             {
@@ -3917,7 +3428,7 @@
               "kind": "method",
               "signature": "(self, name)",
               "summary": "Update the editor widget for a specific variable name.",
-              "line": 308,
+              "line": 314,
               "deprecated": false
             }
           ]
@@ -4248,7 +3759,7 @@
               "kind": "staticmethod",
               "signature": "(widget)",
               "summary": "Get the padding values around a widget.",
-              "line": 714,
+              "line": 719,
               "deprecated": false
             },
             {
@@ -4257,7 +3768,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 733,
+              "line": 738,
               "deprecated": false
             },
             {
@@ -4266,7 +3777,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Filter events for the ExpandableList.",
-              "line": 924,
+              "line": 929,
               "deprecated": false
             },
             {
@@ -4275,7 +3786,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the cursor leaving this list widget.",
-              "line": 957,
+              "line": 962,
               "deprecated": false
             }
           ]
@@ -7690,15 +7201,6 @@
               "summary": "Create or reuse a size grip and ensure it is inserted in *layout*.",
               "line": 104,
               "deprecated": false
-            },
-            {
-              "name": "ensure_size_grip",
-              "qualname": "SizeGripMixin.ensure_size_grip",
-              "kind": "method",
-              "signature": "(self, *, container: Optional[QtWidgets.QWidget] = None, layout: Optional[QtWidgets.QLayout] = None, alignment: Optional[QtCore.Qt.Alignment] = None) -> Optional[QtWidgets.QSizeGrip]",
-              "summary": "Backward-compatible alias for :meth:`create_size_grip`.",
-              "line": 154,
-              "deprecated": false
             }
           ]
         }
@@ -7940,78 +7442,6 @@
               "signature": "(cls, widget: QtWidgets.QWidget = None)",
               "summary": "Clear overrides.",
               "line": 381,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/tasks.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "WorkIndicator",
-          "summary": "",
-          "line": 8,
-          "bases": [
-            "QtWidgets.QDialog"
-          ],
-          "members": [
-            {
-              "name": "initUI",
-              "qualname": "WorkIndicator.initUI",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "",
-              "line": 22,
-              "deprecated": false
-            },
-            {
-              "name": "closeEvent",
-              "qualname": "WorkIndicator.closeEvent",
-              "kind": "method",
-              "signature": "(self, event)",
-              "summary": "",
-              "line": 33,
-              "deprecated": false
-            }
-          ]
-        },
-        {
-          "name": "TasksMixin",
-          "summary": "Background task runner with optional visual work indicator.",
-          "line": 38,
-          "bases": [
-            "QtCore.QThread"
-          ],
-          "members": [
-            {
-              "name": "run",
-              "qualname": "TasksMixin.run",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "",
-              "line": 48,
-              "deprecated": false
-            },
-            {
-              "name": "startTask",
-              "qualname": "TasksMixin.startTask",
-              "kind": "method",
-              "signature": "(self, taskFunction)",
-              "summary": "",
-              "line": 53,
-              "deprecated": false
-            },
-            {
-              "name": "stopTask",
-              "qualname": "TasksMixin.stopTask",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "",
-              "line": 59,
               "deprecated": false
             }
           ]
@@ -12157,6 +11587,57 @@
       ]
     },
     {
+      "relpath": "widgets/table_actions.py",
+      "summary": "Reusable action-column management for :class:`TableWidget`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TableActions",
+          "summary": "Manages action columns on a :class:`TableWidget`.",
+          "line": 139,
+          "bases": [],
+          "members": [
+            {
+              "name": "add",
+              "qualname": "TableActions.add",
+              "kind": "method",
+              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
+              "summary": "Register an action column.",
+              "line": 163,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "TableActions.set",
+              "kind": "method",
+              "signature": "(self, row: int, col: int, state_name: str) -> None",
+              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
+              "line": 209,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "TableActions.get",
+              "kind": "method",
+              "signature": "(self, row: int, col: int) -> Optional[str]",
+              "summary": "Return the current state name for a cell, or ``None``.",
+              "line": 273,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 338,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "widgets/tableWidget.py",
       "summary": "",
       "functions": [],
@@ -12701,57 +12182,6 @@
               "signature": "(self, object_name: str)",
               "summary": "",
               "line": 1306,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/table_actions.py",
-      "summary": "Reusable action-column management for :class:`TableWidget`.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "TableActions",
-          "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 139,
-          "bases": [],
-          "members": [
-            {
-              "name": "add",
-              "qualname": "TableActions.add",
-              "kind": "method",
-              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
-              "summary": "Register an action column.",
-              "line": 163,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "TableActions.set",
-              "kind": "method",
-              "signature": "(self, row: int, col: int, state_name: str) -> None",
-              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 209,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "TableActions.get",
-              "kind": "method",
-              "signature": "(self, row: int, col: int) -> Optional[str]",
-              "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 273,
-              "deprecated": false
-            },
-            {
-              "name": "update_for_row_height",
-              "qualname": "TableActions.update_for_row_height",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Re-size action columns and icons to fit the current row height.",
-              "line": 338,
               "deprecated": false
             }
           ]

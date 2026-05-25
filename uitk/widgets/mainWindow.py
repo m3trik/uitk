@@ -36,7 +36,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         parent: Optional[QtWidgets.QWidget] = None,
         tags: set = None,
         path: str = None,
-        log_level: int = "WARNING",
+        log_level: Union[int, str] = "WARNING",
         restore_window_size: bool = True,
         add_footer: bool = False,
         ensure_on_screen: bool = True,

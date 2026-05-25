@@ -663,7 +663,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             if w and hasattr(w, "sublist"):
                 w.sublist._force_hide_all()
                 if w.sublist.isVisible():
-                    super(ExpandableList, w.sublist).hide()
+                    # Bypass ExpandableList.hide()'s chained-children guard by
+                    # calling QWidget.hide() directly. ``super(ExpandableList,
+                    # w.sublist)`` would TypeError if a re-import has produced
+                    # a second ExpandableList class whose identity differs
+                    # from this module's name binding.
+                    QtWidgets.QWidget.hide(w.sublist)
 
     def _schedule_sublist_hide(self, item):
         """Start (or restart) a deferred hide of ``item.sublist``.
@@ -708,7 +713,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         if on_item or sublist._is_cursor_in_hierarchy(cursor_pos):
             return
         sublist._force_hide_all()
-        super(ExpandableList, sublist).hide()
+        QtWidgets.QWidget.hide(sublist)
 
     @staticmethod
     def get_padding(widget):
@@ -857,7 +862,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 continue
             self._cancel_sublist_hide(sibling)
             sibling.sublist._force_hide_all()
-            super(ExpandableList, sibling.sublist).hide()
+            QtWidgets.QWidget.hide(sibling.sublist)
 
     def _handle_widget_enter_event(self, widget):
         """Handle the enter event for a widget with a sublist.
