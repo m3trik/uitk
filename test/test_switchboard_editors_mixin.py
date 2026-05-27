@@ -174,11 +174,21 @@ class UiHandlerEditorsDelegate(_Base):
     """
 
     def test_editors_delegates_to_switchboard(self):
+        from unittest import mock
         from uitk.handlers.ui_handler import UiHandler
 
         handler = UiHandler(switchboard=self.sb)
-        # Same registry instance — the delegate is a thin alias, not a copy
-        self.assertIs(handler.editors, self.sb.editors)
+        # Patch the property to a sentinel so we verify the delegate
+        # threads through *this* sb's editors property, independent of
+        # any caching state lingering from other tests.
+        sentinel = object()
+        with mock.patch.object(
+            type(self.sb),
+            "editors",
+            new_callable=mock.PropertyMock,
+            return_value=sentinel,
+        ):
+            self.assertIs(handler.editors, sentinel)
 
     def test_editors_show_via_handler(self):
         from uitk.handlers.ui_handler import UiHandler
