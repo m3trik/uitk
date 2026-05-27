@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-05-25_
+_Generated: 2026-05-27_
 
 ## Index
 
@@ -57,6 +57,7 @@ _Generated: 2026-05-25_
 - [`widgets/mixins/attributes.py`](#widgets--mixins--attributes)
 - [`widgets/mixins/convert.py`](#widgets--mixins--convert)
 - [`widgets/mixins/docking.py`](#widgets--mixins--docking)
+- [`widgets/mixins/feedback.py`](#widgets--mixins--feedback) — Mixin: transient HUD-style feedback for any QWidget.
 - [`widgets/mixins/icon_manager.py`](#widgets--mixins--icon_manager)
 - [`widgets/mixins/menu_mixin.py`](#widgets--mixins--menu_mixin) — MenuMixin - provides automatic Menu integration for widgets.
 - [`widgets/mixins/option_box_mixin.py`](#widgets--mixins--option_box_mixin) — OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
@@ -69,6 +70,7 @@ _Generated: 2026-05-25_
 - [`widgets/mixins/text.py`](#widgets--mixins--text)
 - [`widgets/mixins/tooltip_mixin.py`](#widgets--mixins--tooltip_mixin)
 - [`widgets/mixins/value_manager.py`](#widgets--mixins--value_manager)
+- [`widgets/mixins/wheel_step.py`](#widgets--mixins--wheel_step) — Shared modifier-driven wheel-step handling for spin-box widgets.
 - [`widgets/optionBox/_optionBox.py`](#widgets--optionBox--_optionBox) — OptionBox - Plugin-based container for wrapping widgets with action buttons.
 - [`widgets/optionBox/options/_options.py`](#widgets--optionBox--options--_options)
 - [`widgets/optionBox/options/_persistence.py`](#widgets--optionBox--options--_persistence) — Shared persistence wiring for OptionBox plugins.
@@ -99,8 +101,8 @@ _Generated: 2026-05-25_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
+- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -166,17 +168,17 @@ Generic DCC-bridge slot base class.
 
 Attribute spec + kind-handler registry for parameterised forms.
 
-- [`infer_kind(value: Any) -> str`](uitk/uitk/bridge/spec.py#L136) — Map a Python value to one of the built-in kinds.
-- [`register_kind(name: str, handler: KindHandler) -> None`](uitk/uitk/bridge/spec.py#L161) — Register a new kind (or override an existing one).
-- [`get_handler(kind: str) -> KindHandler`](uitk/uitk/bridge/spec.py#L166) — Return the handler for *kind* (raises KeyError if unregistered).
-- [`make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`](uitk/uitk/bridge/spec.py#L176) — Build a Qt widget for *spec*.
-- [`read_value(widget: QtWidgets.QWidget) -> Any`](uitk/uitk/bridge/spec.py#L200) — Return the current value of a factory-built widget.
-- [`set_value(widget: QtWidgets.QWidget, value: Any) -> None`](uitk/uitk/bridge/spec.py#L205) — Set the value of a factory-built widget.
-- [`connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`](uitk/uitk/bridge/spec.py#L210) — Wire the widget's value-change signal to ``callback(new_value)``.
-- **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L45)** — Description of one editable attribute / bridge parameter.
+- [`infer_kind(value: Any) -> str`](uitk/uitk/bridge/spec.py#L137) — Map a Python value to one of the built-in kinds.
+- [`register_kind(name: str, handler: KindHandler) -> None`](uitk/uitk/bridge/spec.py#L162) — Register a new kind (or override an existing one).
+- [`get_handler(kind: str) -> KindHandler`](uitk/uitk/bridge/spec.py#L167) — Return the handler for *kind* (raises KeyError if unregistered).
+- [`make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`](uitk/uitk/bridge/spec.py#L177) — Build a Qt widget for *spec*.
+- [`read_value(widget: QtWidgets.QWidget) -> Any`](uitk/uitk/bridge/spec.py#L201) — Return the current value of a factory-built widget.
+- [`set_value(widget: QtWidgets.QWidget, value: Any) -> None`](uitk/uitk/bridge/spec.py#L206) — Set the value of a factory-built widget.
+- [`connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`](uitk/uitk/bridge/spec.py#L211) — Wire the widget's value-change signal to ``callback(new_value)``.
+- **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L46)** — Description of one editable attribute / bridge parameter.
   - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
   - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L105)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L106)** — Bundle of callables that build / read / write a widget kind.
 
 <a id="bridge--tooltip"></a>
 ### `bridge/tooltip.py`
@@ -561,14 +563,9 @@ HTML formatting helpers shared by uitk's rich-text widgets.
 <a id="widgets--doubleSpinBox"></a>
 ### `widgets/doubleSpinBox.py`
 
-- **[`class DoubleSpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L9)** — Custom QDoubleSpinBox with enhanced step size adjustment capabilities.
+- **[`class DoubleSpinBox(WheelStepMixin, FeedbackMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L10)** — Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
   - `DoubleSpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box, removing trailing zeros and unnecessary decimal points.
   - `DoubleSpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
-  - `DoubleSpinBox.wheelEvent(self, event: QtGui.QWheelEvent) -> None` — Handle wheel events with modifier keys.
-  - `DoubleSpinBox.adjustStepSize(self, event: QtGui.QWheelEvent) -> None` — Adjust the step size dynamically based on the Alt modifier key.
-  - `DoubleSpinBox.increaseValueWithLargeStep(self, event: QtGui.QWheelEvent) -> None` — Increase the spin box value by a larger step when Ctrl is pressed.
-  - `DoubleSpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Move the value by the lowest decimal place (Ctrl+Alt).
-  - `DoubleSpinBox.message(self, text: str) -> None` — Display a temporary message box with the given text.
 
 <a id="widgets--editors--color_mapping_editor"></a>
 ### `widgets/editors/color_mapping_editor.py`
@@ -836,7 +833,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
 <a id="widgets--marking_menu--_marking_menu"></a>
 ### `widgets/marking_menu/_marking_menu.py`
 
-- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L113)** — MarkingMenu is a marking menu based on a QWidget.
+- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L121)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
   - `MarkingMenu.default_bindings(self) -> dict` *(property)* — The original bindings passed at construction time.
   - `MarkingMenu.bindings(self) -> dict` *(property)* — Get bindings from persistent storage.
@@ -845,7 +842,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MarkingMenu.get(self, name: str, **kwargs) -> QtWidgets.QWidget` — Get a UI widget by name.
   - `MarkingMenu.addWidget(self, widget: QtWidgets.QWidget) -> None` — Add a widget to the MarkingMenu window.
   - `MarkingMenu.currentWidget(self) -> Optional[QtWidgets.QWidget]` — Get the currently active widget.
-  - `MarkingMenu.setCurrentWidget(self, widget: QtWidgets.QWidget) -> None` — Set the current widget and position it at the cursor.
+  - `MarkingMenu.setCurrentWidget(self, widget: QtWidgets.QWidget, *, anchor: Optional[QtCore.QPoint] = None) -> None` — Set the current widget and position its center at the given anchor.
   - `MarkingMenu.setCurrentIndex(self, index: int) -> None` — Set the current widget index (compatibility method).
   - `MarkingMenu.mousePressEvent(self, event) -> None` — Handle mouse press: route through the central state-sync.
   - `MarkingMenu.keyPressEvent(self, event) -> None` — Handle key press for non-activation key bindings.
@@ -889,7 +886,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Path.clear_to_origin(self)` — Clears the path but retains the original starting position.
   - `Path.add(self, ui, widget)` — Adds a widget and its global position to the path.
   - `Path.remove(self, target_ui)` — Removes all references to the provided ui object from the path.
-- **[`class Overlay(QtWidgets.QWidget)`](uitk/uitk/widgets/marking_menu/overlay.py#L173)** — Handles paint events as an overlay on top of an existing widget.
+- **[`class Overlay(QtWidgets.QWidget)`](uitk/uitk/widgets/marking_menu/overlay.py#L182)** — Handles paint events as an overlay on top of an existing widget.
   - `Overlay.draw_tangent(self, start_point, end_point, ellipseSize=7)` — Draws a tangent line between two points with an ellipse at the start point.
   - `Overlay.init_region(self, ui, *args, **kwargs)` — Initializes a Region widget with the specified properties and adds it to the given UI's central wid…
   - `Overlay.start_gesture(self, global_pos: QtCore.QPoint) -> None` — Begin a gesture at the given global position.
@@ -977,7 +974,7 @@ Pure menu-resolution logic for the MarkingMenu.
 - **[`class MessageBox(QtWidgets.QMessageBox, AttributesMixin)`](uitk/uitk/widgets/messageBox.py#L8)** — Displays a message box with HTML formatting for a set time before closing.
   - `MessageBox.setStandardButtons(self, *buttons)` — Set the standard buttons for the message box.
   - `MessageBox.move_(self, location) -> None`
-  - `MessageBox.setText(self, string, fontColor='white', background=0.75, fontSize=5) -> None` — Set the text to be displayed with the specified alignment unless overridden by HTML.
+  - `MessageBox.setText(self, string, fontColor='white', background=None, fontSize=5) -> None` — Set the text to be displayed with the specified alignment unless overridden by HTML.
   - `MessageBox.autoClose(self)`
   - `MessageBox.showEvent(self, event)`
   - `MessageBox.hideEvent(self, event)`
@@ -1023,6 +1020,14 @@ Pure menu-resolution logic for the MarkingMenu.
   - `DockingMixin.dock_positions(self)` *(property)*
   - `DockingMixin.update_docking_position(self)`
   - `DockingMixin.eventFilter(self, widget, event)`
+
+<a id="widgets--mixins--feedback"></a>
+### `widgets/mixins/feedback.py`
+
+Mixin: transient HUD-style feedback for any QWidget.
+
+- **[`class FeedbackMixin`](uitk/uitk/widgets/mixins/feedback.py#L27)** — Adds a lazily-instantiated, theme-styled HUD popup.
+  - `FeedbackMixin.show_feedback(self, html_text: str) -> None` — Flash *html_text* near the host.
 
 <a id="widgets--mixins--icon_manager"></a>
 ### `widgets/mixins/icon_manager.py`
@@ -1226,6 +1231,14 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
   - `ValueManager.is_supported_widget(widget)` *(static)* — Check if a widget type is supported for value operations.
   - `ValueManager.get_value_by_signal(widget, signal_name)` *(static)* — Get widget value based on its primary signal type.
   - `ValueManager.set_value_by_signal(widget, value, signal_name, block_signals=False)` *(static)* — Set widget value based on its primary signal type.
+
+<a id="widgets--mixins--wheel_step"></a>
+### `widgets/mixins/wheel_step.py`
+
+Shared modifier-driven wheel-step handling for spin-box widgets.
+
+- **[`class WheelStepMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L40)** — Mixin: modifier-driven wheel handling for ``QAbstractSpinBox`` subclasses.
+  - `WheelStepMixin.wheelEvent(self, event: QtGui.QWheelEvent) -> None`
 
 <a id="widgets--optionBox--_optionBox"></a>
 ### `widgets/optionBox/_optionBox.py`
@@ -1777,19 +1790,25 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
 <a id="widgets--spinBox"></a>
 ### `widgets/spinBox.py`
 
-- **[`class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L12)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
+- **[`class SpinBox(WheelStepMixin, FeedbackMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L13)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
   - `SpinBox.value(self) -> Union[float, int]` — Return integer if decimals is 0, else float.
   - `SpinBox.setCustomDisplayValues(self, *args)` — Set a mapping of values to custom display strings.
   - `SpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box.
   - `SpinBox.valueFromText(self, text: str) -> float` — Convert text back to value.
   - `SpinBox.validate(self, text: str, pos: int) -> object` — Validate input, allowing custom display strings.
   - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
-  - `SpinBox.wheelEvent(self, event: QtGui.QWheelEvent) -> None` — Handle wheel events with modifier keys.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
-  - `SpinBox.adjustStepSize(self, event: QtGui.QWheelEvent) -> None` — Adjust the step size dynamically based on the Alt modifier key.
-  - `SpinBox.increaseValueWithLargeStep(self, event: QtGui.QWheelEvent) -> None` — Increase the spin box value by a larger step when Ctrl is pressed.
-  - `SpinBox.decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None` — Move the value by the lowest decimal place (Ctrl+Alt).
-  - `SpinBox.message(self, text: str) -> None` — Display a temporary message box with the given text.
+
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
@@ -1854,17 +1873,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
-
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`

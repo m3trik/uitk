@@ -153,13 +153,15 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
         )
 
     def test_qss_has_no_unresolved_tokens(self):
-        """Every ``{TOKEN}`` in style.qss resolves against the themes dict."""
+        """Every ``{TOKEN}`` in style.qss resolves against the themes dict
+        (plus any internally-derived tokens injected at assembly time)."""
         import re
 
         parts = StyleSheet._get_template()
         used = {p for i, p in enumerate(parts) if i % 2 == 1}
+        derived = {f"{name}_TINT" for name in StyleSheet._tint_sources}
         for theme_name in StyleSheet.themes:
-            known = set(StyleSheet.themes[theme_name].keys())
+            known = set(StyleSheet.themes[theme_name].keys()) | derived
             missing = used - known
             self.assertFalse(
                 missing,

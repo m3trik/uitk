@@ -140,13 +140,22 @@ class Path:
         self._path = self._path[:1]
 
     def add(self, ui, widget):
-        """Adds a widget and its global position to the path."""
+        """Adds a widget and its global position to the path.
+
+        Returns:
+            The captured global center, or ``None`` if no entry was added
+            (widget missing or not visible). Callers that need the saved
+            anchor should rely on this return value rather than indexing
+            ``_path[-1]`` after the call — the latter silently returns the
+            *previous* entry when an add is skipped.
+        """
         if widget is None or not widget.isVisible():
-            return
+            return None
         w_pos = widget.mapToGlobal(widget.rect().center())
 
         self._path.append((widget, w_pos, QtGui.QCursor.pos()))
         self.remove(ui)
+        return w_pos
 
     def remove(self, target_ui):
         """Removes all references to the provided ui object from the path.
@@ -180,7 +189,10 @@ class Overlay(QtWidgets.QWidget):
         antialiasing (bool, optional): Set antialiasing for the tangent paint events. Defaults to False.
     """
 
-    # Attributes to copy when cloning widgets
+    # Attributes to copy when cloning widgets.
+    # - ``size`` is handled explicitly via ``resize()`` (QWidget has no setSize).
+    # - ``visible`` is set explicitly at the end (always True for clones).
+    # - ``text`` is set explicitly (not every widget type has .text()).
     CLONE_ATTRS = (
         "objectName",
         "accessibleName",
@@ -190,8 +202,6 @@ class Overlay(QtWidgets.QWidget):
         "font",
         "styleSheet",
         "enabled",
-        "visible",
-        "size",
         "minimumSize",
         "maximumSize",
         "layoutDirection",
@@ -349,53 +359,67 @@ class Overlay(QtWidgets.QWidget):
         prev_widget: QtWidgets.QWidget,
         position: QtCore.QPoint,
     ) -> QtWidgets.QWidget:
-        """Clone a widget and place it at the given position in the UI."""
+        """Clone a widget and place it at the given position in the UI.
+
+        ``position`` is the target *global* center for the clone — the
+        value captured by ``Path.add`` when this widget was traversed.
+
+        Parented directly to ``ui`` (the QMainWindow), not to its central
+        widget — empirically required for the hover-to-return-to-previous-
+        submenu gesture. (Burying the clone inside the central widget
+        breaks Qt's enter-event dispatch to the marking-menu filter
+        installed at the QMainWindow level.)
+        """
         new_widget = type(prev_widget)(ui)
 
-        # Build getter map from class constant
-        attr_getters = {
-            "objectName": lambda w: w.objectName(),
-            "accessibleName": lambda w: w.accessibleName(),
-            "toolTip": lambda w: w.toolTip(),
-            "statusTip": lambda w: w.statusTip(),
-            "whatsThis": lambda w: w.whatsThis(),
-            "font": lambda w: w.font(),
-            "styleSheet": lambda w: w.styleSheet(),
-            "enabled": lambda w: w.isEnabled(),
-            "visible": lambda w: w.isVisible(),
-            "size": lambda w: w.size(),
-            "minimumSize": lambda w: w.minimumSize(),
-            "maximumSize": lambda w: w.maximumSize(),
-            "layoutDirection": lambda w: w.layoutDirection(),
-            "contextMenuPolicy": lambda w: w.contextMenuPolicy(),
-            "cursor": lambda w: w.cursor(),
-            "windowTitle": lambda w: w.windowTitle(),
-            "windowIcon": lambda w: w.windowIcon(),
+        # Copy basic attributes via auto-generated setters. Each entry in
+        # CLONE_ATTRS expects a corresponding getter here.
+        getter_for = {
+            "objectName": QtWidgets.QWidget.objectName,
+            "accessibleName": QtWidgets.QWidget.accessibleName,
+            "toolTip": QtWidgets.QWidget.toolTip,
+            "statusTip": QtWidgets.QWidget.statusTip,
+            "whatsThis": QtWidgets.QWidget.whatsThis,
+            "font": QtWidgets.QWidget.font,
+            "styleSheet": QtWidgets.QWidget.styleSheet,
+            "enabled": QtWidgets.QWidget.isEnabled,
+            "minimumSize": QtWidgets.QWidget.minimumSize,
+            "maximumSize": QtWidgets.QWidget.maximumSize,
+            "layoutDirection": QtWidgets.QWidget.layoutDirection,
+            "contextMenuPolicy": QtWidgets.QWidget.contextMenuPolicy,
+            "cursor": QtWidgets.QWidget.cursor,
+            "windowTitle": QtWidgets.QWidget.windowTitle,
+            "windowIcon": QtWidgets.QWidget.windowIcon,
         }
-
-        if hasattr(prev_widget, "text") and callable(prev_widget.text):
-            attr_getters["text"] = lambda w: w.text()
-
         for attr in self.CLONE_ATTRS:
-            getter = attr_getters.get(attr)
-            if not getter:
-                continue
+            getter = getter_for.get(attr)
             setter_name = f"set{attr[0].upper()}{attr[1:]}"
-            if hasattr(new_widget, setter_name):
-                try:
-                    getattr(new_widget, setter_name)(getter(prev_widget))
-                except Exception:
-                    continue
-
-        # Handle text separately if present
-        if "text" in attr_getters and hasattr(new_widget, "setText"):
+            if getter is None or not hasattr(new_widget, setter_name):
+                continue
             try:
-                new_widget.setText(attr_getters["text"](prev_widget))
+                getattr(new_widget, setter_name)(getter(prev_widget))
+            except Exception:
+                continue
+
+        # Copy text if the widget type supports it (QPushButton, QLabel, …
+        # but not raw QWidget).
+        if hasattr(prev_widget, "text") and hasattr(new_widget, "setText"):
+            try:
+                new_widget.setText(prev_widget.text())
             except Exception:
                 pass
 
-        new_pos = new_widget.mapFromGlobal(position - new_widget.rect().center())
-        new_widget.move(new_pos)
+        # Size must be applied via resize() (QWidget has no setSize), and
+        # it must come AFTER minimumSize/maximumSize so those don't clamp
+        # it. Without this, the clone falls back to Qt's default widget
+        # size (~100x30 for QPushButton) instead of matching the launcher.
+        new_widget.resize(prev_widget.size())
+
+        # Position via ``ui.mapFromGlobal`` (the clone's parent). Mapping
+        # through the freshly-created clone relies on its uninitialized
+        # geometry and can return stale values before its first showEvent.
+        target_local = ui.mapFromGlobal(position)
+        new_widget.move(target_local - new_widget.rect().center())
         new_widget.setVisible(True)
 
         return new_widget

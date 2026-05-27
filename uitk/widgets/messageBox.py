@@ -36,12 +36,22 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         None: QtWidgets.QMessageBox.NoButton,
     }
 
+    #: Default StyleSheet theme registered for new MessageBox instances.
+    #: Set to ``None`` on the class to skip auto-registration globally
+    #: (caller takes over styling).
+    _default_theme = "dark"
+
+    # Sentinel — using a class-level constant resolved at call time so changes
+    # to ``MessageBox._default_theme`` after import affect new instances.
+    _USE_DEFAULT_THEME = object()
+
     def __init__(
         self,
         parent=None,
         location="topMiddle",
         align="left",
         timeout=None,
+        theme=_USE_DEFAULT_THEME,
         **kwargs,
     ):
         QtWidgets.QMessageBox.__init__(self, parent)
@@ -73,7 +83,26 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             self.timeout = None
 
         self.setProperty("class", self.__class__.__name__)
+        # Resolve default sentinel against the *class* attribute at call time
+        # so subclasses or runtime overrides of ``_default_theme`` win without
+        # rebinding the default expression on this method.
+        self._theme = self._default_theme if theme is self._USE_DEFAULT_THEME else theme
+        # Apply uitk theme so the popup picks up PANEL_BACKGROUND / TEXT_COLOR
+        # / BORDER tokens; per-call ``background=`` overrides in setText are
+        # applied on the inner label (not via ``self.setStyleSheet``) so the
+        # themed QSS isn't clobbered.
+        self._apply_theme()
         self.set_attributes(**kwargs)
+
+    def _apply_theme(self) -> None:
+        """Register with the StyleSheet engine for theme tokens."""
+        if self._theme is None:
+            return
+        try:
+            from uitk.widgets.mixins.style_sheet import StyleSheet
+        except Exception:  # noqa: BLE001 — style engine optional at this layer.
+            return
+        StyleSheet(self).set(theme=self._theme)
 
     def setStandardButtons(self, *buttons):
         """Set the standard buttons for the message box. Defaults to no buttons if none are provided."""
@@ -117,34 +146,49 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
         self.move(point)
 
-    def setText(self, string, fontColor="white", background=0.75, fontSize=5) -> None:
+    def setText(
+        self,
+        string,
+        fontColor="white",
+        background=None,
+        fontSize=5,
+    ) -> None:
         """Set the text to be displayed with the specified alignment unless overridden by HTML.
 
         Parameters:
             string (str): The text or HTML content to display.
             fontColor (str): The text color.
-            background (bool/float/str): Controls the label background.
-                ``True`` uses default dark grey at 50% opacity,
-                ``False`` or ``0`` disables the background,
-                a ``float`` 0–1 sets opacity on the default dark grey,
-                a CSS color ``str`` is used verbatim.
+            background (bool/float/str/None): Optional inline override for
+                the label background. ``None`` (default) leaves the uitk
+                theme styling in place. ``True`` uses default dark grey at
+                100% opacity; ``False`` / ``0`` forces transparent; a
+                ``float`` 0–1 sets opacity on the default dark grey;
+                a CSS color ``str`` is used verbatim. Override is applied
+                to the inner ``qt_msgbox_label`` directly so the host
+                MessageBox's themed QSS is preserved.
             fontSize (int): The font size of the text.
         """
         s = format_rich_text(
             string, align=self.align, font_color=fontColor, font_size=fontSize
         )
+        super().setText(s)
 
-        # QSS on the internal label — HTML background-color on inline tags
-        # is unreliable across Qt builds (e.g. Maya's embedded Qt).
+        if background is None:
+            return  # Theme handles styling.
+
+        # Inline override -- apply to the inner label, not to ``self``.
+        # ``self.setStyleSheet`` would replace the themed QSS entirely;
+        # the label-scoped override layers on top without disturbing it.
+        label = self.findChild(QtWidgets.QLabel, "qt_msgbox_label")
+        if label is None:
+            return
         bg_css = resolve_background(background)
         if bg_css:
-            self.setStyleSheet(
-                f"QLabel#qt_msgbox_label {{ background-color: {bg_css}; padding: 8px; }}"
+            label.setStyleSheet(
+                f"background-color: {bg_css}; padding: 8px;"
             )
         else:
-            self.setStyleSheet("")
-
-        super().setText(s)
+            label.setStyleSheet("background-color: transparent; padding: 8px;")
 
     def autoClose(self):
         # Close the MessageBox if no standard buttons are set

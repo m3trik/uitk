@@ -14,6 +14,9 @@ QAbstractButton {
 QWidget::item:selected {
     background-color: {BUTTON_HOVER};
 }
+QWidget::item:selected:hover {
+    background-color: {BUTTON_HOVER_TINT};
+}
 QToolTip {
     background-color: {PANEL_BACKGROUND};
     color: {TEXT_COLOR};
@@ -54,7 +57,11 @@ QToolBox::tab:selected {
     background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
 }
-QToolBox::tab:hover {
+QToolBox::tab:selected:hover {
+    background-color: {BUTTON_CHECKED_TINT};
+    color: {TEXT_CHECKED};
+}
+QToolBox::tab:hover:!selected {
     background-color: none;
     color: {TEXT_HOVER};
 }
@@ -108,8 +115,8 @@ QMenu::item:disabled {
     color: {TEXT_DISABLED};
 }
 QMenu::item:selected {
-    border-color: {BUTTON_CHECKED};
-    background-color: {PANEL_BACKGROUND};
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
 }
 QMenu::icon:checked {
     background-color: gray;
@@ -156,12 +163,8 @@ QAbstractButton {
     spacing: 1px;
     text-align: center;
 }
-QAbstractButton:hover {
+QAbstractButton:hover:!checked {
     background-color: {BUTTON_HOVER};
-    color: {TEXT_HOVER};
-}
-QAbstractButton:hover:checked {
-    background-color: {BUTTON_CHECKED};
     color: {TEXT_HOVER};
 }
 QAbstractButton:enabled {
@@ -177,7 +180,7 @@ QAbstractButton:checked {
     color: {TEXT_CHECKED};
 }
 QAbstractButton:checked:hover {
-    background-color: {BUTTON_CHECKED};
+    background-color: {BUTTON_CHECKED_TINT};
     color: {TEXT_CHECKED};
 }
 QAbstractButton::indicator {
@@ -455,10 +458,20 @@ QComboBox QAbstractItemView::item {
     border: none;
     min-height: 14px;
 }
-QComboBox QAbstractItemView::item:selected,
-QComboBox QAbstractItemView::item:hover,
-QComboBox QAbstractItemView::item:selected:hover {
+QComboBox QAbstractItemView::item:hover:!selected {
+    background-color: rgba(255,255,255,50);
+    color: {TEXT_HOVER};
+    padding: 1px;
+    border: none;
+}
+QComboBox QAbstractItemView::item:selected {
     background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+    padding: 1px;
+    border: none;
+}
+QComboBox QAbstractItemView::item:selected:hover {
+    background-color: {BUTTON_HOVER_TINT};
     color: {TEXT_HOVER};
     padding: 1px;
     border: none;
@@ -614,7 +627,7 @@ QAbstractItemView {
 QAbstractItemView::item:alternate {
     background-color: {ALTERNATE_BACKGROUND};
 }
-QAbstractItemView::item:hover {
+QAbstractItemView::item:hover:!selected {
     background-color: rgba(255,255,255,50);
     color: {TEXT_HOVER};
 }
@@ -624,18 +637,27 @@ QAbstractItemView::item:selected {
     border: {BORDER_W} solid {BUTTON_HOVER};
 }
 QAbstractItemView::item:selected:hover {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_HOVER_TINT};
     color: {TEXT_HOVER};
-    border: {BORDER_W} solid {BUTTON_HOVER};
+    border: {BORDER_W} solid {BUTTON_HOVER_TINT};
 }
 QAbstractItemView::item:checked {
     background-color: {BUTTON_CHECKED};
     color: {TEXT_COLOR};
 }
+QAbstractItemView::item:checked:hover:!selected {
+    background-color: {BUTTON_CHECKED_TINT};
+    color: {TEXT_HOVER};
+}
 QAbstractItemView::item:checked:selected {
     background-color: {BUTTON_CHECKED};
     color: {TEXT_CHECKED};
     border: {BORDER_W} solid {BUTTON_HOVER};
+}
+QAbstractItemView::item:checked:selected:hover {
+    background-color: {BUTTON_CHECKED_TINT};
+    color: {TEXT_CHECKED};
+    border: {BORDER_W} solid {BUTTON_HOVER_TINT};
 }
 QAbstractItemView:disabled {
     color: {TEXT_DISABLED};
@@ -688,7 +710,7 @@ QTableWidget::item {
     padding: 2px 5px;
     border: {BORDER_W} solid transparent;
 }
-QTableWidget::item:hover {
+QTableWidget::item:hover:!selected {
     background-color: rgba(255, 255, 255, 30);
     color: {TEXT_HOVER};
     border: {BORDER_W} solid transparent;
@@ -699,9 +721,9 @@ QTableWidget::item:selected {
     border: {BORDER_W} solid {BUTTON_HOVER};
 }
 QTableWidget::item:selected:hover {
-    background-color: {BUTTON_HOVER};
+    background-color: {BUTTON_HOVER_TINT};
     color: {TEXT_HOVER};
-    border: {BORDER_W} solid {BUTTON_HOVER};
+    border: {BORDER_W} solid {BUTTON_HOVER_TINT};
 }
 
 QTreeView::branch {
@@ -949,12 +971,12 @@ QSizeGrip[class~="SizeGrip"] {
     padding: 0px 1px 0px 1px;
     spacing: 1px;
 }
-.default:hover {
+.default:hover:!checked {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
-.default:hover:checked {
-    background-color: {BUTTON_CHECKED};
+.default:checked:hover {
+    background-color: {BUTTON_CHECKED_TINT};
     color: {TEXT_HOVER};
 }
 .default:enabled {
@@ -989,7 +1011,10 @@ QSizeGrip[class~="SizeGrip"] {
 .translucentBgWithBorder:hover {
     border: {BORDER_W} solid {BORDER_COLOR};
 }
-.translucentBgWithBorder QAbstractItemView::item:hover {
+/* :!selected is load-bearing — a class selector adds +100 specificity, so
+   without it this rule beats every ::item:selected:hover rule (which have
+   no class) and wipes the selection bg to transparent on hover. */
+.translucentBgWithBorder QAbstractItemView::item:hover:!selected {
     background-color: transparent;
     color: {TEXT_COLOR};
 }
@@ -1082,7 +1107,7 @@ Header > QPushButton {
     background-color: transparent;
     border: none;
 }
-Header > QPushButton:hover {
+Header > QPushButton:hover:!checked {
     background-color: {WINDOW_BACKGROUND};
     border: none;
 }
@@ -1091,7 +1116,7 @@ Header > QPushButton:checked {
     border: none;
 }
 Header > QPushButton:checked:hover {
-    background-color: {BUTTON_CHECKED};
+    background-color: {BUTTON_CHECKED_TINT};
     border: none;
 }
 Header > QPushButton:pressed {
@@ -1107,7 +1132,7 @@ Header > QPushButton#hdr_hide:hover {
     background-color: transparent;
     border: none;
 }
-[footerWidget="true"]:hover {
+[footerWidget="true"]:hover:!checked {
     background-color: {WINDOW_BACKGROUND};
     border: none;
 }
@@ -1116,7 +1141,7 @@ Header > QPushButton#hdr_hide:hover {
     border: none;
 }
 [footerWidget="true"]:checked:hover {
-    background-color: {BUTTON_CHECKED};
+    background-color: {BUTTON_CHECKED_TINT};
     border: none;
 }
 [footerWidget="true"]:pressed {
@@ -1290,6 +1315,12 @@ QTreeWidget::item:selected {
     border: none;
 }
 
+QTreeWidget::item:selected:hover {
+    background-color: {BUTTON_CHECKED_TINT};
+    color: {TEXT_CHECKED};
+    border: none;
+}
+
 QTreeWidget::item:hover:!selected {
     background-color: rgba(255, 255, 255, 50);
     color: {TEXT_HOVER};
@@ -1315,6 +1346,11 @@ TreeWidget::item:selected {
     color: {TEXT_CHECKED};
 }
 
+TreeWidget::item:selected:hover {
+    background-color: {BUTTON_CHECKED_TINT};
+    color: {TEXT_CHECKED};
+}
+
 /* -- Separator Widget -- */
 Separator {
     color: transparent;
@@ -1332,4 +1368,22 @@ Separator > QLabel {
     background: {PANEL_BACKGROUND};
     border: none;
     padding: 0px 0px;
+}
+
+/* -- MessageBox (transient HUD popup, frameless + translucent host) --
+   The host QMessageBox is WA_TranslucentBackground so its chrome is
+   invisible; the visible chrome lives on the inner ``qt_msgbox_label``
+   instead. Anything that wants per-call background opacity (e.g.
+   ``Slots.message_box(background=0.5)``) sets it as an inline
+   stylesheet on the label itself, which composes with these defaults
+   without replacing the host-level QSS. */
+.MessageBox {
+    background-color: transparent;
+}
+.MessageBox QLabel#qt_msgbox_label {
+    background-color: {PANEL_BACKGROUND};
+    color: {TEXT_COLOR};
+    border: {BORDER_W} solid {BORDER_COLOR};
+    border-radius: {RADIUS};
+    padding: 8px;
 }

@@ -486,10 +486,13 @@ class TableWidget(
     cellScrubFinished = QtCore.Signal(int, int)  # (row, col)
 
     # Mouse-wheel scroll over a cell (opt-in via ``set_wheel_scrub_columns``).
-    # ``steps`` is the signed Qt notch count (``angleDelta().y() / 120``).
-    # Callers map steps to value deltas appropriate for the underlying
-    # type / modifier state.
-    cellWheelScrolled = QtCore.Signal(int, int, int)  # (row, col, steps)
+    # ``steps`` is the signed Qt notch count -- read from whichever axis of
+    # ``angleDelta()`` carries the delta (Alt-held wheels transpose ``.y()``
+    # onto ``.x()`` on some platforms / Qt6 builds, so a ``.y()``-only check
+    # would miss them entirely). ``modifiers`` is captured from the wheel
+    # event itself rather than polled, so receivers don't race against
+    # ``QApplication.keyboardModifiers()``.
+    cellWheelScrolled = QtCore.Signal(int, int, int, object)  # (row, col, steps, modifiers)
 
     def __init__(
         self,
@@ -823,7 +826,7 @@ class TableWidget(
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             index = self.indexAt(pos)
             if index.isValid() and index.column() in self._wheel_scrub_columns:
-                self._emit_wheel_scrub(index, event.angleDelta().y())
+                self._emit_wheel_scrub(index, event)
                 event.accept()
                 return
         super().wheelEvent(event)
@@ -845,13 +848,30 @@ class TableWidget(
         ):
             idx = self.currentIndex()
             if idx.isValid() and idx.column() in self._wheel_scrub_columns:
-                self._emit_wheel_scrub(idx, event.angleDelta().y())
+                self._emit_wheel_scrub(idx, event)
                 return True
         return super().eventFilter(obj, event)
 
-    def _emit_wheel_scrub(self, index, angle_y):
+    @staticmethod
+    def _wheel_signed_delta(event) -> int:
+        """Return whichever axis of ``event.angleDelta()`` carries the delta.
+
+        When Alt is held some platforms / Qt6 builds transpose the wheel
+        delta from ``.y()`` onto ``.x()``; reading only ``.y()`` would
+        miss Alt-modified scrolls entirely (the channels-cell symptom
+        where Alt and Ctrl+Alt did nothing).
+        """
+        delta = event.angleDelta()
+        return delta.y() or delta.x()
+
+    def _emit_wheel_scrub(self, index, event):
         """Emit ``cellWheelScrolled`` after quantizing the wheel angle
         to whole notches.
+
+        ``event`` is the original ``QWheelEvent`` so we can both read
+        its modifier mask (passed via the signal so the receiver doesn't
+        race-poll ``QApplication.keyboardModifiers()``) and fall back to
+        the X axis when Alt has transposed the delta.
 
         The slot is expected to update the underlying model
         synchronously and then call :meth:`refresh_active_editor` to
@@ -860,10 +880,13 @@ class TableWidget(
         of which Qt path delivers the wheel (eventFilter vs
         wheelEvent).
         """
-        steps = angle_y // 120
+        signed = self._wheel_signed_delta(event)
+        steps = signed // 120
         if not steps:
             return
-        self.cellWheelScrolled.emit(index.row(), index.column(), int(steps))
+        self.cellWheelScrolled.emit(
+            index.row(), index.column(), int(steps), event.modifiers()
+        )
 
     def active_editor(self) -> Optional[QtWidgets.QWidget]:
         """Return the currently-open cell editor widget, or ``None``.

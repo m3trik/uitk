@@ -244,7 +244,11 @@ class DriveableMarkingMenu(MarkingMenu):
 
 class _OverlayStub:
     def __init__(self):
-        self.path = type("P", (), {"add": lambda *a: None, "start_pos": None})()
+        self.path = type(
+            "P",
+            (),
+            {"add": lambda *a: None, "start_pos": None, "is_empty": True},
+        )()
 
     def start_gesture(self, *_args):
         pass

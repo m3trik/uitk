@@ -149,7 +149,21 @@ class StateManager(ptk.LoggingMixin):
             return
 
         try:
-            self._get_settings(widget).setValue(key, value)
+            store = self._get_settings(widget)
+            store.setValue(key, value)
+            # Belt-and-braces sync alongside the canonical
+            # ``MainWindow.on_close``/``on_hide`` sync wires. Some host
+            # apps (notably Maya on Windows) can exit without delivering
+            # closeEvent to child windows, dropping QSettings' in-memory
+            # write cache. Per-save sync makes state durable regardless
+            # of how the process tears down. Cheap on Windows (registry
+            # writes are sub-millisecond); for high-frequency signals
+            # (slider drag) on slower QSettings backends, consider
+            # adding a debounce in ``sync_widget_values`` upstream
+            # rather than removing this sync.
+            sync = getattr(store, "sync", None)
+            if callable(sync):
+                sync()
             self.logger.debug(f"Stored state: {key} -> {value}")
         except Exception as e:
             self.logger.warning(f"Failed to store state for {key}: {e}")

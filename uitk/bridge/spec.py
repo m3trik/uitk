@@ -28,6 +28,7 @@ from qtpy import QtWidgets
 
 from uitk.widgets.checkBox import CheckBox
 from uitk.widgets.doubleSpinBox import DoubleSpinBox
+from uitk.widgets.spinBox import SpinBox
 
 
 ChoiceItem = Union[Any, Tuple[str, Any]]
@@ -260,10 +261,17 @@ def _write_bool(widget, value):
     widget.setChecked(bool(value))
 
 
-# ---- int: QSpinBox ---------------------------------------------------------
+# ---- int: uitk SpinBox -----------------------------------------------------
+#
+# uitk's SpinBox derives from QDoubleSpinBox but returns ``int`` from
+# ``value()`` when ``decimals == 0`` -- which is what we want here. Using
+# it (rather than plain ``QSpinBox``) gives AttributeWindow int rows the
+# same modifier-driven wheel stepping as float rows (Ctrl, Ctrl+Shift,
+# Alt, Ctrl+Alt). The plain Qt widget would have silently dropped those.
 
 def _build_int(spec, parent):
-    w = QtWidgets.QSpinBox(parent)
+    # SpinBox defaults to ``decimals=0`` -> ``value()`` returns ``int``.
+    w = SpinBox(parent)
     w.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
     w.setMinimum(int(spec.minimum) if spec.minimum is not None else INT_MIN)
     w.setMaximum(int(spec.maximum) if spec.maximum is not None else INT_MAX)
