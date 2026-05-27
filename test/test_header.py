@@ -404,6 +404,148 @@ class TestHeaderRefreshButton(QtBaseTestCase):
         self.assertEqual(len(received), 1)
 
 
+class TestHeaderHelpButton(QtBaseTestCase):
+    """Tests for Header help button and set_help_text API."""
+
+    def test_no_help_button_by_default(self):
+        """Should not have a help button when set_help_text was never called."""
+        header = self.track_widget(Header(config_buttons=["menu", "hide"]))
+        self.assertNotIn("help", header.buttons)
+
+    def test_set_help_text_auto_adds_button(self):
+        """Should add the help button automatically when set_help_text is called."""
+        header = self.track_widget(Header(config_buttons=["menu", "hide"]))
+        header.set_help_text("Hello world")
+        self.assertIn("help", header.buttons)
+
+    def test_set_help_text_sets_tooltip(self):
+        """Should set the help button's tooltip to the supplied text."""
+        header = self.track_widget(Header(config_buttons=["menu", "hide"]))
+        header.set_help_text("Hello world")
+        self.assertEqual(header.buttons["help"].toolTip(), "Hello world")
+
+    def test_set_help_text_updates_existing_button(self):
+        """Should update the tooltip without creating a second button."""
+        header = self.track_widget(Header(config_buttons=["menu", "hide"]))
+        header.set_help_text("First")
+        first_button = header.buttons["help"]
+        header.set_help_text("Second")
+        self.assertIs(header.buttons["help"], first_button)
+        self.assertEqual(first_button.toolTip(), "Second")
+
+    def test_help_text_accessor(self):
+        """help_text() should return the current help button tooltip."""
+        header = self.track_widget(Header())
+        self.assertEqual(header.help_text(), "")
+        header.set_help_text("Hi")
+        self.assertEqual(header.help_text(), "Hi")
+
+    def test_help_button_inserted_at_leftmost_slot(self):
+        """Should insert the help button immediately right of the stretch."""
+        header = self.track_widget(Header(config_buttons=["menu", "hide"]))
+        header.set_help_text("Hi")
+        first_widget_index = None
+        for i in range(header.container_layout.count()):
+            if header.container_layout.itemAt(i).widget() is not None:
+                first_widget_index = i
+                break
+        self.assertIs(
+            header.container_layout.itemAt(first_widget_index).widget(),
+            header.buttons["help"],
+        )
+
+    def test_config_buttons_can_include_help_explicitly(self):
+        """Should accept 'help' as one of the config_buttons names."""
+        header = self.track_widget(Header(config_buttons=["help", "hide"]))
+        self.assertIn("help", header.buttons)
+
+    def test_show_help_with_no_button_is_noop(self):
+        """show_help() should silently do nothing when no help button exists."""
+        header = self.track_widget(Header())
+        header.show_help()  # must not raise
+
+    def test_help_text_survives_config_buttons_rebuild(self):
+        """Help text should persist when config_buttons is called later.
+
+        Regression: previously config_buttons cleared the layout and the help
+        button along with it — help text was silently lost on a rebuild.
+        """
+        header = self.track_widget(Header(config_buttons=["menu", "hide"]))
+        header.set_help_text("Help me")
+        header.config_buttons("refresh", "menu", "hide")
+        self.assertIn("help", header.buttons)
+        self.assertEqual(header.buttons["help"].toolTip(), "Help me")
+        self.assertEqual(header.help_text(), "Help me")
+
+    def test_show_help_invokes_qtooltip(self):
+        """Clicking the help button should call QToolTip.showText with the help text."""
+        header = self.track_widget(Header(config_buttons=["menu"]))
+        header.set_help_text("Sample help")
+        captured = []
+        original = QtWidgets.QToolTip.showText
+        def _capture(*args, **kwargs):
+            captured.append(args)
+            return original(*args, **kwargs)
+        with patch.object(QtWidgets.QToolTip, "showText", side_effect=_capture):
+            header.buttons["help"].click()
+        self.assertEqual(len(captured), 1)
+        # showText signature: (pos: QPoint, text: str, w: QWidget, ...)
+        self.assertEqual(captured[0][1], "Sample help")
+        self.assertIs(captured[0][2], header.buttons["help"])
+
+
+class TestApplyStylesWithHelpButton(QtBaseTestCase):
+    """Regression: ``UiHandler.apply_styles`` must not treat the auto-installed
+    help button as a "configured" header, otherwise it skips applying the
+    default header buttons and the UI loses its menu / collapse / hide chrome.
+
+    Bug: a slot's ``header_init`` calling ``set_help_text`` populated
+    ``header.buttons = {"help"}``. A later ``apply_styles`` call (or one
+    interleaved with slot init) saw ``current = ("help",)`` and skipped
+    its default-button setup, leaving only the help button visible.
+    Fixed: 2026-05-27
+    """
+
+    def _apply(self, header, header_buttons):
+        """Drive ``UiHandler.apply_styles``'s header-button branch directly."""
+        from uitk.handlers.ui_handler import UiHandler
+        from uitk import Switchboard
+        sb = Switchboard()
+        handler = UiHandler(switchboard=sb)
+        # Stand-in for ``ui`` — apply_styles only reads ``ui.header`` and the
+        # other branches no-op on AttributeError.
+        ui = MagicMock()
+        ui.header = header
+        handler.apply_styles(ui, style={"header_buttons": header_buttons})
+
+    def test_help_only_does_not_block_default_buttons(self):
+        """If the only existing button is help, apply_styles should still add defaults."""
+        header = self.track_widget(Header())
+        header.set_help_text("Hi")
+        self.assertEqual(set(header.buttons), {"help"})
+        self._apply(header, ("menu", "collapse", "hide"))
+        self.assertIn("menu", header.buttons)
+        self.assertIn("collapse", header.buttons)
+        self.assertIn("hide", header.buttons)
+        # Help survives the rebuild (config_buttons preserves it).
+        self.assertIn("help", header.buttons)
+
+    def test_existing_non_help_buttons_block_default_buttons(self):
+        """Explicit non-help buttons mean the slot already configured them — don't override."""
+        header = self.track_widget(Header(config_buttons=["pin"]))
+        self.assertEqual(set(header.buttons), {"pin"})
+        self._apply(header, ("menu", "collapse", "hide"))
+        # Slot's explicit choice is preserved; defaults are NOT applied.
+        self.assertEqual(set(header.buttons), {"pin"})
+
+    def test_no_buttons_applies_defaults(self):
+        """Empty header gets defaults (existing behavior, regression-guarded)."""
+        header = self.track_widget(Header())
+        self.assertEqual(set(header.buttons), set())
+        self._apply(header, ("menu", "collapse", "hide"))
+        self.assertEqual(set(header.buttons), {"menu", "collapse", "hide"})
+
+
 class TestHeaderWindowActions(QtBaseTestCase):
     """Tests for Header window action methods."""
 

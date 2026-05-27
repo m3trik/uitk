@@ -20,6 +20,7 @@ import unittest
 from qtpy import QtCore, QtWidgets
 
 from conftest import QtBaseTestCase
+from uitk.widgets.marking_menu._marking_menu import MarkingMenu
 from uitk.widgets.marking_menu.overlay import Overlay, Path
 
 
@@ -92,12 +93,14 @@ class TestClonePositioningInvariant(QtBaseTestCase):
         return w.mapToGlobal(w.rect().center())
 
     def _smooth(self, ui, w_source, w2_dest):
-        """Mirror of ``MarkingMenu._position_submenu_smooth``."""
+        """Drive the production ``_align_widget_to_global_center`` helper
+        with the same inputs ``_position_submenu_smooth`` would pass —
+        so tests validate the real code path, not a hand-maintained
+        mirror that can drift out of sync."""
         p1 = w_source.mapToGlobal(w_source.rect().center())
-        w2_dest.resize(w_source.size())
-        p2 = w2_dest.mapToGlobal(w2_dest.rect().center())
-        diff = p1 - p2
-        ui.move(ui.pos() + diff)
+        MarkingMenu._align_widget_to_global_center(
+            ui, w2_dest, w_source.size(), p1
+        )
         self.app.processEvents()
 
     def test_clone_distance_to_breadcrumb_equals_polysub_layout_distance(self):
@@ -162,6 +165,58 @@ class TestClonePositioningInvariant(QtBaseTestCase):
         self.assertIsNotNone(position)
         clone = self.overlay._clone_widget(self.meshsub, self.i010_main, position)
         self.assertIs(clone.parent(), self.meshsub)
+
+    def test_smooth_positioning_resize_does_not_shift_neighboring_widgets(self):
+        """When the launcher and destination's same-name widget have
+        different sizes, ``_position_submenu_smooth``'s resize must not
+        pull neighboring widgets off their layout positions.
+
+        Bug: ``w2.resize(w.size())`` kept w2's top-left fixed, so its
+        local center shifted by half the size delta. That shift propagated
+        into ``diff`` and ``ui.move`` slid every neighbor by the same
+        amount — clone-to-mesh spacing in the destination submenu tightened
+        relative to polygons-to-mesh spacing in polysub, exactly the drift
+        the user reported across "most submenus".
+
+        Fix: compensate w2's local position so its center stays put after
+        resize. Other widgets in ui then keep their layout offsets.
+        """
+        # Force divergent sizes between launcher (i010_main) and its
+        # destination-side counterpart (i010_poly). Skip ``center_widget``
+        # so we can dictate sizes directly.
+        self.i010_main.resize(120, 21)
+        self.i010_poly.resize(60, 21)
+        # i004_poly stays at its design width.
+        self.i004_poly.resize(50, 21)
+        self.app.processEvents()
+
+        # Before smooth: snapshot the i010↔i004 vector inside polysub.
+        # This is what the user implicitly memorizes when navigating —
+        # the spacing must survive every operation we run on polysub.
+        i010_center_before = self._gc(self.i010_poly)
+        i004_center_before = self._gc(self.i004_poly)
+        layout_delta_before = (
+            i004_center_before.x() - i010_center_before.x(),
+            i004_center_before.y() - i010_center_before.y(),
+        )
+
+        # Run smooth positioning (main → polysub).
+        self._smooth(self.polysub, self.i010_main, self.i010_poly)
+
+        # After smooth: same vector. Resize must not have shifted i004.
+        i010_center_after = self._gc(self.i010_poly)
+        i004_center_after = self._gc(self.i004_poly)
+        layout_delta_after = (
+            i004_center_after.x() - i010_center_after.x(),
+            i004_center_after.y() - i010_center_after.y(),
+        )
+
+        self.assertEqual(
+            layout_delta_after,
+            layout_delta_before,
+            f"Resize side-effect shifted neighbors: "
+            f"before={layout_delta_before}, after={layout_delta_after}",
+        )
 
     def test_path_add_returns_none_for_invisible_widget(self):
         """Regression: ``_perform_transition`` reads the anchor from

@@ -35,6 +35,7 @@ class Header(
     button_definitions = {
         "refresh": ("refresh.svg", "trigger_refresh"),
         "menu": ("menu.svg", "show_menu"),
+        "help": ("help.svg", "show_help"),
         "collapse": ("chevron_up.svg", "toggle_collapse"),
         "minimize": ("minimize.svg", "minimize_window"),
         "maximize": ("maximize.svg", "toggle_maximize"),
@@ -57,8 +58,8 @@ class Header(
             parent (QWidget, optional): The parent widget. Defaults to None.
             config_buttons (list, optional): List of button names to show in order.
                 Example: ['refresh', 'menu', 'pin']
-                Available buttons: 'refresh', 'menu', 'collapse', 'minimize',
-                'maximize', 'hide', 'pin'
+                Available buttons: 'refresh', 'menu', 'help', 'collapse',
+                'minimize', 'maximize', 'hide', 'pin'
             pin_on_drag_only (bool, optional): If True (default), clicking the pin button hides
                 the window, and only dragging the header pins it. If False, clicking the pin
                 button toggles traditional pin/unpin behavior.
@@ -89,6 +90,9 @@ class Header(
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
         self._full_title = ""  # Untruncated title for elision
         self._version = ""  # Optional version suffix appended to title
+        # Persisted help text — survives config_buttons rebuilds so the help
+        # button is re-added automatically if the layout is rebuilt later.
+        self._help_text = ""
 
         self.container_layout = QtWidgets.QHBoxLayout(self)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
@@ -220,7 +224,7 @@ class Header(
                 Examples:
                     config_buttons('refresh', 'menu', 'pin')
                     config_buttons(['refresh', 'menu', 'pin'])
-                Available: 'refresh', 'menu', 'collapse', 'minimize',
+                Available: 'refresh', 'menu', 'help', 'collapse', 'minimize',
                 'maximize', 'hide', 'pin'
         """
         # Support both styles: config_buttons('a', 'b') and config_buttons(['a', 'b'])
@@ -254,6 +258,12 @@ class Header(
 
             self.container_layout.addWidget(button)
             self.buttons[button_name] = button
+
+        # Re-add the help button when help text was previously set but
+        # 'help' wasn't included in this call's button list. Keeps help
+        # discoverable across config_buttons rebuilds.
+        if self._help_text and "help" not in self.buttons:
+            self._install_help_button(self._help_text)
 
         self.container_layout.invalidate()
         self.trigger_resize_event()
@@ -580,6 +590,60 @@ class Header(
         is equivalent to clicking the refresh button.
         """
         self.refresh_requested.emit()
+
+    def set_help_text(self, text):
+        """Set the tool's help/instruction text and ensure the help button is shown.
+
+        Auto-adds the help button to the header if not already present (inserted
+        at the leftmost position, immediately right of the stretch). The text is
+        stored as the button's tooltip — so hovering shows it, and clicking the
+        button forces the tooltip to pop up (see :meth:`show_help`).
+
+        The text persists across :meth:`config_buttons` rebuilds: if the layout
+        is rebuilt later without ``"help"`` in the list, the help button is
+        re-added automatically so the help text never silently disappears.
+
+        Parameters:
+            text (str): Help / instruction text. Plain text or rich-text HTML
+                (e.g. built with :func:`uitk.widgets.mixins.tooltip_mixin.fmt`).
+        """
+        self._help_text = text or ""
+        if "help" in self.buttons:
+            self.buttons["help"].setToolTip(self._help_text)
+        else:
+            self._install_help_button(self._help_text)
+
+    def _install_help_button(self, text):
+        """Create the help button, insert it at the leftmost slot, and set its tooltip."""
+        icon_filename, method_name = self.button_definitions["help"]
+        callback = getattr(self, method_name)
+        button = self.create_button(icon_filename, callback, button_type="help")
+        button.setToolTip(text)
+        # Insert at the leftmost button slot. The stretch lives at index 0,
+        # so the first widget sits at index 1.
+        self.container_layout.insertWidget(1, button)
+        self.buttons["help"] = button
+        self.trigger_resize_event()
+
+    def help_text(self):
+        """Return the current help text, or ``""``."""
+        return self._help_text
+
+    def show_help(self):
+        """Pop the help tooltip up at the help button.
+
+        Slots connect implicitly via the help button's ``clicked`` signal.
+        Calling this method directly is equivalent to clicking the help button.
+        """
+        button = self.buttons.get("help")
+        if not button:
+            return
+        text = button.toolTip()
+        if not text:
+            return
+        # Anchor just below the button so the tooltip doesn't cover it.
+        pos = button.mapToGlobal(QtCore.QPoint(0, button.height()))
+        QtWidgets.QToolTip.showText(pos, text, button)
 
     def show_menu(self):
         """Show the menu."""

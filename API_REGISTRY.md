@@ -101,8 +101,8 @@ _Generated: 2026-05-27_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
+- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -754,6 +754,9 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `Header.hide_window(self)` — Hide the parent window.
   - `Header.unhide_window(self)` — Unhide the parent window.
   - `Header.trigger_refresh(self)` — Emit the refresh_requested signal.
+  - `Header.set_help_text(self, text)` — Set the tool's help/instruction text and ensure the help button is shown.
+  - `Header.help_text(self)` — Return the current help text, or ``""``.
+  - `Header.show_help(self)` — Pop the help tooltip up at the help button.
   - `Header.show_menu(self)` — Show the menu.
   - `Header.toggle_collapse(self)` — Toggle between collapsed (header only) and expanded window states.
   - `Header.collapse_window(self, fixed_width=None)` — Collapse the parent window to show only the header.
@@ -1216,10 +1219,12 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 <a id="widgets--mixins--tooltip_mixin"></a>
 ### `widgets/mixins/tooltip_mixin.py`
 
-- [`fmt(title: str = None, body: str = None, bullets: list = None, steps: list = None, rows: list = None, sections: list = None) -> str`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L80) — Build a rich-text HTML tooltip string.
+- [`kbd(*keys: str) -> str`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L90) — Render keyboard key(s) as styled ``<kbd>``-like chips.
+- [`hl(text: str, color: str = _C_ACCENT) -> str`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L109) — Highlight ``text`` in ``color`` (defaults to the accent color).
+- [`fmt(title: str = None, body: str = None, bullets: list = None, steps: list = None, rows: list = None, sections: list = None, notes: list = None) -> str`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L123) — Build a rich-text HTML tooltip string.
 - **[`class TooltipProxy`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L36)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
   - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
-- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L163)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
+- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L224)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
 
 <a id="widgets--mixins--value_manager"></a>
 ### `widgets/mixins/value_manager.py`
@@ -1488,6 +1493,8 @@ Opt-in delegate for views whose cells carry their own background.
   - `Separator.title(self) -> str` *(property)* — Get the separator title.
   - `Separator.title(self, value: str) -> None` — Set the separator title.
   - `Separator.setTitle(self, value: str) -> None` — Set the separator title (alias for title property).
+  - `Separator.sizeHint(self) -> QtCore.QSize` — Advertise enough width for the title so parent layouts reserve room.
+  - `Separator.minimumSizeHint(self) -> QtCore.QSize` — Match ``sizeHint`` so the widget can't be squeezed below its title.
   - `Separator.resizeEvent(self, event) -> None` — Position the title label on resize.
 
 <a id="widgets--sequencer--_clip"></a>
@@ -1799,6 +1806,17 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
 
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
+
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
@@ -1862,17 +1880,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
-
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`

@@ -869,20 +869,46 @@ class MarkingMenu(
                 ui_pos_before=(ui.pos().x(), ui.pos().y()),
             )
             if w2:
-                w2.resize(w.size())
-                p2 = w2.mapToGlobal(w2.rect().center())
-                diff = p1 - p2
-                ui.move(ui.pos() + diff)
+                diff = self._align_widget_to_global_center(
+                    ui, w2, w.size(), p1
+                )
                 _diag(
                     "POS_SMOOTH_EXIT",
                     w2_size_after=(w2.width(), w2.height()),
-                    p2=(p2.x(), p2.y()),
+                    w2_local_center=(
+                        w2.rect().center().x(),
+                        w2.rect().center().y(),
+                    ),
                     diff=(diff.x(), diff.y()),
                     ui_pos_after=(ui.pos().x(), ui.pos().y()),
                 )
 
         except Exception as e:
             self.logger.warning(f"Submenu positioning failed: {e}")
+
+    @staticmethod
+    def _align_widget_to_global_center(ui, w2, source_size, target_global_center):
+        """Resize ``w2`` to ``source_size`` and move ``ui`` so ``w2``'s global
+        center lands at ``target_global_center``.
+
+        The resize preserves ``w2``'s *local* center: ``w2.resize`` keeps
+        the top-left fixed and would otherwise shift the local center by
+        half the size delta, which then propagates into the ui-move and
+        slides every neighboring widget in ``ui`` off its layout position.
+        We compensate with an in-place ``w2.move`` so the resize affects
+        only ``w2``'s extent, not its position relative to its siblings.
+
+        Returns the ``QPoint`` delta applied to ``ui`` (for diagnostics).
+        """
+        old_local_center = w2.rect().center()
+        w2.resize(source_size)
+        new_local_center = w2.rect().center()
+        w2.move(w2.pos() + old_local_center - new_local_center)
+
+        p2 = w2.mapToGlobal(w2.rect().center())
+        diff = target_global_center - p2
+        ui.move(ui.pos() + diff)
+        return diff
 
     def _handle_overlay_cloning(self, ui) -> None:
         """Handle overlay cloning with optimized history checking."""
