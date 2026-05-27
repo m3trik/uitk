@@ -77,6 +77,49 @@ class TooltipProxy:
         widget.installEventFilter(self._filter)
 
 
+# --- Color palette ---------------------------------------------------------
+# Tuned for Qt's default dark tooltip background. Kept on the cool side so
+# colored fragments don't fight the bold-default text Qt renders for tooltips.
+
+_C_MUTED = "#9a9a9a"     # de-emphasized labels (row keys, notes prefix)
+_C_NOTE = "#bda36a"      # warm muted for note/tip callout body
+_C_ACCENT = "#6fb5d6"    # soft cyan — keywords, headings, term highlights
+_C_TITLE = "#cfe6f5"     # off-white with cool tint for the top title
+
+
+def kbd(*keys: str) -> str:
+    """Render keyboard key(s) as styled ``<kbd>``-like chips.
+
+    Multiple keys are joined with " + " between chips, matching the
+    convention used in keyboard shortcut docs (e.g. ``Ctrl`` + ``Z``).
+
+    Example::
+
+        f"{kbd('Ctrl', 'Z')} — Undo"
+        f"Press {kbd('Enter')} to confirm"
+    """
+    chip = (
+        "<span style='background:#2f2f2f; border:1px solid #555; "
+        "border-radius:3px; padding:0 4px; font-family:monospace; "
+        "font-size:90%; color:#e0e0e0'>{key}</span>"
+    )
+    return " + ".join(chip.format(key=k) for k in keys)
+
+
+def hl(text: str, color: str = _C_ACCENT) -> str:
+    """Highlight ``text`` in ``color`` (defaults to the accent color).
+
+    Use sparingly — color highlights work best for short terms (a feature
+    name, a state, a value), not whole sentences.
+
+    Example::
+
+        f"Status: {hl('On', color='#7c7')}"
+        f"{hl('Edges')} only — vertices and faces are ignored."
+    """
+    return f"<span style='color:{color}'>{text}</span>"
+
+
 def fmt(
     title: str = None,
     body: str = None,
@@ -84,14 +127,16 @@ def fmt(
     steps: list = None,
     rows: list = None,
     sections: list = None,
+    notes: list = None,
 ) -> str:
     """Build a rich-text HTML tooltip string.
 
     Any combination of parameters may be supplied; sections are stacked in
-    order: title → body → bullets → steps → rows → sections.
+    order: title → body → bullets → steps → rows → sections → notes.
 
     Parameters:
-        title:    Bold header line shown above everything else.
+        title:    Header line shown above everything else, rendered in the
+                  accent title color and bold.
         body:     Paragraph of plain prose beneath the title.
         bullets:  Strings rendered as an unordered ``<ul>`` list.
                   Inline HTML (e.g. ``<b>On:</b> …``) is supported.
@@ -100,10 +145,16 @@ def fmt(
         rows:     ``(key, value)`` pairs rendered as a compact two-column table.
                   Keys are rendered in a muted colour; values in default colour.
         sections: ``(title, [items])`` pairs for multi-section tooltips.
-                  Each section renders a bold sub-heading followed by a ``<ul>``.
+                  Each section renders a colored sub-heading followed by a ``<ul>``.
+        notes:    Strings rendered as italic muted "note:"-style callouts after
+                  the main content. Use for caveats, tips, or "see also" hints.
 
     Returns:
         An HTML string that Qt's tooltip engine renders as rich text.
+
+    See also:
+        :func:`kbd` for keyboard-shortcut chips.
+        :func:`hl` for inline color highlights.
 
     Example::
 
@@ -113,6 +164,7 @@ def fmt(
                 "<b>Composite</b> — Single mixed WAV of all keyed clips.",
                 "<b>Keyed Tracks</b> — Individual source clips keyed on the timeline.",
             ],
+            notes=[f"{kbd('Shift')} while clicking to keep the previous mode."],
         )
 
         fmt(
@@ -132,30 +184,39 @@ def fmt(
     """
     parts = []
     if title:
-        parts.append(f"<b>{title}</b>")
+        parts.append(
+            f"<p style='margin:0 0 3px 0; color:{_C_TITLE}'><b>{title}</b></p>"
+        )
     if body:
         parts.append(f"<p style='margin:2px 0'>{body}</p>")
     if bullets:
         items = "".join(f"<li>{b}</li>" for b in bullets)
-        parts.append(f"<ul style='margin:2px 0; padding-left:14px'>{items}</ul>")
+        parts.append(f"<ul style='margin:3px 0; padding-left:14px'>{items}</ul>")
     if steps:
         items = "".join(f"<li>{s}</li>" for s in steps)
-        parts.append(f"<ol style='margin:2px 0; padding-left:16px'>{items}</ol>")
+        parts.append(f"<ol style='margin:3px 0; padding-left:16px'>{items}</ol>")
     if rows:
         cells = "".join(
-            f"<tr><td style='padding-right:8px; color:#aaa'>{k}</td>"
+            f"<tr><td style='padding-right:8px; color:{_C_MUTED}'>{k}</td>"
             f"<td>{v}</td></tr>"
             for k, v in rows
         )
-        parts.append(f"<table style='margin:2px 0'>{cells}</table>")
+        parts.append(f"<table style='margin:3px 0'>{cells}</table>")
     if sections:
         for section_title, section_items in sections:
             parts.append(
-                f"<p style='margin:4px 0 1px 0'><b>{section_title}</b></p>"
+                f"<p style='margin:6px 0 1px 0; color:{_C_ACCENT}'>"
+                f"<b>{section_title}</b></p>"
             )
             items = "".join(f"<li>{item}</li>" for item in section_items)
             parts.append(
                 f"<ul style='margin:1px 0; padding-left:14px'>{items}</ul>"
+            )
+    if notes:
+        for note in notes:
+            parts.append(
+                f"<p style='margin:3px 0 0 0; color:{_C_NOTE}; font-style:italic'>"
+                f"<span style='color:{_C_MUTED}'>note:</span> {note}</p>"
             )
     return "".join(parts)
 

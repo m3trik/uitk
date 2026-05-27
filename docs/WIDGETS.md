@@ -265,12 +265,31 @@ menu.columns = 3                    # grid layout
 Draggable header bar for frameless windows. Provides standard window controls.
 
 ```python
+from uitk.widgets.mixins.tooltip_mixin import fmt, kbd
+
 def header_init(self, widget):
     widget.config_buttons("menu", "minimize", "maximize", "pin", "hide")
     widget.menu.add("QComboBox", setObjectName="cmb_theme", addItems=["Dark", "Light"])
+    widget.set_help_text(fmt(
+        title="My Tool",
+        body="One-line summary.",
+        steps=["Select objects.", "Press <b>Run</b>."],
+        sections=[("Keyboard", [f"{kbd('Ctrl', 'Z')} — undo"])],
+        notes=["Requires the Foo plugin."],
+    ))
 ```
 
-Button keys: `menu`, `minimize`, `maximize`, `collapse`, `pin`, `hide`.
+Button keys: `refresh`, `menu`, `help`, `collapse`, `minimize`, `maximize`, `fullscreen`, `pin`, `hide`.
+
+`help` is auto-added on first call to `set_help_text(...)` (no need to list it
+in `config_buttons`); clicking the `?` pops the help text as a tooltip via
+`QToolTip.showText`. The text persists across `config_buttons` rebuilds.
+
+Rich-text help is built via `fmt(...)` from
+[`uitk.widgets.mixins.tooltip_mixin`](../uitk/widgets/mixins/tooltip_mixin.py)
+— supports `title`, `body`, `bullets`, `steps`, `rows`, `sections`, and
+`notes` (italic muted callouts). Companion helpers: `kbd(*keys)` for
+keyboard chips, `hl(text, color)` for inline color highlights.
 
 `UiHandler.DEFAULT_STYLE["header_buttons"]` = `("menu", "collapse", "pin")` — applied if no buttons configured manually.
 

@@ -317,7 +317,13 @@ class UiHandler(BaseHandler):
                 )
             if header is not None and hasattr(header, "config_buttons"):
                 current = tuple(getattr(header, "buttons", {}).keys())
-                if not current:
+                # The help button is auto-installed by ``Header.set_help_text``
+                # (typically from a slot's ``header_init``). It is additive, not
+                # a user-explicit button configuration, so don't let its presence
+                # suppress the default-button setup. ``config_buttons`` preserves
+                # the help button across rebuilds when help text is set.
+                non_help_current = tuple(b for b in current if b != "help")
+                if not non_help_current:
                     header.config_buttons(*style["header_buttons"])
 
     # ── Launchable contract ──────────────────────────────────────────────

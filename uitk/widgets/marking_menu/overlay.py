@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-from typing import Callable, Any
+from operator import methodcaller
 from qtpy import QtWidgets, QtGui, QtCore
 
 
@@ -211,6 +211,27 @@ class Overlay(QtWidgets.QWidget):
         "windowIcon",
     )
 
+    # methodcaller does instance-attribute dispatch (so subclasses' overrides
+    # are honored, unlike ``QtWidgets.QWidget.<attr>``), with no per-call
+    # closure construction. Built once at class load.
+    _CLONE_GETTERS = {
+        "objectName": methodcaller("objectName"),
+        "accessibleName": methodcaller("accessibleName"),
+        "toolTip": methodcaller("toolTip"),
+        "statusTip": methodcaller("statusTip"),
+        "whatsThis": methodcaller("whatsThis"),
+        "font": methodcaller("font"),
+        "styleSheet": methodcaller("styleSheet"),
+        "enabled": methodcaller("isEnabled"),
+        "minimumSize": methodcaller("minimumSize"),
+        "maximumSize": methodcaller("maximumSize"),
+        "layoutDirection": methodcaller("layoutDirection"),
+        "contextMenuPolicy": methodcaller("contextMenuPolicy"),
+        "cursor": methodcaller("cursor"),
+        "windowTitle": methodcaller("windowTitle"),
+        "windowIcon": methodcaller("windowIcon"),
+    }
+
     # return the existing QApplication object, or create a new one if none exist.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
@@ -372,27 +393,11 @@ class Overlay(QtWidgets.QWidget):
         """
         new_widget = type(prev_widget)(ui)
 
-        # Copy basic attributes via auto-generated setters. Each entry in
-        # CLONE_ATTRS expects a corresponding getter here.
-        getter_for = {
-            "objectName": QtWidgets.QWidget.objectName,
-            "accessibleName": QtWidgets.QWidget.accessibleName,
-            "toolTip": QtWidgets.QWidget.toolTip,
-            "statusTip": QtWidgets.QWidget.statusTip,
-            "whatsThis": QtWidgets.QWidget.whatsThis,
-            "font": QtWidgets.QWidget.font,
-            "styleSheet": QtWidgets.QWidget.styleSheet,
-            "enabled": QtWidgets.QWidget.isEnabled,
-            "minimumSize": QtWidgets.QWidget.minimumSize,
-            "maximumSize": QtWidgets.QWidget.maximumSize,
-            "layoutDirection": QtWidgets.QWidget.layoutDirection,
-            "contextMenuPolicy": QtWidgets.QWidget.contextMenuPolicy,
-            "cursor": QtWidgets.QWidget.cursor,
-            "windowTitle": QtWidgets.QWidget.windowTitle,
-            "windowIcon": QtWidgets.QWidget.windowIcon,
-        }
+        # Copy basic attributes via auto-generated setters. ``methodcaller``
+        # respects subclass overrides (unlike a bound-class-method
+        # reference) and avoids the per-call lambda churn of a fresh dict.
         for attr in self.CLONE_ATTRS:
-            getter = getter_for.get(attr)
+            getter = self._CLONE_GETTERS.get(attr)
             setter_name = f"set{attr[0].upper()}{attr[1:]}"
             if getter is None or not hasattr(new_widget, setter_name):
                 continue
@@ -409,10 +414,11 @@ class Overlay(QtWidgets.QWidget):
             except Exception:
                 pass
 
-        # Size must be applied via resize() (QWidget has no setSize), and
-        # it must come AFTER minimumSize/maximumSize so those don't clamp
-        # it. Without this, the clone falls back to Qt's default widget
-        # size (~100x30 for QPushButton) instead of matching the launcher.
+        # Size LAST so it isn't perturbed by attr-induced sizeHint changes,
+        # and so the immediately-following ``rect().center()`` reflects
+        # the final geometry. (If ``minimumSize`` / ``maximumSize`` would
+        # clamp this resize, ``new_widget.rect()`` still reads the clamped
+        # size and positioning stays correct for *that* size.)
         new_widget.resize(prev_widget.size())
 
         # Position via ``ui.mapFromGlobal`` (the clone's parent). Mapping
