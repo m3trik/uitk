@@ -1,20 +1,31 @@
 # !/usr/bin/python
 # coding=utf-8
 import math
-from typing import Dict, Union, Optional
-from qtpy import QtWidgets, QtGui, QtCore
-from uitk.widgets.messageBox import MessageBox
+from typing import Dict, Union
+from qtpy import QtWidgets, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.feedback import FeedbackMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
+from uitk.widgets.mixins.wheel_step import WheelStepMixin
 
 
-class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin):
+class SpinBox(
+    WheelStepMixin,
+    FeedbackMixin,
+    QtWidgets.QDoubleSpinBox,
+    MenuMixin,
+    OptionBoxMixin,
+    AttributesMixin,
+):
     """Unified SpinBox that supports both integer and float behavior, plus custom display values.
 
     Features:
     - Custom value-to-text mapping (e.g. -1 -> "Auto")
-    - Dynamic step size adjustments with modifiers (Alt, Ctrl)
+    - Modifier-driven wheel stepping (see
+      :class:`uitk.widgets.mixins.wheel_step.WheelStepMixin`)
+    - Themed HUD feedback popup (see
+      :class:`uitk.widgets.mixins.feedback.FeedbackMixin`)
     - Lazy float/int behavior (using decimals)
     """
 
@@ -24,7 +35,6 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
     def __init__(self, parent=None, **kwargs):
         QtWidgets.QDoubleSpinBox.__init__(self, parent)
 
-        self.msgBox = MessageBox(self, timeout=1)
         self._custom_display_map: Dict[float, str] = {}
         self._custom_value_map: Dict[str, float] = {}
 
@@ -93,29 +103,6 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
         formatted_prefix = f"{prefix}\t"
         super().setPrefix(formatted_prefix)
 
-    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
-        """Handle wheel events with modifier keys.
-
-        Read modifiers from the event (not QGuiApplication) so the dispatch
-        reflects the actual event state and is unit-testable. Use bitwise
-        ``&`` rather than ``==``: in PySide6, ``Qt.ControlModifier |
-        Qt.AltModifier`` is a ``KeyboardModifier`` value while
-        ``event.modifiers()`` is a ``KeyboardModifiers`` flag set, so ``==``
-        between them is false even when both bits match.
-        """
-        modifiers = event.modifiers()
-        ctrl = bool(modifiers & QtCore.Qt.ControlModifier)
-        alt = bool(modifiers & QtCore.Qt.AltModifier)
-
-        if ctrl and alt:
-            self.decreaseValueWithSmallStep(event)
-        elif ctrl:
-            self.increaseValueWithLargeStep(event)
-        elif alt:
-            self.adjustStepSize(event)
-        else:
-            super().wheelEvent(event)
-
     def stepBy(self, steps: int) -> None:
         """Step by the given number of steps, snapping to the step-size grid.
 
@@ -143,49 +130,3 @@ class SpinBox(QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMix
         new_value = round(new_value, self.decimals())
         new_value = max(self.minimum(), min(self.maximum(), new_value))
         self.setValue(new_value)
-
-    def adjustStepSize(self, event: QtGui.QWheelEvent) -> None:
-        """Adjust the step size dynamically based on the Alt modifier key."""
-        current_step = self.singleStep()
-        decimals = self.decimals()
-        if event.angleDelta().y() > 0:
-            new_step = max(
-                min(current_step / 10, self.maximum() - self.value()), 10**-decimals
-            )
-        else:
-            new_step = min(current_step * 10, self.maximum() - self.value())
-        new_step = round(new_step, decimals)
-        self.setSingleStep(new_step)
-        self.message(f"Step: <font color='yellow'>{new_step}</font>")
-
-    def increaseValueWithLargeStep(self, event: QtGui.QWheelEvent) -> None:
-        """Increase the spin box value by a larger step when Ctrl is pressed."""
-        current_step = self.singleStep()
-        adjustment = current_step * 10
-        self.setValue(
-            self.value() + adjustment
-            if event.angleDelta().y() > 0
-            else self.value() - adjustment
-        )
-        self.message(f"Step: <font color='yellow'>{adjustment}</font>")
-
-    def decreaseValueWithSmallStep(self, event: QtGui.QWheelEvent) -> None:
-        """Move the value by the lowest decimal place (Ctrl+Alt).
-
-        Independent of ``singleStep`` — Ctrl+Alt is the precision modifier
-        and should always step by 10^-decimals so users can dial in the
-        least-significant digit regardless of how coarse the current step
-        size is.
-        """
-        adjustment = 10 ** -self.decimals()
-        self.setValue(
-            self.value() + adjustment
-            if event.angleDelta().y() > 0
-            else self.value() - adjustment
-        )
-        self.message(f"Step: <font color='yellow'>{adjustment}</font>")
-
-    def message(self, text: str) -> None:
-        """Display a temporary message box with the given text."""
-        self.msgBox.setText(text)
-        self.msgBox.show()

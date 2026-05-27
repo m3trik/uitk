@@ -65,6 +65,14 @@ def _diag(tag, **kw):
         pass
 
 
+def _diag_enabled() -> bool:
+    """True iff the diag file handle is open. Cheap check — use this to
+    gate the construction of expensive diag payloads (e.g. comprehensions
+    over the overlay path) so we don't pay the build cost when the env
+    var is off."""
+    return _CRASH_DIAG_FH is not None
+
+
 def _safe_int(v):
     """Coerce Qt enum/flag/int to int without raising. Returns -1 on failure."""
     try:
@@ -595,11 +603,18 @@ class MarkingMenu(
         """
         return self._current_widget
 
-    def setCurrentWidget(self, widget: QtWidgets.QWidget) -> None:
-        """Set the current widget and position it at the cursor.
+    def setCurrentWidget(
+        self,
+        widget: QtWidgets.QWidget,
+        *,
+        anchor: Optional[QtCore.QPoint] = None,
+    ) -> None:
+        """Set the current widget and position its center at the given anchor.
 
         Parameters:
             widget (QWidget): The widget to set as current.
+            anchor (QPoint, optional): Global position to align widget's
+                center to. Defaults to the current cursor position.
         """
         if self._current_widget:
             self._current_widget.hide()
@@ -617,9 +632,9 @@ class MarkingMenu(
             else:
                 widget.resize(600, 600)
 
-        # Position the widget at the cursor
-        cursor_pos = QtGui.QCursor.pos()
-        local_pos = self.mapFromGlobal(cursor_pos)
+        if anchor is None:
+            anchor = QtGui.QCursor.pos()
+        local_pos = self.mapFromGlobal(anchor)
         widget.move(local_pos - widget.rect().center())
 
         # Update mouse tracking cache for the new widget
@@ -689,11 +704,16 @@ class MarkingMenu(
             # decorator on the slot method, or set ``widget.slot_timeout``
             # at runtime.
 
-    def _prepare_ui(self, ui) -> QtWidgets.QWidget:
+    def _prepare_ui(self, ui, *, anchor=None) -> QtWidgets.QWidget:
         """Initialize and set the UI without showing it.
 
         Stacked menus (startmenu/submenu) are managed directly by MarkingMenu.
         Standalone windows are delegated to the window manager for styling.
+
+        Parameters:
+            anchor (QPoint, optional): Global position to align a stacked
+                widget's center to. ``None`` defers to ``setCurrentWidget``'s
+                default (current cursor).
         """
         if not isinstance(ui, (str, QtWidgets.QWidget)):
             raise ValueError(f"Invalid datatype for ui: {type(ui)}")
@@ -716,7 +736,7 @@ class MarkingMenu(
 
         if is_stacked:
             # Stacked menus: managed by MarkingMenu
-            self.setCurrentWidget(found_ui)
+            self.setCurrentWidget(found_ui, anchor=anchor)
         else:
             # Standalone windows: hide the marking menu overlay only if NOT parented to it
             if found_ui.parent() != self:
@@ -770,16 +790,26 @@ class MarkingMenu(
             return
 
         try:
-            # Preserve overlay path order by adding to path first
-            self.overlay.path.add(ui, w)
+            # Preserve overlay path order by adding to path first. ``add``'s
+            # return value is the single source of truth for "where was the
+            # trigger widget when the user crossed it" — every downstream
+            # consumer (smooth positioning, clone placement) reads THIS
+            # value rather than re-querying ``w.mapToGlobal`` later, so any
+            # intermediate widget-state change (layout-on-hide, style
+            # reapply, etc.) can't silently drift the menu out from under
+            # the cursor. ``None`` means add was skipped (widget invisible
+            # or missing) — smooth positioning falls back to a live read.
+            anchor_global = self.overlay.path.add(ui, w)
 
             # Batch UI initialization and preparation
             if not ui.is_initialized:
                 self._init_ui(ui)
             self._prepare_ui(ui)
 
-            # Position submenu smoothly without forcing immediate updates
-            self._position_submenu_smooth(ui, w)
+            # Position submenu smoothly without forcing immediate updates.
+            # Pass the path-saved anchor so smooth positioning uses the
+            # single source of truth, not a stale re-read of ``w``.
+            self._position_submenu_smooth(ui, w, anchor_global=anchor_global)
 
             # Switch active widget without repositioning (preserving smooth calculations)
             if self._current_widget and self._current_widget != ui:
@@ -799,35 +829,124 @@ class MarkingMenu(
             # Clear transition flag after a brief delay to allow smooth completion
             QtCore.QTimer.singleShot(16, self._clear_transition_flag)  # ~60fps timing
 
-    def _position_submenu_smooth(self, ui, w) -> None:
-        """Handle submenu positioning with smooth visual transitions."""
+    def _position_submenu_smooth(self, ui, w, *, anchor_global=None) -> None:
+        """Align ui so a same-named widget lands at the trigger's screen position.
+
+        ``anchor_global`` is the path-captured global center of the trigger
+        widget — the single source of truth for *where the cursor crossed
+        the button*. The caller threads this value through from ``path.add``
+        so positioning is independent of any widget-state changes that
+        happen between path-capture and this call (layout-on-hide, style
+        reapply, deferred geometry). When omitted, falls back to a live
+        re-read of ``w.mapToGlobal`` — preserves back-compat for callers
+        that don't yet know about the path entry.
+
+        Resizes the destination widget to match the launcher's size so the
+        button doesn't visually pop to a different size during the
+        transition. This is especially important when the launcher lives in
+        a layout (e.g. main#startmenu's QVBoxLayout) and the destination
+        widget is at fixed geometry — without the resize, the two would
+        have different widths and the cursor would land on a visually
+        different button.
+        """
         try:
-            # Cache widget centers to avoid repeated calculations
-            w_center = w.rect().center()
-            p1 = w.mapToGlobal(w_center)
+            if anchor_global is not None:
+                p1 = anchor_global
+            else:
+                p1 = w.mapToGlobal(w.rect().center())
 
             w2 = self.sb.get_widget(w.objectName(), ui)
+            _diag(
+                "POS_SMOOTH_ENTER",
+                ui=ui.objectName(),
+                w=w.objectName() if hasattr(w, "objectName") else "?",
+                w_size=(w.width(), w.height()),
+                w_pos_in_parent=(w.pos().x(), w.pos().y()),
+                p1=(p1.x(), p1.y()),
+                anchor_source="path" if anchor_global is not None else "live",
+                w2_found=w2 is not None,
+                w2_size_before=(w2.width(), w2.height()) if w2 else None,
+                ui_pos_before=(ui.pos().x(), ui.pos().y()),
+            )
             if w2:
                 w2.resize(w.size())
-                w2_center = w2.rect().center()
-                p2 = w2.mapToGlobal(w2_center)
-
-                # Calculate new position
+                p2 = w2.mapToGlobal(w2.rect().center())
                 diff = p1 - p2
-
-                # Move to position smoothly - let Qt handle the timing naturally
                 ui.move(ui.pos() + diff)
+                _diag(
+                    "POS_SMOOTH_EXIT",
+                    w2_size_after=(w2.width(), w2.height()),
+                    p2=(p2.x(), p2.y()),
+                    diff=(diff.x(), diff.y()),
+                    ui_pos_after=(ui.pos().x(), ui.pos().y()),
+                )
 
         except Exception as e:
             self.logger.warning(f"Submenu positioning failed: {e}")
 
     def _handle_overlay_cloning(self, ui) -> None:
         """Handle overlay cloning with optimized history checking."""
-        if ui != self._last_ui_history_check:
-            ui_history_slice = self.sb.ui_history(slice(0, -1), allow_duplicates=True)
-            if ui not in ui_history_slice:
-                self.overlay.clone_widgets_along_path(ui, self._return_to_startmenu)
+        if ui == self._last_ui_history_check:
+            return
+        ui_history_slice = self.sb.ui_history(slice(0, -1), allow_duplicates=True)
+        if ui in ui_history_slice:
             self._last_ui_history_check = ui
+            return
+
+        # Diag payload is only built when the crash log is open — keeps the
+        # mapToGlobal calls out of the hot path under normal runs.
+        if _diag_enabled():
+            _diag(
+                "CLONE_BEFORE",
+                ui=ui.objectName(),
+                ui_pos=(ui.pos().x(), ui.pos().y()),
+                path_entries=[
+                    self._path_entry_snapshot(w, pos)
+                    for w, pos, _ in self.overlay.path._path
+                ],
+            )
+
+        clones = self.overlay.clone_widgets_along_path(
+            ui, self._return_to_startmenu
+        )
+
+        if _diag_enabled():
+            _diag(
+                "CLONE_AFTER",
+                ui=ui.objectName(),
+                clones=[self._clone_snapshot(c) for c in clones],
+            )
+
+        self._last_ui_history_check = ui
+
+    @staticmethod
+    def _path_entry_snapshot(widget, saved_pos):
+        """One row of the path table for CLONE_BEFORE — captures saved vs
+        live center so the two can be diffed when investigating drift."""
+        if widget is None:
+            return {"name": None, "saved_pos": None, "current_center": None, "size": None}
+        try:
+            current = widget.mapToGlobal(widget.rect().center())
+            current_center = (current.x(), current.y())
+        except Exception:
+            current_center = None
+        return {
+            "name": widget.objectName() if hasattr(widget, "objectName") else None,
+            "saved_pos": (saved_pos.x(), saved_pos.y()) if saved_pos else None,
+            "current_center": current_center,
+            "size": (widget.width(), widget.height()),
+        }
+
+    @staticmethod
+    def _clone_snapshot(clone):
+        """One row of the clones table for CLONE_AFTER."""
+        gc = clone.mapToGlobal(clone.rect().center())
+        return {
+            "name": clone.objectName(),
+            "pos_in_parent": (clone.pos().x(), clone.pos().y()),
+            "size": (clone.width(), clone.height()),
+            "global_center": (gc.x(), gc.y()),
+        }
 
     def _delayed_show_ui(self) -> None:
         """Show the UI after smooth positioning delay."""
@@ -846,7 +965,7 @@ class MarkingMenu(
         self._in_transition = False
 
     def _return_to_startmenu(self) -> None:
-        """Return to the start menu by moving the overlay path back to the start position."""
+        """Return to the start menu, anchoring it at the gesture origin."""
         self._debounce_transition(clear_pending=True)
 
         start_pos = self.overlay.path.start_pos
@@ -855,18 +974,18 @@ class MarkingMenu(
             return
 
         startmenu = self.sb.ui_history(-1, inc="*#startmenu*")
-        self._prepare_ui(startmenu)
-
-        local_pos = self.mapFromGlobal(start_pos)
-        startmenu.move(local_pos - startmenu.rect().center())
-
-        # Switch active widget
-        if self._current_widget and self._current_widget != startmenu:
-            self._current_widget.hide()
-        self._current_widget = startmenu
-        startmenu.show()
-        startmenu.raise_()
-        self.sb.current_ui = startmenu
+        _diag(
+            "RETURN_BEFORE",
+            startmenu=startmenu.objectName() if startmenu else None,
+            start_pos=(start_pos.x(), start_pos.y()),
+            startmenu_pos_before=(startmenu.pos().x(), startmenu.pos().y()) if startmenu else None,
+        )
+        self._prepare_ui(startmenu, anchor=start_pos)
+        _diag(
+            "RETURN_AFTER",
+            startmenu_pos_after=(startmenu.pos().x(), startmenu.pos().y()),
+            startmenu_size=(startmenu.width(), startmenu.height()),
+        )
 
     # ---------------------------------------------------------------------------------------------
     #   Menu Navigation Helpers:
@@ -1079,7 +1198,12 @@ class MarkingMenu(
 
         current_ui = self.sb.active_ui
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
-            self.overlay.start_gesture(event.globalPos())
+            # Only start a new gesture if there isn't one already — otherwise
+            # chord transitions (e.g. holding F12, tapping LMB) would rebind
+            # start_pos to the cursor on every press, drifting the menu with
+            # hand jitter.
+            if self.overlay.path.is_empty:
+                self.overlay.start_gesture(event.globalPos())
 
         self._sync_menu_to_state(
             buttons=self._to_int(event.buttons()),
@@ -1105,7 +1229,8 @@ class MarkingMenu(
             )
             default_name = self._bindings.get(self._activation_key_str)
             if target and target != default_name:
-                self.overlay.start_gesture(QtGui.QCursor.pos())
+                if self.overlay.path.is_empty:
+                    self.overlay.start_gesture(QtGui.QCursor.pos())
                 self.show(target, force=True)
                 return
 
@@ -1284,9 +1409,18 @@ class MarkingMenu(
         """Internal handler for showing marking menus."""
         # Cancel any pending suppress-hide so we don't pull the new menu away.
         self._pending_hide_widget = None
-        self.setCurrentWidget(widget)
 
-        if widget.has_tags("startmenu"):
+        # Startmenus shown mid-gesture (chord transitions like F12 → F12+LMB
+        # → F12) anchor to the gesture's origin so the menu doesn't follow
+        # cursor jitter between presses. The first show of each activation
+        # cycle anchors at the cursor and becomes that gesture's origin.
+        is_startmenu = widget.has_tags("startmenu")
+        new_gesture = is_startmenu and self.overlay.path.is_empty
+        anchor = self.overlay.path.start_pos if is_startmenu and not new_gesture else None
+
+        self.setCurrentWidget(widget, anchor=anchor)
+
+        if new_gesture:
             self.overlay.start_gesture(QtGui.QCursor.pos())
 
         if (

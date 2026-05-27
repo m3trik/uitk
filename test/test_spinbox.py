@@ -340,7 +340,16 @@ class TestSpinBoxStepByGridSnapping(QtBaseTestCase):
 
 
 class TestSpinBoxModifierSteps(QtBaseTestCase):
-    """Tests for Ctrl and Ctrl+Alt step multipliers."""
+    """Tests for the symmetric modifier ladder.
+
+    Ladder under test (Ctrl scales up, Alt scales down, stacking
+    amplifies)::
+
+        Ctrl          singleStep × 10
+        Ctrl+Shift    singleStep × 100
+        Alt           singleStep / 10          (fine)
+        Ctrl+Alt      10 ** -decimals          (smallest)
+    """
 
     def _make_spinbox(self, value=5, step=1, decimals=1):
         from uitk.widgets.spinBox import SpinBox
@@ -352,95 +361,252 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         sb.setValue(value)
         return sb
 
-    def _make_wheel_event(self, delta=120, modifiers=None):
-        """Create a mock wheel event with delta and optional modifier flags."""
+    def _make_wheel_event(self, delta=120, modifiers=None, axis="y"):
+        """Create a mock wheel event with delta on the given axis.
+
+        ``axis="x"`` puts the delta on ``angleDelta().x()`` with ``.y()`` at
+        zero -- simulates the Alt-held axis transpose observed on some
+        platforms / Qt6 builds.
+        """
         from qtpy import QtCore
 
         event = MagicMock()
-        event.angleDelta.return_value.y.return_value = delta
+        if axis == "x":
+            event.angleDelta.return_value.x.return_value = delta
+            event.angleDelta.return_value.y.return_value = 0
+        else:
+            event.angleDelta.return_value.x.return_value = 0
+            event.angleDelta.return_value.y.return_value = delta
         event.modifiers.return_value = (
             modifiers if modifiers is not None else QtCore.Qt.NoModifier
         )
         return event
 
+    # ---- Ctrl ladder ---------------------------------------------------
+
     def test_ctrl_wheel_up_steps_by_10x(self):
-        """Ctrl+wheel up should increase by 10x the single step."""
-        sb = self._make_spinbox(value=5, step=1)
-        event = self._make_wheel_event(delta=120)
-
-        sb.increaseValueWithLargeStep(event)
-        self.assertAlmostEqual(sb.value(), 15.0, places=5)
-
-    def test_ctrl_wheel_down_steps_by_10x(self):
-        """Ctrl+wheel down should decrease by 10x the single step."""
-        sb = self._make_spinbox(value=50, step=1)
-        event = self._make_wheel_event(delta=-120)
-
-        sb.increaseValueWithLargeStep(event)
-        self.assertAlmostEqual(sb.value(), 40.0, places=5)
-
-    def test_ctrl_alt_wheel_up_moves_lowest_decimal(self):
-        """Ctrl+Alt+wheel up should move by the lowest decimal place."""
-        sb = self._make_spinbox(value=5, step=1, decimals=3)
-        event = self._make_wheel_event(delta=120)
-
-        sb.decreaseValueWithSmallStep(event)
-        self.assertAlmostEqual(sb.value(), 5.001, places=5)
-
-    def test_ctrl_alt_wheel_down_moves_lowest_decimal(self):
-        """Ctrl+Alt+wheel down should move by the lowest decimal place."""
-        sb = self._make_spinbox(value=5, step=1, decimals=3)
-        event = self._make_wheel_event(delta=-120)
-
-        sb.decreaseValueWithSmallStep(event)
-        self.assertAlmostEqual(sb.value(), 4.999, places=5)
-
-    def test_ctrl_alt_wheelEvent_dispatches_to_small_step(self):
-        """wheelEvent with Ctrl+Alt routes to the lowest-decimal step.
-
-        Regression: PySide6's flag enum makes
-        ``event.modifiers() == (Qt.ControlModifier | Qt.AltModifier)`` false,
-        which previously caused Ctrl+Alt scrolling to fall through to the
-        default handler and do nothing.
-        """
-        from qtpy import QtCore
-
-        sb = self._make_spinbox(value=5, step=1, decimals=4)
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
-        )
-
-        sb.wheelEvent(event)
-        self.assertAlmostEqual(sb.value(), 5.0001, places=6)
-
-    def test_ctrl_only_wheelEvent_dispatches_to_large_step(self):
-        """wheelEvent with Ctrl alone routes to the 10x-step path."""
         from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1)
         event = self._make_wheel_event(
             delta=120, modifiers=QtCore.Qt.ControlModifier
         )
-
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 15.0, places=5)
 
-    def test_alt_only_wheelEvent_dispatches_to_step_adjust(self):
-        """wheelEvent with Alt alone should adjust the step size, not the value."""
+    def test_ctrl_wheel_down_steps_by_10x(self):
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=50, step=1)
+        event = self._make_wheel_event(
+            delta=-120, modifiers=QtCore.Qt.ControlModifier
+        )
+        sb.wheelEvent(event)
+        self.assertAlmostEqual(sb.value(), 40.0, places=5)
+
+    def test_ctrl_shift_wheel_steps_by_100x(self):
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1)
+        sb.setRange(-1000, 1000)  # widen so 5 + 100 doesn't clamp
+        event = self._make_wheel_event(
+            delta=120,
+            modifiers=QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier,
+        )
+        sb.wheelEvent(event)
+        self.assertAlmostEqual(sb.value(), 105.0, places=5)
+
+    # ---- Alt = singleStep / 10 (fine) ---------------------------------
+
+    def test_alt_wheel_up_steps_by_singleStep_over_10(self):
+        """Alt+wheel up: step the value by ``singleStep / 10``."""
         from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=3)
-        before = sb.value()
-        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
-
+        event = self._make_wheel_event(
+            delta=120, modifiers=QtCore.Qt.AltModifier
+        )
         sb.wheelEvent(event)
-        self.assertEqual(sb.value(), before, "Alt+wheel should not change value")
-        self.assertNotEqual(sb.singleStep(), 1, "Alt+wheel should adjust singleStep")
+        self.assertAlmostEqual(sb.value(), 5.1, places=5)
+
+    def test_alt_wheel_down_steps_by_singleStep_over_10(self):
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=3)
+        event = self._make_wheel_event(
+            delta=-120, modifiers=QtCore.Qt.AltModifier
+        )
+        sb.wheelEvent(event)
+        self.assertAlmostEqual(sb.value(), 4.9, places=5)
+
+    def test_alt_wheel_does_not_mutate_single_step(self):
+        """Alt+wheel must step the *value*, not the widget's ``singleStep``
+        setting (the original pre-symmetric-ladder behaviour).
+        """
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=3)
+        before_step = sb.singleStep()
+        event = self._make_wheel_event(
+            delta=120, modifiers=QtCore.Qt.AltModifier
+        )
+        sb.wheelEvent(event)
+        self.assertEqual(sb.singleStep(), before_step)
+
+    # ---- Ctrl+Alt = 10**-decimals (smallest) --------------------------
+
+    def test_ctrl_alt_wheel_up_steps_by_smallest(self):
+        """Ctrl+Alt+wheel up: step by ``10**-decimals`` (smallest)."""
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=4)
+        event = self._make_wheel_event(
+            delta=120, modifiers=QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
+        )
+        sb.wheelEvent(event)
+        self.assertAlmostEqual(sb.value(), 5.0001, places=6)
+
+    def test_ctrl_alt_wheel_down_steps_by_smallest(self):
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=4)
+        event = self._make_wheel_event(
+            delta=-120, modifiers=QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
+        )
+        sb.wheelEvent(event)
+        self.assertAlmostEqual(sb.value(), 4.9999, places=6)
+
+    def test_alt_wheel_on_int_spinbox_is_no_op(self):
+        """Alt+wheel on an int-precision spin-box (``decimals == 0``)
+        does nothing: ``singleStep / 10 == 0.1`` is below the integer
+        precision floor (``10**-0 == 1``). The mixin must detect this
+        and skip ``setValue`` entirely -- otherwise the internal
+        ``QDoubleSpinBox`` storage drifts to ``+0.1`` of the visible
+        integer while the display stays put, and the HUD lies about a
+        step happening.
+        """
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=0)
+        # Drive the underlying QDoubleSpinBox directly so we can detect
+        # any internal drift below the integer threshold.
+        from qtpy.QtWidgets import QDoubleSpinBox
+        QDoubleSpinBox.setValue(sb, 5.0)
+
+        event = self._make_wheel_event(
+            delta=120, modifiers=QtCore.Qt.AltModifier
+        )
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), 5)
+        self.assertEqual(QDoubleSpinBox.value(sb), 5.0)
+
+    def test_ctrl_alt_smaller_than_alt(self):
+        """Ladder ordering invariant: ``Ctrl+Alt`` must produce a step
+        strictly smaller than ``Alt`` alone. This is the contract the
+        user expects -- adding ``Ctrl`` to ``Alt`` makes the gesture
+        *finer*, not the same as ``Ctrl`` alone (the regression we
+        rolled the snap-to-integer back to fix).
+        """
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=4)
+        # Alt alone
+        sb.setValue(5)
+        event_alt = self._make_wheel_event(
+            delta=120, modifiers=QtCore.Qt.AltModifier
+        )
+        sb.wheelEvent(event_alt)
+        delta_alt = sb.value() - 5
+        # Ctrl+Alt
+        sb.setValue(5)
+        event_ca = self._make_wheel_event(
+            delta=120, modifiers=QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
+        )
+        sb.wheelEvent(event_ca)
+        delta_ca = sb.value() - 5
+
+        self.assertGreater(delta_alt, delta_ca)
+
+    # ---- axis-swap fallback -------------------------------------------
+
+    def test_alt_wheel_reads_x_axis_when_y_is_zero(self):
+        """Alt+wheel on the transposed axis must still step the value
+        (mirror of the Ctrl+Alt axis-swap test).
+        """
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=4)
+        event = self._make_wheel_event(
+            delta=120, modifiers=QtCore.Qt.AltModifier, axis="x"
+        )
+        sb.wheelEvent(event)
+        self.assertAlmostEqual(sb.value(), 5.1, places=5)
+
+    def test_ctrl_alt_wheel_reads_x_axis_when_y_is_zero(self):
+        """Alt-held wheel events arrive on .x() rather than .y() on some Qt
+        builds / platforms (X11, certain Qt6 builds). The mixin must read
+        whichever axis carries the delta or Ctrl+Alt silently no-ops --
+        the regression we hit in real use even though the y-only test
+        passed.
+        """
+        from qtpy import QtCore
+
+        sb = self._make_spinbox(value=5, step=1, decimals=4)
+        event = self._make_wheel_event(
+            delta=120,
+            modifiers=QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier,
+            axis="x",
+        )
+        sb.wheelEvent(event)
+        self.assertAlmostEqual(sb.value(), 5.0001, places=6)
 
 
 # =============================================================================
 # Prefix Tests
 # =============================================================================
+
+
+class TestAttributeWindowIntUsesUitkSpinBox(QtBaseTestCase):
+    """AttributeWindow int rows should use the uitk SpinBox so modifier-driven
+    wheel stepping works there too. Pinning this prevents a quiet revert to
+    plain QSpinBox during future factory refactors.
+    """
+
+    def test_build_int_returns_uitk_spinbox(self):
+        from uitk.bridge.spec import AttributeSpec, make_widget
+        from uitk.widgets.spinBox import SpinBox
+
+        spec = AttributeSpec(key="count", kind="int", default=3)
+        widget = self.track_widget(make_widget(spec))
+        self.assertIsInstance(widget, SpinBox)
+        # SpinBox returns int when decimals == 0
+        self.assertEqual(widget.value(), 3)
+        self.assertIsInstance(widget.value(), int)
+
+    def test_build_int_wheel_modifiers_dispatch(self):
+        """Ctrl+Alt+wheel on an AttributeWindow int row should step by
+        ``10**-decimals == 1`` (the smallest representable int step).
+        Smoke-tests that the SpinBox swap actually wires up the modifier
+        dispatch on a real factory-built widget.
+        """
+        from unittest.mock import MagicMock
+        from qtpy import QtCore
+        from uitk.bridge.spec import AttributeSpec, make_widget
+
+        spec = AttributeSpec(key="count", kind="int", default=5, minimum=-100, maximum=100)
+        widget = self.track_widget(make_widget(spec))
+        widget.setSingleStep(1)
+
+        event = MagicMock()
+        event.angleDelta.return_value.x.return_value = 0
+        event.angleDelta.return_value.y.return_value = 120
+        event.modifiers.return_value = (
+            QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
+        )
+
+        widget.wheelEvent(event)
+        self.assertEqual(widget.value(), 6)
 
 
 class TestSpinBoxPrefix(QtBaseTestCase):

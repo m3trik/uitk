@@ -107,6 +107,66 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     # never match.
     _token_pat = re.compile(r"\{([A-Z_][A-Z0-9_]*)\}")
 
+    # Accent colors that get a derived ``<NAME>_TINT`` companion — consumed
+    # by ``::selected:hover`` / ``::checked:hover`` rules so the hover state
+    # of a highlighted item shifts subtly without losing the accent hue.
+    # Internal: not exposed via ``themes`` / ``get_variables`` / ``set_variable``.
+    _tint_sources = ("BUTTON_HOVER", "BUTTON_CHECKED")
+    _derived_token_suffixes = ("_TINT",)
+    _color_pat = re.compile(
+        r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)|"
+        r"#([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?"
+    )
+
+    @classmethod
+    def _is_derived_token(cls, name: str) -> bool:
+        """True if ``name`` is a derived token managed by ``_derive_internal_vars``.
+
+        Used to reject user overrides on internal tokens — those would be
+        silently overwritten on the next assembly pass.
+        """
+        return any(name.endswith(s) for s in cls._derived_token_suffixes)
+
+    @classmethod
+    def _tint(cls, color_str: str, mix: float = 0.12) -> str:
+        """Subtly lighten ``color_str`` by mixing toward white.
+
+        ``mix`` is the white-blend ratio (0.0 = unchanged, 1.0 = white).
+        Preserves the input format (``rgb``/``rgba``/``#hex``/``#hexa``)
+        and the alpha channel. Returns ``color_str`` unchanged if the
+        format isn't recognized.
+        """
+        m = cls._color_pat.fullmatch(color_str.strip())
+        if not m:
+            return color_str
+        if m.group(1) is not None:
+            r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            a = m.group(4)
+            r = min(255, round(r + (255 - r) * mix))
+            g = min(255, round(g + (255 - g) * mix))
+            b = min(255, round(b + (255 - b) * mix))
+            if a is not None:
+                return f"rgba({r},{g},{b},{a})"
+            return f"rgb({r},{g},{b})"
+        hex6, hex_a = m.group(5), m.group(6)
+        r = min(255, round(int(hex6[0:2], 16) + (255 - int(hex6[0:2], 16)) * mix))
+        g = min(255, round(int(hex6[2:4], 16) + (255 - int(hex6[2:4], 16)) * mix))
+        b = min(255, round(int(hex6[4:6], 16) + (255 - int(hex6[4:6], 16)) * mix))
+        return f"#{r:02x}{g:02x}{b:02x}{hex_a or ''}"
+
+    @classmethod
+    def _derive_internal_vars(cls, theme_vars: dict) -> None:
+        """Inject derived-only tokens (``<NAME>_TINT``) into ``theme_vars``.
+
+        Called right before QSS template assembly so the tint always tracks
+        the resolved accent value (base + global overrides + widget overrides
+        + kwargs).
+        """
+        for name in cls._tint_sources:
+            base = theme_vars.get(name)
+            if base:
+                theme_vars[f"{name}_TINT"] = cls._tint(base)
+
     _qss_cache: dict[str, str] = {}
     # Parsed-template cache: cache_key -> [literal, TOKEN, literal, TOKEN, ...].
     # Built once per (package, resource) on first load; assembly is then a
@@ -229,6 +289,10 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                 for k, v in kwargs.items():
                     if k in theme_vars:
                         theme_vars[k] = str(v)
+                # Derive into theme_vars here — it's not emitted from this
+                # path (the slow path in _set_style handles signal emission
+                # with its own derivation-free dict).
+                cls._derive_internal_vars(theme_vars)
                 parts = cls._get_template(config["resource"], config["package"])
                 qss_final = cls._apply_template(parts, theme_vars)
                 assembled[key] = qss_final
@@ -265,6 +329,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             widget: If provided, override only for this widget. Otherwise global for the theme.
         """
         cls._ensure_settings_loaded()
+        if cls._is_derived_token(name):
+            raise ValueError(
+                f"{name!r} is a derived token (auto-computed from a base "
+                f"accent). Override the source token instead."
+            )
         if value is None:
             if widget:
                 if (
@@ -529,9 +598,13 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
 
             # Reuse a precomputed QSS string if the caller (typically
             # ``reload()``) has already assembled it for our config group.
+            # Derive internal tints into a scratch dict so the signal payload
+            # below carries only user-facing tokens.
             if _qss_final is None:
+                assembly_vars = theme_vars.copy()
+                self._derive_internal_vars(assembly_vars)
                 parts = self._get_template(resource, package)
-                qss_final = self._apply_template(parts, theme_vars)
+                qss_final = self._apply_template(parts, assembly_vars)
             else:
                 qss_final = _qss_final
             self.logger.debug(
