@@ -303,7 +303,7 @@ class TestStyleEditorTheming(QtBaseTestCase):
     def test_length_tokens_all_exist_in_themes(self):
         """Every name in ``LENGTH_TOKENS`` is a real token."""
         for theme_name, theme in StyleSheet.themes.items():
-            unknown = LENGTH_TOKENS - set(theme.keys())
+            unknown = set(LENGTH_TOKENS) - set(theme.keys())
             self.assertFalse(
                 unknown,
                 f"LENGTH_TOKENS contains names not in theme '{theme_name}': {sorted(unknown)}",
@@ -324,11 +324,26 @@ class TestStyleEditorTheming(QtBaseTestCase):
         self.assertEqual(spin.value(), expected)
 
     def test_length_spinbox_caps_at_8(self):
-        """Spinboxes cap at 8 (Qt border-radius degrades above this on small widgets)."""
+        """RADIUS caps at 8 (Qt border-radius degrades above this on small widgets)."""
         self.editor.cmb_tier.setCurrentText("All")
         spin = self._cell_for("RADIUS").findChild(QtWidgets.QSpinBox)
         self.assertEqual(spin.maximum(), 8)
         self.assertEqual(spin.minimum(), 0)
+
+    def test_combobox_item_height_renders_as_spinbox(self):
+        """COMBOBOX_ITEM_HEIGHT is a length token: spinbox, not a swatch, with
+        a ceiling tall enough for its 19px default."""
+        self.editor.cmb_tier.setCurrentText("All")
+        cell = self._cell_for("COMBOBOX_ITEM_HEIGHT")
+        self.assertIsNotNone(cell)
+        self.assertIsNone(cell.findChild(ColorSwatch))
+        spin = cell.findChild(QtWidgets.QSpinBox)
+        self.assertIsNotNone(spin)
+        expected = int(
+            StyleSheet.get_variable("COMBOBOX_ITEM_HEIGHT", theme="light").rstrip("px")
+        )
+        self.assertEqual(spin.value(), expected)
+        self.assertGreaterEqual(spin.maximum(), expected)
 
     def test_color_token_renders_as_swatch(self):
         """BUTTON_HOVER row contains a ``ColorSwatch``."""

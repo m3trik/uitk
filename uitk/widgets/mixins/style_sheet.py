@@ -41,6 +41,9 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "BORDER_HOVER": "rgba(255,255,255,110)",
             "BORDER_W": "1px",
             "RADIUS": "4px",
+            # Metrics (layout, themeable)
+            "COMBOBOX_ITEM_HEIGHT": "19px",  # min row height of popup items
+            "TEXT_INSET": "2px",  # horizontal text inset shared by labels/inputs
             # Selection (text-selection inside inputs)
             "SELECTION_BG": "rgba(70,70,70,100)",
             "SELECTION_FG": "rgb(255,255,190)",
@@ -82,6 +85,9 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "BORDER_HOVER": "rgba(255,255,255,110)",
             "BORDER_W": "0px",  # Dark theme defaults borderless for a softer look.
             "RADIUS": "1px",
+            # Metrics (layout, themeable)
+            "COMBOBOX_ITEM_HEIGHT": "19px",  # min row height of popup items
+            "TEXT_INSET": "2px",  # horizontal text inset shared by labels/inputs
             # Selection (text-selection inside inputs)
             "SELECTION_BG": "rgba(80,80,80,100)",
             "SELECTION_FG": "rgb(255,255,190)",
@@ -412,6 +418,31 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
 
         # Check base theme
         return cls.themes.get(theme, {}).get(name, "")
+
+    @classmethod
+    def get_variable_px(
+        cls,
+        name: str,
+        theme: str = "light",
+        widget: QtWidgets.QWidget = None,
+        default: Union[int, None] = None,
+    ) -> Union[int, None]:
+        """Get a length token as an integer pixel value.
+
+        Parses the leading integer of a length variable (e.g. ``"19px"`` →
+        ``19``). Returns ``default`` if the variable is unset or non-numeric.
+        Single source of truth for token → px conversion so consumers
+        (popup delegates, the style editor's px spin boxes, …) don't each
+        re-implement the parse.
+
+        Args:
+            name: Variable name (e.g. ``"COMBOBOX_ITEM_HEIGHT"``).
+            theme: Base theme name.
+            widget: Context widget for checking overrides.
+            default: Returned when the value is missing/unparseable.
+        """
+        m = re.match(r"\s*(-?\d+)", cls.get_variable(name, theme, widget) or "")
+        return int(m.group(1)) if m else default
 
     @classmethod
     def get_variables(cls, theme: str = "light") -> list[str]:

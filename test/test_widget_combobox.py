@@ -143,6 +143,7 @@ class TestWidgetComboBoxUniformHeight(QtBaseTestCase):
         from uitk.widgets.widgetComboBox import WidgetComboBox
 
         combo = self.track_widget(WidgetComboBox())
+        combo.item_spacing = 0  # isolate uniform-height from the spacing gap
         # Add a short widget first, then a taller one. The first row must
         # grow to match the taller sizeHint.
         checkbox = QtWidgets.QCheckBox("c")
@@ -176,6 +177,52 @@ class TestWidgetComboBoxUniformHeight(QtBaseTestCase):
             combo._model.item(0).sizeHint().height(), baseline,
             "Selectable rows must not grow when an actions section is added",
         )
+
+
+class TestWidgetComboBoxItemSpacing(QtBaseTestCase):
+    """The vertical gap between embedded-widget rows is a tight per-widget
+    height plus the exposed ``item_spacing`` (default 1px). Regression: a
+    stale add-time height (e.g. a checkbox measuring 17px pre-theme, 14px
+    after) left rows taller than their widget, rendering as a ~3px gap."""
+
+    def test_default_item_spacing_is_one(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        self.assertEqual(self.track_widget(WidgetComboBox()).item_spacing, 1)
+
+    def test_item_spacing_adds_to_row_height(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.add(QtWidgets.QPushButton("x"))
+        combo._recompute_uniform_heights()
+        base = combo._uniform_item_height
+
+        combo.item_spacing = 0
+        self.assertEqual(combo._model.item(0).sizeHint().height(), base)
+        combo.item_spacing = 4
+        self.assertEqual(combo._model.item(0).sizeHint().height(), base + 4)
+
+    def test_recompute_corrects_stale_uniform_height(self):
+        """``_recompute_uniform_heights`` re-derives the row height from the
+        widget's *current* sizeHint, shrinking rows that were sized to a
+        stale (larger) add-time height."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.item_spacing = 0
+        widget = QtWidgets.QPushButton("x")
+        combo.add(widget)
+        real_h = widget.sizeHint().height()
+
+        # Simulate a stale, too-tall height captured before the widget shrank.
+        combo._uniform_item_height = real_h + 5
+        combo._resync_uniform_heights()
+        self.assertEqual(combo._model.item(0).sizeHint().height(), real_h + 5)
+
+        combo._recompute_uniform_heights()
+        self.assertEqual(combo._uniform_item_height, real_h)
+        self.assertEqual(combo._model.item(0).sizeHint().height(), real_h)
 
 
 if __name__ == "__main__":

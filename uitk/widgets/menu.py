@@ -672,6 +672,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._pending_registrations: list = []
         self._registration_drain_scheduled: bool = False
 
+        # ``add()`` blocks signals for the duration of the (potentially
+        # recursive, bulk) insert so Qt's internal layout churn doesn't
+        # cascade.  ``on_item_added`` emits land in this queue while blocked
+        # and are flushed once the OUTERMOST add() unwinds (tracked by
+        # ``_add_depth``) and the menu is settled — otherwise the documented
+        # signal never reaches listeners.
+        self._pending_item_added_emits: list = []
+        self._add_depth: int = 0
+
         # Widget structure
         self._layout: Optional[QtWidgets.QVBoxLayout] = None
         self.gridLayout: Optional[QtWidgets.QGridLayout] = None
@@ -2541,6 +2550,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.gridLayout.setEnabled(False)
 
         try:
+            # Track recursion so the outermost call (depth back to 0) owns the
+            # on_item_added flush, regardless of whether signals were already
+            # blocked on entry (collection adds recurse with signals blocked).
+            self._add_depth += 1
+
             # Lazy initialization: create layout on first item add
             self._ensure_layout_created()
 
@@ -2600,7 +2614,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             was_empty = not self.contains_items
 
             self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
-            self.on_item_added.emit(widget)
+            # Defer the notification: signals are blocked here (see the
+            # _pending_item_added_emits comment in __init__). Emitting now is a
+            # no-op for connected slots, so queue it for the outermost add()'s
+            # finally to flush once blocking is lifted and the widget is fully
+            # configured (attributes/height applied below).
+            self._pending_item_added_emits.append(widget)
             self.set_item_data(widget, data)
 
             # Apply item height constraints only to appropriate widget types
@@ -2683,6 +2702,23 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # invisible — saves 1 activate per item.
             if self._layout and self.isVisible():
                 self._layout.activate()
+
+            # Flush queued on_item_added notifications once the OUTERMOST add()
+            # has fully unwound and the menu is settled (updates re-enabled,
+            # layout activated). add() blocks signals internally, so the
+            # synchronous emit during the insert is swallowed — queueing here is
+            # what makes the documented signal reach listeners. ``signalsBlocked``
+            # is honored, so an externally pre-blocked add() drops its
+            # notifications rather than leaking them into a later unblocked call.
+            self._add_depth -= 1
+            if self._add_depth == 0 and self._pending_item_added_emits:
+                pending, self._pending_item_added_emits = (
+                    self._pending_item_added_emits,
+                    [],
+                )
+                if not self.signalsBlocked():
+                    for added in pending:
+                        self.on_item_added.emit(added)
 
     def _add_action_widget(
         self,

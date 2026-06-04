@@ -521,5 +521,159 @@ class TestLegacyMigration(BaseTestCase):
                          "interim .migration dir leaked to root")
 
 
+class TestBuiltinTier(BaseTestCase):
+    """Built-in (shipped) presets layered under user presets via PresetStore.
+
+    Uses standalone (``from_widgets``) mode with real Qt widgets so no
+    MainWindow / StateManager is needed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from qtpy import QtWidgets
+
+        self._tmp = Path(tempfile.mkdtemp(prefix="presets_builtin_"))
+        self.builtin = self._tmp / "builtin"
+        self.user = self._tmp / "user"
+        self.builtin.mkdir()
+        # A shipped built-in preset (objectName -> value, like save() writes).
+        (self.builtin / "studio.json").write_text(
+            json.dumps({"_meta": {"version": 1}, "chk_a": True, "spn_b": 5}),
+            encoding="utf-8",
+        )
+        self.chk = QtWidgets.QCheckBox()
+        self.chk.setObjectName("chk_a")
+        self.spn = QtWidgets.QSpinBox()
+        self.spn.setObjectName("spn_b")
+        self.spn.setMaximum(100)
+        self.mgr = PresetManager.from_widgets(
+            preset_dir=str(self.user),
+            widgets=[self.chk, self.spn],
+            builtin_dir=str(self.builtin),
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def test_builtin_listed_and_sourced(self):
+        self.assertEqual(self.mgr.list(), ["studio"])
+        self.assertEqual(self.mgr.source("studio"), "builtin")
+        self.assertTrue(self.mgr.exists("studio"))
+
+    def test_builtin_loads_into_widgets(self):
+        self.assertEqual(self.mgr.load("studio"), 2)
+        self.assertTrue(self.chk.isChecked())
+        self.assertEqual(self.spn.value(), 5)
+
+    def test_save_creates_user_preset_alongside_builtin(self):
+        self.chk.setChecked(True)
+        self.mgr.save("custom")
+        self.assertEqual(self.mgr.list(), ["custom", "studio"])
+        self.assertEqual(self.mgr.source("custom"), "user")
+        self.assertEqual(self.mgr.source("studio"), "builtin")
+
+    def test_user_preset_shadows_builtin_of_same_name(self):
+        self.spn.setValue(42)
+        self.mgr.save("studio")  # same name as the built-in
+        self.assertEqual(self.mgr.source("studio"), "user")  # now user-sourced
+        self.assertEqual(self.mgr.list().count("studio"), 1)  # still listed once
+        self.spn.setValue(0)
+        self.mgr.load("studio")
+        self.assertEqual(self.spn.value(), 42)  # user copy won
+
+    def test_builtin_is_read_only(self):
+        # Can't delete or rename a name that exists only as a built-in.
+        self.assertFalse(self.mgr.delete("studio"))
+        self.assertFalse(self.mgr.rename("studio", "studio2"))
+        self.assertTrue(self.mgr.exists("studio"))  # survives
+        # Deleting the user shadow falls back to the built-in.
+        self.mgr.save("studio")
+        self.assertTrue(self.mgr.delete("studio"))
+        self.assertEqual(self.mgr.source("studio"), "builtin")
+
+
+class TestSemanticPresetMode(BaseTestCase):
+    """``value_provider`` / ``value_applier`` mode: presets keyed by semantic
+    name (not widget ``objectName``), shared with a headless CLI's PresetStore.
+
+    No Qt widgets involved -- the callbacks own the (de)serialization, so the
+    same JSON a CLI runner reads round-trips through the GUI manager.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._tmp = Path(tempfile.mkdtemp(prefix="presets_semantic_"))
+        self.builtin = self._tmp / "builtin"
+        self.user = self._tmp / "user"
+        self.builtin.mkdir()
+        # A shipped built-in run-template (semantic keys, like the CLI writes).
+        (self.builtin / "specular.json").write_text(
+            json.dumps({"_meta": {"version": 1},
+                        "align_downscale": 2, "depth_filter": "moderate"}),
+            encoding="utf-8",
+        )
+        # Stand-in for a panel's live param values + an applied-into sink.
+        self.live = {"align_downscale": 1, "depth_filter": "mild",
+                     "face_count": "high"}
+        self.applied: dict = {}
+
+        def applier(data):
+            self.applied = dict(data)
+            return len(data)
+
+        self.mgr = PresetManager(
+            preset_dir=str(self.user),
+            builtin_dir=str(self.builtin),
+            value_provider=lambda: dict(self.live),
+            value_applier=applier,
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def test_builtin_loads_via_applier_without_meta(self):
+        n = self.mgr.load("specular")
+        self.assertEqual(n, 2)
+        # The applier sees the semantic payload, with `_meta` already stripped.
+        self.assertEqual(self.applied, {"align_downscale": 2,
+                                        "depth_filter": "moderate"})
+        self.assertNotIn("_meta", self.applied)
+
+    def test_save_writes_provider_payload_to_user_tier(self):
+        path = self.mgr.save("custom")
+        self.assertEqual(self.mgr.source("custom"), "user")
+        on_disk = json.loads(Path(path).read_text(encoding="utf-8"))
+        # Provider keys persisted; `_meta` added by the manager.
+        self.assertEqual(on_disk["align_downscale"], 1)
+        self.assertEqual(on_disk["depth_filter"], "mild")
+        self.assertEqual(on_disk["face_count"], "high")
+        self.assertIn("_meta", on_disk)
+
+    def test_round_trip_save_then_load(self):
+        self.mgr.save("custom")
+        # Change live values; loading the saved preset must drive the applier
+        # back to the captured snapshot.
+        self.live.update(align_downscale=8, depth_filter="aggressive")
+        self.mgr.load("custom")
+        self.assertEqual(self.applied["align_downscale"], 1)
+        self.assertEqual(self.applied["depth_filter"], "mild")
+        self.assertEqual(self.applied["face_count"], "high")
+
+    def test_user_preset_shadows_builtin_semantic(self):
+        self.live = {"align_downscale": 4}
+        self.mgr.save("specular")  # same name as the built-in
+        self.assertEqual(self.mgr.source("specular"), "user")
+        self.mgr.load("specular")
+        self.assertEqual(self.applied, {"align_downscale": 4})  # user copy won
+
+    def test_combo_lists_both_tiers(self):
+        # wire_combo / list() are tier-aware and unchanged by semantic mode.
+        self.live = {"align_downscale": 4}
+        self.mgr.save("custom")
+        self.assertEqual(self.mgr.list(), ["custom", "specular"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -68,6 +68,12 @@ class AttributeSpec:
         tooltip: Tooltip text. The DCC-bridge slots feed this through
             :func:`uitk.bridge.tooltip.format_param_tooltip` to build
             a rich-text version with type/range/default rows.
+        section: Optional category label. A builder that groups specs (e.g.
+            :class:`uitk.bridge.BridgeSlotsBase`) inserts a titled
+            :class:`~uitk.widgets.separator.Separator` before the first spec of
+            each new section, so related params read as a labelled block.
+            Empty (default) = no divider. Sections are expected contiguous in
+            iteration order.
     """
 
     key: str
@@ -80,6 +86,7 @@ class AttributeSpec:
     decimals: int = 0
     choices: Optional[ChoicesSeq] = None
     tooltip: str = ""
+    section: str = ""
 
     def __post_init__(self):
         # An empty key produces a widget with empty objectName that can't be

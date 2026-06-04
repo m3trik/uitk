@@ -478,7 +478,43 @@ class ExternalAppHandler(BaseHandler):
             cfg.get("python") or _default_python()
         )
 
-        if not self._is_importable(cfg["module"], py):
+        importable = self._is_importable(cfg["module"], py)
+        if not importable and name and module is None:
+            # Self-heal a stale cached registration. An app's entry-point
+            # module path can change on disk after discovery was cached — a
+            # package move (``foo`` -> ``foo.sub``) or a version bump in an
+            # editable install that rewrites the entry-point metadata. The
+            # in-memory ``self._apps`` still points at the old path, so the
+            # import fails. When the module came from the registry (no explicit
+            # ``module=`` kwarg), re-discover once and retry with the refreshed
+            # path before assuming the package is missing and (re)installing it
+            # — cheaper than a pip install and it spares the user a host restart.
+            before = dict(self._apps.get(name, {}))
+            try:
+                self.discover()
+            except Exception:  # noqa: BLE001 — best-effort; fall through to install
+                self.logger.debug("[launch] re-discovery failed", exc_info=True)
+            refreshed = self._apps.get(name)
+            if refreshed is not None:
+                # discover() rebuilds the registration from entry-point metadata
+                # alone; restore launch-augmentation fields a manual register()
+                # added (install_spec / python / show_kwargs) so re-discovery
+                # corrects the module path without degrading the registration.
+                for k in ("install_spec", "python", "show_kwargs"):
+                    if not refreshed.get(k) and before.get(k):
+                        refreshed[k] = before[k]
+            refreshed = refreshed or {}
+            if refreshed.get("module") and refreshed["module"] != before.get("module"):
+                self.logger.info(
+                    f"[launch] {name!r} re-discovered: "
+                    f"{before.get('module')!r} -> {refreshed['module']!r}"
+                )
+                cfg["module"] = refreshed["module"]
+                if entry is None and refreshed.get("entry"):
+                    cfg["entry"] = refreshed["entry"]
+                importable = self._is_importable(cfg["module"], py)
+
+        if not importable:
             spec = cfg.get("install_spec")
             if not spec:
                 raise RuntimeError(

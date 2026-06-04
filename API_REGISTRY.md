@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-05-27_
+_Generated: 2026-06-04_
 
 ## Index
 
@@ -101,8 +101,8 @@ _Generated: 2026-05-27_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
+- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -144,10 +144,11 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L83)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L84)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
+  - `BridgeSlotsBase.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
   - `BridgeSlotsBase.list_template_modes(self) -> List[Tuple[str, str]]`
   - `BridgeSlotsBase.b000(self)` — Implement the per-bridge send action.
   - `BridgeSlotsBase.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int` — Return the index of the preferred initial entry in *pairs*.
@@ -160,6 +161,7 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
   - `BridgeSlotsBase.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
   - `BridgeSlotsBase.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
+  - `BridgeSlotsBase.reveal_folder(self, path) -> bool` — Open *path* in the OS file manager (logs + returns False if missing).
   - `BridgeSlotsBase.open_templates_folder(self) -> None` — Reveal :attr:`template_dir` in the OS file manager.
   - `BridgeSlotsBase.clear_log(self) -> None` — Clear the log panel (wired by subclass header menus).
 
@@ -168,17 +170,17 @@ Generic DCC-bridge slot base class.
 
 Attribute spec + kind-handler registry for parameterised forms.
 
-- [`infer_kind(value: Any) -> str`](uitk/uitk/bridge/spec.py#L137) — Map a Python value to one of the built-in kinds.
-- [`register_kind(name: str, handler: KindHandler) -> None`](uitk/uitk/bridge/spec.py#L162) — Register a new kind (or override an existing one).
-- [`get_handler(kind: str) -> KindHandler`](uitk/uitk/bridge/spec.py#L167) — Return the handler for *kind* (raises KeyError if unregistered).
-- [`make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`](uitk/uitk/bridge/spec.py#L177) — Build a Qt widget for *spec*.
-- [`read_value(widget: QtWidgets.QWidget) -> Any`](uitk/uitk/bridge/spec.py#L201) — Return the current value of a factory-built widget.
-- [`set_value(widget: QtWidgets.QWidget, value: Any) -> None`](uitk/uitk/bridge/spec.py#L206) — Set the value of a factory-built widget.
-- [`connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`](uitk/uitk/bridge/spec.py#L211) — Wire the widget's value-change signal to ``callback(new_value)``.
+- [`infer_kind(value: Any) -> str`](uitk/uitk/bridge/spec.py#L144) — Map a Python value to one of the built-in kinds.
+- [`register_kind(name: str, handler: KindHandler) -> None`](uitk/uitk/bridge/spec.py#L169) — Register a new kind (or override an existing one).
+- [`get_handler(kind: str) -> KindHandler`](uitk/uitk/bridge/spec.py#L174) — Return the handler for *kind* (raises KeyError if unregistered).
+- [`make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`](uitk/uitk/bridge/spec.py#L184) — Build a Qt widget for *spec*.
+- [`read_value(widget: QtWidgets.QWidget) -> Any`](uitk/uitk/bridge/spec.py#L208) — Return the current value of a factory-built widget.
+- [`set_value(widget: QtWidgets.QWidget, value: Any) -> None`](uitk/uitk/bridge/spec.py#L213) — Set the value of a factory-built widget.
+- [`connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`](uitk/uitk/bridge/spec.py#L218) — Wire the widget's value-change signal to ``callback(new_value)``.
 - **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L46)** — Description of one editable attribute / bridge parameter.
   - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
   - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L106)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L113)** — Bundle of callables that build / read / write a widget kind.
 
 <a id="bridge--tooltip"></a>
 ### `bridge/tooltip.py`
@@ -535,12 +537,12 @@ HTML formatting helpers shared by uitk's rich-text widgets.
   - `CustomStyle.drawComplexControl(self, control, opt, painter, widget=None)`
   - `CustomStyle.styleHint(self, hint, option=None, widget=None, returnData=None)`
   - `CustomStyle.pixelMetric(self, metric, option=None, widget=None)`
-- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L81)** — ComboBox with header text and alignment support.
+- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L88)** — ComboBox with header text and alignment support.
   - `AlignedComboBox.setHeaderText(self, text)` — Set the header text displayed when no item is selected.
   - `AlignedComboBox.setHeaderAlignment(self, alignment)` — Set the alignment for header text.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L269)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L305)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.items(self)` *(property)*
   - `ComboBox.currentData(self)`
   - `ComboBox.setCurrentData(self, value)`
@@ -636,7 +638,7 @@ Editor windows used by :meth:`ShortcutManager.show_editor`.
 <a id="widgets--editors--style_editor"></a>
 ### `widgets/editors/style_editor.py`
 
-- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L42)** — UI for editing global stylesheet variables with preset support.
+- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L48)** — UI for editing global stylesheet variables with preset support.
   - `StyleEditor.export_preset_data(self)`
   - `StyleEditor.import_preset_data(self, data)`
   - `StyleEditor.populate(self)` — Populate the table with variables for the current theme + tier.
@@ -1069,21 +1071,22 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L716) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L733) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L861) — Root directory under which every relative ``preset_dir`` is resolved.
-- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L17)** — Manages named presets for widget state, stored as external JSON files.
-  - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget]) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
-  - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L775) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L792) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L920) — Root directory under which every relative ``preset_dir`` is resolved.
+- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L16)** — Manages named presets for widget state, stored as external JSON files.
+  - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
+  - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
   - `PresetManager.preset_dir(self) -> Path` *(property)* — The directory where preset files are stored.
   - `PresetManager.preset_dir(self, value) -> None` — Set the preset directory (accepts str, Path, or None for auto-derive).
   - `PresetManager.on_change(self, callback) -> None` — Register a callback invoked when presets are modified.
   - `PresetManager.save(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path` — Save the current widget values as a named preset.
   - `PresetManager.load(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int` — Load a named preset and apply its values to the matching widgets.
-  - `PresetManager.list(self) -> List[str]` — Return a sorted list of available preset names.
-  - `PresetManager.delete(self, name: str) -> bool` — Delete a named preset file.
-  - `PresetManager.rename(self, old_name: str, new_name: str) -> bool` — Rename an existing preset.
-  - `PresetManager.exists(self, name: str) -> bool` — Check whether a named preset exists on disk.
+  - `PresetManager.list(self) -> List[str]` — Return a sorted list of available preset names across both tiers.
+  - `PresetManager.source(self, name: str) -> Optional[str]` — Which tier *name* resolves from: ``"user"``, ``"builtin"``, or ``None``.
+  - `PresetManager.delete(self, name: str) -> bool` — Delete a *user* preset (built-ins are read-only).
+  - `PresetManager.rename(self, old_name: str, new_name: str) -> bool` — Rename a *user* preset.
+  - `PresetManager.exists(self, name: str) -> bool` — Check whether a named preset exists in either tier.
   - `PresetManager.wire_combo(self, combo, on_loaded=None) -> None` — Wire a ``WidgetComboBox`` as a fully-functional preset selector.
 
 <a id="widgets--mixins--settings_manager"></a>
@@ -1184,6 +1187,7 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
   - `StyleSheet.clear_caches(cls) -> None` *(class)* — Drop QSS + parsed-template caches.
   - `StyleSheet.set_variable(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)` *(class)* — Set a theme variable override.
   - `StyleSheet.get_variable(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str` *(class)* — Get a theme variable value, resolving overrides.
+  - `StyleSheet.get_variable_px(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None, default: Union[int, None] = None) -> Union[int, None]` *(class)* — Get a length token as an integer pixel value.
   - `StyleSheet.get_variables(cls, theme: str = 'light') -> list[str]` *(class)* — Get list of available theme variables.
   - `StyleSheet.export_overrides(cls) -> dict` *(class)* — Export the current global overrides as a plain dict.
   - `StyleSheet.import_overrides(cls, data: dict) -> None` *(class)* — Bulk-replace global overrides from a dict and reload once.
@@ -1806,6 +1810,17 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
 
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
+
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
@@ -1869,17 +1884,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
-
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`
@@ -1984,6 +1988,8 @@ Scrollable rich-text viewer window.
   - `WidgetComboBox.widgetAt(self, row: int) -> Optional[QtWidgets.QWidget]` — Return the widget stored at *row* if present.
   - `WidgetComboBox.takeWidgetAt(self, row: int) -> Optional[QtWidgets.QWidget]` — Remove and return the widget stored at *row*.
   - `WidgetComboBox.currentWidget(self) -> Optional[QtWidgets.QWidget]` — Convenience accessor for the selected widget.
+  - `WidgetComboBox.item_spacing(self) -> int` *(property)* — Vertical gap, in pixels, between embedded-widget rows in the
+  - `WidgetComboBox.item_spacing(self, value: int) -> None`
   - `WidgetComboBox.actions(self) -> _ActionsNamespace` *(property)* — Namespace for managing persistent action buttons at the bottom of
   - `WidgetComboBox.showPopup(self) -> None` — Override to expand popup to widest widget and update overflow.
   - `WidgetComboBox.hidePopup(self) -> None` — Override to hide overflow indicator when popup is hidden.

@@ -295,6 +295,54 @@ class TestHeaderMenu(QtBaseTestCase):
         self.assertIs(menu1, menu2)
 
 
+class TestHeaderMenuButtonAutoVisibility(QtBaseTestCase):
+    """The header menu button auto-hides with no content, auto-shows on add.
+
+    The transient "No options" placeholder must not count as content.
+    """
+
+    def _shown_header(self):
+        """Build a shown header (menu+hide) and let its deferred sync run."""
+        container = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(container)
+        header = Header(config_buttons=["menu", "hide"], auto_hide_with_os_frame=False)
+        layout.addWidget(header)
+        container.show()
+        QtWidgets.QApplication.processEvents()
+        QtWidgets.QApplication.processEvents()
+        return header
+
+    def test_menu_button_hidden_when_empty(self):
+        """An empty menu keeps the menu button hidden once shown."""
+        header = self._shown_header()
+        self.assertFalse(header.buttons["menu"].isVisible())
+
+    def test_menu_button_shows_when_content_added(self):
+        """Adding real content auto-shows the menu button."""
+        header = self._shown_header()
+        header.menu.add(["Item A", "Item B"])
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(header.buttons["menu"].isVisible())
+
+    def test_placeholder_does_not_count_as_content(self):
+        """The 'No options' empty-state placeholder must not reveal the button."""
+        header = self._shown_header()
+        # Showing the (empty) menu inserts the transient placeholder.
+        header.menu.setVisible(True)
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(header.menu.contains_items)
+        header._sync_menu_button_visibility()
+        self.assertFalse(header.buttons["menu"].isVisible())
+        header.menu.setVisible(False)
+
+    def test_never_accessing_menu_keeps_button_hidden(self):
+        """No menu created (never accessed) => nothing to offer => hidden."""
+        header = self._shown_header()
+        # Touching `_menu` directly avoids force-creating via the property.
+        self.assertIsNone(getattr(header, "_menu", None))
+        self.assertFalse(header.buttons["menu"].isVisible())
+
+
 class TestHeaderButtonDefinitions(QtBaseTestCase):
     """Tests for Header button definitions."""
 

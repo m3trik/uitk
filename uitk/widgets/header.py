@@ -136,6 +136,8 @@ class Header(
                 add_defaults_button=False,
                 match_parent_width=False,
             )
+            # Auto-show the menu button as soon as real content arrives.
+            self._menu.on_item_added.connect(self._sync_menu_button_visibility)
             return self._menu
 
     def get_icon_path(self, icon_filename):
@@ -267,6 +269,10 @@ class Header(
 
         self.container_layout.invalidate()
         self.trigger_resize_event()
+
+        # A freshly created menu button defaults to visible; reconcile it with
+        # the menu's actual content so an empty menu's button stays hidden.
+        self._sync_menu_button_visibility()
 
     def trigger_resize_event(self):
         current_size = self.size()
@@ -899,7 +905,7 @@ class Header(
         elif self._collapsed:
             self.expand_window()
         super().showEvent(event)
-        QtCore.QTimer.singleShot(0, self._finalize_menu_button_visibility)
+        QtCore.QTimer.singleShot(0, self._sync_menu_button_visibility)
         if self._auto_hide_with_os_frame and not self._auto_hide_checked:
             self._auto_hide_checked = True
             QtCore.QTimer.singleShot(0, self._apply_auto_hide_with_os_frame)
@@ -921,13 +927,22 @@ class Header(
         if not is_frameless:
             self.hide()
 
-    def _finalize_menu_button_visibility(self):
-        # Always show the menu button when configured. Empty menus
-        # surface a transient "no options" message via Menu's empty-state
-        # behavior, so the button stays useful even before items are added.
+    def _sync_menu_button_visibility(self, *_):
+        """Show the header's menu button only when its menu has real content.
+
+        The transient "No options" placeholder is excluded — ``Menu``'s
+        ``contains_items`` already ignores it — so an empty (or placeholder-
+        only) menu keeps the button hidden. Wired to the menu's
+        ``on_item_added`` signal so populating the menu later auto-shows the
+        button; ``*_`` absorbs the added-widget argument the signal carries.
+        Reads ``_menu`` directly rather than the ``menu`` property to avoid
+        force-creating a menu just to hide the button.
+        """
         menu_button = self.buttons.get("menu")
-        if menu_button:
-            menu_button.setVisible(True)
+        if not menu_button:
+            return
+        menu = getattr(self, "_menu", None)
+        menu_button.setVisible(bool(menu is not None and menu.contains_items))
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:
         """Attach this header to the top of a QWidget or QMainWindow's centralWidget if appropriate."""

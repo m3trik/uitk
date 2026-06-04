@@ -47,9 +47,16 @@ class CustomStyle(QtWidgets.QProxyStyle):
     def _strip_focus_state_for_combobox(control, opt):
         # Native Windows style paints a blue focus border on CC_ComboBox
         # whenever State_HasFocus is set; QSS `outline: none` doesn't suppress
-        # it. Return a copied option with the flag cleared.
+        # it. Clear the flag before delegating to the base style.
+        #
+        # Mutate in place rather than copy (`QStyleOptionComboBox(opt)`): the
+        # option Qt hands to `drawComplexControl` is statically typed
+        # `QStyleOptionComplex`, and PySide6's strict copy-ctor rejects that
+        # base type (`TypeError: ... called with wrong argument types:
+        # (QStyleOptionComplex)`) — PySide2 silently accepted it. `QComboBox`
+        # builds the option fresh per paint (`initStyleOption`), so clearing a
+        # flag on it has no cross-call side effects.
         if control == QtWidgets.QStyle.CC_ComboBox:
-            opt = QtWidgets.QStyleOptionComboBox(opt)
             opt.state &= ~QtWidgets.QStyle.State_HasFocus
         return opt
 
@@ -200,6 +207,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
         super().__init__(combo_box.view())
         self._combo = combo_box
         self._strip_color = self._resolve_strip_color()
+        self._row_height = self._resolve_row_height()
 
     def _resolve_strip_color(self):
         """Resolve BUTTON_CHECKED for the combo's active theme, fall back
@@ -227,6 +235,19 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
             widget = widget.parent()
         return "light"
 
+    def _resolve_row_height(self):
+        """Resolve the ``COMBOBOX_ITEM_HEIGHT`` token (px) for the combo's
+        active theme. Returns the integer height, or ``None`` if the token
+        can't be read — in which case ``sizeHint`` leaves rows at their
+        natural height."""
+        try:
+            from uitk.widgets.mixins.style_sheet import StyleSheet
+            return StyleSheet.get_variable_px(
+                "COMBOBOX_ITEM_HEIGHT", theme=self._resolve_active_theme()
+            )
+        except Exception:
+            return None
+
     @staticmethod
     def _parse_color(color_str):
         """Parse a CSS ``rgb()``/``rgba()`` string into a ``QColor``."""
@@ -239,6 +260,21 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
             return QtGui.QColor(int(r), int(g), int(b), int(a) if a else 255)
         c = QtGui.QColor(color_str)
         return c if c.isValid() else None
+
+    def sizeHint(self, option, index):
+        # Force popup rows to COMBOBOX_ITEM_HEIGHT. QSS ``min-height`` is only
+        # a floor, so a large UI font or the combobox's icon-size reservation
+        # (AdjustToMinimumContentsLengthWithIcon reserves the icon height per
+        # row) otherwise inflates rows past the configured height. An explicit
+        # per-row hint is respected as-is — WidgetComboBox rows that embed a
+        # taller widget set Qt.SizeHintRole via _apply_uniform_height.
+        explicit = index.data(QtCore.Qt.SizeHintRole)
+        if isinstance(explicit, QtCore.QSize) and explicit.isValid():
+            return explicit
+        base = super().sizeHint(option, index)
+        if self._row_height is None:
+            return base
+        return QtCore.QSize(base.width(), self._row_height)
 
     def paint(self, painter, option, index):
         # Suppress hover/selection bg only for rows that host an embedded

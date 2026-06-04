@@ -88,6 +88,29 @@ class TestStyleSheetOverrides(QtBaseTestCase):
 
         StyleSheet.reset_overrides()
 
+    def test_get_variable_px(self):
+        """``get_variable_px`` parses a length token to int, honoring
+        overrides and the ``default`` for missing/non-numeric values."""
+        # Real px token from the theme.
+        self.assertEqual(
+            StyleSheet.get_variable_px("COMBOBOX_ITEM_HEIGHT", theme="light"), 19
+        )
+        # Missing token → default (None unless given).
+        self.assertIsNone(StyleSheet.get_variable_px("NOPE_DOES_NOT_EXIST"))
+        self.assertEqual(
+            StyleSheet.get_variable_px("NOPE_DOES_NOT_EXIST", default=7), 7
+        )
+        # Non-numeric (a colour) → default.
+        self.assertEqual(
+            StyleSheet.get_variable_px("PANEL_BACKGROUND", theme="light", default=0), 0
+        )
+        # Override is resolved and parsed.
+        StyleSheet.set_variable("COMBOBOX_ITEM_HEIGHT", "23px", theme="light")
+        self.assertEqual(
+            StyleSheet.get_variable_px("COMBOBOX_ITEM_HEIGHT", theme="light"), 23
+        )
+        StyleSheet.reset_overrides()
+
     def test_reset_overrides(self):
         """Should clear overrides correctly."""
         widget = self.track_widget(QtWidgets.QWidget())
@@ -151,6 +174,30 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
             m.group(1),
             "slider handle picked up the {RADIUS} override — it should be a literal",
         )
+
+    def test_text_inset_is_uniform_across_form_widgets(self):
+        """Labels, comboboxes, line edits and spin boxes share the single
+        ``{TEXT_INSET}`` horizontal padding so their text aligns in a layout.
+        A distinctive override proves each base rule reads the token rather
+        than a coincidental literal."""
+        import re
+
+        parts = StyleSheet._get_template()
+        qss = StyleSheet._apply_template(
+            parts, {**StyleSheet.themes["light"], "TEXT_INSET": "7px"}
+        )
+        for selector in ("QLabel", "QComboBox", "QLineEdit", "QAbstractSpinBox"):
+            # ``selector\s*\{`` matches only the bare base rule, not the
+            # ``:hover`` / ``::drop-down`` / descendant variants.
+            m = re.search(rf"(?:^|\n){re.escape(selector)}\s*\{{([^}}]*)\}}", qss)
+            self.assertIsNotNone(m, f"{selector} base rule must exist")
+            pad = re.search(r"padding:\s*([^;]+);", m.group(1))
+            self.assertIsNotNone(pad, f"{selector} must declare padding")
+            self.assertIn(
+                "7px",
+                pad.group(1),
+                f"{selector} padding must use {{TEXT_INSET}} (got {pad.group(1)!r})",
+            )
 
     def test_qss_has_no_unresolved_tokens(self):
         """Every ``{TOKEN}`` in style.qss resolves against the themes dict
