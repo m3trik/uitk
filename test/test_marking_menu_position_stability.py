@@ -14,6 +14,7 @@ cycle (when the overlay path is empty). Subsequent startmenu shows
 anchor at the existing ``start_pos`` instead of the current cursor.
 """
 import unittest
+from unittest import mock
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -167,6 +168,19 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
+        # The code under test reads QtGui.QCursor.pos() to anchor the menu.
+        # Driving the real OS cursor via setPos() then reading it back is
+        # non-deterministic under a full-suite run (another test perturbs the
+        # cursor, or setPos isn't applied synchronously) — the source of this
+        # file's intermittent failures. Mock the read so the "cursor" the code
+        # sees is exactly what each helper sets, with zero OS dependency.
+        self._fake_cursor = QtCore.QPoint(0, 0)
+        cursor_patch = mock.patch.object(
+            QtGui.QCursor, "pos", side_effect=lambda: QtCore.QPoint(self._fake_cursor)
+        )
+        cursor_patch.start()
+        self.addCleanup(cursor_patch.stop)
+
         self.parent = QtWidgets.QWidget()
         self.parent.resize(400, 400)
         self.parent.show()
@@ -185,7 +199,7 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
 
     def _initial_activation(self, cursor):
         """Simulate F12 press: cursor at given global position, show hud."""
-        QtGui.QCursor.setPos(cursor)
+        self._fake_cursor = QtCore.QPoint(cursor)
         QtWidgets.QApplication.processEvents()
         self.mm._activation_key_held = True
         self.mm._show_marking_menu(self.hud)
@@ -193,7 +207,7 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
 
     def _chord_show(self, ui_name, cursor):
         """Simulate chord transition: move cursor (jitter) then show menu."""
-        QtGui.QCursor.setPos(cursor)
+        self._fake_cursor = QtCore.QPoint(cursor)
         QtWidgets.QApplication.processEvents()
         ui = self.mm.sb.get_ui(ui_name)
         self.mm._show_marking_menu(ui)

@@ -393,6 +393,93 @@ class TestExternalAppHandlerLaunch(unittest.TestCase):
         self.assertEqual(captured["module"], "overridemod")
         self.assertEqual(captured["entry"], "OverrideEntry")
 
+    def test_launch_self_heals_stale_registration(self):
+        """A cached registration whose entry-point module path changed on disk
+        (package move / version bump) must self-heal: launch() re-discovers once
+        and retries with the refreshed module instead of (re)installing."""
+        self.handler.register(
+            "tool", module="old.module", entry="UI",
+            install_spec="pkg", mode="subprocess",
+        )
+
+        def fake_discover(self_, groups=None):
+            # Simulate corrected on-disk metadata being picked up.
+            self_._apps["tool"]["module"] = "new.module"
+            return 1
+
+        captured = {}
+
+        def fake_spawn(**kw):
+            captured.update(kw)
+            return MagicMock()
+
+        with patch.object(
+            ExternalAppHandler, "_is_importable", side_effect=[False, True]
+        ), patch.object(
+            ExternalAppHandler, "discover", fake_discover
+        ), patch("pythontk.PackageManager") as pm, patch.object(
+            ExternalAppHandler, "_spawn", side_effect=fake_spawn
+        ):
+            self.handler.launch("tool")
+
+        pm.assert_not_called()  # re-discovery fixed it; no install needed
+        self.assertEqual(captured["module"], "new.module")
+        self.assertEqual(self.handler._apps["tool"]["module"], "new.module")
+
+    def test_self_heal_falls_through_to_install_when_unchanged(self):
+        """If re-discovery doesn't change the module (genuinely missing), the
+        install fallback still runs and the original error still raises."""
+        self.handler.register(
+            "tool", module="missing.module", entry="UI",
+            install_spec="pkg", mode="subprocess",
+        )
+        pm_instance = MagicMock()
+        with patch.object(
+            ExternalAppHandler, "_is_importable", return_value=False
+        ), patch.object(
+            ExternalAppHandler, "discover", lambda self_, groups=None: 0
+        ), patch("pythontk.PackageManager", return_value=pm_instance):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.handler.launch("tool")
+        pm_instance.install.assert_called_once_with("pkg")
+        self.assertIn("still not importable", str(ctx.exception))
+
+    def test_self_heal_preserves_install_augmentation_fields(self):
+        """Re-discovery during self-heal must not drop launch-augmentation
+        fields (install_spec/python/show_kwargs) a manual register() layered on
+        top of the entry point — discover() rebuilds from metadata alone."""
+        # Entry point now advertises the corrected module path; the live
+        # registration is the stale one plus a manually-added install_spec.
+        eps = [_FakeEP("tool", "new.module", "UI")]
+        self.handler.register(
+            "tool", module="old.module", entry="UI",
+            install_spec="pkg", mode="subprocess",
+        )
+
+        def fake_eps(group=None):
+            return list(eps) if group == "uitk.external_apps.in_process" else []
+
+        captured = {}
+
+        def fake_spawn(**kw):
+            captured.update(kw)
+            return MagicMock()
+
+        with patch("importlib.metadata.entry_points", side_effect=fake_eps), \
+             patch.object(
+                 ExternalAppHandler, "_is_importable",
+                 side_effect=lambda m, p: m == "new.module",
+             ), patch("pythontk.PackageManager") as pm, patch.object(
+                 ExternalAppHandler, "_spawn", side_effect=fake_spawn
+             ):
+            self.handler.launch("tool")
+
+        pm.assert_not_called()
+        self.assertEqual(captured["module"], "new.module")
+        # install_spec survived the re-discovery (would be None if discover()'s
+        # wholesale re-register had been left to clobber it).
+        self.assertEqual(self.handler._apps["tool"]["install_spec"], "pkg")
+
 
 class TestInProcessMode(unittest.TestCase):
     def setUp(self):

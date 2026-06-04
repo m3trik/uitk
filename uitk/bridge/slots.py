@@ -38,6 +38,7 @@ from qtpy import QtCore, QtWidgets
 
 from uitk.widgets.pushButton import PushButton
 from uitk.widgets.widgetComboBox import WidgetComboBox
+from uitk.widgets.separator import Separator
 from uitk.widgets.mixins.preset_manager import PresetManager
 
 from uitk.bridge.spec import (
@@ -159,6 +160,24 @@ class BridgeSlotsBase:
         """Return a fresh bridge instance. Called once, lazily."""
         raise NotImplementedError
 
+    def make_preset_store(self):
+        """Hook: return a :class:`pythontk.PresetStore` to switch presets into
+        **semantic mode**, or ``None`` (default) for **widget-state mode**.
+
+        *Widget-state mode* (default): presets are raw widget snapshots keyed by
+        ``objectName``, stored per-template under :attr:`PRESETS_ROOT`. Used by
+        the DCC bridges (marmoset / substance / rizom).
+
+        *Semantic mode*: presets are ``{param_key: value}`` run-templates keyed
+        by :class:`AttributeSpec` name. A panel returns the **same** store its
+        headless CLI uses (e.g. ``profile.preset_store()``), so a preset saved in
+        the UI is readable by the CLI and vice-versa, and shipped built-ins show
+        in the combo. The store is template-agnostic — one preset set per panel,
+        captured via :meth:`collect_param_values` and applied via
+        :meth:`_apply_param_dict`.
+        """
+        return None
+
     def list_template_modes(self) -> List[Tuple[str, str]]:  # pragma: no cover
         raise NotImplementedError
 
@@ -204,7 +223,13 @@ class BridgeSlotsBase:
         self._bridge = None
         self._param_widgets: Dict[str, QtWidgets.QWidget] = {}
         self._param_rows: Dict[str, QtWidgets.QWidget] = {}
+        # Category dividers: section name -> Separator, plus each param's section,
+        # so a divider can hide when its whole section is hidden for the mode.
+        self._section_separators: Dict[str, QtWidgets.QWidget] = {}
+        self._param_section: Dict[str, str] = {}
         self._preset_mgr: Optional[PresetManager] = None
+        self._preset_store = None  # set in _build_preset_controls (semantic mode)
+        self._semantic_presets = False
         self._preset_combo: Optional[WidgetComboBox] = None
         self._output_dir_edit: Optional[QtWidgets.QLineEdit] = None
         self._param_visibility_settled = False
@@ -336,6 +361,15 @@ class BridgeSlotsBase:
         vbox.setSpacing(0)
 
         for key, spec in self.params_module.PARAMS.items():
+            # Start of a new category -> a titled divider above its first row.
+            # (One separator per section; sections are expected contiguous.)
+            section = getattr(spec, "section", "") or ""
+            self._param_section[key] = section
+            if section and section not in self._section_separators:
+                sep = Separator(grp, title=section)
+                vbox.addWidget(sep)
+                self._section_separators[section] = sep
+
             row = QtWidgets.QWidget(grp)
             hbox = QtWidgets.QHBoxLayout(row)
             hbox.setContentsMargins(0, 0, 0, 0)
@@ -381,19 +415,47 @@ class BridgeSlotsBase:
         """Snapshot every widget's current value, regardless of visibility."""
         return {key: self._read_param(key) for key in self._param_widgets}
 
-    def _refresh_param_visibility(self) -> None:
-        """Show only the rows whose placeholder appears in the active template."""
+    def _relevant_param_keys(self) -> Optional[set]:
+        """Hook: the param keys whose rows should be visible for the current
+        selection, or ``None`` to skip the visibility update entirely (no
+        template selected / unreadable source).
+
+        Default: the placeholder keys referenced by the active template file
+        (the script-substitution bridges). Run-mode panels — e.g. a single
+        runner driven by a ``--stop-after``-style mode rather than per-template
+        files — override this to gate visibility on the selected mode, so the
+        parameter UI stays dynamic the same way the DCC bridges' does.
+        """
         pair = self._selected_template_mode()
         if not pair:
-            return
+            return None
         template, _mode = pair
         path = self.template_dir / f"{template}{self.TEMPLATE_EXTENSION}"
         if not path.is_file():
+            return None
+        return self.params_module.referenced_keys(path.read_text(encoding="utf-8"))
+
+    def _refresh_param_visibility(self) -> None:
+        """Show only the rows relevant to the current selection.
+
+        Delegates the "which keys are relevant?" decision to
+        :meth:`_relevant_param_keys` so subclasses can drive visibility from a
+        template file (default) or a run mode without re-implementing the
+        row-toggling + height-fit bookkeeping.
+        """
+        used = self._relevant_param_keys()
+        if used is None:
             return
-        used = self.params_module.referenced_keys(path.read_text(encoding="utf-8"))
 
         for key, row in self._param_rows.items():
             row.setVisible(key in used)
+        # A category divider shows only while at least one of its params does,
+        # so a section that's fully hidden for the mode doesn't leave a stray rule.
+        for section, sep in self._section_separators.items():
+            sep.setVisible(any(
+                self._param_section.get(k) == section and k in used
+                for k in self._param_rows
+            ))
         if self._param_group is not None:
             self._param_group.setVisible(bool(used))
 
@@ -430,21 +492,60 @@ class BridgeSlotsBase:
         layout.insertWidget(insert_at, combo)
         layout.insertWidget(insert_at + 1, reset_btn)
 
-        managed = [
-            getattr(w, "_line_edit", w) for w in self._param_widgets.values()
-        ]
-        if self.PRESETS_ROOT is None:
-            raise ValueError(
-                f"{type(self).__name__} must set PRESETS_ROOT."
+        store = self.make_preset_store()
+        self._preset_store = store
+        self._semantic_presets = store is not None
+
+        if store is not None:
+            # Semantic mode: presets are {param_key: value} run-templates shared
+            # with the headless CLI through one PresetStore (built-in + user
+            # tiers). The callbacks own (de)serialization, so no managed widget
+            # list is needed and presets are template-agnostic.
+            self._preset_mgr = PresetManager(
+                preset_dir=str(store.user_dir),
+                builtin_dir=str(store.builtin_dir) if store.builtin_dir else None,
+                value_provider=self.collect_param_values,
+                value_applier=self._apply_param_dict,
             )
-        self._preset_mgr = PresetManager.from_widgets(
-            preset_dir=self.PRESETS_ROOT / self._active_template(),
-            widgets=managed,
-        )
+        else:
+            # Widget-state mode (DCC bridges): raw snapshots keyed by objectName,
+            # one preset subdir per template under PRESETS_ROOT.
+            managed = [
+                getattr(w, "_line_edit", w) for w in self._param_widgets.values()
+            ]
+            if self.PRESETS_ROOT is None:
+                raise ValueError(
+                    f"{type(self).__name__} must set PRESETS_ROOT "
+                    "(or override make_preset_store() for semantic presets)."
+                )
+            self._preset_mgr = PresetManager.from_widgets(
+                preset_dir=self.PRESETS_ROOT / self._active_template(),
+                widgets=managed,
+            )
         self._preset_mgr.wire_combo(combo)
 
         self._preset_combo = combo
         self._reset_btn = reset_btn
+
+    def _apply_param_dict(self, data: Dict[str, Any]) -> int:
+        """Apply a semantic ``{param_key: value}`` preset to the param widgets.
+
+        Keys absent from this panel's ``PARAMS`` are ignored (a shared CLI
+        preset may carry knobs this panel doesn't surface). Keys not present in
+        the preset keep their current widget values — overlay semantics matching
+        the CLI's ``--preset``. Returns the number of widgets updated.
+        """
+        applied = 0
+        for key, value in data.items():
+            if key not in self._param_widgets:
+                continue
+            try:
+                self._write_param(key, value)
+                applied += 1
+            except Exception:  # noqa: BLE001
+                # One bad key shouldn't abort the rest of the overlay.
+                continue
+        return applied
 
     def _active_template(self) -> str:
         """Active template stem (mode-agnostic preset key)."""
@@ -512,19 +613,29 @@ class BridgeSlotsBase:
         self._on_template_changed()
 
     def _selected_template_mode(self) -> Optional[Tuple[str, str]]:
-        """``(template, mode)`` for the active combo entry, or *None*."""
+        """``(template, mode)`` for the active combo entry, or *None*.
+
+        ``itemData`` stores a ``(template, mode)`` tuple, but some PySide
+        bindings round-trip it back through ``QVariant`` as a *list* --
+        so accept either and normalise to a tuple.
+        """
         idx = self.ui.cmb000.currentIndex()
         if idx < 0:
             return None
         data = self.ui.cmb000.itemData(idx)
-        if isinstance(data, tuple) and len(data) == 2:
-            return data
+        if isinstance(data, (tuple, list)) and len(data) == 2:
+            return tuple(data)
         return None
 
     def _on_template_changed(self) -> None:
-        """Re-show rows + re-point preset dir + log description on combo change."""
+        """Re-show rows + re-point preset dir + log description on combo change.
+
+        In semantic-preset mode the preset set is template-agnostic (one shared
+        store), so the preset dir is *not* re-pointed per template — only the
+        widget-state bridges keep per-template preset subdirs.
+        """
         self._refresh_param_visibility()
-        if self._preset_mgr is not None:
+        if self._preset_mgr is not None and not self._semantic_presets:
             self._preset_mgr.preset_dir = (
                 self.PRESETS_ROOT / self._active_template()
             )
@@ -566,9 +677,33 @@ class BridgeSlotsBase:
             pass
 
     def _on_log_link_clicked(self, url) -> None:
-        """Route ``action://`` URIs to the shared dispatcher (Maya-side helper)."""
-        # Imported lazily because the dispatcher lives in mayatk and uitk
-        # must remain DCC-agnostic at module-import time.
+        """Route ``action://`` URIs from the log panel to their handler.
+
+        The ``open`` action (reveal a file/folder) is DCC-agnostic, so it is
+        handled here with the cross-platform file-manager opener — this is what
+        lets output-dir links work when a panel runs as a standalone external
+        app (no Maya), which is the common case for the photogrammetry bridges.
+        Node-based actions (``select`` / ``reveal`` in the Maya Outliner) are
+        delegated to the Maya-side dispatcher, imported lazily so uitk stays
+        DCC-agnostic at module-import time.
+        """
+        try:
+            if url.scheme() == "action" and url.host() == "open":
+                from urllib.parse import parse_qs
+
+                params = parse_qs(url.query())
+                path = (
+                    params.get("path", [""])[0]
+                    or params.get("filepath", [""])[0]
+                )
+                if path:
+                    _open_in_file_manager(path)
+                return
+        except Exception as e:  # noqa: BLE001
+            self.bridge.logger.error(f"Could not open link: {e}")
+            return
+        # Node-based actions live in mayatk; import lazily so uitk has no
+        # hard DCC dependency.
         try:
             from mayatk.ui_utils._ui_utils import UiUtils
         except Exception:  # noqa: BLE001
@@ -599,12 +734,25 @@ class BridgeSlotsBase:
 
     # ------------------ Header menu utilities -------------------------
 
+    def reveal_folder(self, path) -> bool:
+        """Open *path* in the OS file manager (logs + returns False if missing).
+
+        Shared by header-menu "Open … folder" actions so subclasses don't each
+        re-implement the existence check + cross-platform reveal + error log.
+        """
+        if not path or not os.path.isdir(str(path)):
+            self.bridge.logger.info(f"Folder not found: {path or '(unset)'}")
+            return False
+        try:
+            _open_in_file_manager(str(path))
+            return True
+        except Exception as e:  # noqa: BLE001
+            self.bridge.logger.error(f"Could not open folder: {e}")
+            return False
+
     def open_templates_folder(self) -> None:
         """Reveal :attr:`template_dir` in the OS file manager."""
-        try:
-            _open_in_file_manager(str(self.template_dir))
-        except Exception as e:  # noqa: BLE001
-            self.bridge.logger.error(f"Could not open templates folder: {e}")
+        self.reveal_folder(self.template_dir)
 
     def clear_log(self) -> None:
         """Clear the log panel (wired by subclass header menus)."""

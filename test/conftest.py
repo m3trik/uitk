@@ -94,6 +94,18 @@ class QtBaseTestCase(BaseTestCase):
     # input-sequence integration tests).
     _drain_qt_events_in_teardown: bool = True
 
+    @staticmethod
+    def _drain_qt_events(passes: int = 3) -> None:
+        """Flush the Qt event queue (DeferredDelete, posted, timer events) so
+        they fire here rather than leaking into another test. Used by tearDown
+        (default), and by input-sequence tests that drain in setUp instead (to
+        isolate from a prior test's leftovers without advancing their own
+        not-yet-built state)."""
+        from qtpy import QtCore, QtWidgets
+
+        for _ in range(passes):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
     def tearDown(self):
         """Clean up widgets created during the test."""
         super().tearDown()
@@ -106,12 +118,7 @@ class QtBaseTestCase(BaseTestCase):
                     pass
             self._widgets_to_cleanup.clear()
         if self._drain_qt_events_in_teardown:
-            from qtpy import QtCore, QtWidgets
-
-            for _ in range(3):
-                QtWidgets.QApplication.processEvents(
-                    QtCore.QEventLoop.AllEvents, 50
-                )
+            self._drain_qt_events()
 
     def track_widget(self, widget):
         """Register a widget for automatic cleanup.

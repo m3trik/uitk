@@ -1,6 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-import re
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.colorSwatch import ColorSwatch
 from uitk.widgets.mixins.style_sheet import StyleSheet
@@ -33,10 +32,17 @@ BASIC_TOKENS = frozenset(
     }
 )
 
-# Non-color tokens. Anything not listed here is treated as a color and
-# rendered with a ``ColorSwatch``; listed tokens get a ``QSpinBox`` with
-# the ``" px"`` suffix.
-LENGTH_TOKENS = frozenset({"RADIUS", "BORDER_W"})
+# Non-color tokens, mapped to their spinbox ``(min, max)`` pixel range.
+# Anything not listed here is treated as a color and rendered with a
+# ``ColorSwatch``; listed tokens get a ``QSpinBox`` with the ``" px"``
+# suffix. Radius/border stay ≤8 (Qt's border-radius rendering degrades on
+# small widgets above that); row-height tokens need a taller ceiling.
+LENGTH_TOKENS = {
+    "RADIUS": (0, 8),
+    "BORDER_W": (0, 8),
+    "COMBOBOX_ITEM_HEIGHT": (0, 64),
+    "TEXT_INSET": (0, 16),
+}
 
 
 class StyleEditor(EditorPanel):
@@ -51,9 +57,9 @@ class StyleEditor(EditorPanel):
     editor go dark and its rows reflect the dark theme's values.
 
     Two value types are handled: color tokens get a :class:`ColorSwatch`;
-    length tokens (RADIUS, BORDER_W) get a ``QSpinBox`` with a ``" px"``
-    suffix. A "tier" combo filters the table to either the 12 most-edited
-    tokens (Basic) or every token (All).
+    length tokens (see ``LENGTH_TOKENS``) get a ``QSpinBox`` with a ``" px"``
+    suffix, clamped to each token's pixel range. A "tier" combo filters the
+    table to either the 12 most-edited tokens (Basic) or every token (All).
     """
 
     def __init__(self, parent=None):
@@ -234,8 +240,7 @@ class StyleEditor(EditorPanel):
         name_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
         self.table.setItem(row, 0, name_item)
 
-        current_val = StyleSheet.get_variable(var_name, theme=theme)
-        n = _parse_px(current_val)
+        n = StyleSheet.get_variable_px(var_name, theme=theme, default=0)
 
         container = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(container)
@@ -244,8 +249,7 @@ class StyleEditor(EditorPanel):
         layout.setAlignment(QtCore.Qt.AlignCenter)
 
         spin = QtWidgets.QSpinBox()
-        # Cap at 8: Qt's border-radius rendering degrades on small widgets above this.
-        spin.setRange(0, 8)
+        spin.setRange(*LENGTH_TOKENS[var_name])
         spin.setSuffix(" px")
         spin.setValue(n)
         # 76px: Qt reserves internal width for hidden up/down arrow buttons.
@@ -339,15 +343,5 @@ class StyleEditor(EditorPanel):
         spin = container.findChild(QtWidgets.QSpinBox)
         if spin:
             spin.blockSignals(True)
-            spin.setValue(_parse_px(val))
+            spin.setValue(StyleSheet.get_variable_px(name, theme=theme, default=0))
             spin.blockSignals(False)
-
-
-def _parse_px(value: str) -> int:
-    """Extract the leading integer from a length string like ``"5px"``.
-
-    Returns 0 for empty / unparseable input. Drops decimals — the editor
-    only edits integer pixels.
-    """
-    m = re.match(r"(-?\d+)", value or "")
-    return int(m.group(1)) if m else 0

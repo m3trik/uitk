@@ -32,7 +32,7 @@ QWidget.QLabel {
     color: {TEXT_COLOR};
     border: {BORDER_W} solid {BORDER_COLOR};
     border-radius: {RADIUS};
-    padding: 0px 1px 0px 1px;
+    padding: 0px {TEXT_INSET} 0px {TEXT_INSET};
 }
 
 /* -- Containers -- */
@@ -360,6 +360,7 @@ QAbstractSpinBox {
     background-color: {WIDGET_BACKGROUND};
     color: {TEXT_COLOR};
     border: {BORDER_W} solid {BORDER_COLOR};
+    padding: 0px {TEXT_INSET} 0px {TEXT_INSET};
 }
 QAbstractSpinBox:disabled {
     color: {TEXT_DISABLED};
@@ -402,7 +403,7 @@ QComboBox {
     background-color: {WIDGET_BACKGROUND};
     color: {TEXT_COLOR};
     border: {BORDER_W} solid {BORDER_COLOR};
-    padding: 0px 1px 0px 1px;
+    padding: 0px {TEXT_INSET} 0px {TEXT_INSET};
     border-radius: {RADIUS};
 }
 QComboBox:disabled {
@@ -454,26 +455,30 @@ QComboBox QAbstractItemView {
     margin: 0px;
 }
 QComboBox QAbstractItemView::item {
-    padding: 1px;
+    /* Horizontal-only padding: a non-zero top/bottom would stack on top of
+       min-height (Qt adds padding to the content box), making rows taller
+       than COMBOBOX_ITEM_HEIGHT. The 1px horizontal + the view's 1px keeps
+       popup text aligned with the closed combobox's TEXT_INSET. */
+    padding: 0px 1px 0px 1px;
     border: none;
-    min-height: 14px;
+    min-height: {COMBOBOX_ITEM_HEIGHT};
 }
 QComboBox QAbstractItemView::item:hover:!selected {
     background-color: rgba(255,255,255,50);
     color: {TEXT_HOVER};
-    padding: 1px;
+    padding: 0px 1px 0px 1px;
     border: none;
 }
 QComboBox QAbstractItemView::item:selected {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
-    padding: 1px;
+    padding: 0px 1px 0px 1px;
     border: none;
 }
 QComboBox QAbstractItemView::item:selected:hover {
     background-color: {BUTTON_HOVER_TINT};
     color: {TEXT_HOVER};
-    padding: 1px;
+    padding: 0px 1px 0px 1px;
     border: none;
 }
 /* Hide the 12px checkmark column inside combobox popups — Fusion reserves
@@ -492,7 +497,7 @@ QLabel {
     border-style: none;
     border-radius: {RADIUS};
     border: {BORDER_W} solid {BORDER_COLOR};
-    padding: 0px 0px 0px 2px;
+    padding: 0px {TEXT_INSET} 0px {TEXT_INSET};
 }
 QLabel:hover {
     background-color: {WIDGET_BACKGROUND};
@@ -529,7 +534,7 @@ QLineEdit {
     selection-background-color: {BUTTON_HOVER};
     selection-color: {TEXT_COLOR};
     border-radius: {RADIUS};
-    padding: 0 8px;
+    padding: 0 {TEXT_INSET};
 }
 QLineEdit:hover {
     border: {BORDER_W} solid {BORDER_HOVER};

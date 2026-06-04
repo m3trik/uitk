@@ -277,6 +277,16 @@ class MarkingMenuInputScenarios(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
+        # Flush events left pending by a prior test/file BEFORE building this
+        # test's input sequence. This class opts out of the teardown drain
+        # (it would advance the menu state the next test expects), but stray
+        # DeferredDelete / posted events from an earlier test — e.g. a combobox
+        # popup show/grab — otherwise interleave with our QTest events and
+        # intermittently knock the menu out of its expected state. Draining here,
+        # before self.mm exists, isolates the test without touching its own
+        # not-yet-created state.
+        self._drain_qt_events()
+
         self.parent = QtWidgets.QWidget()
         self.parent.resize(400, 400)
         self.parent.show()

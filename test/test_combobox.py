@@ -88,20 +88,30 @@ class CustomStyleFocusStateStripping(QtBaseTestCase):
             "Non-combobox path must return the original option unchanged",
         )
 
-    def test_caller_option_is_not_mutated(self):
+    def test_strips_focus_on_base_complex_option_without_raising(self):
+        """Regression (PySide6): ``drawComplexControl`` receives the option
+        statically typed as the base ``QStyleOptionComplex``. The old copy
+        (``QStyleOptionComboBox(opt)``) raised ``TypeError: ... called with
+        wrong argument types: (QStyleOptionComplex)`` under PySide6 (PySide2
+        accepted it), crashing every combobox paint. The flag is now cleared
+        in place, which works for either option type."""
         from qtpy import QtWidgets
         from uitk.widgets.comboBox import CustomStyle
 
-        opt = QtWidgets.QStyleOptionComboBox()
-        opt.state = QtWidgets.QStyle.State_HasFocus
+        opt = QtWidgets.QStyleOptionComplex()
+        opt.state = QtWidgets.QStyle.State_HasFocus | QtWidgets.QStyle.State_Enabled
 
-        CustomStyle._strip_focus_state_for_combobox(
+        prepared = CustomStyle._strip_focus_state_for_combobox(
             QtWidgets.QStyle.CC_ComboBox, opt
         )
 
+        self.assertFalse(
+            bool(prepared.state & QtWidgets.QStyle.State_HasFocus),
+            "State_HasFocus must be stripped even from a base QStyleOptionComplex",
+        )
         self.assertTrue(
-            bool(opt.state & QtWidgets.QStyle.State_HasFocus),
-            "Caller's option must not be mutated (we copy via QStyleOptionComboBox(opt))",
+            bool(prepared.state & QtWidgets.QStyle.State_Enabled),
+            "Other state flags must be preserved",
         )
 
 
@@ -166,6 +176,107 @@ class ComboBoxStyleConfiguration(QtBaseTestCase):
             )
         finally:
             combo.hidePopup()
+
+
+class ComboBoxPopupRowHeight(QtBaseTestCase):
+    """Popup rows must equal ``COMBOBOX_ITEM_HEIGHT`` exactly.
+
+    Regression: the token was applied as ``min-height`` while the item rules
+    kept 1px top/bottom padding, which Qt adds on top of the content
+    min-height — so rows rendered 2px taller than configured (21px vs 19px).
+    Vertical item padding is now zero, making the token the true row height.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        StyleSheet.reset_overrides()
+
+    def tearDown(self):
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        StyleSheet.reset_overrides()
+        super().tearDown()
+
+    def _row_height(self, theme="light"):
+        from uitk.widgets.comboBox import ComboBox, _CurrentItemIndicatorDelegate
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        combo = self.track_widget(ComboBox())
+        StyleSheet().set(combo, theme=theme)
+        combo.addItems(["a", "b", "c"])
+        # Mirror showPopup()'s style + delegate install (offscreen showPopup
+        # is flaky); the QSS-driven row height is governed by these alone.
+        view = combo.view()
+        view.setStyle(combo.custom_style)
+        view.setItemDelegate(_CurrentItemIndicatorDelegate(combo))
+        return view.sizeHintForRow(0)
+
+    def test_default_row_height_equals_token(self):
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        token = int(
+            StyleSheet.get_variable("COMBOBOX_ITEM_HEIGHT", theme="light").rstrip("px")
+        )
+        self.assertEqual(self._row_height("light"), token)
+
+    def test_row_height_tracks_token_without_padding_inflation(self):
+        """A custom height well above the font floor must be matched exactly,
+        not exceeded by a constant padding offset (the +2px bug)."""
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        StyleSheet.set_variable("COMBOBOX_ITEM_HEIGHT", "30px", theme="light")
+        self.assertEqual(self._row_height("light"), 30)
+
+    def test_row_height_clamps_down_with_large_font(self):
+        """QSS ``min-height`` is only a floor; the delegate must force the row
+        height DOWN when the natural row (large UI font / the combobox's icon
+        reservation) would exceed the token. Regression: dropdown rows
+        rendered taller than ``COMBOBOX_ITEM_HEIGHT``."""
+        from qtpy import QtGui, QtWidgets
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        app = QtWidgets.QApplication.instance()
+        prev_font = app.font()
+        big = QtGui.QFont(prev_font)
+        big.setPointSize(20)
+        app.setFont(big)
+        try:
+            token = int(
+                StyleSheet.get_variable(
+                    "COMBOBOX_ITEM_HEIGHT", theme="light"
+                ).rstrip("px")
+            )
+            # The font alone would otherwise produce a taller row.
+            self.assertGreater(QtGui.QFontMetrics(big).height(), token)
+            self.assertEqual(self._row_height("light"), token)
+        finally:
+            app.setFont(prev_font)
+
+    def test_explicit_row_size_hint_is_respected(self):
+        """A row carrying an explicit ``Qt.SizeHintRole`` (WidgetComboBox rows
+        embed a taller widget via ``_apply_uniform_height``) keeps its height;
+        the token only governs plain text rows."""
+        from qtpy import QtCore, QtWidgets
+        from uitk.widgets.comboBox import ComboBox, _CurrentItemIndicatorDelegate
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        combo = self.track_widget(ComboBox())
+        StyleSheet().set(combo, theme="light")
+        combo.addItems(["a", "b"])
+        combo.model().item(1).setSizeHint(QtCore.QSize(80, 40))
+        deleg = _CurrentItemIndicatorDelegate(combo)
+        opt = QtWidgets.QStyleOptionViewItem()
+        token = int(
+            StyleSheet.get_variable("COMBOBOX_ITEM_HEIGHT", theme="light").rstrip("px")
+        )
+        self.assertEqual(
+            deleg.sizeHint(opt, combo.model().index(1, 0)).height(), 40
+        )
+        self.assertEqual(
+            deleg.sizeHint(opt, combo.model().index(0, 0)).height(), token
+        )
 
 
 if __name__ == "__main__":

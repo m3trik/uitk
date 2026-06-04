@@ -783,6 +783,46 @@ class TestMenuSignals(QtBaseTestCase):
             pass
         self.assertTrue(connected)
 
+    def test_on_item_added_is_delivered(self):
+        """on_item_added must reach connected slots despite add()'s blockSignals.
+
+        Regression: add() blocks signals for the duration of the insert, so a
+        synchronous emit was swallowed and the documented signal never fired.
+        The added widget(s) are now flushed by the outermost add() once
+        blocking is lifted.
+        """
+        menu = self.track_widget(Menu())
+        received = []
+        menu.on_item_added.connect(received.append)
+        widget = menu.add("QPushButton", setText="A")
+        self.assertEqual(received, [widget])
+
+    def test_on_item_added_delivered_for_bulk_add(self):
+        """A collection add fires the signal once per item, in order."""
+        menu = self.track_widget(Menu())
+        received = []
+        menu.on_item_added.connect(received.append)
+        widgets = menu.add(["A", "B", "C"])
+        self.assertEqual(received, widgets)
+
+    def test_on_item_added_respects_external_block(self):
+        """An externally pre-blocked add() suppresses the signal entirely.
+
+        The notification must be dropped (not leaked into a later unblocked
+        add()), so the recursion-depth flush honors signalsBlocked().
+        """
+        menu = self.track_widget(Menu())
+        received = []
+        menu.on_item_added.connect(received.append)
+
+        menu.blockSignals(True)
+        menu.add("Hidden")
+        menu.blockSignals(False)
+        self.assertEqual(received, [])  # dropped while blocked
+
+        later = menu.add("Visible")
+        self.assertEqual(received, [later])  # no leak of the blocked item
+
 
 class TestMenuGridLayout(QtBaseTestCase):
     """Tests for Menu grid layout positioning."""

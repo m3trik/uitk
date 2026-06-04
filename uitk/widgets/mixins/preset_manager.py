@@ -1,6 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-import json
 import logging
 import os
 import shutil
@@ -79,6 +78,9 @@ class PresetManager(ptk.LoggingMixin):
         preset_dir: Optional[Path] = None,
         widgets: Optional[List[QtWidgets.QWidget]] = None,
         log_level: str = "WARNING",
+        builtin_dir: Optional[Union[str, Path]] = None,
+        value_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+        value_applier: Optional[Callable[[Dict[str, Any]], int]] = None,
     ):
         super().__init__()
         self.set_log_level(log_level)
@@ -87,10 +89,27 @@ class PresetManager(ptk.LoggingMixin):
         self._explicit_widgets = list(widgets) if widgets is not None else None
         self._excluded_widgets: Set[QtWidgets.QWidget] = set()
 
+        # Semantic-preset mode (opt-in). When both callbacks are set, presets
+        # are a plain ``{semantic_key: value}`` dict supplied by *value_provider*
+        # on save and handed to *value_applier* on load -- NOT raw widget-state
+        # keyed by ``objectName``. This lets a panel persist the SAME semantic
+        # run-template the headless CLI reads (one :class:`pythontk.PresetStore`,
+        # two front-ends), instead of GUI-only widget snapshots. The store
+        # (built-in + user tiers) and :meth:`wire_combo` are unchanged.
+        self.value_provider = value_provider
+        self.value_applier = value_applier
+
         if preset_dir is not None:
             self._preset_dir = self._resolve_preset_dir(preset_dir)
         else:
             self._preset_dir = None
+
+        # Read-only, shipped presets (a panel's ``presets/`` dir by convention,
+        # passed explicitly). ``None`` / a missing dir ⇒ the built-in tier is
+        # simply absent and only user presets show. Layered under user presets by
+        # the shared :class:`pythontk.PresetStore` (a user preset of the same name
+        # shadows the built-in), so the GUI and any headless path see one set.
+        self._builtin_dir = self._resolve_builtin_dir(builtin_dir)
 
         self.metadata_provider: Optional[Callable[[], dict]] = None
         self.on_metadata_loaded: Optional[Callable[[dict], None]] = None
@@ -122,11 +141,38 @@ class PresetManager(ptk.LoggingMixin):
             p = get_presets_root() / p
         return p
 
+    @staticmethod
+    def _resolve_builtin_dir(raw: Optional[Union[str, Path]]) -> Optional[Path]:
+        """Resolve a *builtin_dir* (``~`` / env expanded), or ``None``.
+
+        A relative value is taken as-is (relative to CWD) — built-in dirs are
+        repo paths the caller knows, not consolidated-root short names.
+        """
+        if raw is None:
+            return None
+        return Path(os.path.expandvars(str(raw))).expanduser()
+
+    @property
+    def _store(self) -> "ptk.PresetStore":
+        """The two-tier backing store (built-in + user).
+
+        Built fresh each access (construction is trivial) off the resolved
+        :attr:`preset_dir` (the migrated user tier) and :attr:`_builtin_dir`, so
+        discovery and file I/O share one implementation with the headless
+        ``pythontk.PresetStore`` and stay correct if either dir is reassigned.
+        """
+        user_dir = self.preset_dir
+        return ptk.PresetStore(
+            user_dir.name, package="uitk",
+            builtin_dir=self._builtin_dir, user_dir=user_dir,
+        )
+
     @classmethod
     def from_widgets(
         cls,
         preset_dir,
         widgets: List[QtWidgets.QWidget],
+        builtin_dir: Optional[Union[str, Path]] = None,
     ) -> "PresetManager":
         """Create a standalone PresetManager for an explicit list of widgets.
 
@@ -140,7 +186,7 @@ class PresetManager(ptk.LoggingMixin):
         Returns:
             A PresetManager instance.
         """
-        return cls(preset_dir=preset_dir, widgets=widgets)
+        return cls(preset_dir=preset_dir, widgets=widgets, builtin_dir=builtin_dir)
 
     def setup(
         self,
@@ -149,6 +195,9 @@ class PresetManager(ptk.LoggingMixin):
         on_loaded=None,
         metadata_provider: Optional[Callable[[], dict]] = None,
         on_metadata_loaded: Optional[Callable[[dict], None]] = None,
+        builtin_dir: Optional[Union[str, Path]] = None,
+        value_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+        value_applier: Optional[Callable[[Dict[str, Any]], int]] = None,
     ) -> "PresetManager":
         """Configure and optionally auto-wire a preset combo.
 
@@ -181,12 +230,18 @@ class PresetManager(ptk.LoggingMixin):
         """
         if preset_dir is not None:
             self._preset_dir = self._resolve_preset_dir(preset_dir)
+        if builtin_dir is not None:
+            self._builtin_dir = self._resolve_builtin_dir(builtin_dir)
         if widgets is not None:
             self._explicit_widgets = list(widgets)
         if metadata_provider is not None:
             self.metadata_provider = metadata_provider
         if on_metadata_loaded is not None:
             self.on_metadata_loaded = on_metadata_loaded
+        if value_provider is not None:
+            self.value_provider = value_provider
+        if value_applier is not None:
+            self.value_applier = value_applier
 
         # Auto-create and wire a preset combo when parent is a Menu
         if hasattr(self.parent, "add") and hasattr(self.parent, "get_items"):
@@ -286,31 +341,35 @@ class PresetManager(ptk.LoggingMixin):
         Returns:
             The Path to the saved JSON file.
         """
-        widgets = self._get_widgets(scope)
         data: Dict[str, Any] = {"_meta": {"version": self.PRESET_VERSION}}
 
         if self.metadata_provider is not None:
             data["_meta"].update(self.metadata_provider())
 
-        for widget in widgets:
-            obj_name = widget.objectName()
-            if not obj_name:
-                continue
+        if self.value_provider is not None:
+            # Semantic mode: the payload is a caller-supplied {key: value} map
+            # (e.g. a bridge's ``collect_param_values()``), not widget-state.
+            for key, value in self.value_provider().items():
+                if value is not None and _is_serializable(value):
+                    data[key] = value
+        else:
+            for widget in self._get_widgets(scope):
+                obj_name = widget.objectName()
+                if not obj_name:
+                    continue
 
-            if self.state is not None:
-                value = self.state._get_current_value(widget)
-            else:
-                value = self._get_widget_value(widget)
+                if self.state is not None:
+                    value = self.state._get_current_value(widget)
+                else:
+                    value = self._get_widget_value(widget)
 
-            if value is not None and _is_serializable(value):
-                data[obj_name] = value
+                if value is not None and _is_serializable(value):
+                    data[obj_name] = value
 
-        filepath = self._preset_path(name)
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-
+        # Delegate the write to the store — it always targets the user tier
+        # (built-ins are read-only; saving a built-in's name creates a user
+        # override that shadows it, i.e. the "duplicate to edit" flow).
+        filepath = self._store.save(name, data)
         self.logger.debug(
             f"Saved preset '{name}' ({len(data) - 1} widgets) -> {filepath}"
         )
@@ -339,22 +398,31 @@ class PresetManager(ptk.LoggingMixin):
         Returns:
             The number of widgets that were updated.
         """
-        filepath = self._preset_path(name)
-        if not filepath.exists():
-            self.logger.warning(f"Preset file not found: {filepath}")
+        # Resolve via the store: a user preset shadows a built-in of the same
+        # name, so the same call serves shipped defaults and user saves.
+        try:
+            data = self._store.load(name)
+        except KeyError:
+            self.logger.warning(f"Preset not found: {name}")
             return 0
-
-        with open(filepath, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError as e:
-                self.logger.warning(f"Invalid preset file '{name}': {e}")
-                return 0
+        except (ValueError, OSError) as e:  # ValueError covers JSONDecodeError
+            self.logger.warning(f"Invalid preset '{name}': {e}")
+            return 0
 
         # Extract and dispatch metadata
         meta = data.pop("_meta", {})
         if self.on_metadata_loaded is not None and meta:
             self.on_metadata_loaded(meta)
+
+        if self.value_applier is not None:
+            # Semantic mode: hand the whole {key: value} payload to the caller's
+            # applier (e.g. a bridge's ``_apply_param_dict``), which maps keys
+            # to its own widgets. Return its applied-count (default to the
+            # payload size if the applier returns None).
+            applied = self.value_applier(data)
+            applied = applied if isinstance(applied, int) else len(data)
+            self.logger.debug(f"Loaded preset '{name}': {applied} keys applied.")
+            return applied
 
         widgets = self._get_widgets(scope)
         widget_map = {w.objectName(): w for w in widgets if w.objectName()}
@@ -407,73 +475,64 @@ class PresetManager(ptk.LoggingMixin):
         return applied
 
     def list(self) -> List[str]:
-        """Return a sorted list of available preset names.
+        """Return a sorted list of available preset names across both tiers.
 
-        Returns:
-            List of preset name strings (without file extension).
+        Union of built-in (shipped, read-only) and user presets; a user preset
+        of the same name shadows the built-in, so each name appears once.
         """
-        if not self.preset_dir.exists():
-            return []
-        return sorted(p.stem for p in self.preset_dir.glob("*.json"))
+        return self._store.list()
+
+    def source(self, name: str) -> Optional[str]:
+        """Which tier *name* resolves from: ``"user"``, ``"builtin"``, or ``None``.
+
+        Lets a UI lock / relabel built-ins (they can't be renamed or deleted).
+        """
+        return self._store.source(name)
 
     def delete(self, name: str) -> bool:
-        """Delete a named preset file.
+        """Delete a *user* preset (built-ins are read-only).
 
-        Parameters:
-            name: The preset name to delete.
-
-        Returns:
-            True if the file was deleted, False if it did not exist.
+        Returns True if a user file was removed; False if absent or the name
+        exists only as a read-only built-in.
         """
-        filepath = self._preset_path(name)
-        if filepath.exists():
-            filepath.unlink()
-            self.logger.debug(f"Deleted preset '{name}': {filepath}")
+        if self._store.delete(name):
+            self.logger.debug(f"Deleted preset '{name}'")
             self._notify_change()
             return True
-        self.logger.debug(f"Preset '{name}' does not exist.")
+        self.logger.debug(f"Preset '{name}' not deleted (absent or built-in).")
         return False
 
     def rename(self, old_name: str, new_name: str) -> bool:
-        """Rename an existing preset.
+        """Rename a *user* preset.
 
-        Parameters:
-            old_name: The current preset name.
-            new_name: The desired new name.
-
-        Returns:
-            True if renamed successfully, False otherwise.
+        False if *old_name* isn't a user preset, or *new_name* already exists in
+        either tier (won't silently shadow a built-in).
         """
-        old_path = self._preset_path(old_name)
-        new_path = self._preset_path(new_name)
-
-        if not old_path.exists():
-            self.logger.warning(f"Cannot rename: preset '{old_name}' not found.")
-            return False
-        if new_path.exists():
-            self.logger.warning(f"Cannot rename: preset '{new_name}' already exists.")
-            return False
-
-        old_path.rename(new_path)
-        self.logger.debug(f"Renamed preset '{old_name}' -> '{new_name}'")
-        self._notify_change()
-        return True
+        if self._store.rename(old_name, new_name):
+            self.logger.debug(f"Renamed preset '{old_name}' -> '{new_name}'")
+            self._notify_change()
+            return True
+        self.logger.warning(
+            f"Cannot rename preset '{old_name}' -> '{new_name}' "
+            "(source not a user preset, or target name already in use)."
+        )
+        return False
 
     def exists(self, name: str) -> bool:
-        """Check whether a named preset exists on disk."""
-        return self._preset_path(name).exists()
+        """Check whether a named preset exists in either tier."""
+        return self._store.exists(name)
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
     def _preset_path(self, name: str) -> Path:
-        """Return the full file path for a preset name."""
-        # Sanitize name: replace path separators and other unsafe chars
-        safe_name = "".join(
-            c if c.isalnum() or c in ("-", "_", " ") else "_" for c in name
-        )
-        return self.preset_dir / f"{safe_name}.json"
+        """Full path for a *user* preset name (sanitized).
+
+        Kept for back-compat; the store is the tier-aware source of truth. Uses
+        the shared sanitizer so a name maps to the same file as the headless path.
+        """
+        return self._store.path(name, "user")
 
     def _get_widgets(
         self, scope: Optional[QtWidgets.QWidget] = None

@@ -159,6 +159,9 @@ class WidgetComboBox(ComboBox):
         # (separator + button container) is excluded from this tracking
         # because its container is intentionally tall.
         self._uniform_item_height = 0
+        # Deliberate vertical gap (px) between embedded-widget rows, added on
+        # top of the tight per-widget row height. Exposed via ``item_spacing``.
+        self._item_spacing = 1
 
         self._model = QtGui.QStandardItemModel(self)
         self.setModel(self._model)
@@ -378,6 +381,13 @@ class WidgetComboBox(ComboBox):
         container.setProperty("_embedded_widget", widget)
         return container
 
+    def _row_target_height(self) -> int:
+        """Row sizeHint height for tracked rows: the tight uniform widget
+        height plus the deliberate ``item_spacing`` gap. Single source of the
+        row-height policy so ``_apply_uniform_height`` / ``_resync_uniform_heights``
+        can't drift apart."""
+        return self._uniform_item_height + self._item_spacing
+
     def _apply_uniform_height(self, row_item, widget, track=True):
         """Set ``row_item``'s sizeHint using the uniform height policy.
 
@@ -394,16 +404,17 @@ class WidgetComboBox(ComboBox):
                 self._uniform_item_height = natural.height()
                 self._resync_uniform_heights()
             row_item.setSizeHint(
-                QtCore.QSize(natural.width(), self._uniform_item_height)
+                QtCore.QSize(natural.width(), self._row_target_height())
             )
         else:
             row_item.setSizeHint(natural)
 
     def _resync_uniform_heights(self):
-        """Re-apply the current uniform height to every tracked row."""
-        target = self._uniform_item_height
-        if target <= 0:
+        """Re-apply the current uniform height (+ ``item_spacing``) to every
+        tracked row."""
+        if self._uniform_item_height <= 0:
             return
+        target = self._row_target_height()
         # Action rows live at the tail; iterate everything except those.
         # `_action_row_count` is the count of separator + container rows.
         total = self._model.rowCount()
@@ -415,6 +426,44 @@ class WidgetComboBox(ComboBox):
             sh = item.sizeHint()
             if sh.height() != target:
                 item.setSizeHint(QtCore.QSize(sh.width(), target))
+
+    def _recompute_uniform_heights(self):
+        """Re-derive ``_uniform_item_height`` from embedded widgets' *current*
+        sizeHints, then resync.
+
+        A widget's sizeHint can change after it was first added — most
+        notably once the theme is applied, which shifts font metrics (a
+        checkbox measured 17px pre-theme, 14px after). The height captured at
+        add-time then leaves rows taller than their widget, and the
+        vertically-centered widget renders that surplus as dead space between
+        rows. Recomputing from live sizes (done at popup time) keeps rows
+        tight so ``item_spacing`` is the only deliberate gap.
+        """
+        total = self._model.rowCount()
+        last_tracked = total - self._action_row_count
+        tallest = 0
+        for r in range(last_tracked):
+            widget = self._widget_items.get(r)
+            if widget is not None:
+                tallest = max(tallest, widget.sizeHint().height())
+        if tallest > 0:
+            self._uniform_item_height = tallest
+            self._resync_uniform_heights()
+
+    @property
+    def item_spacing(self) -> int:
+        """Vertical gap, in pixels, between embedded-widget rows in the
+        dropdown (default ``1``). Rows are otherwise sized tightly to their
+        widget, so this is the only deliberate inter-row spacing. Setting it
+        re-applies row heights immediately."""
+        return self._item_spacing
+
+    @item_spacing.setter
+    def item_spacing(self, value: int) -> None:
+        value = max(0, int(value))
+        if value != self._item_spacing:
+            self._item_spacing = value
+            self._resync_uniform_heights()
 
     def _rebuild_index_maps(self) -> None:
         """After row removal remap stored widgets to their new rows."""
@@ -596,6 +645,10 @@ class WidgetComboBox(ComboBox):
     def showPopup(self) -> None:
         """Override to expand popup to widest widget and update overflow."""
         self._flush_pending_index_widgets()
+        # Re-derive row heights from the widgets' current sizeHints before the
+        # popup is laid out — they may have shrunk since add-time (theme/font
+        # changes), and a stale height shows as dead space between rows.
+        self._recompute_uniform_heights()
 
         # Let the base chain run first (ComboBox.showPopup sets
         # view.minimumWidth from sizeHintForColumn, then QComboBox.showPopup
