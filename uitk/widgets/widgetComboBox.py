@@ -181,6 +181,14 @@ class WidgetComboBox(ComboBox):
         # Persistent actions section (separator + action buttons at bottom of dropdown)
         self._actions_ns = _ActionsNamespace(self)
         self._action_row_count: int = 0
+        # Action buttons are laid out in this many columns, filled row-major.
+        # Default 1 = a single vertical stack (back-compat).
+        self._action_columns: int = 1
+        # (action, slot) pairs binding each action's ``changed`` signal to its
+        # button's enabled state. Tracked so ``_strip_actions_section`` can
+        # disconnect them and not accumulate dangling connections to deleted
+        # buttons across rebuilds.
+        self._action_button_conns: list = []
 
         # Create overflow indicator (initialized lazily on first popup)
         self._overflow_indicator = None
@@ -507,8 +515,56 @@ class WidgetComboBox(ComboBox):
         """
         return self._actions_ns
 
+    @property
+    def action_columns(self) -> int:
+        """Number of columns the persistent action buttons are arranged into.
+
+        Buttons fill row-major (left-to-right, then top-to-bottom). Default
+        ``1`` is a single vertical stack. Set to ``2`` to pack four actions
+        into a 2x2 grid, etc. Setting it re-lays out the actions section
+        immediately.
+        """
+        return self._action_columns
+
+    @action_columns.setter
+    def action_columns(self, value: int) -> None:
+        value = max(1, int(value))
+        if value != self._action_columns:
+            self._action_columns = value
+            self._rebuild_actions_section()
+
+    def _disconnect_action_buttons(self) -> None:
+        """Drop the action.changed→button bindings from the last rebuild."""
+        for action, slot in self._action_button_conns:
+            try:
+                action.changed.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass  # action deleted or already disconnected
+        self._action_button_conns.clear()
+
+    def _bind_button_to_action(
+        self, btn: QtWidgets.QPushButton, action: QtWidgets.QAction
+    ) -> None:
+        """Mirror *action*'s enabled state onto *btn*, now and on change.
+
+        Lets a caller ``action.setEnabled(False)`` to grey out the matching
+        button (e.g. disabling Rename/Delete for a read-only built-in preset)
+        without reaching into the popup's internal button widgets.
+        """
+        btn.setEnabled(action.isEnabled())
+
+        def _sync():
+            try:
+                btn.setEnabled(action.isEnabled())
+            except RuntimeError:
+                pass  # button deleted
+
+        action.changed.connect(_sync)
+        self._action_button_conns.append((action, _sync))
+
     def _strip_actions_section(self) -> None:
         """Remove existing action rows (separator + buttons) from the bottom."""
+        self._disconnect_action_buttons()
         if self._action_row_count == 0:
             return
 
@@ -531,9 +587,11 @@ class WidgetComboBox(ComboBox):
     def _rebuild_actions_section(self) -> None:
         """Rebuild the separator + action buttons at the bottom.
 
-        All action buttons are grouped inside a single container widget
-        with zero margins and left alignment, added as one model row
-        beneath the separator.
+        Buttons are grouped inside a single container widget (zero margins)
+        added as one model row beneath the separator. They are arranged in
+        :attr:`action_columns` columns, filled row-major, so e.g. four actions
+        with ``action_columns == 2`` form a tidy 2x2 grid. Each button mirrors
+        its QAction's enabled state via :meth:`_bind_button_to_action`.
         """
         self._strip_actions_section()
         if not self._actions_ns._actions:
@@ -556,35 +614,59 @@ class WidgetComboBox(ComboBox):
             " margin: 3px 6px;"
             "}"
         )
-        self._add_widget_item(sep, "", None, ascending=False, track_height=False)
+        sep_row = self._add_widget_item(
+            sep, "", None, ascending=False, track_height=False
+        )
+        # A NoFrame/HLine separator advertises an invalid sizeHint height, so
+        # _apply_uniform_height can't size its row and the view falls back to
+        # the delegate's font-based default — taller than the 7px line, which
+        # renders as dead space above and below it (and between the separator
+        # and the buttons). Pin the row to the separator's own fixed height.
+        sep_item = self._model.item(sep_row)
+        if sep_item is not None:
+            sep_item.setSizeHint(QtCore.QSize(0, sep.minimumHeight()))
 
-        # Build a single container holding all action buttons vertically.
+        # Build a single container holding all action buttons in a grid.
+        ncols = max(1, self._action_columns)
         container = QtWidgets.QWidget(self.view())
-        layout = QtWidgets.QVBoxLayout(container)
+        layout = QtWidgets.QGridLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setHorizontalSpacing(2)
+        layout.setVerticalSpacing(1)
 
         max_btn_width = 0
-        for action in self._actions_ns._actions:
+        for i, action in enumerate(self._actions_ns._actions):
             btn = QtWidgets.QPushButton(container)
             btn.setText(action.text())
             if action.icon() and not action.icon().isNull():
                 btn.setIcon(action.icon())
+            if action.toolTip():
+                btn.setToolTip(action.toolTip())
             btn.setDefault(False)
             btn.setAutoDefault(False)
             btn.setProperty("class", "combobox-action")
             btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
             btn.clicked.connect(action.trigger)
             btn.clicked.connect(self.hidePopup)
             btn.setStyleSheet("text-align: center;")
-            layout.addWidget(btn)
+            self._bind_button_to_action(btn, action)
+            layout.addWidget(btn, i // ncols, i % ncols)
             # Track widest button via sizeHint (reliable for QPushButton).
             w = btn.sizeHint().width()
             if w > max_btn_width:
                 max_btn_width = w
 
+        # Equal-width columns so the grid reads as aligned pairs.
+        for c in range(ncols):
+            layout.setColumnStretch(c, 1)
+
         # Force the container to adopt a valid size before it's embedded.
-        container.setMinimumWidth(max_btn_width)
+        container.setMinimumWidth(
+            max_btn_width * ncols + layout.horizontalSpacing() * (ncols - 1)
+        )
         container.adjustSize()
 
         row = self._add_widget_item(container, "", None, ascending=False, track_height=False)
@@ -1274,6 +1356,7 @@ class WidgetComboBox(ComboBox):
     # Overrides
     # ------------------------------------------------------------------
     def clear(self) -> None:  # type: ignore[override]
+        self._disconnect_action_buttons()
         for container in self._row_containers.values():
             if container:
                 container.deleteLater()

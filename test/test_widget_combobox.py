@@ -225,5 +225,93 @@ class TestWidgetComboBoxItemSpacing(QtBaseTestCase):
         self.assertEqual(combo._model.item(0).sizeHint().height(), real_h)
 
 
+class TestWidgetComboBoxActionsSection(QtBaseTestCase):
+    """The persistent actions section: grid layout, separator sizing, and
+    button↔action enabled-state mirroring."""
+
+    @staticmethod
+    def _action_buttons(combo):
+        """Return the QPushButtons in the actions container (last row)."""
+        last = combo._model.rowCount() - 1
+        container = combo._row_containers.get(last)
+        inner = container.property("_embedded_widget")
+        lay = inner.layout()
+        return [lay.itemAt(i).widget() for i in range(lay.count())]
+
+    def test_action_columns_grid_row_major(self):
+        """``action_columns = 2`` packs actions row-major into a 2-col grid."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from qtpy import QtWidgets as QW
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.action_columns = 2
+        combo.actions.add(
+            {"A": lambda: None, "B": lambda: None,
+             "C": lambda: None, "D": lambda: None}
+        )
+
+        last = combo._model.rowCount() - 1
+        lay = combo._row_containers.get(last).property("_embedded_widget").layout()
+        self.assertIsInstance(lay, QW.QGridLayout)
+        pos = {
+            lay.itemAt(i).widget().text(): lay.getItemPosition(i)[:2]
+            for i in range(lay.count())
+        }
+        self.assertEqual(pos["A"], (0, 0))
+        self.assertEqual(pos["B"], (0, 1))
+        self.assertEqual(pos["C"], (1, 0))
+        self.assertEqual(pos["D"], (1, 1))
+
+    def test_separator_row_height_pinned_to_separator(self):
+        """Regression: the separator row must be sized to the separator widget,
+        not the delegate's (font-based) default — otherwise the surplus renders
+        as dead space between the separator and the action buttons."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.actions.add("Only", lambda: None)
+
+        sep_row = combo._model.rowCount() - 2  # separator precedes the buttons
+        sep_item = combo._model.item(sep_row)
+        sep_widget = combo._row_containers.get(sep_row).property("_embedded_widget")
+
+        self.assertTrue(
+            sep_item.sizeHint().isValid(),
+            "separator row left with an invalid sizeHint (the dead-space bug)",
+        )
+        self.assertEqual(
+            sep_item.sizeHint().height(), sep_widget.minimumHeight(),
+            "separator row height must match the separator widget's own height",
+        )
+
+    def test_button_mirrors_action_enabled_state(self):
+        """Toggling ``action.setEnabled`` greys out / restores its button."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        action = combo.actions.add("Toggle", lambda: None)
+
+        (btn,) = self._action_buttons(combo)
+        self.assertTrue(btn.isEnabled())
+
+        action.setEnabled(False)
+        self.assertFalse(btn.isEnabled(), "button did not follow action.setEnabled(False)")
+
+        action.setEnabled(True)
+        self.assertTrue(btn.isEnabled(), "button did not follow action.setEnabled(True)")
+
+    def test_rebuild_does_not_accumulate_action_connections(self):
+        """Repeated rebuilds (e.g. preset refresh) must not leave dangling
+        action.changed→button bindings connected to deleted buttons."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.actions.add("X", lambda: None)
+        for _ in range(5):
+            combo._rebuild_actions_section()
+        # One live binding per action after the latest rebuild.
+        self.assertEqual(len(combo._action_button_conns), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

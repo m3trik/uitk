@@ -592,6 +592,63 @@ class TestBuiltinTier(BaseTestCase):
         self.assertTrue(self.mgr.delete("studio"))
         self.assertEqual(self.mgr.source("studio"), "builtin")
 
+    # ------------------------------------------------------------------
+    # wire_combo: built-in handling in the GUI selector
+    # ------------------------------------------------------------------
+    def _wire_combo(self):
+        """Wire a real WidgetComboBox to ``self.mgr`` and return it.
+
+        Adds a user preset ("custom") alongside the shipped built-in
+        ("studio") so both tiers are present in the combo.
+        """
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        self.mgr.save("custom")  # a user preset to contrast with the built-in
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        return combo
+
+    @staticmethod
+    def _action_state(combo, label):
+        """Enabled state of the actions-section button named *label*."""
+        last = combo._model.rowCount() - 1
+        inner = combo._row_containers.get(last).property("_embedded_widget")
+        lay = inner.layout()
+        for i in range(lay.count()):
+            btn = lay.itemAt(i).widget()
+            if btn.text() == label:
+                return btn.isEnabled()
+        raise AssertionError(f"no action button {label!r}")
+
+    def test_wire_combo_italicises_builtins(self):
+        combo = self._wire_combo()
+        items = {
+            combo._model.item(i).text(): combo._model.item(i)
+            for i in range(combo._model.rowCount() - combo._action_row_count)
+        }
+        # Built-in shown italic; user preset is not. Text stays the raw name in
+        # both cases so load/rename/delete still resolve.
+        self.assertTrue(items["studio"].font().italic(), "built-in not italicised")
+        self.assertFalse(items["custom"].font().italic(), "user preset wrongly italicised")
+        # Marking must be font-only — no item icons (they shifted the collapsed
+        # display's text and pushed the dropdown arrow into the name).
+        self.assertTrue(items["studio"].icon().isNull(), "built-in should carry no icon")
+        self.assertTrue(items["custom"].icon().isNull(), "user preset should carry no icon")
+
+    def test_wire_combo_disables_rename_delete_for_builtin(self):
+        combo = self._wire_combo()
+
+        combo.setCurrentIndex(combo.findText("studio"))  # built-in
+        self.assertFalse(self._action_state(combo, "Rename"))
+        self.assertFalse(self._action_state(combo, "Delete"))
+        self.assertTrue(self._action_state(combo, "Save"))  # override allowed
+        self.assertTrue(self._action_state(combo, "Open"))
+
+        combo.setCurrentIndex(combo.findText("custom"))  # user
+        self.assertTrue(self._action_state(combo, "Rename"))
+        self.assertTrue(self._action_state(combo, "Delete"))
+
 
 class TestSemanticPresetMode(BaseTestCase):
     """``value_provider`` / ``value_applier`` mode: presets keyed by semantic

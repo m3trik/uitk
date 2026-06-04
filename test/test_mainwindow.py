@@ -509,12 +509,16 @@ class TestMainWindowGeometry(QtBaseTestCase):
 
         # Now open a new window with the same name but persistence disabled.
         # It must NOT shrink to 200x100.
+        # fit_to_content_on_show is disabled here so the pre-show resize below
+        # survives: this test isolates the saved-geometry restore path, which is
+        # orthogonal to the on-show content fit (that snaps height to content).
         opted_out = self.track_widget(
             MainWindow(
                 name,
                 self.sb,
                 central_widget=QtWidgets.QLabel("content sized larger than 200x100"),
                 restore_window_size=False,
+                fit_to_content_on_show=False,
             )
         )
         opted_out.resize(640, 480)

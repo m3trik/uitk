@@ -820,7 +820,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MainWindow.adjust_height_by(self, delta: int) -> None` — Apply a signed pixel delta to the window's height.
   - `MainWindow.fit_height_to_content(self) -> None` — Snap the window's height to its layout's natural content size.
   - `MainWindow.save_window_geometry(self) -> None` — Save the current window geometry (size and position) to settings.
-  - `MainWindow.restore_window_geometry(self) -> None` — Restore the window geometry (size and position) from settings.
+  - `MainWindow.restore_window_geometry(self) -> bool` — Restore the window geometry (size and position) from settings.
   - `MainWindow.clear_saved_geometry(self) -> None` — Clear any saved window geometry from settings.
   - `MainWindow.setVisible(self, visible: bool) -> None` — Override setVisible to respect pin state when hiding.
   - `MainWindow.show(self, pos=None, app_exec=False) -> None` — Show the MainWindow.
@@ -1071,9 +1071,9 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L775) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L792) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L920) — Root directory under which every relative ``preset_dir`` is resolved.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L829) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L846) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L974) — Root directory under which every relative ``preset_dir`` is resolved.
 - **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L16)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -1991,6 +1991,8 @@ Scrollable rich-text viewer window.
   - `WidgetComboBox.item_spacing(self) -> int` *(property)* — Vertical gap, in pixels, between embedded-widget rows in the
   - `WidgetComboBox.item_spacing(self, value: int) -> None`
   - `WidgetComboBox.actions(self) -> _ActionsNamespace` *(property)* — Namespace for managing persistent action buttons at the bottom of
+  - `WidgetComboBox.action_columns(self) -> int` *(property)* — Number of columns the persistent action buttons are arranged into.
+  - `WidgetComboBox.action_columns(self, value: int) -> None`
   - `WidgetComboBox.showPopup(self) -> None` — Override to expand popup to widest widget and update overflow.
   - `WidgetComboBox.hidePopup(self) -> None` — Override to hide overflow indicator when popup is hidden.
   - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance arrow drawn after the text.

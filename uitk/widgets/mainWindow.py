@@ -40,6 +40,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         restore_window_size: bool = True,
         add_footer: bool = False,
         ensure_on_screen: bool = True,
+        fit_to_content_on_show: bool = True,
         default_slot_timeout: Optional[float] = None,
         settings: Optional[SettingsManager] = None,
         **kwargs,
@@ -60,6 +61,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 "footer" in the central widget) is always adopted regardless of
                 this flag. Defaults to False — embed the Footer in the .ui file.
             ensure_on_screen: Whether to ensure the window is fully on screen when shown. Defaults to True.
+            fit_to_content_on_show: On first show, snap the window height to its
+                content so a footer (or trailing spacer) doesn't leave a deadspace
+                gap above it. Skipped when a saved window size was restored, so it
+                never overrides a size the user intentionally set. Defaults to True.
             default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
             settings: Optional SettingsManager to use. Defaults to a new instance.
             **kwargs: Additional keyword arguments
@@ -91,6 +96,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         self.has_tags = lambda tags=None: self.sb.has_tags(self, tags)
         self.is_initialized = False
         self.ensure_on_screen = ensure_on_screen
+        self.fit_to_content_on_show = fit_to_content_on_show
         self.restore_window_size = restore_window_size
         self.add_footer = add_footer
         self.default_slot_timeout = default_slot_timeout
@@ -631,10 +637,17 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             f"[save_window_geometry]: Saved window geometry for {self.objectName()}"
         )
 
-    def restore_window_geometry(self) -> None:
-        """Restore the window geometry (size and position) from settings."""
+    def restore_window_geometry(self) -> bool:
+        """Restore the window geometry (size and position) from settings.
+
+        Returns:
+            bool: True if a saved, non-degenerate geometry was applied; False if
+                none was found or it was rejected (in which case ``adjustSize`` was
+                used as a fallback). Callers use this to decide whether a fit-to-
+                content pass would clobber a size the user intentionally set.
+        """
         if not self.restore_window_size:
-            return
+            return False
 
         # Get QByteArray directly using the clean API
         geometry = self.settings.getByteArray("window_geometry")
@@ -652,6 +665,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                         self.logger.debug(
                             f"[restore_window_geometry]: Restored window geometry for {self.objectName()}"
                         )
+                        return True
                 else:
                     self.logger.debug(
                         f"[restore_window_geometry]: Failed to restore window geometry for {self.objectName()}"
@@ -665,6 +679,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 f"[restore_window_geometry]: No valid geometry data found for {self.objectName()}, using adjustSize"
             )
             self.adjustSize()
+        return False
 
     def clear_saved_geometry(self) -> None:
         """Clear any saved window geometry from settings."""
@@ -766,11 +781,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 if callable(enforce):
                     enforce(suppress_resize=True)
 
+            restored_geometry = False
             if self.restore_window_size:
-                self.restore_window_geometry()
-
-            if self.ensure_on_screen:
-                self._ensure_on_screen()
+                restored_geometry = self.restore_window_geometry()
 
             self.logger.debug(f"[showEvent]: Registering children on first show.")
             try:
@@ -778,6 +791,17 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 self.logger.debug(f"[showEvent]: Registering children done.")
             except Exception as e:
                 self.logger.debug(f"[showEvent]: Error during register_children: {e}")
+
+            # Snap the window height to its content on first show so a footer
+            # (or trailing expanding spacer) doesn't leave a deadspace gap above
+            # it. Skipped when a saved size was restored — that's intentional and
+            # fitting would discard it. Runs before _ensure_on_screen so the
+            # repositioning accounts for the final height.
+            if self.fit_to_content_on_show and not restored_geometry:
+                self.fit_height_to_content()
+
+            if self.ensure_on_screen:
+                self._ensure_on_screen()
 
         self.trigger_deferred()
         self.activateWindow()

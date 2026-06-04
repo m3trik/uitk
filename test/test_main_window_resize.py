@@ -405,5 +405,93 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
         self.assertEqual(other_before, other_after)
 
 
+class TestFitToContentOnShow(QtBaseTestCase):
+    """First-show fit that removes the deadspace gap above a footer/spacer.
+
+    The wiring lives in ``MainWindow.showEvent``: on the first show it calls
+    ``fit_height_to_content`` unless a saved window size was restored (which the
+    user set intentionally) or the feature was opted out via the ctor flag.
+    """
+
+    def _spy_window(self, central, **kwargs):
+        """Build a window whose ``fit_height_to_content`` records its calls."""
+        win = self.track_widget(
+            MainWindow(
+                name="test_fit_on_show",
+                switchboard_instance=_BareSwitchboard(),
+                central_widget=central,
+                ensure_on_screen=False,
+                **kwargs,
+            )
+        )
+        calls = []
+        win.fit_height_to_content = lambda: calls.append(1)
+        return win, calls
+
+    def test_fit_runs_on_first_show_by_default(self):
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        win, calls = self._spy_window(central, restore_window_size=False)
+        win.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(calls, [1], "Fit should run exactly once on first show")
+
+    def test_fit_skipped_when_disabled(self):
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        win, calls = self._spy_window(
+            central, restore_window_size=False, fit_to_content_on_show=False
+        )
+        win.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(calls, [], "Fit must not run when opted out")
+
+    def test_fit_skipped_when_saved_geometry_restored(self):
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        win, calls = self._spy_window(central, restore_window_size=True)
+        # Simulate a successfully restored user size.
+        win.restore_window_geometry = lambda: True
+        win.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(
+            calls, [], "Fit must not clobber a restored user-set size"
+        )
+
+    def test_fit_runs_only_on_first_show(self):
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        win, calls = self._spy_window(central, restore_window_size=False)
+        win.show()
+        QtWidgets.QApplication.processEvents()
+        win.hide()
+        QtWidgets.QApplication.processEvents()
+        win.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(calls, [1], "Fit is a first-show-only concern")
+
+    def test_deadspace_collapsed_on_show(self):
+        """End-to-end: a footer + trailing Expanding spacer leaves no gap.
+
+        The real fit (not stubbed) must leave the shown window content-tight,
+        i.e. its height equals the minimum size hint — the Expanding spacer
+        that would otherwise pad the area above the footer is collapsed.
+        """
+        central, _groups = _build_tentacle_like_central([
+            ("transform", [19] * 4),
+            ("align", [19]),
+        ])
+        win = self.track_widget(_build_window(central))  # restore off, fit on
+        win.show()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents()
+
+        self.assertLessEqual(
+            abs(win.height() - win.minimumSizeHint().height()), 2,
+            f"Window should be content-tight on show (no deadspace): "
+            f"height={win.height()}, minHint={win.minimumSizeHint().height()}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
