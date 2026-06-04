@@ -637,9 +637,16 @@ class PresetManager(ptk.LoggingMixin):
     def wire_combo(self, combo, on_loaded=None) -> None:
         """Wire a ``WidgetComboBox`` as a fully-functional preset selector.
 
-        Adds **Save / Rename / Delete / Open Folder** actions to the
-        combo's action section, populates it with existing presets, and
-        connects selection changes to ``load()``.
+        Adds **Rename / Delete / Open / Save** actions to the combo's action
+        section (arranged as a 2x2 grid), populates it with existing presets,
+        and connects selection changes to ``load()``.
+
+        Built-in (shipped, read-only) presets are shown italicised in the list,
+        and **Rename / Delete are disabled** while one is selected — they can't
+        act on a read-only preset, so greying them out is clearer than letting a
+        click silently no-op. **Save** stays enabled (it writes a user preset
+        that shadows the built-in — the "duplicate to edit" flow), as does
+        **Open**.
 
         The combo shows the *current preset name* as its selected item.
         When no presets exist the combo is empty and displays
@@ -652,6 +659,24 @@ class PresetManager(ptk.LoggingMixin):
                 signals are left unblocked so slot handlers fire naturally.
         """
         mgr = self
+
+        def mark_builtins(names):
+            """Italicise read-only built-in presets (+ a read-only tooltip).
+
+            Sets the model item's font/tooltip rather than its text, so
+            ``itemText`` stays the raw preset name for load/rename/delete. The
+            italic is via ``Qt.FontRole`` (dropdown list only) — the collapsed
+            display keeps the widget font, so the dropdown arrow is unaffected.
+            """
+            italic = QtGui.QFont(combo.font())
+            italic.setItalic(True)
+            for i, nm in enumerate(names):
+                if mgr.source(nm) != "builtin":
+                    continue
+                item = combo._model.item(i)
+                if item is not None:
+                    item.setFont(italic)
+                    item.setToolTip(f"{nm} (built-in, read-only)")
 
         def refresh(select_name: Optional[str] = None):
             """Repopulate the combo with current preset names.
@@ -666,6 +691,7 @@ class PresetManager(ptk.LoggingMixin):
                 combo.clear()
                 if names:
                     combo.addItems(names)
+                    mark_builtins(names)
                     if select_name:
                         idx = combo.findText(select_name)
                         if idx >= 0:
@@ -680,10 +706,25 @@ class PresetManager(ptk.LoggingMixin):
             finally:
                 combo.blockSignals(False)
             # clear() destroys all model rows including the action section;
-            # rebuild so Save/Rename/Delete/Open Folder appear at the bottom.
+            # rebuild so the action buttons reappear at the bottom.
             combo._rebuild_actions_section()
+            update_action_states()
+
+        def update_action_states():
+            """Enable Rename/Delete only for the *user* preset that's selected.
+
+            Built-ins are read-only and "no selection" has nothing to act on,
+            so both are disabled in those cases. The bound buttons follow the
+            action state automatically (see ``_bind_button_to_action``).
+            """
+            idx = combo.currentIndex()
+            name = combo.itemText(idx) if idx >= 0 else ""
+            is_user = bool(name) and mgr.source(name) == "user"
+            rename_action.setEnabled(is_user)
+            delete_action.setEnabled(is_user)
 
         def on_selected(idx):
+            update_action_states()
             if idx < 0:
                 return
             name = combo.itemText(idx)
@@ -740,19 +781,32 @@ class PresetManager(ptk.LoggingMixin):
         self._excluded_widgets.add(combo)
         self._refresh_combo = refresh
 
+        # Two columns -> Rename | Delete on the first row, Open | Save on the
+        # second (actions fill row-major). wire_combo is WidgetComboBox-only
+        # (it also drives ._model / ._rebuild_actions_section below).
+        combo.action_columns = 2
+
         actions = combo.actions.add(
             {
-                "Save": on_save,
                 "Rename": on_rename,
                 "Delete": on_delete,
-                "Open Folder": on_open_folder,
+                "Open": on_open_folder,
+                "Save": on_save,
             }
         )
-        # Apply SVG icons (save / edit / trash / folder).
+        rename_action, delete_action, open_action, save_action = actions
+        for action, tip in (
+            (rename_action, "Rename the selected user preset."),
+            (delete_action, "Delete the selected user preset."),
+            (open_action, "Open the preset folder in the file explorer."),
+            (save_action, "Save the current settings as a preset."),
+        ):
+            action.setToolTip(tip)
+        # Apply SVG icons (edit / trash / folder / save) matching the order above.
         try:
             from uitk.widgets.mixins.icon_manager import IconManager
 
-            for action, icon_name in zip(actions, ("save", "edit", "trash", "folder")):
+            for action, icon_name in zip(actions, ("edit", "trash", "folder", "save")):
                 action.setIcon(IconManager.get(icon_name, size=(14, 14)))
             combo._rebuild_actions_section()
         except Exception:

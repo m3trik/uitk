@@ -101,8 +101,8 @@ _Generated: 2026-06-04_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/tableWidget.py`](#widgets--tableWidget)
+- [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -820,7 +820,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MainWindow.adjust_height_by(self, delta: int) -> None` — Apply a signed pixel delta to the window's height.
   - `MainWindow.fit_height_to_content(self) -> None` — Snap the window's height to its layout's natural content size.
   - `MainWindow.save_window_geometry(self) -> None` — Save the current window geometry (size and position) to settings.
-  - `MainWindow.restore_window_geometry(self) -> None` — Restore the window geometry (size and position) from settings.
+  - `MainWindow.restore_window_geometry(self) -> bool` — Restore the window geometry (size and position) from settings.
   - `MainWindow.clear_saved_geometry(self) -> None` — Clear any saved window geometry from settings.
   - `MainWindow.setVisible(self, visible: bool) -> None` — Override setVisible to respect pin state when hiding.
   - `MainWindow.show(self, pos=None, app_exec=False) -> None` — Show the MainWindow.
@@ -1071,9 +1071,9 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L775) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L792) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L920) — Root directory under which every relative ``preset_dir`` is resolved.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L829) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L846) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L974) — Root directory under which every relative ``preset_dir`` is resolved.
 - **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L16)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -1810,17 +1810,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
 
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
-
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
@@ -1884,6 +1873,17 @@ Reusable action-column management for :class:`TableWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
+
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`
@@ -1991,6 +1991,8 @@ Scrollable rich-text viewer window.
   - `WidgetComboBox.item_spacing(self) -> int` *(property)* — Vertical gap, in pixels, between embedded-widget rows in the
   - `WidgetComboBox.item_spacing(self, value: int) -> None`
   - `WidgetComboBox.actions(self) -> _ActionsNamespace` *(property)* — Namespace for managing persistent action buttons at the bottom of
+  - `WidgetComboBox.action_columns(self) -> int` *(property)* — Number of columns the persistent action buttons are arranged into.
+  - `WidgetComboBox.action_columns(self, value: int) -> None`
   - `WidgetComboBox.showPopup(self) -> None` — Override to expand popup to widest widget and update overflow.
   - `WidgetComboBox.hidePopup(self) -> None` — Override to hide overflow indicator when popup is hidden.
   - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance arrow drawn after the text.
