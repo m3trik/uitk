@@ -634,8 +634,25 @@ class MarkingMenu(
 
         if anchor is None:
             anchor = QtGui.QCursor.pos()
-        local_pos = self.mapFromGlobal(anchor)
-        widget.move(local_pos - widget.rect().center())
+        # Center the widget on the anchor, then clamp it fully within the
+        # available geometry of the screen the anchor lands on. Without this a
+        # menu opened with the cursor near a screen edge (or near a monitor
+        # boundary on multi-monitor setups) spills off-screen — its center sits
+        # at the cursor, so up to half the menu can fall outside the display.
+        global_top_left = anchor - widget.rect().center()
+        screen = QtWidgets.QApplication.screenAt(
+            anchor
+        ) or QtWidgets.QApplication.primaryScreen()
+        if screen is not None:
+            ag = screen.availableGeometry()
+            # max(ag.left(), ...) guards the degenerate case of a widget wider
+            # or taller than the screen (clamp to the top-left corner).
+            x = min(global_top_left.x(), ag.right() - widget.width() + 1)
+            x = max(ag.left(), x)
+            y = min(global_top_left.y(), ag.bottom() - widget.height() + 1)
+            y = max(ag.top(), y)
+            global_top_left = QtCore.QPoint(x, y)
+        widget.move(self.mapFromGlobal(global_top_left))
 
         # Update mouse tracking cache for the new widget
         self.mouse_tracking.update_child_widgets()

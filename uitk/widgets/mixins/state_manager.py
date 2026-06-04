@@ -180,9 +180,19 @@ class StateManager(ptk.LoggingMixin):
         try:
             value = self._get_settings(widget).value(key)
             if value is not None:
-                try:
-                    parsed_value = json.loads(value)
-                except (TypeError, json.JSONDecodeError):
+                # Only JSON-decode raw strings. A SettingsManager (what
+                # MainWindow actually passes here, despite the QSettings type
+                # hint) has *already* decoded the value, so a second
+                # json.loads on the decoded result is both redundant and
+                # lossy — e.g. decoding the bool ``True`` would raise and
+                # silently fall back. Guarding on ``str`` keeps the raw
+                # QSettings path working without double-decoding.
+                if isinstance(value, str):
+                    try:
+                        parsed_value = json.loads(value)
+                    except json.JSONDecodeError:
+                        parsed_value = value
+                else:
                     parsed_value = value
                 with self.suppress_save():
                     self.apply(widget, parsed_value)

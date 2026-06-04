@@ -74,6 +74,14 @@ class ValueManager:
                     # Fallback for invalid numeric values
                     widget.setValue(widget.minimum())
 
+            elif isinstance(widget, QtWidgets.QAbstractButton) and widget.isCheckable():
+                # Checkable buttons (QCheckBox, QRadioButton, checkable
+                # QPushButton) inherit setText from QAbstractButton, so without
+                # this branch they would match the setText branch below and have
+                # their LABEL set to the value instead of their checked state.
+                # Must precede setText. (Mirrors set_value_by_signal's "toggled".)
+                ValueManager._set_boolean_value(widget, value)
+
             elif hasattr(widget, "setText") and callable(widget.setText):
                 # Text-capable widgets (QLineEdit, QLabel, etc.)
                 # Skip icon-only option buttons that should never display text
@@ -115,11 +123,11 @@ class ValueManager:
                     widget.setCurrentIndex(value)
 
             elif hasattr(widget, "setChecked") and callable(widget.setChecked):
-                # QCheckBox, QRadioButton, checkable QPushButton
-                if isinstance(value, str):
-                    widget.setChecked(value.lower() in ["true", "1", "yes", "on"])
-                else:
-                    widget.setChecked(bool(value))
+                # Checkable non-button widgets (e.g. checkable QGroupBox).
+                # Checkable QAbstractButtons are handled by the earlier branch
+                # (before setText); this catches setChecked holders that aren't
+                # QAbstractButtons and so have no setText to shadow them.
+                ValueManager._set_boolean_value(widget, value)
 
             elif hasattr(widget, "setCheckState") and callable(widget.setCheckState):
                 # QCheckBox with tri-state
