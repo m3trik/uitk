@@ -108,7 +108,22 @@ class QtBaseTestCase(BaseTestCase):
 
     def tearDown(self):
         """Clean up widgets created during the test."""
+        from qtpy import QtWidgets
+
         super().tearDown()
+        # Release any lingering mouse grab so it can't leak into the next test.
+        # A test (or production code under test) that grabs the mouse and is
+        # torn down without releasing leaves a dangling grabber — frequently on
+        # a widget that's about to be deleted below — which non-deterministically
+        # corrupts grab/hover/handoff assertions in whichever test happens to run
+        # next. Releasing here, for every Qt test, fixes that class of
+        # order-dependent flake at its root (rather than per-class tearDowns).
+        grabber = QtWidgets.QWidget.mouseGrabber()
+        if grabber is not None:
+            try:
+                grabber.releaseMouse()
+            except RuntimeError:  # grabber already mid-destruction
+                pass
         if self._widgets_to_cleanup:
             for widget in self._widgets_to_cleanup:
                 try:

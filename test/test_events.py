@@ -618,14 +618,8 @@ class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
         self.tracker = MouseTracking(self.parent, auto_update=False)
         self.tracker.update_child_widgets()
 
-    def tearDown(self):
-        g = QtWidgets.QWidget.mouseGrabber()
-        if g is not None:
-            try:
-                g.releaseMouse()
-            except RuntimeError:
-                pass
-        super().tearDown()
+    # Mouse-grab release on teardown is handled by QtBaseTestCase.tearDown,
+    # which releases any lingering grabber after every Qt test.
 
     def _move(self, target, cursor_pos):
         """Send a MouseMove with the mocked cursor at ``cursor_pos``."""
