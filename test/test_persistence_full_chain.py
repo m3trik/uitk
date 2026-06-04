@@ -576,5 +576,59 @@ class TestSlotMethodAndInitCoexist(_PersistBase):
         )
 
 
+# ===========================================================================
+# Scenario 10: StateManager does not double-decode values
+# ===========================================================================
+
+class TestStateManagerNoDoubleDecode(_PersistBase):
+    """``MainWindow`` passes a ``SettingsManager`` (not a raw ``QSettings``)
+    to ``StateManager``. ``SettingsManager.value`` already JSON-decodes, so
+    ``StateManager.load`` must NOT decode a second time. This pins the
+    regression where the boolean ``True`` coming back from the manager hit a
+    second ``json.loads`` (raising, then silently falling back).
+    """
+
+    def _state_and_settings(self):
+        sm = SettingsManager(
+            org=self.TEST_ORG, app=self.TEST_APP, namespace="switchboard"
+        )
+        branch = sm.branch("edit")
+        return StateManager(branch), branch
+
+    def _checkbox(self, name="chk004"):
+        chk = QtWidgets.QCheckBox()
+        chk.setObjectName(name)
+        chk.restore_state = True
+        chk.derived_type = QtWidgets.QCheckBox
+        chk.default_signals = lambda: "toggled"
+        self.track_widget(chk)
+        return chk
+
+    def test_bool_round_trip_via_settings_manager(self):
+        state, branch = self._state_and_settings()
+        chk = self._checkbox()
+        chk.setChecked(True)
+        state.save(chk, True)
+        branch.settings.sync()
+
+        chk2 = self._checkbox()
+        self.assertFalse(chk2.isChecked())
+        self._state_and_settings()[0].load(chk2)
+        self.assertTrue(
+            chk2.isChecked(),
+            "bool True did not survive the SettingsManager round-trip "
+            "(double-decode regression)",
+        )
+
+    def test_raw_string_true_still_decodes(self):
+        # The raw-QSettings path (value is a str) must still be decoded.
+        state, branch = self._state_and_settings()
+        branch.settings.setValue("switchboard/edit/chk004/toggled", "true")
+        branch.settings.sync()
+        chk = self._checkbox()
+        state.load(chk)
+        self.assertTrue(chk.isChecked())
+
+
 if __name__ == "__main__":
     unittest.main()
