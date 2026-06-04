@@ -9,6 +9,7 @@ press/release combinations to ensure no flicker, no stuck states, and no
 """
 import logging
 import unittest
+from unittest import mock
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -286,6 +287,22 @@ class MarkingMenuInputScenarios(QtBaseTestCase):
         # before self.mm exists, isolates the test without touching its own
         # not-yet-created state.
         self._drain_qt_events()
+
+        # mouseReleaseEvent resolves the widget under the *real* OS cursor via
+        # QApplication.widgetAt(QCursor.pos()); if that lands on an unrelated
+        # widget it returns early WITHOUT _sync_menu_to_state, so the menu never
+        # falls back to the default. With windows overlapping at their default
+        # positions and the cursor uncontrolled, widgetAt's result (and the
+        # raise/activate z-order race behind it) is non-deterministic — the
+        # source of test_08's intermittent 'main' != 'hud'. None of these tests
+        # exercise the click-dispatch path; pin widgetAt to None so every
+        # release deterministically takes the canonical "cursor over nothing →
+        # sync to new input state" branch.
+        widget_at_patch = mock.patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=None
+        )
+        widget_at_patch.start()
+        self.addCleanup(widget_at_patch.stop)
 
         self.parent = QtWidgets.QWidget()
         self.parent.resize(400, 400)

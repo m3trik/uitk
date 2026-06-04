@@ -197,6 +197,24 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
         self.mm.sb.register(self.main)
         QtWidgets.QApplication.processEvents()
 
+        # Anchor every menu at the center of the *actual* test screen, sized to
+        # comfortably fit, so MarkingMenu.setCurrentWidget's on-screen clamp is a
+        # guaranteed no-op. That keeps these assertions purely about *anchoring*
+        # (cursor vs start_pos, drift-free across chords) and independent of the
+        # screen size: CI runs the Qt 'offscreen' platform whose default screen
+        # (~640x480) is smaller than the default 600x600 menu, so a hard-coded
+        # off-center anchor would trip the clamp and mask the very drift bug
+        # these tests guard. With a centered, screen-fitting menu, a wrongly-used
+        # jittered cursor still yields a different (unclamped) position, so the
+        # tests stay sharp.
+        screen = self.mm.screen() or QtWidgets.QApplication.primaryScreen()
+        ag = screen.availableGeometry()
+        self.safe_anchor = ag.center()
+        menu_w, menu_h = ag.width() // 3, ag.height() // 3
+        for stub in (self.hud, self.cameras, self.main):
+            stub.resize(menu_w, menu_h)
+        QtWidgets.QApplication.processEvents()
+
     def _initial_activation(self, cursor):
         """Simulate F12 press: cursor at given global position, show hud."""
         self._fake_cursor = QtCore.QPoint(cursor)
@@ -215,7 +233,7 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
 
     def test_initial_show_anchors_at_cursor(self):
         """First activation must anchor at the cursor (sets start_pos)."""
-        anchor = QtCore.QPoint(900, 500)
+        anchor = self.safe_anchor
         self._initial_activation(anchor)
 
         expected_pos = self.mm.mapFromGlobal(anchor) - self.hud.rect().center()
@@ -224,7 +242,7 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
 
     def test_chord_transition_anchors_at_start_pos_not_cursor(self):
         """LMB press during gesture must position cameras at start_pos."""
-        anchor = QtCore.QPoint(900, 500)
+        anchor = self.safe_anchor
         self._initial_activation(anchor)
 
         # Simulate cursor jitter on LMB press.
@@ -242,7 +260,7 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
     def test_no_drift_over_many_chord_transitions(self):
         """Bouncing between two startmenus must never shift their position
         even with consistent cursor drift on each press."""
-        anchor = QtCore.QPoint(900, 500)
+        anchor = self.safe_anchor
         self._initial_activation(anchor)
 
         positions_main = []
@@ -272,13 +290,14 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
     def test_path_clear_starts_fresh_gesture(self):
         """If the path was cleared (e.g. menu hidden), the next show must
         start a new gesture at the new cursor (not the stale start_pos)."""
-        first = QtCore.QPoint(900, 500)
+        first = self.safe_anchor
         self._initial_activation(first)
         first_start = self.mm.overlay.path.start_pos
 
-        # Simulate menu hide → path cleared, then a new activation.
+        # Simulate menu hide → path cleared, then a new activation at a
+        # distinct (still on-screen) position.
         self.mm.overlay.path.clear()
-        second = QtCore.QPoint(600, 700)
+        second = self.safe_anchor + QtCore.QPoint(-40, 40)
         self._initial_activation(second)
 
         self.assertNotEqual(first_start, self.mm.overlay.path.start_pos)
