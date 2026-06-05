@@ -119,6 +119,13 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     # Internal: not exposed via ``themes`` / ``get_variables`` / ``set_variable``.
     _tint_sources = ("BUTTON_HOVER", "BUTTON_CHECKED")
     _derived_token_suffixes = ("_TINT",)
+    # Derived tokens with explicit (non-suffix) names — kept separate because
+    # their names share suffixes (``_BACKGROUND``) with real exposed tokens.
+    _derived_token_names = ("DISABLED_CHECKED_BACKGROUND",)
+    # Disabled-but-checked background: the disabled background nudged a little
+    # toward the checked accent, so a checked toggle that's been disabled reads
+    # as *disabled with a hint of checked* rather than fully active.
+    _disabled_checked_mix = 0.22
     _color_pat = re.compile(
         r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)|"
         r"#([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?"
@@ -131,7 +138,9 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         Used to reject user overrides on internal tokens — those would be
         silently overwritten on the next assembly pass.
         """
-        return any(name.endswith(s) for s in cls._derived_token_suffixes)
+        return name in cls._derived_token_names or any(
+            name.endswith(s) for s in cls._derived_token_suffixes
+        )
 
     @classmethod
     def _tint(cls, color_str: str, mix: float = 0.12) -> str:
@@ -142,36 +151,59 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         and the alpha channel. Returns ``color_str`` unchanged if the
         format isn't recognized.
         """
-        m = cls._color_pat.fullmatch(color_str.strip())
-        if not m:
-            return color_str
-        if m.group(1) is not None:
-            r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            a = m.group(4)
-            r = min(255, round(r + (255 - r) * mix))
-            g = min(255, round(g + (255 - g) * mix))
-            b = min(255, round(b + (255 - b) * mix))
-            if a is not None:
-                return f"rgba({r},{g},{b},{a})"
-            return f"rgb({r},{g},{b})"
-        hex6, hex_a = m.group(5), m.group(6)
-        r = min(255, round(int(hex6[0:2], 16) + (255 - int(hex6[0:2], 16)) * mix))
-        g = min(255, round(int(hex6[2:4], 16) + (255 - int(hex6[2:4], 16)) * mix))
-        b = min(255, round(int(hex6[4:6], 16) + (255 - int(hex6[4:6], 16)) * mix))
-        return f"#{r:02x}{g:02x}{b:02x}{hex_a or ''}"
+        return cls._blend(color_str, "rgb(255,255,255)", mix)
+
+    @classmethod
+    def _blend(cls, base_str: str, accent_str: str, mix: float = 0.5) -> str:
+        """Mix ``base_str`` toward ``accent_str`` by ``mix`` (0=base, 1=accent).
+
+        Linear RGB interpolation; the result keeps ``base``'s format and alpha.
+        Returns ``base_str`` unchanged if either color can't be parsed.
+        """
+
+        def parse(s: str):
+            m = cls._color_pat.fullmatch(s.strip())
+            if not m:
+                return None
+            if m.group(1) is not None:
+                return int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4), "rgb"
+            h6, ha = m.group(5), m.group(6)
+            return int(h6[0:2], 16), int(h6[2:4], 16), int(h6[4:6], 16), ha, "hex"
+
+        base, accent = parse(base_str), parse(accent_str)
+        if not base or not accent:
+            return base_str
+        r = round(base[0] + (accent[0] - base[0]) * mix)
+        g = round(base[1] + (accent[1] - base[1]) * mix)
+        b = round(base[2] + (accent[2] - base[2]) * mix)
+        if base[4] == "rgb":
+            return (
+                f"rgba({r},{g},{b},{base[3]})"
+                if base[3] is not None
+                else f"rgb({r},{g},{b})"
+            )
+        return f"#{r:02x}{g:02x}{b:02x}{base[3] or ''}"
 
     @classmethod
     def _derive_internal_vars(cls, theme_vars: dict) -> None:
-        """Inject derived-only tokens (``<NAME>_TINT``) into ``theme_vars``.
+        """Inject derived-only tokens into ``theme_vars``.
 
-        Called right before QSS template assembly so the tint always tracks
-        the resolved accent value (base + global overrides + widget overrides
-        + kwargs).
+        Called right before QSS template assembly so the derived values always
+        track the resolved sources (base + global overrides + widget overrides
+        + kwargs): the ``<NAME>_TINT`` hover companions, and
+        ``DISABLED_CHECKED_BACKGROUND`` (disabled bg nudged toward the checked
+        accent — see :attr:`_disabled_checked_mix`).
         """
         for name in cls._tint_sources:
             base = theme_vars.get(name)
             if base:
                 theme_vars[f"{name}_TINT"] = cls._tint(base)
+        disabled = theme_vars.get("DISABLED_BACKGROUND")
+        checked = theme_vars.get("BUTTON_CHECKED")
+        if disabled and checked:
+            theme_vars["DISABLED_CHECKED_BACKGROUND"] = cls._blend(
+                disabled, checked, cls._disabled_checked_mix
+            )
 
     _qss_cache: dict[str, str] = {}
     # Parsed-template cache: cache_key -> [literal, TOKEN, literal, TOKEN, ...].

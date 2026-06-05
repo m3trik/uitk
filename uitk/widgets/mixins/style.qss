@@ -183,6 +183,13 @@ QAbstractButton:checked:hover {
     background-color: {BUTTON_CHECKED_TINT};
     color: {TEXT_CHECKED};
 }
+/* Disabled while checked: read as disabled (with a faint checked tint), not
+   fully active. Higher specificity than the :checked / :disabled rules above. */
+QAbstractButton:checked:disabled {
+    background-color: {DISABLED_CHECKED_BACKGROUND};
+    color: {TEXT_DISABLED};
+    border: {BORDER_W} solid {DISABLED_CHECKED_BACKGROUND};
+}
 QAbstractButton::indicator {
     width: 0px;
     height: 0px;
@@ -991,6 +998,11 @@ QSizeGrip[class~="SizeGrip"] {
     color: {TEXT_DISABLED};
     background-color: {DISABLED_BACKGROUND};
     border: {BORDER_W} solid {DISABLED_BACKGROUND};
+}
+.default:checked:disabled {
+    color: {TEXT_DISABLED};
+    background-color: {DISABLED_CHECKED_BACKGROUND};
+    border: {BORDER_W} solid {DISABLED_CHECKED_BACKGROUND};
 }
 .transparentBgNoBorder {
     background-color: transparent;

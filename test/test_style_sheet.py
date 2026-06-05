@@ -202,17 +202,48 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
     def test_qss_has_no_unresolved_tokens(self):
         """Every ``{TOKEN}`` in style.qss resolves against the themes dict
         (plus any internally-derived tokens injected at assembly time)."""
-        import re
-
         parts = StyleSheet._get_template()
         used = {p for i, p in enumerate(parts) if i % 2 == 1}
-        derived = {f"{name}_TINT" for name in StyleSheet._tint_sources}
         for theme_name in StyleSheet.themes:
-            known = set(StyleSheet.themes[theme_name].keys()) | derived
-            missing = used - known
+            # Derive the same way assembly does, so any internal token
+            # (``*_TINT``, ``DISABLED_CHECKED_BACKGROUND``, …) is covered.
+            theme_vars = StyleSheet.themes[theme_name].copy()
+            StyleSheet._derive_internal_vars(theme_vars)
+            missing = used - set(theme_vars.keys())
             self.assertFalse(
                 missing,
                 f"theme '{theme_name}' is missing tokens used in style.qss: {sorted(missing)}",
+            )
+
+    def test_disabled_checked_background_derived_and_protected(self):
+        """``DISABLED_CHECKED_BACKGROUND`` is a derived token: a slight blend of
+        the disabled background toward the checked accent, and not user-settable."""
+        import re
+
+        def rgb(s):
+            m = re.match(r"rgba?\((\d+),\s*(\d+),\s*(\d+)", s)
+            return tuple(int(m.group(i)) for i in (1, 2, 3))
+
+        for theme_name in StyleSheet.themes:
+            theme_vars = StyleSheet.themes[theme_name].copy()
+            StyleSheet._derive_internal_vars(theme_vars)
+            dc = theme_vars.get("DISABLED_CHECKED_BACKGROUND")
+            self.assertIsNotNone(dc)
+            base = rgb(StyleSheet.themes[theme_name]["DISABLED_BACKGROUND"])
+            accent = rgb(StyleSheet.themes[theme_name]["BUTTON_CHECKED"])
+            got = rgb(dc)
+            # Each channel sits between disabled and accent, and stays close to
+            # the disabled base (a slight tint, not the full accent).
+            for i in range(3):
+                self.assertTrue(min(base[i], accent[i]) <= got[i] <= max(base[i], accent[i]))
+                self.assertLessEqual(abs(got[i] - base[i]), abs(accent[i] - base[i]) * 0.5)
+
+        # Derived token detection + override rejection.
+        self.assertTrue(StyleSheet._is_derived_token("DISABLED_CHECKED_BACKGROUND"))
+        self.assertFalse(StyleSheet._is_derived_token("DISABLED_BACKGROUND"))
+        with self.assertRaises(ValueError):
+            StyleSheet.set_variable(
+                "DISABLED_CHECKED_BACKGROUND", "rgb(1,2,3)", theme="light"
             )
 
     def test_reload_assembles_qss_once_per_config_group(self):
