@@ -7395,7 +7395,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget: QtWidgets.QWidget = None) -> str",
               "summary": "Get the icon color for a widget based on its current theme.",
-              "line": 216,
+              "line": 248,
               "deprecated": false
             },
             {
@@ -7404,7 +7404,7 @@
               "kind": "classmethod",
               "signature": "(cls, theme: str, widget: QtWidgets.QWidget = None)",
               "summary": "Set a new theme for a specific widget or all registered widgets.",
-              "line": 238,
+              "line": 270,
               "deprecated": false
             },
             {
@@ -7413,7 +7413,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget: QtWidgets.QWidget = None)",
               "summary": "Reload the style for a specific widget or all registered widgets.",
-              "line": 253,
+              "line": 285,
               "deprecated": false
             },
             {
@@ -7422,7 +7422,7 @@
               "kind": "classmethod",
               "signature": "(cls) -> None",
               "summary": "Drop QSS + parsed-template caches.",
-              "line": 312,
+              "line": 344,
               "deprecated": false
             },
             {
@@ -7431,7 +7431,7 @@
               "kind": "classmethod",
               "signature": "(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)",
               "summary": "Set a theme variable override.",
-              "line": 322,
+              "line": 354,
               "deprecated": false
             },
             {
@@ -7440,7 +7440,7 @@
               "kind": "classmethod",
               "signature": "(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str",
               "summary": "Get a theme variable value, resolving overrides.",
-              "line": 399,
+              "line": 431,
               "deprecated": false
             },
             {
@@ -7449,7 +7449,7 @@
               "kind": "classmethod",
               "signature": "(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None, default: Union[int, None] = None) -> Union[int, None]",
               "summary": "Get a length token as an integer pixel value.",
-              "line": 423,
+              "line": 455,
               "deprecated": false
             },
             {
@@ -7458,7 +7458,7 @@
               "kind": "classmethod",
               "signature": "(cls, theme: str = 'light') -> list[str]",
               "summary": "Get list of available theme variables.",
-              "line": 448,
+              "line": 480,
               "deprecated": false
             },
             {
@@ -7467,7 +7467,7 @@
               "kind": "classmethod",
               "signature": "(cls) -> dict",
               "summary": "Export the current global overrides as a plain dict.",
-              "line": 453,
+              "line": 485,
               "deprecated": false
             },
             {
@@ -7476,7 +7476,7 @@
               "kind": "classmethod",
               "signature": "(cls, data: dict) -> None",
               "summary": "Bulk-replace global overrides from a dict and reload once.",
-              "line": 465,
+              "line": 497,
               "deprecated": false
             },
             {
@@ -7485,7 +7485,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget: QtWidgets.QWidget = None)",
               "summary": "Clear overrides.",
-              "line": 481,
+              "line": 513,
               "deprecated": false
             }
           ]
