@@ -76,6 +76,7 @@ class OptionBox:
             "clear",
             "recent",
             "pin",
+            "disable",
             "toggle",
             "action",
             "browse",
@@ -154,6 +155,7 @@ class OptionBox:
         from .options.action import MenuOption, ActionOption
         from .options.browse import BrowseOption
         from .options.clear import ClearOption
+        from .options.disable import DisableOption
         from .options.pin_values import PinValuesOption
         from .options.recent_values import RecentValuesOption
         from .options.toggle import ToggleOption
@@ -162,6 +164,7 @@ class OptionBox:
             ClearOption: "clear",
             RecentValuesOption: "recent",
             PinValuesOption: "pin",
+            DisableOption: "disable",
             ToggleOption: "toggle",
             BrowseOption: "browse",
         }

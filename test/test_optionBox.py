@@ -25,6 +25,7 @@ from pathlib import Path
 
 from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
 from uitk.widgets.optionBox.options._options import ButtonOption
+from uitk.widgets.optionBox.options.disable import DisableOption
 from uitk.widgets.optionBox.options.pin_values import PinValuesOption
 from uitk.widgets.optionBox.options.browse import BrowseOption
 from uitk.widgets.optionBox.options.recent_values import (
@@ -1182,6 +1183,154 @@ class TestOptionBoxManagerToggle(QtBaseTestCase):
         self.assertIsNotNone(toggle)
         toggle.set_on(False)
         self.assertEqual(seen, [False])
+
+
+class TestDisableOption(QtBaseTestCase):
+    """The per-widget disable (bypass-to-default) toggle."""
+
+    def _make(self, default=0.0, start=5.0):
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setRange(-100.0, 100.0)
+        sb.setValue(start)
+        opt = DisableOption(sb, reset=lambda: sb.setValue(default))
+        box = OptionBox(options=[opt])
+        self.track_widget(box.wrap(sb))
+        return sb, opt
+
+    def test_starts_active(self):
+        sb, opt = self._make()
+        self.assertFalse(opt.is_disabled)
+        self.assertTrue(sb.isEnabled())
+        self.assertEqual(sb.value(), 5.0)
+
+    def test_disable_snapshots_resets_and_greys_out(self):
+        sb, opt = self._make(default=0.0, start=5.0)
+        opt.set_disabled(True)
+        self.assertTrue(opt.is_disabled)
+        self.assertEqual(sb.value(), 0.0, "disabled -> reset to default")
+        self.assertFalse(sb.isEnabled(), "disabled -> greyed out")
+
+    def test_restore_brings_back_value_and_re_enables(self):
+        sb, opt = self._make(default=0.0, start=5.0)
+        opt.set_disabled(True)
+        opt.set_disabled(False)
+        self.assertFalse(opt.is_disabled)
+        self.assertEqual(sb.value(), 5.0, "restored the snapshot")
+        self.assertTrue(sb.isEnabled())
+
+    def test_snapshot_tracks_edits_before_disable(self):
+        # The value the user has at the moment of disabling is what's restored.
+        sb, opt = self._make(default=0.0, start=5.0)
+        sb.setValue(7.5)
+        opt.set_disabled(True)
+        self.assertEqual(sb.value(), 0.0)
+        opt.set_disabled(False)
+        self.assertEqual(sb.value(), 7.5)
+
+    def test_toggled_signal(self):
+        sb, opt = self._make()
+        seen = []
+        opt.toggled.connect(seen.append)
+        opt.set_disabled(True)
+        opt.set_disabled(False)
+        self.assertEqual(seen, [True, False])
+        opt.set_disabled(False)  # no-op, no emit
+        self.assertEqual(seen, [True, False])
+
+    def test_silent_set_does_not_emit(self):
+        sb, opt = self._make()
+        seen = []
+        opt.toggled.connect(seen.append)
+        opt.set_disabled(True, emit=False)
+        self.assertEqual(seen, [])
+        self.assertTrue(opt.is_disabled)
+
+    def test_auto_reset_uses_window_state_manager(self):
+        # With no explicit reset, the option resolves the default from the
+        # wrapped widget's window StateManager (window.state.reset(widget)) —
+        # the zero-config path uitk panels rely on.
+        window = self.track_widget(QtWidgets.QWidget())  # top-level -> isWindow()
+        calls = []
+
+        class _FakeState:
+            def reset(self, w):
+                calls.append(w)
+
+        window.state = _FakeState()
+        layout = QtWidgets.QVBoxLayout(window)
+        sb = QtWidgets.QDoubleSpinBox()
+        sb.setValue(5.0)
+        layout.addWidget(sb)
+        opt = DisableOption(sb)  # no explicit reset
+        box = OptionBox(options=[opt])
+        self.track_widget(box.wrap(sb))
+
+        opt.set_disabled(True)
+        self.assertEqual(calls, [sb], "auto reset should call window.state.reset(widget)")
+
+    def test_auto_reset_suppresses_the_persistence_save(self):
+        # The reset must run inside the StateManager's suppress_save() so the
+        # disabled (default) value isn't persisted — the disable stays transient.
+        import contextlib
+
+        window = self.track_widget(QtWidgets.QWidget())
+        events = []
+
+        class _FakeState:
+            @contextlib.contextmanager
+            def suppress_save(self):
+                events.append("enter")
+                try:
+                    yield
+                finally:
+                    events.append("exit")
+
+            def reset(self, w):
+                events.append("reset")
+
+        window.state = _FakeState()
+        layout = QtWidgets.QVBoxLayout(window)
+        sb = QtWidgets.QDoubleSpinBox()
+        layout.addWidget(sb)
+        opt = DisableOption(sb)
+        box = OptionBox(options=[opt])
+        self.track_widget(box.wrap(sb))
+
+        opt.set_disabled(True)
+        self.assertEqual(events, ["enter", "reset", "exit"], "reset must run inside suppress_save")
+
+
+class TestOptionBoxManagerDisable(QtBaseTestCase):
+    """The OptionBoxManager.set_disable() fluent API + ordering."""
+
+    def _make_manager(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        mgr = OptionBoxManager(sb)
+        sb._option_box_manager = mgr
+        return sb, mgr
+
+    def test_set_disable_returns_self_and_adds_option(self):
+        sb, mgr = self._make_manager()
+        result = mgr.set_disable()
+        self.assertIs(result, mgr)
+        self.assertEqual(
+            len([o for o in mgr._pending_options if isinstance(o, DisableOption)]), 1
+        )
+
+    def test_set_disable_replaces_by_default(self):
+        sb, mgr = self._make_manager()
+        mgr.set_disable(icon="undo")
+        mgr.set_disable(icon="close")
+        disables = [o for o in mgr._pending_options if isinstance(o, DisableOption)]
+        self.assertEqual(len(disables), 1)
+
+    def test_disable_is_in_valid_option_order(self):
+        sb, mgr = self._make_manager()
+        # Should not raise: "disable" is a recognized order key now.
+        mgr.option_order = ["disable", "clear"]
+        self.assertIn("disable", mgr.option_order)
 
 
 # -----------------------------------------------------------------------------

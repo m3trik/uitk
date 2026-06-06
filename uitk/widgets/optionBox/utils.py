@@ -24,11 +24,12 @@ class OptionBoxManager(ptk.LoggingMixin):
             "clear",
             "recent",
             "pin",
+            "disable",
             "toggle",
             "action",
             "browse",
             "menu",
-        ]  # Default order: clear, recent, pin, toggle, action, browse, then menu
+        ]  # Default order: clear, recent, pin, disable, toggle, action, browse, menu
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -64,6 +65,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             "clear",
             "recent",
             "pin",
+            "disable",
             "toggle",
             "action",
             "browse",
@@ -306,6 +308,66 @@ class OptionBoxManager(ptk.LoggingMixin):
         """
         kwargs.setdefault("replace", False)
         return self.set_toggle(**kwargs)
+
+    def set_disable(
+        self,
+        *,
+        reset=None,
+        icon: str = "undo",
+        tooltip_off: str = "Disable: reset this value to its default.",
+        tooltip_on: str = "Disabled (at default). Click to restore your value.",
+        disabled_color: Optional[str] = None,
+        replace: bool = True,
+        on_toggled=None,
+    ):
+        """Add a per-widget *disable* (bypass-to-default) toggle (fluent).
+
+        When on: snapshots the widget's value, resets it to its default, and
+        greys it out. When off: restores the snapshot and re-enables. The
+        default is resolved from the widget's window ``StateManager`` unless a
+        ``reset`` callable is given. Non-persistent (each session starts active).
+
+        Args:
+            reset: Optional callable to put the widget at its default. ``None``
+                auto-uses ``window.state.reset(widget)``.
+            icon: Icon name (theme-coloured active, red while disabled).
+            tooltip_off / tooltip_on: Tooltips for the active / disabled states.
+            disabled_color: Hex tint while disabled (``None`` = project error red).
+            replace: When ``True`` (default), removes any existing DisableOption.
+            on_toggled: Optional callable connected to ``toggled(bool)``
+                (``True`` = now disabled).
+
+        Returns:
+            self: For fluent chaining. Retrieve via ``find_option(DisableOption)``.
+        """
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        if replace:
+            self._pending_options = [
+                o for o in self._pending_options if not isinstance(o, DisableOption)
+            ]
+            if self._option_box:
+                for o in [
+                    opt
+                    for opt in self._option_box.get_options()
+                    if isinstance(opt, DisableOption)
+                ]:
+                    self._option_box.remove_option(o)
+
+        kwargs = dict(
+            wrapped_widget=self._widget,
+            reset=reset,
+            icon=icon,
+            tooltip_off=tooltip_off,
+            tooltip_on=tooltip_on,
+        )
+        if disabled_color is not None:
+            kwargs["disabled_color"] = disabled_color
+        option = DisableOption(**kwargs)
+        if on_toggled is not None:
+            option.toggled.connect(on_toggled)
+        self.add_option(option)
+        return self
 
     def browse(
         self,

@@ -1091,22 +1091,42 @@ def _legacy_qt_root_candidates() -> List[Path]:
     return [appconfig / "m3trik" / "presets", appconfig, generic]
 
 
+def _dir_has_preset_data(directory: Path) -> bool:
+    """True when *directory* holds at least one preset file (``*.json``).
+
+    Distinguishes a *husk* — an empty shell a prior wrap left behind,
+    holding only a ``.migrated`` sentinel (the merge keeps the destination
+    on a sentinel collision, so the source dir survives) — from genuine
+    pre-wrap state that still carries presets to relocate. A husk must not
+    count as pre-wrap evidence, or it re-triggers the wrap on every launch
+    and keeps reburying correctly-placed packages (the "saved preset gone
+    next session" bug).
+    """
+    try:
+        return any(directory.rglob("*.json"))
+    except OSError:
+        return False
+
+
 def _looks_like_ecosystem_wrapper(uitk_dir: Path, known_pkgs: Set[str]) -> bool:
     """True when *uitk_dir* is already in the wrapper layout.
 
     A *clean* wrapper layout has only known-package subdirs (uitk /
-    mayatk / extapps) and possibly dotfiles. Anything else at the root
-    level — ``style_presets``, ``hotkey_presets``, ``some_window``, ... —
-    is pre-wrap state that needs to be moved one level deeper.
+    mayatk / extapps) and possibly dotfiles. A non-known root-level dir
+    carrying preset data — ``style_presets``, ``hotkey_presets``,
+    ``some_window``, ... — is pre-wrap state that needs to be moved one
+    level deeper.
 
     Strict matching (vs. "any known-pkg present") also recovers from a
     *partial* wrap: if a prior wrap was interrupted after creating the
     inner ``uitk/`` subdir but before moving every stray sibling, the
-    next call still detects the strays as pre-wrap and finishes the
-    job.
+    next call still detects the data-bearing strays as pre-wrap and
+    finishes the job.
 
-    Empty dirs count as "already wrapped" (no data to move; treating
-    them as pre-wrap would create a useless empty ``uitk/`` subdir).
+    Empty dirs — and data-less *husks* (only a ``.migrated`` sentinel,
+    no ``*.json``) — count as "already wrapped": there is nothing to
+    move, and treating them as pre-wrap would re-fire the wrap forever,
+    burying any package freshly re-created at the root in between.
     """
     if not uitk_dir.is_dir():
         return False
@@ -1121,6 +1141,8 @@ def _looks_like_ecosystem_wrapper(uitk_dir: Path, known_pkgs: Set[str]) -> bool:
             continue
         if child.name.startswith("."):
             continue
+        if not _dir_has_preset_data(child):
+            continue  # husk left by a prior wrap — not real pre-wrap state
         return False
     return True
 
@@ -1136,9 +1158,15 @@ def _wrap_pre_wrap_uitk_state(uitk_dir: Path, known_pkgs: Set[str]) -> None:
     one level deeper, in place, without a sibling temp dir.
 
     Robust to a previously-interrupted wrap: the detector treats any
-    non-known-pkg / non-dotfile child as evidence of pre-wrap state,
-    so a partial wrap (inner ``uitk/`` already created, some siblings
-    not yet moved) gets finished on the next call.
+    *data-bearing* non-known-pkg / non-dotfile child as evidence of
+    pre-wrap state, so a partial wrap (inner ``uitk/`` already created,
+    some siblings not yet moved) gets finished on the next call.
+
+    Only uitk's own pre-wrap dirs move down. A known-package sibling
+    (``mayatk/``, ``extapps/``, and the inner ``uitk/`` itself) already
+    lives at the correct level, so it is left in place — relocating it
+    would bury presets saved under it where the live load path can't
+    find them (the "saved preset gone next session" bug).
 
     Interim migration-state artifacts (``.migrated``, ``.migration/``)
     that survive from older revisions of this module are dropped
@@ -1178,6 +1206,13 @@ def _wrap_pre_wrap_uitk_state(uitk_dir: Path, known_pkgs: Set[str]) -> None:
                     shutil.rmtree(child)
             except OSError as e:
                 _log.warning("preset wrap: could not remove %s: %s", child, e)
+            continue
+        # A correctly-placed known-package sibling (mayatk/, extapps/, and
+        # the inner uitk/ itself) already lives at the right level — never
+        # relocate it into the wrapper, or presets saved under it get buried
+        # where the live load path won't find them. Only uitk's own pre-wrap
+        # state (the non-known root-level dirs) moves down.
+        if child.is_dir() and child.name in known_pkgs:
             continue
         # The inner target itself shows up in the snapshot only if it
         # pre-existed; skip it so we don't try to move it into itself.
