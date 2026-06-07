@@ -25,6 +25,7 @@ from pathlib import Path
 
 from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
 from uitk.widgets.optionBox.options._options import ButtonOption
+from uitk.widgets.optionBox.options.reset import ResetOption
 from uitk.widgets.optionBox.options.pin_values import PinValuesOption
 from uitk.widgets.optionBox.options.browse import BrowseOption
 from uitk.widgets.optionBox.options.recent_values import (
@@ -1182,6 +1183,369 @@ class TestOptionBoxManagerToggle(QtBaseTestCase):
         self.assertIsNotNone(toggle)
         toggle.set_on(False)
         self.assertEqual(seen, [False])
+
+
+class TestResetOption(QtBaseTestCase):
+    """The per-widget reset-to-default button + its modifier-gated bypass toggle."""
+
+    def _make(self, default=0.0, start=5.0):
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setRange(-100.0, 100.0)
+        sb.setValue(start)
+        opt = ResetOption(sb, reset=lambda: sb.setValue(default))
+        box = OptionBox(options=[opt])
+        self.track_widget(box.wrap(sb))
+        return sb, opt
+
+    @staticmethod
+    def _force_modifier(opt, modifier):
+        """Make the option's click handler see *modifier* as held (test seam)."""
+        opt._current_modifiers = lambda: modifier
+
+    # ---- plain reset (primary behavior) ----------------------------------
+
+    def test_starts_active(self):
+        sb, opt = self._make()
+        self.assertFalse(opt.is_bypassed)
+        self.assertTrue(sb.isEnabled())
+        self.assertEqual(sb.value(), 5.0)
+
+    def test_plain_click_resets_to_default_without_greying(self):
+        sb, opt = self._make(default=0.0, start=5.0)
+        self._force_modifier(opt, QtCore.Qt.NoModifier)
+        opt.widget.click()
+        app.processEvents()
+        self.assertFalse(opt.is_bypassed, "plain click does not enter bypass")
+        self.assertEqual(sb.value(), 0.0, "plain click resets to default")
+        self.assertTrue(sb.isEnabled(), "plain reset leaves the widget enabled")
+
+    def test_reset_method_resets_value(self):
+        sb, opt = self._make(default=0.0, start=5.0)
+        opt.reset()
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(opt.is_bypassed)
+
+    # ---- bypass toggle (Alt/Ctrl + click) --------------------------------
+
+    def test_modifier_click_enters_bypass(self):
+        sb, opt = self._make(default=0.0, start=5.0)
+        self._force_modifier(opt, QtCore.Qt.AltModifier)
+        opt.widget.click()
+        app.processEvents()
+        self.assertTrue(opt.is_bypassed)
+        self.assertEqual(sb.value(), 0.0, "bypass -> reset to default")
+        self.assertFalse(sb.isEnabled(), "bypass -> greyed out")
+
+    def test_ctrl_modifier_also_enters_bypass(self):
+        sb, opt = self._make()
+        self._force_modifier(opt, QtCore.Qt.ControlModifier)
+        opt.widget.click()
+        app.processEvents()
+        self.assertTrue(opt.is_bypassed)
+
+    def test_bypass_snapshots_resets_and_greys_out(self):
+        sb, opt = self._make(default=0.0, start=5.0)
+        opt.set_bypassed(True)
+        self.assertTrue(opt.is_bypassed)
+        self.assertEqual(sb.value(), 0.0, "bypassed -> reset to default")
+        self.assertFalse(sb.isEnabled(), "bypassed -> greyed out")
+
+    def test_restore_brings_back_value_and_re_enables(self):
+        sb, opt = self._make(default=0.0, start=5.0)
+        opt.set_bypassed(True)
+        opt.set_bypassed(False)
+        self.assertFalse(opt.is_bypassed)
+        self.assertEqual(sb.value(), 5.0, "restored the snapshot")
+        self.assertTrue(sb.isEnabled())
+
+    def test_click_while_bypassed_restores_regardless_of_modifier(self):
+        # While bypassed the greyed row's only live control must not be a
+        # confusing no-op: any click (plain or modified) restores.
+        sb, opt = self._make(default=0.0, start=5.0)
+        opt.set_bypassed(True)
+        app.processEvents()
+        self._force_modifier(opt, QtCore.Qt.NoModifier)
+        opt.widget.click()  # plain click while bypassed
+        app.processEvents()
+        self.assertFalse(opt.is_bypassed)
+        self.assertEqual(sb.value(), 5.0)
+        self.assertTrue(sb.isEnabled())
+
+    def test_bypass_button_stays_clickable_while_widget_disabled(self):
+        # Bypass greys out the wrapped widget, which cascade-disables every
+        # option button via the container's enabled-sync. The reset button
+        # itself must stay enabled, or the user can never click it to restore.
+        sb, opt = self._make(default=0.0, start=5.0)
+        button = opt.widget
+        opt.set_bypassed(True)
+        app.processEvents()
+        self.assertFalse(sb.isEnabled())
+        self.assertTrue(
+            button.isEnabled(), "reset button must stay clickable to restore"
+        )
+        # End-to-end via the real clicked signal — QAbstractButton.click() is a
+        # no-op while disabled, so this also proves the button is truly clickable
+        # (not merely that the opt-out property is set).
+        button.click()
+        app.processEvents()
+        self.assertFalse(opt.is_bypassed)
+        self.assertEqual(sb.value(), 5.0)
+        self.assertTrue(sb.isEnabled())
+
+    def test_other_buttons_still_disable_when_widget_bypassed(self):
+        # The opt-out is surgical: sibling option buttons (pin, clear, ...)
+        # still cascade-disable with the wrapped widget — only the reset button
+        # is exempt.
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setValue(5.0)
+        reset = ResetOption(sb, reset=lambda: sb.setValue(0.0))
+        pin = PinValuesOption(sb)
+        box = OptionBox(options=[reset, pin])
+        self.track_widget(box.wrap(sb))
+        reset.set_bypassed(True)
+        app.processEvents()
+        self.assertTrue(reset.widget.isEnabled(), "reset button exempt")
+        self.assertFalse(pin.widget.isEnabled(), "pin button still disabled")
+
+    def test_snapshot_tracks_edits_before_bypass(self):
+        # The value the user has at the moment of bypassing is what's restored.
+        sb, opt = self._make(default=0.0, start=5.0)
+        sb.setValue(7.5)
+        opt.set_bypassed(True)
+        self.assertEqual(sb.value(), 0.0)
+        opt.set_bypassed(False)
+        self.assertEqual(sb.value(), 7.5)
+
+    # ---- type-correct value signal (snapshot/restore) --------------------
+
+    @staticmethod
+    def _register(widget, signal_name):
+        """Simulate Switchboard registration so the option uses the type signal."""
+        widget.default_signals = lambda: signal_name
+
+    def _wrap(self, widget, reset):
+        opt = ResetOption(widget, reset=reset)
+        self.track_widget(OptionBox(options=[opt]).wrap(widget))
+        return opt
+
+    def test_bypass_restore_emits_widget_type_signal_combobox(self):
+        # A combo box's slots connect to currentIndexChanged. Restoring by the
+        # type signal must set the *index* and fire that signal — not silently
+        # change the display text.
+        combo = self.track_widget(QtWidgets.QComboBox())
+        combo.addItems(["A", "B", "C"])
+        combo.setCurrentIndex(2)
+        self._register(combo, "currentIndexChanged")
+        opt = self._wrap(combo, reset=lambda: combo.setCurrentIndex(0))
+
+        seen = []
+        combo.currentIndexChanged.connect(seen.append)
+
+        opt.set_bypassed(True)  # -> index 0
+        self.assertEqual(combo.currentIndex(), 0)
+        seen.clear()
+        opt.set_bypassed(False)  # restore -> index 2
+        self.assertEqual(combo.currentIndex(), 2, "restored the snapshot index")
+        self.assertEqual(seen, [2], "currentIndexChanged must fire on restore")
+
+    def test_snapshot_uses_type_signal_checkbox(self):
+        # get_value() on a QCheckBox returns its *label* (text() precedes
+        # isChecked()); the signal-keyed snapshot captures the checked state
+        # instead, so a restore round-trips correctly and fires toggled.
+        cb = self.track_widget(QtWidgets.QCheckBox("My Label"))
+        cb.setChecked(True)
+        self._register(cb, "toggled")
+        opt = self._wrap(cb, reset=lambda: cb.setChecked(False))
+
+        seen = []
+        cb.toggled.connect(seen.append)
+
+        opt.set_bypassed(True)  # -> unchecked
+        self.assertFalse(cb.isChecked())
+        seen.clear()
+        opt.set_bypassed(False)  # restore -> checked
+        self.assertTrue(cb.isChecked(), "restored checked state, not the label")
+        self.assertEqual(seen, [True], "toggled must fire on restore")
+
+    def test_bypass_restore_emits_valuechanged_spinbox(self):
+        # Regression: the registered-spinbox path still fires valueChanged.
+        sb, opt = self._make(default=0.0, start=5.0)
+        self._register(sb, "valueChanged")
+        seen = []
+        sb.valueChanged.connect(seen.append)
+        opt.set_bypassed(True)
+        seen.clear()
+        opt.set_bypassed(False)
+        self.assertEqual(sb.value(), 5.0)
+        self.assertEqual(seen, [5.0], "valueChanged must fire on restore")
+
+    def test_centralized_reset_clears_bypassed_snapshot(self):
+        # When a field is bypassed (holding a snapshot) and the panel's global
+        # reset-to-default runs, the snapshot must follow to the new default so
+        # restoring the field doesn't resurrect the pre-reset value.
+        from uitk.widgets.mixins.state_manager import StateManager
+
+        window = self.track_widget(QtWidgets.QWidget())  # top-level -> isWindow()
+        layout = QtWidgets.QVBoxLayout(window)
+        sb = QtWidgets.QDoubleSpinBox()
+        sb.setObjectName("sb")
+        sb.setRange(-100.0, 100.0)
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.restore_state = True
+        layout.addWidget(sb)
+
+        qs = QtCore.QSettings("uitk_test", "reset_sync_repro")
+        qs.clear()
+        window.state = StateManager(qs)
+        sb.setValue(0.0)
+        window.state.capture_default(sb)  # default = 0
+        sb.setValue(5.0)
+
+        opt = ResetOption(sb)
+        self.track_widget(OptionBox(options=[opt]).wrap(sb))
+
+        opt.set_bypassed(True)  # snapshot 5, widget -> 0, disabled
+        self.assertEqual(sb.value(), 0.0)
+
+        window.state.reset_all()  # global reset-to-default
+
+        opt.set_bypassed(False)  # restore
+        self.assertEqual(
+            sb.value(),
+            0.0,
+            "restore after a global reset must yield the default, not the stale 5",
+        )
+
+    def test_toggled_signal(self):
+        sb, opt = self._make()
+        seen = []
+        opt.toggled.connect(seen.append)
+        opt.set_bypassed(True)
+        opt.set_bypassed(False)
+        self.assertEqual(seen, [True, False])
+        opt.set_bypassed(False)  # no-op, no emit
+        self.assertEqual(seen, [True, False])
+
+    def test_plain_reset_does_not_emit_toggled(self):
+        sb, opt = self._make()
+        seen = []
+        opt.toggled.connect(seen.append)
+        opt.reset()
+        self.assertEqual(seen, [], "a plain reset is not a bypass-state change")
+
+    def test_silent_set_does_not_emit(self):
+        sb, opt = self._make()
+        seen = []
+        opt.toggled.connect(seen.append)
+        opt.set_bypassed(True, emit=False)
+        self.assertEqual(seen, [])
+        self.assertTrue(opt.is_bypassed)
+
+    def test_auto_reset_uses_window_state_manager(self):
+        # With no explicit reset, the option resolves the default from the
+        # wrapped widget's window StateManager (window.state.reset(widget)) —
+        # the zero-config path uitk panels rely on.
+        window = self.track_widget(QtWidgets.QWidget())  # top-level -> isWindow()
+        calls = []
+
+        class _FakeState:
+            def reset(self, w):
+                calls.append(w)
+
+        window.state = _FakeState()
+        layout = QtWidgets.QVBoxLayout(window)
+        sb = QtWidgets.QDoubleSpinBox()
+        sb.setValue(5.0)
+        layout.addWidget(sb)
+        opt = ResetOption(sb)  # no explicit reset
+        box = OptionBox(options=[opt])
+        self.track_widget(box.wrap(sb))
+
+        opt.set_bypassed(True)
+        self.assertEqual(calls, [sb], "auto reset should call window.state.reset(widget)")
+
+    def test_bypass_suppresses_the_persistence_save(self):
+        # The bypass reset must run inside the StateManager's suppress_save() so
+        # the default value isn't persisted — the bypass stays transient.
+        window, sb, events = self._make_state_window()
+        opt = ResetOption(sb)
+        box = OptionBox(options=[opt])
+        self.track_widget(box.wrap(sb))
+
+        opt.set_bypassed(True)
+        self.assertEqual(
+            events, ["enter", "reset", "exit"], "bypass reset must run inside suppress_save"
+        )
+
+    def test_plain_reset_does_not_suppress_the_persistence_save(self):
+        # A plain reset persists the default (the user chose it), so it must NOT
+        # run inside suppress_save.
+        window, sb, events = self._make_state_window()
+        opt = ResetOption(sb)
+        box = OptionBox(options=[opt])
+        self.track_widget(box.wrap(sb))
+
+        opt.reset()
+        self.assertEqual(events, ["reset"], "plain reset must persist (no suppress_save)")
+
+    def _make_state_window(self):
+        """A top-level window carrying a StateManager that records save-suppression."""
+        import contextlib
+
+        window = self.track_widget(QtWidgets.QWidget())
+        events = []
+
+        class _FakeState:
+            @contextlib.contextmanager
+            def suppress_save(self):
+                events.append("enter")
+                try:
+                    yield
+                finally:
+                    events.append("exit")
+
+            def reset(self, w):
+                events.append("reset")
+
+        window.state = _FakeState()
+        layout = QtWidgets.QVBoxLayout(window)
+        sb = QtWidgets.QDoubleSpinBox()
+        layout.addWidget(sb)
+        return window, sb, events
+
+
+class TestOptionBoxManagerReset(QtBaseTestCase):
+    """The OptionBoxManager.set_reset() fluent API + ordering."""
+
+    def _make_manager(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        mgr = OptionBoxManager(sb)
+        sb._option_box_manager = mgr
+        return sb, mgr
+
+    def test_set_reset_returns_self_and_adds_option(self):
+        sb, mgr = self._make_manager()
+        result = mgr.set_reset()
+        self.assertIs(result, mgr)
+        self.assertEqual(
+            len([o for o in mgr._pending_options if isinstance(o, ResetOption)]), 1
+        )
+
+    def test_set_reset_replaces_by_default(self):
+        sb, mgr = self._make_manager()
+        mgr.set_reset(icon="undo")
+        mgr.set_reset(icon="close")
+        resets = [o for o in mgr._pending_options if isinstance(o, ResetOption)]
+        self.assertEqual(len(resets), 1)
+
+    def test_reset_is_in_valid_option_order(self):
+        sb, mgr = self._make_manager()
+        # Should not raise: "reset" is a recognized order key now.
+        mgr.option_order = ["reset", "clear"]
+        self.assertIn("reset", mgr.option_order)
 
 
 # -----------------------------------------------------------------------------

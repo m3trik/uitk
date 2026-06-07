@@ -621,5 +621,24 @@ class TestSpinBoxPrefix(QtBaseTestCase):
         self.assertEqual(sb.prefix(), "Value:\t")
 
 
+class TestSpinBoxTextColor(QtBaseTestCase):
+    """SpinBoxTextColorMixin.set_text_color is shared with DoubleSpinBox."""
+
+    def _make(self):
+        from uitk.widgets.spinBox import SpinBox
+
+        return self.track_widget(SpinBox())
+
+    def test_set_and_clear_text_color(self):
+        sb = self._make()
+        self.assertIsNone(sb.text_color())
+        sb.set_text_color("#55aaff")
+        self.assertEqual(sb.text_color(), "#55aaff")
+        self.assertIn("color: #55aaff;", sb.styleSheet())
+        sb.set_text_color(None)
+        self.assertIsNone(sb.text_color())
+        self.assertEqual(sb.styleSheet(), "")
+
+
 if __name__ == "__main__":
     unittest.main()

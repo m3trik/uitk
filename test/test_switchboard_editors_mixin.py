@@ -123,15 +123,13 @@ class EditorsAutoRecovery(_Base):
 
     def test_is_alive_handles_attribute_error(self):
         # Some shiboken builds raise AttributeError instead of RuntimeError
-        # for partially-disposed wrappers — the probe must treat that as
-        # "dead" rather than letting it propagate.
-        from uitk.switchboard.editors import _EditorRegistry
-
+        # for partially-disposed wrappers — the shared liveness probe (used by
+        # the editor cache) must treat that as "dead" rather than propagate.
         class _BadlyDisposed:
             def objectName(self):
                 raise AttributeError("simulated wrapper disposal")
 
-        self.assertFalse(_EditorRegistry._is_alive(_BadlyDisposed()))
+        self.assertFalse(self.sb._widget_is_alive(_BadlyDisposed()))
 
 
 class EditorsShortcuts(_Base):

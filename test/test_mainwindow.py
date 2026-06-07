@@ -482,6 +482,59 @@ class TestMainWindowGeometry(QtBaseTestCase):
         # Cleanup stored settings
         window2.clear_saved_geometry()
 
+    def test_fit_on_show_keeps_restored_width_and_trims_height(self):
+        """On-show fit preserves a restored geometry's width but trims its height.
+
+        The contract behind fit_to_content_on_show=True running regardless of a
+        restored size: a saved geometry contributes width + position; the fit
+        only removes vertical dead space. Uses real content so the fit actually
+        fires (an empty central widget would make fit_height_to_content no-op).
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        name = "TestFitKeepsWidth"
+
+        def _content():
+            w = QtWidgets.QWidget()
+            lyt = QtWidgets.QVBoxLayout(w)
+            lyt.setContentsMargins(0, 0, 0, 0)
+            label = QtWidgets.QLabel("content")
+            label.setFixedHeight(40)
+            lyt.addWidget(label)
+            return w
+
+        # --- Session 1: stretch wide + tall (well past the 40px content), save ---
+        window1 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=_content())
+        )
+        window1.clear_saved_geometry()
+        window1.show()
+        QtWidgets.QApplication.processEvents()
+        window1.resize(500, 600)
+        QtWidgets.QApplication.processEvents()
+        window1.hide()  # saves 500x600
+        QtWidgets.QApplication.processEvents()
+
+        # --- Session 2: restore, then fit on show ---
+        window2 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=_content())
+        )
+        window2.show()
+        QtWidgets.QApplication.processEvents()
+
+        # Width (and position) from the restore survive the fit.
+        self.assertEqual(window2.width(), 500)
+        # Vertical dead space is trimmed: height drops far below the saved 600
+        # and snaps to the content minimum.
+        self.assertLess(window2.height(), 600)
+        self.assertLessEqual(
+            abs(window2.height() - window2.minimumSizeHint().height()), 2,
+            f"Height should snap to content: height={window2.height()}, "
+            f"minHint={window2.minimumSizeHint().height()}",
+        )
+
+        window2.clear_saved_geometry()
+
     def test_restore_disabled_ignores_saved_geometry_on_show(self):
         """A restore_window_size=False window must not apply saved geometry on show.
 

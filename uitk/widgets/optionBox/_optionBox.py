@@ -50,8 +50,14 @@ class OptionBoxContainer(QtWidgets.QWidget):
             self.style().polish(self)
         for i in range(1, layout.count()):
             btn = layout.itemAt(i).widget()
-            if btn:
-                btn.setEnabled(enabled)
+            if not btn:
+                continue
+            # An option may opt out of cascade-disabling — e.g. the
+            # ResetOption's bypass toggle, which greys out the wrapped widget
+            # itself and so must stay clickable for the user to restore it.
+            if btn.property("keepEnabledWhenWrappedDisabled"):
+                continue
+            btn.setEnabled(enabled)
 
 
 class OptionBox:
@@ -76,6 +82,7 @@ class OptionBox:
             "clear",
             "recent",
             "pin",
+            "reset",
             "toggle",
             "action",
             "browse",
@@ -154,6 +161,7 @@ class OptionBox:
         from .options.action import MenuOption, ActionOption
         from .options.browse import BrowseOption
         from .options.clear import ClearOption
+        from .options.reset import ResetOption
         from .options.pin_values import PinValuesOption
         from .options.recent_values import RecentValuesOption
         from .options.toggle import ToggleOption
@@ -162,6 +170,7 @@ class OptionBox:
             ClearOption: "clear",
             RecentValuesOption: "recent",
             PinValuesOption: "pin",
+            ResetOption: "reset",
             ToggleOption: "toggle",
             BrowseOption: "browse",
         }

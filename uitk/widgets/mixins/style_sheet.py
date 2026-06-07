@@ -117,7 +117,9 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     # by ``::selected:hover`` / ``::checked:hover`` rules so the hover state
     # of a highlighted item shifts subtly without losing the accent hue.
     # Internal: not exposed via ``themes`` / ``get_variables`` / ``set_variable``.
-    _tint_sources = ("BUTTON_HOVER", "BUTTON_CHECKED")
+    # ``PANEL_BACKGROUND`` is also tinted: its ``_TINT`` is the slider handle's
+    # resting color, a hair brighter than the panel so the knob reads as grabbable.
+    _tint_sources = ("BUTTON_HOVER", "BUTTON_CHECKED", "PANEL_BACKGROUND")
     _derived_token_suffixes = ("_TINT",)
     # Derived tokens with explicit (non-suffix) names — kept separate because
     # their names share suffixes (``_BACKGROUND``) with real exposed tokens.

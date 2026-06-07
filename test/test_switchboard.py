@@ -603,6 +603,249 @@ class TestSwitchboardInvertOnModifier(unittest.TestCase):
             self.assertEqual(Switchboard.invert_on_modifier(-5), 5)
 
 
+class TestSwitchboardAddResetButtons(QtBaseTestCase):
+    """Tests for SwitchboardUtilsMixin.add_reset_buttons batch helper.
+
+    Uses uitk spin/combo widgets (which carry the OptionBoxMixin and wrap
+    cleanly) so the tests mirror real panels — production slots wire uitk
+    SpinBox/DoubleSpinBox/ComboBox, never plain QtWidgets spin boxes.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.spinBox import SpinBox
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+        # Add convention-named uitk spin widgets to the panel so every
+        # resolution path (findChildren, string pattern, explicit list) and the
+        # uitk ComboBox already in the example UI are all exercisable.
+        layout = self.ui.centralWidget().layout()
+        self.s000 = SpinBox()
+        self.s000.setObjectName("s000")
+        layout.addWidget(self.s000)
+        self.ui.register_widget(self.s000)
+        self.s001 = DoubleSpinBox()
+        self.s001.setObjectName("s001")
+        layout.addWidget(self.s001)
+        self.ui.register_widget(self.s001)
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def _has_reset(self, widget):
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        return widget.option_box.find_option(ResetOption) is not None
+
+    def test_auto_discovers_spinboxes_via_findchildren(self):
+        """widgets=None discovers every child of *types* (spin boxes by default)."""
+        box = self.track_widget(QtWidgets.QWidget())
+        from uitk.widgets.spinBox import SpinBox
+
+        QtWidgets.QVBoxLayout(box)
+        a = SpinBox()
+        a.setObjectName("only_a")
+        box.layout().addWidget(a)
+        b = SpinBox()
+        b.setObjectName("only_b")
+        box.layout().addWidget(b)
+
+        wired = self.sb.add_reset_buttons(box)
+        self.assertCountEqual(wired, [a, b])
+        self.assertTrue(self._has_reset(a))
+        self.assertTrue(self._has_reset(b))
+
+    def test_string_pattern_resolution(self):
+        """A shorthand pattern resolves via the s000/cmb000 naming convention."""
+        wired = self.sb.add_reset_buttons(self.ui, "s000-1")
+        self.assertEqual(wired, [self.s000, self.s001])
+        self.assertTrue(self._has_reset(self.s000))
+        self.assertTrue(self._has_reset(self.s001))
+
+    def test_explicit_widget_list(self):
+        """An explicit widget list wires exactly those widgets."""
+        wired = self.sb.add_reset_buttons(self.ui, [self.s000])
+        self.assertEqual(wired, [self.s000])
+        self.assertTrue(self._has_reset(self.s000))
+        self.assertFalse(self._has_reset(self.s001))
+
+    def test_skips_named_widget(self):
+        """A widget whose objectName is in skip is left alone."""
+        wired = self.sb.add_reset_buttons(self.ui, [self.s000, self.s001], skip=("s000",))
+        self.assertEqual(wired, [self.s001])
+        self.assertFalse(self._has_reset(self.s000))
+
+    def test_skips_widget_instance(self):
+        """A widget instance (not just its name) in skip is left alone."""
+        wired = self.sb.add_reset_buttons(self.ui, [self.s000, self.s001], skip=(self.s000,))
+        self.assertEqual(wired, [self.s001])
+        self.assertFalse(self._has_reset(self.s000))
+
+    def test_types_override_targets_combos(self):
+        """types= lets a panel wire combo boxes instead of spin boxes."""
+        wired = self.sb.add_reset_buttons(self.ui, types=(QtWidgets.QComboBox,))
+        self.assertIn(self.ui.cmb_options, wired)
+        self.assertTrue(self._has_reset(self.ui.cmb_options))
+        # The default spin-box targets must remain untouched.
+        self.assertFalse(self._has_reset(self.s000))
+
+    def test_forwards_kwargs_to_set_reset(self):
+        """**set_reset_kwargs reach the underlying ResetOption."""
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        self.sb.add_reset_buttons(self.ui, [self.s000], icon="close")
+        opt = self.s000.option_box.find_option(ResetOption)
+        self.assertIsNotNone(opt)
+        self.assertEqual(opt._icon, "close")
+
+    def test_returns_empty_for_no_matches(self):
+        """A container with no matching widgets returns an empty list, not an error."""
+        empty = self.track_widget(QtWidgets.QWidget())
+        self.assertEqual(self.sb.add_reset_buttons(empty), [])
+
+
+class _DeadCppWrapper:
+    """Stand-in for a shiboken wrapper whose C++ object was invalidated.
+
+    Touching any Qt method raises RuntimeError (exactly as a reparented
+    QUiLoader widget does in PySide6), but the defer-time name stamp survives
+    because it is a plain Python attribute.
+    """
+
+    def __init__(self, name):
+        self._deferred_object_name = name
+
+    def objectName(self):
+        raise RuntimeError("Internal C++ object (QSpinBox) already deleted")
+
+
+class TestDeferredWidgetRevival(QtBaseTestCase):
+    """Regression tests for the self-healing deferred-widget pipeline.
+
+    A widget accessed during a slots ``__init__`` is registered as a *deferred*
+    widget; an option-box wrap (``add_reset_buttons``) then reparents it, which
+    in PySide6 invalidates the wrapper captured at defer time. Previously
+    ``_process_deferred_widgets`` crashed on the dead wrapper
+    ("Internal C++ object ... already deleted") and the whole panel failed to
+    open. The switchboard must now re-resolve the live wrapper instead.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.spinBox import SpinBox
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+        layout = self.ui.centralWidget().layout()
+        self.s000 = SpinBox()
+        self.s000.setObjectName("s000")
+        layout.addWidget(self.s000)
+        self.ui.register_widget(self.s000)
+        self.s001 = DoubleSpinBox()
+        self.s001.setObjectName("s001")
+        layout.addWidget(self.s001)
+        self.ui.register_widget(self.s001)
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_widget_is_alive_distinguishes_live_from_dead(self):
+        self.assertTrue(self.sb._widget_is_alive(self.s000))
+        self.assertFalse(self.sb._widget_is_alive(_DeadCppWrapper("s000")))
+
+    def test_revive_returns_widget_unchanged_when_alive(self):
+        """A live wrapper is passed straight through (the common case)."""
+        self.assertIs(self.sb._revive_deferred_widget(self.ui, self.s000), self.s000)
+
+    def test_revive_reresolves_dead_wrapper_and_repairs_registry(self):
+        """A dead wrapper is re-resolved by name; ui.<name> and ui.widgets heal."""
+        dead = _DeadCppWrapper("s000")
+        # Simulate the post-reparent registry state: the dead wrapper is what
+        # the switchboard currently holds, while the live widget is still in
+        # the Qt child tree (findable by name).
+        self.ui.widgets.discard(self.s000)
+        self.ui.widgets.add(dead)
+        setattr(self.ui, "s000", dead)
+
+        revived = self.sb._revive_deferred_widget(self.ui, dead)
+
+        self.assertIs(revived, self.s000)
+        self.assertIn(self.s000, self.ui.widgets)
+        self.assertNotIn(dead, self.ui.widgets)
+        # Downstream self.ui.s000 access now lands on the live wrapper.
+        self.assertIs(getattr(self.ui, "s000"), self.s000)
+        self.assertTrue(self.sb._widget_is_alive(self.ui.s000))
+
+    def test_revive_returns_none_when_unrecoverable(self):
+        """A dead wrapper whose widget no longer exists is reported, not raised."""
+        self.assertIsNone(
+            self.sb._revive_deferred_widget(self.ui, _DeadCppWrapper("does_not_exist"))
+        )
+
+    def test_process_deferred_survives_dead_wrapper(self):
+        """The exact crash site: a dead wrapper in the deferred list must not
+        abort the batch, and the live widget must still be initialized."""
+        dead = _DeadCppWrapper("s000")
+        self.ui.widgets.discard(self.s000)
+        self.ui.widgets.add(dead)
+        setattr(self.ui, "s000", dead)
+
+        # Pre-fix this raised RuntimeError on the [w.objectName() ...] log line.
+        self.sb._process_deferred_widgets(self.ui, [dead, self.s001])
+
+        self.assertIs(getattr(self.ui, "s000"), self.s000)
+        self.assertIn(self.s000, self.ui.widgets)
+        self.assertNotIn(dead, self.ui.widgets)
+        self.assertTrue(self.sb._widget_is_alive(self.ui.s000))
+
+    def test_process_deferred_drops_unrecoverable_widget(self):
+        """An unrecoverable dead wrapper is skipped without crashing the panel."""
+        self.sb._process_deferred_widgets(self.ui, [_DeadCppWrapper("does_not_exist")])
+
+    def test_real_optionbox_wrap_after_defer_keeps_widget_usable(self):
+        """End-to-end: the real option-box wrap (which invalidates the wrapper
+        in PySide6) after a defer must leave the widget usable post-process."""
+        # Stamp the name as the defer path would, then perform the real wrap and
+        # run the pipeline step that crashed.
+        self.s000._deferred_object_name = "s000"
+        self.sb.add_reset_buttons(self.ui, [self.s000])
+
+        self.sb._process_deferred_widgets(self.ui, [self.s000])
+
+        self.assertTrue(self.sb._widget_is_alive(self.ui.s000))
+        # The live widget remains functional for perform_operation-style use.
+        self.ui.s000.value()
+
+
 # =============================================================================
 # SwitchboardWidgetMixin Tests
 # =============================================================================

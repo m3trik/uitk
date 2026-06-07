@@ -128,6 +128,40 @@ by default — that loses typed input.
 `set_on(value, emit=False)` flips state silently (preset restore, tests).
 Use `find_option(ToggleOption)` to retrieve it from an OptionBoxManager.
 
+### ResetOption
+A per-widget **reset-to-default** button with a modifier-gated **bypass**
+toggle. A plain click resets the wrapped widget to its default (persisted).
+Hold **Alt or Ctrl** while clicking to *bypass* instead: it snapshots the
+current value, resets to default transiently, and greys the widget out; clicking
+the bypassed button restores the snapshot and re-enables. The icon goes the
+project "error" red while bypassed. Bypass is non-persistent (each session
+starts un-bypassed).
+
+```python
+from uitk.widgets.optionBox.options.reset import ResetOption
+
+reset = ResetOption(spin_box)  # default resolved from window.state at click time
+option_box = OptionBox(options=[reset])
+option_box.wrap(spin_box)
+```
+
+Or via the fluent manager — the common case, one line per field:
+
+```python
+spin_box.option_box.set_reset()                      # auto (window StateManager)
+spin_box.option_box.set_reset(reset=my_reset_func)   # explicit reset callable
+```
+
+The "default" is resolved automatically from the wrapped widget's window
+`StateManager` (`window.state.reset(widget)`) unless a `reset` callable is
+supplied. A plain reset persists the default (you chose it). The bypass
+snapshot is in-memory (session only) and its reset runs inside the
+StateManager's `suppress_save()`, so the *persisted* value stays your real one —
+closing while a field is bypassed doesn't bury it at its default (the bypass is
+fully transient). `set_bypassed(value, emit=False)` flips the bypass silently;
+`reset()` performs the plain reset; `toggled(bool)` fires when the bypass state
+changes (`True` = now bypassed). Use `find_option(ResetOption)` to retrieve it.
+
 ### PinValuesOption
 Allows pinning/saving and restoring widget values.
 

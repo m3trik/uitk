@@ -42,7 +42,13 @@ class _BareSwitchboard:
 
 
 def _build_window(content_widget):
-    """Construct a MainWindow with content_widget centered, return it."""
+    """Construct a MainWindow with content_widget centered, return it.
+
+    Leaves ``fit_to_content_on_show`` at the production default (True) so the
+    collapse/adjust tests exercise the realistic combo (on-show fit + later
+    resize). The fit only acts once on show and is independent of the
+    collapse-shrink path (verified: same behavior with it on or off).
+    """
     win = MainWindow(
         name="test_resize_window",
         switchboard_instance=_BareSwitchboard(),
@@ -446,16 +452,18 @@ class TestFitToContentOnShow(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
         self.assertEqual(calls, [], "Fit must not run when opted out")
 
-    def test_fit_skipped_when_saved_geometry_restored(self):
+    def test_fit_runs_even_when_saved_geometry_restored(self):
         central = QtWidgets.QWidget()
         QtWidgets.QVBoxLayout(central)
         win, calls = self._spy_window(central, restore_window_size=True)
-        # Simulate a successfully restored user size.
-        win.restore_window_geometry = lambda: True
+        # A restored geometry only contributes width + position; the fit still
+        # trims vertical dead space, so it must run regardless. Stub the restore
+        # to a no-op so the test doesn't depend on persisted QSettings.
+        win.restore_window_geometry = lambda: None
         win.show()
         QtWidgets.QApplication.processEvents()
         self.assertEqual(
-            calls, [], "Fit must not clobber a restored user-set size"
+            calls, [1], "Fit trims dead space even when a size was restored"
         )
 
     def test_fit_runs_only_on_first_show(self):
@@ -481,7 +489,7 @@ class TestFitToContentOnShow(QtBaseTestCase):
             ("transform", [19] * 4),
             ("align", [19]),
         ])
-        win = self.track_widget(_build_window(central))  # restore off, fit on
+        win = self.track_widget(_build_window(central))  # fit on by default
         win.show()
         for _ in range(3):
             QtWidgets.QApplication.processEvents()

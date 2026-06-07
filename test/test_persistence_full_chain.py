@@ -630,5 +630,53 @@ class TestStateManagerNoDoubleDecode(_PersistBase):
         self.assertTrue(chk.isChecked())
 
 
+class TestSyncStoredDefaultHook(QtBaseTestCase):
+    """reset()/reset_all() notify a widget's ``sync_stored_default`` hook.
+
+    Lets an option-box reset toggle (holding a bypass snapshot) follow a
+    centralized reset-to-default instead of leaving the snapshot stale.
+    """
+
+    def _registered_spinbox(self, state):
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setObjectName("sb")
+        sb.setRange(-100.0, 100.0)
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.restore_state = True
+        sb.setValue(0.0)
+        state.capture_default(sb)  # default = 0
+        sb.setValue(5.0)
+        return sb
+
+    def _state(self):
+        qs = QtCore.QSettings("uitk_test", "sync_stored_default")
+        qs.clear()
+        return StateManager(qs)
+
+    def test_reset_calls_hook_with_default(self):
+        state = self._state()
+        sb = self._registered_spinbox(state)
+        received = []
+        sb.sync_stored_default = received.append
+        state.reset(sb)
+        self.assertEqual(sb.value(), 0.0)
+        self.assertEqual(received, [0.0], "reset must notify the hook with the default")
+
+    def test_reset_all_calls_hook_with_default(self):
+        state = self._state()
+        sb = self._registered_spinbox(state)
+        received = []
+        sb.sync_stored_default = received.append
+        state.reset_all()
+        self.assertEqual(received, [0.0])
+
+    def test_no_hook_is_harmless(self):
+        state = self._state()
+        sb = self._registered_spinbox(state)  # no sync_stored_default attribute
+        state.reset(sb)  # must not raise
+        self.assertEqual(sb.value(), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

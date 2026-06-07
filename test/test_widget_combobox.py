@@ -312,6 +312,37 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         # One live binding per action after the latest rebuild.
         self.assertEqual(len(combo._action_button_conns), 1)
 
+    def test_icon_only_no_separator_single_row(self):
+        """icon-only + no-separator -> a single container row of textless,
+        accessible-named buttons (toolbar style)."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.action_icon_only = True
+        combo.show_action_separator = False
+        combo.actions.add(
+            {"A": lambda: None, "B": lambda: None, "C": lambda: None}
+        )
+        combo.action_columns = 3
+
+        # No separator -> only the button container row is added.
+        self.assertEqual(combo._action_row_count, 1)
+        btns = self._action_buttons(combo)
+        self.assertEqual(len(btns), 3)
+        for b in btns:
+            self.assertEqual(b.text(), "", "icon-only buttons carry no text")
+            self.assertTrue(
+                b.accessibleName(), "icon-only buttons keep an accessible name"
+            )
+
+    def test_separator_drawn_by_default(self):
+        """Default keeps the separator (two action rows: separator + buttons)."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.actions.add("Only", lambda: None)
+        self.assertEqual(combo._action_row_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

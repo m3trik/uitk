@@ -7,12 +7,14 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.feedback import FeedbackMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
+from uitk.widgets.mixins.spin_box_text_color import SpinBoxTextColorMixin
 from uitk.widgets.mixins.wheel_step import WheelStepMixin
 
 
 class SpinBox(
     WheelStepMixin,
     FeedbackMixin,
+    SpinBoxTextColorMixin,
     QtWidgets.QDoubleSpinBox,
     MenuMixin,
     OptionBoxMixin,

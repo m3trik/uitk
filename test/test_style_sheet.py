@@ -175,6 +175,39 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
             "slider handle picked up the {RADIUS} override — it should be a literal",
         )
 
+    def test_slider_hover_leaves_background_handle_reads_as_grabbable(self):
+        """Slider hover must not repaint the widget background; the grab
+        affordance is the resting handle sitting a hair brighter than the
+        panel (``PANEL_BACKGROUND_TINT``), with the blue handle-hover intact."""
+        import re
+
+        def rgb(s):
+            m = re.match(r"rgba?\((\d+),\s*(\d+),\s*(\d+)", s)
+            return tuple(int(m.group(i)) for i in (1, 2, 3))
+
+        parts = StyleSheet._get_template()
+        for theme_name in StyleSheet.themes:
+            theme_vars = StyleSheet.themes[theme_name].copy()
+            StyleSheet._derive_internal_vars(theme_vars)
+            qss = StyleSheet._apply_template(parts, theme_vars)
+
+            hover = re.search(r"(?:^|\n)QAbstractSlider:hover\s*\{([^}]*)\}", qss)
+            self.assertIsNotNone(hover, "QAbstractSlider:hover rule must exist")
+            self.assertNotIn(
+                "background-color",
+                hover.group(1),
+                f"[{theme_name}] slider hover must leave the background alone",
+            )
+
+            handle = re.search(
+                r"QAbstractSlider::handle\s*\{[^}]*?background-color:\s*([^;]+);", qss
+            )
+            self.assertIsNotNone(handle, "slider handle rule must exist")
+            tint, panel = rgb(handle.group(1)), rgb(theme_vars["PANEL_BACKGROUND"])
+            self.assertEqual(rgb(theme_vars["PANEL_BACKGROUND_TINT"]), tint)
+            # Brighter than the panel on every channel, by at least one level.
+            self.assertTrue(all(t >= p for t, p in zip(tint, panel)) and tint != panel)
+
     def test_text_inset_is_uniform_across_form_widgets(self):
         """Labels, comboboxes, line edits and spin boxes share the single
         ``{TEXT_INSET}`` horizontal padding so their text aligns in a layout.

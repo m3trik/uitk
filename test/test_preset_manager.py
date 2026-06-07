@@ -399,6 +399,95 @@ class TestLegacyMigration(BaseTestCase):
         self.assertFalse((self._new_root / "style_presets").exists())
         self.assertFalse((self._new_root / "hotkey_presets").exists())
 
+    def test_husk_dirs_do_not_rebury_known_packages(self):
+        """Regression: leftover husk dirs must not re-bury a placed package.
+
+        Field repro — a freshly-saved ``mayatk/curtain`` preset vanished the
+        next session. Cause: a prior wrap left behind *husk* dirs at the
+        wrapper root (``style_presets/`` etc. holding only a ``.migrated``
+        sentinel, no preset data). Those non-known-package names made the
+        wrapper-detector return False every launch, so the wrap fired and
+        relocated the *entire* correctly-placed ``mayatk/`` tree into
+        ``<root>/uitk/mayatk/`` — where the live load path never looks. The
+        preset wasn't deleted, just buried.
+
+        Two invariants pin the fix: (1) data-less husks are not treated as
+        pre-wrap evidence, and (2) a known-package sibling is never moved
+        into the inner wrapper even if the wrap does run.
+        """
+        # Correct wrapper layout: inner uitk/ (uitk's own state) + a known-
+        # package sibling holding a real user preset (the curtain save).
+        (self._new_root / "uitk" / "style_presets").mkdir(parents=True)
+        (self._new_root / "uitk" / "style_presets" / "dark.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        curtain = self._new_root / "mayatk" / "curtain"
+        curtain.mkdir(parents=True)
+        (curtain / "MyCurtain.json").write_text(
+            json.dumps({"_meta": {"version": 1}, "s000": 29.0}), encoding="utf-8"
+        )
+        # Leftover husks at the root: interim sentinel only, no preset data.
+        for husk in ("style_presets", "hotkey_presets", "switchboard_browser"):
+            (self._new_root / husk).mkdir()
+            (self._new_root / husk / ".migrated").write_text("", encoding="utf-8")
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir  # trigger migration
+
+        # The user's preset must remain at its live location...
+        self.assertTrue(
+            (self._new_root / "mayatk" / "curtain" / "MyCurtain.json").exists(),
+            "known-package preset reburied by a husk-triggered re-wrap",
+        )
+        # ...and must NOT have been relocated under the inner uitk/ wrapper.
+        self.assertFalse(
+            (self._new_root / "uitk" / "mayatk" / "curtain" / "MyCurtain.json").exists(),
+            "mayatk tree buried under <root>/uitk/mayatk/",
+        )
+
+    def test_wrap_leaves_known_package_sibling_at_root(self):
+        """When the wrap DOES fire, a known-package sibling stays put.
+
+        Companion to ``test_husk_dirs_do_not_rebury_known_packages``: that one
+        keeps the wrap from firing at all (husks ignored); this one forces a
+        genuine fire — real pre-wrap uitk state (``style_presets/`` *with*
+        data) coexisting with a freshly-placed ``mayatk/`` package — and pins
+        the second half of the fix: only uitk's own pre-wrap dirs move into
+        the inner wrapper; the known-package sibling is never relocated. Fails
+        before the ``known_pkgs`` skip in ``_wrap_pre_wrap_uitk_state`` (mayatk
+        gets dragged down into ``<root>/uitk/mayatk/``).
+        """
+        # Genuine pre-wrap uitk state carrying real presets -> wrap must fire.
+        (self._new_root / "style_presets").mkdir(parents=True)
+        (self._new_root / "style_presets" / "dark.json").write_text(
+            json.dumps({"bg": "#000"}), encoding="utf-8"
+        )
+        # A placed known-package sibling with a user preset.
+        curtain = self._new_root / "mayatk" / "curtain"
+        curtain.mkdir(parents=True)
+        (curtain / "keep.json").write_text(
+            json.dumps({"_meta": {"version": 1}, "s000": 1.0}), encoding="utf-8"
+        )
+
+        mgr = PresetManager(preset_dir=self.TEST_KEY)
+        _ = mgr.preset_dir  # trigger migration
+
+        # The wrap ran: uitk's own pre-wrap state nested under the inner uitk/.
+        self.assertTrue(
+            (self._new_root / "uitk" / "style_presets" / "dark.json").exists(),
+            "pre-wrap uitk state was not nested (wrap didn't fire)",
+        )
+        self.assertFalse((self._new_root / "style_presets").exists())
+        # ...but the known-package sibling stayed at the root, untouched.
+        self.assertTrue(
+            (self._new_root / "mayatk" / "curtain" / "keep.json").exists(),
+            "known-package sibling dragged into the inner wrapper by the wrap",
+        )
+        self.assertFalse(
+            (self._new_root / "uitk" / "mayatk").exists(),
+            "mayatk relocated under <root>/uitk/ instead of staying at root",
+        )
+
     def test_pre_wrap_skipped_when_already_wrapped(self):
         """If the new root already has the wrapper layout, no in-place re-wrap."""
         # New-style wrapper layout: known-package subdirs present.
@@ -611,13 +700,17 @@ class TestBuiltinTier(BaseTestCase):
 
     @staticmethod
     def _action_state(combo, label):
-        """Enabled state of the actions-section button named *label*."""
+        """Enabled state of the actions-section button named *label*.
+
+        Matches on accessibleName since the preset combo uses icon-only buttons
+        (no visible text).
+        """
         last = combo._model.rowCount() - 1
         inner = combo._row_containers.get(last).property("_embedded_widget")
         lay = inner.layout()
         for i in range(lay.count()):
             btn = lay.itemAt(i).widget()
-            if btn.text() == label:
+            if btn.accessibleName() == label:
                 return btn.isEnabled()
         raise AssertionError(f"no action button {label!r}")
 
@@ -648,6 +741,43 @@ class TestBuiltinTier(BaseTestCase):
         combo.setCurrentIndex(combo.findText("custom"))  # user
         self.assertTrue(self._action_state(combo, "Rename"))
         self.assertTrue(self._action_state(combo, "Delete"))
+
+    @staticmethod
+    def _action_buttons(combo):
+        last = combo._model.rowCount() - 1
+        inner = combo._row_containers.get(last).property("_embedded_widget")
+        lay = inner.layout()
+        return [lay.itemAt(i).widget() for i in range(lay.count())]
+
+    def test_wire_combo_actions_are_icon_only_single_row_with_refresh(self):
+        combo = self._wire_combo()
+        btns = self._action_buttons(combo)
+        names = [b.accessibleName() for b in btns]
+        self.assertEqual(names, ["Rename", "Refresh", "Delete", "Open", "Save"])
+        # icon-only -> no visible text; single row -> no separator row.
+        self.assertTrue(all(b.text() == "" for b in btns), "buttons must be icon-only")
+        self.assertEqual(combo._action_row_count, 1, "separator removed -> one action row")
+
+    def test_wire_combo_refresh_reloads_current_preset(self):
+        # Refresh re-applies the selected preset's stored values to the widgets.
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        self.chk.setChecked(True)
+        self.spn.setValue(42)
+        self.mgr.save("custom")  # captures chk=True, spn=42
+
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        combo.setCurrentIndex(combo.findText("custom"))  # loads -> spn 42
+        self.assertEqual(self.spn.value(), 42)
+
+        self.spn.setValue(7)  # user edits away from the preset
+        for b in self._action_buttons(combo):
+            if b.accessibleName() == "Refresh":
+                b.click()
+                break
+        self.assertEqual(self.spn.value(), 42, "Refresh must reload the selected preset")
 
 
 class TestSemanticPresetMode(BaseTestCase):

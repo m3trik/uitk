@@ -96,7 +96,7 @@ class _EditorRegistry:
                 f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
             )
         cached = self._cache.get(name)
-        if cached is not None and self._is_alive(cached):
+        if cached is not None and self._sb._widget_is_alive(cached):
             return cached
         instance = self._build(name)
         self._cache[name] = instance
@@ -180,21 +180,6 @@ class _EditorRegistry:
         if marking_menu is not None:
             return marking_menu
         return self._sb.parent()
-
-    @staticmethod
-    def _is_alive(instance) -> bool:
-        """Probe a Qt object to detect a deleted C++ underlying.
-
-        Catches both ``RuntimeError`` (the standard PySide signal that
-        the wrapped C++ object has been deleted) and ``AttributeError``
-        (which some shiboken builds raise for partially-disposed
-        wrappers). Anything else is unexpected and we let it propagate.
-        """
-        try:
-            instance.objectName()
-            return True
-        except (RuntimeError, AttributeError):
-            return False
 
     def _build(self, name: str):
         """Instantiate the editor by name, importing its module on demand."""

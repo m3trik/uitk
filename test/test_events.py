@@ -604,6 +604,9 @@ class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
+        # Flush any events/DeferredDeletes left by a prior test so they can't
+        # interleave with this test's show/grab under a full-suite run.
+        self._drain_qt_events()
         self.parent = self.track_widget(QtWidgets.QWidget())
         self.parent.setObjectName("mm_parent")
         self.parent.resize(400, 200)
@@ -614,6 +617,14 @@ class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
         self.btn_b.setObjectName("B")
         self.btn_b.resize(80, 30); self.btn_b.move(200, 50)
         self.parent.show()
+        # Qt only establishes a mouse grab on a widget whose window is active.
+        # Under a full-suite run a prior test can leave another window active,
+        # so grabMouse() on the new owner would release the old grab without
+        # taking a new one (mouseGrabber() -> None) — the source of an
+        # intermittent grab-handoff failure under the offscreen QPA. Raising +
+        # activating the parent makes the grab deterministic.
+        self.parent.raise_()
+        self.parent.activateWindow()
         QtWidgets.QApplication.processEvents()
         self.tracker = MouseTracking(self.parent, auto_update=False)
         self.tracker.update_child_widgets()

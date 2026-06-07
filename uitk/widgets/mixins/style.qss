@@ -808,7 +808,8 @@ QAbstractSlider {
     background-color: {WIDGET_BACKGROUND};
 }
 QAbstractSlider:hover {
-    background-color: {WIDGET_BACKGROUND_HOVER};
+    /* Leave the widget background as-is on hover (only the border highlights);
+       the grab affordance is the always-slightly-brighter handle, below. */
     border: {BORDER_W} solid {BORDER_HOVER};
 }
 QAbstractSlider:disabled {
@@ -831,7 +832,8 @@ QAbstractSlider::handle {
     border: {BORDER_W} solid {BORDER_COLOR};
     /* Literal 1px: handle is width:10px by design â€” {RADIUS} > 5 distorts it. */
     border-radius: 1px;
-    background-color: {PANEL_BACKGROUND};
+    /* A hair brighter than the panel so the knob reads as grabbable. */
+    background-color: {PANEL_BACKGROUND_TINT};
 }
 QAbstractSlider::handle:hover {
     background-color: {BUTTON_HOVER};

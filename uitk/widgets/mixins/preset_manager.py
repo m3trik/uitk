@@ -637,16 +637,18 @@ class PresetManager(ptk.LoggingMixin):
     def wire_combo(self, combo, on_loaded=None) -> None:
         """Wire a ``WidgetComboBox`` as a fully-functional preset selector.
 
-        Adds **Rename / Delete / Open / Save** actions to the combo's action
-        section (arranged as a 2x2 grid), populates it with existing presets,
-        and connects selection changes to ``load()``.
+        Adds a single row of compact, icon-only actions —
+        **Rename / Refresh / Delete / Open / Save** — to the combo's action
+        section, populates it with existing presets, and connects selection
+        changes to ``load()``. *Refresh* reloads (re-applies) the currently
+        selected preset.
 
         Built-in (shipped, read-only) presets are shown italicised in the list,
         and **Rename / Delete are disabled** while one is selected — they can't
         act on a read-only preset, so greying them out is clearer than letting a
-        click silently no-op. **Save** stays enabled (it writes a user preset
-        that shadows the built-in — the "duplicate to edit" flow), as does
-        **Open**.
+        click silently no-op. **Refresh / Open / Save** stay enabled (Save
+        writes a user preset that shadows the built-in — the "duplicate to edit"
+        flow).
 
         The combo shows the *current preset name* as its selected item.
         When no presets exist the combo is empty and displays
@@ -723,24 +725,38 @@ class PresetManager(ptk.LoggingMixin):
             rename_action.setEnabled(is_user)
             delete_action.setEnabled(is_user)
 
-        def on_selected(idx):
-            update_action_states()
+        def load_current():
+            """(Re)apply the currently selected preset's values to the widgets.
+
+            When ``on_loaded`` is provided, block signals during load and fire
+            the single consolidated callback afterwards. Otherwise, let signals
+            propagate so normal slot handlers (e.g. checkbox → refresh) fire.
+            """
+            idx = combo.currentIndex()
             if idx < 0:
                 return
             name = combo.itemText(idx)
             if name:
-                # When on_loaded is provided, block signals during load
-                # and fire the single consolidated callback afterwards.
-                # Otherwise, let signals propagate so normal slot handlers
-                # (e.g. checkbox → refresh) fire automatically.
                 mgr.load(name, block_signals=on_loaded is not None)
                 if on_loaded:
                     on_loaded()
 
+        def on_selected(idx):
+            update_action_states()
+            load_current()
+
+        def on_refresh():
+            """Reload the currently selected preset (re-apply its values)."""
+            load_current()
+
         def on_save():
             parent_w = combo.window() or combo
+            # Built-ins blank the seed so Save acts as duplicate-to-edit
+            # rather than silently shadowing a read-only default.
+            current = combo.currentText()
+            seed = "" if mgr.source(current) == "builtin" else current
             name, ok = QtWidgets.QInputDialog.getText(
-                parent_w, "Save Preset", "Preset name:"
+                parent_w, "Save Preset", "Preset name:", text=seed
             )
             if ok and name.strip():
                 name = name.strip()
@@ -781,33 +797,39 @@ class PresetManager(ptk.LoggingMixin):
         self._excluded_widgets.add(combo)
         self._refresh_combo = refresh
 
-        # Two columns -> Rename | Delete on the first row, Open | Save on the
-        # second (actions fill row-major). wire_combo is WidgetComboBox-only
-        # (it also drives ._model / ._rebuild_actions_section below).
-        combo.action_columns = 2
+        # A single row of compact, icon-only buttons (no separator).
+        # wire_combo is WidgetComboBox-only (it also drives ._model /
+        # ._rebuild_actions_section below).
+        combo.action_icon_only = True
+        combo.show_action_separator = False
 
         actions = combo.actions.add(
             {
                 "Rename": on_rename,
+                "Refresh": on_refresh,
                 "Delete": on_delete,
                 "Open": on_open_folder,
                 "Save": on_save,
             }
         )
-        rename_action, delete_action, open_action, save_action = actions
+        rename_action, refresh_action, delete_action, open_action, save_action = actions
+        combo.action_columns = len(actions)  # all on one row
         for action, tip in (
             (rename_action, "Rename the selected user preset."),
+            (refresh_action, "Reload the selected preset."),
             (delete_action, "Delete the selected user preset."),
             (open_action, "Open the preset folder in the file explorer."),
             (save_action, "Save the current settings as a preset."),
         ):
             action.setToolTip(tip)
-        # Apply SVG icons (edit / trash / folder / save) matching the order above.
+        # Apply SVG icons matching the order above.
         try:
             from uitk.widgets.mixins.icon_manager import IconManager
 
-            for action, icon_name in zip(actions, ("edit", "trash", "folder", "save")):
-                action.setIcon(IconManager.get(icon_name, size=(14, 14)))
+            for action, icon_name in zip(
+                actions, ("edit", "refresh", "trash", "folder", "save")
+            ):
+                action.setIcon(IconManager.get(icon_name, size=(16, 16)))
             combo._rebuild_actions_section()
         except Exception:
             pass
@@ -1091,22 +1113,42 @@ def _legacy_qt_root_candidates() -> List[Path]:
     return [appconfig / "m3trik" / "presets", appconfig, generic]
 
 
+def _dir_has_preset_data(directory: Path) -> bool:
+    """True when *directory* holds at least one preset file (``*.json``).
+
+    Distinguishes a *husk* — an empty shell a prior wrap left behind,
+    holding only a ``.migrated`` sentinel (the merge keeps the destination
+    on a sentinel collision, so the source dir survives) — from genuine
+    pre-wrap state that still carries presets to relocate. A husk must not
+    count as pre-wrap evidence, or it re-triggers the wrap on every launch
+    and keeps reburying correctly-placed packages (the "saved preset gone
+    next session" bug).
+    """
+    try:
+        return any(directory.rglob("*.json"))
+    except OSError:
+        return False
+
+
 def _looks_like_ecosystem_wrapper(uitk_dir: Path, known_pkgs: Set[str]) -> bool:
     """True when *uitk_dir* is already in the wrapper layout.
 
     A *clean* wrapper layout has only known-package subdirs (uitk /
-    mayatk / extapps) and possibly dotfiles. Anything else at the root
-    level — ``style_presets``, ``hotkey_presets``, ``some_window``, ... —
-    is pre-wrap state that needs to be moved one level deeper.
+    mayatk / extapps) and possibly dotfiles. A non-known root-level dir
+    carrying preset data — ``style_presets``, ``hotkey_presets``,
+    ``some_window``, ... — is pre-wrap state that needs to be moved one
+    level deeper.
 
     Strict matching (vs. "any known-pkg present") also recovers from a
     *partial* wrap: if a prior wrap was interrupted after creating the
     inner ``uitk/`` subdir but before moving every stray sibling, the
-    next call still detects the strays as pre-wrap and finishes the
-    job.
+    next call still detects the data-bearing strays as pre-wrap and
+    finishes the job.
 
-    Empty dirs count as "already wrapped" (no data to move; treating
-    them as pre-wrap would create a useless empty ``uitk/`` subdir).
+    Empty dirs — and data-less *husks* (only a ``.migrated`` sentinel,
+    no ``*.json``) — count as "already wrapped": there is nothing to
+    move, and treating them as pre-wrap would re-fire the wrap forever,
+    burying any package freshly re-created at the root in between.
     """
     if not uitk_dir.is_dir():
         return False
@@ -1121,6 +1163,8 @@ def _looks_like_ecosystem_wrapper(uitk_dir: Path, known_pkgs: Set[str]) -> bool:
             continue
         if child.name.startswith("."):
             continue
+        if not _dir_has_preset_data(child):
+            continue  # husk left by a prior wrap — not real pre-wrap state
         return False
     return True
 
@@ -1136,9 +1180,15 @@ def _wrap_pre_wrap_uitk_state(uitk_dir: Path, known_pkgs: Set[str]) -> None:
     one level deeper, in place, without a sibling temp dir.
 
     Robust to a previously-interrupted wrap: the detector treats any
-    non-known-pkg / non-dotfile child as evidence of pre-wrap state,
-    so a partial wrap (inner ``uitk/`` already created, some siblings
-    not yet moved) gets finished on the next call.
+    *data-bearing* non-known-pkg / non-dotfile child as evidence of
+    pre-wrap state, so a partial wrap (inner ``uitk/`` already created,
+    some siblings not yet moved) gets finished on the next call.
+
+    Only uitk's own pre-wrap dirs move down. A known-package sibling
+    (``mayatk/``, ``extapps/``, and the inner ``uitk/`` itself) already
+    lives at the correct level, so it is left in place — relocating it
+    would bury presets saved under it where the live load path can't
+    find them (the "saved preset gone next session" bug).
 
     Interim migration-state artifacts (``.migrated``, ``.migration/``)
     that survive from older revisions of this module are dropped
@@ -1178,6 +1228,13 @@ def _wrap_pre_wrap_uitk_state(uitk_dir: Path, known_pkgs: Set[str]) -> None:
                     shutil.rmtree(child)
             except OSError as e:
                 _log.warning("preset wrap: could not remove %s: %s", child, e)
+            continue
+        # A correctly-placed known-package sibling (mayatk/, extapps/, and
+        # the inner uitk/ itself) already lives at the right level — never
+        # relocate it into the wrapper, or presets saved under it get buried
+        # where the live load path won't find them. Only uitk's own pre-wrap
+        # state (the non-known root-level dirs) moves down.
+        if child.is_dir() and child.name in known_pkgs:
             continue
         # The inner target itself shows up in the snapshot only if it
         # pre-existed; skip it so we don't try to move it into itself.
