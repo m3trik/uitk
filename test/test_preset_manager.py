@@ -700,13 +700,17 @@ class TestBuiltinTier(BaseTestCase):
 
     @staticmethod
     def _action_state(combo, label):
-        """Enabled state of the actions-section button named *label*."""
+        """Enabled state of the actions-section button named *label*.
+
+        Matches on accessibleName since the preset combo uses icon-only buttons
+        (no visible text).
+        """
         last = combo._model.rowCount() - 1
         inner = combo._row_containers.get(last).property("_embedded_widget")
         lay = inner.layout()
         for i in range(lay.count()):
             btn = lay.itemAt(i).widget()
-            if btn.text() == label:
+            if btn.accessibleName() == label:
                 return btn.isEnabled()
         raise AssertionError(f"no action button {label!r}")
 
@@ -737,6 +741,43 @@ class TestBuiltinTier(BaseTestCase):
         combo.setCurrentIndex(combo.findText("custom"))  # user
         self.assertTrue(self._action_state(combo, "Rename"))
         self.assertTrue(self._action_state(combo, "Delete"))
+
+    @staticmethod
+    def _action_buttons(combo):
+        last = combo._model.rowCount() - 1
+        inner = combo._row_containers.get(last).property("_embedded_widget")
+        lay = inner.layout()
+        return [lay.itemAt(i).widget() for i in range(lay.count())]
+
+    def test_wire_combo_actions_are_icon_only_single_row_with_refresh(self):
+        combo = self._wire_combo()
+        btns = self._action_buttons(combo)
+        names = [b.accessibleName() for b in btns]
+        self.assertEqual(names, ["Rename", "Refresh", "Delete", "Open", "Save"])
+        # icon-only -> no visible text; single row -> no separator row.
+        self.assertTrue(all(b.text() == "" for b in btns), "buttons must be icon-only")
+        self.assertEqual(combo._action_row_count, 1, "separator removed -> one action row")
+
+    def test_wire_combo_refresh_reloads_current_preset(self):
+        # Refresh re-applies the selected preset's stored values to the widgets.
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        self.chk.setChecked(True)
+        self.spn.setValue(42)
+        self.mgr.save("custom")  # captures chk=True, spn=42
+
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        combo.setCurrentIndex(combo.findText("custom"))  # loads -> spn 42
+        self.assertEqual(self.spn.value(), 42)
+
+        self.spn.setValue(7)  # user edits away from the preset
+        for b in self._action_buttons(combo):
+            if b.accessibleName() == "Refresh":
+                b.click()
+                break
+        self.assertEqual(self.spn.value(), 42, "Refresh must reload the selected preset")
 
 
 class TestSemanticPresetMode(BaseTestCase):

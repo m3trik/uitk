@@ -205,9 +205,9 @@ The widget is then added to `self.widgets`, `on_child_registered` is emitted, an
 ```
 1. showEvent()
 2. CollapsableGroup._enforce_state(suppress_resize=True)  # settle groups
-3. restore_window_geometry()                              # restore size/pos; returns True if a saved size was applied
+3. restore_window_geometry()                              # restore size/pos
 4. register_children()                                    # catch widgets not caught by ChildPolished
-5. fit_height_to_content()                                # snap height to content (skipped if a saved size was restored or fit_to_content_on_show=False)
+5. fit_height_to_content()                                # trim vertical dead space; keeps restored width+pos (skipped if fit_to_content_on_show=False)
 6. _ensure_on_screen()                                    # clamp to monitor (after fit, so it sees the final height)
 7. trigger_deferred()                                     # run deferred setup
 8. on_first_show signal                                   # slot classes can hook here

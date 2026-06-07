@@ -637,16 +637,18 @@ class PresetManager(ptk.LoggingMixin):
     def wire_combo(self, combo, on_loaded=None) -> None:
         """Wire a ``WidgetComboBox`` as a fully-functional preset selector.
 
-        Adds **Rename / Delete / Open / Save** actions to the combo's action
-        section (arranged as a 2x2 grid), populates it with existing presets,
-        and connects selection changes to ``load()``.
+        Adds a single row of compact, icon-only actions —
+        **Rename / Refresh / Delete / Open / Save** — to the combo's action
+        section, populates it with existing presets, and connects selection
+        changes to ``load()``. *Refresh* reloads (re-applies) the currently
+        selected preset.
 
         Built-in (shipped, read-only) presets are shown italicised in the list,
         and **Rename / Delete are disabled** while one is selected — they can't
         act on a read-only preset, so greying them out is clearer than letting a
-        click silently no-op. **Save** stays enabled (it writes a user preset
-        that shadows the built-in — the "duplicate to edit" flow), as does
-        **Open**.
+        click silently no-op. **Refresh / Open / Save** stay enabled (Save
+        writes a user preset that shadows the built-in — the "duplicate to edit"
+        flow).
 
         The combo shows the *current preset name* as its selected item.
         When no presets exist the combo is empty and displays
@@ -723,24 +725,38 @@ class PresetManager(ptk.LoggingMixin):
             rename_action.setEnabled(is_user)
             delete_action.setEnabled(is_user)
 
-        def on_selected(idx):
-            update_action_states()
+        def load_current():
+            """(Re)apply the currently selected preset's values to the widgets.
+
+            When ``on_loaded`` is provided, block signals during load and fire
+            the single consolidated callback afterwards. Otherwise, let signals
+            propagate so normal slot handlers (e.g. checkbox → refresh) fire.
+            """
+            idx = combo.currentIndex()
             if idx < 0:
                 return
             name = combo.itemText(idx)
             if name:
-                # When on_loaded is provided, block signals during load
-                # and fire the single consolidated callback afterwards.
-                # Otherwise, let signals propagate so normal slot handlers
-                # (e.g. checkbox → refresh) fire automatically.
                 mgr.load(name, block_signals=on_loaded is not None)
                 if on_loaded:
                     on_loaded()
 
+        def on_selected(idx):
+            update_action_states()
+            load_current()
+
+        def on_refresh():
+            """Reload the currently selected preset (re-apply its values)."""
+            load_current()
+
         def on_save():
             parent_w = combo.window() or combo
+            # Built-ins blank the seed so Save acts as duplicate-to-edit
+            # rather than silently shadowing a read-only default.
+            current = combo.currentText()
+            seed = "" if mgr.source(current) == "builtin" else current
             name, ok = QtWidgets.QInputDialog.getText(
-                parent_w, "Save Preset", "Preset name:"
+                parent_w, "Save Preset", "Preset name:", text=seed
             )
             if ok and name.strip():
                 name = name.strip()
@@ -781,33 +797,39 @@ class PresetManager(ptk.LoggingMixin):
         self._excluded_widgets.add(combo)
         self._refresh_combo = refresh
 
-        # Two columns -> Rename | Delete on the first row, Open | Save on the
-        # second (actions fill row-major). wire_combo is WidgetComboBox-only
-        # (it also drives ._model / ._rebuild_actions_section below).
-        combo.action_columns = 2
+        # A single row of compact, icon-only buttons (no separator).
+        # wire_combo is WidgetComboBox-only (it also drives ._model /
+        # ._rebuild_actions_section below).
+        combo.action_icon_only = True
+        combo.show_action_separator = False
 
         actions = combo.actions.add(
             {
                 "Rename": on_rename,
+                "Refresh": on_refresh,
                 "Delete": on_delete,
                 "Open": on_open_folder,
                 "Save": on_save,
             }
         )
-        rename_action, delete_action, open_action, save_action = actions
+        rename_action, refresh_action, delete_action, open_action, save_action = actions
+        combo.action_columns = len(actions)  # all on one row
         for action, tip in (
             (rename_action, "Rename the selected user preset."),
+            (refresh_action, "Reload the selected preset."),
             (delete_action, "Delete the selected user preset."),
             (open_action, "Open the preset folder in the file explorer."),
             (save_action, "Save the current settings as a preset."),
         ):
             action.setToolTip(tip)
-        # Apply SVG icons (edit / trash / folder / save) matching the order above.
+        # Apply SVG icons matching the order above.
         try:
             from uitk.widgets.mixins.icon_manager import IconManager
 
-            for action, icon_name in zip(actions, ("edit", "trash", "folder", "save")):
-                action.setIcon(IconManager.get(icon_name, size=(14, 14)))
+            for action, icon_name in zip(
+                actions, ("edit", "refresh", "trash", "folder", "save")
+            ):
+                action.setIcon(IconManager.get(icon_name, size=(16, 16)))
             combo._rebuild_actions_section()
         except Exception:
             pass

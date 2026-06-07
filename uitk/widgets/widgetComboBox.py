@@ -184,6 +184,11 @@ class WidgetComboBox(ComboBox):
         # Action buttons are laid out in this many columns, filled row-major.
         # Default 1 = a single vertical stack (back-compat).
         self._action_columns: int = 1
+        # When True, action buttons show only their icon (no text) and render as
+        # compact square buttons — a toolbar-style row. Default False (text).
+        self._action_icon_only: bool = False
+        # Whether to draw the separator above the actions section. Default True.
+        self._show_action_separator: bool = True
         # (action, slot) pairs binding each action's ``changed`` signal to its
         # button's enabled state. Tracked so ``_strip_actions_section`` can
         # disconnect them and not accumulate dangling connections to deleted
@@ -533,6 +538,35 @@ class WidgetComboBox(ComboBox):
             self._action_columns = value
             self._rebuild_actions_section()
 
+    @property
+    def action_icon_only(self) -> bool:
+        """When True, action buttons show only their icon (compact, no text).
+
+        Renders the actions section as a toolbar-style row of square icon
+        buttons; the action text is still used as each button's tooltip. Default
+        ``False`` (icon + centered text). Setting it re-lays out the section.
+        """
+        return self._action_icon_only
+
+    @action_icon_only.setter
+    def action_icon_only(self, value: bool) -> None:
+        value = bool(value)
+        if value != self._action_icon_only:
+            self._action_icon_only = value
+            self._rebuild_actions_section()
+
+    @property
+    def show_action_separator(self) -> bool:
+        """Whether a separator is drawn above the actions section (default True)."""
+        return self._show_action_separator
+
+    @show_action_separator.setter
+    def show_action_separator(self, value: bool) -> None:
+        value = bool(value)
+        if value != self._show_action_separator:
+            self._show_action_separator = value
+            self._rebuild_actions_section()
+
     def _disconnect_action_buttons(self) -> None:
         """Drop the action.changed→button bindings from the last rebuild."""
         for action, slot in self._action_button_conns:
@@ -584,47 +618,60 @@ class WidgetComboBox(ComboBox):
         ]
         self._action_row_count = 0
 
+    # Square size (px) of an icon-only action button.
+    _ACTION_ICON_BUTTON_SIZE = 24
+
     def _rebuild_actions_section(self) -> None:
-        """Rebuild the separator + action buttons at the bottom.
+        """Rebuild the (optional separator +) action buttons at the bottom.
 
         Buttons are grouped inside a single container widget (zero margins)
-        added as one model row beneath the separator. They are arranged in
-        :attr:`action_columns` columns, filled row-major, so e.g. four actions
-        with ``action_columns == 2`` form a tidy 2x2 grid. Each button mirrors
-        its QAction's enabled state via :meth:`_bind_button_to_action`.
+        added as one model row. They are arranged in :attr:`action_columns`
+        columns, filled row-major, so e.g. four actions with
+        ``action_columns == 2`` form a tidy 2x2 grid (or a single row when
+        ``action_columns`` equals the action count). When
+        :attr:`action_icon_only` is set the buttons are compact, icon-only
+        squares (text → tooltip) for a toolbar-style row; otherwise they show a
+        centered icon + text and expand to fill. The separator above the section
+        is drawn unless :attr:`show_action_separator` is False. Each button
+        mirrors its QAction's enabled state via :meth:`_bind_button_to_action`.
         """
         self._strip_actions_section()
         if not self._actions_ns._actions:
             return
 
-        from uitk.widgets.separator import Separator
+        row_count = 0
+        icon_only = self._action_icon_only
 
-        # Default Separator HLine is too subtle against the popup background —
-        # strengthen it with a palette-aware border-top so the actions section
-        # reads as a distinct group from the items above.  Uses palette(text)
-        # so it stays visible on dark themes where palette(mid) blends in.
-        sep = Separator()
-        sep.setFrameShape(QtWidgets.QFrame.NoFrame)
-        sep.setFixedHeight(7)
-        sep.setStyleSheet(
-            "QFrame {"
-            " background: transparent;"
-            " border: none;"
-            " border-top: 1px solid palette(text);"
-            " margin: 3px 6px;"
-            "}"
-        )
-        sep_row = self._add_widget_item(
-            sep, "", None, ascending=False, track_height=False
-        )
-        # A NoFrame/HLine separator advertises an invalid sizeHint height, so
-        # _apply_uniform_height can't size its row and the view falls back to
-        # the delegate's font-based default — taller than the 7px line, which
-        # renders as dead space above and below it (and between the separator
-        # and the buttons). Pin the row to the separator's own fixed height.
-        sep_item = self._model.item(sep_row)
-        if sep_item is not None:
-            sep_item.setSizeHint(QtCore.QSize(0, sep.minimumHeight()))
+        if self._show_action_separator:
+            from uitk.widgets.separator import Separator
+
+            # Default Separator HLine is too subtle against the popup background —
+            # strengthen it with a palette-aware border-top so the actions section
+            # reads as a distinct group from the items above.  Uses palette(text)
+            # so it stays visible on dark themes where palette(mid) blends in.
+            sep = Separator()
+            sep.setFrameShape(QtWidgets.QFrame.NoFrame)
+            sep.setFixedHeight(7)
+            sep.setStyleSheet(
+                "QFrame {"
+                " background: transparent;"
+                " border: none;"
+                " border-top: 1px solid palette(text);"
+                " margin: 3px 6px;"
+                "}"
+            )
+            sep_row = self._add_widget_item(
+                sep, "", None, ascending=False, track_height=False
+            )
+            # A NoFrame/HLine separator advertises an invalid sizeHint height, so
+            # _apply_uniform_height can't size its row and the view falls back to
+            # the delegate's font-based default — taller than the 7px line, which
+            # renders as dead space above and below it (and between the separator
+            # and the buttons). Pin the row to the separator's own fixed height.
+            sep_item = self._model.item(sep_row)
+            if sep_item is not None:
+                sep_item.setSizeHint(QtCore.QSize(0, sep.minimumHeight()))
+            row_count += 1
 
         # Build a single container holding all action buttons in a grid.
         ncols = max(1, self._action_columns)
@@ -637,21 +684,29 @@ class WidgetComboBox(ComboBox):
         max_btn_width = 0
         for i, action in enumerate(self._actions_ns._actions):
             btn = QtWidgets.QPushButton(container)
-            btn.setText(action.text())
             if action.icon() and not action.icon().isNull():
                 btn.setIcon(action.icon())
-            if action.toolTip():
-                btn.setToolTip(action.toolTip())
+            # Text becomes the tooltip in icon-only mode so the action is still
+            # discoverable without a visible label; the accessible name keeps it
+            # identifiable to screen readers (and tests) in both modes.
+            btn.setToolTip(action.toolTip() or action.text())
+            btn.setAccessibleName(action.text())
+            if icon_only:
+                side = self._ACTION_ICON_BUTTON_SIZE
+                btn.setIconSize(QtCore.QSize(side - 8, side - 8))
+                btn.setFixedSize(QtCore.QSize(side, side))
+            else:
+                btn.setText(action.text())
+                btn.setSizePolicy(
+                    QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+                )
+                btn.setStyleSheet("text-align: center;")
             btn.setDefault(False)
             btn.setAutoDefault(False)
             btn.setProperty("class", "combobox-action")
             btn.setCursor(QtCore.Qt.PointingHandCursor)
-            btn.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
             btn.clicked.connect(action.trigger)
             btn.clicked.connect(self.hidePopup)
-            btn.setStyleSheet("text-align: center;")
             self._bind_button_to_action(btn, action)
             layout.addWidget(btn, i // ncols, i % ncols)
             # Track widest button via sizeHint (reliable for QPushButton).
@@ -659,7 +714,8 @@ class WidgetComboBox(ComboBox):
             if w > max_btn_width:
                 max_btn_width = w
 
-        # Equal-width columns so the grid reads as aligned pairs.
+        # Equal-width columns so the grid reads as aligned pairs (and so
+        # compact icon buttons distribute evenly across the row).
         for c in range(ncols):
             layout.setColumnStretch(c, 1)
 
@@ -673,8 +729,9 @@ class WidgetComboBox(ComboBox):
         item = self._model.item(row)
         if item:
             item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
+        row_count += 1
 
-        self._action_row_count = 2  # separator + 1 container row
+        self._action_row_count = row_count
 
     def _create_overflow_indicator(self) -> QtWidgets.QLabel:
         """Create a minimal triangle arrow indicator for overflow."""

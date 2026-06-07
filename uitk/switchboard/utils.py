@@ -402,6 +402,90 @@ class SwitchboardUtilsMixin:
                         f"Failed to connect signal '{signal_name}' on '{widget}' to '{slot}': {e}"
                     )
 
+    def add_reset_buttons(
+        self,
+        ui,
+        widgets=None,
+        *,
+        types=(QtWidgets.QAbstractSpinBox,),
+        skip=(),
+        **set_reset_kwargs,
+    ):
+        """Give each matching value widget a per-field *reset-to-default* button.
+
+        A thin batch wrapper over the option-box ``ResetOption`` (see
+        ``widget.option_box.set_reset``): for every resolved widget it adds a
+        small icon button beside the field that resets it to its registry
+        default on click, or *bypasses* it to default (greyed, restorable) on
+        Alt/Ctrl+click. The default is resolved from the UI's ``StateManager``
+        at click time, so no per-field wiring is needed. Bypass is
+        non-persistent — each session starts with every field active.
+
+        Widget resolution mirrors :meth:`connect_multi`.
+
+        Note:
+            Prefer calling this *before* ``connect_multi`` (or anything that
+            registers the same widgets as deferred) inside a slots ``__init__``.
+            Wrapping a widget in its option-box reparents it, which invalidates
+            the QUiLoader-built Python wrapper captured at defer time. The
+            switchboard self-heals — ``_process_deferred_widgets`` re-resolves
+            such widgets to their live wrapper — so a late wrap no longer crashes
+            the panel ("Internal C++ object ... already deleted"); wrapping first
+            simply avoids the extra re-resolution.
+
+        Parameters:
+            ui (QWidget): A previously loaded dynamic UI object.
+            widgets (str/list/None): Widgets to wire. A shorthand pattern
+                (``'s000-4'``), an explicit widget list, or ``None`` to
+                auto-discover every child of *types*.
+            types (tuple): Widget class(es) auto-discovered when *widgets* is
+                ``None`` (default: spin boxes). Pass e.g. ``(ComboBox,)`` for a
+                panel whose parameters are combos.
+            skip (str/iterable): objectName(s) and/or widget instance(s) to
+                leave alone (e.g. fields sharing a tight row with a button).
+            **set_reset_kwargs: Forwarded verbatim to ``option_box.set_reset``
+                (e.g. ``reset=``, ``icon=``, ``tooltip=``, ``on_toggled=``).
+
+        Returns:
+            list: The widgets that received a reset button.
+
+        Example:
+            sb.add_reset_buttons(ui)                      # every spin box
+            sb.add_reset_buttons(ui, skip=("s025", "s026", "s027"))
+            sb.add_reset_buttons(ui, "cmb000-1")          # specific combos
+        """
+        if widgets is None:
+            widgets = []
+            for t in ptk.make_iterable(types):
+                widgets.extend(ui.findChildren(t))
+        elif isinstance(widgets, str):
+            widgets = self.get_widgets_by_string_pattern(ui, widgets)
+        else:
+            widgets = ptk.make_iterable(widgets)
+
+        # Split skip into names and widget identities so callers can pass either.
+        skip = ptk.make_iterable(skip)
+        skip_names = {s for s in skip if isinstance(s, str)}
+        skip_ids = {id(s) for s in skip if not isinstance(s, str)}
+
+        wired = []
+        for widget in widgets:
+            if not widget:
+                continue
+            name = widget.objectName()
+            if name in skip_names or id(widget) in skip_ids:
+                continue
+            try:
+                widget.option_box.set_reset(**set_reset_kwargs)
+                wired.append(widget)
+            except Exception as e:
+                # Use the name captured above rather than re-reading the widget:
+                # if set_reset failed because the underlying C++ object was torn
+                # down mid-wrap, calling back into it here would raise again and
+                # abort the whole batch.
+                self.logger.debug(f"[add_reset_buttons] skipped '{name}': {e}")
+        return wired
+
     def set_axis_for_checkboxes(self, checkboxes, axis, ui=None):
         """Set the given checkbox's check states to reflect the specified axis.
 

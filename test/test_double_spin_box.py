@@ -191,5 +191,55 @@ class TestDoubleSpinBoxPrefix(QtBaseTestCase):
         self.assertEqual(sb.prefix(), "Value:\t")
 
 
+class TestDoubleSpinBoxTextColor(QtBaseTestCase):
+    """SpinBoxTextColorMixin.set_text_color — tints the value text (e.g. X/Y/Z)."""
+
+    def _make(self):
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        return self.track_widget(DoubleSpinBox())
+
+    def test_default_is_unset(self):
+        sb = self._make()
+        self.assertIsNone(sb.text_color())
+        self.assertEqual(sb.styleSheet(), "")
+
+    def test_set_text_color_applies_to_spinbox(self):
+        sb = self._make()
+        sb.set_text_color("#ff5555")
+        self.assertEqual(sb.text_color(), "#ff5555")
+        # Applied on the spin box itself — under the theme the QAbstractSpinBox
+        # color governs the displayed value, so a line-edit color is overridden.
+        self.assertIn("color: #ff5555;", sb.styleSheet())
+
+    def test_clear_with_none_resets_to_theme(self):
+        sb = self._make()
+        sb.set_text_color("#ff5555")
+        sb.set_text_color(None)
+        self.assertIsNone(sb.text_color())
+        self.assertEqual(sb.styleSheet(), "")
+
+    def test_empty_string_clears(self):
+        sb = self._make()
+        sb.set_text_color("#ff5555")
+        sb.set_text_color("")  # falsy -> treated as clear
+        self.assertIsNone(sb.text_color())
+        self.assertEqual(sb.styleSheet(), "")
+
+    def test_color_merges_with_existing_inline_style(self):
+        # set_text_color must not clobber other inline styling (e.g. option-box
+        # border tweaks); changing/clearing the color leaves the rest intact.
+        sb = self._make()
+        sb.setStyleSheet("border-right-width: 0px;")
+        sb.set_text_color("#ff5555")
+        self.assertIn("border-right-width: 0px;", sb.styleSheet())
+        self.assertIn("color: #ff5555;", sb.styleSheet())
+        sb.set_text_color("#00b000")  # change color
+        self.assertIn("border-right-width: 0px;", sb.styleSheet())
+        self.assertNotIn("#ff5555", sb.styleSheet())
+        sb.set_text_color(None)  # clear color
+        self.assertEqual(sb.styleSheet().strip(), "border-right-width: 0px;")
+
+
 if __name__ == "__main__":
     unittest.main()

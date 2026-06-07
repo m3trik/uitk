@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-06-05_
+_Generated: 2026-06-07_
 
 ## Index
 
@@ -65,6 +65,7 @@ _Generated: 2026-06-05_
 - [`widgets/mixins/settings_manager.py`](#widgets--mixins--settings_manager)
 - [`widgets/mixins/shortcuts.py`](#widgets--mixins--shortcuts) — Generic keyboard-shortcut primitives, usable by any Qt widget.
 - [`widgets/mixins/size_grip.py`](#widgets--mixins--size_grip) — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
+- [`widgets/mixins/spin_box_text_color.py`](#widgets--mixins--spin_box_text_color) — Shared value-text coloring for spin-box widgets.
 - [`widgets/mixins/state_manager.py`](#widgets--mixins--state_manager)
 - [`widgets/mixins/style_sheet.py`](#widgets--mixins--style_sheet)
 - [`widgets/mixins/text.py`](#widgets--mixins--text)
@@ -80,6 +81,7 @@ _Generated: 2026-06-05_
 - [`widgets/optionBox/options/option_menu.py`](#widgets--optionBox--options--option_menu) — Option Menu - A dropdown menu option for OptionBox.
 - [`widgets/optionBox/options/pin_values.py`](#widgets--optionBox--options--pin_values) — Pin Values option for OptionBox - allows pinning/saving widget values.
 - [`widgets/optionBox/options/recent_values.py`](#widgets--optionBox--options--recent_values) — Recent Values option for OptionBox — shows a selectable history list.
+- [`widgets/optionBox/options/reset.py`](#widgets--optionBox--options--reset) — Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
 - [`widgets/optionBox/options/toggle.py`](#widgets--optionBox--options--toggle) — Toggle option for OptionBox — a persisted binary on/off button.
 - [`widgets/optionBox/utils.py`](#widgets--optionBox--utils) — Utilities and helper functions for OptionBox.
 - [`widgets/progressBar.py`](#widgets--progressBar)
@@ -101,8 +103,8 @@ _Generated: 2026-06-05_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
+- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -360,7 +362,7 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
 
 Mixin that exposes the bundled editor windows on the Switchboard.
 
-- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L225)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
+- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L210)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
   - `SwitchboardEditorsMixin.editors(self) -> _EditorRegistry` *(property)* — Cached editor registry — see :class:`_EditorRegistry`.
 
 <a id="switchboard--names"></a>
@@ -427,6 +429,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]` — Create button groups for a set of widgets.
   - `SwitchboardUtilsMixin.toggle_multi(self, ui, trigger=None, signal=None, **kwargs)` — Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…
   - `SwitchboardUtilsMixin.connect_multi(self, ui, widgets, signals, slots)` — Connect multiple signals to multiple slots at once.
+  - `SwitchboardUtilsMixin.add_reset_buttons(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)` — Give each matching value widget a per-field *reset-to-default* button.
   - `SwitchboardUtilsMixin.set_axis_for_checkboxes(self, checkboxes, axis, ui=None)` — Set the given checkbox's check states to reflect the specified axis.
   - `SwitchboardUtilsMixin.get_axis_from_checkboxes(self, checkboxes, ui=None, return_type='str')` — Get the intended axis value as a string or integer by reading the multiple checkbox's check states.
   - `SwitchboardUtilsMixin.hide_unmatched_groupboxes(self, ui, unknown_tags) -> None` — Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted
@@ -565,7 +568,7 @@ HTML formatting helpers shared by uitk's rich-text widgets.
 <a id="widgets--doubleSpinBox"></a>
 ### `widgets/doubleSpinBox.py`
 
-- **[`class DoubleSpinBox(WheelStepMixin, FeedbackMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L10)** — Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
+- **[`class DoubleSpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L11)** — Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
   - `DoubleSpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box, removing trailing zeros and unnecessary decimal points.
   - `DoubleSpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
 
@@ -820,7 +823,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MainWindow.adjust_height_by(self, delta: int) -> None` — Apply a signed pixel delta to the window's height.
   - `MainWindow.fit_height_to_content(self) -> None` — Snap the window's height to its layout's natural content size.
   - `MainWindow.save_window_geometry(self) -> None` — Save the current window geometry (size and position) to settings.
-  - `MainWindow.restore_window_geometry(self) -> bool` — Restore the window geometry (size and position) from settings.
+  - `MainWindow.restore_window_geometry(self) -> None` — Restore the window geometry (size and position) from settings.
   - `MainWindow.clear_saved_geometry(self) -> None` — Clear any saved window geometry from settings.
   - `MainWindow.setVisible(self, visible: bool) -> None` — Override setVisible to respect pin state when hiding.
   - `MainWindow.show(self, pos=None, app_exec=False) -> None` — Show the MainWindow.
@@ -1071,9 +1074,9 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L829) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L846) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L974) — Root directory under which every relative ``preset_dir`` is resolved.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L851) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L868) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L996) — Root directory under which every relative ``preset_dir`` is resolved.
 - **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L16)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -1158,6 +1161,15 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
   - `CornerSizeGrip.paintEvent(self, event: QtGui.QPaintEvent) -> None`
 - **[`class SizeGripMixin`](uitk/uitk/widgets/mixins/size_grip.py#L98)** — Mixin that provides a consistent QSizeGrip attachment helper.
   - `SizeGripMixin.create_size_grip(self, container: Optional[QtWidgets.QWidget] = None, layout: Optional[QtWidgets.QLayout] = None, *, alignment: Optional[QtCore.Qt.Alignment] = None) -> Optional[QtWidgets.QSizeGrip]` — Create or reuse a size grip and ensure it is inserted in *layout*.
+
+<a id="widgets--mixins--spin_box_text_color"></a>
+### `widgets/mixins/spin_box_text_color.py`
+
+Shared value-text coloring for spin-box widgets.
+
+- **[`class SpinBoxTextColorMixin`](uitk/uitk/widgets/mixins/spin_box_text_color.py#L20)** — Tint a spin box's displayed value text.
+  - `SpinBoxTextColorMixin.set_text_color(self, color) -> None` — Tint the displayed value text.
+  - `SpinBoxTextColorMixin.text_color(self)` — The current value-text color override, or ``None`` if unset.
 
 <a id="widgets--mixins--state_manager"></a>
 ### `widgets/mixins/state_manager.py`
@@ -1257,7 +1269,7 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
 - **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L8)** — Container widget that wraps a widget with option buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled-state changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L57)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L63)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
@@ -1396,6 +1408,17 @@ Recent Values option for OptionBox — shows a selectable history list.
   - `RecentValuesOption.recent_values(self)` *(property)* — Return a copy of the recent values list (most-recent first).
   - `RecentValuesOption.clear_recent_values(self)` — Clear all recent values.
 
+<a id="widgets--optionBox--options--reset"></a>
+### `widgets/optionBox/options/reset.py`
+
+Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
+
+- **[`class ResetOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/reset.py#L41)** — Reset-to-default button with a modifier-gated *bypass* toggle.
+  - `ResetOption.is_bypassed(self) -> bool` *(property)* — ``True`` while the parameter is bypassed (held at its default).
+  - `ResetOption.reset(self) -> None` — Reset the wrapped widget to its default (one-shot, persisted).
+  - `ResetOption.set_bypassed(self, value: bool, *, emit: bool = True) -> None` — Bypass (``True``) or restore (``False``) the widget.
+  - `ResetOption.setup_widget(self)`
+
 <a id="widgets--optionBox--options--toggle"></a>
 ### `widgets/optionBox/options/toggle.py`
 
@@ -1411,11 +1434,11 @@ Toggle option for OptionBox — a persisted binary on/off button.
 
 Utilities and helper functions for OptionBox.
 
-- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L950) — Add an option box to any widget with one function call.
-- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L973) — Add just a clear button to a text widget.
-- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L986) — Add a menu option to any widget.
-- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1005) — Add option_box attribute to a widget class.
-- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1020) — Patch common Qt widgets with option box support.
+- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1020) — Add an option box to any widget with one function call.
+- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1043) — Add just a clear button to a text widget.
+- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1056) — Add a menu option to any widget.
+- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1075) — Add option_box attribute to a widget class.
+- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1090) — Patch common Qt widgets with option box support.
 - **[`class OptionBoxManager(ptk.LoggingMixin)`](uitk/uitk/widgets/optionBox/utils.py#L10)** — Elegant manager for option box functionality accessible as widget.option_box
   - `OptionBoxManager.clear_option(self)` *(property)* — Get/set clear option state
   - `OptionBoxManager.clear_option(self, enabled)` — Enable/disable clear option
@@ -1427,6 +1450,7 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.add_action(self, callback=None, icon='option_box', tooltip='Options', text=None, states=None, settings_key=None)` — Add an action button without replacing existing ones.
   - `OptionBoxManager.set_toggle(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, gated_widgets=(), settings_key=None, replace: bool = True, on_toggled=None)` — Add a persisted binary toggle button (fluent interface).
   - `OptionBoxManager.add_toggle(self, **kwargs)` — Add a toggle without replacing existing ones.
+  - `OptionBoxManager.set_reset(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)` — Add a per-widget *reset-to-default* button (fluent).
   - `OptionBoxManager.browse(self, file_types=None, title='Browse', start_dir=None, mode='file', icon='folder', tooltip='Browse...', callback=None)` — Enable file/folder browse button (fluent interface).
   - `OptionBoxManager.enable_clear(self)` — Enable clear option (fluent interface)
   - `OptionBoxManager.disable_clear(self)` — Disable clear option (fluent interface)
@@ -1801,7 +1825,7 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
 <a id="widgets--spinBox"></a>
 ### `widgets/spinBox.py`
 
-- **[`class SpinBox(WheelStepMixin, FeedbackMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L13)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
+- **[`class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L14)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
   - `SpinBox.value(self) -> Union[float, int]` — Return integer if decimals is 0, else float.
   - `SpinBox.setCustomDisplayValues(self, *args)` — Set a mapping of values to custom display strings.
   - `SpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box.
@@ -1809,6 +1833,17 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.validate(self, text: str, pos: int) -> object` — Validate input, allowing custom display strings.
   - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
+
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
@@ -1873,17 +1908,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
-
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`
@@ -1993,6 +2017,10 @@ Scrollable rich-text viewer window.
   - `WidgetComboBox.actions(self) -> _ActionsNamespace` *(property)* — Namespace for managing persistent action buttons at the bottom of
   - `WidgetComboBox.action_columns(self) -> int` *(property)* — Number of columns the persistent action buttons are arranged into.
   - `WidgetComboBox.action_columns(self, value: int) -> None`
+  - `WidgetComboBox.action_icon_only(self) -> bool` *(property)* — When True, action buttons show only their icon (compact, no text).
+  - `WidgetComboBox.action_icon_only(self, value: bool) -> None`
+  - `WidgetComboBox.show_action_separator(self) -> bool` *(property)* — Whether a separator is drawn above the actions section (default True).
+  - `WidgetComboBox.show_action_separator(self, value: bool) -> None`
   - `WidgetComboBox.showPopup(self) -> None` — Override to expand popup to widest widget and update overflow.
   - `WidgetComboBox.hidePopup(self) -> None` — Override to hide overflow indicator when popup is hidden.
   - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance arrow drawn after the text.

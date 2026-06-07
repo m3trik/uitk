@@ -634,24 +634,33 @@ class MarkingMenu(
 
         if anchor is None:
             anchor = QtGui.QCursor.pos()
-        # Center the widget on the anchor, then clamp it fully within the
-        # available geometry of the screen the anchor lands on. Without this a
-        # menu opened with the cursor near a screen edge (or near a monitor
-        # boundary on multi-monitor setups) spills off-screen — its center sits
-        # at the cursor, so up to half the menu can fall outside the display.
+        # Center the widget on the anchor. Marking-menu navigation windows
+        # (startmenu/submenu) MUST keep their center pinned to the gesture
+        # origin: the directional flick that drives the menu is measured
+        # relative to that point, so an on-screen clamp that nudges the menu
+        # away from the cursor desyncs the gesture and "breaks the overlay
+        # starting position". Those windows opt out via ensure_on_screen=False
+        # (set in _init_ui) — and are the only widgets that reach this method
+        # today, so in practice the clamp below is skipped. It is kept (not
+        # deleted) and gated on the same ensure_on_screen flag MainWindow's
+        # _ensure_on_screen honors, so setCurrentWidget stays a correct
+        # positioning primitive for any opted-in widget, guarding the case
+        # where centering near a screen/monitor edge would spill it off the
+        # display.
         global_top_left = anchor - widget.rect().center()
-        screen = QtWidgets.QApplication.screenAt(
-            anchor
-        ) or QtWidgets.QApplication.primaryScreen()
-        if screen is not None:
-            ag = screen.availableGeometry()
-            # max(ag.left(), ...) guards the degenerate case of a widget wider
-            # or taller than the screen (clamp to the top-left corner).
-            x = min(global_top_left.x(), ag.right() - widget.width() + 1)
-            x = max(ag.left(), x)
-            y = min(global_top_left.y(), ag.bottom() - widget.height() + 1)
-            y = max(ag.top(), y)
-            global_top_left = QtCore.QPoint(x, y)
+        if getattr(widget, "ensure_on_screen", True):
+            screen = QtWidgets.QApplication.screenAt(
+                anchor
+            ) or QtWidgets.QApplication.primaryScreen()
+            if screen is not None:
+                ag = screen.availableGeometry()
+                # max(ag.left(), ...) guards the degenerate case of a widget
+                # wider or taller than the screen (clamp to the top-left corner).
+                x = min(global_top_left.x(), ag.right() - widget.width() + 1)
+                x = max(ag.left(), x)
+                y = min(global_top_left.y(), ag.bottom() - widget.height() + 1)
+                y = max(ag.top(), y)
+                global_top_left = QtCore.QPoint(x, y)
         widget.move(self.mapFromGlobal(global_top_left))
 
         # Update mouse tracking cache for the new widget
@@ -1448,6 +1457,55 @@ class MarkingMenu(
                     self.grabMouse()
                     _diag("PENDING_HIDE_AFTER_GRAB")
 
+    def _ensure_fullscreen_on_active_screen(
+        self, anchor: Optional[QtCore.QPoint] = None
+    ) -> None:
+        """Pin the full-screen overlay to the screen the menu will land on.
+
+        The overlay is a single frameless full-screen window and every menu is
+        positioned inside it via ``self.mapFromGlobal(...)``. Qt's
+        ``showFullScreen()`` binds the window to whichever screen it currently
+        occupies — set once at construction to the parent (Maya) window's
+        screen. When Maya is dragged to another monitor the overlay stays
+        pinned to the original screen, so a menu anchored on the new monitor
+        maps to local coordinates outside the overlay's bounds and silently
+        never appears ("shows once, then subsequent shows fail without error").
+
+        Relocate the overlay to the screen containing ``anchor`` (the same
+        point ``setCurrentWidget`` positions the menu against, defaulting
+        to the cursor) *before* the menu is positioned, so the coordinate
+        mapping resolves against the correct window origin.
+
+        Parameters:
+            anchor (QPoint, optional): Global point the menu will be anchored
+                to. Defaults to the current cursor position.
+        """
+        if anchor is None:
+            anchor = QtGui.QCursor.pos()
+        target = (
+            QtWidgets.QApplication.screenAt(anchor)
+            or QtWidgets.QApplication.primaryScreen()
+        )
+        handle = self.windowHandle()
+        current = handle.screen() if handle is not None else None
+
+        # Relocate only when the overlay is *confirmed* to be on a different
+        # screen than the active one. Single-monitor and indeterminate cases
+        # (no window handle / no screens) fall through to the original
+        # show-if-hidden behaviour, so this is a strict no-op there.
+        # (current is not None already implies handle is not None.)
+        if target is not None and current is not None and current is not target:
+            # Drop the full-screen state so the geometry can move across
+            # screens, relocate, then re-assert full-screen on the target.
+            self.setWindowState(self.windowState() & ~QtCore.Qt.WindowFullScreen)
+            handle.setScreen(target)
+            self.setGeometry(target.geometry())
+            self.showFullScreen()
+            return
+
+        if self.isHidden():
+            self.showFullScreen()
+
     def _show_marking_menu(self, widget, **kwargs):
         """Internal handler for showing marking menus."""
         # Cancel any pending suppress-hide so we don't pull the new menu away.
@@ -1460,6 +1518,12 @@ class MarkingMenu(
         is_startmenu = widget.has_tags("startmenu")
         new_gesture = is_startmenu and self.overlay.path.is_empty
         anchor = self.overlay.path.start_pos if is_startmenu and not new_gesture else None
+
+        # Multi-monitor: relocate the full-screen overlay to the anchor's screen
+        # before positioning the menu (see method docstring). Must run before
+        # setCurrentWidget, which maps the global anchor into the overlay's
+        # local space — same anchor, so both resolve to the same screen.
+        self._ensure_fullscreen_on_active_screen(anchor)
 
         self.setCurrentWidget(widget, anchor=anchor)
 
@@ -1474,9 +1538,8 @@ class MarkingMenu(
         ):
             self._non_default_shown = True
 
-        if self.isHidden():
-            self.showFullScreen()
-
+        # The overlay is already shown full-screen on the active monitor by
+        # _ensure_fullscreen_on_active_screen() above.
         self.raise_()
         self.activateWindow()
 

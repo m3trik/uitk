@@ -103,6 +103,22 @@ class SwitchboardWidgetMixin:
         return ptk.filter_dict(dct, inc=inc, exc=exc, keys=True, values=True)
 
     @staticmethod
+    def _widget_is_alive(instance) -> bool:
+        """Probe a Qt object to detect a deleted C++ underlying.
+
+        Catches both ``RuntimeError`` (the standard PySide signal that the
+        wrapped C++ object has been deleted) and ``AttributeError`` (which some
+        shiboken builds raise for partially-disposed wrappers). Anything else is
+        unexpected and propagates. Shared switchboard liveness probe — used by
+        the deferred-widget revival path and the editor cache.
+        """
+        try:
+            instance.objectName()
+            return True
+        except (RuntimeError, AttributeError):
+            return False
+
+    @staticmethod
     def _get_widget_from_ui(
         ui: QtWidgets.QWidget, object_name: str
     ) -> QtWidgets.QWidget:

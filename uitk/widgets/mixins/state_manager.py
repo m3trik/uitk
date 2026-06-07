@@ -226,6 +226,7 @@ class StateManager(ptk.LoggingMixin):
             widget.block_signals_on_restore = block_signals
             try:
                 self.apply(widget, default_value)
+                self._sync_stored_default(widget, default_value)
             finally:
                 if had_attr:
                     widget.block_signals_on_restore = original_block
@@ -238,7 +239,27 @@ class StateManager(ptk.LoggingMixin):
     def reset(self, widget: QtWidgets.QWidget) -> None:
         """Reset a widget to its default value."""
         if widget in self._defaults:
-            self.apply(widget, self._defaults[widget])
+            default = self._defaults[widget]
+            self.apply(widget, default)
+            self._sync_stored_default(widget, default)
+
+    def _sync_stored_default(self, widget: QtWidgets.QWidget, default_value: Any) -> None:
+        """Let a stored-value override on the widget re-sync to the new default.
+
+        An option-box *reset* toggle in bypass mode holds a snapshot of the
+        user's value while the field shows its default; without this, a
+        centralized reset-to-default would leave that snapshot stale and
+        restoring the field would resurrect the old value over the reset. A
+        widget advertises ``sync_stored_default(default)`` (a duck-typed hook)
+        while it carries such an override; we call it right after the default is
+        applied. Decoupled by design — StateManager doesn't import the option.
+        """
+        hook = getattr(widget, "sync_stored_default", None)
+        if callable(hook):
+            try:
+                hook(default_value)
+            except Exception as e:
+                self.logger.debug(f"sync_stored_default hook failed: {e}")
 
     def clear(self, widget: QtWidgets.QWidget) -> None:
         """Removes the stored state for the widget from QSettings."""

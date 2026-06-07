@@ -553,11 +553,18 @@ class SwitchboardSlotsMixin:
             deferred_count = (
                 len(deferred_widgets) if "deferred_widgets" in locals() else 0
             )
-            deferred_names = (
-                [w.objectName() for w in deferred_widgets]
-                if "deferred_widgets" in locals() and deferred_widgets
-                else []
-            )
+            # Resolve names defensively: a deferred wrapper may itself be the
+            # dead C++ object that triggered this failure, so fall back to the
+            # name stamped at defer time rather than re-raising while logging.
+            deferred_names = []
+            if "deferred_widgets" in locals() and deferred_widgets:
+                for w in deferred_widgets:
+                    try:
+                        deferred_names.append(w.objectName())
+                    except (RuntimeError, AttributeError):
+                        deferred_names.append(
+                            getattr(w, "_deferred_object_name", "<deleted>")
+                        )
             error_message = (
                 f"[_create_slots_instance] [{ui.objectName()}] Failed to create slots instance for '{key}':\n"
                 f"  Error: {type(e).__name__}: {e}\n"
@@ -671,6 +678,52 @@ class SwitchboardSlotsMixin:
                 f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Error restoring state: {e}"
             )
 
+    def _revive_deferred_widget(
+        self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget
+    ) -> Optional[QtWidgets.QWidget]:
+        """Return a live wrapper for a deferred widget, re-resolving if stale.
+
+        A widget registered/deferred during a slots ``__init__`` can be
+        reparented before it is processed — most commonly by an option-box wrap
+        (e.g. ``add_reset_buttons``), which moves the widget into a container and
+        invalidates the Python wrapper captured at defer time. The underlying
+        QWidget still exists, so re-resolve it by the name stamped in
+        ``_add_to_placeholder`` and repair the switchboard bookkeeping (the
+        ``ui.<name>`` attribute and ``ui.widgets`` set, both of which still hold
+        the dead wrapper) so downstream ``self.ui.<name>`` access also lands on
+        the live wrapper.
+
+        Returns the live widget, or ``None`` if it can't be recovered — the
+        caller then skips it rather than crashing the whole panel open.
+        """
+        if self._widget_is_alive(widget):
+            return widget
+
+        try:
+            name = getattr(widget, "_deferred_object_name", None)
+        except (RuntimeError, AttributeError):
+            name = None
+        if not name:
+            return None
+
+        fresh = self._get_widget_from_ui(ui, name)
+        if fresh is None or not self._widget_is_alive(fresh):
+            return None
+
+        # Drop the dead wrapper and (re)register the live one. register_widget
+        # re-points the ui.<name> attribute, re-adds to ui.widgets, and runs the
+        # widget's init (now that the slots instance exists) — the subsequent
+        # init phases below are then idempotent no-ops for it.
+        ui.widgets.discard(widget)
+        if fresh not in ui.widgets:
+            ui.register_widget(fresh)
+
+        self.logger.debug(
+            f"[_revive_deferred_widget] [{ui.objectName()}.{name}] "
+            "re-resolved a reparented deferred widget"
+        )
+        return fresh
+
     def _process_deferred_widgets(
         self, ui: QtWidgets.QWidget, deferred_widgets: list
     ) -> None:
@@ -679,6 +732,20 @@ class SwitchboardSlotsMixin:
             self.logger.debug(
                 f"[_process_deferred_widgets] [{ui.objectName()}] No deferred widgets to process"
             )
+            return
+
+        # Re-resolve any widget whose wrapper was invalidated by a reparent
+        # (e.g. an option-box wrap) after it was deferred, so neither the
+        # logging below nor the init phases touch a dead C++ object — that would
+        # otherwise abort the entire panel open. Unrecoverable widgets are
+        # dropped rather than allowed to crash the batch.
+        revived = []
+        for widget in deferred_widgets:
+            live = self._revive_deferred_widget(ui, widget)
+            if live is not None:
+                revived.append(live)
+        deferred_widgets = revived
+        if not deferred_widgets:
             return
 
         self.logger.debug(
@@ -717,6 +784,17 @@ class SwitchboardSlotsMixin:
 
     def _add_to_placeholder(self, key: str, widget: QtWidgets.QWidget) -> None:
         """Add a widget to a placeholder's deferred_widgets metadata."""
+        # Stamp the objectName now, while the wrapper is guaranteed live. A
+        # deferred widget can be reparented before it is processed (e.g. an
+        # option-box wrap via add_reset_buttons), which invalidates this Python
+        # wrapper; the stamped name lets _revive_deferred_widget re-resolve a
+        # fresh wrapper instead of crashing on the dead one. It is a plain
+        # Python attribute, so it stays readable even after the C++ side dies.
+        try:
+            widget._deferred_object_name = widget.objectName()
+        except (RuntimeError, AttributeError):
+            pass
+
         placeholder = self.slot_instances.get_placeholder(key)
         if placeholder:
             # Add widget to existing placeholder's metadata

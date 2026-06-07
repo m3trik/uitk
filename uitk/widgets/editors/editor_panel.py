@@ -218,7 +218,13 @@ class EditorPanel(WindowPanel):
             self.load_preset(name)
 
     def _on_save_preset(self):
-        name, ok = QtWidgets.QInputDialog.getText(self, "Save Preset", "Preset name:")
+        # Built-ins blank the seed so Save acts as duplicate-to-edit
+        # rather than silently shadowing a read-only default.
+        current = self._cmb_preset.currentText()
+        seed = "" if self._preset_mgr.source(current) == "builtin" else current
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Save Preset", "Preset name:", text=seed
+        )
         if ok and name.strip():
             name = name.strip()
             self.save_preset(name)

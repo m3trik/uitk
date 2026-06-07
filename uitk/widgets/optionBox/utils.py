@@ -24,12 +24,12 @@ class OptionBoxManager(ptk.LoggingMixin):
             "clear",
             "recent",
             "pin",
-            "disable",
+            "reset",
             "toggle",
             "action",
             "browse",
             "menu",
-        ]  # Default order: clear, recent, pin, disable, toggle, action, browse, menu
+        ]  # Default order: clear, recent, pin, reset, toggle, action, browse, menu
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -65,7 +65,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             "clear",
             "recent",
             "pin",
-            "disable",
+            "reset",
             "toggle",
             "action",
             "browse",
@@ -309,48 +309,54 @@ class OptionBoxManager(ptk.LoggingMixin):
         kwargs.setdefault("replace", False)
         return self.set_toggle(**kwargs)
 
-    def set_disable(
+    def set_reset(
         self,
         *,
         reset=None,
         icon: str = "undo",
-        tooltip_off: str = "Disable: reset this value to its default.",
-        tooltip_on: str = "Disabled (at default). Click to restore your value.",
+        tooltip: str = "Reset to default.    Alt/Ctrl+click: hold at default (bypass).",
+        tooltip_bypassed: str = "Held at default (bypassed). Click to restore your value.",
         disabled_color: Optional[str] = None,
+        bypass_modifier=None,
         replace: bool = True,
         on_toggled=None,
     ):
-        """Add a per-widget *disable* (bypass-to-default) toggle (fluent).
+        """Add a per-widget *reset-to-default* button (fluent).
 
-        When on: snapshots the widget's value, resets it to its default, and
-        greys it out. When off: restores the snapshot and re-enables. The
-        default is resolved from the widget's window ``StateManager`` unless a
-        ``reset`` callable is given. Non-persistent (each session starts active).
+        A plain click resets the widget to its default (persisted). Hold a
+        modifier (``Alt`` or ``Ctrl`` by default) while clicking to *bypass*:
+        snapshot the value, reset to default transiently, and grey the widget
+        out; click the bypassed button again to restore. The default is
+        resolved from the widget's window ``StateManager`` unless a ``reset``
+        callable is given. Bypass is non-persistent (each session starts
+        un-bypassed).
 
         Args:
             reset: Optional callable to put the widget at its default. ``None``
                 auto-uses ``window.state.reset(widget)``.
-            icon: Icon name (theme-coloured active, red while disabled).
-            tooltip_off / tooltip_on: Tooltips for the active / disabled states.
-            disabled_color: Hex tint while disabled (``None`` = project error red).
-            replace: When ``True`` (default), removes any existing DisableOption.
+            icon: Icon name (theme-coloured normally, red while bypassed).
+            tooltip / tooltip_bypassed: Tooltips for the active / bypassed states.
+            disabled_color: Hex tint while bypassed (``None`` = project error red).
+            bypass_modifier: Modifier(s) that switch a click from reset to the
+                bypass toggle (``None`` = ``Alt | Ctrl``).
+            replace: When ``True`` (default), removes any existing ResetOption.
             on_toggled: Optional callable connected to ``toggled(bool)``
-                (``True`` = now disabled).
+                (``True`` = now bypassed).
 
         Returns:
-            self: For fluent chaining. Retrieve via ``find_option(DisableOption)``.
+            self: For fluent chaining. Retrieve via ``find_option(ResetOption)``.
         """
-        from uitk.widgets.optionBox.options.disable import DisableOption
+        from uitk.widgets.optionBox.options.reset import ResetOption
 
         if replace:
             self._pending_options = [
-                o for o in self._pending_options if not isinstance(o, DisableOption)
+                o for o in self._pending_options if not isinstance(o, ResetOption)
             ]
             if self._option_box:
                 for o in [
                     opt
                     for opt in self._option_box.get_options()
-                    if isinstance(opt, DisableOption)
+                    if isinstance(opt, ResetOption)
                 ]:
                     self._option_box.remove_option(o)
 
@@ -358,12 +364,14 @@ class OptionBoxManager(ptk.LoggingMixin):
             wrapped_widget=self._widget,
             reset=reset,
             icon=icon,
-            tooltip_off=tooltip_off,
-            tooltip_on=tooltip_on,
+            tooltip=tooltip,
+            tooltip_bypassed=tooltip_bypassed,
         )
         if disabled_color is not None:
             kwargs["disabled_color"] = disabled_color
-        option = DisableOption(**kwargs)
+        if bypass_modifier is not None:
+            kwargs["bypass_modifier"] = bypass_modifier
+        option = ResetOption(**kwargs)
         if on_toggled is not None:
             option.toggled.connect(on_toggled)
         self.add_option(option)

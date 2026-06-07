@@ -304,5 +304,80 @@ class TestMarkingMenuPositionStability(QtBaseTestCase):
         self.assertEqual(self.mm.overlay.path.start_pos, second)
 
 
+class TestSetCurrentWidgetOnScreenOptOut(QtBaseTestCase):
+    """``setCurrentWidget`` must clamp on-screen ONLY when the widget opts in
+    via ``ensure_on_screen``.
+
+    Navigation menus (startmenu/submenu) set ``ensure_on_screen=False`` so the
+    menu center stays pinned to the gesture origin. An unconditional clamp
+    (added then walked back) shifted a menu opened near a screen edge away from
+    the cursor — [user report] "the shift breaks the overlay starting
+    position." A widget that keeps ``ensure_on_screen=True`` is still clamped
+    here, so the primitive stays correct for any opted-in caller (standalone
+    windows carry that flag, though they're positioned via a different path).
+    """
+
+    _drain_qt_events_in_teardown = False
+
+    def setUp(self):
+        super().setUp()
+        self._fake_cursor = QtCore.QPoint(0, 0)
+        cursor_patch = mock.patch.object(
+            QtGui.QCursor, "pos", side_effect=lambda: QtCore.QPoint(self._fake_cursor)
+        )
+        cursor_patch.start()
+        self.addCleanup(cursor_patch.stop)
+
+        self.parent = QtWidgets.QWidget()
+        self.parent.resize(400, 400)
+        self.parent.show()
+        self.track_widget(self.parent)
+
+        self.mm = _MM(self.parent)
+        self.track_widget(self.mm)
+
+        # Anchor at the screen's top-left corner: centering any positive-sized
+        # menu there pushes its top-left negative, so a clamp — if enabled —
+        # MUST move it. Screen-size independent (works on CI 'offscreen').
+        screen = self.mm.screen() or QtWidgets.QApplication.primaryScreen()
+        self.ag = screen.availableGeometry()
+        self.corner = self.ag.topLeft()
+
+    def _make_menu(self, name, ensure_on_screen):
+        ui = _StubUi(name, ["startmenu"], parent=self.mm)
+        ui.ensure_on_screen = ensure_on_screen
+        ui.resize(max(1, self.ag.width() // 3), max(1, self.ag.height() // 3))
+        self.mm.sb.register(ui)
+        QtWidgets.QApplication.processEvents()
+        return ui
+
+    def test_navigation_menu_not_clamped(self):
+        """ensure_on_screen=False → center stays pinned to the anchor."""
+        ui = self._make_menu("nav", ensure_on_screen=False)
+        self.mm.setCurrentWidget(ui, anchor=self.corner)
+
+        unclamped = self.mm.mapFromGlobal(self.corner) - ui.rect().center()
+        self.assertEqual(
+            ui.pos(),
+            unclamped,
+            "navigation menu must stay centered on the gesture origin, not "
+            "be shifted on-screen",
+        )
+
+    def test_opted_in_widget_is_clamped(self):
+        """ensure_on_screen=True → clamped fully within available geometry."""
+        ui = self._make_menu("opted_in", ensure_on_screen=True)
+        self.mm.setCurrentWidget(ui, anchor=self.corner)
+
+        # Centering on the top-left corner drives top-left negative; the clamp
+        # snaps it to the screen's available top-left.
+        expected = self.mm.mapFromGlobal(QtCore.QPoint(self.ag.left(), self.ag.top()))
+        self.assertEqual(
+            ui.pos(),
+            expected,
+            "a widget that opts into ensure_on_screen must be clamped on-screen",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
