@@ -22,8 +22,9 @@ from conftest import QtBaseTestCase, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 from uitk.switchboard import Switchboard
+from uitk.switchboard.utils import _suspend_override_cursor
 from uitk.examples.example import ExampleSlots
 
 
@@ -1864,6 +1865,91 @@ class TestSwitchboardActiveUi(QtBaseTestCase):
         after = self.sb._current_ui
         self.assertIs(result, before)
         self.assertIs(after, before)
+
+
+class TestSuspendOverrideCursor(QtBaseTestCase):
+    """Modal switchboard-utils dialogs must not inherit the slot busy cursor.
+
+    Bug: ``SlotInvoker._invoke`` pushes an application-wide ``WaitCursor``
+    override for the slot's duration. A ``QApplication`` override cursor
+    beats every widget cursor, so dialogs a slot spawns (message box,
+    file dialog, input dialog) showed the busy hourglass over their own
+    buttons and text fields. Fixed by suspending the override-cursor
+    stack for the modal dialog's lifetime via ``_suspend_override_cursor``.
+    Fixed: 2026-06-09
+    """
+
+    def _drain(self):
+        app = QtWidgets.QApplication.instance()
+        while app.overrideCursor() is not None:
+            app.restoreOverrideCursor()
+
+    def setUp(self):
+        super().setUp()
+        self._drain()
+
+    def tearDown(self):
+        self._drain()
+        super().tearDown()
+
+    def test_noop_without_active_override(self):
+        app = QtWidgets.QApplication.instance()
+        self.assertIsNone(app.overrideCursor())
+        with _suspend_override_cursor():
+            self.assertIsNone(app.overrideCursor())
+        self.assertIsNone(app.overrideCursor())
+
+    def test_suspends_and_restores_wait_cursor(self):
+        app = QtWidgets.QApplication.instance()
+        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+        with _suspend_override_cursor():
+            self.assertIsNone(
+                app.overrideCursor(), "busy cursor not suspended for the dialog"
+            )
+        self.assertIsNotNone(app.overrideCursor())
+        self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
+
+    def test_restores_full_stack_in_order(self):
+        app = QtWidgets.QApplication.instance()
+        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.BusyCursor))
+        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+        with _suspend_override_cursor():
+            self.assertIsNone(app.overrideCursor())
+        # Top of the restored stack is the last one that was pushed.
+        self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
+        app.restoreOverrideCursor()
+        self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.BusyCursor)
+
+    def test_restores_even_on_exception(self):
+        app = QtWidgets.QApplication.instance()
+        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+        with self.assertRaises(ValueError):
+            with _suspend_override_cursor():
+                raise ValueError("boom")
+        self.assertIsNotNone(app.overrideCursor())
+        self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
+
+    def test_input_dialog_suspends_override_during_exec(self):
+        """input_dialog must clear the busy cursor while its modal loop runs."""
+        sb = Switchboard()
+        app = QtWidgets.QApplication.instance()
+        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+
+        seen = {}
+
+        def fake_exec(self):
+            seen["override"] = app.overrideCursor()
+            return QtWidgets.QDialog.Rejected
+
+        with mock.patch.object(QtWidgets.QDialog, "exec_", fake_exec):
+            sb.input_dialog(title="t", label="l")
+
+        self.assertIn("override", seen)
+        self.assertIsNone(
+            seen["override"], "busy cursor still active inside modal exec_"
+        )
+        # And the slot busy-cursor is back afterward.
+        self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
 
 
 # -----------------------------------------------------------------------------

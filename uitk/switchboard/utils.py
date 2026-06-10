@@ -2,9 +2,46 @@
 # coding=utf-8
 import re
 import traceback
+import contextlib
 from typing import Callable, List, Optional, Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+
+
+@contextlib.contextmanager
+def _suspend_override_cursor():
+    """Temporarily clear the application override-cursor stack.
+
+    The slot dispatcher pushes a :data:`Qt.WaitCursor` override for the
+    duration of every slot (see ``SlotInvoker._invoke``). A
+    ``QApplication`` override cursor takes precedence over *every* widget
+    cursor, so any dialog a slot spawns inherits the busy hourglass —
+    even over its buttons, text fields, and file lists, where the user is
+    expected to interact. A per-widget ``setCursor`` cannot win against an
+    active override, so the only correct fix is to suspend the override
+    for the dialog's (modal) lifetime, letting each widget show its
+    natural cursor (arrow on buttons, I-beam in line edits), then restore
+    the exact stack afterward so the slot's busy feedback resumes.
+
+    No-op when no override is active (dialogs opened outside a slot).
+    """
+    app = QtWidgets.QApplication.instance()
+    saved = []
+    try:
+        if app is not None:
+            # Pop the whole stack (top-first), preserving each cursor so it
+            # can be re-pushed in the original order on exit.
+            while True:
+                current = app.overrideCursor()
+                if current is None:
+                    break
+                saved.append(QtGui.QCursor(current))
+                app.restoreOverrideCursor()
+        yield
+    finally:
+        if app is not None:
+            for cursor in reversed(saved):
+                app.setOverrideCursor(cursor)
 
 
 class SwitchboardUtilsMixin:
@@ -774,7 +811,9 @@ class SwitchboardUtilsMixin:
             msg_box.timeout = timeout
             msg_box.setStandardButtons(*buttons)
             msg_box.setText(string, background=background)
-            return msg_box.exec_()
+            # Modal: suspend any slot busy-cursor so buttons show an arrow.
+            with _suspend_override_cursor():
+                return msg_box.exec_()
         else:
             # Safe to reuse for passive popups
             if not hasattr(self, "_messageBox"):
@@ -895,9 +934,10 @@ class SwitchboardUtilsMixin:
 
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
-        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            None, title, start_dir, file_types_string, options=options
-        )
+        with _suspend_override_cursor():
+            files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+                None, title, start_dir, file_types_string, options=options
+            )
 
         return files if allow_multiple else files[0] if files else None
 
@@ -916,9 +956,10 @@ class SwitchboardUtilsMixin:
             directory_path = dir_dialog(title="Select a project folder")
         """
         options = QtWidgets.QFileDialog.Options()
-        directory_path = QtWidgets.QFileDialog.getExistingDirectory(
-            None, title, start_dir, options=options
-        )
+        with _suspend_override_cursor():
+            directory_path = QtWidgets.QFileDialog.getExistingDirectory(
+                None, title, start_dir, options=options
+            )
 
         return directory_path
 
@@ -953,9 +994,10 @@ class SwitchboardUtilsMixin:
 
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            None, title, start_dir, file_types_string
-        )
+        with _suspend_override_cursor():
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                None, title, start_dir, file_types_string
+            )
 
         return path or None
 
@@ -1045,7 +1087,11 @@ class SwitchboardUtilsMixin:
             if ss:
                 dlg.setStyleSheet(ss)
 
-        if dlg.exec_() == QtWidgets.QDialog.Accepted:
+        # Modal: suspend any slot busy-cursor so the line edit shows an
+        # I-beam and the buttons an arrow instead of the busy hourglass.
+        with _suspend_override_cursor():
+            accepted = dlg.exec_() == QtWidgets.QDialog.Accepted
+        if accepted:
             result = line.text().strip()
             return result if result else None
         return None

@@ -697,6 +697,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._cached_menu_position = None
         self._popup_configured = False  # Track if popup setup has been done
         self._dismiss_on_move_filter: Optional[_DismissOnAncestorMove] = None
+        self._activating_chain = False  # Re-entrancy guard for sizeHint activation
 
         # Data containers and flags
         self.widget_data: Dict[QtWidgets.QWidget, Any] = {}
@@ -2776,6 +2777,40 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         return (left_padding + right_padding, top_padding + bottom_padding)
 
+    def _activate_inner_layouts(self) -> None:
+        """Synchronously recompute the nested layout sizeHints.
+
+        ``add()`` skips ``self._layout.activate()`` while the menu is
+        invisible (Qt re-activates before paint, so the work is wasted for
+        an off-screen widget — see the bulk-add note in ``add()``).  The
+        side effect is that the *inner* QBoxLayouts (``centralWidgetLayout``
+        and the frame layout) keep a cached sizeHint from when they were
+        empty — collapsed to just their margins.  ``invalidate()`` only
+        posts a deferred ``LayoutRequest`` that never gets processed while
+        invisible, and ``sizeHint`` below reads ``self._frame.sizeHint()``
+        directly, bypassing the grid's own (correct) recompute.  The net
+        result: ``adjustSize()`` on a freshly-populated, not-yet-shown menu
+        sizes it to the minimum width, clipping content (e.g. the
+        RecentValues / PinnedValues popups, which size-then-show).
+
+        Forcing a synchronous ``activate()`` on the inner chain refreshes
+        those cached hints.  The outer ``self._layout`` is intentionally
+        left alone — Qt drives its activation and may already be mid-pass.
+        Only needed while invisible; once shown Qt drains the pending
+        ``LayoutRequest`` and the hints stay current on their own.
+        """
+        if self._activating_chain:
+            return
+        self._activating_chain = True
+        try:
+            if self.centralWidgetLayout is not None:
+                self.centralWidgetLayout.activate()
+            frame = getattr(self, "_frame", None)
+            if frame is not None and frame.layout() is not None:
+                frame.layout().activate()
+        finally:
+            self._activating_chain = False
+
     def sizeHint(self):
         """Return the recommended size for the widget.
 
@@ -2786,6 +2821,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """
         if self._layout is None:
             return super().sizeHint()
+
+        # While invisible the nested layouts hold a stale (collapsed) cached
+        # sizeHint; refresh them so adjustSize()/width-matching see the real
+        # content width. Once shown, Qt keeps them current — skip the work.
+        if not self.isVisible():
+            self._activate_inner_layouts()
 
         total_height = 0
         total_width = 0
