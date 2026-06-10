@@ -458,6 +458,70 @@ class TestRecentValuesCenterTruncation(QtBaseTestCase):
         self.assertEqual(buttons[0].text(), "short")
 
 
+class TestRecentValuesPopupWidthSizing(QtBaseTestCase):
+    """The popup must size to its content width even while still invisible.
+
+    Bug: ``adjustSize()`` on a freshly-populated, not-yet-shown popup
+    collapsed the menu to its minimum width, center-clipping every value
+    into uselessness (observed on tentacle's "Set Workspace" history).
+    Root cause: ``add()`` skips ``self._layout.activate()`` while invisible,
+    leaving the inner QBoxLayouts' cached sizeHints collapsed to their
+    margins; ``Menu.sizeHint()`` read those stale hints. Fixed by forcing
+    a synchronous activate of the inner layout chain in ``sizeHint()``.
+    Fixed: 2026-06-09
+    """
+
+    LONG_VALUES = [
+        "O:/Dropbox (Moth+Flame)/Moth+Flame Dropbox/Ryan Simpson/_tests/lightmap_bake_test/scripts",
+        "O:/Dropbox (Moth+Flame)/Moth+Flame Team Folder/Platform/Build",
+        "O:/Dropbox (Moth+Flame)/Moth+Flame Team Folder/PRODUCTION/SceneAssembly",
+    ]
+
+    def test_invisible_popup_sizehint_reflects_content(self):
+        """sizeHint width must reflect the widest row, not the menu minimum."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        popup = RecentValuesPopup(parent=parent, text_align="left")
+        self.track_widget(popup.menu)
+        for v in self.LONG_VALUES:
+            popup.add_recent_value(v)
+
+        self.assertFalse(popup.menu.isVisible())
+        hint_w = popup.menu.sizeHint().width()
+        grid_w = popup.menu.gridLayout.sizeHint().width()
+        # The grid already knows the true content width; the menu must agree
+        # rather than collapsing to its 150px minimum.
+        self.assertGreaterEqual(
+            hint_w,
+            grid_w,
+            f"Menu sizeHint width {hint_w} collapsed below grid content {grid_w}",
+        )
+        self.assertGreater(hint_w, popup.menu.minimumWidth() + 100)
+
+    def test_adjustsize_widens_to_content_before_show(self):
+        """adjustSize() on the hidden popup must widen it to fit the content."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        popup = RecentValuesPopup(parent=parent, text_align="left")
+        self.track_widget(popup.menu)
+        for v in self.LONG_VALUES:
+            popup.add_recent_value(v)
+
+        popup.menu.adjustSize()
+        self.assertGreater(
+            popup.menu.width(),
+            600,
+            "Popup stayed collapsed after adjustSize (content clipped)",
+        )
+
+    def test_empty_popup_stays_compact(self):
+        """The fix must not balloon an empty popup."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        popup = RecentValuesPopup(parent=parent)
+        self.track_widget(popup.menu)
+        popup.add_empty_message()
+        popup.menu.adjustSize()
+        self.assertLess(popup.menu.width(), 400)
+
+
 class TestPopupAlignParameter(QtBaseTestCase):
     """Tests for popup_align parameter on RecentValuesOption and PinValuesOption.
 
