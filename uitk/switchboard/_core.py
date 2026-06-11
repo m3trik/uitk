@@ -72,8 +72,15 @@ class Switchboard(
     QtGui = QtGui
     QtWidgets = QtWidgets
 
-    # Use the existing QApplication object, or create a new one if none exists.
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    # Lazy QApplication accessor. Previously this ran in the class body,
+    # which constructed a QApplication as a side effect of merely importing
+    # or referencing Switchboard — violating the package's no-side-effects-
+    # on-import rule. Resolved on first access instead; works on both the
+    # class (Switchboard.app) and instances (sb.app).
+    app = ptk.ClassProperty(
+        lambda cls: QtWidgets.QApplication.instance()
+        or QtWidgets.QApplication(sys.argv)
+    )
 
     # Emitted when a new UI enters ui_registry via register().
     on_ui_registered = QtCore.Signal(str)
@@ -113,6 +120,12 @@ class Switchboard(
         super().__init__(parent)
         """ """
         self.logger.setLevel(log_level)
+
+        # Ensure a QApplication exists before any UI work. The lazy ``app``
+        # class property creates one on first access; touching it here keeps
+        # the old guarantee (an app always exists once a Switchboard does)
+        # without the old import-time side effect.
+        _ = self.app
 
         # Ensure plain QtWidgets (e.g. unpromoted QLineEdit in .ui files) expose
         # `widget.option_box`. patch_widget_class is idempotent (no-op if the
@@ -348,10 +361,6 @@ class Switchboard(
             )
         return instance
 
-    def __new__(cls, *args, **kwargs):
-        instance = super().__new__(cls)
-        return instance
-
     @property
     def active_ui(self) -> Optional[QtWidgets.QWidget]:
         """Return the currently set UI, or None — no auto-load, no warning.
@@ -400,6 +409,7 @@ class Switchboard(
 
         self._current_ui = ui
         self._ui_history.append(ui)
+        del self._ui_history[:-200]  # cap history growth at the write site
 
     @property
     def prev_ui(self) -> QtWidgets.QWidget:
@@ -999,12 +1009,15 @@ class Switchboard(
             )
 
     def ui_history(self, index=None, allow_duplicates=False, inc=None, exc=None):
-        """Get the UI history."""
-        self._ui_history = self._ui_history[-200:]
-        if not allow_duplicates:
-            self._ui_history = list(dict.fromkeys(self._ui_history[::-1]))[::-1]
+        """Get the UI history.
 
-        history = self._ui_history
+        Read-only: deduplication and filtering produce a view; the stored
+        history is only mutated by the ``current_ui`` setter.
+        """
+        history = list(self._ui_history)
+        if not allow_duplicates:
+            # Keep the most recent occurrence of each UI, preserving order.
+            history = list(dict.fromkeys(history[::-1]))[::-1]
         if inc or exc:
             history = ptk.filter_list(history, inc, exc, lambda u: u.objectName())
 

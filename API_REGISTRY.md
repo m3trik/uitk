@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-06-10_
+_Generated: 2026-06-11_
 
 ## Index
 
@@ -53,6 +53,7 @@ _Generated: 2026-06-10_
 - [`widgets/marking_menu/_resolver.py`](#widgets--marking_menu--_resolver) — Pure menu-resolution logic for the MarkingMenu.
 - [`widgets/marking_menu/overlay.py`](#widgets--marking_menu--overlay)
 - [`widgets/menu.py`](#widgets--menu)
+- [`widgets/menuButton.py`](#widgets--menuButton)
 - [`widgets/messageBox.py`](#widgets--messageBox)
 - [`widgets/mixins/attributes.py`](#widgets--mixins--attributes)
 - [`widgets/mixins/convert.py`](#widgets--mixins--convert)
@@ -393,11 +394,11 @@ Switchboard-side keyboard shortcut machinery.
 <a id="switchboard--slots"></a>
 ### `switchboard/slots.py`
 
-- **[`class Signals`](uitk/uitk/switchboard/slots.py#L11)** — Decorator to specify which signals a slot should connect to.
+- **[`class Signals`](uitk/uitk/switchboard/slots.py#L15)** — Decorator to specify which signals a slot should connect to.
   - `Signals.blockSignals(cls, func)` *(class)* — Decorator that blocks widget signals during method execution.
-- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L62)** — Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
-- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L142)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
-- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L327)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
+- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L66)** — Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
+- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L208)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
+- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L409)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
   - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
   - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
   - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
@@ -420,7 +421,9 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--utils"></a>
 ### `switchboard/utils.py`
 
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L47)** — Utility methods for widget positioning, centering, and screen geometry.
+- [`pop_override_cursor_stack(app)`](uitk/uitk/switchboard/utils.py#L11) — Pop the whole application override-cursor stack.
+- [`push_override_cursor_stack(app, saved)`](uitk/uitk/switchboard/utils.py#L31) — Re-push cursors captured by :func:`pop_override_cursor_stack`,
+- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L87)** — Utility methods for widget positioning, centering, and screen geometry.
   - `SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
   - `SwitchboardUtilsMixin.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)` *(static)* — Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…
   - `SwitchboardUtilsMixin.unpack_names(cls, name_string)` *(class)* — Unpacks a comma-separated string of names and returns a list of individual names.
@@ -841,7 +844,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
 <a id="widgets--marking_menu--_marking_menu"></a>
 ### `widgets/marking_menu/_marking_menu.py`
 
-- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L121)** — MarkingMenu is a marking menu based on a QWidget.
+- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L122)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
   - `MarkingMenu.default_bindings(self) -> dict` *(property)* — The original bindings passed at construction time.
   - `MarkingMenu.bindings(self) -> dict` *(property)* — Get bindings from persistent storage.
@@ -968,13 +971,22 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Menu.remove_widget(self, widget)` — Remove a widget from the layout.
   - `Menu.clear(self) -> None` — Clear all items in the list.
   - `Menu.add(self, x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map], data: Any = None, row: Optional[int] = None, col: int = 0, rowSpan: int = 1, colSpan: Optional[int] = None, **kwargs) -> Union[QtWidgets.QWidget, list]` — Add an item or multiple items to the list.
-  - `Menu.get_padding(widget)` — Get the padding values around a widget.
   - `Menu.sizeHint(self)` — Return the recommended size for the widget.
   - `Menu.showEvent(self, event) -> None` — Handle show event with positioning (optimized for performance).
   - `Menu.hide(self, force: bool = False) -> bool` — Hide the menu, respecting the pinned state.
   - `Menu.hideEvent(self, event) -> None` — Handle hide event.
   - `Menu.eventFilter(self, widget, event)` — Handle events for the menu and its children.
   - `Menu.trigger_from_widget(self, widget: Optional[QtWidgets.QWidget] = None, *, button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton) -> None` — Toggle visibility using the same rules as the parent click event.
+
+<a id="widgets--menuButton"></a>
+### `widgets/menuButton.py`
+
+- **[`class MenuButton(QtWidgets.QPushButton, AttributesMixin)`](uitk/uitk/widgets/menuButton.py#L10)** — A navigation button for marking menus.
+  - `MenuButton.getTarget(self) -> str`
+  - `MenuButton.setTarget(self, value: str) -> None`
+  - `MenuButton.getFilterTags(self) -> str`
+  - `MenuButton.setFilterTags(self, value: str) -> None`
+  - `MenuButton.filter_tag_list(self) -> list` — Return ``filterTags`` parsed to a list of tags (empty when unset).
 
 <a id="widgets--messageBox"></a>
 ### `widgets/messageBox.py`
@@ -991,7 +1003,7 @@ Pure menu-resolution logic for the MarkingMenu.
 <a id="widgets--mixins--attributes"></a>
 ### `widgets/mixins/attributes.py`
 
-- **[`class AttributesMixin`](uitk/uitk/widgets/mixins/attributes.py#L7)** — A mixin class providing a comprehensive interface for setting attributes on Qt widgets.
+- **[`class AttributesMixin`](uitk/uitk/widgets/mixins/attributes.py#L11)** — A mixin class providing a comprehensive interface for setting attributes on Qt widgets.
   - `AttributesMixin.set_flags(self, **flags)` — Sets or unsets given window flags, safely ignoring unsupported cases.
   - `AttributesMixin.set_legal_attribute(self, obj, name, value, also_set_original=False)` — If the original name contains illegal characters, this method sets an attribute using
   - `AttributesMixin.set_attributes(self, *objects, **attributes)`
@@ -1174,7 +1186,7 @@ Shared value-text coloring for spin-box widgets.
 <a id="widgets--mixins--state_manager"></a>
 ### `widgets/mixins/state_manager.py`
 
-- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/state_manager.py#L11)** — Manages widget state persistence using QSettings.
+- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/state_manager.py#L13)** — Manages widget state persistence using QSettings.
   - `StateManager.apply(self, widget: QtWidgets.QWidget, value: Any) -> None` — Apply the given value to the widget using ValueManager.
   - `StateManager.suppress_save(self)` — Context manager that temporarily suppresses QSettings writes.
   - `StateManager.save(self, widget: QtWidgets.QWidget, value: Any = None) -> None` — Save the current value of the widget to QSettings.

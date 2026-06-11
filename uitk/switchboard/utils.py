@@ -8,12 +8,40 @@ from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 
+def pop_override_cursor_stack(app):
+    """Pop the whole application override-cursor stack.
+
+    Shared primitive for the cursor-suspension helpers below and the
+    dispatcher's modal guard. Returns the popped cursors **top-first** so
+    they can be re-pushed in the original order via
+    :func:`push_override_cursor_stack`. No-op (empty list) when no
+    override is active or ``app`` is ``None``.
+    """
+    saved = []
+    if app is not None:
+        while True:
+            current = app.overrideCursor()
+            if current is None:
+                break
+            saved.append(QtGui.QCursor(current))
+            app.restoreOverrideCursor()
+    return saved
+
+
+def push_override_cursor_stack(app, saved):
+    """Re-push cursors captured by :func:`pop_override_cursor_stack`,
+    restoring the original stack order. No-op when ``app`` is ``None``."""
+    if app is not None:
+        for cursor in reversed(saved):
+            app.setOverrideCursor(cursor)
+
+
 @contextlib.contextmanager
 def _suspend_override_cursor():
     """Temporarily clear the application override-cursor stack.
 
     The slot dispatcher pushes a :data:`Qt.WaitCursor` override for the
-    duration of every slot (see ``SlotInvoker._invoke``). A
+    duration of every slot (see ``SlotWrapper._invoke``). A
     ``QApplication`` override cursor takes precedence over *every* widget
     cursor, so any dialog a slot spawns inherits the busy hourglass —
     even over its buttons, text fields, and file lists, where the user is
@@ -26,22 +54,34 @@ def _suspend_override_cursor():
     No-op when no override is active (dialogs opened outside a slot).
     """
     app = QtWidgets.QApplication.instance()
-    saved = []
+    saved = pop_override_cursor_stack(app)
     try:
-        if app is not None:
-            # Pop the whole stack (top-first), preserving each cursor so it
-            # can be re-pushed in the original order on exit.
-            while True:
-                current = app.overrideCursor()
-                if current is None:
-                    break
-                saved.append(QtGui.QCursor(current))
-                app.restoreOverrideCursor()
         yield
     finally:
-        if app is not None:
-            for cursor in reversed(saved):
-                app.setOverrideCursor(cursor)
+        push_override_cursor_stack(app, saved)
+
+
+def _drain_override_cursor():
+    """Pop the entire application override-cursor stack.
+
+    Counterpart to :func:`_suspend_override_cursor` for *non-modal*
+    windows. A modal dialog can suspend the slot's busy cursor for the
+    bounded lifetime of its event loop and restore it on close. A
+    non-modal viewer (see :meth:`text_view_dialog`) outlives the slot
+    that spawned it — by the time the user closes it the dispatcher's
+    ``finally`` has long since restored the cursor, so there is nothing
+    to restore *to*. Re-pushing a ``WaitCursor`` on the window's close
+    would strand a busy hourglass with no matching pop (the reported
+    "cursor stays active" symptom). The correct behaviour is therefore
+    to *cancel* the busy cursor outright when the window appears: the
+    slot's work product is on screen and the user is now meant to
+    interact with it. Draining the whole stack also leaves the
+    dispatcher's matching ``restoreOverrideCursor`` a harmless no-op,
+    keeping the override stack balanced.
+
+    No-op when no override is active (window opened outside a slot).
+    """
+    pop_override_cursor_stack(QtWidgets.QApplication.instance())
 
 
 class SwitchboardUtilsMixin:
@@ -902,6 +942,13 @@ class SwitchboardUtilsMixin:
         # can return without the window being collected.
         self.gc_protect(dlg)
         dlg.show()
+
+        # Non-modal: this returns while the slot dispatcher still holds a
+        # WaitCursor override (popped only in its ``finally``). Unlike the
+        # modal dialogs above we cannot suspend-and-restore around a
+        # bounded event loop, so cancel the busy cursor outright — the
+        # report is on screen and the user is meant to interact with it.
+        _drain_override_cursor()
         return dlg
 
     @staticmethod

@@ -1,6 +1,8 @@
 # !/usr/bin/python
 # coding=utf-8
+import enum
 import json
+import weakref
 from contextlib import contextmanager
 from typing import Any, Optional
 from qtpy import QtWidgets, QtCore
@@ -31,7 +33,10 @@ class StateManager(ptk.LoggingMixin):
         super().__init__()
         self.set_log_level(log_level)
         self.qsettings = qsettings
-        self._defaults = {}
+        # Weak keys: a plain dict pins every registered widget for the
+        # manager's lifetime, and reset_all would then iterate wrappers
+        # whose C++ object is long gone.
+        self._defaults = weakref.WeakKeyDictionary()
         self._save_suppressed = 0
 
     def _get_settings(self, widget: QtWidgets.QWidget) -> QtCore.QSettings:
@@ -141,6 +146,12 @@ class StateManager(ptk.LoggingMixin):
         if not key:
             return
 
+        # PySide6 Qt enums (e.g. Qt.CheckState from checkState()) are not
+        # int subclasses — without this coercion the primitive-type gate
+        # below silently dropped tri-state checkbox state.
+        if isinstance(value, enum.Enum):
+            value = value.value
+
         # Serialize non-primitive values
         if isinstance(value, (dict, list, tuple)):
             value = json.dumps(value)
@@ -210,7 +221,15 @@ class StateManager(ptk.LoggingMixin):
         Note:
             Widgets with `exclude_from_reset=True` attribute will be skipped.
         """
-        for widget, default_value in self._defaults.items():
+        for widget, default_value in list(self._defaults.items()):
+            # A live wrapper can outlast its C++ object; touching it raises
+            # RuntimeError. Drop the entry instead of crashing the reset.
+            try:
+                widget.objectName()
+            except RuntimeError:
+                self._defaults.pop(widget, None)
+                continue
+
             # Skip widgets explicitly excluded from reset
             if getattr(widget, "exclude_from_reset", False):
                 self.logger.debug(
@@ -315,6 +334,8 @@ class StateManager(ptk.LoggingMixin):
         """
         if self._save_suppressed:
             return
+        if isinstance(value, enum.Enum):
+            value = value.value
         if isinstance(value, (dict, list, tuple)):
             value = json.dumps(value)
         elif not isinstance(value, (int, float, str, bool)):

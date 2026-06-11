@@ -1,7 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
+import logging
+
 from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
+
+logger = logging.getLogger(__name__)
 
 
 class AttributesMixin:
@@ -219,12 +223,24 @@ class AttributesMixin:
                 }
                 w.setCheckState(state[value])
 
-            # Fallback: directly set any custom attribute
+            # Fallback: directly set any custom attribute. A name that looks
+            # like an intended Qt setter ("set_*" / "setX...") landing here is
+            # almost always a typo — the silent setattr used to absorb it as a
+            # junk attribute with no feedback.
             else:
+                if attr.startswith("set_") or (
+                    attr.startswith("set") and len(attr) > 3 and attr[3].isupper()
+                ):
+                    logger.warning(
+                        f"set_attributes: {attr!r} matched no Qt attribute, "
+                        f"method, or known custom attribute on "
+                        f"{type(w).__name__}; setting it as a plain Python "
+                        f"attribute (possible typo)."
+                    )
                 setattr(w, attr, value)
 
         except AttributeError as e:
-            print(f"Error: {e}")
+            logger.warning(f"set_attributes: failed to set {attr!r}: {e}")
 
     def _set_spinbox_limits(self, spinbox, limits):
         """Configure the minimum, maximum, step values, and decimal precision for a given spinbox widget.

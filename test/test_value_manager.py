@@ -97,5 +97,82 @@ class TestSetValueCheckableButtons(QtBaseTestCase):
         self.assertEqual(b.text(), "Hello")
 
 
+class TestSetValueNumeric(QtBaseTestCase):
+    """set_value on numeric widgets."""
+
+    def test_bad_value_leaves_widget_unchanged(self):
+        """Regression: the direct set_value path reset the widget to
+        minimum() on an unparseable value (42 -> 5); it must leave the
+        current value untouched, matching _set_numeric_value."""
+        sb = QtWidgets.QSpinBox()
+        self.track_widget(sb)
+        sb.setRange(5, 100)
+        sb.setValue(42)
+        ValueManager.set_value(sb, "not-a-number")
+        self.assertEqual(sb.value(), 42)
+
+    def test_string_numbers_accepted(self):
+        """The direct path goes through _set_numeric_value, which handles
+        string numbers like '7.0'."""
+        sb = QtWidgets.QSpinBox()
+        self.track_widget(sb)
+        sb.setRange(0, 100)
+        ValueManager.set_value(sb, "7.0")
+        self.assertEqual(sb.value(), 7)
+
+
+class TestStateManagerPersistence(QtBaseTestCase):
+    """StateManager.save type gate + widget-default lifetime."""
+
+    class _SpySettings:
+        def __init__(self):
+            self.stored = {}
+
+        def setValue(self, key, value):
+            self.stored[key] = value
+
+        def sync(self):
+            pass
+
+    def test_checkstate_enum_persists(self):
+        """Regression: PySide6's Qt.CheckState is not an int subclass, so
+        the primitive-type gate silently dropped tri-state checkbox state.
+        Enums must be coerced to their value and stored."""
+        from qtpy import QtCore
+        from uitk.widgets.mixins.state_manager import StateManager
+
+        settings = self._SpySettings()
+        sm = StateManager(settings)
+
+        cb = QtWidgets.QCheckBox()
+        self.track_widget(cb)
+        cb.setObjectName("triState")
+        cb.setTristate(True)
+        cb.restore_state = True
+        cb.derived_type = QtWidgets.QCheckBox
+        cb.default_signals = lambda: "stateChanged"
+        cb.setCheckState(QtCore.Qt.CheckState.PartiallyChecked)
+
+        sm.save(cb)
+        self.assertEqual(
+            settings.stored.get("triState/stateChanged"),
+            QtCore.Qt.CheckState.PartiallyChecked.value,
+        )
+
+    def test_defaults_do_not_pin_widgets(self):
+        """_defaults uses weak keys: a garbage-collected widget's entry
+        must disappear instead of leaking (and later crashing reset_all)."""
+        import gc
+        from uitk.widgets.mixins.state_manager import StateManager
+
+        sm = StateManager(self._SpySettings())
+        w = QtWidgets.QSpinBox()
+        sm.set_default(w, 3)
+        self.assertTrue(sm.has_default(w))
+        del w
+        gc.collect()
+        self.assertEqual(len(sm._defaults), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

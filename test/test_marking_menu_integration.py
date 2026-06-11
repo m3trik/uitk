@@ -485,5 +485,93 @@ class MarkingMenuInputScenarios(QtBaseTestCase):
         self.assertIsNone(self.mm._current_widget)
 
 
+class MarkingMenuHoverNavigation(QtBaseTestCase):
+    """Hovering a MenuButton must open its ``target`` submenu.
+
+    Guards the regression where nav buttons stopped navigating on mouse-over
+    because ``child_enterEvent`` read a stale carrier (``accessibleName``)
+    instead of the typed ``target`` property. Deterministic — no real input.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sb = StubSwitchboard(dict(DEFAULT_BINDINGS))
+        self.parent = QtWidgets.QWidget()
+        self.track_widget(self.parent)
+        self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
+        self.mm.sb = self.sb
+        self.track_widget(self.mm)
+
+    def _enter(self, widget):
+        pt = QtCore.QPointF(0, 0)
+        self.mm.child_enterEvent(widget, QtGui.QEnterEvent(pt, pt, pt))
+
+    def test_hover_opens_target_submenu(self):
+        from uitk.widgets.menuButton import MenuButton
+
+        host = StubUi("polygons#startmenu")
+        submenu = StubUi("foo#submenu")
+        self.sb.register_ui(host)
+        self.sb.register_ui(submenu)
+
+        btn = self._nav_button(MenuButton(target="foo"), host)
+
+        opened = []
+        self.mm._set_submenu = lambda menu, w: opened.append(menu)
+        self._enter(btn)
+
+        self.assertEqual(len(opened), 1, "hover did not open a submenu")
+        self.assertIs(opened[0], submenu)
+
+    def test_hover_filtered_button_opens_component_submenu(self):
+        """A filtered button (target + filterTags) hovers to its component
+        submenu (polygons Edge -> polygons#edge#submenu), not the base — the
+        regression that made the polygons component buttons inert on hover."""
+        from uitk.widgets.menuButton import MenuButton
+
+        base = StubUi("polygons#submenu")  # the UI the button lives on
+        component = StubUi("polygons#edge#submenu")
+        self.sb.register_ui(base)
+        self.sb.register_ui(component)
+
+        btn = self._nav_button(MenuButton(target="polygons", filterTags="edge"), base)
+
+        opened = []
+        self.mm._set_submenu = lambda menu, w: opened.append(menu)
+        self._enter(btn)
+
+        self.assertEqual(len(opened), 1, "filtered button did not navigate on hover")
+        self.assertIs(opened[0], component)
+
+    def test_hover_on_targetless_menubutton_is_noop(self):
+        from uitk.widgets.menuButton import MenuButton
+
+        btn = self._nav_button(MenuButton(), StubUi("polygons#startmenu"))  # no target
+
+        opened = []
+        self.mm._set_submenu = lambda menu, w: opened.append(menu)
+        self._enter(btn)
+
+        self.assertEqual(opened, [], "target-less button should not navigate")
+
+    def test_hover_on_plain_button_is_noop(self):
+        """A regular slot button must not be treated as a navigator."""
+        btn = self._nav_button(QtWidgets.QPushButton(), StubUi("polygons#startmenu"))
+
+        opened = []
+        self.mm._set_submenu = lambda menu, w: opened.append(menu)
+        self._enter(btn)
+
+        self.assertEqual(opened, [])
+
+    def _nav_button(self, btn, host):
+        """Wire a widget the way register_widget would (``ui`` + ``base_name``)
+        so child_enterEvent's downstream checks don't AttributeError."""
+        btn.ui = host
+        btn.base_name = lambda: "x"  # anything != "chk"
+        self.track_widget(btn)
+        return btn
+
+
 if __name__ == "__main__":
     unittest.main()
