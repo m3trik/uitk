@@ -2648,7 +2648,19 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
             self.set_attributes(widget, **kwargs)
             widget.installEventFilter(self)
-            setattr(self, widget.objectName(), widget)
+            # Expose the item as an attribute for ergonomic access
+            # (menu.<objectName>), but never clobber Menu's own API: an item
+            # named "clear"/"show"/"add" would silently replace the method.
+            item_name = widget.objectName()
+            if item_name:
+                existing = getattr(self, item_name, None)
+                if existing is None or isinstance(existing, QtWidgets.QWidget):
+                    setattr(self, item_name, widget)
+                else:
+                    self.logger.warning(
+                        f"[Menu.add] item objectName {item_name!r} collides with "
+                        f"an existing Menu attribute; skipping attribute exposure."
+                    )
 
             # Defer registration to the next event-loop tick so it happens
             # AFTER add() finishes (updates re-enabled, signals unblocked).
@@ -2755,27 +2767,6 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
         return widget
-
-    def get_padding(widget):
-        """Get the padding values around a widget.
-
-        This method calculates the padding values (distance from content to frame boundary) for a widget in all four directions.
-
-        Parameters:
-            widget (obj): A widget object to get the padding values for.
-
-        Returns:
-            tuple: A tuple containing padding values (horizontal padding, vertical padding).
-        """
-        frame_geo = widget.frameGeometry()
-        geo = widget.geometry()
-
-        left_padding = geo.left() - frame_geo.left()
-        right_padding = frame_geo.right() - geo.right()
-        top_padding = geo.top() - frame_geo.top()
-        bottom_padding = frame_geo.bottom() - geo.bottom()
-
-        return (left_padding + right_padding, top_padding + bottom_padding)
 
     def _activate_inner_layouts(self) -> None:
         """Synchronously recompute the nested layout sizeHints.

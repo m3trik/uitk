@@ -414,6 +414,17 @@ class Overlay(QtWidgets.QWidget):
             except Exception:
                 pass
 
+        # Carry across any extra Qt properties a custom widget declares as
+        # clone-relevant (e.g. MenuButton's ``target`` / ``filterTags``). Done
+        # generically via QObject.property so the overlay needs no per-widget
+        # knowledge — any future stateful widget can opt in by declaring
+        # ``clone_properties``.
+        for name in getattr(prev_widget, "clone_properties", ()):
+            try:
+                new_widget.setProperty(name, prev_widget.property(name))
+            except Exception:
+                continue
+
         # Size LAST so it isn't perturbed by attr-induced sizeHint changes,
         # and so the immediately-following ``rect().center()`` reflects
         # the final geometry. (If ``minimumSize`` / ``maximumSize`` would

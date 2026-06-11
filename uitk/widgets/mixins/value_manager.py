@@ -63,16 +63,10 @@ class ValueManager:
         try:
             # Handle different widget types with proper value conversion
             if hasattr(widget, "setValue") and callable(widget.setValue):
-                # Numeric widgets (QSpinBox, QDoubleSpinBox, QSlider, etc.)
-                try:
-                    widget.setValue(
-                        float(value)
-                        if isinstance(widget, QtWidgets.QDoubleSpinBox)
-                        else int(value)
-                    )
-                except (ValueError, TypeError):
-                    # Fallback for invalid numeric values
-                    widget.setValue(widget.minimum())
+                # Numeric widgets (QSpinBox, QDoubleSpinBox, QSlider, etc.).
+                # _set_numeric_value leaves the widget unchanged on an
+                # unparseable value — never reset to minimum().
+                ValueManager._set_numeric_value(widget, value)
 
             elif isinstance(widget, QtWidgets.QAbstractButton) and widget.isCheckable():
                 # Checkable buttons (QCheckBox, QRadioButton, checkable

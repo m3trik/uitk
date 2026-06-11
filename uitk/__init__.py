@@ -26,8 +26,8 @@ Example:
         button.menu.add("Option 1")  # Built-in menu support
 
 Key Modules:
-    switchboard: Dynamic UI loader and event handler
-    signals: Signal decorator for slot annotations
+    switchboard: Dynamic UI loader and event handler (also home of the
+        ``Signals`` slot-annotation decorator, in ``switchboard.slots``)
     events: Event filters and mouse tracking utilities
     file_manager: File and path management utilities
     widgets: Enhanced Qt widget classes with mixins
@@ -40,12 +40,12 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.2.70"
+__version__ = "1.2.73"
 
 
 DEFAULT_INCLUDE = {
-    # Standalone-process bootstrap (must stay importable without dragging
-    # in Switchboard, which constructs a QApplication at class-body time).
+    # Standalone-process bootstrap (kept Switchboard-free so high-DPI setup
+    # can run before any Qt machinery loads).
     "_bootstrap": "configure_high_dpi",
     # Switchboard symbols are mapped to their specific composition modules
     # (rather than the package facade) to preserve per-symbol lazy loading.
@@ -93,6 +93,7 @@ DEFAULT_INCLUDE = {
     "widgets.lineEdit": "LineEdit",
     "widgets.mainWindow": "MainWindow",
     "widgets.menu": "Menu",
+    "widgets.menuButton": "MenuButton",
     "widgets.messageBox": "MessageBox",
     "widgets.optionBox._optionBox": [
         "OptionBox",
@@ -107,7 +108,6 @@ DEFAULT_INCLUDE = {
         "patch_widget_class",
         "patch_common_widgets",
     ],
-    "widgets.optionBox.options.clear": "ClearButton",
     "widgets.optionBox.options._options": ["BaseOption", "ButtonOption"],
     "widgets.optionBox.options.action": ["ActionOption", "MenuOption"],
     "widgets.optionBox.options.browse": "BrowseOption",

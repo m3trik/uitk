@@ -1006,6 +1006,28 @@ QSizeGrip[class~="SizeGrip"] {
     background-color: {DISABLED_CHECKED_BACKGROUND};
     border: {BORDER_W} solid {DISABLED_CHECKED_BACKGROUND};
 }
+/* MenuButton — marking-menu navigation launcher (replaces 'i' buttons).
+   Self-contained base so a promoted button never renders unstyled; mirrors the
+   .default look. Hover (bg + text, border kept) comes from the generic
+   QAbstractButton:hover:!checked rule. */
+.MenuButton {
+    background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_COLOR};
+    border-style: outset;
+    border-radius: {RADIUS};
+    border: {BORDER_W} solid {BORDER_COLOR};
+    padding: 0px 1px 0px 1px;
+    spacing: 1px;
+}
+.MenuButton:pressed {
+    background-color: {BUTTON_CHECKED_TINT};
+    color: {TEXT_HOVER};
+}
+.MenuButton:disabled {
+    color: {TEXT_DISABLED};
+    background-color: {DISABLED_BACKGROUND};
+    border: {BORDER_W} solid {DISABLED_BACKGROUND};
+}
 .transparentBgNoBorder {
     background-color: transparent;
     border: none;

@@ -24,6 +24,6 @@ Refresh manually: `python m3trik/scripts/generate_api_registry.py uitk` — othe
 
 - `uitk/widgets/` — reusable widgets.
 - `uitk/themes/` — QSS-based style management.
-- `uitk/signals.py` — central signal registry.
+- `uitk/switchboard/slots.py` — slot wiring: `Signals` decorator, `SlotWrapper` dispatch.
 
 See [CHANGELOG.md](CHANGELOG.md) for history.

@@ -13,6 +13,7 @@ from uitk.events import EventFactoryFilter, MouseTracking
 from .overlay import Overlay
 from ._resolver import parse_binding_keys, resolve_target_menu
 from uitk.handlers.ui_handler import UiHandler
+from uitk.widgets.menuButton import MenuButton
 from uitk.widgets.mixins.shortcuts import GlobalShortcut
 from uitk.compile import precompile_async
 from uitk.loaders import CompiledLoader
@@ -1154,14 +1155,15 @@ class MarkingMenu(
             if child:
                 widget = child
 
-        # Handle 'i' button clicks (menu/submenu launchers)
-        if isinstance(widget, QtWidgets.QPushButton):
-            if hasattr(widget, "base_name") and widget.base_name() == "i":
-                menu = self._resolve_button_menu(widget)
-                if menu:
-                    is_standalone = not menu.has_tags(["startmenu", "submenu"])
-                    self.show(menu, force=is_standalone)
-                    return True
+        # Navigation-button clicks (menu/submenu launchers). Click opens the
+        # button's target as a standalone window or a stacked submenu depending
+        # on the target UI's own tags.
+        if isinstance(widget, MenuButton):
+            menu = self._resolve_button_menu(widget)
+            if menu:
+                is_standalone = not menu.has_tags(["startmenu", "submenu"])
+                self.show(menu, force=is_standalone)
+                return True
 
         # Emit clicked signal for standard buttons
         if hasattr(widget, "clicked"):
@@ -1355,26 +1357,27 @@ class MarkingMenu(
         )
         event.accept()
 
-    def _resolve_button_menu(self, widget) -> Optional[QtWidgets.QWidget]:
-        """Resolve menu for an 'i' button, handling cache and tag cleanup."""
-        menu_name = widget.accessibleName()
-        if not menu_name:
+    def _cached_ui(self, name: str) -> Optional[QtWidgets.QWidget]:
+        """Return the UI for *name*, populating the submenu cache on first hit."""
+        ui = self._submenu_cache.get(name)
+        if ui is None:
+            ui = self.sb.get_ui(name)
+            if ui:
+                self._submenu_cache[name] = ui
+        return ui
+
+    def _resolve_button_menu(self, widget: MenuButton) -> Optional[QtWidgets.QWidget]:
+        """Resolve the menu a ``MenuButton`` navigates to (click path).
+
+        The destination (``target``) and filter tags (``filter_tag_list``) are
+        read straight off the widget; matching groupboxes are revealed via the
+        filter tags.
+        """
+        if not widget.target:
             return None
-
-        unknown_tags = self.sb.get_unknown_tags(
-            menu_name, known_tags=["submenu", "startmenu"]
-        )
-        new_menu_name = self.sb.edit_tags(menu_name, remove=unknown_tags)
-
-        menu = self._submenu_cache.get(new_menu_name)
-        if menu is None:
-            menu = self.sb.get_ui(new_menu_name)
-            if menu:
-                self._submenu_cache[new_menu_name] = menu
-
+        menu = self._cached_ui(widget.target)
         if menu:
-            self.sb.hide_unmatched_groupboxes(menu, unknown_tags)
-
+            self.sb.hide_unmatched_groupboxes(menu, widget.filter_tag_list())
         return menu
 
     def show(
@@ -1716,7 +1719,7 @@ class MarkingMenu(
                 QtWidgets.QRadioButton,
             ):
                 self.sb.center_widget(w, padding_x=25)
-                if w.base_name() == "i":
+                if isinstance(w, MenuButton):
                     w.ui.style.set(widget=w)
 
             if w.type == self.sb.registered_widgets.Region:
@@ -1726,22 +1729,15 @@ class MarkingMenu(
 
     def child_enterEvent(self, w, event) -> None:
         """Handle the enter event for child widgets."""
-        if w.derived_type == QtWidgets.QPushButton:
-            if w.base_name() == "i":
-                acc_name = w.accessibleName()
-                if not acc_name:
-                    return
-
-                submenu_name = f"{acc_name}#submenu"
-                if submenu_name != w.ui.objectName():
-                    submenu = self._submenu_cache.get(submenu_name)
-                    if submenu is None:
-                        submenu = self.sb.get_ui(submenu_name)
-                        if submenu:
-                            self._submenu_cache[submenu_name] = submenu
-
-                    if submenu:
-                        self._set_submenu(submenu, w)
+        if isinstance(w, MenuButton) and w.target:
+            # Hover opens the button's own submenu — component-specific when the
+            # button carries filter tags (the polygons Edge button →
+            # "polygons#edge#submenu", not the base "polygons#submenu").
+            submenu_name = "#".join([w.target, *w.filter_tag_list(), "submenu"])
+            if submenu_name != w.ui.objectName():
+                submenu = self._cached_ui(submenu_name)
+                if submenu:
+                    self._set_submenu(submenu, w)
 
         if w.base_name() == "chk" and w.ui.has_tags("submenu") and self.isVisible():
             if isinstance(w, QtWidgets.QAbstractButton):

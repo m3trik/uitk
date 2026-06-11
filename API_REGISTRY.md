@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-06-10_
+_Generated: 2026-06-11_
 
 ## Index
 
@@ -53,6 +53,7 @@ _Generated: 2026-06-10_
 - [`widgets/marking_menu/_resolver.py`](#widgets--marking_menu--_resolver) — Pure menu-resolution logic for the MarkingMenu.
 - [`widgets/marking_menu/overlay.py`](#widgets--marking_menu--overlay)
 - [`widgets/menu.py`](#widgets--menu)
+- [`widgets/menuButton.py`](#widgets--menuButton)
 - [`widgets/messageBox.py`](#widgets--messageBox)
 - [`widgets/mixins/attributes.py`](#widgets--mixins--attributes)
 - [`widgets/mixins/convert.py`](#widgets--mixins--convert)
@@ -103,8 +104,8 @@ _Generated: 2026-06-10_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/tableWidget.py`](#widgets--tableWidget)
+- [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -393,11 +394,11 @@ Switchboard-side keyboard shortcut machinery.
 <a id="switchboard--slots"></a>
 ### `switchboard/slots.py`
 
-- **[`class Signals`](uitk/uitk/switchboard/slots.py#L11)** — Decorator to specify which signals a slot should connect to.
+- **[`class Signals`](uitk/uitk/switchboard/slots.py#L15)** — Decorator to specify which signals a slot should connect to.
   - `Signals.blockSignals(cls, func)` *(class)* — Decorator that blocks widget signals during method execution.
-- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L62)** — Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
-- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L142)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
-- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L327)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
+- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L66)** — Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
+- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L208)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
+- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L409)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
   - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
   - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
   - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
@@ -420,7 +421,9 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--utils"></a>
 ### `switchboard/utils.py`
 
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L47)** — Utility methods for widget positioning, centering, and screen geometry.
+- [`pop_override_cursor_stack(app)`](uitk/uitk/switchboard/utils.py#L11) — Pop the whole application override-cursor stack.
+- [`push_override_cursor_stack(app, saved)`](uitk/uitk/switchboard/utils.py#L31) — Re-push cursors captured by :func:`pop_override_cursor_stack`,
+- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L87)** — Utility methods for widget positioning, centering, and screen geometry.
   - `SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
   - `SwitchboardUtilsMixin.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)` *(static)* — Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…
   - `SwitchboardUtilsMixin.unpack_names(cls, name_string)` *(class)* — Unpacks a comma-separated string of names and returns a list of individual names.
@@ -841,7 +844,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
 <a id="widgets--marking_menu--_marking_menu"></a>
 ### `widgets/marking_menu/_marking_menu.py`
 
-- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L121)** — MarkingMenu is a marking menu based on a QWidget.
+- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L122)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
   - `MarkingMenu.default_bindings(self) -> dict` *(property)* — The original bindings passed at construction time.
   - `MarkingMenu.bindings(self) -> dict` *(property)* — Get bindings from persistent storage.
@@ -968,13 +971,22 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Menu.remove_widget(self, widget)` — Remove a widget from the layout.
   - `Menu.clear(self) -> None` — Clear all items in the list.
   - `Menu.add(self, x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map], data: Any = None, row: Optional[int] = None, col: int = 0, rowSpan: int = 1, colSpan: Optional[int] = None, **kwargs) -> Union[QtWidgets.QWidget, list]` — Add an item or multiple items to the list.
-  - `Menu.get_padding(widget)` — Get the padding values around a widget.
   - `Menu.sizeHint(self)` — Return the recommended size for the widget.
   - `Menu.showEvent(self, event) -> None` — Handle show event with positioning (optimized for performance).
   - `Menu.hide(self, force: bool = False) -> bool` — Hide the menu, respecting the pinned state.
   - `Menu.hideEvent(self, event) -> None` — Handle hide event.
   - `Menu.eventFilter(self, widget, event)` — Handle events for the menu and its children.
   - `Menu.trigger_from_widget(self, widget: Optional[QtWidgets.QWidget] = None, *, button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton) -> None` — Toggle visibility using the same rules as the parent click event.
+
+<a id="widgets--menuButton"></a>
+### `widgets/menuButton.py`
+
+- **[`class MenuButton(QtWidgets.QPushButton, AttributesMixin)`](uitk/uitk/widgets/menuButton.py#L10)** — A navigation button for marking menus.
+  - `MenuButton.getTarget(self) -> str`
+  - `MenuButton.setTarget(self, value: str) -> None`
+  - `MenuButton.getFilterTags(self) -> str`
+  - `MenuButton.setFilterTags(self, value: str) -> None`
+  - `MenuButton.filter_tag_list(self) -> list` — Return ``filterTags`` parsed to a list of tags (empty when unset).
 
 <a id="widgets--messageBox"></a>
 ### `widgets/messageBox.py`
@@ -991,7 +1003,7 @@ Pure menu-resolution logic for the MarkingMenu.
 <a id="widgets--mixins--attributes"></a>
 ### `widgets/mixins/attributes.py`
 
-- **[`class AttributesMixin`](uitk/uitk/widgets/mixins/attributes.py#L7)** — A mixin class providing a comprehensive interface for setting attributes on Qt widgets.
+- **[`class AttributesMixin`](uitk/uitk/widgets/mixins/attributes.py#L11)** — A mixin class providing a comprehensive interface for setting attributes on Qt widgets.
   - `AttributesMixin.set_flags(self, **flags)` — Sets or unsets given window flags, safely ignoring unsupported cases.
   - `AttributesMixin.set_legal_attribute(self, obj, name, value, also_set_original=False)` — If the original name contains illegal characters, this method sets an attribute using
   - `AttributesMixin.set_attributes(self, *objects, **attributes)`
@@ -1174,7 +1186,7 @@ Shared value-text coloring for spin-box widgets.
 <a id="widgets--mixins--state_manager"></a>
 ### `widgets/mixins/state_manager.py`
 
-- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/state_manager.py#L11)** — Manages widget state persistence using QSettings.
+- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/state_manager.py#L13)** — Manages widget state persistence using QSettings.
   - `StateManager.apply(self, widget: QtWidgets.QWidget, value: Any) -> None` — Apply the given value to the widget using ValueManager.
   - `StateManager.suppress_save(self)` — Context manager that temporarily suppresses QSettings writes.
   - `StateManager.save(self, widget: QtWidgets.QWidget, value: Any = None) -> None` — Save the current value of the widget to QSettings.
@@ -1834,17 +1846,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
 
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
-
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
@@ -1908,6 +1909,17 @@ Reusable action-column management for :class:`TableWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
+
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`
