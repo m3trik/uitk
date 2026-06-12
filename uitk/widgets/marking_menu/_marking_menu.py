@@ -169,6 +169,7 @@ class MarkingMenu(
         log_level: str = "DEBUG",
         suppress_default_on_reentry: bool = False,
         precompile: bool = False,
+        context_tags=None,
         **kwargs,
     ):
         """ """
@@ -202,6 +203,8 @@ class MarkingMenu(
 
         if switchboard:
             self.sb = switchboard
+            if context_tags:
+                self.sb.context_tags = set(context_tags)
             # If sources are provided, register them to the existing switchboard
             if any([ui_source, slot_source, widget_source]):
                 self.sb.register(
@@ -218,6 +221,7 @@ class MarkingMenu(
                 widget_source=widget_source,
                 handlers=self._handlers_config,
                 base_dir=base_dir,
+                context_tags=context_tags,
             )
 
         # Initialize the Handler Ecosystem

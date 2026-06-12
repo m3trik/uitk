@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import re
 from typing import Optional, Type
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
@@ -7,6 +8,48 @@ import pythontk as ptk
 
 class SwitchboardWidgetMixin:
     """Widget registration, resolution, and dynamic class loading for Switchboard."""
+
+    def is_registered_ui(self, name: str) -> bool:
+        """True if *name* matches a known UI file stem in the registry (no load is triggered)."""
+        if not name:
+            return False
+        filenames = self.registry.ui_registry.get("filename") or []
+        return name in filenames
+
+    def apply_visibility_policy(self, widget) -> bool:
+        """Hide a freshly-registered widget the current context can't serve.
+
+        Two policies, applied at widget registration (``MainWindow.register_widget``):
+
+        1. **``requires`` tag** — a Designer dynamic string property naming the feature
+           tag(s) the widget needs (``"maya"``, ``"maya|blender"``; ``|``/comma/space
+           separated alternatives). Hidden when the switchboard's ``context_tags`` is
+           non-empty and shares no tag. An empty ``context_tags`` disables filtering.
+        2. **Nav auto-hide** — a ``MenuButton`` whose ``target`` does not resolve against
+           the UI registry navigates nowhere in this context and hides itself (no manual
+           tags needed; an unported submenu disappears from every nav path that points
+           at it).
+
+        Returns True when the widget was hidden; the reason is recorded on
+        ``widget.hidden_by_policy`` for tooling/coverage reports.
+        """
+        requires = widget.property("requires")
+        if requires and self.context_tags:
+            tags = {t for t in re.split(r"[|,\s]+", str(requires)) if t}
+            if tags and not (tags & self.context_tags):
+                widget.setVisible(False)
+                widget.hidden_by_policy = "requires"
+                return True
+
+        from uitk.widgets.menuButton import MenuButton
+
+        if isinstance(widget, MenuButton):
+            target = widget.target
+            if target and not self.is_registered_ui(target):
+                widget.setVisible(False)
+                widget.hidden_by_policy = "nav-unresolved"
+                return True
+        return False
 
     def resolve_widget_class(
         self, class_name: str

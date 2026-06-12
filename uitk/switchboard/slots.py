@@ -1002,6 +1002,41 @@ class SwitchboardSlotsMixin:
         slot_class = self.get_slots_instance(widget.ui)
         return self.get_slot(slot_class, widget.objectName(), wrap=wrap, widget=widget)
 
+    def mark_missing_slot(self, widget):
+        """Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.
+
+        Gives a live "not-yet-built" map during development (installed by setting
+        ``UITK_MARK_MISSING_SLOTS`` in the environment, or passed explicitly as the
+        switchboard's ``on_missing_slot``). Never the production default — it would
+        repaint every unwired widget at init.
+        """
+        widget.setEnabled(False)
+        widget.setToolTip(
+            f"Not implemented: no '{widget.objectName()}' slot for "
+            f"'{widget.ui.objectName()}'."
+        )
+
+    def notify_missing_slot(self, widget):
+        """Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.
+
+        Only fires for widgets the switchboard *would* have connected (signal-bearing
+        ``derived_type``), and never for nav ``MenuButton``s (they own navigation, not a
+        slot). No-op when no ``on_missing_slot`` hook is set — the production default.
+        """
+        hook = getattr(self, "on_missing_slot", None)
+        if not hook:
+            return
+        from uitk.widgets.menuButton import MenuButton
+
+        if isinstance(widget, MenuButton):
+            return
+        if not self.default_signals.get(widget.derived_type):
+            return
+        try:
+            hook(widget)
+        except Exception as error:
+            self.logger.debug(f"[notify_missing_slot] hook raised: {error}")
+
     def connect_slot(self, widget, slot=None):
         """Connect a widget's signals to its slot."""
         ui_name = widget.ui.objectName()
@@ -1013,6 +1048,7 @@ class SwitchboardSlotsMixin:
                 self.logger.debug(
                     f"[connect_slot] [{ui_name}.{widget_name}] No slot found for widget"
                 )
+                self.notify_missing_slot(widget)
                 return
 
         signals = getattr(

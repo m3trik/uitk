@@ -391,6 +391,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         self._add_child_destroyed_signal(widget)
         self._add_child_refresh_on_show_signal(widget)
 
+        # Context-driven visibility (requires-tag filtering + nav auto-hide) —
+        # applied before slot init so a hidden widget never half-initializes.
+        # getattr-guarded: MainWindow supports lean duck-typed switchboard stubs.
+        apply_policy = getattr(self.sb, "apply_visibility_policy", None)
+        if apply_policy:
+            apply_policy(widget)
+
         self.widgets.add(widget)
         self.on_child_registered.emit(widget)
         widget.init_slot()
