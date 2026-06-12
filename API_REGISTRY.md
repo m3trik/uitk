@@ -407,6 +407,8 @@ Switchboard-side keyboard shortcut machinery.
   - `SwitchboardSlotsMixin.call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs)` — Call a slot method for a widget.
   - `SwitchboardSlotsMixin.get_slot(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]`
   - `SwitchboardSlotsMixin.get_slot_from_widget(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]`
+  - `SwitchboardSlotsMixin.mark_missing_slot(self, widget)` — Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.
+  - `SwitchboardSlotsMixin.notify_missing_slot(self, widget)` — Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.
   - `SwitchboardSlotsMixin.connect_slot(self, widget, slot=None)` — Connect a widget's signals to its slot.
   - `SwitchboardSlotsMixin.slot_history(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)` — Get the slot history.
 
@@ -453,7 +455,9 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--widgets"></a>
 ### `switchboard/widgets.py`
 
-- **[`class SwitchboardWidgetMixin`](uitk/uitk/switchboard/widgets.py#L8)** — Widget registration, resolution, and dynamic class loading for Switchboard.
+- **[`class SwitchboardWidgetMixin`](uitk/uitk/switchboard/widgets.py#L9)** — Widget registration, resolution, and dynamic class loading for Switchboard.
+  - `SwitchboardWidgetMixin.is_registered_ui(self, name: str) -> bool` — True if *name* matches a known UI file stem in the registry (no load is triggered).
+  - `SwitchboardWidgetMixin.apply_visibility_policy(self, widget) -> bool` — Hide a freshly-registered widget the current context can't serve.
   - `SwitchboardWidgetMixin.resolve_widget_class(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]` — Return the widget class registered under the given name.
   - `SwitchboardWidgetMixin.get_icon(self, icon_name: str) -> QtGui.QIcon` — Get a registered icon by name.
   - `SwitchboardWidgetMixin.register_widget(self, widget)` — Register any custom widgets using the module names.
