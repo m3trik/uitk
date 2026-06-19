@@ -17,7 +17,7 @@ classifiers = [
 
 # Dependencies - exclude optional system deps (qtpy)
 dependencies = [
-    "pythontk>=0.8.63",
+    "pythontk>=0.8.65",
 ]
 
 [project.urls]
