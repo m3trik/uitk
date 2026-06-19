@@ -108,6 +108,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         self.widgets = set()
         self.restore_widget_states = True
         self.restored_widgets = set()
+        # Cache of StateManagers for sibling presentation surfaces (panel /
+        # #submenu / #startmenu), keyed by UI name — lets sync_widget_values
+        # persist into a sibling's store without loading its window.
+        self._relative_states = {}
         self._deferred = {}
         self.lock_style = False
         self.original_style = ""
@@ -491,13 +495,39 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             self.state.load(widget)
             self.restored_widgets.add(widget)
 
+    def _relative_state(self, ui_name: str) -> StateManager:
+        """Lazily build (and cache) a StateManager for a sibling surface's
+        settings branch, so its store can be written without loading its
+        window. This is the *not-loaded* fallback; when a sibling is live,
+        callers use its own ``ui.state`` instead.
+        """
+        state = self._relative_states.get(ui_name)
+        if state is None:
+            state = StateManager(self.sb.settings.branch(ui_name))
+            self._relative_states[ui_name] = state
+        return state
+
     def sync_widget_values(self, widget: QtWidgets.QWidget, value: Any) -> None:
-        """Sync a widget's state value across related UIs and apply the value using StateManager."""
+        """Persist a widget's value and mirror it across related surfaces.
+
+        A panel and its marking-menu surfaces (``<panel>``,
+        ``<panel>#submenu``, ``<panel>#startmenu``) present the *same*
+        logical controls but keep SEPARATE per-surface QSettings namespaces.
+        A change previously only reached a sibling surface if that surface
+        was loaded *and shown* at the time, so a value set from the panel
+        never reached an unopened marking-menu's store — and reopening it a
+        later session restored a stale/default copy (the "settings reset
+        themselves a few sessions later" bug).
+
+        Now the value is written into every related surface's store directly
+        (loaded or not); any currently-live sibling widget is also updated
+        visually, with its own save suppressed so the mirror can't ping-pong.
+        """
         if not isinstance(widget, QtWidgets.QWidget):
             self.logger.warning(f"[sync_widget_values] Invalid widget: {widget}")
             return
 
-        # Skip syncing when save is suppressed (e.g. during preset load)
+        # Skip syncing when save is suppressed (e.g. during restore / preset load)
         if self.state._save_suppressed:
             return
 
@@ -508,17 +538,44 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             )
             return
 
-        # Save and apply to all relative widgets
-        relatives = self.sb.get_ui_relatives(widget.ui, upstream=True, downstream=True)
-        for relative in relatives:
-            relative_widget = self.sb.get_widget(widget.objectName(), relative)
-            if relative_widget and relative_widget is not widget:
-                self.logger.debug(
-                    f"[{self.objectName()}] [sync_widget_values] Syncing {widget.objectName()} to {relative_widget.objectName()}"
-                )
+        name = widget.objectName()
+        signal = widget.default_signals()
+        # No default signal → no state key to write (save() would no-op too).
+        if not signal:
+            return
 
-                self.state.save(relative_widget, value)
-                self.state.apply(relative_widget, value)
+        key = f"{name}/{signal}"
+        # get_ui_relatives already excludes self.
+        for relative_name in self.sb.get_ui_relatives(
+            self.objectName(), upstream=True, downstream=True
+        ):
+            # Resolve the sibling window only if it's already loaded — never
+            # force-load it just to mirror a value.
+            relative = (
+                self.sb.get_ui(relative_name)
+                if self.sb.loaded_ui.has(relative_name)
+                else None
+            )
+            relative_state = (
+                getattr(relative, "state", None) or self._relative_state(relative_name)
+            )
+
+            # 1) Persist into the sibling surface's own store, even when its
+            #    window was never opened this session — so a later restore
+            #    reads the right value instead of a stale/default one.
+            relative_state.save_value(key, value)
+
+            # 2) If that surface is live, mirror the value onto its widget
+            #    (its save suppressed to avoid a propagation ping-pong).
+            if relative is not None:
+                relative_widget = self.sb.get_widget(name, relative)
+                if relative_widget is not None and relative_widget is not widget:
+                    self.logger.debug(
+                        f"[{self.objectName()}] [sync_widget_values] Mirroring "
+                        f"{name} to live {relative_name}"
+                    )
+                    with relative.state.suppress_save():
+                        relative.state.apply(relative_widget, value)
 
         # Save for the current widget
         self.state.save(widget, value)
@@ -569,6 +626,29 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         # recomputed value, not the cached one.
         self.updateGeometry()
 
+    def _content_min_height(self) -> int:
+        """Return the true minimum height the content needs.
+
+        ``minimumSizeHint().height()`` alone is an unreliable floor for a
+        resize. Qt's ``qSmartMinSize`` REPLACES a child's layout-computed
+        minimum with any explicit ``setMinimumSize`` value — even when that
+        explicit value is SMALLER than the content requires. A central widget
+        carrying such an under-reporting minimum (e.g. a stale ``minimumSize``
+        baked into a ``.ui``) drags this window's ``minimumSizeHint`` below the
+        real content size; a subsequent ``resize()`` to that value then packs
+        fixed-height children into too little space and they overlap.
+
+        The central widget's own ``minimumSizeHint()`` reflects its layout's
+        real minimum (it is not subject to the explicit-min override), so the
+        max of the two is a floor that always covers the content while still
+        allowing dead space above a footer / spacer to be trimmed.
+        """
+        floor = self.minimumSizeHint().height()
+        central = self.centralWidget()
+        if central is not None:
+            floor = max(floor, central.minimumSizeHint().height())
+        return floor
+
     def _sync_min_height_to_hint(self, hint: int) -> None:
         """Align ``minimumHeight`` with the freshly-computed layout hint.
 
@@ -596,7 +676,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         Use when a widget knows the before/after change in pixels and
         wants the window to follow gracefully -- preserving any extra
         height the user previously expanded into. Width is preserved.
-        Result is clamped to ``minimumSizeHint().height()``.
+        Result is clamped to the true content minimum
+        (``_content_min_height()``), so it can't shrink into overlap.
 
         Parameters:
             delta: Signed pixel delta. Positive grows, negative shrinks.
@@ -604,7 +685,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if delta == 0:
             return
         self._activate_descendant_layouts()
-        min_h = self.minimumSizeHint().height()
+        min_h = self._content_min_height()
         new_height = max(self.height() + delta, min_h)
         self._sync_min_height_to_hint(min_h)
         self.resize(self.width(), new_height)
@@ -619,13 +700,26 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         into. Use ``adjust_height_by`` when that preservation matters.
         """
         self._activate_descendant_layouts()
-        min_h = self.minimumSizeHint().height()
-        target = min_h
+        # Target the layout's natural content height, falling back to sizeHint.
+        # When BOTH are 0 the layout exposes no height at all (e.g. marking-menu
+        # submenus whose content — an ExpandableList, nested Regions — is
+        # absolutely positioned in a layout-less central): leave the window at
+        # its natural size rather than resize. ``_content_min_height`` must NOT
+        # override this early return — it reports only the tiny *laid-out* part
+        # (~18px for a lone nav button), and resizing to that collapsed such
+        # submenus to a sliver with their real content rendered detached
+        # ("submenu shows in the wrong location").
+        target = self.minimumSizeHint().height()
         if target <= 0:
             target = self.sizeHint().height()
         if target <= 0:
             return
-        self._sync_min_height_to_hint(min_h)
+        # We have a positive content target: floor it by the true content
+        # minimum so an under-reporting central (a layout min smaller than the
+        # space its fixed-height children need) can't pack them into overlap.
+        floor = self._content_min_height()
+        target = max(target, floor)
+        self._sync_min_height_to_hint(floor)
         self.resize(self.width(), target)
 
     def save_window_geometry(self) -> None:

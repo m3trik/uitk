@@ -14,7 +14,7 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from conftest import QtBaseTestCase
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.expandableList import ExpandableList
 
 
@@ -142,6 +142,40 @@ class TestExpandableList(QtBaseTestCase):
         self.assertGreater(size.width(), 0, "Sublist width should be > 0")
         self.assertGreater(size.height(), 0, "Sublist height should be > 0")
 
+    def test_force_hide_collapses_sublist_shown_under_hidden_ancestor(self):
+        """A sublist open at hide-time must reopen collapsed.
+
+        Bug: sublists are reparented to the window, so when an ancestor is
+        hidden they get a spontaneous hide (``isVisible()`` → False) but keep
+        their explicit-visible flag. ``_force_hide_all``'s old ``isVisible()``
+        guard then skipped them, the flag survived, and Qt's ``showChildren``
+        restored them on the next show — the list "reshown in the previously
+        open state". The collapse must clear the flag unconditionally.
+
+        Reproduced deterministically by showing a sublist while its window is
+        not visible: ``isVisible()`` is False yet ``isHidden()`` is False (the
+        exact mid-hide condition). The fix asserts ``isHidden()`` afterward —
+        the flag ``showChildren`` actually consults — not an OS-dependent
+        visibility outcome.
+        """
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        w1 = lw.add("Parent")
+        w1.sublist.add("Child")  # non-empty so it is a real, showable sublist
+
+        # Window is not shown → ancestor not visible. Explicitly show the
+        # sublist: not visible (ancestor hidden) but not explicitly hidden.
+        w1.sublist.show()
+        self.assertFalse(w1.sublist.isVisible())
+        self.assertFalse(w1.sublist.isHidden())
+
+        # Hiding the list (what hideEvent does) must collapse it unconditionally.
+        lw._force_hide_all()
+        self.assertTrue(
+            w1.sublist.isHidden(),
+            "sublist must be explicitly hidden so a later show won't restore it",
+        )
+
     def test_root_list_attribute(self):
         """Verify root_list always points to the topmost ExpandableList."""
         lw = ExpandableList(self.window)
@@ -153,6 +187,101 @@ class TestExpandableList(QtBaseTestCase):
         self.assertIs(w1.sublist.root_list, lw)
         self.assertIs(w2.sublist.root_list, lw)
         self.assertIs(w3.sublist.root_list, lw)
+
+    def test_explicit_hide_collapses_open_sublists(self):
+        """Calling hide() on a list must tear down its open sublists.
+
+        Bug: hide() used to early-return while any sublist was visible. Since
+        sublists are reparented to the window (not Qt children of the list),
+        an explicit dismiss then closed *nothing* — neither the list nor the
+        sublist. hide() now force-collapses the hierarchy, then hides.
+        """
+        lw = ExpandableList(fixed_item_height=21)  # top-level: sublists parent to lw
+        self.track_widget(lw)
+        w1 = lw.add("Parent")
+        c1 = w1.sublist.add("Child")
+        c1.sublist.add("Grandchild")
+        lw.show()
+        lw._handle_widget_enter_event(w1)
+        w1.sublist._handle_widget_enter_event(c1)
+        self.assertTrue(w1.sublist.isVisible())
+        self.assertTrue(c1.sublist.isVisible())
+
+        lw.hide()
+
+        self.assertFalse(lw.isVisible(), "the list itself must hide")
+        self.assertTrue(w1.sublist.isHidden(), "sublist must collapse on hide")
+        self.assertTrue(c1.sublist.isHidden(), "nested sublist must collapse on hide")
+
+    def test_sublist_stays_collapsed_after_window_reshow(self):
+        """A sublist open at hide-time must not reopen on the next show.
+
+        Bug: after ``_force_hide_all`` correctly collapses sublists on hide,
+        Qt delivers a synthetic ``Enter`` to the item under the stationary
+        cursor when the window reappears. That Enter ran the normal
+        hover-to-expand path, silently reopening the previously-expanded
+        sublist — the list "reshown in its previously open state".
+        Fixed: gate the Enter-driven open behind a show-time latch that
+        clears only once the cursor actually moves.
+        """
+        self.window.show()
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        lw.show()
+        w1 = lw.add("Parent")
+        w1.sublist.add("Child")  # non-empty so it is a real, showable sublist
+
+        # Open the sublist (direct call mirrors a genuine hover).
+        lw._handle_widget_enter_event(w1)
+        self.assertTrue(w1.sublist.isVisible())
+
+        # Window hides — hideEvent/_force_hide_all collapse the sublist.
+        self.window.hide()
+        self.assertTrue(w1.sublist.isHidden())
+
+        # Reshow re-arms the latch (showEvent records the cursor position).
+        self.window.show()
+        self.assertIsNotNone(
+            lw._suppress_open_pos, "showEvent must arm the auto-open latch on reshow"
+        )
+
+        # Pin the latch to the current cursor so the "stationary cursor"
+        # condition is deterministic — the suite runs under the native QPA
+        # locally (real, moving pointer) and offscreen only in CI.
+        lw._suppress_open_pos = QtGui.QCursor.pos()
+
+        # The synthetic Enter Qt fires at the unchanged cursor position must
+        # NOT reopen the sublist.
+        QtWidgets.QApplication.sendEvent(w1, QtCore.QEvent(QtCore.QEvent.Enter))
+        self.assertFalse(
+            w1.sublist.isVisible(),
+            "sublist must stay collapsed on reshow until the cursor moves",
+        )
+
+    def test_auto_open_resumes_after_cursor_moves(self):
+        """Once the cursor moves off the show position, hover-to-expand resumes.
+
+        Guards against the reshow latch over-suppressing: a genuine Enter at a
+        position different from the recorded show position must open the
+        sublist and clear the latch.
+        """
+        self.window.show()
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        lw.show()
+        w1 = lw.add("Parent")
+        w1.sublist.add("Child")
+
+        # Latch armed at a position the cursor is no longer at (it has moved).
+        lw._suppress_open_pos = QtCore.QPoint(-9999, -9999)
+        QtWidgets.QApplication.sendEvent(w1, QtCore.QEvent(QtCore.QEvent.Enter))
+
+        self.assertTrue(
+            w1.sublist.isVisible(), "sublist should open on a genuine hover Enter"
+        )
+        self.assertIsNone(
+            lw._suppress_open_pos, "latch should clear once the cursor has moved"
+        )
 
 
 if __name__ == "__main__":

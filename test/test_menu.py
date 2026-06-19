@@ -1334,6 +1334,86 @@ class TestMenuRegistrationCoalescing(QtBaseTestCase):
         self.assertEqual(m._pending_registrations, [])
         self.assertFalse(m._registration_drain_scheduled)
 
+
+class _StubMainWindow(QtWidgets.QMainWindow):
+    """Minimal stand-in exposing the ``register_widget`` / ``widgets`` contract
+    that :meth:`Menu._resolve_registration_window` probes for.
+
+    ``register_widget`` mirrors the essential side effects of the real
+    ``MainWindow.register_widget``: it marks the widget for state persistence
+    (``restore_state``) and tracks it. That's all the registration path needs
+    to verify here.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.widgets = set()
+        self.registered = []
+
+    def register_widget(self, widget):
+        widget.restore_state = True
+        self.widgets.add(widget)
+        self.registered.append(widget.objectName())
+
+
+class TestMenuRegistrationSurvivesReparent(QtBaseTestCase):
+    """Deferred registration must reach the MainWindow even after the menu
+    reparents to a top-level popup on show.
+
+    Regression: a menu shows by reparenting itself to a top-level Tool/Popup
+    window, which severs the live parent chain back to the MainWindow. Because
+    dynamic-widget registration is *deferred* to a later event-loop tick, in a
+    live DCC session the show/reparent could race ahead of the drain — at which
+    point ``_register_with_main_window`` walked a broken chain, found no
+    MainWindow, and silently skipped registration. The widget never got
+    ``restore_state``, so its value was neither saved nor restored. Repro'd as
+    menu-hosted options resetting every session only in interactive Maya.
+
+    Fix: capture the owning MainWindow weakly while the chain is still intact
+    (at schedule time) and fall back to it at drain time.
+    """
+
+    def _build(self):
+        window = self.track_widget(_StubMainWindow())
+        central = self.track_widget(QtWidgets.QWidget())
+        window.setCentralWidget(central)
+        host = self.track_widget(QtWidgets.QPushButton("host", central))
+        menu = self.track_widget(Menu(parent=host))
+        return window, host, menu
+
+    def test_resolve_finds_window_via_live_chain(self):
+        """The cheap, common path: an intact parent chain resolves directly."""
+        window, _host, menu = self._build()
+        self.assertIs(menu._resolve_registration_window(), window)
+
+    def test_resolve_falls_back_to_cache_after_reparent(self):
+        """Once the live chain is broken, the cached window still resolves."""
+        window, _host, menu = self._build()
+        # Prime the cache via a successful live walk.
+        self.assertIs(menu._resolve_registration_window(), window)
+
+        rogue = self.track_widget(QtWidgets.QMainWindow())  # no register_widget
+        menu.setParent(rogue, QtCore.Qt.Window)
+        self.assertFalse(hasattr(menu.parent(), "register_widget"))
+
+        self.assertIs(menu._resolve_registration_window(), window)
+
+    def test_registration_survives_menu_reparent_before_drain(self):
+        """End-to-end: add → reparent (break chain) → drain still registers."""
+        window, _host, menu = self._build()
+        chk = menu.add("QCheckBox", setObjectName="chk_opt")
+
+        # Simulate the menu becoming a top-level popup on show.
+        rogue = self.track_widget(QtWidgets.QMainWindow())
+        menu.setParent(rogue, QtCore.Qt.Window)
+        self.assertFalse(hasattr(menu.parent(), "register_widget"))
+
+        menu._drain_pending_registrations()
+
+        self.assertIn("chk_opt", window.registered)
+        self.assertIn(chk, window.widgets)
+        self.assertTrue(getattr(chk, "restore_state", False))
+
     def test_reentrant_add_during_drain_rearms_timer(self):
         """If a registration handler triggers another add() while the drain
         is running, the new item must land in a fresh queue with its own

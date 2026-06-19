@@ -1451,6 +1451,48 @@ class TestSlotMismatchLogging(QtBaseTestCase):
             f"Slot-not-found must be DEBUG, not WARNING (floods console): {warning_calls}",
         )
 
+    def test_connect_slot_skips_non_callable_collision(self):
+        """connect_slot must skip (with a WARNING) when a widget's objectName
+        collides with a non-callable attribute on the slots class.
+
+        Without the guard, ``getattr(slots, objectName)`` returns that attribute
+        (e.g. a widget stored as ``self.<objectName>``) and ``signal.connect`` on
+        it raised the cryptic "is not a callable object" — the map_converter
+        footer-button bug. The connection must be skipped, not attempted.
+        """
+        from unittest.mock import patch
+
+        slots_instance = self.sb.get_slots_instance(self.ui)
+        # Simulate the collision: a non-callable attribute named like the widget.
+        slots_instance.colliding_widget = QtWidgets.QLabel("not a slot")
+
+        orphan = QtWidgets.QPushButton("Colliding")
+        orphan.setObjectName("colliding_widget")
+        orphan.setParent(self.ui.centralWidget())
+        self.ui.register_widget(orphan)
+
+        logger = self.sb.logger
+        with (
+            patch.object(logger, "warning", wraps=logger.warning) as mock_warning,
+            patch.object(logger, "error", wraps=logger.error) as mock_error,
+        ):
+            self.sb.connect_slot(orphan)
+
+        # Must NOT have attempted the connection (no cryptic connect error).
+        connect_errors = [
+            str(c) for c in mock_error.call_args_list if "Error connecting" in str(c)
+        ]
+        self.assertEqual(
+            connect_errors, [], f"Should skip, not error on connect: {connect_errors}"
+        )
+        # Should warn (actionably) about the non-callable collision.
+        warns = [str(c) for c in mock_warning.call_args_list if "non-callable" in str(c)]
+        self.assertTrue(
+            len(warns) > 0, "Expected a WARNING about the non-callable slot collision"
+        )
+        # And the signal must not be wired.
+        self.assertNotIn(orphan, self.ui.connected_slots)
+
     def test_connect_slot_logs_debug_on_missing_slot(self):
         """connect_slot should log at DEBUG (not WARNING) when widget has no slot.
 

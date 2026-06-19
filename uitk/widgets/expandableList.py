@@ -559,26 +559,48 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         except Exception:
             pass
 
-    def _has_any_visible_sublist(self):
-        """Check if any direct child widget's sublist is currently visible.
+    def _get_root_list(self):
+        """Return the topmost list in this hierarchy (self if already root)."""
+        return getattr(self, "root_list", self)
+
+    def _auto_open_suppressed(self):
+        """Whether a sublist auto-open should be ignored right now.
+
+        Suppression is armed by the root list's ``showEvent`` with the
+        show-time cursor position. Qt delivers a synthetic ``Enter`` to the
+        item under the cursor whenever the list (re)appears; without this
+        latch that Enter silently reopens whatever sublist was expanded before
+        the hide. The first Enter seen at a *different* cursor position clears
+        the latch, so genuine hover-to-expand resumes after the user moves.
 
         Returns:
-            bool: True if any child's sublist is visible.
+            bool: True while the synthetic show-time Enter should be ignored.
         """
-        for i in range(self._layout.count()):
-            widget = self._layout.itemAt(i).widget()
-            if widget and hasattr(widget, "sublist") and widget.sublist.isVisible():
-                return True
+        root = self._get_root_list()
+        show_pos = getattr(root, "_suppress_open_pos", None)
+        if show_pos is None:
+            return False
+        if QtGui.QCursor.pos() == show_pos:
+            return True
+        root._suppress_open_pos = None
         return False
 
     def hide(self):
-        """Hide this list, but only if no child sublist is still visible.
+        """Hide this list and collapse every still-open sublist.
 
-        This chains naturally: the deepest list hides first, which
-        allows its parent to hide on the next check, and so on.
+        Sublists are reparented to the window (so they aren't clipped by
+        intermediate native widgets), which means they are *not* Qt children
+        of this list and don't disappear just because it hides. Force-collapse
+        the whole hierarchy first so an explicit dismiss never strands an open
+        sublist on screen.
+
+        The previous implementation instead *refused* to hide while a sublist
+        was visible (an early return); combined with sublists living outside
+        this list's child tree, an explicit ``hide()`` then closed nothing at
+        all. ``hideEvent`` runs ``_force_hide_all`` too, covering hides that
+        bypass this override (e.g. a parent-window hide).
         """
-        if self._has_any_visible_sublist():
-            return
+        self._force_hide_all()
         super().hide()
 
     def showEvent(self, event):
@@ -599,6 +621,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         super().showEvent(event)
         if hasattr(self, "parent_list"):
             return  # only run on the root list
+
+        # Arm synthetic-Enter suppression (see _auto_open_suppressed): a
+        # (re)show makes Qt deliver a synthetic Enter to whatever item sits
+        # under a stationary cursor, which would otherwise immediately reopen
+        # the sublist that was expanded before the hide — the list "reshown in
+        # its previously-expanded state". Record the show-time cursor position;
+        # auto-open stays latched off until the cursor actually moves.
+        self._suppress_open_pos = QtGui.QCursor.pos()
 
         self.resize(self.sizeHint())
 
@@ -655,20 +685,28 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         return False
 
     def _force_hide_all(self):
-        """Force-hide all visible sublists in this hierarchy, bypassing
-        the chained ``hide()`` override.
+        """Force-hide every sublist in this hierarchy, bypassing the chained
+        ``hide()`` override.
+
+        Hides *unconditionally* — not just sublists that currently read as
+        visible. Sublists are reparented to the window, so when an ancestor is
+        hidden they get a spontaneous hide (``isVisible()`` goes False) yet keep
+        their explicit-visible flag; Qt's ``showChildren`` then restores them on
+        the next show, reopening the list in its previously-expanded state. An
+        ``isVisible()`` guard here would skip them mid-hide and leave that flag
+        set, so the clear must be unconditional. Hiding an already-hidden widget
+        is a no-op, so the extra calls are harmless.
         """
         for i in range(self._layout.count()):
             w = self._layout.itemAt(i).widget()
             if w and hasattr(w, "sublist"):
                 w.sublist._force_hide_all()
-                if w.sublist.isVisible():
-                    # Bypass ExpandableList.hide()'s chained-children guard by
-                    # calling QWidget.hide() directly. ``super(ExpandableList,
-                    # w.sublist)`` would TypeError if a re-import has produced
-                    # a second ExpandableList class whose identity differs
-                    # from this module's name binding.
-                    QtWidgets.QWidget.hide(w.sublist)
+                # Bypass ExpandableList.hide()'s chained-children guard by
+                # calling QWidget.hide() directly. ``super(ExpandableList,
+                # w.sublist)`` would TypeError if a re-import has produced a
+                # second ExpandableList class whose identity differs from this
+                # module's name binding.
+                QtWidgets.QWidget.hide(w.sublist)
 
     def _schedule_sublist_hide(self, item):
         """Start (or restart) a deferred hide of ``item.sublist``.
@@ -939,7 +977,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         event_type = event.type()
 
         if event_type == QtCore.QEvent.Enter:
-            self._handle_widget_enter_event(widget)
+            # Ignore the synthetic Enter Qt fires on (re)show under a
+            # stationary cursor — it would reopen the sublist that was open
+            # before the hide. Direct/programmatic calls to
+            # _handle_widget_enter_event bypass this gate intentionally.
+            if not self._auto_open_suppressed():
+                self._handle_widget_enter_event(widget)
 
         elif event_type == QtCore.QEvent.Leave:
             # Schedule a deferred hide of this item's sublist (if any),
@@ -967,8 +1010,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         keeps it open if the cursor returned into the hierarchy.
         """
         if hasattr(self, "parent_item"):
-            top = self.root_list if hasattr(self, "root_list") else self
-            top._schedule_sublist_hide(self.parent_item)
+            self._get_root_list()._schedule_sublist_hide(self.parent_item)
         super().leaveEvent(event)
 
 

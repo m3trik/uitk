@@ -211,6 +211,31 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             return QtCore.QSize(hint.width(), self._collapsed_height())
         return hint
 
+    def _checkbox_suppressed_option(self):
+        """Group-box style option with the checkable indicator removed.
+
+        ``CollapsableGroup`` is checkable only so its title acts as an
+        expand/collapse toggle — the checkbox drawn left of the title is
+        visual noise. The QSS ``::indicator { width:0; height:0 }`` rule is an
+        unreliable way to remove it: under ``QStyleSheetStyle`` it shrinks the
+        checkbox but still reserves part of its slot, so the title stays
+        indented from a plain group box (the offset seen in Blender). Dropping
+        ``SC_GroupBoxCheckBox`` from the option instead suppresses the
+        indicator *and* reclaims its reserved space, so the title aligns with a
+        plain ``QGroupBox`` on every style.
+        """
+        opt = QtWidgets.QStyleOptionGroupBox()
+        self.initStyleOption(opt)
+        opt.subControls &= ~QtWidgets.QStyle.SC_GroupBoxCheckBox
+        return opt
+
+    def paintEvent(self, event):
+        """Paint the group box without its checkable indicator."""
+        painter = QtWidgets.QStylePainter(self)
+        painter.drawComplexControl(
+            QtWidgets.QStyle.CC_GroupBox, self._checkbox_suppressed_option()
+        )
+
 
 # -----------------------------------------------------------------------------
 

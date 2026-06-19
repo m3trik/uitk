@@ -183,5 +183,84 @@ class TestParseBindingKeys(unittest.TestCase):
         self.assertEqual(norm, {"Key_F12": "x"})
 
 
+class TestReconcileBindings(unittest.TestCase):
+    """Forward-merge of new default bindings into a persisted set.
+
+    Regression: a user whose stored bindings predate a newly-shipped chord
+    (e.g. ``F12+L+R`` → ``maya#startmenu``) kept a frozen set and never received
+    it — the chord fell through to the RightButton-only sibling (``main#startmenu``).
+    """
+
+    @staticmethod
+    def _reconcile(defaults, stored):
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+
+        return MarkingMenu._reconcile_bindings(defaults, stored)
+
+    def test_first_run_seeds_defaults(self):
+        defaults = {"Key_F12": "hud", "Key_F12|LeftButton": "cameras"}
+        self.assertEqual(self._reconcile(defaults, None), defaults)
+
+    def test_adds_new_default_key_to_stale_stored(self):
+        defaults = {"Key_F12": "hud", "Key_F12|LeftButton|RightButton": "maya"}
+        stored = {"Key_F12": "hud"}  # older set, missing the L+R chord
+        merged = self._reconcile(defaults, stored)
+        self.assertEqual(
+            merged, {"Key_F12": "hud", "Key_F12|LeftButton|RightButton": "maya"}
+        )
+
+    def test_user_customization_wins_on_overlap(self):
+        defaults = {"Key_F12": "hud", "Key_F12|RightButton": "main"}
+        stored = {"Key_F12": "my_custom_menu"}  # user rebound the default key
+        merged = self._reconcile(defaults, stored)
+        self.assertEqual(merged["Key_F12"], "my_custom_menu")  # preserved
+        self.assertEqual(merged["Key_F12|RightButton"], "main")  # new default added
+
+    def test_no_write_when_already_current(self):
+        defaults = {"Key_F12": "hud"}
+        stored = {"Key_F12": "hud", "Key_F12|LeftButton": "user_extra"}
+        # stored already covers every default key → nothing to persist
+        self.assertIsNone(self._reconcile(defaults, stored))
+
+    def test_empty_defaults_no_write(self):
+        self.assertIsNone(self._reconcile({}, None))
+
+    def test_corrupt_stored_reseeds_without_crashing(self):
+        # A non-dict from corrupt/legacy QSettings must not be spread into a
+        # dict literal (would raise at construction) — re-seed defaults instead.
+        defaults = {"Key_F12": "hud"}
+        for bad in (["not", "a", "dict"], "string", 42):
+            self.assertEqual(self._reconcile(defaults, bad), defaults)
+
+
+class TestBindingStoreKey(unittest.TestCase):
+    """Per-host namespacing of the persisted-bindings QSettings key.
+
+    Regression: the QSettings backend is shared by (org, app), so Maya and
+    Blender wrote the same ``marking_menu_bindings`` and the F12+L+R chord
+    (maya#startmenu vs blender#startmenu) collided — fixing Maya pointed
+    Blender's chord at a UI it doesn't have.
+    """
+
+    @staticmethod
+    def _key(context_tags):
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+
+        return MarkingMenu._binding_store_key(context_tags)
+
+    def test_maya_and_blender_keys_differ(self):
+        self.assertEqual(self._key({"maya"}), "marking_menu_bindings_maya")
+        self.assertEqual(self._key({"blender"}), "marking_menu_bindings_blender")
+        self.assertNotEqual(self._key({"maya"}), self._key({"blender"}))
+
+    def test_standalone_keeps_legacy_unsuffixed_key(self):
+        self.assertEqual(self._key(None), "marking_menu_bindings")
+        self.assertEqual(self._key(set()), "marking_menu_bindings")
+
+    def test_multi_tag_is_deterministic(self):
+        # sorted → stable regardless of set iteration order
+        self.assertEqual(self._key({"b", "a"}), "marking_menu_bindings_a_b")
+
+
 if __name__ == "__main__":
     unittest.main()

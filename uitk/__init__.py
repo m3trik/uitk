@@ -137,6 +137,7 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.icon_manager": "IconManager",
     "widgets.mixins.menu_mixin": "MenuMixin",
     "widgets.mixins.option_box_mixin": "OptionBoxMixin",
+    "widgets.mixins.recent_values_store": "RecentValuesStore",
     "widgets.mixins.settings_manager": "SettingsManager",
     "widgets.mixins.shortcuts": ["ShortcutManager", "ShortcutMixin"],
     "widgets.mixins.state_manager": "StateManager",

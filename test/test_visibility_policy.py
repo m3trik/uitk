@@ -119,6 +119,34 @@ class TestNavAutoHide(_PolicyTestBase):
         self.register(b, "b908")
         self.assertFalse(b.isHidden())
 
+    def test_bare_target_resolves_via_submenu_stays_visible(self):
+        """Regression: a bare base-name ``target`` (the marking-menu convention)
+        navigates on hover to ``"<target>#submenu"``. The auto-hide must resolve
+        the same way — the bare name is never itself a registered filename, so an
+        exact-match check wrongly hid every submenu launcher (whole maya menu went
+        blank). Here ``"render"`` -> registered ``"render#submenu"`` -> stay visible.
+        """
+        self.sb.is_registered_ui = lambda name: name == "render#submenu"
+        self.assertFalse(self.sb.is_registered_ui("render"))  # bare name is not a filename
+        b = MenuButton(self.ui, target="render")
+        self.register(b, "b913")
+        self.assertFalse(b.isHidden())
+
+    def test_filter_tagged_target_resolves(self):
+        """A button carrying ``filterTags`` navigates to ``"<target>#<tags>#submenu"``."""
+        self.sb.is_registered_ui = lambda name: name == "polygons#face#submenu"
+        b = MenuButton(self.ui, target="polygons", filterTags="face")
+        self.register(b, "b914")
+        self.assertFalse(b.isHidden())
+
+    def test_bare_target_without_submenu_still_hides(self):
+        """No matching direct/submenu/filter-tagged UI -> the launcher is dead -> hidden."""
+        self.sb.is_registered_ui = lambda name: False
+        b = MenuButton(self.ui, target="unported")
+        self.register(b, "b915")
+        self.assertTrue(b.isHidden())
+        self.assertEqual(getattr(b, "hidden_by_policy", None), "nav-unresolved")
+
 
 class TestMissingSlotHook(_PolicyTestBase):
     """connect_slot's no-slot branch routes through the on_missing_slot policy hook."""

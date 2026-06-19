@@ -283,7 +283,8 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
         fields = ptk.make_iterable(metadata.get("fields", ["filename", "filepath"]))
         named_tuples = []
 
-        allow_duplicates = metadata.get("allow_duplicates", False)
+        # NOTE: allow_duplicates is honored downstream — it rides in *metadata*
+        # to FileContainer, which applies it on extend.
 
         if objects is not None:
             all_files = []

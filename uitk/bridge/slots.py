@@ -13,6 +13,9 @@ rizom (and any future) DCC bridges:
 * Optional required "Output Dir" row with browse button + fallback hook.
 * Bridge-level ``STARTUP_INFO`` displayed once on load (opt-in).
 * Per-template description displayed whenever the template combo changes.
+* Header menu (``header_init``): a "Utilities" separator + declared menu items
+  + the rich-text help button, driven by the :attr:`HEADER_MENU_ITEMS` /
+  :attr:`HELP_SPEC` class-attr hooks so subclasses set *data, not code*.
 
 Per-bridge slot subclasses contribute only DCC-specific bits:
 
@@ -43,7 +46,7 @@ from uitk.widgets.mixins.preset_manager import PresetManager
 
 from uitk.bridge.spec import (
     AttributeSpec,
-    get_handler,
+    connect_changed,
     make_widget,
     read_value,
     set_value,
@@ -145,6 +148,37 @@ class BridgeSlotsBase:
     # buttons, ...) and must NOT have their parent row clamped to 19px
     # because the embedded layout is taller than one input line.
     PATH_LIKE_KINDS: Tuple[str, ...] = ("path", "file_list")
+
+    # ------------------ Header menu (declarative) ---------------------
+    # The default :meth:`header_init` builds a "Utilities" separator, the
+    # declared menu items, and the rich-text help -- so subclasses set
+    # *data*, not code. Each item is
+    # ``(label, objectName, tooltip, handler_method_name)``; the handler is
+    # resolved on the slot via ``getattr`` and connected to ``clicked``.
+    #
+    # The default item set is the script-template bridges' menu (marmoset /
+    # substance / blender / maya). Bridges with a different menu shape
+    # (rizom's UV-editor + scripts, unity's project folder, the
+    # photogrammetry panels' cancel/output) override ``HEADER_MENU_ITEMS``;
+    # the handlers they name live on the subclass.
+    HEADER_MENU_TITLE: str = "Utilities"
+    HEADER_MENU_ITEMS: Tuple[Tuple[str, str, str, str], ...] = (
+        (
+            "Open Templates Folder", "btn_open_templates",
+            "Reveal the bundled template folder in Explorer.",
+            "open_templates_folder",
+        ),
+        (
+            "Refresh Templates", "btn_refresh_templates",
+            "Re-scan the templates folder and rebuild the template combo.",
+            "refresh_templates",
+        ),
+        ("Clear Log", "btn_clear_log", "Clear the log panel below.", "clear_log"),
+    )
+    # ``fmt()`` keyword dict (``title`` / ``body`` / ``steps`` / ``sections`` /
+    # ``notes``) for the header help button, or ``None`` for no help.
+    # Subclasses set this (or override :meth:`help_spec` to compute it).
+    HELP_SPEC: Optional[Dict[str, Any]] = None
 
     # ------------------ Subclass hooks --------------------------------
 
@@ -524,6 +558,21 @@ class BridgeSlotsBase:
             )
         self._preset_mgr.wire_combo(combo)
 
+        # Live "modified" marker: any param edit re-evaluates the dirty state so
+        # the combo shows e.g. "specular *". StateManager fires these same
+        # change signals during session restore, so the marker self-corrects
+        # regardless of whether widgets restore before or after this wiring.
+        for widget in self._param_widgets.values():
+            connect_changed(
+                widget, lambda *_: self._preset_mgr.refresh_modified_state()
+            )
+        # Insurance against any widgets restored with signals blocked: one
+        # deferred recompute once the event loop settles (no-op headless).
+        try:
+            QtCore.QTimer.singleShot(0, self._preset_mgr.refresh_modified_state)
+        except Exception:  # noqa: BLE001
+            pass
+
         self._preset_combo = combo
         self._reset_btn = reset_btn
 
@@ -574,6 +623,11 @@ class BridgeSlotsBase:
                 self._preset_combo.setCurrentIndex(-1)
             finally:
                 self._preset_combo.blockSignals(False)
+
+        # Reset abandons the active preset (values are now registry defaults,
+        # not any saved preset); clears the pointer + modified marker.
+        if self._preset_mgr is not None:
+            self._preset_mgr.active_preset = None
 
     # ------------------ Template combo --------------------------------
 
@@ -733,6 +787,43 @@ class BridgeSlotsBase:
                 pass
 
     # ------------------ Header menu utilities -------------------------
+
+    def header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]:
+        """Hook: the header-menu items. Default = :attr:`HEADER_MENU_ITEMS`."""
+        return self.HEADER_MENU_ITEMS
+
+    def help_spec(self) -> Optional[Dict[str, Any]]:
+        """Hook: the ``fmt()`` keyword dict for the header help, or ``None``.
+
+        Default = :attr:`HELP_SPEC` (static). Override to compute it (e.g. a
+        panel whose help depends on runtime state)."""
+        return self.HELP_SPEC
+
+    def header_init(self, widget) -> None:
+        """Default header menu: a "Utilities" separator, the declared
+        :meth:`header_menu_items` (each wired to a handler method on this slot),
+        and the rich-text help from :meth:`help_spec`.
+
+        Subclasses customise by setting :attr:`HEADER_MENU_ITEMS` /
+        :attr:`HELP_SPEC` (or overriding the two hooks) -- *data, not code*. A
+        bridge that needs extra wiring can still override this method wholesale.
+        """
+        widget.menu.add("Separator", setTitle=self.HEADER_MENU_TITLE)
+        for label, name, tooltip, handler in self.header_menu_items():
+            widget.menu.add(
+                "QPushButton", setText=label, setObjectName=name,
+                setToolTip=tooltip,
+            )
+            getattr(widget.menu, name).clicked.connect(getattr(self, handler))
+
+        spec = self.help_spec()
+        if spec:
+            try:
+                from uitk.widgets.mixins.tooltip_mixin import fmt
+
+                widget.set_help_text(fmt(**spec))
+            except Exception:  # noqa: BLE001 - help is non-essential chrome
+                pass
 
     def reveal_folder(self, path) -> bool:
         """Open *path* in the OS file manager (logs + returns False if missing).

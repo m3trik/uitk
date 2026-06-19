@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import contextlib
 import inspect
 import traceback
 from functools import wraps
@@ -834,26 +835,41 @@ class SwitchboardSlotsMixin:
             f"[_process_deferred_widgets] [{ui.objectName()}] Processing deferred widgets: {[w.objectName() for w in deferred_widgets]}"
         )
 
-        # Phase 1: Run slot initialization for ALL deferred widgets first
-        # This allows slots class __init__ to complete all widget configuration
-        # before any state operations occur
-        for widget in deferred_widgets:
-            try:
-                self._perform_slot_init(ui, widget)
-            except Exception as e:
-                self.logger.error(
-                    f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed slot init: {e}"
-                )
+        # Suppress QSettings writes for the whole batch. The immediate
+        # init_slot path blocks each widget's signals around slot-init +
+        # restore (so an init-time value change can't echo back as a save
+        # before the persisted value is restored). The deferred batch ran
+        # *unblocked*, so a widget whose ``*_init`` mutates its value
+        # (``addItems`` flips a combo to index 0, ``setChecked`` fires
+        # ``toggled``) persisted that post-init default over the stored
+        # value before Phase 2 restored it — values silently reset to
+        # defaults. Suppressing saves across both phases closes that gap
+        # without changing whether slots fire (restore stays per
+        # ``block_signals_on_restore``).
+        state = getattr(ui, "state", None)
+        suppress = getattr(state, "suppress_save", None)
+        ctx = suppress() if callable(suppress) else contextlib.nullcontext()
+        with ctx:
+            # Phase 1: Run slot initialization for ALL deferred widgets first
+            # This allows slots class __init__ to complete all widget configuration
+            # before any state operations occur
+            for widget in deferred_widgets:
+                try:
+                    self._perform_slot_init(ui, widget)
+                except Exception as e:
+                    self.logger.error(
+                        f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed slot init: {e}"
+                    )
 
-        # Phase 2: Run state initialization for ALL widgets
-        # Now that all widgets are configured, capture defaults and restore state
-        for widget in deferred_widgets:
-            try:
-                self._perform_state_init(ui, widget)
-            except Exception as e:
-                self.logger.error(
-                    f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed state init: {e}"
-                )
+            # Phase 2: Run state initialization for ALL widgets
+            # Now that all widgets are configured, capture defaults and restore state
+            for widget in deferred_widgets:
+                try:
+                    self._perform_state_init(ui, widget)
+                except Exception as e:
+                    self.logger.error(
+                        f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed state init: {e}"
+                    )
 
         # Clear the deferred widgets from the placeholder
         key = self.get_base_name(ui.objectName())
@@ -1050,6 +1066,21 @@ class SwitchboardSlotsMixin:
                 )
                 self.notify_missing_slot(widget)
                 return
+
+        # A widget's slot is resolved by ``getattr(slots, objectName)``. When the
+        # objectName collides with a non-method attribute on the slots class
+        # (e.g. a footer widget stored as ``self.<objectName>``), that attribute
+        # comes back here. Connecting a signal to it raised the cryptic
+        # "<obj> is not a callable object". Skip with an actionable warning
+        # instead — a non-callable can never be a valid slot.
+        if not callable(slot):
+            self.logger.warning(
+                f"[connect_slot] [{ui_name}.{widget_name}] Resolved slot is a "
+                f"non-callable {type(slot).__name__}; the widget's objectName "
+                f"collides with a non-method attribute on the slots class. "
+                f"Skipping (store such widgets under a non-colliding attribute name)."
+            )
+            return
 
         signals = getattr(
             slot,

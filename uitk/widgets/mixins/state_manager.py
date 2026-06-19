@@ -29,6 +29,15 @@ class StateManager(ptk.LoggingMixin):
     - Handles non-stateful signals (like 'clicked') by not triggering state sync
     """
 
+    # Sentinel returned by ``_coerce_for_store`` for values QSettings can't
+    # round-trip — distinct from a legitimately stored ``None``.
+    _UNSUPPORTED = object()
+
+    # Index-based widgets (combo boxes) report ``-1`` for "no selection",
+    # which they briefly do while their model is being (re)populated.
+    _INDEX_SIGNAL = "currentIndexChanged"
+    _NO_SELECTION = -1
+
     def __init__(self, qsettings: QtCore.QSettings, log_level="WARNING"):
         super().__init__()
         self.set_log_level(log_level)
@@ -68,6 +77,24 @@ class StateManager(ptk.LoggingMixin):
     def apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
         """Apply the given value to the widget using ValueManager."""
         signal_name = widget.derived_type and widget.default_signals()
+
+        # A stored index can outrun a not-yet-populated model (e.g. a
+        # combobox whose items load lazily, or a surface restored before its
+        # init runs). Applying it would silently clamp/no-op, and a later
+        # change could then persist the wrong (lower) index. Skip until the
+        # model is large enough; the value stays on disk for a fuller restore.
+        if (
+            signal_name == self._INDEX_SIGNAL
+            and isinstance(value, int)
+            and value >= 0
+        ):
+            count = getattr(widget, "count", None)
+            if callable(count) and value >= count():
+                self.logger.debug(
+                    f"Skipping out-of-range index {value} for "
+                    f"{widget.objectName()} (count={count()})"
+                )
+                return
 
         # Don't apply None values for text-based widgets to prevent clearing valid text
         if value is None:
@@ -124,6 +151,23 @@ class StateManager(ptk.LoggingMixin):
         finally:
             self._save_suppressed -= 1
 
+    def _coerce_for_store(self, value: Any) -> Any:
+        """Coerce a value into something QSettings round-trips losslessly.
+
+        Returns :data:`_UNSUPPORTED` for types that can't be persisted, so
+        callers can distinguish "drop this write" from a stored ``None``.
+        """
+        # PySide6 Qt enums (e.g. Qt.CheckState from checkState()) are not
+        # int subclasses — without this coercion the primitive-type gate
+        # below silently dropped tri-state checkbox state.
+        if isinstance(value, enum.Enum):
+            value = value.value
+        if isinstance(value, (dict, list, tuple)):
+            return json.dumps(value)
+        if isinstance(value, (int, float, str, bool)):
+            return value
+        return self._UNSUPPORTED
+
     def save(self, widget: QtWidgets.QWidget, value: Any = None) -> None:
         """Save the current value of the widget to QSettings.
 
@@ -146,22 +190,38 @@ class StateManager(ptk.LoggingMixin):
         if not key:
             return
 
-        # PySide6 Qt enums (e.g. Qt.CheckState from checkState()) are not
-        # int subclasses — without this coercion the primitive-type gate
-        # below silently dropped tri-state checkbox state.
-        if isinstance(value, enum.Enum):
-            value = value.value
+        self.save_value(key, value)
 
-        # Serialize non-primitive values
-        if isinstance(value, (dict, list, tuple)):
-            value = json.dumps(value)
-        elif not isinstance(value, (int, float, str, bool)):
+    def save_value(self, key: str, value: Any) -> None:
+        """Serialize and persist ``value`` at an explicit state ``key``.
+
+        Lower-level companion to :meth:`save`: it writes (and per-write
+        syncs) without needing a live widget wrapper, so a value can be
+        mirrored into a *related surface's* store — see
+        ``MainWindow.sync_widget_values``. Shares save()'s serialization and
+        the no-selection guard, keeping a single write chokepoint.
+
+        Writes are silently skipped when ``suppress_save`` is active.
+        """
+        if self._save_suppressed:
+            return
+
+        # Combo/index widgets briefly report ``-1`` (no selection) while
+        # their model is being (re)populated; persisting that transient
+        # would wipe a valid stored index. The real selection saves on the
+        # next change.
+        if value == self._NO_SELECTION and key.endswith(f"/{self._INDEX_SIGNAL}"):
+            self.logger.debug(f"Skipping no-selection (-1) transient for {key}")
+            return
+
+        stored = self._coerce_for_store(value)
+        if stored is self._UNSUPPORTED:
             self.logger.debug(f"Unsupported type for {key}: {type(value)}")
             return
 
         try:
-            store = self._get_settings(widget)
-            store.setValue(key, value)
+            store = self.qsettings
+            store.setValue(key, stored)
             # Belt-and-braces sync alongside the canonical
             # ``MainWindow.on_close``/``on_hide`` sync wires. Some host
             # apps (notably Maya on Windows) can exit without delivering
@@ -175,7 +235,7 @@ class StateManager(ptk.LoggingMixin):
             sync = getattr(store, "sync", None)
             if callable(sync):
                 sync()
-            self.logger.debug(f"Stored state: {key} -> {value}")
+            self.logger.debug(f"Stored state: {key} -> {stored}")
         except Exception as e:
             self.logger.warning(f"Failed to store state for {key}: {e}")
 
@@ -334,14 +394,11 @@ class StateManager(ptk.LoggingMixin):
         """
         if self._save_suppressed:
             return
-        if isinstance(value, enum.Enum):
-            value = value.value
-        if isinstance(value, (dict, list, tuple)):
-            value = json.dumps(value)
-        elif not isinstance(value, (int, float, str, bool)):
+        stored = self._coerce_for_store(value)
+        if stored is self._UNSUPPORTED:
             self.logger.debug(f"Unsupported type for custom key {key}: {type(value)}")
             return
-        self.qsettings.setValue(f"custom/{key}", value)
+        self.qsettings.setValue(f"custom/{key}", stored)
 
     def load_custom(self, key: str, default: Any = None) -> Any:
         """Retrieve a previously stored custom key/value pair.

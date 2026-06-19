@@ -779,6 +779,129 @@ class TestBuiltinTier(BaseTestCase):
                 break
         self.assertEqual(self.spn.value(), 42, "Refresh must reload the selected preset")
 
+    # ------------------------------------------------------------------
+    # active-preset memory + modified ("dirty") marker
+    # ------------------------------------------------------------------
+    def _click_action(self, combo, label):
+        for b in self._action_buttons(combo):
+            if b.accessibleName() == label:
+                b.click()
+                return
+        raise AssertionError(f"no action button {label!r}")
+
+    def test_active_preset_persists_across_managers(self):
+        # Loading records the active preset in the .active sidecar; a fresh
+        # manager over the same dirs reads it back (cross-session restore).
+        self.mgr.load("studio")
+        self.assertEqual(self.mgr.active_preset, "studio")
+        mgr2 = PresetManager.from_widgets(
+            preset_dir=str(self.user),
+            widgets=[self.chk, self.spn],
+            builtin_dir=str(self.builtin),
+        )
+        self.assertEqual(mgr2.active_preset, "studio")
+
+    def test_wire_combo_restores_selection_without_applying_values(self):
+        # The crux of idea 1: restoring the *selection* must NOT re-apply the
+        # preset values (widgets restore themselves from session state).
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        self.mgr.load("studio")  # active -> studio; chk True, spn 5
+        self.chk.setChecked(False)
+        self.spn.setValue(0)  # stand-in for separately-restored session values
+
+        mgr2 = PresetManager.from_widgets(
+            preset_dir=str(self.user),
+            widgets=[self.chk, self.spn],
+            builtin_dir=str(self.builtin),
+        )
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        mgr2.wire_combo(combo)
+
+        self.assertEqual(combo.currentText(), "studio")  # selection restored
+        self.assertFalse(self.chk.isChecked())  # values untouched
+        self.assertEqual(self.spn.value(), 0)
+        # The restored values diverge from the preset -> dirty marker shows.
+        self.assertTrue(mgr2.is_modified())
+        self.assertEqual(combo.current_text_suffix, " *")
+
+    def test_modified_marker_set_on_edit_and_cleared_on_refresh(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        combo.setCurrentIndex(combo.findText("studio"))  # load -> spn 5
+        self.assertFalse(self.mgr.is_modified())
+        self.assertEqual(combo.current_text_suffix, "")
+
+        self.spn.setValue(7)  # edit -> change signal auto-updates the marker
+        self.assertTrue(self.mgr.is_modified())
+        self.assertEqual(combo.current_text_suffix, " *")
+
+        self._click_action(combo, "Refresh")  # revert
+        self.assertEqual(self.spn.value(), 5)
+        self.assertFalse(self.mgr.is_modified())
+        self.assertEqual(combo.current_text_suffix, "")
+
+    def test_modified_marker_cleared_on_save_over_active(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        self.mgr.save("draft")  # a user preset to make active
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        combo.setCurrentIndex(combo.findText("draft"))
+        self.spn.setValue(13)
+        self.assertTrue(self.mgr.is_modified())
+        # Saving over the active preset bakes the edit -> marker clears.
+        self.mgr.save("draft")
+        self.assertFalse(self.mgr.is_modified())
+        self.assertEqual(combo.current_text_suffix, "")
+
+    def test_refresh_reloads_active_even_when_index_is_minus_one(self):
+        # Regression for the live "Refresh does nothing" bug: after a session
+        # restore the combo index can be -1 while the active preset is known.
+        # The old index-based Refresh no-oped; it must key off active_preset.
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        combo.setCurrentIndex(combo.findText("studio"))  # active -> studio
+        self.spn.setValue(7)
+        combo.blockSignals(True)
+        combo.setCurrentIndex(-1)  # simulate post-restore / no visible selection
+        combo.blockSignals(False)
+        self.assertEqual(combo.currentIndex(), -1)
+
+        self._click_action(combo, "Refresh")
+        self.assertEqual(self.spn.value(), 5)  # restored despite index -1
+
+    def test_wire_combo_placeholder_when_no_active(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)  # nothing loaded -> no active preset
+        self.assertEqual(combo.currentIndex(), -1)
+        self.assertEqual(combo.placeholderText(), "Presets…")
+
+    def test_delete_active_clears_pointer_and_marker(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        self.mgr.save("draft")
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        combo.setCurrentIndex(combo.findText("draft"))
+        self.assertEqual(self.mgr.active_preset, "draft")
+        self._click_action(combo, "Delete")
+        self.assertIsNone(self.mgr.active_preset)
+        self.assertEqual(combo.current_text_suffix, "")
+        self.assertEqual(combo.currentIndex(), -1)
+
 
 class TestSemanticPresetMode(BaseTestCase):
     """``value_provider`` / ``value_applier`` mode: presets keyed by semantic
@@ -860,6 +983,78 @@ class TestSemanticPresetMode(BaseTestCase):
         self.live = {"align_downscale": 4}
         self.mgr.save("custom")
         self.assertEqual(self.mgr.list(), ["custom", "specular"])
+
+    # ------------------------------------------------------------------
+    # active-preset + modified marker (semantic mode)
+    # ------------------------------------------------------------------
+    def _shared_state_mgr(self):
+        """A manager whose applier drives the same dict the provider reads.
+
+        Mirrors a real panel: applying a preset updates the param widgets that
+        ``value_provider`` then reports, so ``is_modified`` is meaningful.
+        """
+        state = dict(self.live)
+
+        def applier(data):
+            for k, v in data.items():
+                if k in state:
+                    state[k] = v
+            return len(data)
+
+        mgr = PresetManager(
+            preset_dir=str(self.user),
+            builtin_dir=str(self.builtin),
+            value_provider=lambda: dict(state),
+            value_applier=applier,
+        )
+        return mgr, state
+
+    @staticmethod
+    def _action_buttons(combo):
+        last = combo._model.rowCount() - 1
+        inner = combo._row_containers.get(last).property("_embedded_widget")
+        lay = inner.layout()
+        return [lay.itemAt(i).widget() for i in range(lay.count())]
+
+    def test_semantic_active_persists_across_managers(self):
+        mgr, state = self._shared_state_mgr()
+        mgr.load("specular")
+        self.assertEqual(mgr.active_preset, "specular")
+        mgr2 = PresetManager(
+            preset_dir=str(self.user),
+            builtin_dir=str(self.builtin),
+            value_provider=lambda: dict(state),
+            value_applier=lambda d: len(d),
+        )
+        self.assertEqual(mgr2.active_preset, "specular")
+
+    def test_semantic_is_modified_tracks_edits(self):
+        mgr, state = self._shared_state_mgr()
+        mgr.load("specular")  # state -> align 2, depth moderate
+        self.assertFalse(mgr.is_modified())
+        state["align_downscale"] = 9  # edit away from the preset
+        self.assertTrue(mgr.is_modified())
+        # Saving over the active preset rebaselines -> clean again.
+        mgr.save("specular")
+        self.assertFalse(mgr.is_modified())
+
+    def test_semantic_refresh_discards_edits_even_when_index_minus_one(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        mgr, state = self._shared_state_mgr()
+        combo = WidgetComboBox()
+        self.addCleanup(combo.deleteLater)
+        mgr.wire_combo(combo)
+        combo.setCurrentIndex(combo.findText("specular"))  # load
+        state["align_downscale"] = 9
+        combo.blockSignals(True)
+        combo.setCurrentIndex(-1)
+        combo.blockSignals(False)
+        for b in self._action_buttons(combo):
+            if b.accessibleName() == "Refresh":
+                b.click()
+                break
+        self.assertEqual(state["align_downscale"], 2)  # restored from preset
 
 
 if __name__ == "__main__":

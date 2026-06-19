@@ -101,6 +101,37 @@ class TestFooterStatusText(QtBaseTestCase):
         footer.setStatusText("")
         self.assertEqual(footer.statusText(), "")
 
+    def test_level_colors_the_label(self):
+        """A severity level tints the status label's foreground."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Boom", level="error")
+        self.assertEqual(footer.statusText(), "Boom")
+        qss = footer.status_label.styleSheet()
+        self.assertIn(Footer.LEVEL_COLORS["error"], qss)
+        self.assertIn("background: transparent", qss)
+
+    def test_info_level_has_no_color_override(self):
+        """``info``/``None`` leaves the theme default colour (no color rule)."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Plain", level="info")
+        self.assertNotIn("color:", footer.status_label.styleSheet())
+
+    def test_level_resets_when_unset(self):
+        """Switching back to a level-less message drops the colour override."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Bad", level="error")
+        footer.setStatusText("Fine")
+        self.assertNotIn("color:", footer.status_label.styleSheet())
+
+    def test_level_colors_come_from_pythontk_log_colors(self):
+        """Severity colours are sourced from pythontk's LOG_COLORS SSoT."""
+        from pythontk.core_utils.logging_mixin import LoggingMixin
+
+        log_colors = LoggingMixin.LOG_COLORS
+        self.assertEqual(Footer.LEVEL_COLORS["error"], log_colors["ERROR"])
+        self.assertEqual(Footer.LEVEL_COLORS["warning"], log_colors["WARNING"])
+        self.assertEqual(Footer.LEVEL_COLORS["success"], log_colors["SUCCESS"])
+
 
 class TestFooterDefaultStatusText(QtBaseTestCase):
     """Tests for Footer default status text."""
