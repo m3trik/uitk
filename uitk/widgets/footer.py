@@ -7,6 +7,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.progressBar import ProgressBar
+from uitk.widgets._html_style import LOG_COLORS
 
 try:
     from pythontk.str_utils import StrUtils
@@ -34,6 +35,17 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
     # Pixel height of the slim progress indicator at the bottom edge.
     PROGRESS_BAR_HEIGHT = 3
 
+    # Foreground colour per status severity, sourced from pythontk's
+    # ``LOG_COLORS`` (via _html_style) so the footer, message boxes, and console
+    # logs share one palette. ``info`` (``None``) leaves the theme default text
+    # colour in place. Used by ``setStatusText(..., level=...)``.
+    LEVEL_COLORS = {
+        "info": None,
+        "success": LOG_COLORS.get("SUCCESS", "#7ec77e"),
+        "warning": LOG_COLORS.get("WARNING", "#e0b341"),
+        "error": LOG_COLORS.get("ERROR", "#e06c6c"),
+    }
+
     def __init__(
         self,
         parent=None,
@@ -51,6 +63,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         self._status_text = ""
         self._default_status_text = ""
+        self._status_level = None
         self._size_grip = None
 
         # Hold-to-cancel relay: ProgressBar emits holdStarted/holdEnded;
@@ -325,13 +338,16 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """
         self._size_grip = value
 
-    def setText(self, text: str) -> None:
+    def setText(self, text: str, level: Optional[str] = None) -> None:
         """Set the status text (convenience method matching QLabel API).
 
         Parameters:
             text (str): The status text to display.
+            level (str, optional): Severity for colour coding — one of
+                ``LEVEL_COLORS`` (``info``/``success``/``warning``/``error``).
+                ``None`` leaves the theme default colour.
         """
-        self.setStatusText(text)
+        self.setStatusText(text, level)
 
     def text(self) -> str:
         """Get the current displayed text (convenience method matching QLabel API).
@@ -341,14 +357,37 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """
         return self._status_label.text()
 
-    def setStatusText(self, text: str | None = None) -> None:
+    def setStatusText(self, text: str | None = None, level: Optional[str] = None) -> None:
         """Set the status text of the footer.
 
         Parameters:
             text (str): The new status text.
+            level (str, optional): Severity for colour coding — one of
+                ``LEVEL_COLORS`` (``info``/``success``/``warning``/``error``).
+                ``None`` (default) restores the theme default colour, so
+                existing callers are unaffected.
         """
         self._status_text = text or ""
+        self._apply_status_level(level)
         self._elide_status_text()
+
+    def _apply_status_level(self, level: Optional[str]) -> None:
+        """Colour the status label by severity, preserving its transparency.
+
+        No-ops when the level is unchanged so the common case (every plain
+        ``setStatusText`` call, which passes ``level=None``) never triggers a
+        redundant stylesheet re-polish. On a change it re-applies the
+        transparent/no-border base so switching from a coloured level back to
+        ``info``/``None`` cleanly drops the colour override. The base string
+        matches :meth:`_apply_transparent_style` exactly, so the initial
+        ``None`` state is already correct without a restyle.
+        """
+        if level == self._status_level:
+            return
+        self._status_level = level
+        color = self.LEVEL_COLORS.get(level)
+        base = "background: transparent; border: none;"
+        self._status_label.setStyleSheet(base + (f" color: {color};" if color else ""))
 
     def setDefaultStatusText(self, text: str | None = None) -> None:
         """Set fallback text shown when no explicit status is provided."""

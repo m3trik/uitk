@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import json
 import logging
 import os
 import shutil
@@ -115,6 +116,18 @@ class PresetManager(ptk.LoggingMixin):
         self.on_metadata_loaded: Optional[Callable[[dict], None]] = None
 
         self._on_change_callbacks = []
+
+        # Active-preset / modified tracking. ``_active_snapshot`` is the stored
+        # value dict (minus ``_meta``) of the active preset, captured on load
+        # (or when ``active_preset`` is assigned for a session restore), and is
+        # the baseline :meth:`is_modified` compares the live values against.
+        # ``_modified`` caches the last computed dirty state so observers only
+        # fire on a real transition. ``_value_change_widgets`` tracks widgets
+        # already wired for live dirty detection (connect-once).
+        self._active_snapshot: Optional[Dict[str, Any]] = None
+        self._modified: Optional[bool] = None
+        self._on_modified_callbacks: List[Callable[[bool], None]] = []
+        self._value_change_widgets: Set[int] = set()
 
     @staticmethod
     def _resolve_preset_dir(raw: Union[str, Path]) -> Path:
@@ -323,6 +336,143 @@ class PresetManager(ptk.LoggingMixin):
                 self.logger.debug(f"Preset change callback error: {e}")
 
     # ------------------------------------------------------------------
+    # Active preset + modified ("dirty") tracking
+    # ------------------------------------------------------------------
+
+    @property
+    def active_preset(self) -> Optional[str]:
+        """Name of the preset currently in use, or ``None``.
+
+        Persisted (per :attr:`preset_dir`) via the backing store's ``.active``
+        sidecar, so it survives between sessions. Assigning a name updates the
+        modified-tracking baseline **without applying any values** — widgets
+        restore themselves from session state, so only the *selection* needs
+        restoring. Assign ``None`` to clear.
+        """
+        return self._store.active
+
+    @active_preset.setter
+    def active_preset(self, name: Optional[str]) -> None:
+        self._store.active = name
+        self._resync_active()
+
+    def _resync_active(self) -> None:
+        """Re-read the active preset's stored values as the dirty baseline.
+
+        Used after the active pointer changes for a reason *other* than a load
+        (session restore, delete, rename) — values are not applied, only the
+        baseline + marker are refreshed.
+        """
+        active = self._store.active
+        if not active:
+            self._active_snapshot = None
+        else:
+            try:
+                self._active_snapshot = self._strip_meta(self._store.load(active))
+            except (KeyError, ValueError, OSError):
+                self._active_snapshot = None
+        self.refresh_modified_state()
+
+    def is_modified(self) -> bool:
+        """True when live values diverge from the active preset's stored values.
+
+        Compares only keys present in *both* the stored preset and the current
+        snapshot (overlay semantics — a shared CLI preset may carry knobs this
+        panel doesn't surface, and vice-versa). ``False`` when no preset is
+        active.
+        """
+        if not self._active_snapshot:
+            return False
+        current = self._capture_values()
+        for key, stored in self._active_snapshot.items():
+            if key in current and self._normalize(current[key]) != self._normalize(
+                stored
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _normalize(value: Any) -> str:
+        """JSON-normalize for comparison (tuple/list parity, stable dict order)."""
+        try:
+            return json.dumps(value, sort_keys=True, default=str)
+        except TypeError:
+            return repr(value)
+
+    def on_modified_changed(self, callback: Callable[[bool], None]) -> None:
+        """Register *callback(bool)* invoked when the modified state flips."""
+        self._on_modified_callbacks.append(callback)
+
+    def refresh_modified_state(self) -> bool:
+        """Recompute the modified state; notify observers on a transition.
+
+        Cheap to call on every value change — observers fire only when the
+        boolean actually changes. Returns the current modified flag.
+        """
+        modified = self.is_modified()
+        if modified != self._modified:
+            self._modified = modified
+            for cb in self._on_modified_callbacks:
+                try:
+                    cb(modified)
+                except Exception as e:
+                    self.logger.debug(f"Modified-state callback error: {e}")
+        return modified
+
+    def connect_value_widgets(self) -> None:
+        """Wire managed widgets' change signals so the dirty marker updates live.
+
+        Best-effort and connect-once per widget. No-op in semantic mode (no
+        managed widgets — the caller wires its own param widgets, e.g. the
+        bridge via :func:`uitk.bridge.spec.connect_changed`). Called by
+        :meth:`wire_combo` so the menu / standalone paths get a live marker for
+        free.
+        """
+        if self.value_provider is not None:
+            return
+        for widget in self._get_widgets():
+            wid = id(widget)
+            if wid in self._value_change_widgets:
+                continue
+            signal = self._value_change_signal(widget)
+            if signal is None:
+                continue
+            try:
+                signal.connect(lambda *a: self.refresh_modified_state())
+                self._value_change_widgets.add(wid)
+            except (RuntimeError, TypeError):
+                pass
+
+    @staticmethod
+    def _value_change_signal(widget: QtWidgets.QWidget):
+        """Return *widget*'s value-change Signal, or ``None``."""
+        # Prefer the uitk wrapper's declared default signal.
+        getter = getattr(widget, "default_signals", None)
+        if callable(getter):
+            try:
+                name = getter()
+                if name:
+                    sig = getattr(widget, name, None)
+                    if sig is not None:
+                        return sig
+            except Exception:
+                pass
+        # Fall back to a type-based mapping for plain Qt widgets.
+        for cls, attr in (
+            (QtWidgets.QCheckBox, "stateChanged"),
+            (QtWidgets.QRadioButton, "toggled"),
+            (QtWidgets.QComboBox, "currentIndexChanged"),
+            (QtWidgets.QLineEdit, "textChanged"),
+            (QtWidgets.QTextEdit, "textChanged"),
+            (QtWidgets.QSpinBox, "valueChanged"),
+            (QtWidgets.QDoubleSpinBox, "valueChanged"),
+            (QtWidgets.QSlider, "valueChanged"),
+        ):
+            if isinstance(widget, cls):
+                return getattr(widget, attr, None)
+        return None
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -346,25 +496,10 @@ class PresetManager(ptk.LoggingMixin):
         if self.metadata_provider is not None:
             data["_meta"].update(self.metadata_provider())
 
-        if self.value_provider is not None:
-            # Semantic mode: the payload is a caller-supplied {key: value} map
-            # (e.g. a bridge's ``collect_param_values()``), not widget-state.
-            for key, value in self.value_provider().items():
-                if value is not None and _is_serializable(value):
-                    data[key] = value
-        else:
-            for widget in self._get_widgets(scope):
-                obj_name = widget.objectName()
-                if not obj_name:
-                    continue
-
-                if self.state is not None:
-                    value = self.state._get_current_value(widget)
-                else:
-                    value = self._get_widget_value(widget)
-
-                if value is not None and _is_serializable(value):
-                    data[obj_name] = value
+        # ``_capture_values`` is the single source of truth for "what the live
+        # state is" -- shared with the modified-state comparison so save and the
+        # dirty marker can never drift apart.
+        data.update(self._capture_values(scope))
 
         # Delegate the write to the store — it always targets the user tier
         # (built-ins are read-only; saving a built-in's name creates a user
@@ -374,7 +509,46 @@ class PresetManager(ptk.LoggingMixin):
             f"Saved preset '{name}' ({len(data) - 1} widgets) -> {filepath}"
         )
         self._notify_change()
+        # Saving makes the just-written values the new baseline for *name*; if
+        # it's the active preset the modified marker should clear.
+        if self.active_preset == name:
+            self._active_snapshot = self._strip_meta(data)
+            self.refresh_modified_state()
         return filepath
+
+    def _capture_values(
+        self, scope: Optional[QtWidgets.QWidget] = None
+    ) -> Dict[str, Any]:
+        """Snapshot the current managed values as a flat ``{key: value}`` dict.
+
+        Single source of truth for what :meth:`save` persists and what
+        :meth:`is_modified` compares the active preset against. In semantic mode
+        the keys are :class:`AttributeSpec` names from *value_provider*;
+        otherwise they are widget ``objectName`` s. Only JSON-serializable,
+        non-``None`` values are kept (matching what reaches disk).
+        """
+        values: Dict[str, Any] = {}
+        if self.value_provider is not None:
+            for key, value in self.value_provider().items():
+                if value is not None and _is_serializable(value):
+                    values[key] = value
+            return values
+        for widget in self._get_widgets(scope):
+            obj_name = widget.objectName()
+            if not obj_name:
+                continue
+            if self.state is not None:
+                value = self.state._get_current_value(widget)
+            else:
+                value = self._get_widget_value(widget)
+            if value is not None and _is_serializable(value):
+                values[obj_name] = value
+        return values
+
+    @staticmethod
+    def _strip_meta(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return *data* without the reserved ``_meta`` block."""
+        return {k: v for k, v in data.items() if k != "_meta"}
 
     def load(
         self,
@@ -414,6 +588,12 @@ class PresetManager(ptk.LoggingMixin):
         if self.on_metadata_loaded is not None and meta:
             self.on_metadata_loaded(meta)
 
+        # ``data`` no longer holds ``_meta`` so it *is* the snapshot. Record the
+        # active preset + baseline now; refresh the marker *after* applying so it
+        # reflects the post-apply (clean) state, not the pre-apply diff.
+        self._store.active = name
+        self._active_snapshot = dict(data)
+
         if self.value_applier is not None:
             # Semantic mode: hand the whole {key: value} payload to the caller's
             # applier (e.g. a bridge's ``_apply_param_dict``), which maps keys
@@ -422,6 +602,7 @@ class PresetManager(ptk.LoggingMixin):
             applied = self.value_applier(data)
             applied = applied if isinstance(applied, int) else len(data)
             self.logger.debug(f"Loaded preset '{name}': {applied} keys applied.")
+            self.refresh_modified_state()
             return applied
 
         widgets = self._get_widgets(scope)
@@ -472,6 +653,7 @@ class PresetManager(ptk.LoggingMixin):
         self.logger.debug(
             f"Loaded preset '{name}': {applied}/{len(data)} widgets applied."
         )
+        self.refresh_modified_state()
         return applied
 
     def list(self) -> List[str]:
@@ -498,6 +680,8 @@ class PresetManager(ptk.LoggingMixin):
         if self._store.delete(name):
             self.logger.debug(f"Deleted preset '{name}'")
             self._notify_change()
+            # The store may have cleared a dangling ``.active``; re-sync cache.
+            self._resync_active()
             return True
         self.logger.debug(f"Preset '{name}' not deleted (absent or built-in).")
         return False
@@ -511,6 +695,8 @@ class PresetManager(ptk.LoggingMixin):
         if self._store.rename(old_name, new_name):
             self.logger.debug(f"Renamed preset '{old_name}' -> '{new_name}'")
             self._notify_change()
+            # The store follows ``.active`` across the rename; re-sync cache.
+            self._resync_active()
             return True
         self.logger.warning(
             f"Cannot rename preset '{old_name}' -> '{new_name}' "
@@ -640,8 +826,8 @@ class PresetManager(ptk.LoggingMixin):
         Adds a single row of compact, icon-only actions —
         **Rename / Refresh / Delete / Open / Save** — to the combo's action
         section, populates it with existing presets, and connects selection
-        changes to ``load()``. *Refresh* reloads (re-applies) the currently
-        selected preset.
+        changes to ``load()``. *Refresh* re-applies the **active** preset
+        (``mgr.active_preset``), discarding any edits.
 
         Built-in (shipped, read-only) presets are shown italicised in the list,
         and **Rename / Delete are disabled** while one is selected — they can't
@@ -650,9 +836,13 @@ class PresetManager(ptk.LoggingMixin):
         writes a user preset that shadows the built-in — the "duplicate to edit"
         flow).
 
-        The combo shows the *current preset name* as its selected item.
-        When no presets exist the combo is empty and displays
-        placeholder text (``"No saved presets"``).
+        The combo shows the *active preset name* as its selected item, restored
+        from the persisted :attr:`active_preset` on wire (selection only — no
+        values are re-applied, since widgets restore themselves from session
+        state). When the live values diverge from the active preset a ``" *"``
+        suffix is shown (see :meth:`is_modified`); Save / Refresh clear it. When
+        no preset is active the combo shows the ``"Presets…"`` placeholder, or
+        ``"No saved presets"`` when none exist.
 
         Parameters:
             combo: A ``WidgetComboBox`` to populate and wire.
@@ -685,8 +875,13 @@ class PresetManager(ptk.LoggingMixin):
 
             Parameters:
                 select_name: If given, select this preset after repopulating.
-                    If None, no item is pre-selected.
+                    If ``None``, the persisted **active preset** is re-selected
+                    (idea: restore only the *selection* \u2014 widget values restore
+                    themselves from session state). Selection is set with
+                    signals blocked, so **no values are applied**.
             """
+            if select_name is None:
+                select_name = mgr.active_preset
             names = mgr.list()
             combo.blockSignals(True)
             try:
@@ -694,15 +889,10 @@ class PresetManager(ptk.LoggingMixin):
                 if names:
                     combo.addItems(names)
                     mark_builtins(names)
-                    if select_name:
-                        idx = combo.findText(select_name)
-                        if idx >= 0:
-                            combo.setCurrentIndex(idx)
-                        else:
-                            combo.setCurrentIndex(0)
-                    else:
-                        combo.setCurrentIndex(-1)
-                    combo.setPlaceholderText("Select a preset\u2026")
+                    # findText -> -1 when the (stale) name is gone, which falls
+                    # through to the placeholder rather than a silent item-0.
+                    combo.setCurrentIndex(combo.findText(select_name) if select_name else -1)
+                    combo.setPlaceholderText("Presets\u2026")
                 else:
                     combo.setPlaceholderText("No saved presets")
             finally:
@@ -711,6 +901,9 @@ class PresetManager(ptk.LoggingMixin):
             # rebuild so the action buttons reappear at the bottom.
             combo._rebuild_actions_section()
             update_action_states()
+            # Selection was set with signals blocked (no value apply); sync the
+            # dirty baseline from the active preset and refresh the marker.
+            mgr._resync_active()
 
         def update_action_states():
             """Enable Rename/Delete only for the *user* preset that's selected.
@@ -725,29 +918,33 @@ class PresetManager(ptk.LoggingMixin):
             rename_action.setEnabled(is_user)
             delete_action.setEnabled(is_user)
 
-        def load_current():
-            """(Re)apply the currently selected preset's values to the widgets.
+        def apply_preset(name):
+            """(Re)apply preset *name*'s values to the widgets (no-op if falsy).
 
             When ``on_loaded`` is provided, block signals during load and fire
             the single consolidated callback afterwards. Otherwise, let signals
             propagate so normal slot handlers (e.g. checkbox → refresh) fire.
             """
-            idx = combo.currentIndex()
-            if idx < 0:
+            if not name:
                 return
-            name = combo.itemText(idx)
-            if name:
-                mgr.load(name, block_signals=on_loaded is not None)
-                if on_loaded:
-                    on_loaded()
+            mgr.load(name, block_signals=on_loaded is not None)
+            if on_loaded:
+                on_loaded()
 
         def on_selected(idx):
             update_action_states()
-            load_current()
+            if idx >= 0:
+                apply_preset(combo.itemText(idx))
 
         def on_refresh():
-            """Reload the currently selected preset (re-apply its values)."""
-            load_current()
+            """Reload the **active** preset (re-apply its values), discarding edits.
+
+            Keyed off ``mgr.active_preset`` rather than the combo's
+            ``currentIndex`` so Refresh still works after a session restore (or
+            any state that left the index at -1) — the index-based version
+            silently no-oped, which read as "Refresh is broken".
+            """
+            apply_preset(mgr.active_preset)
 
         def on_save():
             parent_w = combo.window() or combo
@@ -761,6 +958,9 @@ class PresetManager(ptk.LoggingMixin):
             if ok and name.strip():
                 name = name.strip()
                 mgr.save(name)
+                # The saved preset becomes active; its values == what we just
+                # wrote, so the marker is clean.
+                mgr.active_preset = name
                 refresh(select_name=name)
 
         def on_rename():
@@ -833,6 +1033,16 @@ class PresetManager(ptk.LoggingMixin):
             combo._rebuild_actions_section()
         except Exception:
             pass
+
+        def update_marker(modified: bool):
+            """Reflect the modified ('dirty') state as an asterisk on the combo's
+            displayed current text (item data is left untouched)."""
+            combo.current_text_suffix = " *" if modified else ""
+
+        mgr.on_modified_changed(update_marker)
+        # Live marker updates for the menu / standalone (widget-state) paths;
+        # no-op in semantic mode (the caller wires its own param widgets).
+        mgr.connect_value_widgets()
 
         refresh()
         combo.currentIndexChanged.connect(on_selected)

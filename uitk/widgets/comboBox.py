@@ -40,6 +40,11 @@ class CustomStyle(QtWidgets.QProxyStyle):
                     opt.displayAlignment = self.combo_box.header_alignment
                 elif current_index >= 0:
                     opt.text = self.combo_box.itemText(current_index)
+                    # Append a display-only suffix (e.g. " *" for unsaved edits)
+                    # to the painted text; item data / itemText stay untouched.
+                    suffix = getattr(self.combo_box, "current_text_suffix", "")
+                    if suffix:
+                        opt.text = f"{opt.text}{suffix}"
 
         super().drawControl(element, opt, painter, widget)
 
@@ -326,6 +331,7 @@ class ComboBox(
         self.prev_index = -1
         self.has_header = False
         self.header_text = None
+        self._current_text_suffix = ""
         self.editable = editable
 
         self.currentIndexChanged.connect(self.check_index)
@@ -341,6 +347,24 @@ class ComboBox(
             QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon
         )
         self.set_attributes(**kwargs)
+
+    @property
+    def current_text_suffix(self) -> str:
+        """Text appended to the *displayed* current selection only.
+
+        Affects what the collapsed combo paints (via the style's
+        ``drawControl``), not ``itemText`` / item data — so a marker like
+        ``" *"`` (unsaved edits) can be shown without corrupting the underlying
+        name used for load/rename/delete. Setting it repaints.
+        """
+        return self._current_text_suffix
+
+    @current_text_suffix.setter
+    def current_text_suffix(self, value: str) -> None:
+        value = value or ""
+        if value != self._current_text_suffix:
+            self._current_text_suffix = value
+            self.update()
 
     @property
     def items(self):

@@ -149,6 +149,70 @@ class TestOptionBoxWrappingVisibility(QtBaseTestCase):
         self.assertFalse(btn.isHidden(), "Button should not be hidden after expand")
 
 
+class TestOptionBoxOverlayRefit(QtBaseTestCase):
+    """Regression: an absolutely-positioned OptionBoxContainer (the marking-menu
+    overlay case) must re-fit to content on show.
+
+    Bug: marking-menu option-box buttons measured their size hint *before* the
+    theme QSS had been polished, so a host Qt style whose un-polished button
+    minimum is large (e.g. Windows' native style) froze an inflated geometry —
+    the option-box square ended up pushed ~2-4x too far from the button text on
+    some hosts but not others. Fixed by re-fitting to content on first show when
+    no parent layout owns the container. Fixed: 2026-06-13.
+    """
+
+    def test_absolute_container_refits_to_content_on_show(self):
+        """No managing parent layout → collapse a stale/inflated size, keep center."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.resize(800, 600)
+        btn = QtWidgets.QPushButton("Clean", parent)
+        opt = OptionBox(options=[])
+        container = self.track_widget(opt.wrap(btn))
+
+        # Simulate the frozen, inflated geometry from a pre-polish size hint.
+        container.resize(300, max(container.height(), 24))
+        container.move(250, 100)
+        inflated_center = container.geometry().center()
+
+        parent.show()
+        container.show()
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+
+        content_w = container.sizeHint().width()
+        self.assertLess(container.width(), 300, "Inflated width must shrink on show")
+        self.assertLessEqual(
+            container.width(),
+            content_w + 2,
+            f"Container should collapse to content (~{content_w}px), "
+            f"got {container.width()}",
+        )
+        self.assertAlmostEqual(
+            container.geometry().center().x(),
+            inflated_center.x(),
+            delta=3,
+            msg="Re-fit must preserve the container's center point",
+        )
+
+    def test_layout_managed_container_not_refit_on_show(self):
+        """A parent layout owns sizing → container must NOT collapse to content."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        btn = QtWidgets.QPushButton("Clean")
+        layout.addWidget(btn)
+        opt = OptionBox(options=[])
+        container = self.track_widget(opt.wrap(btn))  # replaces btn in the layout
+
+        parent.resize(300, 60)
+        parent.show()
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+
+        self.assertGreater(
+            container.width(),
+            container.sizeHint().width() + 20,
+            "Layout-managed container should stay stretched, not refit to content",
+        )
+
+
 class TestPinValuesOptionCreation(QtBaseTestCase):
     """Tests for PinValuesOption creation and initialization."""
 
@@ -343,24 +407,30 @@ class TestRecentValuesDisplayFormat(QtBaseTestCase):
     def test_auto_with_paths_produces_display_map(self):
         option = self._make_option(display_format="auto")
         paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
-        dm = option._resolve_display_map(paths)
+        dm = option.store.display_map(paths)
         self.assertTrue(len(dm) > 0)
         self.assertIn("DirA", dm[paths[0]])
         self.assertIn("DirB", dm[paths[1]])
 
     def test_auto_with_non_paths_falls_back(self):
+        """auto-fallback now returns full (short) strings, not an empty sentinel."""
         option = self._make_option(display_format="auto")
-        self.assertEqual(option._resolve_display_map(["foo", "bar"]), {})
+        self.assertEqual(
+            option.store.display_map(["foo", "bar"]), {"foo": "foo", "bar": "bar"}
+        )
 
-    def test_truncate_returns_empty(self):
+    def test_truncate_returns_full_strings(self):
+        """The store always returns display strings (never the old {} sentinel)."""
         option = self._make_option(display_format="truncate")
         paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
-        self.assertEqual(option._resolve_display_map(paths), {})
+        dm = option.store.display_map(paths)
+        self.assertEqual(set(dm), set(paths))
+        self.assertTrue(all(isinstance(v, str) for v in dm.values()))
 
     def test_basename_mode(self):
         option = self._make_option(display_format="basename")
         paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
-        dm = option._resolve_display_map(paths)
+        dm = option.store.display_map(paths)
         self.assertEqual(dm[paths[0]], "file.txt")
         self.assertEqual(dm[paths[1]], "other.txt")
 
@@ -369,7 +439,7 @@ class TestRecentValuesDisplayFormat(QtBaseTestCase):
             display_format=lambda v: f"[{Path(v).stem}]",
         )
         paths = ["C:/Root/Sub/DirA/file.txt", "C:/Root/Sub/DirB/other.txt"]
-        dm = option._resolve_display_map(paths)
+        dm = option.store.display_map(paths)
         self.assertEqual(dm[paths[0]], "[file]")
         self.assertEqual(dm[paths[1]], "[other]")
 
@@ -506,10 +576,20 @@ class TestRecentValuesPopupWidthSizing(QtBaseTestCase):
             popup.add_recent_value(v)
 
         popup.menu.adjustSize()
+        # Deterministic, font-independent: adjustSize() must widen the popup to its
+        # content (the grid's own width hint), not collapse to the 150px minimum. The
+        # absolute pixel width of these paths is font-dependent (e.g. 574px at 9pt Segoe
+        # UI vs >1000px at the default font), so a hardcoded threshold flakes across
+        # environments — assert the popup reached its content width instead.
+        self.assertGreaterEqual(
+            popup.menu.width(),
+            popup.menu.gridLayout.sizeHint().width(),
+            "Popup stayed collapsed after adjustSize (content clipped)",
+        )
         self.assertGreater(
             popup.menu.width(),
-            600,
-            "Popup stayed collapsed after adjustSize (content clipped)",
+            popup.menu.minimumWidth() + 100,
+            "Popup didn't widen past its minimum",
         )
 
     def test_empty_popup_stays_compact(self):

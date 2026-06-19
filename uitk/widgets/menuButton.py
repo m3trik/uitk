@@ -83,6 +83,36 @@ class MenuButton(QtWidgets.QPushButton, AttributesMixin):
             return []
         return [t for t in re.split(r"[,\s]+", self._filter_tags) if t]
 
+    def submenu_name(self) -> str:
+        """The submenu UI name this button navigates to on hover.
+
+        Composes ``target`` with any ``filterTags`` and the ``submenu`` tag —
+        ``target="render"`` → ``"render#submenu"``; ``target="polygons"`` +
+        ``filterTags="edge"`` → ``"polygons#edge#submenu"``. Single source of
+        truth for the hover-nav name: both the marking menu's ``child_enterEvent``
+        (which opens it) and the visibility policy's resolution check (which must
+        not hide a button that reaches it) read this, so the two can't drift.
+        """
+        return "#".join([self.target, *self.filter_tag_list(), "submenu"])
+
+    # -- events ---------------------------------------------------------------
+    def hideEvent(self, event) -> None:
+        """Drop any lingering ``:hover`` state before the button is reshown.
+
+        A marking-menu button is usually hidden *under the cursor* — the menu
+        closes in place, so no ``leaveEvent`` precedes the hide. Qt leaves
+        ``WA_UnderMouse`` set in that case, which keeps ``State_MouseOver`` (and
+        the QSS ``:hover`` rule) live, so the next ``show()`` would paint the
+        button as hovered until a real enter/leave recomputes it.
+
+        Clearing the attribute is the whole fix: ``:hover`` is a pseudo-state Qt
+        rebuilds from the style option (which reads ``WA_UnderMouse``) on every
+        paint, so the next show repaints non-hovered — no repolish needed (that
+        idiom is for dynamic-property selector re-cascade, not pseudo-states).
+        """
+        self.setAttribute(QtCore.Qt.WA_UnderMouse, False)
+        super().hideEvent(event)
+
 
 # ----------------------------------------------------------------------------
 

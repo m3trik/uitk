@@ -2,6 +2,7 @@
 # coding=utf-8
 import inspect
 import warnings
+import weakref
 from dataclasses import dataclass, field
 from typing import Optional, Union, Callable, Dict, Any, Tuple
 from qtpy import QtWidgets, QtCore, QtGui
@@ -671,6 +672,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # not "one tick per item" — see test_register_with_main_window_deferred_not_synchronous.
         self._pending_registrations: list = []
         self._registration_drain_scheduled: bool = False
+        # Owning MainWindow, captured (weakly) while the menu is still nested
+        # under its host so deferred registration survives the menu reparenting
+        # to a top-level popup on show — see _resolve_registration_window.
+        self._registration_window_ref: Optional["weakref.ref"] = None
 
         # ``add()`` blocks signals for the duration of the (potentially
         # recursive, bulk) insert so Qt's internal layout churn doesn't
@@ -2008,21 +2013,59 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
 
-    def _register_with_main_window(self, widget: QtWidgets.QWidget) -> None:
-        """Walk up the parent chain to find a MainWindow and register *widget*.
+    def _resolve_registration_window(self) -> Optional[QtWidgets.QWidget]:
+        """Return the owning MainWindow for dynamic-widget registration.
 
-        This enables signal wiring, slot discovery, and QSettings-based
-        state persistence for widgets added dynamically via :meth:`add`.
+        Registration is *deferred* (see :meth:`_schedule_registration`); by the
+        time the drain runs the menu may have reparented itself to a top-level
+        popup / Tool window on show, severing the parent chain back to the
+        MainWindow. A plain ``self.parent()`` walk then finds nothing and
+        registration is silently skipped — the widget never gets
+        ``restore_state``, so its value is neither saved nor restored. This was
+        the prime suspect behind menu-hosted options resetting only in live
+        interactive DCC sessions (where show/reparent races the drain).
+
+        To stay robust we (1) prefer a live parent-chain walk — correct and
+        cheap in the common, un-reparented case — and (2) fall back to the
+        MainWindow captured weakly while the chain was still intact. The cache
+        is refreshed on every successful live walk.
         """
         curr = self.parent()
         while curr is not None:
             if hasattr(curr, "register_widget") and hasattr(curr, "widgets"):
-                try:
-                    curr.register_widget(widget)
-                except Exception:
-                    pass
-                return
+                self._registration_window_ref = weakref.ref(curr)
+                return curr
             curr = curr.parent()
+
+        ref = self._registration_window_ref
+        window = ref() if ref is not None else None
+        if window is not None:
+            try:
+                window.objectName()  # dead C++ wrapper -> RuntimeError
+                return window
+            except RuntimeError:
+                self._registration_window_ref = None
+        return None
+
+    def _register_with_main_window(self, widget: QtWidgets.QWidget) -> None:
+        """Find the owning MainWindow and register *widget* with it.
+
+        This enables signal wiring, slot discovery, and QSettings-based
+        state persistence for widgets added dynamically via :meth:`add`.
+        Resolution goes through :meth:`_resolve_registration_window` so a menu
+        that has already reparented to a popup still resolves its MainWindow.
+        """
+        window = self._resolve_registration_window()
+        if window is None:
+            self.logger.debug(
+                "_register_with_main_window: no MainWindow reachable for "
+                f"{widget.objectName()!r}; its state will not persist"
+            )
+            return
+        try:
+            window.register_widget(widget)
+        except Exception:
+            pass
 
     def _schedule_registration(self, widget: QtWidgets.QWidget) -> None:
         """Queue *widget* for deferred registration with the main window.
@@ -2031,6 +2074,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         drain pass.  Registration order (FIFO) and the deferred-not-sync
         contract from :meth:`Menu.add` are preserved.
         """
+        # Capture the owning MainWindow once, while the menu is still nested
+        # under its host and the parent chain is intact. By drain time the menu
+        # may have reparented to a popup, breaking the walk; the cache set here
+        # lets _resolve_registration_window recover it. A later legitimate
+        # reparent is still honored — drain-time resolution re-walks live first.
+        if self._registration_window_ref is None:
+            self._resolve_registration_window()
         self._pending_registrations.append(widget)
         if not self._registration_drain_scheduled:
             self._registration_drain_scheduled = True
@@ -2081,6 +2131,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     state = curr.state
                     break
                 curr = curr.parent()
+
+        # Last resort: the MainWindow captured during registration. The live
+        # walk above misses it once the menu has reparented to a popup on show
+        # (same reparenting that breaks _register_with_main_window).
+        if not state:
+            window = self._resolve_registration_window()
+            state = getattr(window, "state", None) if window is not None else None
 
         if not state:
             self.logger.debug("_restore_menu_defaults: No state manager found")

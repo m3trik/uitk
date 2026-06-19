@@ -134,6 +134,18 @@ class QtBaseTestCase(BaseTestCase):
             self._widgets_to_cleanup.clear()
         if self._drain_qt_events_in_teardown:
             self._drain_qt_events()
+        # Actually destroy deleteLater()'d widgets NOW. processEvents() never
+        # handles DeferredDelete (Qt processes those only in a real event loop
+        # or via an explicit sendPostedEvents call), so without this every
+        # widget "deleted" above survives until process exit — where Qt's
+        # static teardown destroys ~the whole suite's widgets at once and a
+        # single event dispatched into a half-dead Python override segfaults
+        # the runner (observed: Sequencer.event AV at exit, 0xC0000005).
+        from qtpy import QtCore
+
+        QtCore.QCoreApplication.sendPostedEvents(
+            None, QtCore.QEvent.DeferredDelete
+        )
 
     def track_widget(self, widget):
         """Register a widget for automatic cleanup.

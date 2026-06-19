@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import re
 from typing import Optional, Type
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
@@ -7,6 +8,84 @@ import pythontk as ptk
 
 class SwitchboardWidgetMixin:
     """Widget registration, resolution, and dynamic class loading for Switchboard."""
+
+    def is_registered_ui(self, name: str) -> bool:
+        """True if *name* matches a known UI file stem in the registry (no load is triggered)."""
+        if not name:
+            return False
+        filenames = self.registry.ui_registry.get("filename") or []
+        return name in filenames
+
+    def menu_button_target_name(self, widget) -> Optional[str]:
+        """The registered UI name a ``MenuButton`` navigates to, or ``None``.
+
+        Single source of truth for nav-button destination resolution, shared by the
+        visibility auto-hide (:meth:`menu_button_target_resolves`) and the marking menu's
+        click path (``MarkingMenu._resolve_button_menu``) so they can't drift — divergence
+        here is what let a click resolve a different (or dead) target than the auto-hide saw.
+        Two candidates, the registered base ``target`` preferred:
+
+        * **Base-panel launcher** — a ``target`` that is itself a registered UI (e.g. the
+          polygons component buttons → the ``"polygons"`` panel, then tag-filtered by the
+          caller). This is the original click behavior; preferred so a button that has both
+          a base panel and a submenu still opens the base panel on click.
+        * **Submenu launcher** — a bare ``target`` like ``"cameras"`` that is *not* a
+          registered filename composes ``submenu_name()`` (``"cameras#lower#submenu"``),
+          matching the hover path (``child_enterEvent``), which always opens the submenu.
+        """
+        target = widget.target
+        if not target:
+            return None
+        if self.is_registered_ui(target):
+            return target
+        submenu = widget.submenu_name()
+        if self.is_registered_ui(submenu):
+            return submenu
+        return None
+
+    def menu_button_target_resolves(self, widget) -> bool:
+        """True if a ``MenuButton``'s ``target`` resolves to a registered UI.
+
+        See :meth:`menu_button_target_name` for the resolution rules — the visibility
+        policy never hides a button that *does* go somewhere (a click would reach it).
+        """
+        return self.menu_button_target_name(widget) is not None
+
+    def apply_visibility_policy(self, widget) -> bool:
+        """Hide a freshly-registered widget the current context can't serve.
+
+        Two policies, applied at widget registration (``MainWindow.register_widget``):
+
+        1. **``requires`` tag** — a Designer dynamic string property naming the feature
+           tag(s) the widget needs (``"maya"``, ``"maya|blender"``; ``|``/comma/space
+           separated alternatives). Hidden when the switchboard's ``context_tags`` is
+           non-empty and shares no tag. An empty ``context_tags`` disables filtering.
+        2. **Nav auto-hide** — a ``MenuButton`` whose ``target`` does not resolve against
+           the UI registry navigates nowhere in this context and hides itself (no manual
+           tags needed; an unported submenu disappears from every nav path that points
+           at it). Resolution mirrors the live nav paths — see
+           :meth:`menu_button_target_resolves`.
+
+        Returns True when the widget was hidden; the reason is recorded on
+        ``widget.hidden_by_policy`` for tooling/coverage reports.
+        """
+        requires = widget.property("requires")
+        if requires and self.context_tags:
+            tags = {t for t in re.split(r"[|,\s]+", str(requires)) if t}
+            if tags and not (tags & self.context_tags):
+                widget.setVisible(False)
+                widget.hidden_by_policy = "requires"
+                return True
+
+        from uitk.widgets.menuButton import MenuButton
+
+        if isinstance(widget, MenuButton):
+            target = widget.target
+            if target and not self.menu_button_target_resolves(widget):
+                widget.setVisible(False)
+                widget.hidden_by_policy = "nav-unresolved"
+                return True
+        return False
 
     def resolve_widget_class(
         self, class_name: str

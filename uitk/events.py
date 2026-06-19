@@ -188,6 +188,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         track_on_drag_only: bool = True,
         log_level="WARNING",
         auto_update: bool = True,
+        buttons_provider=None,
     ):
         super().__init__(parent)
 
@@ -198,6 +199,14 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
 
         self.track_on_drag_only = track_on_drag_only
         self.auto_update = auto_update
+        # Strategy hook for "is a mouse button held". ``None`` (default) queries Qt
+        # live at call time (so patches/monkeypatches of QApplication.mouseButtons
+        # are honored — never capture the bound method here); a host whose native
+        # loop owns the mouse (Blender's GHOST) injects a provider that reads the
+        # real button state, because Qt's query is blind to presses it never saw.
+        # Without that, the drag-gated track() (Region hover-reveal + grab handoff)
+        # never fires under such a host.
+        self._buttons_provider = buttons_provider
         self._prev_mouse_over: set[QtWidgets.QWidget] = set()
         self._mouse_over: set[QtWidgets.QWidget] = set()
         self._filtered_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
@@ -205,6 +214,22 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._mouse_owner: QtWidgets.QWidget | None = None
 
         parent.installEventFilter(self)
+
+    def _buttons_held(self) -> bool:
+        """Whether a mouse button is currently held, via the injected provider.
+
+        See ``buttons_provider`` in :meth:`__init__`. With no provider, queries
+        ``QApplication.mouseButtons()`` live (looked up at call time, not cached).
+        Falls back to that same query if a provider raises, so a misbehaving host
+        hook degrades to default behavior rather than killing hover tracking.
+        """
+        provider = self._buttons_provider
+        if provider is None:
+            return bool(QtWidgets.QApplication.mouseButtons())
+        try:
+            return bool(provider())
+        except Exception:
+            return bool(QtWidgets.QApplication.mouseButtons())
 
     def should_capture_mouse(self, widget):
         """Checks if a widget should capture the mouse."""
@@ -434,7 +459,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                     f"Grabbing mouse for widget: {top_widget.objectName()}"
                 )
                 self._grab_widget(top_widget)
-            elif self._mouse_owner and QtWidgets.QApplication.mouseButtons():
+            elif self._mouse_owner and self._buttons_held():
                 # Keep the current owner if dragging
                 pass
             else:
@@ -490,7 +515,7 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                 self.update_child_widgets()
 
         if etype == QtCore.QEvent.Type.MouseMove:
-            if self.track_on_drag_only and not QtWidgets.QApplication.mouseButtons():
+            if self.track_on_drag_only and not self._buttons_held():
                 self._flush_hover_state()
                 return False
             self.track()

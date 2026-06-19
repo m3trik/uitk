@@ -368,5 +368,98 @@ class TestStackedMenuPersistenceOptOut(QtBaseTestCase):
         self.assertGreaterEqual(ui.height(), 600)
 
 
+class _NavStubSb:
+    """Switchboard stub for the nav-resolution methods. ``get_ui`` *raises* for an
+    unregistered name — mirroring the real resolver ("Slot class '<name>' not found") —
+    so the test pins that ``_cached_ui`` must guard it rather than let it propagate. The
+    destination resolver is the REAL ``SwitchboardWidgetMixin.menu_button_target_name`` (the
+    shared SSoT the click + auto-hide paths both use), exercised against this stub's
+    ``is_registered_ui``."""
+
+    from uitk.switchboard.widgets import SwitchboardWidgetMixin as _Mixin
+
+    menu_button_target_name = _Mixin.menu_button_target_name
+
+    def __init__(self, registered):
+        self._registered = dict(registered)  # name -> ui sentinel
+        self.hidden = []
+
+    def is_registered_ui(self, name):
+        return name in self._registered
+
+    def get_ui(self, name):
+        if name not in self._registered:
+            raise AttributeError(f"Slot class '{name}' not found.")
+        return self._registered[name]
+
+    def hide_unmatched_groupboxes(self, menu, tags):
+        self.hidden.append((menu, tuple(tags)))
+
+
+class TestNavButtonMenuResolution(QtBaseTestCase):
+    """Click-path nav resolution must mirror the hover path's ``submenu_name()`` SSoT.
+
+    Regression: a bare-target nav launcher (``target="cameras"``, ``filterTags="lower"``)
+    must resolve to its composed submenu ``"cameras#lower#submenu"`` — the same name hover
+    uses — not the bare ``target`` (which isn't a registered UI, so resolving it raised
+    ``AttributeError`` and the upper/lower submenus never launched on click). And
+    ``_cached_ui`` must return ``None`` for an unregistered name instead of raising.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+
+        self.parent = self.track_widget(QtWidgets.QWidget())
+
+        class _NavMenu:
+            _cached_ui = MarkingMenu._cached_ui
+            _resolve_button_menu = MarkingMenu._resolve_button_menu
+
+            def __init__(self, sb):
+                self.sb = sb
+                self._submenu_cache = {}
+
+        self._NavMenu = _NavMenu
+
+    def _button(self, target, filterTags=""):
+        from uitk.widgets.menuButton import MenuButton
+
+        return MenuButton(self.parent, target=target, filterTags=filterTags)
+
+    def test_click_resolves_nav_launcher_via_submenu_name(self):
+        ui = object()
+        sb = _NavStubSb({"cameras#lower#submenu": ui})
+        menu = self._NavMenu(sb)
+        btn = self._button("cameras", "lower")  # bare target is NOT a registered UI
+
+        resolved = menu._resolve_button_menu(btn)
+
+        self.assertIs(resolved, ui)  # used submenu_name(), not bare "cameras" (would raise)
+        self.assertEqual(sb.hidden, [(ui, ("lower",))])  # filter tags applied to the submenu
+
+    def test_click_resolves_standalone_target_directly(self):
+        ui = object()
+        sb = _NavStubSb({"some_tool": ui})  # no "some_tool#submenu"
+        menu = self._NavMenu(sb)
+        btn = self._button("some_tool")
+
+        self.assertIs(menu._resolve_button_menu(btn), ui)
+
+    def test_resolve_empty_target_returns_none(self):
+        menu = self._NavMenu(_NavStubSb({}))
+        self.assertIsNone(menu._resolve_button_menu(self._button("")))
+
+    def test_cached_ui_returns_none_for_unregistered(self):
+        menu = self._NavMenu(_NavStubSb({}))
+        self.assertIsNone(menu._cached_ui("no_such_menu#submenu"))  # must not raise
+
+    def test_cached_ui_returns_and_caches_registered(self):
+        ui = object()
+        menu = self._NavMenu(_NavStubSb({"x#submenu": ui}))
+        self.assertIs(menu._cached_ui("x#submenu"), ui)
+        self.assertIn("x#submenu", menu._submenu_cache)  # cached on first hit
+
+
 if __name__ == "__main__":
     unittest.main()

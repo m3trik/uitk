@@ -1428,3 +1428,12 @@ Separator > QLabel {
     border-radius: {RADIUS};
     padding: 8px;
 }
+/* The Ok / action buttons in the popup's button box. The base QAbstractButton
+   rule pads them to almost nothing (0px 1px), which looks cramped in a modal —
+   give them generous breathing room on all sides. Hover / pressed states are
+   inherited from the QAbstractButton rules above. */
+.MessageBox QPushButton {
+    padding: 10px 28px;
+    min-width: 72px;
+    margin: 6px;
+}

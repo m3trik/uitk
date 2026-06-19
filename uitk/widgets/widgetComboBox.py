@@ -919,7 +919,9 @@ class WidgetComboBox(ComboBox):
             text = self.header_text
             alignment = getattr(self, "header_alignment", QtCore.Qt.AlignLeft)
         else:
-            text = self.currentText() or ""
+            # Include the display-only suffix (e.g. " *") so the arrow is
+            # positioned after it, matching what CustomStyle.drawControl paints.
+            text = (self.currentText() or "") + getattr(self, "current_text_suffix", "")
             alignment = QtCore.Qt.AlignLeft
 
         if not text:

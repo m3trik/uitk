@@ -714,6 +714,59 @@ class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
                     "Previous grabber must have WA_UnderMouse=False.",
                 )
 
+    def test_buttons_provider_overrides_qt_query(self):
+        """``_buttons_held()`` follows the injected ``buttons_provider``, overriding
+        ``QApplication.mouseButtons()`` in both directions.
+
+        This is the Blender/GHOST fix: GHOST owns the mouse, so Qt's own
+        ``mouseButtons()`` is blind to a held button — which gates the drag-only
+        ``track()`` (the marking menu's Region hover-reveal) off. A provider that
+        reads the real button state restores it; a provider reporting "no button"
+        gates it off even when Qt reports one. (The end-to-end reveal is covered
+        live by ``tentacle/test/blender/cameras_track_check.py`` — here we assert
+        the deterministic gate input, not the OS grab outcome, which the offscreen
+        QPA can't sustain.)
+        """
+        held = {"down": True}
+        tracker = MouseTracking(
+            self.parent,
+            auto_update=False,
+            buttons_provider=lambda: (
+                QtCore.Qt.LeftButton if held["down"] else QtCore.Qt.NoButton
+            ),
+        )
+        # Provider says "held" while Qt's own query is blind (the GHOST case).
+        with patch.object(
+            QtWidgets.QApplication, "mouseButtons", return_value=QtCore.Qt.NoButton
+        ):
+            self.assertTrue(
+                tracker._buttons_held(),
+                "Provider-reported held button must win over a blind Qt query.",
+            )
+        # Provider says "no button" while Qt reports one -> provider still wins.
+        held["down"] = False
+        with patch.object(
+            QtWidgets.QApplication, "mouseButtons", return_value=QtCore.Qt.LeftButton
+        ):
+            self.assertFalse(
+                tracker._buttons_held(),
+                "Provider-reported no-button must win over Qt reporting one.",
+            )
+
+    def test_default_buttons_provider_reads_qt_live(self):
+        """With no provider, ``_buttons_held()`` queries ``QApplication.mouseButtons()``
+        live at call time — capturing the bound method at construction would bypass
+        any patch/monkeypatch (the regression that broke the grab-handoff tests)."""
+        tracker = MouseTracking(self.parent, auto_update=False)
+        with patch.object(
+            QtWidgets.QApplication, "mouseButtons", return_value=QtCore.Qt.LeftButton
+        ):
+            self.assertTrue(tracker._buttons_held())
+        with patch.object(
+            QtWidgets.QApplication, "mouseButtons", return_value=QtCore.Qt.NoButton
+        ):
+            self.assertFalse(tracker._buttons_held())
+
 
 # -----------------------------------------------------------------------------
 # Main

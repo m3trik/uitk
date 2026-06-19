@@ -11,7 +11,7 @@ import pythontk as ptk
 from uitk.switchboard import Switchboard
 from uitk.events import EventFactoryFilter, MouseTracking
 from .overlay import Overlay
-from ._resolver import parse_binding_keys, resolve_target_menu
+from ._resolver import parse_binding_keys, resolve_target_menu, count_buttons
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.menuButton import MenuButton
 from uitk.widgets.mixins.shortcuts import GlobalShortcut
@@ -169,6 +169,7 @@ class MarkingMenu(
         log_level: str = "DEBUG",
         suppress_default_on_reentry: bool = False,
         precompile: bool = False,
+        context_tags=None,
         **kwargs,
     ):
         """ """
@@ -202,6 +203,8 @@ class MarkingMenu(
 
         if switchboard:
             self.sb = switchboard
+            if context_tags:
+                self.sb.context_tags = set(context_tags)
             # If sources are provided, register them to the existing switchboard
             if any([ui_source, slot_source, widget_source]):
                 self.sb.register(
@@ -218,6 +221,7 @@ class MarkingMenu(
                 widget_source=widget_source,
                 handlers=self._handlers_config,
                 base_dir=base_dir,
+                context_tags=context_tags,
             )
 
         # Initialize the Handler Ecosystem
@@ -241,14 +245,19 @@ class MarkingMenu(
             if ui_paths:
                 precompile_async(*ui_paths)
 
-        # Initialize bindings: explicit arg > stored > empty
+        # Initialize bindings: explicit arg > stored > empty. The store is
+        # namespaced per host context (see _bindings_store) so Maya/Blender don't
+        # clobber each other's chords in the shared QSettings backend.
         if self._initial_bindings:
-            # Only apply initial bindings if no bindings are currently stored (first run)
-            if self.sb.configurable.marking_menu_bindings.get(None) is None:
-                self.sb.configurable.marking_menu_bindings.set(self._initial_bindings)
+            to_persist = self._reconcile_bindings(
+                self._initial_bindings,
+                self._bindings_store.get(None),
+            )
+            if to_persist is not None:
+                self._bindings_store.set(to_persist)
 
         # Register callback to rebuild bindings when they change
-        self.sb.configurable.marking_menu_bindings.changed.connect(self._build_bindings)
+        self._bindings_store.changed.connect(self._build_bindings)
         self._build_bindings()
 
         self.child_event_filter = EventFactoryFilter(
@@ -265,7 +274,9 @@ class MarkingMenu(
         )
 
         self.overlay = Overlay(self, antialiasing=True)
-        self.mouse_tracking = MouseTracking(self, auto_update=False)
+        self.mouse_tracking = MouseTracking(
+            self, auto_update=False, buttons_provider=self._host_mouse_buttons
+        )
 
         self.key_show = self._activation_key
         self.key_close = QtCore.Qt.Key_Escape
@@ -296,8 +307,18 @@ class MarkingMenu(
             self._shortcut_instance.pressed.connect(self._on_activation_press)
             self._shortcut_instance.released.connect(self._on_activation_release)
 
-    def _on_activation_press(self):
-        """Handle the global shortcut press event."""
+    def _on_activation_press(self, buttons=None):
+        """Handle the global shortcut press event.
+
+        Parameters:
+            buttons: Optional pre-resolved Qt mouse-button mask. Hosts whose
+                native event loop owns the mouse (e.g. Blender's GHOST) pass the
+                physically held buttons here — ``QApplication.mouseButtons()``
+                only reflects events Qt itself has seen. ``None`` (the Qt
+                shortcut path) falls back to the Qt query.
+        """
+        if buttons is None:
+            buttons = QtWidgets.QApplication.mouseButtons()
         _diag(
             "ACT_PRESS_ENTER",
             held=self._activation_key_held,
@@ -307,7 +328,7 @@ class MarkingMenu(
             self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
             grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()),
             current_widget=_widget_id(self._current_widget),
-            buttons=_safe_int(QtWidgets.QApplication.mouseButtons()),
+            buttons=_safe_int(buttons),
         )
         try:
             # If a standalone window was opened during this key-hold cycle,
@@ -319,8 +340,6 @@ class MarkingMenu(
             self._activation_key_held = True
             self._non_default_shown = False
             self.key_show_press.emit()
-
-            buttons = QtWidgets.QApplication.mouseButtons()
 
             _diag("ACT_PRESS_BEFORE_DISMISS", buttons=_safe_int(buttons))
             # Clean external UIs, passing current state to avoid race/re-query
@@ -478,6 +497,64 @@ class MarkingMenu(
         kwargs["singleton_key"] = id(switchboard)
         return super().instance(**kwargs)
 
+    @staticmethod
+    def _reconcile_bindings(defaults: dict, stored: Optional[dict]) -> Optional[dict]:
+        """Decide what binding dict (if any) to persist at construction.
+
+        Returns the dict to write to persistent storage, or ``None`` when no
+        write is needed:
+
+        * ``stored is None`` (first run) → seed with ``defaults``.
+        * ``stored`` present → ``{**defaults, **stored}`` so newly-shipped default
+          keys are added while the user's customizations of existing keys win on
+          overlap. Returns ``None`` when that merge equals ``stored`` (already
+          current — avoid a redundant write + ``changed`` signal).
+
+        Without the forward-merge a user who ran an older version keeps a frozen
+        binding set and never receives new defaults — the symptom that a newly
+        added chord (e.g. ``F12+L+R``) silently falls through to a sibling menu
+        because its binding was never present in the resolver's lookup.
+
+        A ``None`` or non-dict ``stored`` (unset, or corrupt/legacy QSettings) is
+        treated as first run and re-seeded with ``defaults`` — never spread into
+        a dict literal, which would raise at construction.
+        """
+        if not defaults:
+            return None
+        if not isinstance(stored, dict):
+            return dict(defaults)
+        merged = {**defaults, **stored}
+        return merged if merged != stored else None
+
+    @staticmethod
+    def _binding_store_key(context_tags) -> str:
+        """QSettings key for persisted bindings, namespaced by host context.
+
+        The QSettings backend is shared across processes by ``(org, app)``, so a
+        Maya and a Blender session would otherwise read/write the SAME
+        ``marking_menu_bindings`` key — and their chords collide: ``F12+L+R`` maps
+        to ``maya#startmenu`` in one host and ``blender#startmenu`` in the other,
+        so whichever persisted last hijacks the key and the other host's chord
+        resolves to a UI it doesn't even have. Namespacing by ``context_tags``
+        (``..._maya`` / ``..._blender``) keeps each DCC's binding set independent;
+        an empty/absent context (standalone) keeps the legacy un-suffixed key.
+        """
+        tags = sorted(context_tags or ())
+        return "marking_menu_bindings" + ("_" + "_".join(tags) if tags else "")
+
+    @property
+    def _bindings_store(self):
+        """The persisted-bindings ``SettingItem`` for this menu's host context.
+
+        See :meth:`_binding_store_key` for why the key is host-namespaced. The
+        pre-namespace key is intentionally left orphaned — re-seeding each host
+        from its own current defaults is the correct recovery from the prior
+        shared-key collision (so a Blender session no longer inherits Maya's
+        ``F12+L+R`` target, or vice versa).
+        """
+        key = self._binding_store_key(getattr(self.sb, "context_tags", None))
+        return getattr(self.sb.configurable, key)
+
     @property
     def default_bindings(self) -> dict:
         """The original bindings passed at construction time."""
@@ -486,12 +563,23 @@ class MarkingMenu(
     @property
     def bindings(self) -> dict:
         """Get bindings from persistent storage."""
-        return self.sb.configurable.marking_menu_bindings.get({})
+        return self._bindings_store.get({})
 
     @bindings.setter
     def bindings(self, value: dict):
         """Set bindings (auto-persists and triggers rebuild via callback)."""
-        self.sb.configurable.marking_menu_bindings.set(value)
+        self._bindings_store.set(value)
+
+    def on_bindings_changed(self, callback) -> None:
+        """Subscribe to binding changes on this menu's persistent store.
+
+        Public hook for the binding editor (tentacle's settings panel): it must
+        listen on — and write to — the SAME host-namespaced store the menu reads
+        (see :meth:`_binding_store_key`), or its combos desync from the live menu.
+        Routing through ``bindings`` / this hook keeps that storage key an
+        internal detail rather than something every editor reimplements.
+        """
+        self._bindings_store.changed.connect(callback)
 
     @property
     def ui_handler(self):
@@ -1143,15 +1231,33 @@ class MarkingMenu(
             w = w.parent()
         return False
 
-    def _handle_widget_action(self, widget) -> bool:
+    def _ui_owns_widget(self, ui, widget) -> bool:
+        """True if *widget* belongs to menu *ui* — a direct Qt descendant, or a
+        logical descendant (a top-level sublist marked with ``_logical_ancestor``).
+        The "is this widget part of the current menu?" test shared by the press
+        click-vs-chord classification and the release click dispatch."""
+        return ui.isAncestorOf(widget) or self._is_logical_descendant(ui, widget)
+
+    def _handle_widget_action(self, widget, global_pos=None) -> bool:
         """Execute action for a widget (button click or menu navigation).
+
+        Args:
+            widget: The widget resolved under the release/click position.
+            global_pos: The dispatch position in global coords. Used to resolve a
+                container's child at the *event* position rather than the live
+                ``QCursor.pos()`` — under a host that pumps Qt from its own loop
+                (Blender) the cursor drifts between the physical release and when
+                this runs, so the live cursor can land on the wrong child (the
+                same drift the release-path hit-test guards against). Falls back to
+                the live cursor when not supplied.
 
         Returns:
             bool: True if action was executed, False if widget is non-interactive.
         """
         # Resolve container to actual child widget
         if hasattr(widget, "derived_type") and widget.derived_type == QtWidgets.QWidget:
-            child = widget.childAt(widget.mapFromGlobal(QtGui.QCursor.pos()))
+            pos = global_pos if global_pos is not None else QtGui.QCursor.pos()
+            child = widget.childAt(widget.mapFromGlobal(pos))
             if child:
                 widget = child
 
@@ -1162,6 +1268,7 @@ class MarkingMenu(
             menu = self._resolve_button_menu(widget)
             if menu:
                 is_standalone = not menu.has_tags(["startmenu", "submenu"])
+                _diag("MM_DISPATCH_NAV", widget=_widget_id(widget), menu=_widget_id(menu))
                 self.show(menu, force=is_standalone)
                 return True
 
@@ -1169,16 +1276,32 @@ class MarkingMenu(
         if hasattr(widget, "clicked"):
             ui = getattr(widget, "ui", None)
             base_name = getattr(widget, "base_name", lambda: None)()
-            if ui and ui.has_tags(["startmenu", "submenu"]) and base_name != "chk":
+            ui_is_menu = bool(ui and ui.has_tags(["startmenu", "submenu"]))
+            if ui_is_menu and base_name != "chk":
+                # Marks the leaf's slot actually firing — the proof a click ran
+                # vs was silently dropped (a release hitting a leaf whose owning
+                # ``ui`` isn't a live menu logs MM_DISPATCH_SKIP and just hides).
+                _diag(
+                    "MM_DISPATCH_CLICK",
+                    widget=_widget_id(widget),
+                    ui=_widget_id(ui),
+                    base_name=base_name,
+                )
                 self.hide()
                 widget.clicked.emit()
                 return True
             else:
+                _diag(
+                    "MM_DISPATCH_SKIP",
+                    widget=_widget_id(widget),
+                    ui=_widget_id(ui),
+                    base_name=base_name,
+                    ui_is_menu=ui_is_menu,
+                )
                 self.logger.debug(
                     f"[_handle_widget_action] Click skipped for "
                     f"'{widget.objectName()}': ui={ui}, "
-                    f"has_tags={ui.has_tags(['startmenu', 'submenu']) if ui else 'N/A'}, "
-                    f"base_name='{base_name}'"
+                    f"has_tags={ui_is_menu}, base_name='{base_name}'"
                 )
 
         # Handle ExpandableList items (widgets with item_text set by ExpandableList)
@@ -1191,7 +1314,19 @@ class MarkingMenu(
                     return True
                 parent = parent.parent()
 
+        _diag("MM_DISPATCH_NONINTERACTIVE", widget=_widget_id(widget))
         return False
+
+    def _host_mouse_buttons(self):
+        """Current mouse-button mask for hover/drag tracking — overridable per host.
+
+        Defaults to Qt's own query. A host whose native event loop owns the mouse
+        (Blender's GHOST) overrides this to read the real (physical) button state,
+        so ``MouseTracking``'s drag-gated ``track()`` — which reveals the marking
+        menu's ``visible_on_mouse_over`` Regions during a grabbed chord gesture —
+        still fires when ``QApplication.mouseButtons()`` is blind to GHOST events.
+        """
+        return QtWidgets.QApplication.mouseButtons()
 
     def _transfer_mouse_control(self, button, buttons_mask) -> None:
         """Transfer mouse control to this widget by grabbing and synthesizing a press."""
@@ -1225,6 +1360,33 @@ class MarkingMenu(
         QtWidgets.QApplication.sendEvent(self, event)
         _diag("XFER_AFTER_SENDEVENT")
 
+    def _is_menu_item_press(self, event) -> bool:
+        """True if *event* is a lone-button press over an interactive item
+        (a button) of the current start/submenu — i.e. a click to dispatch on
+        release, not a chord to resolve.
+
+        Uses the event's own global position (not the live cursor) so it is
+        immune to cursor drift under a pumped host event loop (Blender), and
+        hit-tests against ``current_ui`` so only presses on *this menu's* items
+        count — a press on empty overlay (the chord gesture) returns False.
+        """
+        # A menu item is left-clicked; Middle/Right are chord selectors, never an
+        # item click. Requiring a lone LeftButton keeps every chord (incl. a second
+        # concurrent button → count > 1, and bare M/R presses) resolving as a chord.
+        if event.button() != QtCore.Qt.LeftButton:
+            return False
+        if count_buttons(self._to_int(event.buttons())) != 1:
+            return False
+        current_ui = self.sb.active_ui
+        if not (current_ui and current_ui.has_tags(["startmenu", "submenu"])):
+            return False
+        target = QtWidgets.QApplication.widgetAt(event.globalPos())
+        if target is None or target is self:
+            return False
+        if not isinstance(target, QtWidgets.QAbstractButton):
+            return False
+        return self._ui_owns_widget(current_ui, target)
+
     # ---------------------------------------------------------------------------------------------
     #   Stacked Widget Event handling:
 
@@ -1243,6 +1405,25 @@ class MarkingMenu(
         # Cancel any pending suppress-hide so we don't yank the menu away
         # right after showing it.
         self._pending_hide_widget = None
+
+        # A press that lands on an interactive menu item (a leaf or nav button of
+        # the current start/submenu) is a CLICK — dispatch it on release; it must
+        # never be re-resolved as the F12|Button chord. In Maya the button itself
+        # consumes the press so the menu never sees it; over Blender the menu can
+        # hold the mouse grab (a chord reach, or a stray re-grab), which routes the
+        # press to the menu instead — where the sync below would read
+        # buttons=LeftButton (while the key is held) as the chord and navigate away
+        # before the leaf can fire (the "dead click", reproduced live in
+        # tentacle/test/blender/normals_multiclick_check.py). Skipping the re-grab +
+        # sync here lets the release reach _handle_widget_action. This must apply
+        # even mid-chord: _is_menu_item_press already excludes a real chord (it
+        # requires a lone button over an interactive item of the current menu, so a
+        # second concurrent button or a press on empty overlay still resolves as a
+        # chord) — the discriminator is position + button count, not a flag.
+        if self._is_menu_item_press(event):
+            _diag("MM_PRESS_MENU_ITEM", held=self._activation_key_held)
+            event.accept()
+            return
 
         # Defensive: re-establish mouse grab if it was lost (e.g. after a
         # deferred child-hide caused the host app to claim focus).
@@ -1324,7 +1505,14 @@ class MarkingMenu(
         )
 
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
-            widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+            # Resolve the click target at the *release event's* position, not the
+            # live cursor: the dispatch must act on where the button was released.
+            # Under a host that pumps Qt from its own loop (Blender), the cursor
+            # can move between the physical release and when this handler runs, so
+            # QCursor.pos() drifts off the leaf and the click is silently dropped
+            # (the intermittent "dead click"). event.globalPos() carries the OS
+            # release position and equals the cursor under a native Qt loop (Maya).
+            widget = QtWidgets.QApplication.widgetAt(event.globalPos())
             _diag("MM_RELEASE_WIDGETAT", widget=_widget_id(widget))
 
             self.logger.debug(
@@ -1334,10 +1522,8 @@ class MarkingMenu(
             )
 
             if widget and widget is not self and widget is not current_ui:
-                if current_ui.isAncestorOf(widget) or self._is_logical_descendant(
-                    current_ui, widget
-                ):
-                    if self._handle_widget_action(widget):
+                if self._ui_owns_widget(current_ui, widget):
+                    if self._handle_widget_action(widget, event.globalPos()):
                         self.releaseMouse()
                         event.accept()
                         return
@@ -1358,10 +1544,23 @@ class MarkingMenu(
         event.accept()
 
     def _cached_ui(self, name: str) -> Optional[QtWidgets.QWidget]:
-        """Return the UI for *name*, populating the submenu cache on first hit."""
+        """Return the UI for *name*, populating the submenu cache on first hit.
+
+        Returns ``None`` for an unresolvable name rather than raising: ``get_ui`` resolves
+        an unknown name through the slot resolver, which raises ``AttributeError`` ("Slot
+        class '<name>' not found"). Callers (``child_enterEvent``, ``_resolve_button_menu``)
+        guard on a falsy result, so honouring the ``Optional`` contract is what lets a nav
+        launcher whose target doesn't resolve degrade gracefully instead of crashing the
+        hover/click that triggered it. (Catching the resolver's miss — rather than gating on
+        ``is_registered_ui`` — keeps programmatically-registered UIs that ``get_ui`` can load
+        but that aren't in the *file* registry resolvable.)
+        """
         ui = self._submenu_cache.get(name)
         if ui is None:
-            ui = self.sb.get_ui(name)
+            try:
+                ui = self.sb.get_ui(name)
+            except AttributeError:
+                return None
             if ui:
                 self._submenu_cache[name] = ui
         return ui
@@ -1369,13 +1568,21 @@ class MarkingMenu(
     def _resolve_button_menu(self, widget: MenuButton) -> Optional[QtWidgets.QWidget]:
         """Resolve the menu a ``MenuButton`` navigates to (click path).
 
-        The destination (``target``) and filter tags (``filter_tag_list``) are
-        read straight off the widget; matching groupboxes are revealed via the
-        filter tags.
+        Delegates destination resolution to the shared
+        ``Switchboard.menu_button_target_name`` SSoT so a click, a hover
+        (``child_enterEvent``) and the auto-hide check
+        (``menu_button_target_resolves``) all agree. A bare-target nav launcher
+        (``target="cameras"``, ``filterTags="lower"``) opens its composed submenu
+        ``"cameras#lower#submenu"``; a fully-qualified ``target`` opens directly.
+        Previously this resolved the *bare* ``target`` only, so clicking an upper/lower
+        nav region raised ``AttributeError`` ("Slot class 'cameras' not found") instead of
+        opening the submenu — the "submenus don't launch" report. Matching groupboxes are
+        revealed via the filter tags.
         """
-        if not widget.target:
+        name = self.sb.menu_button_target_name(widget)
+        if not name:
             return None
-        menu = self._cached_ui(widget.target)
+        menu = self._cached_ui(name)
         if menu:
             self.sb.hide_unmatched_groupboxes(menu, widget.filter_tag_list())
         return menu
@@ -1733,7 +1940,7 @@ class MarkingMenu(
             # Hover opens the button's own submenu — component-specific when the
             # button carries filter tags (the polygons Edge button →
             # "polygons#edge#submenu", not the base "polygons#submenu").
-            submenu_name = "#".join([w.target, *w.filter_tag_list(), "submenu"])
+            submenu_name = w.submenu_name()
             if submenu_name != w.ui.objectName():
                 submenu = self._cached_ui(submenu_name)
                 if submenu:

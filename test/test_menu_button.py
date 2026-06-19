@@ -20,7 +20,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 
 app = setup_qt_application()
 
-from qtpy import QtWidgets  # noqa: E402
+from qtpy import QtWidgets, QtCore, QtGui  # noqa: E402
 
 from uitk.widgets.menuButton import MenuButton  # noqa: E402
 
@@ -99,6 +99,51 @@ class TestMenuButtonDetectionContract(QtBaseTestCase):
     def test_plain_pushbutton_is_not_a_menubutton(self):
         """A regular slot button must not be picked up as a navigator."""
         self.assertNotIsInstance(QtWidgets.QPushButton(), MenuButton)
+
+
+class TestMenuButtonHoverReset(QtBaseTestCase):
+    """A marking-menu button is normally hidden *under the cursor* — the menu
+    closes in place, so no ``leaveEvent`` precedes the hide. Qt leaves
+    ``WA_UnderMouse`` set in that case, which keeps ``State_MouseOver`` (and the
+    QSS ``:hover`` rule) active, so the button reappears painted as hovered until
+    a real enter/leave recomputes it ("hover styling doesn't always clear").
+    ``hideEvent`` must drop the lingering hover state on every hide.
+    """
+
+    @staticmethod
+    def _is_hover_styled(widget):
+        """True when the widget's style option still carries the QSS ``:hover``
+        state (``State_MouseOver``) — what actually paints a button hovered."""
+        opt = QtWidgets.QStyleOption()
+        opt.initFrom(widget)
+        return bool(opt.state & QtWidgets.QStyle.State_MouseOver)
+
+    def _hovered_button(self):
+        b = self.track_widget(MenuButton(target="polygons#submenu"))
+        b.show()
+        # Simulate the cursor being over the button — what a real enterEvent
+        # leaves behind, and the driver Qt reads for State_MouseOver / :hover.
+        b.setAttribute(QtCore.Qt.WA_UnderMouse, True)
+        self.assertTrue(self._is_hover_styled(b))
+        return b
+
+    def test_hideEvent_clears_hover_state(self):
+        """Deterministic guard: the override drops the hover style-state
+        regardless of whether the offscreen platform synthesizes a leave."""
+        b = self._hovered_button()
+        b.hideEvent(QtGui.QHideEvent())
+        self.assertFalse(
+            self._is_hover_styled(b),
+            "MenuButton.hideEvent must clear State_MouseOver so the button is "
+            "not reshown styled as hovered.",
+        )
+
+    def test_real_hide_clears_hover_state(self):
+        """The override is wired into the real hide() path (children receive a
+        QHideEvent when their menu window hides)."""
+        b = self._hovered_button()
+        b.hide()
+        self.assertFalse(self._is_hover_styled(b))
 
 
 if __name__ == "__main__":

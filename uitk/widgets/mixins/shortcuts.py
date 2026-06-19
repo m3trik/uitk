@@ -599,8 +599,6 @@ class ShortcutMixin:
         if not actions_config:
             return menu
 
-        shortcuts_info = self.get_shortcuts_info() if auto_match_shortcuts else {}
-
         for config in actions_config:
             if len(config) >= 2:
                 text = config[0]

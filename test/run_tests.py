@@ -19,10 +19,15 @@ import re
 import unittest
 import logging
 import argparse
+import faulthandler
 from datetime import datetime
 from pathlib import Path
 from io import StringIO
 from typing import Optional
+
+# Dump a native traceback if Qt segfaults (e.g. during teardown) — otherwise
+# a crash surfaces only as an unexplained 0xC0000005 exit code on Windows.
+faulthandler.enable()
 
 # Add package root to path
 PACKAGE_ROOT = Path(__file__).parent.parent.absolute()
@@ -417,12 +422,45 @@ def main():
 
     success = runner.run()
 
-    # Exit with appropriate code
-    # Use os._exit on success to avoid Qt teardown crashes (common in CI/test runners)
-    if success:
-        sys.stdout.flush()
-        os._exit(0)
-    sys.exit(1)
+    # Destroy any still-pending deleteLater() widgets while the interpreter is
+    # fully alive. processEvents() never handles DeferredDelete, and test
+    # classes that skip super().tearDown() bypass the conftest flush — whatever
+    # is left would otherwise be torn down by Qt at process exit, where a
+    # single event dispatched into a half-dead Python override segfaults.
+    try:
+        from qtpy import QtCore, QtWidgets
+
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            # Destroying widgets can queue further deferred deletes (children,
+            # buddies); a few passes settle the queue.
+            for _ in range(3):
+                QtCore.QCoreApplication.sendPostedEvents(
+                    None, QtCore.QEvent.DeferredDelete
+                )
+                app.processEvents()
+    except Exception:
+        pass
+
+    _hard_exit(0 if success else 1)
+
+
+def _hard_exit(code: int) -> None:
+    """Exit immediately, preserving *code* as the process exit status.
+
+    Plain interpreter shutdown — and even ``os._exit`` on Windows (which still
+    runs ``DLL_PROCESS_DETACH``, executing Qt's static destructors) — can
+    segfault tearing down leaked Qt objects, replacing the exit code with
+    0xC0000005. ``TerminateProcess`` skips detach callbacks entirely.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code)
+    os._exit(code)
 
 
 if __name__ == "__main__":

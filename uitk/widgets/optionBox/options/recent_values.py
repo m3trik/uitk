@@ -2,63 +2,19 @@
 # coding=utf-8
 """Recent Values option for OptionBox — shows a selectable history list."""
 
-import os
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from ._options import ButtonOption
 
-
-def _is_filesystem_path(value):
-    """Return True if *value* looks like a filesystem path."""
-    s = str(value)
-    # Drive letter (C:/) or UNC (\\server) or absolute unix (/home)
-    if len(s) >= 2 and s[1] == ":":
-        return True
-    if s.startswith("//") or s.startswith("\\\\"):
-        return True
-    if s.startswith("/"):
-        return True
-    return False
-
-
-def _build_display_map_smart_path(values):
-    """Build a display map by stripping the common directory prefix.
-
-    Only engages when *all* values look like filesystem paths and there
-    are at least two of them.  Falls back to ``None`` (use default
-    truncation) otherwise.
-    """
-    str_values = [str(v) for v in values]
-    if len(str_values) < 2 or not all(_is_filesystem_path(v) for v in str_values):
-        return None
-
-    normalized = [ptk.format_path(v) for v in str_values]
-    try:
-        prefix = os.path.commonpath(normalized)
-    except ValueError:
-        return None
-
-    if not prefix:
-        return None
-
-    display_map = {}
-    for raw, norm in zip(values, normalized):
-        tail = norm[len(prefix) :].lstrip("/")
-        display_map[raw] = f"\u2026/{tail}" if tail else str(raw)
-    return display_map
-
-
-def _normalize_value(value):
-    """Normalize a value for comparison.
-
-    Strips whitespace and, for path-like strings, normalizes separators
-    and case so that ``C:/Dir`` and ``c:\\dir`` compare equal.
-    """
-    if isinstance(value, str):
-        value = value.strip()
-        if "/" in value or "\\" in value:
-            value = ptk.format_path(value).lower()
-    return value
+# Canonical home for the storage/formatting logic is the widget-free
+# RecentValuesStore. Re-exported here for backward compatibility \u2014 earlier
+# code (and tests) import these names from this module.
+from uitk.widgets.mixins.recent_values_store import (
+    RecentValuesStore,
+    normalize_value as _normalize_value,
+    _is_filesystem_path,
+    _build_display_map_smart_path,
+)
 
 
 class RecentValuesPopup(QtCore.QObject):
@@ -271,6 +227,7 @@ class RecentValuesOption(ButtonOption):
         popup_align="right",
         text_align="center",
         auto_record=False,
+        store=None,
     ):
         """Initialize the recent values option.
 
@@ -302,6 +259,10 @@ class RecentValuesOption(ButtonOption):
                     text matches an item (avoids per-keystroke noise).
                 Off by default — callers must invoke ``record()`` from
                 their own commit path (e.g. browse success, action).
+            store: An existing :class:`RecentValuesStore` to present. When
+                given it overrides *settings_key*/*max_recent*/*display_format*
+                and lets several presenters (e.g. this popup and an
+                ExpandableList) share one history.
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -310,61 +271,28 @@ class RecentValuesOption(ButtonOption):
             callback=self._show_popup,
             checkable=True,
         )
-        self._recent_values: list = []
-        self._settings_key = settings_key
-        self._max_recent = max_recent
-        self._display_format = display_format
         self._popup_align = popup_align
         self._text_align = text_align
         self._popup = None
-        self._settings = None
         self._auto_record = bool(auto_record)
         self._auto_record_connected = False
 
-        if self._settings_key:
-            self._init_settings()
-            self._load_recent_values()
+        # Storage, persistence and display-formatting live in the shared,
+        # widget-free store; this option is just a presenter over it.
+        self._store = store or RecentValuesStore(
+            settings_key=settings_key,
+            max_recent=max_recent,
+            display_format=display_format,
+        )
+        self._store.subscribe(self._update_button_tooltip)
 
         if self._auto_record and wrapped_widget is not None:
             self._install_auto_record(wrapped_widget)
 
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
-    def _init_settings(self):
-        if self._settings is None and self._settings_key:
-            from uitk.widgets.mixins.settings_manager import SettingsManager
-
-            self._settings = SettingsManager(
-                org="uitk", app="RecentValues", namespace=self._settings_key
-            )
-
-    def _save_recent_values(self):
-        if not self._settings:
-            return
-        self._settings.setValue("entries", list(self._recent_values))
-        self._settings.sync()
-
-    def _load_recent_values(self):
-        if not self._settings:
-            return
-        data = self._settings.value("entries", [])
-        if not data:
-            return
-        # Deduplicate on load (keeps first occurrence = most recent)
-        seen = set()
-        deduped = []
-        for v in data:
-            if v is None:
-                continue
-            n = _normalize_value(v)
-            if n not in seen:
-                seen.add(n)
-                deduped.append(v)
-        self._recent_values = deduped
-        if self._widget:
-            self._update_button_tooltip()
+    @property
+    def store(self):
+        """The backing :class:`RecentValuesStore` (shareable across presenters)."""
+        return self._store
 
     # ------------------------------------------------------------------
     # Widget creation
@@ -483,12 +411,12 @@ class RecentValuesOption(ButtonOption):
 
         # Recent values excluding the current one
         others = [
-            v for v in self._recent_values if _normalize_value(v) != normalized_current
+            v for v in self._store.values if _normalize_value(v) != normalized_current
         ]
 
         # Build a display map for all visible values
         all_values = ([current_value] if has_current else []) + others
-        display_map = self._resolve_display_map(all_values)
+        display_map = self._store.display_map(all_values)
 
         # Show current value at the top if not empty
         if has_current:
@@ -505,25 +433,6 @@ class RecentValuesOption(ButtonOption):
         if not has_current and not others:
             self._popup.add_empty_message()
 
-    def _resolve_display_map(self, values):
-        """Return ``{raw_value: display_string}`` or empty dict."""
-        fmt = self._display_format
-
-        if callable(fmt):
-            return {v: fmt(v) for v in values}
-
-        if fmt == "basename":
-            return {v: os.path.basename(str(v)) for v in values}
-
-        if fmt == "auto":
-            dm = _build_display_map_smart_path(values)
-            if dm is not None:
-                return dm
-            # Fall through to default truncation (display_text=None)
-
-        # "truncate" or auto-fallback — let the popup use its default
-        return {}
-
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
@@ -533,12 +442,7 @@ class RecentValuesOption(ButtonOption):
         self.value_selected.emit(value)
 
     def _remove_value(self, value):
-        normalized = _normalize_value(value)
-        self._recent_values = [
-            v for v in self._recent_values if _normalize_value(v) != normalized
-        ]
-        self._save_recent_values()
-        self._update_button_tooltip()
+        self._store.remove(value)  # store notifies -> button tooltip updates
         # Refresh popup in-place
         QtCore.QTimer.singleShot(0, self._refresh_popup_deferred)
 
@@ -559,34 +463,11 @@ class RecentValuesOption(ButtonOption):
         """
         if value is None:
             value = self._get_widget_value()
-        if value is None or not str(value).strip():
-            return
-
-        normalized = _normalize_value(value)
-        # Remove existing duplicate
-        self._recent_values = [
-            v for v in self._recent_values if _normalize_value(v) != normalized
-        ]
-        # Insert at front
-        self._recent_values.insert(0, value)
-        # Trim
-        self._recent_values = self._recent_values[: self._max_recent]
-
-        self._save_recent_values()
-        self._update_button_tooltip()
+        self._store.record(value)
 
     def add_recent_value(self, value):
         """Programmatically seed a recent value (appends if not duplicate)."""
-        if value is None or not str(value).strip():
-            return
-        normalized = _normalize_value(value)
-        if any(_normalize_value(v) == normalized for v in self._recent_values):
-            return
-        self._recent_values.append(value)
-        if len(self._recent_values) > self._max_recent:
-            self._recent_values = self._recent_values[-self._max_recent :]
-        self._save_recent_values()
-        self._update_button_tooltip()
+        self._store.add(value)
 
     def set_wrapped_widget(self, widget):
         """Set or update the wrapped widget, re-installing auto-record if enabled."""
@@ -650,13 +531,11 @@ class RecentValuesOption(ButtonOption):
     @property
     def recent_values(self):
         """Return a copy of the recent values list (most-recent first)."""
-        return list(self._recent_values)
+        return self._store.values
 
     def clear_recent_values(self):
         """Clear all recent values."""
-        self._recent_values.clear()
-        self._save_recent_values()
-        self._update_button_tooltip()
+        self._store.clear()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -665,7 +544,7 @@ class RecentValuesOption(ButtonOption):
     def _update_button_tooltip(self, *_args):
         if self._widget is None:
             return
-        n = len(self._recent_values)
+        n = len(self._store.values)
         if n:
             self._widget.setToolTip(f"Recent values ({n})")
         else:

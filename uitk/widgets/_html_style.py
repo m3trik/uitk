@@ -14,12 +14,28 @@ on a stable selector instead.
 """
 from typing import Optional, Union
 
+# Severity → colour palette, sourced from pythontk's logging colours so the
+# message boxes, text views, footers, and console logs all share one SSoT.
+# Falls back to an empty dict (per-use literal fallbacks below) if pythontk's
+# logging module isn't importable in a minimal environment.
+try:
+    from pythontk.core_utils.logging_mixin import LoggingMixin as _LoggingMixin
 
+    LOG_COLORS = dict(_LoggingMixin.LOG_COLORS)
+except Exception:  # noqa: BLE001 — pythontk logging optional at this layer.
+    LOG_COLORS = {}
+
+
+# Level-prefix tokens → coloured span, keyed by the ``LOG_COLORS`` severity.
+_PREFIX_COLOR = {
+    "Error:": LOG_COLORS.get("ERROR", "red"),
+    "Warning:": LOG_COLORS.get("WARNING", "yellow"),
+    "Note:": LOG_COLORS.get("NOTICE", "blue"),
+    "Result:": LOG_COLORS.get("RESULT", "green"),
+}
 PREFIX_STYLES = {
-    "Error:": '<hl style="color:red;">Error:</hl>',
-    "Warning:": '<hl style="color:yellow;">Warning:</hl>',
-    "Note:": '<hl style="color:blue;">Note:</hl>',
-    "Result:": '<hl style="color:green;">Result:</hl>',
+    token: f'<hl style="color:{color};">{token}</hl>'
+    for token, color in _PREFIX_COLOR.items()
 }
 
 INLINE_STYLES = {

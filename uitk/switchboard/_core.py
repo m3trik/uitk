@@ -116,10 +116,26 @@ class Switchboard(
         log_level: str = "warning",
         base_dir=None,
         loader="runtime",
+        context_tags=None,
+        on_missing_slot=None,
     ) -> None:
         super().__init__(parent)
         """ """
         self.logger.setLevel(log_level)
+
+        # Visibility-policy context: the feature tags this host satisfies (e.g. {"maya"}).
+        # Widgets carrying a `requires` Designer property are hidden at registration when
+        # none of their tags match (see apply_visibility_policy). Empty = no filtering,
+        # so a standalone/dev session shows everything.
+        self.context_tags = set(context_tags) if context_tags else set()
+
+        # Missing-slot policy hook: callable(widget) invoked when connect_slot finds no
+        # slot for a signal-bearing widget. None = silent (production default). Setting
+        # UITK_MARK_MISSING_SLOTS in the environment installs the built-in grey-out
+        # marker (a live "not-yet-built" map for development).
+        if on_missing_slot is None and os.getenv("UITK_MARK_MISSING_SLOTS"):
+            on_missing_slot = self.mark_missing_slot
+        self.on_missing_slot = on_missing_slot
 
         # Ensure a QApplication exists before any UI work. The lazy ``app``
         # class property creates one on first access; touching it here keeps

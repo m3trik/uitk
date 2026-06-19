@@ -119,6 +119,46 @@ class TestFitHeightToContent(QtBaseTestCase):
         self.assertLess(win.height(), 800)
         self.assertGreaterEqual(win.height(), win.minimumSizeHint().height() - 1)
 
+    def test_fit_does_not_collapse_when_layout_min_is_zero(self):
+        """Regression: a window whose own layout doesn't constrain height (0) but
+        whose central under-reports a tiny minimum must snap to its natural
+        ``sizeHint``, not collapse to that tiny content-min.
+
+        This is the marking-menu submenu profile: content (e.g. an
+        ``ExpandableList``) is absolutely positioned, so the window's
+        ``minimumSizeHint`` is 0 while the central's is a small laid-out value.
+        ``fit_height_to_content`` used ``_content_min_height()`` (a small-but-
+        positive value here) as its resize *target*, which skipped the
+        ``sizeHint`` fallback and collapsed the submenu to an ~18px sliver that
+        rendered detached from its content ("submenu shows in the wrong
+        location"). ``_content_min_height`` must act only as a floor.
+        """
+        central = QtWidgets.QWidget()
+        win = self.track_widget(_build_window(central))
+        win.show()
+        win.resize(400, 600)  # natural size from .ui / _init_ui
+        QtWidgets.QApplication.processEvents()
+
+        # Real submenu hint profile: the content (ExpandableList, nested Regions)
+        # is absolutely positioned in a layout-less central, so BOTH the window's
+        # minimumSizeHint and its sizeHint are 0; only the tiny laid-out nav
+        # button gives the central a small minimum (18). _content_min_height() is
+        # therefore max(0, 18) == 18 — but that is NOT the real content height.
+        win.minimumSizeHint = lambda: QtCore.QSize(400, 0)
+        win.sizeHint = lambda: QtCore.QSize(400, 0)
+        central.minimumSizeHint = lambda: QtCore.QSize(400, 18)
+
+        win.fit_height_to_content()
+        self.assertEqual(win.width(), 400)
+        # No layout height info -> leave the window at its natural size; must NOT
+        # collapse to the tiny content-min (the ~18px sliver regression).
+        self.assertGreaterEqual(
+            win.height(),
+            600,
+            "submenu-style window collapsed to the tiny content-min instead of "
+            "keeping its natural size",
+        )
+
 
 class TestCollapsableGroupDelegatesToMainWindow(QtBaseTestCase):
     """CollapsableGroup must hand the resize off to MainWindow.adjust_height_by."""
@@ -498,6 +538,91 @@ class TestFitToContentOnShow(QtBaseTestCase):
             abs(win.height() - win.minimumSizeHint().height()), 2,
             f"Window should be content-tight on show (no deadspace): "
             f"height={win.height()}, minHint={win.minimumSizeHint().height()}",
+        )
+
+
+class TestFitRespectsTrueContentMin(QtBaseTestCase):
+    """An explicit central-widget ``minimumSize`` SMALLER than its content must
+    not let fit/adjust shrink the window into overlapping children.
+
+    This is the ``scene_exporter.ui`` trap: the central widget carried
+    ``minimumSize.height = 240`` while its fixed-height content needed ~268.
+    Qt's ``qSmartMinSize`` REPLACES the layout-computed minimum with the
+    smaller explicit value, so ``MainWindow.minimumSizeHint()`` under-reported
+    (240) and ``fit_height_to_content()`` resized the window down until the
+    fixed-height children overlapped. The window must instead floor on the
+    central widget's true layout minimum.
+    """
+
+    def _build(self, explicit_min_h, child_heights):
+        """A central widget whose fixed-height children sum to more than the
+        explicit minimum height it (wrongly) advertises."""
+        central = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(central)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        for h in child_heights:
+            w = QtWidgets.QLabel("x")
+            w.setMinimumSize(QtCore.QSize(0, h))
+            w.setMaximumSize(QtCore.QSize(16777215, h))  # fixed height
+            lay.addWidget(w)
+        # Explicit min SMALLER than the content sum — the trap.
+        central.setMinimumSize(QtCore.QSize(100, explicit_min_h))
+        win = self.track_widget(_build_window(central))
+        return win, central, sum(child_heights)
+
+    def test_content_min_recovers_true_layout_minimum(self):
+        win, central, content = self._build(
+            explicit_min_h=80, child_heights=[60, 60, 60]
+        )
+        win.show()
+        QtWidgets.QApplication.processEvents()
+
+        true_min = central.minimumSizeHint().height()
+        # The central widget's layout minimum reflects the real content...
+        self.assertGreaterEqual(true_min, content - 2)
+        # ...but the window's own minimumSizeHint is dragged below it by the
+        # too-small explicit central min (the bug's mechanism).
+        self.assertLess(
+            win.minimumSizeHint().height(), true_min,
+            "Precondition: explicit central min should clamp minimumSizeHint low",
+        )
+        # The robust floor recovers the true content minimum.
+        self.assertGreaterEqual(win._content_min_height(), true_min)
+
+    def test_fit_floors_on_content_not_clamped_hint(self):
+        win, central, _content = self._build(
+            explicit_min_h=80, child_heights=[60, 60, 60]
+        )
+        win.show()
+        QtWidgets.QApplication.processEvents()
+        win.resize(win.width(), 400)  # user-stretched
+        QtWidgets.QApplication.processEvents()
+
+        win.fit_height_to_content()
+        QtWidgets.QApplication.processEvents()
+
+        # Deterministic product state (independent of live-WM resize outcome):
+        # the minimum height pinned by the fit must cover the real content, so
+        # the children can never be packed into overlap.
+        self.assertGreaterEqual(
+            win.minimumHeight(), central.minimumSizeHint().height(),
+            "fit must pin the window minimum at the true content height",
+        )
+
+    def test_adjust_height_by_floors_on_content(self):
+        win, central, _content = self._build(
+            explicit_min_h=80, child_heights=[60, 60, 60]
+        )
+        win.show()
+        QtWidgets.QApplication.processEvents()
+
+        win.adjust_height_by(-1000)  # try to collapse far below content
+        QtWidgets.QApplication.processEvents()
+
+        self.assertGreaterEqual(
+            win.minimumHeight(), central.minimumSizeHint().height(),
+            "adjust_height_by must not pin a minimum below the content height",
         )
 
 

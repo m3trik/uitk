@@ -28,6 +28,40 @@ class OptionBoxContainer(QtWidgets.QWidget):
         if event.type() == QtCore.QEvent.EnabledChange:
             self._sync_option_buttons_enabled()
 
+    def showEvent(self, event):
+        """Re-fit to content when shown without a managing parent layout.
+
+        In a layout (e.g. a docked panel) the parent owns this container's
+        size — leave it alone. But in an absolute-positioned context (the
+        marking-menu overlay), the wrapped widget can have been sized from a
+        *pre-polish* size hint — before the theme QSS collapsed it — and that
+        inflated geometry then freezes, leaving the option-box button far wider
+        than its text (the option-box square pushed away from the label). The
+        symptom is host-specific: styles whose un-polished button minimum is
+        already tight (e.g. Maya's) never inflate, while Windows' native style
+        does. Deferring one tick lets the QSS settle, then we re-fit to the
+        now-correct hint and keep the container centered where it was placed.
+        """
+        super().showEvent(event)
+        parent = self.parentWidget()
+        if parent is not None and parent.layout() is not None:
+            return  # layout-managed — sizing is the parent's responsibility
+        QtCore.QTimer.singleShot(0, self._refit_to_content)
+
+    def _refit_to_content(self):
+        """Collapse to the content size hint, preserving the center point."""
+        try:
+            layout = self.layout()
+            if layout is None:
+                return
+            center = self.geometry().center()
+            layout.activate()
+            self.adjustSize()
+            new = self.size()
+            self.move(center.x() - new.width() // 2, center.y() - new.height() // 2)
+        except RuntimeError:
+            pass  # underlying C++ object already deleted
+
     def eventFilter(self, obj, event):
         """Watch the wrapped widget for enabled-state changes."""
         if event.type() == QtCore.QEvent.EnabledChange:
