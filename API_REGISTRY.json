@@ -12239,57 +12239,6 @@
       ]
     },
     {
-      "relpath": "widgets/table_actions.py",
-      "summary": "Reusable action-column management for :class:`TableWidget`.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "TableActions",
-          "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 139,
-          "bases": [],
-          "members": [
-            {
-              "name": "add",
-              "qualname": "TableActions.add",
-              "kind": "method",
-              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
-              "summary": "Register an action column.",
-              "line": 163,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "TableActions.set",
-              "kind": "method",
-              "signature": "(self, row: int, col: int, state_name: str) -> None",
-              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 209,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "TableActions.get",
-              "kind": "method",
-              "signature": "(self, row: int, col: int) -> Optional[str]",
-              "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 273,
-              "deprecated": false
-            },
-            {
-              "name": "update_for_row_height",
-              "qualname": "TableActions.update_for_row_height",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Re-size action columns and icons to fit the current row height.",
-              "line": 338,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
       "relpath": "widgets/tableWidget.py",
       "summary": "",
       "functions": [],
@@ -12834,6 +12783,57 @@
               "signature": "(self, object_name: str)",
               "summary": "",
               "line": 1329,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "widgets/table_actions.py",
+      "summary": "Reusable action-column management for :class:`TableWidget`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TableActions",
+          "summary": "Manages action columns on a :class:`TableWidget`.",
+          "line": 139,
+          "bases": [],
+          "members": [
+            {
+              "name": "add",
+              "qualname": "TableActions.add",
+              "kind": "method",
+              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
+              "summary": "Register an action column.",
+              "line": 163,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "TableActions.set",
+              "kind": "method",
+              "signature": "(self, row: int, col: int, state_name: str) -> None",
+              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
+              "line": 209,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "TableActions.get",
+              "kind": "method",
+              "signature": "(self, row: int, col: int) -> Optional[str]",
+              "summary": "Return the current state name for a cell, or ``None``.",
+              "line": 273,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 338,
               "deprecated": false
             }
           ]
