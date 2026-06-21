@@ -1577,6 +1577,43 @@ class TestStateLoadFiresConnectedSlots(QtBaseTestCase):
         )
 
 
+class TestRunWhenReady(QtBaseTestCase):
+    """``MainWindow.run_when_ready`` defers a callback until the UI's children
+    are registered (first show), or runs it immediately if already shown.
+
+    Backs the extapps panels' cross-widget setup: a slot ``__init__`` can run
+    before its child widgets exist, so wiring that spans widgets is routed here.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_defers_until_first_show(self):
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("RWR", self.sb))
+        calls = []
+        window.run_when_ready(lambda: calls.append(1))
+        self.assertEqual(calls, [], "callback must not run before first show")
+        window.show()
+        self._drain_qt_events()
+        self.assertEqual(calls, [1], "callback must run once on first show")
+
+    def test_runs_immediately_when_already_initialized(self):
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("RWR2", self.sb))
+        window.show()
+        self._drain_qt_events()
+        self.assertTrue(window.is_initialized)
+        calls = []
+        window.run_when_ready(lambda: calls.append(1))
+        self.assertEqual(
+            calls, [1], "callback must run immediately once the UI is shown"
+        )
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

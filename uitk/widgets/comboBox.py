@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
+from contextlib import contextmanager
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.switchboard import Signals
@@ -347,6 +348,52 @@ class ComboBox(
             QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon
         )
         self.set_attributes(**kwargs)
+
+    @contextmanager
+    def _silenced(self):
+        """Block this combo's signals for the span of a structural mutation.
+
+        Populating a combobox moves the current index off ``-1`` and fires
+        ``currentIndexChanged``. When the combo is registered for state
+        persistence, the switchboard *saves* on that signal — so a populate that
+        runs before the widget's stored value is restored persists the transient
+        default and clobbers the saved selection (the "combobox doesn't restore
+        across sessions" bug). ``add()`` already avoids this via
+        ``@Signals.blockSignals``; the structural overrides below extend the same
+        protection to the Qt-native population API (``addItems``/``clear``/...).
+
+        Saves and restores the previous blocked state, so nesting inside an
+        already-blocked context (``add()``, ``init_slot``) never unblocks early.
+        """
+        was_blocked = self.blockSignals(True)
+        try:
+            yield
+        finally:
+            self.blockSignals(was_blocked)
+
+    # Qt-native population mutates the current index as a side effect; wrap each
+    # so the transient change can't fire slots or persist state mid-populate.
+    # The single emit a caller actually wants (the restored/default value) still
+    # arrives via the normal restore flow, matching add()'s behavior.
+    def clear(self):
+        with self._silenced():
+            super().clear()
+
+    def addItem(self, *args, **kwargs):
+        with self._silenced():
+            super().addItem(*args, **kwargs)
+
+    def addItems(self, *args, **kwargs):
+        with self._silenced():
+            super().addItems(*args, **kwargs)
+
+    def insertItem(self, *args, **kwargs):
+        with self._silenced():
+            super().insertItem(*args, **kwargs)
+
+    def insertItems(self, *args, **kwargs):
+        with self._silenced():
+            super().insertItems(*args, **kwargs)
 
     @property
     def current_text_suffix(self) -> str:

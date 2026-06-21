@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-06-19_
+_Generated: 2026-06-21_
 
 ## Index
 
@@ -105,8 +105,8 @@ _Generated: 2026-06-19_
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - [`widgets/spinBox.py`](#widgets--spinBox)
-- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
+- [`widgets/tableWidget.py`](#widgets--tableWidget)
 - [`widgets/textEdit.py`](#widgets--textEdit)
 - [`widgets/textEditLogHandler.py`](#widgets--textEditLogHandler)
 - [`widgets/textViewBox.py`](#widgets--textViewBox) — Scrollable rich-text viewer window.
@@ -148,7 +148,7 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L87)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L77)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -310,6 +310,7 @@ Unified launchable-entry data class shared by all Switchboard handlers.
 
 - **[`class UiHandler(BaseHandler)`](uitk/uitk/handlers/ui_handler.py#L12)** — A generic, dynamic UI Handler that supports recursive discovery of UI and Slot files.
   - `UiHandler.editors(self)` *(property)* — Shortcut to the bound switchboard's editor registry.
+  - `UiHandler.can_resolve(self, name: str) -> bool` — True if :meth:`get` would resolve *name* to a UI — without building it.
   - `UiHandler.get(self, name: str, reload: bool = False, **kwargs)` — Retrieve a standalone UI by name and apply default styling.
   - `UiHandler.show(self, ui, pos: Union[str, Tuple[int, int], QtCore.QPoint, None] = None, force: bool = False, **kwargs)` — Show a UI by name or widget reference.
   - `UiHandler.setup_lifecycle(self, ui, hide_signal=None)` — Connect a window to a hide signal, respecting its pin state.
@@ -461,6 +462,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 
 - **[`class SwitchboardWidgetMixin`](uitk/uitk/switchboard/widgets.py#L9)** — Widget registration, resolution, and dynamic class loading for Switchboard.
   - `SwitchboardWidgetMixin.is_registered_ui(self, name: str) -> bool` — True if *name* matches a known UI file stem in the registry (no load is triggered).
+  - `SwitchboardWidgetMixin.ui_name_resolves(self, name: str) -> bool` — True if *name* resolves to a UI, without triggering a load.
   - `SwitchboardWidgetMixin.menu_button_target_name(self, widget) -> Optional[str]` — The registered UI name a ``MenuButton`` navigates to, or ``None``.
   - `SwitchboardWidgetMixin.menu_button_target_resolves(self, widget) -> bool` — True if a ``MenuButton``'s ``target`` resolves to a registered UI.
   - `SwitchboardWidgetMixin.apply_visibility_policy(self, widget) -> bool` — Hide a freshly-registered widget the current context can't serve.
@@ -549,17 +551,22 @@ HTML formatting helpers shared by uitk's rich-text widgets.
 <a id="widgets--comboBox"></a>
 ### `widgets/comboBox.py`
 
-- **[`class CustomStyle(QtWidgets.QProxyStyle)`](uitk/uitk/widgets/comboBox.py#L13)** — Custom proxy style for ComboBox that handles header text display.
+- **[`class CustomStyle(QtWidgets.QProxyStyle)`](uitk/uitk/widgets/comboBox.py#L14)** — Custom proxy style for ComboBox that handles header text display.
   - `CustomStyle.drawControl(self, element, opt, painter, widget=None)` — Override control drawing to handle header text display.
   - `CustomStyle.drawComplexControl(self, control, opt, painter, widget=None)`
   - `CustomStyle.styleHint(self, hint, option=None, widget=None, returnData=None)`
   - `CustomStyle.pixelMetric(self, metric, option=None, widget=None)`
-- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L93)** — ComboBox with header text and alignment support.
+- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L94)** — ComboBox with header text and alignment support.
   - `AlignedComboBox.setHeaderText(self, text)` — Set the header text displayed when no item is selected.
   - `AlignedComboBox.setHeaderAlignment(self, alignment)` — Set the alignment for header text.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L310)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L311)** — QComboBox with automatic Menu and OptionBox integration.
+  - `ComboBox.clear(self)`
+  - `ComboBox.addItem(self, *args, **kwargs)`
+  - `ComboBox.addItems(self, *args, **kwargs)`
+  - `ComboBox.insertItem(self, *args, **kwargs)`
+  - `ComboBox.insertItems(self, *args, **kwargs)`
   - `ComboBox.current_text_suffix(self) -> str` *(property)* — Text appended to the *displayed* current selection only.
   - `ComboBox.current_text_suffix(self, value: str) -> None`
   - `ComboBox.items(self)` *(property)*
@@ -833,6 +840,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MainWindow.is_current_ui(self, value: bool) -> None` — Sets the widget as the currently active UI if value is True.
   - `MainWindow.register_widget(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None` — Registers a widget with the main window, initializing it and connecting its signals.
   - `MainWindow.trigger_deferred(self) -> None` — Executes all deferred methods, in priority order.
+  - `MainWindow.run_when_ready(self, callback: Callable[[], Any]) -> None` — Run *callback* once this window's child widgets are registered.
   - `MainWindow.perform_restore_state(self, widget: QtWidgets.QWidget, force=False) -> None` — Restores the state of a given widget if it has a restore_state attribute.
   - `MainWindow.sync_widget_values(self, widget: QtWidgets.QWidget, value: Any) -> None` — Persist a widget's value and mirror it across related surfaces.
   - `MainWindow.eventFilter(self, watched, event) -> bool` — Override the event filter to register widgets when they are polished.
@@ -857,7 +865,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
 <a id="widgets--marking_menu--_marking_menu"></a>
 ### `widgets/marking_menu/_marking_menu.py`
 
-- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L122)** — MarkingMenu is a marking menu based on a QWidget.
+- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L21)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
   - `MarkingMenu.default_bindings(self) -> dict` *(property)* — The original bindings passed at construction time.
   - `MarkingMenu.bindings(self) -> dict` *(property)* — Get bindings from persistent storage.
@@ -881,7 +889,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MarkingMenu.add_child_event_filter(self, widgets) -> None` — Initialize child widgets with an event filter.
   - `MarkingMenu.child_enterEvent(self, w, event) -> None` — Handle the enter event for child widgets.
   - `MarkingMenu.child_leaveEvent(self, w, event) -> None` — Handle the leave event for child widgets.
-  - `MarkingMenu.child_mouseButtonReleaseEvent(self, w, event) -> bool` — Forward release events to the child's normal handler.
+  - `MarkingMenu.child_mouseButtonReleaseEvent(self, w, event) -> bool` — Dispatch (or forward) a release delivered to a *grabbed* child.
 
 <a id="widgets--marking_menu--_resolver"></a>
 ### `widgets/marking_menu/_resolver.py`
@@ -1890,6 +1898,17 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
 
+<a id="widgets--table_actions"></a>
+### `widgets/table_actions.py`
+
+Reusable action-column management for :class:`TableWidget`.
+
+- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
+  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
+  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
+  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
+
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
@@ -1953,17 +1972,6 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.
   - `TableWidget.unregister_menu_action(self, object_name: str)`
-
-<a id="widgets--table_actions"></a>
-### `widgets/table_actions.py`
-
-Reusable action-column management for :class:`TableWidget`.
-
-- **[`class TableActions`](uitk/uitk/widgets/table_actions.py#L139)** — Manages action columns on a :class:`TableWidget`.
-  - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None` — Register an action column.
-  - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
-  - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
-  - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`

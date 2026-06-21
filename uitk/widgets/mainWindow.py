@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
-from typing import Any, Optional, Union, List
+from typing import Any, Callable, Optional, Union, List
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 
@@ -482,6 +482,24 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             for method in self._deferred[priority]:
                 method()
         self._deferred.clear()
+
+    def run_when_ready(self, callback: Callable[[], Any]) -> None:
+        """Run *callback* once this window's child widgets are registered.
+
+        Runs immediately if the window has already had its first show (children
+        registered via ``register_children``); otherwise defers to
+        ``on_first_show``. Use this from a slot class ``__init__`` for
+        cross-widget setup (presets, footer wiring, label colours, …): the
+        switchboard can build the slots instance *before* the child widgets
+        exist on ``self.ui`` — even eagerly during construction with
+        ``slot_source=`` — so touching them in ``__init__`` would raise and
+        leave ``ui.slots`` unset. Per-widget setup belongs in the ``*_init``
+        hooks; this is for the wiring that spans several widgets.
+        """
+        if self.is_initialized:
+            callback()
+        else:
+            self.on_first_show.connect(callback)
 
     def perform_restore_state(self, widget: QtWidgets.QWidget, force=False) -> None:
         """Restores the state of a given widget if it has a restore_state attribute."""

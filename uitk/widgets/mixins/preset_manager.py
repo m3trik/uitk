@@ -1196,7 +1196,7 @@ _LEGACY_PRESET_PATHS: Dict[str, str] = {
     "mayatk/reference_manager": "~/.mayatk/presets/reference_manager",
     "mayatk/color_manager": "~/.mayatk/presets/color_manager",
     "mayatk/shot_manifest_colors": "~/.mayatk/presets/shot_manifest_colors",
-    "extapps/map_packer": "~/.pythontk/presets/map_packer",
+    "extapps/texture_maps/packer": "~/.pythontk/presets/map_packer",
     "uitk/style_presets": "{APPCONFIG}/uitk/style_presets",
     "uitk/hotkey_presets": "{APPCONFIG}/uitk/hotkey_presets",
     "uitk/switchboard_browser/presets": "{APPCONFIG}/uitk/switchboard_browser/presets",

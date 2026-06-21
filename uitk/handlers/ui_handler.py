@@ -136,6 +136,19 @@ class UiHandler(BaseHandler):
             except Exception as e:
                 self.logger.error(f"Failed to register override '{name}': {e}")
 
+    def can_resolve(self, name: str) -> bool:
+        """True if :meth:`get` would resolve *name* to a UI — without building it.
+
+        Hook for the switchboard's :meth:`SwitchboardWidgetMixin.ui_name_resolves`
+        so destination resolution (nav-button click + auto-hide) can recognise UIs
+        this handler produces. Base = a registered file stem; subclasses extend it
+        for non-file sources (``MayaUiHandler`` adds its native-menu names).
+        """
+        if not name:
+            return False
+        base = name.split("#")[0] if "#" in name else name
+        return self.sb.is_registered_ui(base)
+
     def get(self, name: str, reload: bool = False, **kwargs):
         """Retrieve a standalone UI by name and apply default styling.
 

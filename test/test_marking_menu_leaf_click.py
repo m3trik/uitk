@@ -194,10 +194,16 @@ class MarkingMenuLeafClickWhileGrabHeld(QtBaseTestCase):
 
         PASSES today and must keep passing after the fix — the fix differentiates
         an on-leaf click from a chord, it does not disable chords.
+
+        "Nothing clickable under the cursor" must mock BOTH hit-tests empty:
+        ``widgetAt`` (OS) AND ``childAt`` (the geometric fallback _owned_item_at
+        adds). With only widgetAt mocked, childAt would geometrically find the
+        leaf (it sits at the press point) and (correctly) read the press as a
+        click — so an empty-space chord must null both.
         """
         with mock.patch.object(
             QtWidgets.QApplication, "widgetAt", return_value=None
-        ):
+        ), mock.patch.object(self.submenu, "childAt", return_value=None):
             self._press(QtCore.Qt.LeftButton, QtCore.Qt.LeftButton)
 
         self.assertEqual(self.mm.sb.current_ui.objectName(), "cameras")

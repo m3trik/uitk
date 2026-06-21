@@ -501,7 +501,18 @@ class SwitchboardSlotsMixin:
                     signals.add(k)
         return signals
 
-    def _find_slots_class(self, base_name: str) -> Optional[Type]:
+    def _find_slots_class(
+        self, base_name: str, allow_sole_fallback: bool = False
+    ) -> Optional[Type]:
+        """Resolve the slot class for ``base_name``.
+
+        ``allow_sole_fallback`` enables the explicit single-class binding (step
+        3): only the slot-*creation* callers — which already hold a real,
+        registered UI — opt in. The UI-*resolution* caller
+        (``_resolve_ui_using_slots``) leaves it ``False`` so an unknown attribute
+        still raises ``AttributeError`` instead of fabricating a phantom UI from
+        the sole class.
+        """
         # 1. Try resolving by class name (Standard convention)
         try_names = self.get_slot_class_names(base_name)
 
@@ -535,6 +546,30 @@ class SwitchboardSlotsMixin:
                 )
                 return cls
 
+        # 3. Explicit single-class binding (convention-independent fallback).
+        # A Switchboard built for one panel has exactly one registered slot
+        # class; honor it for that panel's UI even when the class name doesn't
+        # follow the <ui-basename> convention — i.e. an explicit
+        # ``slot_source=SomeSlots`` passed to the constructor is respected
+        # regardless of name. Restricted to the unambiguous single-class case,
+        # so multi-UI apps (which rely on name-matching to pick the right class)
+        # are unaffected; name/file matching above still takes precedence. Only
+        # the slot-creation callers opt in (see ``allow_sole_fallback``) — the
+        # UI-name resolver must NOT, or any unknown attribute would resolve.
+        if allow_sole_fallback:
+            registered = [
+                c
+                for c in (self.registry.slot_registry.get(return_field="classobj") or [])
+                if c is not None
+            ]
+            unique = list(dict.fromkeys(registered))
+            if len(unique) == 1:
+                self.logger.debug(
+                    f"[_find_slots_class] No name match for '{base_name}'; binding "
+                    f"the sole registered slot class {unique[0]}"
+                )
+                return unique[0]
+
         return None
 
     def slots_instantiated(self, key: str) -> bool:
@@ -561,8 +596,9 @@ class SwitchboardSlotsMixin:
             )
             return None
 
-        # Find and create the slots instance
-        slots_cls = self._find_slots_class(key)
+        # Find and create the slots instance. ``ui`` is a real registered UI
+        # here, so honor an explicit single slot class even on a name mismatch.
+        slots_cls = self._find_slots_class(key, allow_sole_fallback=True)
         if slots_cls:
             try:
                 # Set creation in progress flag
@@ -901,8 +937,9 @@ class SwitchboardSlotsMixin:
                 f"[_add_to_placeholder] [{widget.ui.objectName()}.{widget.objectName()}] Added to placeholder metadata"
             )
         else:
-            # Create new placeholder with widget in metadata
-            slots_cls = self._find_slots_class(key)
+            # Create new placeholder with widget in metadata. ``widget.ui`` is a
+            # real registered UI, so honor an explicit single slot class here too.
+            slots_cls = self._find_slots_class(key, allow_sole_fallback=True)
             if slots_cls:
                 placeholder = self.slot_instances.Placeholder(
                     slots_cls, meta={"deferred_widgets": [widget]}
