@@ -36,6 +36,8 @@ app = setup_qt_application()
 from qtpy import QtCore, QtWidgets
 
 from uitk.switchboard import Switchboard
+from uitk.widgets.mainWindow import MainWindow
+from uitk.widgets.comboBox import ComboBox
 from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.state_manager import StateManager
 from uitk.widgets.optionBox.utils import patch_common_widgets
@@ -268,6 +270,196 @@ class TestComboIndexTransients(QtBaseTestCase):
         self.assertEqual(
             cmb.currentIndex(), 1, "out-of-range apply disturbed the combobox"
         )
+
+
+# ===========================================================================
+# 4. Combobox populate-time clobber (Qt-native addItems/clear)
+# ===========================================================================
+
+class TestComboPopulateClobber(QtBaseTestCase):
+    """A uitk ``ComboBox`` populated via the Qt-native API after registration
+    must not persist the populate-time ``currentIndexChanged`` over the user's
+    stored selection.
+
+    Repro of the "combobox doesn't restore across sessions" bug: the map-packer
+    populates its channel combos in the slot-class ``__init__`` — *outside*
+    ``init_slot``'s signal-blocked wrap — so on reopen ``addItems`` fired
+    ``currentIndexChanged(0)``, the switchboard saved ``0``, and restore then
+    read back the clobbered ``0``.  ``ComboBox`` now blocks its own signals
+    across structural mutations (matching ``add()``'s ``@Signals.blockSignals``),
+    so populating is inert with respect to state.
+    """
+
+    ORG = "uitk_combo_clobber_test"
+    KEY = "cmb_chan/currentIndexChanged"
+    ITEMS = ["None", "Metallic", "Roughness"]
+
+    def _settings(self):
+        sm = SettingsManager(org=self.ORG, app="main")
+        sm.settings.clear()
+        sm.settings.sync()
+        return sm
+
+    def tearDown(self):
+        sm = SettingsManager(org=self.ORG, app="main")
+        sm.settings.clear()
+        sm.settings.sync()
+        super().tearDown()
+
+    def _registered_combo(self, sm, name="cmb_chan"):
+        """A fresh window + registered ComboBox sharing ``sm`` (one 'session')."""
+        sb = Switchboard()
+        win = self.track_widget(
+            MainWindow(
+                name, sb, settings=sm, central_widget=QtWidgets.QWidget()
+            )
+        )
+        c = ComboBox()
+        c.setObjectName("cmb_chan")
+        c.setParent(win.centralWidget())
+        win.register_widget(c)  # wires on_child_changed -> save; restore_state -> True
+        return win, c
+
+    def test_populate_writes_no_state(self):
+        """addItems on a registered, restore_state combo persists nothing."""
+        sm = self._settings()
+        win, c = self._registered_combo(sm, "ui_a")
+        c.addItems(self.ITEMS)
+        self.assertIsNone(
+            sm.value(self.KEY),
+            "populating the combo persisted a transient index (clobber risk)",
+        )
+
+    def test_additem_loop_writes_no_state(self):
+        """A singular-``addItem`` populate loop is also inert.
+
+        Distinct from ``addItems``: the first ``addItem`` moves the index
+        ``-1 -> 0`` and fires ``currentIndexChanged`` just the same. This is the
+        dominant population idiom in the consumer slots (``for text, data: cmb.
+        addItem(...)``), so its override needs its own guard — without it a future
+        "the singular override is redundant" cleanup would silently reopen the
+        clobber at those call sites.
+        """
+        sm = self._settings()
+        win, c = self._registered_combo(sm, "ui_a")
+        for text in self.ITEMS:
+            c.addItem(text)
+        self.assertIsNone(
+            sm.value(self.KEY),
+            "a singular addItem() loop persisted a transient index (clobber risk)",
+        )
+
+    def test_reopen_restores_user_selection(self):
+        """Cross-session round-trip: a saved selection survives repopulation."""
+        sm = self._settings()
+
+        # --- session 1: open, restore, user picks "Metallic" (index 1) ---
+        win1, c1 = self._registered_combo(sm, "ui_a")
+        c1.addItems(self.ITEMS)
+        win1.state.capture_default(c1)
+        c1.perform_restore_state()
+        c1.setCurrentIndex(1)
+        win1.state.save(c1)
+        self.assertEqual(sm.value(self.KEY), 1, "user selection failed to save")
+        win1.close()
+
+        # --- session 2: reopen; repopulation must not clobber the stored 1 ---
+        win2, c2 = self._registered_combo(sm, "ui_b")
+        c2.addItems(self.ITEMS)  # the bug trigger
+        self.assertEqual(
+            sm.value(self.KEY),
+            1,
+            "repopulating the combo on reopen clobbered the stored selection",
+        )
+        win2.state.capture_default(c2)
+        c2.perform_restore_state()
+        self.assertEqual(
+            c2.currentIndex(),
+            1,
+            "combo did not restore the user's selection across sessions",
+        )
+
+
+# ===========================================================================
+# 5. Plain-QLineEdit persistence round-trip (coverage gap)
+# ===========================================================================
+
+class TestLineEditPersistence(QtBaseTestCase):
+    """A registered *plain* (unpromoted) ``QLineEdit`` saves on ``textChanged``
+    and restores its value across sessions — the line-edit analogue of the combo
+    coverage above. Closes a coverage gap (text widgets had no persistence test).
+    """
+
+    ORG = "uitk_lineedit_persist_test"
+    KEY = "le_path/textChanged"
+
+    def _settings(self):
+        sm = SettingsManager(org=self.ORG, app="main")
+        sm.settings.clear()
+        sm.settings.sync()
+        return sm
+
+    def tearDown(self):
+        sm = SettingsManager(org=self.ORG, app="main")
+        sm.settings.clear()
+        sm.settings.sync()
+        super().tearDown()
+
+    def _registered_lineedit(self, sm, win_name):
+        """A fresh window + registered *plain* QLineEdit sharing ``sm``."""
+        sb = Switchboard()
+        win = self.track_widget(
+            MainWindow(
+                win_name, sb, settings=sm, central_widget=QtWidgets.QWidget()
+            )
+        )
+        le = QtWidgets.QLineEdit()
+        le.setObjectName("le_path")
+        le.setParent(win.centralWidget())
+        win.register_widget(le)  # wires textChanged -> save; restore_state -> True
+        return win, le
+
+    def _pump(self):
+        for _ in range(10):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 12)
+
+    def test_user_text_round_trips_across_sessions(self):
+        """A value typed after restore survives a reopen."""
+        sm = self._settings()
+        win1, le1 = self._registered_lineedit(sm, "ui_a")
+        win1.state.capture_default(le1)
+        le1.perform_restore_state()
+        le1.setText("C:/proj/sourceimages")  # user edit (post-restore)
+        self._pump()
+        self.assertEqual(sm.value(self.KEY), "C:/proj/sourceimages")
+        win1.close()
+
+        win2, le2 = self._registered_lineedit(sm, "ui_b")
+        win2.state.capture_default(le2)
+        le2.perform_restore_state()
+        self.assertEqual(
+            le2.text(),
+            "C:/proj/sourceimages",
+            "lineedit did not restore the user's value across sessions",
+        )
+
+    def test_empty_user_text_round_trips(self):
+        """An intentionally-cleared field restores as empty (not the .ui default)."""
+        sm = self._settings()
+        win1, le1 = self._registered_lineedit(sm, "ui_a")
+        le1.setText("seed")  # a .ui-style default present at registration
+        win1.register_widget(le1)
+        win1.state.capture_default(le1)
+        le1.perform_restore_state()
+        le1.setText("")  # user clears it (post-restore edit)
+        self._pump()
+        self.assertEqual(sm.value(self.KEY), "")
+        win1.close()
+
+        win2, le2 = self._registered_lineedit(sm, "ui_b")
+        win2.state.capture_default(le2)
+        le2.perform_restore_state()
+        self.assertEqual(le2.text(), "", "cleared field did not restore as empty")
 
 
 if __name__ == "__main__":

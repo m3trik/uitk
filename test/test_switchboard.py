@@ -2092,6 +2092,82 @@ class TestModalBusyCursorFilter(QtBaseTestCase):
         self.assertEqual(self.app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
 
 
+class TestExplicitSlotBinding(QtBaseTestCase):
+    """An explicitly-passed ``slot_source`` binds to its UI even when the class
+    name doesn't follow the ``<ui-basename>`` convention.
+
+    Regression: when the texture_maps panels' ``.ui`` basenames were
+    de-stuttered (``map_packer.ui`` -> ``packer.ui``) but the slot classes kept
+    the old ``Map*Slots`` names, ``_find_slots_class('packer')`` matched nothing
+    and ``ui.slots`` was ``None`` (every panel was slot-less). A Switchboard
+    built for a single panel now honors its sole registered slot class
+    regardless of name; name/file matching still takes precedence, and the
+    fallback is restricted to the unambiguous single-class case.
+    """
+
+    def test_sole_slot_class_binds_despite_name_mismatch(self):
+        class WeirdlyNamedSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=WeirdlyNamedSlots)
+        # Slot-creation callers opt into the single-class fallback...
+        self.assertIs(
+            sb._find_slots_class("packer", allow_sole_fallback=True),
+            WeirdlyNamedSlots,
+        )
+        # ...but the strict (default) lookup, used by UI-name resolution, does
+        # NOT — so it can't fabricate slots for an arbitrary name.
+        self.assertIsNone(sb._find_slots_class("packer"))
+
+    def test_strict_lookup_never_fabricates_a_ui(self):
+        """The single-class fallback must not leak into UI resolution: an
+        unknown ``loaded_ui.<name>`` still raises ``AttributeError`` rather than
+        creating a phantom UI bound to the sole slot class."""
+        class SoloSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=SoloSlots)
+        with self.assertRaises(AttributeError):
+            _ = sb.loaded_ui.totally_unknown_panel
+
+    def test_name_match_still_takes_precedence(self):
+        class PackerSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        class CompositorSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=[PackerSlots, CompositorSlots])
+        # Two classes: resolve by name, never via the single-class fallback
+        # (even when the fallback is allowed).
+        self.assertIs(
+            sb._find_slots_class("packer", allow_sole_fallback=True), PackerSlots
+        )
+        self.assertIs(
+            sb._find_slots_class("compositor", allow_sole_fallback=True),
+            CompositorSlots,
+        )
+
+    def test_ambiguous_multiclass_no_match_returns_none(self):
+        class FooSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        class BarSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=[FooSlots, BarSlots])
+        # More than one class: the fallback can't disambiguate even when allowed.
+        self.assertIsNone(
+            sb._find_slots_class("nomatch", allow_sole_fallback=True)
+        )
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

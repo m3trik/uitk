@@ -7,12 +7,12 @@ the host process's Qt event loop or block Maya / Blender / Max on errors.
 Typical usage::
 
     sb.handlers.external_app.register(
-        "map_compositor",
-        module="extapps.map_compositor",
-        entry="MapCompositorUI",
+        "compositor",
+        module="extapps.texture_maps.compositor",
+        entry="CompositorUI",
         install_spec="extapps",
     )
-    sb.handlers.external_app.launch("map_compositor")
+    sb.handlers.external_app.launch("compositor")
 """
 import os
 import shutil
@@ -235,7 +235,7 @@ class ExternalAppHandler(BaseHandler):
 
         Parameters:
             name: Unique identifier used with :meth:`launch`.
-            module: Importable module name (e.g. ``"extapps.map_compositor"``).
+            module: Importable module name (e.g. ``"extapps.texture_maps.compositor"``).
             entry: Class/callable inside *module* that returns a uitk
                 MainWindow when invoked. Required for ``mode="in_process"``.
                 In ``mode="subprocess"`` it's optional — if omitted the

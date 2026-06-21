@@ -69,16 +69,6 @@ def _open_in_file_manager(path: str) -> None:
         subprocess.Popen(["xdg-open", path])
 
 
-def _pick_dir(line_edit: QtWidgets.QLineEdit) -> None:
-    """Directory picker; writes the chosen path back into *line_edit*."""
-    start = line_edit.text() or str(Path.home())
-    path = QtWidgets.QFileDialog.getExistingDirectory(
-        line_edit, "Select directory", start
-    )
-    if path:
-        line_edit.setText(path)
-
-
 # ----------------------------------------------------------------------
 # BridgeSlotsBase
 # ----------------------------------------------------------------------
@@ -293,7 +283,22 @@ class BridgeSlotsBase:
     # ------------------ Output Dir row --------------------------------
 
     def _build_output_dir_row(self) -> None:
-        """Insert a persistent 'Output Dir' line edit + browse above the params."""
+        """Insert a persistent 'Output Dir' line edit (with option-box buttons) above params.
+
+        The path field carries uitk **option-box** icon buttons instead of a bare
+        ``...`` push-button. :meth:`_configure_output_dir_options` decides which —
+        the default is a persisted **recent-values** history + a **directory
+        browse** button; subclasses override it (e.g. the Unity bridge swaps the
+        browse button for an option *menu* of project actions).
+
+        The edit is parented into the row layout (with stretch) **before** the
+        option box wraps it, so the wrap reparents it in place via
+        ``replaceWidget`` (preserving the stretch factor) while it is already
+        layout-managed. Wrapping a *parentless* edit instead lets it briefly show
+        as a top-level widget, whose ``OptionBoxContainer.showEvent`` schedules a
+        ``_refit_to_content`` that collapses + absolutely-positions the container
+        — leaving the field right-shifted instead of filling the row.
+        """
         layout = self.ui.grp_process.layout()
 
         row = QtWidgets.QWidget(self.ui.grp_process)
@@ -306,25 +311,92 @@ class BridgeSlotsBase:
         label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
         edit = QtWidgets.QLineEdit(row)
+        edit.setObjectName(f"{self.LOG_TAG}_output_dir")
         edit.setPlaceholderText(self.OUTPUT_DIR_PLACEHOLDER)
         edit.setMinimumHeight(19)
         edit.setMaximumHeight(19)
         edit.setToolTip(self.OUTPUT_DIR_TOOLTIP)
-
-        browse = QtWidgets.QPushButton("...", row)
-        browse.setFixedWidth(22)
-        browse.setMinimumHeight(19)
-        browse.setMaximumHeight(19)
-        browse.clicked.connect(lambda: _pick_dir(edit))
+        self._output_dir_edit = edit
 
         hbox.addWidget(label)
         hbox.addWidget(edit, 1)
-        hbox.addWidget(browse)
+
+        # Wrap after the edit is in the layout: the option box replaces it in
+        # place (keeping the stretch) instead of leaving a stale top-level geom.
+        self._configure_output_dir_options(edit)
 
         insert_at = layout.indexOf(self.ui.cmb000) + 1
         layout.insertWidget(insert_at, row)
-        self._output_dir_edit = edit
         self._output_dir_row = row
+
+    # ------------------ Output Dir option-box buttons -----------------
+
+    def _output_dir_browse_title(self) -> str:
+        """Window title for the output-dir browse dialog (from the row label)."""
+        return self.OUTPUT_DIR_LABEL.rstrip(": ") or "Select directory"
+
+    def _add_recent_output_dir_option(self, edit) -> None:
+        """Attach the persisted recent-values history button to *edit* (shared)."""
+        edit.option_box.recent(
+            settings_key=f"{self.LOG_TAG}_output_dir_recent",
+            auto_record=True,
+            display_format="auto",
+        )
+
+    def _configure_output_dir_options(self, edit) -> None:
+        """Hook: option-box buttons for the output-dir field.
+
+        Default = a persisted recent-values history + a directory-browse button.
+        Subclasses override to customise (the Unity bridge uses an option menu of
+        project actions instead of the lone browse button).
+        """
+        self._add_recent_output_dir_option(edit)
+        edit.option_box.set_action(
+            callback=self._pick_output_dir,
+            icon="folder",
+            tooltip="Browse for a folder",
+            settings_key=False,
+        )
+
+    def _pick_output_dir(self) -> None:
+        """Open a directory dialog, load the choice into the field, and record it.
+
+        Shared by the default browse button and any subclass that surfaces the same
+        'Set …' action as a menu item.
+        """
+        edit = self._output_dir_edit
+        if edit is None:
+            return
+        start = self.resolved_output_dir() or str(Path.home())
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self.ui, self._output_dir_browse_title(), start
+        )
+        if not path:
+            return
+        edit.setText(path)
+        self._record_output_dir(path)
+
+    @staticmethod
+    def _record_recent(edit, value) -> None:
+        """Record *value* into *edit*'s option-box recent-values history (no-op if none).
+
+        Programmatic ``setText`` doesn't fire the ``auto_record`` (editingFinished)
+        path, so any code that sets a recent-backed field in code (browse, a
+        subclass 'New Project' action, a host hand-off) calls this to keep the
+        history in sync. Shared by every recent-backed field — the base output-dir
+        row and any subclass row (e.g. the Unity workflow's Model File).
+        """
+        if edit is None:
+            return
+        from uitk.widgets.optionBox.options.recent_values import RecentValuesOption
+
+        recent = edit.option_box.find_option(RecentValuesOption)
+        if recent is not None:
+            recent.record(value)
+
+    def _record_output_dir(self, value) -> None:
+        """Record *value* into the output-dir field's recent-values history."""
+        self._record_recent(self._output_dir_edit, value)
 
     def resolved_output_dir(self) -> str:
         """Return the current Output Dir text trimmed of whitespace.

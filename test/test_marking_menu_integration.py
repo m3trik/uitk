@@ -174,7 +174,6 @@ class DriveableMarkingMenu(MarkingMenu):
         self._initial_bindings = bindings
         self._default_bindings = bindings
         self._in_transition = False
-        self._pending_ui = None
         self._last_ui_history_check = None
         self._windows_to_restore = set()
 
@@ -383,10 +382,16 @@ class MarkingMenuInputScenarios(QtBaseTestCase):
         self.assert_current("maya")
 
     def test_05_release_left_with_right_held_shows_right_menu(self):
+        # A partial chord release is DEFERRED by the tolerance (it must not switch
+        # immediately — that was the "menu shifts" regression); the switch to the
+        # remaining-button menu happens only once the held button passes the
+        # tolerance (here simulated by firing the timeout).
         self.activate()
         self.press(QtCore.Qt.LeftButton, QtCore.Qt.LeftButton)
         self.press(QtCore.Qt.RightButton, QtCore.Qt.LeftButton | QtCore.Qt.RightButton)
         self.release(QtCore.Qt.LeftButton, QtCore.Qt.RightButton)
+        self.assert_current("maya")  # deferred — no immediate switch
+        self.mm._on_chord_release_timeout()  # R held past tolerance → switch
         self.assert_current("main")
 
     def test_06_release_right_with_left_held_shows_left_menu(self):
@@ -394,6 +399,8 @@ class MarkingMenuInputScenarios(QtBaseTestCase):
         self.press(QtCore.Qt.LeftButton, QtCore.Qt.LeftButton)
         self.press(QtCore.Qt.RightButton, QtCore.Qt.LeftButton | QtCore.Qt.RightButton)
         self.release(QtCore.Qt.RightButton, QtCore.Qt.LeftButton)
+        self.assert_current("maya")  # deferred — no immediate switch
+        self.mm._on_chord_release_timeout()  # L held past tolerance → switch
         self.assert_current("cameras")
 
     def test_07_press_release_press_different_button_no_double_press(self):

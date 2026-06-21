@@ -2,7 +2,6 @@
 # coding=utf-8
 import sys
 import os
-import time
 from typing import Optional
 from qtpy import QtCore, QtWidgets, QtGui
 import pythontk as ptk
@@ -17,106 +16,6 @@ from uitk.widgets.menuButton import MenuButton
 from uitk.widgets.mixins.shortcuts import GlobalShortcut
 from uitk.compile import precompile_async
 from uitk.loaders import CompiledLoader
-
-
-# Crash diagnostic (opt-in via TENTACLE_MM_CRASH_DIAG=1).
-# Writes line-buffered log so the last entry survives a hard segfault.
-_CRASH_DIAG_FH = None
-_CRASH_DIAG_INIT_TRIED = False
-
-# Cache the validity probe at import time (hot path during gestures).
-_IS_VALID = None
-try:
-    from shiboken6 import isValid as _IS_VALID  # type: ignore
-except Exception:
-    try:
-        from shiboken2 import isValid as _IS_VALID  # type: ignore
-    except Exception:
-        _IS_VALID = None
-
-
-def _diag(tag, **kw):
-    """Append one diagnostic record. Lazy-initializes file handle on first call,
-    so the env var can be set after import (e.g. from Maya's Script Editor).
-    Never raises.
-    """
-    global _CRASH_DIAG_FH, _CRASH_DIAG_INIT_TRIED
-    if _CRASH_DIAG_FH is None:
-        if _CRASH_DIAG_INIT_TRIED and not os.environ.get("TENTACLE_MM_CRASH_DIAG"):
-            return
-        _CRASH_DIAG_INIT_TRIED = True
-        if not os.environ.get("TENTACLE_MM_CRASH_DIAG"):
-            return
-        try:
-            path = os.path.expanduser("~/tentacle_marking_menu_crash.log")
-            _CRASH_DIAG_FH = open(path, "a", buffering=1, encoding="utf-8")
-            _CRASH_DIAG_FH.write(
-                f"\n===== session start pid={os.getpid()} "
-                f"t={time.time():.3f} =====\n"
-            )
-        except Exception:
-            _CRASH_DIAG_FH = None
-            return
-    try:
-        parts = [f"{time.time():.6f}", tag]
-        for k, v in kw.items():
-            parts.append(f"{k}={v!r}")
-        _CRASH_DIAG_FH.write(" | ".join(parts) + "\n")
-    except Exception:
-        pass
-
-
-def _diag_enabled() -> bool:
-    """True iff the diag file handle is open. Cheap check — use this to
-    gate the construction of expensive diag payloads (e.g. comprehensions
-    over the overlay path) so we don't pay the build cost when the env
-    var is off."""
-    return _CRASH_DIAG_FH is not None
-
-
-def _safe_int(v):
-    """Coerce Qt enum/flag/int to int without raising. Returns -1 on failure."""
-    try:
-        if isinstance(v, int):
-            return v
-        return int(v)
-    except Exception:
-        try:
-            return int(v.value)
-        except Exception:
-            return -1
-
-
-def _widget_id(w):
-    """Safe widget identity string — survives deleted C++ underneath."""
-    if w is None:
-        return "None"
-    try:
-        if _IS_VALID is not None and not _IS_VALID(w):
-            return f"<DELETED {type(w).__name__} id={id(w):#x}>"
-        cls = type(w).__name__
-        try:
-            name = w.objectName() or "<noname>"
-        except Exception:
-            name = "<err>"
-        try:
-            is_win = w.isWindow()
-        except Exception:
-            is_win = "?"
-        try:
-            visible = w.isVisible()
-        except Exception:
-            visible = "?"
-        try:
-            wflags = _safe_int(w.windowFlags())
-        except Exception:
-            wflags = "?"
-        return (
-            f"<{cls} name={name!r} id={id(w):#x} "
-            f"win={is_win} vis={visible} flags={wflags}>"
-        )
-    except Exception as e:
-        return f"<id-err {e!r}>"
 
 
 class MarkingMenu(
@@ -156,6 +55,39 @@ class MarkingMenu(
     _pending_show_timer: QtCore.QTimer = None
     _shortcut_instance: Optional["GlobalShortcut"] = None
     _current_widget: Optional[QtWidgets.QWidget] = None
+    # Single-shot latch: a chord release arrives as TWO release events a few ms
+    # apart (one per button). Without coalescing, each one dispatches — the
+    # trailing release fires a SECOND action (e.g. clicks a leaf of a submenu a
+    # nav-button release just opened). v1.0.66's removed _chord_release_timer
+    # coalesced the pair into one decision; this latch restores "one dispatch per
+    # gesture". Set when an action fires, re-armed on the next press / activation.
+    _action_dispatched: bool = False
+
+    # Chord-release tolerance — governs NAVIGATION only, never item selection.
+    # A release OVER AN OWNED ITEM always dispatches the click immediately on the
+    # first release (see mouseReleaseEvent); this timer is consulted only for a
+    # release over EMPTY overlay (the "switch menus by releasing a button"
+    # gesture). There, a real-world both-buttons release is imperfect — the two
+    # buttons lift a few ms apart, so the first release arrives with the other
+    # still held (a "partial"). Acting on that partial immediately would flicker
+    # the menu to the one-button menu before the second button lifts. v1.0.66
+    # deferred it by a tolerance window (this timer): if the other button also
+    # releases within the window it was a both-buttons release (settle on the
+    # final all-up release); if it is still held when the window expires it was
+    # an intentional switch (→ navigate to the remaining-button menu). Putting
+    # this deferral AHEAD of the owned-item dispatch was the regression — it
+    # navigated the menu away before the click could land. Tunable; 75 ms matches
+    # the proven v1.0.66 value.
+    CHORD_RELEASE_TOLERANCE_MS: int = 75
+    _chord_release_timer: Optional[QtCore.QTimer] = None
+    _chord_pending_buttons: int = 0
+    _chord_pending_modifiers: int = 0
+
+    # Smooth submenu-transition state: set by _set_submenu, consumed by the
+    # _pending_show_timer's _perform_transition, cleared by _debounce_transition.
+    _pending_transition_ui: Optional[QtWidgets.QWidget] = None
+    _pending_transition_widget: Optional[QtWidgets.QWidget] = None
+    _transitioning_to_window: bool = False
 
     def __init__(
         self,
@@ -292,8 +224,6 @@ class MarkingMenu(
         self._pending_show_timer = QtCore.QTimer()
         self._pending_show_timer.setSingleShot(True)
         self._pending_show_timer.timeout.connect(self._perform_transition)
-        self._setup_complete = True
-        self._pending_ui = None
 
         # Auto-install shortcut if parent is provided
         if parent:
@@ -319,42 +249,24 @@ class MarkingMenu(
         """
         if buttons is None:
             buttons = QtWidgets.QApplication.mouseButtons()
-        _diag(
-            "ACT_PRESS_ENTER",
-            held=self._activation_key_held,
-            suppress=self._standalone_suppress,
-            non_default=self._non_default_shown,
-            self_visible=self.isVisible(),
-            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
-            grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()),
-            current_widget=_widget_id(self._current_widget),
-            buttons=_safe_int(buttons),
-        )
         try:
             # If a standalone window was opened during this key-hold cycle,
             # ignore re-press until the key is genuinely released and pressed again.
             if self._standalone_suppress:
-                _diag("ACT_PRESS_SUPPRESSED")
                 return
 
             self._activation_key_held = True
             self._non_default_shown = False
+            self._action_dispatched = False  # fresh marking-menu session
             self.key_show_press.emit()
 
-            _diag("ACT_PRESS_BEFORE_DISMISS", buttons=_safe_int(buttons))
             # Clean external UIs, passing current state to avoid race/re-query
             self._dismiss_external_popups(buttons)
-            _diag("ACT_PRESS_AFTER_DISMISS")
 
             # Single source of truth: pick a menu from the current input state.
             self._sync_menu_to_state(
                 buttons=self._to_int(buttons),
                 modifiers=self._to_int(QtWidgets.QApplication.keyboardModifiers()),
-            )
-            _diag(
-                "ACT_PRESS_AFTER_SYNC",
-                self_visible=self.isVisible(),
-                current_widget=_widget_id(self._current_widget),
             )
 
             # Hand over mouse control if a button is already held at activation.
@@ -365,10 +277,8 @@ class MarkingMenu(
             QtCore.QTimer.singleShot(0, self.dim_other_windows)
 
         except Exception as e:
-            _diag("ACT_PRESS_EXC", err=repr(e))
             self.logger.error(f"Error in _on_activation_press: {e}")
             self._activation_key_held = False
-        _diag("ACT_PRESS_EXIT")
 
     def _sync_menu_to_state(self, *, buttons=None, modifiers=None, extra_key=None):
         """Single source of truth — make the visible menu match input state.
@@ -397,7 +307,9 @@ class MarkingMenu(
             f"_sync_menu_to_state: buttons={buttons:#x}, modifiers={modifiers:#x}, "
             f"extra_key={extra_key} -> target={target}"
         )
-
+        # The resolved navigation target. When a release falls through to here
+        # instead of dispatching a click, this is the menu the gesture switches
+        # to — i.e. the "menu stays open and shifts" the user sees.
         if target is None:
             return
 
@@ -431,21 +343,17 @@ class MarkingMenu(
         ):
             return
 
+        # The re-show — this is the visible "shift" when a release reaches here.
         self.show(target, force=True)
 
     def _on_activation_release(self):
         """Handle the global shortcut release event."""
-        _diag(
-            "ACT_RELEASE_ENTER",
-            held=self._activation_key_held,
-            self_visible=self.isVisible(),
-            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
-            grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()),
-            current_widget=_widget_id(self._current_widget),
-        )
         self._activation_key_held = False
         self._standalone_suppress = False
         self._non_default_shown = False
+        # The gesture is over — drop any pending chord-release decision so a
+        # deferred partial can't fire a menu switch after the key is released.
+        self._cancel_chord_release_timer()
 
         self.logger.debug("_on_activation_release: Emitting key_show_release signal")
         self.key_show_release.emit()
@@ -881,8 +789,8 @@ class MarkingMenu(
 
     def _perform_transition(self) -> None:
         """Execute the scheduled submenu transition."""
-        ui = getattr(self, "_pending_transition_ui", None)
-        w = getattr(self, "_pending_transition_widget", None)
+        ui = self._pending_transition_ui
+        w = self._pending_transition_widget
 
         # Clear pending references
         self._pending_transition_ui = None
@@ -933,6 +841,8 @@ class MarkingMenu(
             ui.show()
             ui.raise_()
             self.sb.current_ui = ui
+            # Hover-nav committed: this submenu is now current_ui going into the
+            # release.
 
             # Optimize history check and overlay cloning
             self._handle_overlay_cloning(ui)
@@ -971,32 +881,8 @@ class MarkingMenu(
                 p1 = w.mapToGlobal(w.rect().center())
 
             w2 = self.sb.get_widget(w.objectName(), ui)
-            _diag(
-                "POS_SMOOTH_ENTER",
-                ui=ui.objectName(),
-                w=w.objectName() if hasattr(w, "objectName") else "?",
-                w_size=(w.width(), w.height()),
-                w_pos_in_parent=(w.pos().x(), w.pos().y()),
-                p1=(p1.x(), p1.y()),
-                anchor_source="path" if anchor_global is not None else "live",
-                w2_found=w2 is not None,
-                w2_size_before=(w2.width(), w2.height()) if w2 else None,
-                ui_pos_before=(ui.pos().x(), ui.pos().y()),
-            )
             if w2:
-                diff = self._align_widget_to_global_center(
-                    ui, w2, w.size(), p1
-                )
-                _diag(
-                    "POS_SMOOTH_EXIT",
-                    w2_size_after=(w2.width(), w2.height()),
-                    w2_local_center=(
-                        w2.rect().center().x(),
-                        w2.rect().center().y(),
-                    ),
-                    diff=(diff.x(), diff.y()),
-                    ui_pos_after=(ui.pos().x(), ui.pos().y()),
-                )
+                self._align_widget_to_global_center(ui, w2, w.size(), p1)
 
         except Exception as e:
             self.logger.warning(f"Submenu positioning failed: {e}")
@@ -1013,7 +899,7 @@ class MarkingMenu(
         We compensate with an in-place ``w2.move`` so the resize affects
         only ``w2``'s extent, not its position relative to its siblings.
 
-        Returns the ``QPoint`` delta applied to ``ui`` (for diagnostics).
+        Returns the ``QPoint`` delta applied to ``ui``.
         """
         old_local_center = w2.rect().center()
         w2.resize(source_size)
@@ -1034,72 +920,8 @@ class MarkingMenu(
             self._last_ui_history_check = ui
             return
 
-        # Diag payload is only built when the crash log is open — keeps the
-        # mapToGlobal calls out of the hot path under normal runs.
-        if _diag_enabled():
-            _diag(
-                "CLONE_BEFORE",
-                ui=ui.objectName(),
-                ui_pos=(ui.pos().x(), ui.pos().y()),
-                path_entries=[
-                    self._path_entry_snapshot(w, pos)
-                    for w, pos, _ in self.overlay.path._path
-                ],
-            )
-
-        clones = self.overlay.clone_widgets_along_path(
-            ui, self._return_to_startmenu
-        )
-
-        if _diag_enabled():
-            _diag(
-                "CLONE_AFTER",
-                ui=ui.objectName(),
-                clones=[self._clone_snapshot(c) for c in clones],
-            )
-
+        self.overlay.clone_widgets_along_path(ui, self._return_to_startmenu)
         self._last_ui_history_check = ui
-
-    @staticmethod
-    def _path_entry_snapshot(widget, saved_pos):
-        """One row of the path table for CLONE_BEFORE — captures saved vs
-        live center so the two can be diffed when investigating drift."""
-        if widget is None:
-            return {"name": None, "saved_pos": None, "current_center": None, "size": None}
-        try:
-            current = widget.mapToGlobal(widget.rect().center())
-            current_center = (current.x(), current.y())
-        except Exception:
-            current_center = None
-        return {
-            "name": widget.objectName() if hasattr(widget, "objectName") else None,
-            "saved_pos": (saved_pos.x(), saved_pos.y()) if saved_pos else None,
-            "current_center": current_center,
-            "size": (widget.width(), widget.height()),
-        }
-
-    @staticmethod
-    def _clone_snapshot(clone):
-        """One row of the clones table for CLONE_AFTER."""
-        gc = clone.mapToGlobal(clone.rect().center())
-        return {
-            "name": clone.objectName(),
-            "pos_in_parent": (clone.pos().x(), clone.pos().y()),
-            "size": (clone.width(), clone.height()),
-            "global_center": (gc.x(), gc.y()),
-        }
-
-    def _delayed_show_ui(self) -> None:
-        """Show the UI after smooth positioning delay."""
-        if self._pending_ui:
-            current_ui = self.sb.active_ui
-            if current_ui == self._pending_ui:
-                if self._current_widget and self._current_widget != current_ui:
-                    self._current_widget.hide()
-                self._current_widget = current_ui
-                current_ui.show()
-                current_ui.raise_()
-            self._pending_ui = None
 
     def _clear_transition_flag(self):
         """Clear the transition flag to allow new transitions."""
@@ -1115,18 +937,7 @@ class MarkingMenu(
             return
 
         startmenu = self.sb.ui_history(-1, inc="*#startmenu*")
-        _diag(
-            "RETURN_BEFORE",
-            startmenu=startmenu.objectName() if startmenu else None,
-            start_pos=(start_pos.x(), start_pos.y()),
-            startmenu_pos_before=(startmenu.pos().x(), startmenu.pos().y()) if startmenu else None,
-        )
         self._prepare_ui(startmenu, anchor=start_pos)
-        _diag(
-            "RETURN_AFTER",
-            startmenu_pos_after=(startmenu.pos().x(), startmenu.pos().y()),
-            startmenu_size=(startmenu.width(), startmenu.height()),
-        )
 
     # ---------------------------------------------------------------------------------------------
     #   Menu Navigation Helpers:
@@ -1142,38 +953,22 @@ class MarkingMenu(
             if btn != QtCore.Qt.NoButton:
                 # Find target
                 target = QtWidgets.QWidget.mouseGrabber()
-                target_src = "grabber"
                 if not target:
                     target = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-                    target_src = "widgetAt"
-
-                _diag(
-                    "DISMISS_TARGET",
-                    src=target_src,
-                    target=_widget_id(target),
-                    is_ancestor=(self.isAncestorOf(target) if target else None),
-                    btn=_safe_int(btn),
-                )
 
                 # Should not send to self or children if we are somehow active (unlikely at this stage)
                 if target and not self.isAncestorOf(target):
-                    try:
-                        local_pos = target.mapFromGlobal(QtGui.QCursor.pos())
-                        # QMouseEvent(type, localPos, globalPos, button, buttons, modifiers)
-                        event = QtGui.QMouseEvent(
-                            QtCore.QEvent.MouseButtonRelease,
-                            QtCore.QPointF(local_pos),
-                            QtCore.QPointF(QtGui.QCursor.pos()),
-                            btn,
-                            QtCore.Qt.NoButton,
-                            QtCore.Qt.KeyboardModifier(),
-                        )
-                        _diag("DISMISS_BEFORE_SENDEVENT", target=_widget_id(target))
-                        QtWidgets.QApplication.sendEvent(target, event)
-                        _diag("DISMISS_AFTER_SENDEVENT")
-                    except Exception as e:
-                        _diag("DISMISS_SENDEVENT_EXC", err=repr(e))
-                        raise
+                    local_pos = target.mapFromGlobal(QtGui.QCursor.pos())
+                    # QMouseEvent(type, localPos, globalPos, button, buttons, modifiers)
+                    event = QtGui.QMouseEvent(
+                        QtCore.QEvent.MouseButtonRelease,
+                        QtCore.QPointF(local_pos),
+                        QtCore.QPointF(QtGui.QCursor.pos()),
+                        btn,
+                        QtCore.Qt.NoButton,
+                        QtCore.Qt.KeyboardModifier(),
+                    )
+                    QtWidgets.QApplication.sendEvent(target, event)
 
         # 2. Close active popup chain
         popup = QtWidgets.QApplication.activePopupWidget()
@@ -1238,6 +1033,46 @@ class MarkingMenu(
         click-vs-chord classification and the release click dispatch."""
         return ui.isAncestorOf(widget) or self._is_logical_descendant(ui, widget)
 
+    def _owned_item_at(self, pos, current_ui):
+        """The owned item of *current_ui* at global *pos*, or ``None``.
+
+        Tries the OS-level :func:`QApplication.widgetAt` first — the only probe
+        that can resolve a *logical* descendant (a top-level ExpandableList
+        sublist marked with ``_logical_ancestor``) — then a geometric
+        ``current_ui.childAt`` fallback.
+
+        The geometric fallback is the fix for the marking menu's central live
+        bug: over the menu's ``WA_TranslucentBackground`` overlay, ``widgetAt``'s
+        OS ``WindowFromPoint`` falls through the layered window's transparent
+        pixels and returns ``None`` even though the cursor is squarely over a
+        button. So BOTH the release hit-test (:meth:`_resolve_release_target`) and
+        the press click-vs-chord classification (:meth:`_is_menu_item_press`)
+        missed, and the gesture fell through to ``_sync_menu_to_state`` and
+        navigated away instead of clicking — the intermittent "the menu item under
+        the cursor never registers a click, the menu just shifts/switches". It is
+        pixel/alpha-dependent (hence "needs several clicks"). ``childAt`` walks the
+        widget tree by geometry with no OS window query, so it finds the item
+        ``widgetAt`` couldn't. Confirmed live: at a cursor squarely inside a
+        button's rect, ``widgetAt`` returned ``None`` while ``childAt`` returned
+        the button.
+        """
+        widget = QtWidgets.QApplication.widgetAt(pos)
+        if (
+            widget is not None
+            and widget is not self
+            and widget is not current_ui
+            and self._ui_owns_widget(current_ui, widget)
+        ):
+            return widget
+        child = current_ui.childAt(current_ui.mapFromGlobal(pos))
+        if (
+            child is not None
+            and child is not current_ui
+            and self._ui_owns_widget(current_ui, child)
+        ):
+            return child
+        return None
+
     def _handle_widget_action(self, widget, global_pos=None) -> bool:
         """Execute action for a widget (button click or menu navigation).
 
@@ -1267,8 +1102,12 @@ class MarkingMenu(
         if isinstance(widget, MenuButton):
             menu = self._resolve_button_menu(widget)
             if menu:
+                # A nav button opens its target as a standalone window or a
+                # stacked submenu depending on the target UI's own tags. A
+                # category button like 'key' resolves (on release) to the native
+                # Maya 'key' menu — an untagged window — so this opens it
+                # standalone; a bare submenu target opens in the overlay.
                 is_standalone = not menu.has_tags(["startmenu", "submenu"])
-                _diag("MM_DISPATCH_NAV", widget=_widget_id(widget), menu=_widget_id(menu))
                 self.show(menu, force=is_standalone)
                 return True
 
@@ -1278,26 +1117,13 @@ class MarkingMenu(
             base_name = getattr(widget, "base_name", lambda: None)()
             ui_is_menu = bool(ui and ui.has_tags(["startmenu", "submenu"]))
             if ui_is_menu and base_name != "chk":
-                # Marks the leaf's slot actually firing — the proof a click ran
-                # vs was silently dropped (a release hitting a leaf whose owning
-                # ``ui`` isn't a live menu logs MM_DISPATCH_SKIP and just hides).
-                _diag(
-                    "MM_DISPATCH_CLICK",
-                    widget=_widget_id(widget),
-                    ui=_widget_id(ui),
-                    base_name=base_name,
-                )
+                # The leaf's slot actually fires here — a release hitting a leaf
+                # whose owning ``ui`` isn't a live menu falls through to the
+                # skip-log below instead.
                 self.hide()
                 widget.clicked.emit()
                 return True
             else:
-                _diag(
-                    "MM_DISPATCH_SKIP",
-                    widget=_widget_id(widget),
-                    ui=_widget_id(ui),
-                    base_name=base_name,
-                    ui_is_menu=ui_is_menu,
-                )
                 self.logger.debug(
                     f"[_handle_widget_action] Click skipped for "
                     f"'{widget.objectName()}': ui={ui}, "
@@ -1314,7 +1140,6 @@ class MarkingMenu(
                     return True
                 parent = parent.parent()
 
-        _diag("MM_DISPATCH_NONINTERACTIVE", widget=_widget_id(widget))
         return False
 
     def _host_mouse_buttons(self):
@@ -1333,19 +1158,9 @@ class MarkingMenu(
         self.logger.debug(
             f"_transfer_mouse_control: button={button}, buttons_mask={buttons_mask}"
         )
-        _diag(
-            "XFER_ENTER",
-            button=_safe_int(button),
-            buttons_mask=_safe_int(buttons_mask),
-            self_visible=self.isVisible(),
-            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
-            grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()),
-        )
 
         # Force grab mouse to ensure MarkingMenu receives subsequent move events
-        _diag("XFER_BEFORE_GRAB")
         self.grabMouse()
-        _diag("XFER_AFTER_GRAB", grabber=_widget_id(QtWidgets.QWidget.mouseGrabber()))
 
         local_pos = self.mapFromGlobal(QtGui.QCursor.pos())
         event = QtGui.QMouseEvent(
@@ -1356,9 +1171,7 @@ class MarkingMenu(
             buttons_mask,
             QtCore.Qt.KeyboardModifier(),
         )
-        _diag("XFER_BEFORE_SENDEVENT")
         QtWidgets.QApplication.sendEvent(self, event)
-        _diag("XFER_AFTER_SENDEVENT")
 
     def _is_menu_item_press(self, event) -> bool:
         """True if *event* is a lone-button press over an interactive item
@@ -1368,7 +1181,11 @@ class MarkingMenu(
         Uses the event's own global position (not the live cursor) so it is
         immune to cursor drift under a pumped host event loop (Blender), and
         hit-tests against ``current_ui`` so only presses on *this menu's* items
-        count — a press on empty overlay (the chord gesture) returns False.
+        count — a press on empty overlay (the chord gesture) returns False. The
+        hit-test goes through :meth:`_owned_item_at` (widgetAt + geometric childAt
+        fallback): widgetAt alone returns None over the translucent overlay, so a
+        single click on a menu item was mis-classified as a chord and navigated
+        away instead of clicking — the same bug the release path had.
         """
         # A menu item is left-clicked; Middle/Right are chord selectors, never an
         # item click. Requiring a lone LeftButton keeps every chord (incl. a second
@@ -1380,12 +1197,8 @@ class MarkingMenu(
         current_ui = self.sb.active_ui
         if not (current_ui and current_ui.has_tags(["startmenu", "submenu"])):
             return False
-        target = QtWidgets.QApplication.widgetAt(event.globalPos())
-        if target is None or target is self:
-            return False
-        if not isinstance(target, QtWidgets.QAbstractButton):
-            return False
-        return self._ui_owns_widget(current_ui, target)
+        target = self._owned_item_at(event.globalPos(), current_ui)
+        return isinstance(target, QtWidgets.QAbstractButton)
 
     # ---------------------------------------------------------------------------------------------
     #   Stacked Widget Event handling:
@@ -1393,18 +1206,19 @@ class MarkingMenu(
     def mousePressEvent(self, event) -> None:
         """Handle mouse press: route through the central state-sync."""
         self.logger.debug(f"mousePressEvent: {event.buttons()} {event.modifiers()}")
-        _diag(
-            "MM_PRESS_ENTER",
-            held=self._activation_key_held,
-            self_visible=self.isVisible(),
-            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
-            buttons=_safe_int(event.buttons()),
-            current_widget=_widget_id(self._current_widget),
-        )
 
         # Cancel any pending suppress-hide so we don't yank the menu away
         # right after showing it.
         self._pending_hide_widget = None
+
+        # Re-arm the single-shot dispatch latch: a press is a fresh click intent.
+        # (The chord's own L-then-R presses both land before any release, so this
+        # never re-arms mid-release-pair.) NOT re-armed on show() — a nav release
+        # shows a submenu mid-gesture and must stay latched against the trailing
+        # release.
+        self._action_dispatched = False
+        # A new press supersedes any pending chord-release decision.
+        self._cancel_chord_release_timer()
 
         # A press that lands on an interactive menu item (a leaf or nav button of
         # the current start/submenu) is a CLICK — dispatch it on release; it must
@@ -1421,14 +1235,12 @@ class MarkingMenu(
         # second concurrent button or a press on empty overlay still resolves as a
         # chord) — the discriminator is position + button count, not a flag.
         if self._is_menu_item_press(event):
-            _diag("MM_PRESS_MENU_ITEM", held=self._activation_key_held)
             event.accept()
             return
 
         # Defensive: re-establish mouse grab if it was lost (e.g. after a
         # deferred child-hide caused the host app to claim focus).
         if self._activation_key_held and self.mouseGrabber() is not self:
-            _diag("MM_PRESS_REGRAB", self_visible=self.isVisible())
             self.grabMouse()
 
         current_ui = self.sb.active_ui
@@ -1492,50 +1304,200 @@ class MarkingMenu(
 
         super().mouseDoubleClickEvent(event)
 
+    def _ensure_chord_release_timer(self) -> QtCore.QTimer:
+        """Lazily create the single-shot chord-release tolerance timer.
+
+        Lazy (not built in ``__init__``) so subclasses that bypass ``__init__``
+        for event-handler-only testing still get it on first use.
+        """
+        timer = self._chord_release_timer
+        if timer is None:
+            timer = QtCore.QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._on_chord_release_timeout)
+            self._chord_release_timer = timer
+        return timer
+
+    def _defer_chord_release(self, event) -> None:
+        """Hold a partial NAVIGATION release (one button up, other(s) still held,
+        and NOT over an owned item) for the tolerance window instead of navigating
+        now.
+
+        The final all-up release within the window cancels this and settles to the
+        no-button menu (``_sync_menu_to_state``); if the window expires with a
+        button still held it was an intentional switch and
+        :meth:`_on_chord_release_timeout` navigates to the remaining-button menu.
+        """
+        self._chord_pending_buttons = self._to_int(event.buttons())
+        self._chord_pending_modifiers = self._to_int(event.modifiers())
+        self._ensure_chord_release_timer().start(self.CHORD_RELEASE_TOLERANCE_MS)
+
+    def _cancel_chord_release_timer(self) -> None:
+        """Cancel a pending chord-release decision (the gesture resolved)."""
+        timer = self._chord_release_timer
+        if timer is not None and timer.isActive():
+            timer.stop()
+        self._chord_pending_buttons = 0
+
+    def _on_chord_release_timeout(self) -> None:
+        """The remaining chord button(s) were held past the tolerance — the user
+        meant to SWITCH menus, not release both. Navigate to the menu the still-
+        held buttons resolve to (the deferred sync the partial release skipped)."""
+        pending = self._chord_pending_buttons
+        self._chord_pending_buttons = 0
+        if pending:
+            self._sync_menu_to_state(
+                buttons=pending, modifiers=self._chord_pending_modifiers
+            )
+
+    def _defer_partial_or_settle(self, event, current_ui) -> bool:
+        """Classify a NAVIGATION release as a *partial* chord release (defer) or
+        the final release (settle). Both release handlers call this ONLY after
+        ruling out a release over an owned item (which dispatches immediately) —
+        so this governs the "switch menus by releasing a button" gesture, never
+        item selection.
+
+        Returns True when the release left a button still held over a
+        start/submenu: it is deferred by the tolerance window and the caller must
+        consume the event. Returns False for the final all-up release (or a plain
+        single-button release), having cancelled any pending decision first, so
+        the caller proceeds to navigate (``_sync_menu_to_state``).
+        """
+        if (
+            self._to_int(event.buttons()) != 0
+            and current_ui
+            and current_ui.has_tags(["startmenu", "submenu"])
+        ):
+            self._defer_chord_release(event)
+            return True
+        self._cancel_chord_release_timer()
+        return False
+
+    def _resolve_release_target(self, event, current_ui):
+        """Resolve the owned menu item under a release, returning ``(widget, pos)``.
+
+        Probes the release EVENT position first (the OS release point, immune to
+        cursor drift under a host that pumps Qt from its own loop — Blender), then
+        the LIVE cursor (:func:`QtGui.QCursor.pos`). Each position is resolved via
+        :meth:`_owned_item_at` (widgetAt + the geometric childAt fallback that
+        fixes the translucent-overlay miss).
+
+        Returns ``(None, None)`` when no position is over an owned item.
+        """
+        for source, pos in (
+            ("event", event.globalPos()),
+            ("cursor", QtGui.QCursor.pos()),
+        ):
+            widget = self._owned_item_at(pos, current_ui)
+            if widget is not None:
+                return widget, pos
+        return None, None
+
+    def _handle_menu_item_release(self, pos, widget) -> bool:
+        """Dispatch a release that landed on an owned interactive item of the
+        current start/submenu — the shared core of :meth:`mouseReleaseEvent`
+        (the menu holds the grab) and :meth:`child_mouseButtonReleaseEvent` (the
+        grab migrated to the child). Routing both through here keeps the SAME
+        gesture giving the SAME result no matter which object holds the grab.
+
+        The item fires IMMEDIATELY on the release, exactly as the proven v1.0.66
+        path did (``mouseReleaseEvent`` dispatched ``_handle_widget_action`` on
+        the *first* release over an owned widget, with no wait for the other
+        chord button). So a *both-buttons-held* release registers the click on
+        whichever button lifts first and hides the menu; the trailing release of
+        the pair lands on the now-hidden menu and is a harmless no-op.
+
+        Chord *navigation* — releasing a button over empty overlay to drop to
+        another menu — is unaffected: that path never reaches here (no owned
+        interactive widget under the release), so the caller falls through to
+        :meth:`_sync_menu_to_state` and navigates as before.
+
+        ``pos`` is the resolved hit-test position from :meth:`_resolve_release_target`
+        (event point or live cursor — whichever found the item), passed to
+        ``_handle_widget_action`` so a container resolves its child at the same
+        point the item was found.
+
+        Returns True when the release is fully handled and the caller should
+        consume it + drop the grab — whether it FIRED the item or SWALLOWED the
+        trailing release of an already-dispatched chord. Returns False only when
+        the widget is non-interactive, so the caller falls through to its own
+        default handling (``_sync_menu_to_state`` / forward).
+
+        A chord release fires this once: the per-gesture ``_action_dispatched``
+        latch SWALLOWS the trailing release of the pair (returns True without
+        acting) so it cannot dispatch a second action — the nav-button case,
+        where the first release opened a submenu without hiding, and the trailing
+        release would otherwise click into it OR fall through to sync and hide the
+        just-opened submenu. The latch is re-armed on the next press / activation.
+        """
+        if self._action_dispatched:
+            # Trailing release of the chord — swallow it (consume; no second
+            # action, and crucially do NOT fall through to sync, which would
+            # navigate/hide the menu the first release just settled on).
+            return True
+        # Set BEFORE dispatching so a re-entrant release during _handle_widget_action
+        # (e.g. nav-show pumping events) can't slip a second action through.
+        self._action_dispatched = True
+        if self._handle_widget_action(widget, pos):
+            return True
+        # Non-interactive widget — nothing fired, so un-latch and let the caller
+        # fall through to its default handling (and a later real action still fires).
+        self._action_dispatched = False
+        return False
+
     def mouseReleaseEvent(self, event) -> None:
         """Handle mouse release: dispatch click action or sync menu state."""
         current_ui = self.sb.active_ui
-        _diag(
-            "MM_RELEASE_ENTER",
-            held=self._activation_key_held,
-            self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
-            current_ui=_widget_id(current_ui),
-            button=_safe_int(event.button()),
-            buttons=_safe_int(event.buttons()),
-        )
 
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
-            # Resolve the click target at the *release event's* position, not the
-            # live cursor: the dispatch must act on where the button was released.
-            # Under a host that pumps Qt from its own loop (Blender), the cursor
-            # can move between the physical release and when this handler runs, so
-            # QCursor.pos() drifts off the leaf and the click is silently dropped
-            # (the intermittent "dead click"). event.globalPos() carries the OS
-            # release position and equals the cursor under a native Qt loop (Maya).
-            widget = QtWidgets.QApplication.widgetAt(event.globalPos())
-            _diag("MM_RELEASE_WIDGETAT", widget=_widget_id(widget))
+            # Release over an owned interactive item dispatches the click
+            # IMMEDIATELY — on the FIRST release of a chord, with NO wait for any
+            # other held button. This is the proven v1.0.66 order: it resolved
+            # and fired the owned item BEFORE consulting the chord-release timer,
+            # and the timer only ever governed the *navigation* case (a release
+            # over empty overlay). The regression was deferring this owned-item
+            # release through the tolerance window first — the timer then
+            # navigated the menu to the remaining-button menu (the "stays open
+            # and shifts") before the click could land, so the MenuButton under
+            # the cursor never registered. The _action_dispatched latch inside
+            # _handle_menu_item_release swallows the trailing release of the
+            # pair, so the click fires exactly once.
+            #
+            # The hit-test resolves at the event position first, then the live
+            # cursor — a Maya chord release's globalPos can miss the item the
+            # pointer is over (see _resolve_release_target).
+            widget, pos = self._resolve_release_target(event, current_ui)
 
             self.logger.debug(
                 f"[mouseReleaseEvent] current_ui={current_ui.objectName()}, "
-                f"widgetAt={widget.objectName() if widget and hasattr(widget, 'objectName') else widget}, "
+                f"target={widget.objectName() if widget and hasattr(widget, 'objectName') else widget}, "
                 f"grabber={self.mouseGrabber() is self}"
             )
 
-            if widget and widget is not self and widget is not current_ui:
-                if self._ui_owns_widget(current_ui, widget):
-                    if self._handle_widget_action(widget, event.globalPos()):
-                        self.releaseMouse()
-                        event.accept()
-                        return
-                    # Non-interactive widget — fall through to normal sync.
-                else:
-                    # Cursor over an unrelated widget — leave menu state alone.
-                    _diag(
-                        "MM_RELEASE_UNRELATED_RETURN",
-                        self_grabber=(QtWidgets.QWidget.mouseGrabber() is self),
-                    )
+            if widget is not None:
+                if self._handle_menu_item_release(pos, widget):
+                    self.releaseMouse()
                     event.accept()
                     return
+                # owned but non-interactive — fall through to chord handling
+            else:
+                # Nothing owned under the release. If the pointer is over an
+                # unrelated (non-menu) widget, leave the menu state alone; over
+                # empty overlay / the menu background, fall through to the chord
+                # sync (release-to-navigate).
+                probe = QtWidgets.QApplication.widgetAt(event.globalPos())
+                if probe is not None and probe is not self and probe is not current_ui:
+                    event.accept()
+                    return
+
+        # Not over an owned item: this is chord NAVIGATION (release over empty
+        # overlay to switch menus). ONLY here does the chord-release tolerance
+        # apply — a partial release (a button still held) is deferred so a
+        # near-simultaneous both-buttons release doesn't flicker to the
+        # one-button menu; the final all-up release navigates below.
+        if self._defer_partial_or_settle(event, current_ui):
+            event.accept()
+            return
 
         self._sync_menu_to_state(
             buttons=self._to_int(event.buttons()),
@@ -1649,13 +1611,6 @@ class MarkingMenu(
         """
         widget = self._pending_hide_widget
         self._pending_hide_widget = None
-        _diag(
-            "PENDING_HIDE_ENTER",
-            widget=_widget_id(widget),
-            current_widget=_widget_id(self._current_widget),
-            held=self._activation_key_held,
-            self_visible=self.isVisible(),
-        )
         if widget is not None and widget is self._current_widget and widget.isVisible():
             widget.hide()
             self._current_widget = None
@@ -1663,9 +1618,7 @@ class MarkingMenu(
                 self.raise_()
                 self.activateWindow()
                 if self.mouseGrabber() is not self:
-                    _diag("PENDING_HIDE_BEFORE_GRAB", self_visible=self.isVisible())
                     self.grabMouse()
-                    _diag("PENDING_HIDE_AFTER_GRAB")
 
     def _ensure_fullscreen_on_active_screen(
         self, anchor: Optional[QtCore.QPoint] = None
@@ -1838,7 +1791,7 @@ class MarkingMenu(
         super().hide()
 
         parent = self.parentWidget()
-        if parent and not getattr(self, "_transitioning_to_window", False):
+        if parent and not self._transitioning_to_window:
             # Order matters: raise_() first brings window to front, then activateWindow()
             # gives it focus. Reversing this can cause the parent to go behind other apps.
             # Skip when transitioning to a standalone window — the target window
@@ -1861,7 +1814,6 @@ class MarkingMenu(
             self._pending_show_timer.stop()
 
         self._in_transition = False
-        self._pending_ui = None
 
         if len(self._submenu_cache) > 50:
             self._submenu_cache.clear()
@@ -1941,10 +1893,9 @@ class MarkingMenu(
             # button carries filter tags (the polygons Edge button →
             # "polygons#edge#submenu", not the base "polygons#submenu").
             submenu_name = w.submenu_name()
-            if submenu_name != w.ui.objectName():
-                submenu = self._cached_ui(submenu_name)
-                if submenu:
-                    self._set_submenu(submenu, w)
+            submenu = self._cached_ui(submenu_name) if submenu_name != w.ui.objectName() else None
+            if submenu:
+                self._set_submenu(submenu, w)
 
         if w.base_name() == "chk" and w.ui.has_tags("submenu") and self.isVisible():
             if isinstance(w, QtWidgets.QAbstractButton):
@@ -1964,13 +1915,60 @@ class MarkingMenu(
             super_event(event)
 
     def child_mouseButtonReleaseEvent(self, w, event) -> bool:
-        """Forward release events to the child's normal handler.
+        """Dispatch (or forward) a release delivered to a *grabbed* child.
 
-        With the mouse grabbed by MarkingMenu, releases come through
-        ``mouseReleaseEvent`` directly. This filter only fires when the
-        grab is bypassed (e.g. cursor over a non-grab-target child),
-        in which case we just delegate to the child.
+        During a drag the mouse grab migrates from the MarkingMenu to the
+        child button under the cursor (``MouseTracking._handle_mouse_grab``
+        captures QPushButtons), so the release lands HERE — on the child's
+        event filter — not on :meth:`mouseReleaseEvent`. The grabbed button
+        never received a *press* (the chord press went to the overlay), so it
+        is not ``down`` and Qt emits no native click: without help, the release
+        is a dead click.
+
+        When the child is an interactive item of the current start/submenu, the
+        release is routed through the SAME :meth:`_handle_menu_item_release` the
+        menu-grab path uses, in the SAME order: the owned item fires IMMEDIATELY
+        on the first release, with NO wait for any other held button (the chord
+        tolerance governs navigation only — see :meth:`mouseReleaseEvent`), and
+        the ``_action_dispatched`` latch swallows the trailing release of the
+        pair. Sharing that core keeps the gesture giving the SAME result no matter
+        which object holds the grab — and fixes the dead click that regressed when
+        the ``_chord_release_timer`` machinery was replaced by
+        ``_sync_menu_to_state`` (commit 3b7213e), which left this path a no-op
+        pass-through. The two sites are mutually exclusive (menu-grab →
+        mouseReleaseEvent; child-grab → here), so there is no double dispatch.
+
+        The target is resolved via :meth:`_resolve_release_target` (event position
+        then live cursor), so the click lands on the right item whether the cursor
+        drifted off ``w`` under a pumped host loop (Blender) or the chord release's
+        event position missed the item the pointer is over (Maya).
         """
+        current_ui = self.sb.active_ui
+        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
+            # Owned item → dispatch the click IMMEDIATELY on the first release,
+            # regardless of any other held button (same order as the menu-grab
+            # path; the chord tolerance governs navigation only, never an
+            # owned-item select). The _action_dispatched latch makes the trailing
+            # release of a both-button pair a no-op, so the click fires once.
+            widget, pos = self._resolve_release_target(event, current_ui)
+            if widget is not None:
+                if self._handle_menu_item_release(pos, widget):
+                    # Fired — drop the child's grab and consume.
+                    try:
+                        w.releaseMouse()
+                    except RuntimeError:
+                        pass
+                    return True
+                return False  # owned but non-interactive — let it fall through
+
+        # Not over an owned item: chord NAVIGATION. A partial release (other
+        # button still held) is deferred by the tolerance window; returning True
+        # keeps the child's grab so the final release still reaches here.
+        if self._defer_partial_or_settle(event, current_ui):
+            return True
+
+        # Not over an owned menu item — forward to the child's own handler when
+        # the grab was bypassed (cursor moved off it), as before.
         if not w.underMouse():
             w.mouseReleaseEvent(event)
         return False

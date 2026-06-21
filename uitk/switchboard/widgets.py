@@ -16,6 +16,30 @@ class SwitchboardWidgetMixin:
         filenames = self.registry.ui_registry.get("filename") or []
         return name in filenames
 
+    def ui_name_resolves(self, name: str) -> bool:
+        """True if *name* resolves to a UI, without triggering a load.
+
+        Broader than :meth:`is_registered_ui`: a name resolves if it is a
+        registered file stem OR a name the active UI handler can build on demand
+        — e.g. a mayatk native Maya menu (``"key"``), which is not a ``.ui`` file
+        but is produced by ``MayaUiHandler`` from ``MayaNativeMenus.MENU_MAPPING``.
+        The file-stem-only ``is_registered_ui`` missed those handler-backed,
+        lazily-built UIs, which is why a nav button whose ``target`` is a native
+        menu fell back to its ``#submenu`` overlay on release (instead of opening
+        the menu). Resolvability is queried via the handler's ``can_resolve`` hook
+        (default = file stem), so no menu is actually built here.
+        """
+        if not name:
+            return False
+        if self.is_registered_ui(name):
+            return True
+        handler = getattr(getattr(self, "handlers", None), "ui", None)
+        can_resolve = getattr(handler, "can_resolve", None)
+        try:
+            return bool(can_resolve and can_resolve(name))
+        except Exception:
+            return False
+
     def menu_button_target_name(self, widget) -> Optional[str]:
         """The registered UI name a ``MenuButton`` navigates to, or ``None``.
 
@@ -25,18 +49,22 @@ class SwitchboardWidgetMixin:
         here is what let a click resolve a different (or dead) target than the auto-hide saw.
         Two candidates, the registered base ``target`` preferred:
 
-        * **Base-panel launcher** — a ``target`` that is itself a registered UI (e.g. the
-          polygons component buttons → the ``"polygons"`` panel, then tag-filtered by the
-          caller). This is the original click behavior; preferred so a button that has both
-          a base panel and a submenu still opens the base panel on click.
-        * **Submenu launcher** — a bare ``target`` like ``"cameras"`` that is *not* a
-          registered filename composes ``submenu_name()`` (``"cameras#lower#submenu"``),
-          matching the hover path (``child_enterEvent``), which always opens the submenu.
+        * **Base-panel launcher** — a ``target`` that itself resolves to a UI (e.g. the
+          polygons component buttons → the ``"polygons"`` panel; or a category button like
+          ``"key"`` → the native Maya ``key`` menu the mayatk handler builds on demand).
+          This is the original click behavior; preferred so a button that has both a base
+          panel and a submenu still opens the base panel on click. Resolvability uses
+          :meth:`ui_name_resolves` (file stem OR handler-backed) — not the file-stem-only
+          :meth:`is_registered_ui`, which missed lazily-built native menus and made ``key``
+          fall back to its overlay submenu on release ("the standalone menu never opened").
+        * **Submenu launcher** — a bare ``target`` like ``"cameras"`` that does *not*
+          resolve composes ``submenu_name()`` (``"cameras#lower#submenu"``), matching the
+          hover path (``child_enterEvent``), which always opens the submenu.
         """
         target = widget.target
         if not target:
             return None
-        if self.is_registered_ui(target):
+        if self.ui_name_resolves(target):
             return target
         submenu = widget.submenu_name()
         if self.is_registered_ui(submenu):

@@ -144,6 +144,11 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.kwargs = kwargs
 
         self.widget_data = {}
+        # Hide watches installed by the root list's showEvent: the top-level
+        # window (see _watch_window_hide) and the containing uitk MainWindow's
+        # on_hide signal (see _watch_ui_hide). None until showEvent runs.
+        self._watched_window = None
+        self._hide_signal_source = None
 
         self._setup_layout()
         self._setup_widget_properties()
@@ -303,17 +308,33 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     def clear(self):
         """Clear all items in the list and its sublists.
 
-        This method recursively removes all items from the list, including items from all nested sublists.
+        This method recursively removes all items from the list, including items
+        from all nested sublists.
+
+        Each sublist is reparented to the *window* (so intermediate native widgets
+        can't clip it), which means it is NOT a Qt child of its parent item.
+        Deleting the parent item therefore does NOT delete the sublist — it would
+        orphan it on the window, where a flyout open at clear time keeps showing
+        and ``_force_hide_all`` can no longer reach it (it iterates this layout,
+        which no longer holds the orphan). On a list with ``refresh_on_show`` —
+        which calls ``clear()`` on every show — those orphans accumulate and the
+        stale flyout "is still visible when shown again". So tear the sublist
+        widget down explicitly: hide it (drop any open flyout), then detach and
+        delete it alongside its parent item.
         """
         # Process widgets in reverse order to avoid index errors
         for i in reversed(range(self._layout.count())):
             widget = self._layout.itemAt(i).widget()
             if widget:
-                # Recursively clear sublist if it exists
-                if hasattr(widget, "sublist"):
-                    widget.sublist.clear()
+                # Recursively clear, then destroy, the reparented sublist widget.
+                sublist = getattr(widget, "sublist", None)
+                if sublist is not None:
+                    sublist.clear()
+                    QtWidgets.QWidget.hide(sublist)  # drop any open flyout now
+                    sublist.setParent(None)
+                    sublist.deleteLater()
 
-                # Remove and clean up the widget
+                # Remove and clean up the item itself
                 self._layout.removeWidget(widget)
                 widget.setParent(None)
                 widget.deleteLater()
@@ -622,6 +643,23 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         if hasattr(self, "parent_list"):
             return  # only run on the root list
 
+        # Defensive reset (safety net): collapse the whole hierarchy before
+        # re-displaying. The ancestor-window watch below is the primary fix, but
+        # sublists are reparented and keep their explicit-show flag across a
+        # hide, so should any hide path ever slip past the watch, Qt's
+        # showChildren would restore the open sublist here — "sublists remain
+        # visible on next show". Collapsing unconditionally on every show makes a
+        # missed hide impossible to leak forward; nothing should legitimately be
+        # expanded on a fresh show.
+        self._force_hide_all()
+
+        # Collapse every sublist on the hides this list's own hideEvent misses
+        # (sublists are reparented to the window): the top-level window hiding
+        # (full dismiss / modal dialog) and the containing MainWindow hiding
+        # (submenu navigation — a deep descendant gets no hideEvent).
+        self._watch_window_hide()
+        self._watch_ui_hide()
+
         # Arm synthetic-Enter suppression (see _auto_open_suppressed): a
         # (re)show makes Qt deliver a synthetic Enter to whatever item sits
         # under a stationary cursor, which would otherwise immediately reopen
@@ -665,6 +703,65 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         """
         self._force_hide_all()
         super().hideEvent(event)
+
+    def _watch_window_hide(self):
+        """Collapse sublists when the top-level window hides.
+
+        Sublists are reparented to ``self.window()`` so intermediate native
+        widgets can't clip them — which means they are NOT children of this list
+        and don't auto-hide with it. The top-level window receives ``Hide`` for
+        both programmatic and spontaneous hides (a DCC host reclaiming the
+        overlay), and ``WindowBlocked`` when a modal dialog covers it; watching
+        those collapses the sublists on full dismiss / reclaim / modal dialog.
+
+        Idempotent; re-targets if the window changes between shows.
+        """
+        win = self.window()
+        if win is None or win is self or win is self._watched_window:
+            return
+        if self._watched_window is not None:
+            try:
+                self._watched_window.removeEventFilter(self)
+            except RuntimeError:
+                pass  # old window already deleted (C++ side)
+        win.installEventFilter(self)
+        self._watched_window = win
+
+    def _watch_ui_hide(self):
+        """Collapse sublists when the containing uitk ``MainWindow`` hides.
+
+        The window watch alone misses *submenu navigation*: the marking menu
+        adds submenu UIs as NON-window children and hides the active one
+        (``_current_widget.hide()``) while the top-level menu window stays up.
+        This list is nested several levels under that UI, and Qt delivers a
+        ``QHideEvent`` only to the widget being hidden — NOT to its deep
+        descendants — so this list's own ``hideEvent`` never fires and the
+        reparented sublists linger on the still-visible window. uitk
+        ``MainWindow`` emits ``on_hide`` from its ``hideEvent``, so connect the
+        collapse to the nearest ``MainWindow`` ancestor's signal — a clean,
+        targeted hook that touches none of the marking menu's own internals.
+
+        Idempotent; re-targets if the chain changes between shows.
+        """
+        source = None
+        w = self.parentWidget()
+        while w is not None:
+            if hasattr(w, "on_hide"):  # a uitk MainWindow (the UI container)
+                source = w
+                break
+            if w.isWindow():
+                break  # reached the top-level; no MainWindow in between
+            w = w.parentWidget()
+        if source is self._hide_signal_source:
+            return
+        if self._hide_signal_source is not None:
+            try:
+                self._hide_signal_source.on_hide.disconnect(self._force_hide_all)
+            except (RuntimeError, TypeError):
+                pass  # old source deleted, or was never connected
+        self._hide_signal_source = source
+        if source is not None:
+            source.on_hide.connect(self._force_hide_all)
 
     def _is_cursor_in_hierarchy(self, cursor_pos):
         """Check if cursor is within this list or any visible child sublist.
@@ -975,6 +1072,19 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             bool: False if the event should be further processed, and True if the event should be ignored.
         """
         event_type = event.type()
+
+        # The watched top-level window hiding (full dismiss / spontaneous host
+        # reclaim) or being covered by a modal dialog (WindowBlocked — no Hide
+        # is delivered then) must collapse every sublist — see
+        # _watch_window_hide. Handled first so the window is never mistaken for a
+        # list item by the branches below (its Enter/Leave/Release must not drive
+        # the sublist hover machinery). WindowDeactivate is deliberately NOT
+        # watched: DCC overlays (Blender) spuriously lose activation during
+        # normal chord navigation, which would collapse the menu mid-use.
+        if widget is self._watched_window:
+            if event_type in (QtCore.QEvent.Hide, QtCore.QEvent.WindowBlocked):
+                self._force_hide_all()
+            return False
 
         if event_type == QtCore.QEvent.Enter:
             # Ignore the synthetic Enter Qt fires on (re)show under a

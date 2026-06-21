@@ -379,10 +379,15 @@ class _NavStubSb:
     from uitk.switchboard.widgets import SwitchboardWidgetMixin as _Mixin
 
     menu_button_target_name = _Mixin.menu_button_target_name
+    # The resolver now routes through ui_name_resolves (file stem OR handler-backed).
+    # With no ``handlers`` set on this stub it degrades to is_registered_ui.
+    ui_name_resolves = _Mixin.ui_name_resolves
 
-    def __init__(self, registered):
+    def __init__(self, registered, handler=None):
         self._registered = dict(registered)  # name -> ui sentinel
         self.hidden = []
+        if handler is not None:  # opt-in: a UI handler exposing can_resolve()
+            self.handlers = type("H", (), {"ui": handler})()
 
     def is_registered_ui(self, name):
         return name in self._registered
@@ -445,6 +450,44 @@ class TestNavButtonMenuResolution(QtBaseTestCase):
         btn = self._button("some_tool")
 
         self.assertIs(menu._resolve_button_menu(btn), ui)
+
+    def test_click_prefers_handler_resolvable_base_over_submenu(self):
+        """A nav button whose bare ``target`` is NOT a file stem but IS resolvable
+        by the UI handler (a mayatk native Maya menu like ``"key"``, built on
+        demand) must resolve to that base target on click — NOT fall back to its
+        ``#submenu`` overlay.
+
+        Regression (Phase-5, commit 2cc9858): the click resolver checked the
+        file-stem-only ``is_registered_ui("key")`` (False, since the native menu
+        is not a file), so it fell back to ``key#submenu`` and a release showed
+        the overlay instead of opening the native key menu. ``ui_name_resolves``
+        now also consults the handler's ``can_resolve`` hook.
+        """
+        native, overlay = object(), object()
+
+        class _Handler:  # stands in for MayaUiHandler.can_resolve
+            def can_resolve(self, name):
+                return name == "key"
+
+        # Both the native base ("key") and the overlay ("key#submenu") are loadable,
+        # but only the overlay is a registered *file*; the base is handler-backed.
+        sb = _NavStubSb({"key": native, "key#submenu": overlay}, handler=_Handler())
+        sb.is_registered_ui = lambda name: name == "key#submenu"  # base is NOT a file
+        menu = self._NavMenu(sb)
+        btn = self._button("key")
+
+        self.assertEqual(sb.menu_button_target_name(btn), "key")
+        self.assertIs(menu._resolve_button_menu(btn), native)
+
+    def test_click_falls_back_to_submenu_when_base_unresolvable(self):
+        """No handler resolves the bare target → compose the submenu (unchanged)."""
+        overlay = object()
+        sb = _NavStubSb({"cameras#lower#submenu": overlay})  # no handler
+        sb.is_registered_ui = lambda name: name == "cameras#lower#submenu"
+        menu = self._NavMenu(sb)
+        btn = self._button("cameras", "lower")
+
+        self.assertIs(menu._resolve_button_menu(btn), overlay)
 
     def test_resolve_empty_target_returns_none(self):
         menu = self._NavMenu(_NavStubSb({}))
