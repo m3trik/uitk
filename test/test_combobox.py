@@ -279,5 +279,86 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
         )
 
 
+class ActivateHostWindowBeforePopup(QtBaseTestCase):
+    """``showPopup`` activates a non-active host window first, so the first click
+    in the popup selects an item instead of being swallowed activating the window.
+
+    Bug (2026-06-21): combos in option-box / dropdown menus
+    (``Qt.Tool | WA_ShowWithoutActivating``) and DCC-hosted panels are commonly
+    shown without activation; on Windows the first click into their popup
+    re-activated the host window instead of selecting a row — the "I clicked a
+    value but nothing happened; I had to re-focus the window / reopen the list"
+    symptom. These assert the deterministic product behavior (``activateWindow``
+    is / isn't called) rather than the OS focus outcome, which is unreliable under
+    the offscreen QPA.
+    """
+
+    def _combo_with_fake_window(self, *, active):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        self.calls = []
+        self.fake_window = type(
+            "FakeWindow",
+            (),
+            {
+                "isActiveWindow": lambda _self: active,
+                "activateWindow": lambda _self: self.calls.append(1),
+            },
+        )()
+        combo.window = lambda: self.fake_window
+        return combo
+
+    def test_activates_when_host_inactive(self):
+        combo = self._combo_with_fake_window(active=False)
+        combo._activate_host_window()
+        self.assertEqual(self.calls, [1], "must activate a non-active host window")
+
+    def test_noop_when_host_active(self):
+        combo = self._combo_with_fake_window(active=True)
+        combo._activate_host_window()
+        self.assertEqual(self.calls, [], "must not churn focus when already active")
+
+    def test_no_window_is_safe(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.window = lambda: None
+        combo._activate_host_window()  # must not raise
+
+
+class SetCurrentIndexNegativePreservesBlockState(QtBaseTestCase):
+    """``setCurrentIndex(index<0)`` must RESTORE the caller's prior blockSignals
+    state, not force-unblock.
+
+    Pre-existing latent bug: the override unconditionally called
+    ``blockSignals(False)`` after a negative-index reset, so a header reset nested
+    inside an outer ``blockSignals(True)`` (populate / restore batch) silently
+    unblocked signals for the rest of that batch — letting transient changes fire
+    slots / persist state. The fix mirrors the ``_silenced`` save/restore.
+    """
+
+    def _combo(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.add(["a", "b"])  # add() is @blockSignals → leaves signals unblocked
+        return combo
+
+    def test_preserves_blocked_true(self):
+        combo = self._combo()
+        combo.blockSignals(True)
+        combo.setCurrentIndex(-1)
+        self.assertTrue(
+            combo.signalsBlocked(), "must preserve the caller's blockSignals(True)"
+        )
+        combo.blockSignals(False)
+
+    def test_preserves_blocked_false(self):
+        combo = self._combo()
+        combo.setCurrentIndex(-1)  # prior state is unblocked
+        self.assertFalse(combo.signalsBlocked())
+
+
 if __name__ == "__main__":
     unittest.main()

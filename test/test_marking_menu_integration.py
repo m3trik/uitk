@@ -258,7 +258,20 @@ class _OverlayStub:
 
 
 class _MouseTrackingStub:
+    # Mirror the slice of the real MouseTracking interface the menu touches: the
+    # input-logging gate flag and the class-scoped log toggles that
+    # MarkingMenu.enable_input_logging drives.
+    _input_logging_on = False
+
     def update_child_widgets(self):
+        pass
+
+    @classmethod
+    def set_log_file(cls, *args, **kwargs):
+        pass
+
+    @classmethod
+    def set_log_level(cls, *args, **kwargs):
         pass
 
 

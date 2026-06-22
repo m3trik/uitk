@@ -63,10 +63,11 @@ class ActionOption(ButtonOption):
         self._current_state = 0
         self._settings_key = settings_key
         self._settings = None
+        # Persistence is only meaningful for state-cycling options. set_states()
+        # initializes the settings handle and restores the persisted index; a
+        # state-less option (plain action button / MenuOption) opens no QSettings.
         if states:
             self.set_states(states)
-        self._init_settings()
-        self._load_state()
 
     def create_widget(self):
         """Create the action button widget."""
@@ -120,9 +121,11 @@ class ActionOption(ButtonOption):
         """
         self._states = list(states)
         self._current_state = 0
-        # Restore persisted index if available and still in-bounds
-        if self._settings:
-            self._load_state()
+        # States now exist, so persistence is meaningful — initialize the
+        # settings handle lazily here (it is skipped at construction for the
+        # no-states case) before restoring the persisted index.
+        self._init_settings()
+        self._load_state()
         if self._widget:
             self._apply_state()
 
@@ -170,6 +173,12 @@ class ActionOption(ButtonOption):
 
     def _init_settings(self):
         if self._settings is not None:
+            return
+        # No states => nothing is ever persisted (current_state is only saved
+        # while cycling, which requires states). Skip the SettingsManager /
+        # QSettings construction entirely; this is the common MenuOption /
+        # plain-action case and runs synchronously per widget at register time.
+        if not self._states:
             return
         key = self._resolve_settings_key()
         if not key:

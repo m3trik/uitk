@@ -840,24 +840,18 @@ class OptionBoxManager(ptk.LoggingMixin):
         LAZY LOADING TRIGGER: Accessing this property will trigger wrapping
         if there are pending options that haven't been wrapped yet.
         """
-        import time
-
-        container_start = time.perf_counter()
-
         # If we have pending options and haven't wrapped yet, do it now
         if self._pending_options and not self._is_wrapped:
             self.logger.debug(
                 f"OptionBoxManager.container: Triggering lazy wrap for {len(self._pending_options)} pending options"
             )
             self._perform_wrap()
-            duration_ms = (time.perf_counter() - container_start) * 1000
-            self.logger.debug(
-                f"OptionBoxManager.container: Lazy wrap completed in {duration_ms:.3f}ms"
-            )
 
         # If we don't have a container yet, but widget has a menu with items,
-        # try to get the container from the menu's option box
-        if not self._container and hasattr(self._widget, "menu"):
+        # try to get the container from the menu's option box. Use the
+        # non-creating ``has_menu`` check — ``hasattr(widget, "menu")`` would
+        # materialize a context menu via the lazy MenuMixin descriptor.
+        if not self._container and getattr(self._widget, "has_menu", False):
             menu = self._widget.menu
             if (
                 hasattr(menu, "option_box")
@@ -953,9 +947,20 @@ class OptionBoxManager(ptk.LoggingMixin):
             self._create_option_box()
 
     def _find_existing_option_box(self):
-        """Find existing option box created by menu or other systems"""
-        if hasattr(self._widget, "menu") and hasattr(self._widget.menu, "option_box"):
-            menu_option_box = self._widget.menu.option_box
+        """Find existing option box created by menu or other systems.
+
+        Uses the non-creating ``has_menu`` check instead of touching
+        ``widget.menu`` directly: the MenuMixin ``.menu`` descriptor lazily
+        *creates* a standalone context menu on first access, so probing it
+        here would materialize an otherwise-unused menu for every wrapped
+        widget at register time.
+        """
+        if not getattr(self._widget, "has_menu", False):
+            return None
+
+        menu = self._widget.menu
+        if hasattr(menu, "option_box"):
+            menu_option_box = menu.option_box
             if menu_option_box and hasattr(menu_option_box, "container"):
                 return menu_option_box
 

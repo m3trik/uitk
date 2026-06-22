@@ -4,6 +4,27 @@
 
 from qtpy import QtWidgets, QtCore
 
+from .options.action import MenuOption, ActionOption
+from .options.browse import BrowseOption
+from .options.clear import ClearOption
+from .options.reset import ResetOption
+from .options.pin_values import PinValuesOption
+from .options.recent_values import RecentValuesOption
+from .options.toggle import ToggleOption
+
+# Concrete option type -> grouping key, consulted by OptionBox._sort_options.
+# Built once at import; was previously rebuilt (with 7 local imports) on every
+# wrap() / _rebuild_layout() call. The option modules never import _optionBox,
+# so these top-level imports introduce no cycle.
+_TYPE_TO_KEY = {
+    ClearOption: "clear",
+    RecentValuesOption: "recent",
+    PinValuesOption: "pin",
+    ResetOption: "reset",
+    ToggleOption: "toggle",
+    BrowseOption: "browse",
+}
+
 
 class OptionBoxContainer(QtWidgets.QWidget):
     """Container widget that wraps a widget with option buttons.
@@ -192,26 +213,10 @@ class OptionBox:
         The default order places menu buttons after action buttons so the
         option-box dropdown is always the rightmost control.
         """
-        from .options.action import MenuOption, ActionOption
-        from .options.browse import BrowseOption
-        from .options.clear import ClearOption
-        from .options.reset import ResetOption
-        from .options.pin_values import PinValuesOption
-        from .options.recent_values import RecentValuesOption
-        from .options.toggle import ToggleOption
-
-        _type_to_key = {
-            ClearOption: "clear",
-            RecentValuesOption: "recent",
-            PinValuesOption: "pin",
-            ResetOption: "reset",
-            ToggleOption: "toggle",
-            BrowseOption: "browse",
-        }
         _fallback = len(self._option_order)
 
         def _type_priority(option):
-            for cls, key in _type_to_key.items():
+            for cls, key in _TYPE_TO_KEY.items():
                 if isinstance(option, cls):
                     try:
                         return self._option_order.index(key)
@@ -456,26 +461,36 @@ class OptionBox:
 
         return container
 
+    # Border-trim fragments that collapse the seam between the wrapped widget
+    # and its option buttons. Appended idempotently (see _append_style_once):
+    # re-wrapping a widget (remove() then re-create) would otherwise accumulate
+    # duplicate fragments on its styleSheet, and each redundant setStyleSheet
+    # forces a style re-polish.
+    _TRIM_HOST = "border-right-width: 0px; border-right-style: none;"
+    _TRIM_FIRST = (
+        "border-left-width: 0px; border-left-style: none; "
+        "border-left-color: transparent;"
+    )
+    _TRIM_MID = (
+        "border-right-width: 0px; border-right-style: none; "
+        "border-right-color: transparent;"
+    )
+
+    @staticmethod
+    def _append_style_once(widget, fragment):
+        """Append *fragment* to *widget*'s styleSheet only if not already present."""
+        existing = widget.styleSheet()
+        if fragment in existing:
+            return
+        widget.setStyleSheet(f"{existing}; {fragment}" if existing else fragment)
+
     def _apply_border_styling(self, wrapped_widget, option_widgets=None):
         """Apply border styling to prevent double borders."""
-        existing_style = wrapped_widget.styleSheet()
-        wrapped_widget.setStyleSheet(
-            existing_style + "; border-right-width: 0px; border-right-style: none;"
-        )
+        self._append_style_once(wrapped_widget, self._TRIM_HOST)
 
         if option_widgets:
-            # Remove left border from first option widget
-            first_widget = option_widgets[0]
-            first_style = first_widget.styleSheet()
-            first_widget.setStyleSheet(
-                first_style
-                + "; border-left-width: 0px; border-left-style: none; border-left-color: transparent;"
-            )
-
-            # Remove right border from all except last
+            # Remove left border from the first option widget.
+            self._append_style_once(option_widgets[0], self._TRIM_FIRST)
+            # Remove right border from all except the last.
             for widget in option_widgets[:-1]:
-                existing_style = widget.styleSheet()
-                widget.setStyleSheet(
-                    existing_style
-                    + "; border-right-width: 0px; border-right-style: none; border-right-color: transparent;"
-                )
+                self._append_style_once(widget, self._TRIM_MID)

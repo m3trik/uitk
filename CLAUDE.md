@@ -12,13 +12,11 @@
 
 ## API surface
 
-Before writing a new helper, **check the registry first** — duplicates undermine the SSoT goal.
+**Before adding a helper, check the registry** (navigation rules: [root](../CLAUDE.md)):
 
-- This package: [`API_REGISTRY.md`](API_REGISTRY.md) · [`API_CHANGES.md`](API_CHANGES.md) (diff vs last refresh)
-- Upstream: [`pythontk` API](../pythontk/API_REGISTRY.md)
+- [`API_INDEX.md`](API_INDEX.md) (compact — read first) · [`API_REGISTRY.md`](API_REGISTRY.md) (grep, don't Read whole) · [`API_CHANGES.md`](API_CHANGES.md)
+- Upstream: [pythontk](../pythontk/API_INDEX.md)
 - Cross-package shadows: [`m3trik/docs/API_SHADOWS.md`](../m3trik/docs/API_SHADOWS.md)
-
-Refresh manually: `python m3trik/scripts/generate_api_registry.py uitk` — otherwise auto-refreshed bi-weekly.
 
 ## Architecture
 

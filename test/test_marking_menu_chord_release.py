@@ -544,5 +544,102 @@ class MarkingMenuChordReleaseDispatch(QtBaseTestCase):
         )
 
 
+class MarkingMenuHideRelinquishesControl(QtBaseTestCase):
+    """``hide()`` must end the gesture and fully release mouse control.
+
+    Regression: a window launched from a leaf goes through ``hide()`` then the
+    leaf's slot — NOT ``_show_window`` — so ``_activation_key_held`` (cleared only
+    on the physical key release and in ``_show_window``) stayed set when the
+    key-release was missed (focus jumps to the launched window). The hidden menu's
+    re-grab guards (``mousePressEvent`` / ``_do_pending_hide``) then kept/re-took
+    the mouse grab and the launched window was input-dead until the user tapped
+    the activation key again — which ran this same cleanup via
+    ``_on_activation_release``. ``hide()`` also released a grab only when
+    ``mouseGrabber() is self``, missing a grab ``MouseTracking`` migrated onto a
+    leaf button.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._drain_qt_events()
+        self.parent = QtWidgets.QWidget()
+        self.parent.resize(400, 400)
+        self.parent.show()
+        self.track_widget(self.parent)
+        self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
+        QtWidgets.QWidget.show(self.mm)
+        self.track_widget(self.mm)
+
+    def test_hide_ends_gesture_and_releases_self_grab(self):
+        # The live state after a chord launch with the key still held.
+        self.mm._activation_key_held = True
+        spy = mock.MagicMock()
+        self.mm.releaseMouse = spy
+        try:
+            with mock.patch.object(
+                QtWidgets.QWidget, "mouseGrabber", return_value=self.mm
+            ):
+                self.mm.hide()
+        finally:
+            del self.mm.releaseMouse
+        self.assertFalse(
+            self.mm._activation_key_held,
+            "hide() must end the gesture so the re-grab guards can't re-acquire "
+            "the mouse once the menu is hidden",
+        )
+        # hide() releases, and the hideEvent safety net releases again (idempotent
+        # in reality — the first release clears the grabber — but our static
+        # mouseGrabber mock keeps reporting self, so just assert it was released).
+        self.assertTrue(spy.called, "hide() must release the menu's own grab")
+
+    def test_hideevent_safety_net_ends_gesture(self):
+        # A hide that bypasses hide() (parent hide / setVisible(False)) still
+        # delivers a hideEvent; the safety net must END THE GESTURE, not only
+        # release the grab — otherwise the flag stays set and a re-grab guard can
+        # re-acquire the mouse on a later stray press.
+        self.mm._activation_key_held = True
+        self.mm.hideEvent(QtGui.QHideEvent())
+        self.assertFalse(
+            self.mm._activation_key_held,
+            "hideEvent must clear _activation_key_held, not just release the grab",
+        )
+
+    def test_release_input_grab_releases_a_child_button_grab(self):
+        # MouseTracking migrates the grab onto the leaf under the cursor; that
+        # child is a descendant of the menu, so the release must reach it.
+        child = QtWidgets.QPushButton(self.mm)
+        self.track_widget(child)
+        spy = mock.MagicMock()
+        child.releaseMouse = spy
+        try:
+            with mock.patch.object(
+                QtWidgets.QWidget, "mouseGrabber", return_value=child
+            ):
+                self.mm._release_input_grab()
+        finally:
+            del child.releaseMouse
+        spy.assert_called_once()
+
+    def test_release_input_grab_ignores_an_unrelated_grabber(self):
+        other = QtWidgets.QWidget()
+        self.track_widget(other)
+        spy = mock.MagicMock()
+        other.releaseMouse = spy
+        try:
+            with mock.patch.object(
+                QtWidgets.QWidget, "mouseGrabber", return_value=other
+            ):
+                self.mm._release_input_grab()
+        finally:
+            del other.releaseMouse
+        spy.assert_not_called()
+
+    def test_release_input_grab_handles_no_grabber(self):
+        with mock.patch.object(
+            QtWidgets.QWidget, "mouseGrabber", return_value=None
+        ):
+            self.mm._release_input_grab()  # must not raise
+
+
 if __name__ == "__main__":
     unittest.main()

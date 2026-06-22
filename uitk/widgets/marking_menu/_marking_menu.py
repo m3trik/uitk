@@ -2,6 +2,7 @@
 # coding=utf-8
 import sys
 import os
+import tempfile
 from typing import Optional
 from qtpy import QtCore, QtWidgets, QtGui
 import pythontk as ptk
@@ -88,6 +89,11 @@ class MarkingMenu(
     _pending_transition_ui: Optional[QtWidgets.QWidget] = None
     _pending_transition_widget: Optional[QtWidgets.QWidget] = None
     _transitioning_to_window: bool = False
+    # Explicit on/off for the input-handoff diagnostics (see enable_input_logging).
+    # Gates capture that touches Qt hit-testing, so it never runs on the hot event
+    # path unless a repro is actively being recorded. NOT the log level: the class
+    # logger sits at NOTSET, which makes isEnabledFor(DEBUG) unreliable as a gate.
+    _input_logging_on: bool = False
 
     def __init__(
         self,
@@ -209,6 +215,14 @@ class MarkingMenu(
         self.mouse_tracking = MouseTracking(
             self, auto_update=False, buttons_provider=self._host_mouse_buttons
         )
+        # Opt-in input-handoff diagnostics: set UITK_INPUT_LOG=<path> before
+        # launch to tee DEBUG grab/launch/release records (this menu + its
+        # MouseTracking) to a file. Zero cost unless the env var is set.
+        if os.environ.get("UITK_INPUT_LOG"):
+            try:
+                self.enable_input_logging(os.environ["UITK_INPUT_LOG"])
+            except Exception as _e:  # never let diagnostics break construction
+                self.logger.warning(f"UITK_INPUT_LOG enable failed: {_e}")
 
         self.key_show = self._activation_key
         self.key_close = QtCore.Qt.Key_Escape
@@ -348,6 +362,11 @@ class MarkingMenu(
 
     def _on_activation_release(self):
         """Handle the global shortcut release event."""
+        if self._input_logging_on:
+            self.logger.debug(
+                f"[handoff] _on_activation_release (the 'tap key_show again' fix path) "
+                f"| {self._input_state()}"
+            )
         self._activation_key_held = False
         self._standalone_suppress = False
         self._non_default_shown = False
@@ -1205,7 +1224,12 @@ class MarkingMenu(
 
     def mousePressEvent(self, event) -> None:
         """Handle mouse press: route through the central state-sync."""
-        self.logger.debug(f"mousePressEvent: {event.buttons()} {event.modifiers()}")
+        if self._input_logging_on:
+            self.logger.debug(
+                f"[handoff] mousePressEvent buttons={self._to_int(event.buttons()):#04x} "
+                f"widgetAt={self._w_repr(QtWidgets.QApplication.widgetAt(event.globalPos()))} "
+                f"| {self._input_state()}"
+            )
 
         # Cancel any pending suppress-hide so we don't yank the menu away
         # right after showing it.
@@ -1448,6 +1472,13 @@ class MarkingMenu(
     def mouseReleaseEvent(self, event) -> None:
         """Handle mouse release: dispatch click action or sync menu state."""
         current_ui = self.sb.active_ui
+        if self._input_logging_on:
+            self.logger.debug(
+                f"[handoff] mouseReleaseEvent button={self._to_int(event.button()):#04x} "
+                f"widgetAt={self._w_repr(QtWidgets.QApplication.widgetAt(event.globalPos()))} "
+                f"current_ui={current_ui.objectName() if current_ui else None!r} | "
+                f"{self._input_state()}"
+            )
 
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             # Release over an owned interactive item dispatches the click
@@ -1711,6 +1742,11 @@ class MarkingMenu(
 
     def _show_window(self, widget, pos=None, force=False, **kwargs):
         """Internal handler for showing standalone windows."""
+        if self._input_logging_on:
+            self.logger.debug(
+                f"[handoff] _show_window START target={widget.objectName()!r} "
+                f"force={force} | {self._input_state()}"
+            )
         # Ensure the widget won't be hidden alongside the MarkingMenu.
         if widget.parent() is self:
             widget.setParent(self.parent(), QtCore.Qt.Window)
@@ -1748,6 +1784,18 @@ class MarkingMenu(
         # ui_handler.show() can activate the target.  A zero-delay timer runs
         # after all pending events settle, ensuring the target ends up on top.
         QtCore.QTimer.singleShot(0, lambda w=widget: (w.raise_(), w.activateWindow()))
+        # Same-delay follow-up (FIFO: runs after the raise above) — captures the
+        # post-activation grab/active state, the moment a launched window would
+        # be input-dead if a grab survived the handoff. Only scheduled while a
+        # repro is being recorded, so no idle timer is queued otherwise.
+        if self._input_logging_on:
+            QtCore.QTimer.singleShot(
+                0,
+                lambda w=widget: self.logger.debug(
+                    f"[handoff] _show_window POST-RAISE target={w.objectName()!r} | "
+                    f"{self._input_state()}"
+                ),
+            )
 
         return widget
 
@@ -1782,11 +1830,16 @@ class MarkingMenu(
             except AttributeError:
                 pass
 
-        # CRITICAL: Release mouse grab before hiding to prevent zombie grabs.
-        # If the MarkingMenu grabbed the mouse (see _transfer_mouse_control) and we
-        # hide without releasing, the OS may leave mouse input in a broken state.
-        if self.mouseGrabber() is self:
-            self.releaseMouse()
+        # CRITICAL: end the gesture and fully relinquish mouse control before
+        # hiding (see _relinquish_input_control). The leaf-click launch path calls
+        # hide() then opens a tool window via its slot WITHOUT going through
+        # _show_window (the only other place _activation_key_held is cleared), so
+        # without this the flag stayed set, the hidden menu's re-grab guards
+        # (mousePressEvent / _do_pending_hide) kept/re-acquired the mouse, and the
+        # launched window was input-dead (every click went to the hidden menu)
+        # until the user tapped the activation key again — which ran this same
+        # cleanup via _on_activation_release.
+        self._relinquish_input_control()
 
         super().hide()
 
@@ -1801,12 +1854,133 @@ class MarkingMenu(
             parent.activateWindow()
 
     def hideEvent(self, event):
-        """Clean up on hide - ensures mouse grab is released even if hide() was bypassed."""
-        # Safety net: release mouse grab if we still have it
-        if self.mouseGrabber() is self:
-            self.releaseMouse()
+        """Clean up on hide - relinquishes input control even if hide() was bypassed."""
+        # Safety net for a hide that bypassed hide() (e.g. a parent hide /
+        # setVisible(False)): run the same full relinquish so the gesture can't
+        # stay "live" with a dangling grab — releasing the grab alone left
+        # _activation_key_held set, so a re-grab guard could still re-acquire.
+        self._relinquish_input_control()
         self._clear_optimization_caches()
         super().hideEvent(event)
+
+    def _relinquish_input_control(self):
+        """End the gesture and release any grab — the full hand-off cleanup run on
+        every hide, whether deliberate (:meth:`hide`) or bypassed (:meth:`hideEvent`).
+
+        Clearing ``_activation_key_held`` stops the re-grab guards
+        (``mousePressEvent`` / ``_do_pending_hide``) from re-acquiring the mouse
+        once the menu is hidden; :meth:`_release_input_grab` drops a grab the menu
+        or one of its child buttons still holds.
+        """
+        if self._input_logging_on:
+            self.logger.debug(
+                f"[handoff] _relinquish_input_control | {self._input_state()}"
+            )
+        self._activation_key_held = False
+        self._release_input_grab()
+
+    def _release_input_grab(self):
+        """Release a mouse grab held by the menu OR one of its child buttons.
+
+        ``hide()`` historically released only a grab held by ``self``, but
+        ``MouseTracking`` migrates the grab onto the leaf button under the cursor
+        during a drag (``_grab_widget`` → ``widget.grabMouse()``), so a chord that
+        ends over a child left that child holding the global grab after the menu
+        hid. Checking ``isAncestorOf`` covers both owners.
+        """
+        grabber = QtWidgets.QWidget.mouseGrabber()
+        owned = grabber is not None and (grabber is self or self.isAncestorOf(grabber))
+        if self._input_logging_on:
+            self.logger.debug(
+                "[handoff] _release_input_grab: "
+                + (
+                    f"releasing {self._w_repr(grabber)}"
+                    if owned
+                    else f"nothing owned to release (grabber={self._w_repr(grabber)})"
+                )
+            )
+        if owned:
+            grabber.releaseMouse()
+
+    # ---------------------------------------------------------------------------------------------
+    #   Input-handoff diagnostics
+    #
+    #   The "standalone window launched from the menu is input-dead until you tap
+    #   key_show again" report is an input-handoff race: a mouse grab held by the
+    #   menu (or a child button MouseTracking migrated it to) routes the new
+    #   window's clicks back to the hidden menu. These read-only helpers expose
+    #   the grab/activation state so a live repro pinpoints *which* object holds
+    #   the grab (or rules a grab out) instead of guessing.
+
+    def _w_repr(self, w) -> str:
+        """Compact, delete-safe identifier for a widget in input-state logs."""
+        try:
+            if w is None:
+                return "None"
+            win = w.window()
+            return (
+                f"{type(w).__name__}('{w.objectName()}')"
+                f"@{type(win).__name__}('{win.objectName()}')"
+            )
+        except RuntimeError:
+            return "<deleted>"
+
+    def _input_state(self) -> str:
+        """One-line snapshot of the mouse-grab / activation state, shared by the
+        handoff-diagnostic logs (read-only; safe to call from any log site).
+
+        Reports who holds the global mouse grab and where it sits relative to the
+        menu (``self`` / ``child`` / ``other`` / ``none``), the live button mask,
+        the active window, the ``MouseTracking`` owner, and the menu's re-grab
+        flags — the variables that decide whether a launched window takes clicks.
+        """
+        grab = QtWidgets.QWidget.mouseGrabber()
+        mt = getattr(self, "mouse_tracking", None)
+        owner = getattr(mt, "_mouse_owner", None) if mt is not None else None
+        if grab is self:
+            where = "self"
+        elif grab is not None and self.isAncestorOf(grab):
+            where = "child"
+        elif grab is not None:
+            where = "other"
+        else:
+            where = "none"
+        return (
+            f"grab={self._w_repr(grab)}[{where}] "
+            f"buttons={self._to_int(QtWidgets.QApplication.mouseButtons()):#04x} "
+            f"active={self._w_repr(QtWidgets.QApplication.activeWindow())} "
+            f"mt_owner={self._w_repr(owner)} "
+            f"key_held={getattr(self, '_activation_key_held', None)} "
+            f"suppress={getattr(self, '_standalone_suppress', None)} "
+            f"menu_visible={self.isVisible()}"
+        )
+
+    def enable_input_logging(self, path: Optional[str] = None, level="DEBUG") -> str:
+        """Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.
+
+        The menu and ``MouseTracking`` use separate class-scoped loggers, so this
+        raises the level and attaches a file handler on BOTH — otherwise the grab
+        migration records emitted by ``MouseTracking`` are missed. Returns the log
+        path; stop with :meth:`disable_input_logging`. Reproduce the issue, then
+        read the file. Auto-enabled at construction when the ``UITK_INPUT_LOG``
+        environment variable names a path.
+        """
+        if path is None:
+            path = os.path.join(tempfile.gettempdir(), "uitk_input_handoff.log")
+        for cls in {type(self), type(self.mouse_tracking)}:
+            cls.set_log_level(level)
+            cls.set_log_file(path, level)
+        self._input_logging_on = True
+        self.mouse_tracking._input_logging_on = True
+        self.logger.debug(f"[input-log] enabled -> {path} | {self._input_state()}")
+        return path
+
+    def disable_input_logging(self) -> None:
+        """Stop the file logging started by :meth:`enable_input_logging`."""
+        self._input_logging_on = False
+        self.mouse_tracking._input_logging_on = False
+        for cls in {type(self), type(self.mouse_tracking)}:
+            cls.set_log_file(None)
 
     def _clear_optimization_caches(self):
         """Clear optimization caches to prevent memory accumulation."""
@@ -1944,6 +2118,13 @@ class MarkingMenu(
         event position missed the item the pointer is over (Maya).
         """
         current_ui = self.sb.active_ui
+        if self._input_logging_on:
+            self.logger.debug(
+                f"[handoff] child_mouseButtonReleaseEvent w={self._w_repr(w)} "
+                f"widgetAt={self._w_repr(QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos()))} "
+                f"current_ui={current_ui.objectName() if current_ui else None!r} | "
+                f"{self._input_state()}"
+            )
         if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
             # Owned item → dispatch the click IMMEDIATELY on the first release,
             # regardless of any other held button (same order as the menu-grab

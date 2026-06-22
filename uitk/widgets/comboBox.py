@@ -497,11 +497,20 @@ class ComboBox(
             self.blockSignals(False)
 
     def setCurrentIndex(self, index):
+        # A negative index (header / no-selection reset) shouldn't fire slots or
+        # persist state, so block signals across it — but SAVE and RESTORE the
+        # caller's prior blocked state rather than force-unblocking, so a reset
+        # nested inside an outer ``blockSignals(True)`` (e.g. a populate/restore
+        # batch) doesn't leak signals for the remainder of that batch. Mirrors the
+        # ``_silenced`` contextmanager's save/restore.
         if index < 0:
-            self.blockSignals(True)
-        super().setCurrentIndex(index)
-        if index < 0:
-            self.blockSignals(False)
+            was_blocked = self.blockSignals(True)
+            try:
+                super().setCurrentIndex(index)
+            finally:
+                self.blockSignals(was_blocked)
+        else:
+            super().setCurrentIndex(index)
 
     def check_index(self, index):
         if self.has_header and index != -1:
@@ -641,6 +650,24 @@ class ComboBox(
         super().removeItem(index)
         self.item_deleted.emit(item_text)
 
+    def _activate_host_window(self):
+        """Activate the combo's top-level window before its popup opens.
+
+        These combos commonly live in a window shown *without activation* —
+        option-box / dropdown menus use ``Qt.Tool | WA_ShowWithoutActivating``,
+        and a DCC-hosted panel may not be the foreground window. On Windows the
+        **first click into a popup of a non-active window is consumed activating
+        that window** instead of selecting the item — the "I clicked a value but
+        nothing happened; I had to re-focus the window / reopen the list" symptom.
+        Activating the host first makes the popup's click land on the item.
+
+        Guarded on ``isActiveWindow`` so it's a no-op (no focus churn) whenever
+        we're already active — which is the normal case.
+        """
+        window = self.window()
+        if window is not None and not window.isActiveWindow():
+            window.activateWindow()
+
     def showPopup(self):
         view = self.view()
         view.setMinimumWidth(view.sizeHintForColumn(0))
@@ -654,6 +681,9 @@ class ComboBox(
         # tests and inspection.
         if not isinstance(view.itemDelegate(), _CurrentItemIndicatorDelegate):
             view.setItemDelegate(_CurrentItemIndicatorDelegate(self))
+        # Ensure the host window is active so the first click in the popup selects
+        # an item rather than being swallowed re-activating the window.
+        self._activate_host_window()
         self.before_popup_shown.emit()
         super().showPopup()
 
