@@ -1692,6 +1692,124 @@ class TestOptionBoxManagerReset(QtBaseTestCase):
         self.assertIn("reset", mgr.option_order)
 
 
+class TestOptionBoxInitPerfRegressions(QtBaseTestCase):
+    """Phase-1 init-performance regressions.
+
+    Pin the behavioral guarantees behind the Phase-1 optimizations so a
+    future refactor can't silently re-introduce the wasted work:
+      - wrapping a widget must not materialize its lazy MenuMixin context menu;
+      - a state-less ActionOption/MenuOption must not open QSettings;
+      - border-trim styling must be idempotent across re-wraps.
+    """
+
+    def _make_menu_mixin_widget(self):
+        """A widget exposing the lazy MenuMixin ``menu``/``has_menu`` API."""
+        from uitk.widgets.checkBox import CheckBox
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        widget = CheckBox("Test")
+        layout.addWidget(widget)
+        mgr = OptionBoxManager(widget)
+        widget._option_box_manager = mgr
+        try:
+            widget.option_box = mgr
+        except AttributeError:
+            pass
+        return widget, mgr
+
+    def test_wrapping_does_not_create_context_menu(self):
+        """Adding an option-box menu must not create the widget's context menu.
+
+        ``_find_existing_option_box`` / the ``container`` fallback used to probe
+        ``widget.menu`` directly, whose lazy descriptor *creates* a standalone
+        context menu as a side effect. The non-creating ``has_menu`` check must
+        leave the wrapped widget menu-less.
+        """
+        widget, mgr = self._make_menu_mixin_widget()
+        self.assertFalse(widget.has_menu, "precondition: no context menu yet")
+
+        mgr.menu.add("Some Item")  # the ubiquitous tbXXX_init pattern
+        container = mgr.container  # force the lazy wrap + container fallback
+        self.assertIsNotNone(container)
+
+        self.assertFalse(
+            widget.has_menu,
+            "option-box setup must not materialize the widget's context menu",
+        )
+
+    def test_stateless_action_option_skips_qsettings(self):
+        """A state-less ActionOption must not construct a SettingsManager."""
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        opt = ActionOption(wrapped_widget=None, callback=lambda: None)
+        self.assertIsNone(
+            opt._settings, "no states => no persistence handle should be opened"
+        )
+
+    def test_stateful_action_option_persists_round_trip(self):
+        """States init persistence AND it still saves/restores through the
+        restructured init path (settings now created in set_states, not the
+        constructor). Covers construction-time states and the runtime
+        ``set_states`` path.
+        """
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        states = [{"icon": "play"}, {"icon": "pause"}, {"icon": "stop"}]
+        widget = self.track_widget(QtWidgets.QPushButton("Test"))
+        widget.setObjectName("perf_regression_action_btn")
+
+        opt = ActionOption(wrapped_widget=widget, states=states)
+        self.assertIsNotNone(
+            opt._settings, "states present => settings handle must exist"
+        )
+        try:
+            # Save an index, then reconstruct and confirm it restores.
+            opt._current_state = 2
+            opt._save_state()
+
+            restored = ActionOption(wrapped_widget=widget, states=states)
+            self.assertEqual(
+                restored._current_state, 2, "persisted state must restore on reconstruct"
+            )
+
+            # Runtime path: a state-less option opens no settings, but
+            # set_states() must initialize them and restore the saved index.
+            late = ActionOption(wrapped_widget=widget, callback=lambda: None)
+            self.assertIsNone(late._settings, "no states => no QSettings opened")
+            late.set_states(states)
+            self.assertIsNotNone(
+                late._settings, "set_states() must lazily initialize persistence"
+            )
+            self.assertEqual(
+                late._current_state, 2, "set_states() must restore the persisted index"
+            )
+        finally:
+            if opt._settings is not None:
+                opt._settings.clear()
+
+    def test_border_styling_is_idempotent(self):
+        """Re-applying border trim must not duplicate style fragments."""
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        button = self.track_widget(QtWidgets.QPushButton())
+        opt = OptionBox(options=[])
+
+        opt._apply_border_styling(widget, [button])
+        once = widget.styleSheet()
+        opt._apply_border_styling(widget, [button])
+        twice = widget.styleSheet()
+
+        self.assertEqual(
+            once, twice, "border trim must be idempotent (no fragment accumulation)"
+        )
+        self.assertEqual(
+            once.count("border-right-width: 0px"),
+            1,
+            "the right-border trim must appear exactly once on the wrapped widget",
+        )
+
+
 # -----------------------------------------------------------------------------
 # Interactive Demo (Legacy)
 # -----------------------------------------------------------------------------

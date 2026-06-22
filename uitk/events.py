@@ -212,6 +212,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._filtered_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
         self._extra_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
         self._mouse_owner: QtWidgets.QWidget | None = None
+        # Gated by MarkingMenu.enable_input_logging — keeps the grab-handoff debug
+        # records (and their objectName lookups) off the hot path unless a repro
+        # is being recorded.
+        self._input_logging_on = False
 
         parent.installEventFilter(self)
 
@@ -480,12 +484,18 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._release_mouse_owner()
         widget.grabMouse()
         self._mouse_owner = widget
+        if self._input_logging_on:
+            self.logger.debug(f"[handoff] grab migrated to {widget.objectName()!r}")
 
     def _release_mouse_owner(self):
         """Release the currently grabbed widget, if any."""
 
         if self._mouse_owner and self.is_widget_valid(self._mouse_owner):
             try:
+                if self._input_logging_on:
+                    self.logger.debug(
+                        f"[handoff] releasing grab owner {self._mouse_owner.objectName()!r}"
+                    )
                 self._mouse_owner.releaseMouse()
             except RuntimeError:
                 pass
@@ -533,6 +543,11 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
             QtCore.QEvent.Type.FocusOut,
             QtCore.QEvent.Type.WindowDeactivate,
         ):
+            if self._input_logging_on and self._mouse_owner is not None:
+                self.logger.debug(
+                    f"[handoff] deactivation event ({etype}) on tracked parent "
+                    f"-> release owner + flush"
+                )
             self._release_mouse_owner()
             self._flush_hover_state()
 

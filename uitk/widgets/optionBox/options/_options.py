@@ -2,6 +2,16 @@
 # coding=utf-8
 from abc import ABC, abstractmethod, ABCMeta
 from qtpy import QtWidgets, QtCore
+from uitk.widgets.mixins.attributes import AttributesMixin
+
+
+class OptionButton(QtWidgets.QPushButton, AttributesMixin):
+    """Icon-only push button used for every option-box action button.
+
+    Defined once at module scope rather than re-declared inside
+    ``ButtonOption.create_widget`` on every call — the class object (and its
+    metaclass run) was previously rebuilt per option button.
+    """
 
 
 # Resolve metaclass conflict between QObject and ABC
@@ -128,15 +138,10 @@ class ButtonOption(BaseOption):
     def create_widget(self):
         """Create a QPushButton widget."""
         from uitk.widgets.mixins.icon_manager import IconManager
-        from uitk.widgets.mixins.attributes import AttributesMixin
 
-        # Create a custom button class with our mixins
-        # NOTE: RichText mixin removed - option buttons only display icons
-        from qtpy import QtCore
-
-        class OptionButton(QtWidgets.QPushButton, AttributesMixin):
-            pass
-
+        # OptionButton (QPushButton + AttributesMixin) is defined at module
+        # scope. NOTE: RichText mixin intentionally omitted — option buttons
+        # only display icons.
         button = OptionButton()
 
         # Disable default/focus visuals that can introduce stray frame lines

@@ -1,14 +1,9 @@
 # uitk — API Changes
 
-_Diff vs prior baseline. Generated 2026-06-21._
+_Diff vs prior baseline. Generated 2026-06-22._
 
-## Added (8)
+## Added (3)
 
-- `handlers/ui_handler.py::UiHandler.can_resolve(self, name: str) -> bool`
-- `switchboard/widgets.py::SwitchboardWidgetMixin.ui_name_resolves(self, name: str) -> bool`
-- `widgets/comboBox.py::ComboBox.addItem(self, *args, **kwargs)`
-- `widgets/comboBox.py::ComboBox.addItems(self, *args, **kwargs)`
-- `widgets/comboBox.py::ComboBox.clear(self)`
-- `widgets/comboBox.py::ComboBox.insertItem(self, *args, **kwargs)`
-- `widgets/comboBox.py::ComboBox.insertItems(self, *args, **kwargs)`
-- `widgets/mainWindow.py::MainWindow.run_when_ready(self, callback: Callable[[], Any]) -> None`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.disable_input_logging(self) -> None`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.enable_input_logging(self, path: Optional[str] = None, level='DEBUG') -> str`
+- `widgets/optionBox/options/_options.py::OptionButton(class)`

@@ -228,5 +228,75 @@ class MarkingMenuLeafClickWhileGrabHeld(QtBaseTestCase):
         self.assertEqual(self.fired, [], "the leaf must not fire on a non-Left press")
 
 
+class InputHandoffDiagnostics(QtBaseTestCase):
+    """The input-handoff diagnostics (``enable_input_logging``) must default OFF
+    and never run their state capture on the hot event path unless explicitly
+    enabled.
+
+    Enabling that capture unconditionally — it calls ``QApplication.widgetAt()``
+    inside ``mousePressEvent`` — segfaulted offscreen QPA on every press. The gate
+    is a dedicated flag, NOT the log level: the class logger sits at NOTSET, so
+    ``isEnabledFor(DEBUG)`` is True even when nothing is emitted.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._drain_qt_events()
+        self.parent = QtWidgets.QWidget()
+        self.parent.resize(200, 200)
+        self.parent.show()
+        self.track_widget(self.parent)
+        self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
+        QtWidgets.QWidget.show(self.mm)
+        self.track_widget(self.mm)
+
+    def test_diagnostics_off_by_default(self):
+        self.assertFalse(self.mm._input_logging_on)
+        self.assertFalse(self.mm.mouse_tracking._input_logging_on)
+
+    def test_press_does_not_capture_state_while_off(self):
+        """Regression guard: with diagnostics off, a press must NOT invoke the
+        (Qt-hit-test-touching) state capture — that eager call crashed offscreen."""
+        with mock.patch.object(
+            DriveableMarkingMenu, "_input_state", autospec=True
+        ) as spy:
+            ev = QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(10, 10),
+                QtCore.QPointF(10, 10),
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+            )
+            try:
+                self.mm.mousePressEvent(ev)  # press internals are not under test
+            except Exception:
+                pass
+        spy.assert_not_called()
+
+    def test_enable_disable_toggles_both_flags(self):
+        """enable/disable flips the gate on BOTH the menu and its MouseTracking
+        (separate class loggers). Logging I/O is mocked so the test neither writes
+        a file nor mutates the shared class-logger level."""
+        mt_cls = type(self.mm.mouse_tracking)
+        with mock.patch.object(
+            DriveableMarkingMenu, "set_log_file"
+        ), mock.patch.object(
+            DriveableMarkingMenu, "set_log_level"
+        ), mock.patch.object(
+            mt_cls, "set_log_file"
+        ), mock.patch.object(
+            mt_cls, "set_log_level"
+        ):
+            returned = self.mm.enable_input_logging("ignored.log")
+            self.assertEqual(returned, "ignored.log")
+            self.assertTrue(self.mm._input_logging_on)
+            self.assertTrue(self.mm.mouse_tracking._input_logging_on)
+
+            self.mm.disable_input_logging()
+            self.assertFalse(self.mm._input_logging_on)
+            self.assertFalse(self.mm.mouse_tracking._input_logging_on)
+
+
 if __name__ == "__main__":
     unittest.main()
