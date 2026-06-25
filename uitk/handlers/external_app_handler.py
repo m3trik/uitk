@@ -4,7 +4,16 @@ Each app is a pip-installable Python package whose UI is exposed via a
 class (entry point). Apps run in a fresh interpreter so they don't share
 the host process's Qt event loop or block Maya / Blender / Max on errors.
 
-Typical usage::
+Apps self-describe via ``uitk.external_apps[.in_process]`` entry points,
+so a host normally registers nothing — :meth:`ExternalAppHandler.discover`
+(run on construction) picks them up and derives each app's ``install_spec``
+from its distribution automatically. A host only needs to point at the
+*provider* package when it might not be installed yet::
+
+    sb.handlers.external_app.add_provider("extapps")   # install-on-demand
+    sb.handlers.external_app.launch("compositor")      # installs + launches
+
+Direct registration is still available for ad-hoc / out-of-band apps::
 
     sb.handlers.external_app.register(
         "compositor",
@@ -12,7 +21,6 @@ Typical usage::
         entry="CompositorUI",
         install_spec="extapps",
     )
-    sb.handlers.external_app.launch("compositor")
 """
 import os
 import shutil
@@ -135,6 +143,18 @@ class ExternalAppHandler(BaseHandler):
         "uitk.external_apps.in_process": "in_process",
     }
 
+    # Entry-point group hosts use to advertise *provider packages* — a
+    # package that ships discoverable apps but may not be installed yet.
+    # ``name = install_spec`` (e.g. ``extapps = "extapps"``). Read by
+    # :meth:`discover`; absent providers self-install on first launch
+    # of any of their apps (see :meth:`_bootstrap_providers`).
+    PROVIDER_GROUP: str = "uitk.external_app_providers"
+
+    # Entry-point extras beginning with this prefix are host-visibility
+    # gates (``hide_maya`` -> hidden in the ``maya`` context) rather than
+    # semantic browser tags. See :meth:`_partition_extras`.
+    HIDE_PREFIX: str = "hide_"
+
     def __init__(
         self,
         switchboard: Switchboard,
@@ -144,6 +164,12 @@ class ExternalAppHandler(BaseHandler):
     ):
         super().__init__(switchboard=switchboard, log_level=log_level)
         self._apps: Dict[str, dict] = {}
+        # Provider packages that ship discoverable apps but may not be
+        # installed yet. Keyed by install_spec; consulted on a launch miss.
+        self._providers: Dict[str, dict] = {}
+        # install_specs already attempted this session, so a launch miss
+        # doesn't reinstall a provider on every click.
+        self._bootstrapped: Set[str] = set()
         # Cache of widgets returned in in-process mode, keyed by app name.
         # Re-launching by name returns the cached widget so close-and-reopen
         # via the same button doesn't create duplicate windows.
@@ -153,6 +179,7 @@ class ExternalAppHandler(BaseHandler):
         # process table.
         self._subprocesses: Dict[str, "subprocess.Popen"] = {}
         if auto_discover:
+            self._discover_providers()
             self.discover()
 
     def discover(self, groups: Optional[Iterable[str]] = None) -> int:
@@ -179,21 +206,12 @@ class ExternalAppHandler(BaseHandler):
         Returns the count of apps newly registered. Re-registers
         existing entries on each call (idempotent).
         """
-        try:
-            from importlib.metadata import entry_points
-        except ImportError:  # pragma: no cover — covered by all 3.8+ runtimes
-            return 0
         scan = dict(self.DISCOVERY_GROUPS) if groups is None else {
             g: self.DISCOVERY_GROUPS.get(g, "subprocess") for g in groups
         }
         count = 0
         for group, mode in scan.items():
-            try:
-                # Python 3.10+: entry_points(group=...) selector.
-                eps = entry_points(group=group)
-            except TypeError:  # pragma: no cover — Python 3.8/3.9 path
-                eps = entry_points().get(group, [])
-            for ep in eps:
+            for ep in self._entry_points(group):
                 try:
                     module = ep.module  # left of ':' — never imports
                     attr = ep.attr      # right of ':'
@@ -204,11 +222,24 @@ class ExternalAppHandler(BaseHandler):
                         exc_info=True,
                     )
                     continue
+                # Split extras: ``hide_<host>`` extras are host-visibility
+                # gates (exclusion semantics, never displayed); everything
+                # else is a plain semantic tag for the browser filter.
+                tags, hidden_in = self._partition_extras(extras)
+                # The app's distribution name *is* its install spec — read
+                # it straight off the entry point so a missing package can
+                # self-install on first launch with zero host bookkeeping.
+                # ``ep.dist`` is Python 3.10+; older runtimes (and the test
+                # fakes) simply yield no spec and fall back to the provider
+                # mechanism / a manual ``install_spec``.
+                spec = getattr(getattr(ep, "dist", None), "name", None)
                 self.register(
                     ep.name,
                     module=module,
                     entry=attr,
-                    tags=set(extras) if extras else None,
+                    install_spec=spec,
+                    tags=tags or None,
+                    hidden_in=hidden_in or None,
                     mode=mode,
                 )
                 count += 1
@@ -218,6 +249,165 @@ class ExternalAppHandler(BaseHandler):
                 f"from groups {list(scan)}"
             )
         return count
+
+    @staticmethod
+    def _entry_points(group: str) -> list:
+        """Return the entry points in *group*, across importlib versions.
+
+        Centralises the Python 3.10+ ``entry_points(group=...)`` selector
+        vs the 3.8/3.9 ``entry_points().get(group, [])`` mapping form so
+        both :meth:`discover` and :meth:`_discover_providers` share one path.
+        """
+        try:
+            from importlib.metadata import entry_points
+        except ImportError:  # pragma: no cover — present on all 3.8+ runtimes
+            return []
+        try:
+            return list(entry_points(group=group))
+        except TypeError:  # pragma: no cover — Python 3.8/3.9 selector signature
+            return list(entry_points().get(group, []))
+
+    @classmethod
+    def _partition_extras(cls, extras: Iterable[str]) -> "tuple[set, set]":
+        """Split entry-point *extras* into (semantic tags, host gates).
+
+        ``hide_<host>`` extras become the host-visibility gate set (with
+        the prefix stripped); all other extras are plain semantic tags.
+        Keeping the two apart means a domain tag like ``photogrammetry``
+        can never gate an app out of a host whose ``context_tags`` happens
+        not to contain it.
+        """
+        tags: Set[str] = set()
+        hidden_in: Set[str] = set()
+        for extra in extras:
+            if extra.startswith(cls.HIDE_PREFIX):
+                gate = extra[len(cls.HIDE_PREFIX):].strip()
+                if gate:
+                    hidden_in.add(gate)
+            else:
+                tags.add(extra)
+        return tags, hidden_in
+
+    # ── Provider packages (install-on-demand) ────────────────────────────
+
+    @staticmethod
+    def _base_pkg_name(install_spec: str) -> str:
+        """Best-effort import name for a pip *install_spec*.
+
+        Strips version pins / extras / URL fragments so the spec can be
+        probed for importability before installing. Works for the common
+        ``name``/``name==1.0``/``name[extra]`` forms; for anything exotic
+        (VCS URLs) the caller should pass an explicit ``probe_module``.
+        """
+        spec = install_spec.strip()
+        for sep in ("[", "==", ">=", "<=", "~=", ">", "<", "@", " "):
+            spec = spec.split(sep, 1)[0]
+        return spec.strip()
+
+    def add_provider(
+        self,
+        install_spec: str,
+        *,
+        probe_module: Optional[str] = None,
+        group: Optional[str] = None,
+        python: Optional[str] = None,
+    ) -> None:
+        """Register a provider package that ships discoverable apps.
+
+        A provider is a pip-installable package whose apps self-describe
+        via the discovery entry-point groups but which may not be
+        installed in the target interpreter yet. When an app name fails
+        to resolve at :meth:`launch` time, the handler installs each
+        not-yet-importable provider and re-runs :meth:`discover` before
+        giving up — so a host needs to know only *which package* provides
+        apps, never the per-app module/entry table.
+
+        Parameters:
+            install_spec: ``pip install`` target (PyPI name, ``name[extra]``,
+                ``git+https://...`` URL, ...).
+            probe_module: Import name used to check whether the provider is
+                already present (avoids a needless reinstall). Defaults to
+                the spec's base package name.
+            group: Discovery entry-point group the provider feeds; picks the
+                install interpreter (in-process groups install into the
+                current interpreter, others into a standalone Python).
+                Defaults to the in-process group.
+            python: Explicit interpreter to install into; overrides *group*.
+        """
+        self._providers[install_spec] = {
+            "install_spec": install_spec,
+            "probe_module": probe_module or self._base_pkg_name(install_spec),
+            "group": group,
+            "python": python,
+        }
+
+    def _discover_providers(self) -> int:
+        """Register providers advertised under :attr:`PROVIDER_GROUP`.
+
+        Lets a host declare its providers declaratively in its own
+        ``pyproject.toml`` (``extapps = "extapps"``) instead of in code.
+        The entry-point name is the probe/import name; its value is the
+        install spec. Returns the count registered.
+        """
+        count = 0
+        for ep in self._entry_points(self.PROVIDER_GROUP):
+            try:
+                spec = ep.value  # raw RHS string — the install spec
+            except Exception:
+                continue
+            self.add_provider(spec, probe_module=ep.name, group=None)
+            count += 1
+        return count
+
+    def _bootstrap_providers(self, python: Optional[str] = None) -> bool:
+        """Make untried providers' apps resolvable, then re-discover.
+
+        Called on a launch miss. Each provider is attempted at most once
+        per session (tracked in ``self._bootstrapped``) so a wrong app
+        name doesn't reinstall on every click. A provider that's already
+        importable is left alone (no install) but discovery still re-runs,
+        in case its apps weren't registered when the handler was built.
+
+        Returns True if any provider was attempted this call (so the
+        caller should re-resolve the app); False if there was nothing
+        new to try.
+        """
+        pending = [s for s in self._providers if s not in self._bootstrapped]
+        if not pending:
+            return False
+        for spec in pending:
+            self._bootstrapped.add(spec)
+            prov = self._providers[spec]
+            group = prov.get("group")
+            mode = self.DISCOVERY_GROUPS.get(group) if group else "in_process"
+            py = python or prov.get("python") or (
+                sys.executable if mode == "in_process" else _default_python()
+            )
+            if self._is_importable(prov["probe_module"], py):
+                continue  # already present — re-discovery below surfaces it
+            if os.path.basename(py).lower() in _DCC_HOST_SIBLINGS:
+                # Can't pip into a live DCC interpreter (maya.exe / blender.exe)
+                # — the install would hang. Rely on the package being present in
+                # the host's env; the launch raises a clean error if it isn't.
+                self.logger.warning(
+                    f"[provider] {spec!r} not importable but {py!r} is a DCC "
+                    f"host — skipping install (provision it into the host env)."
+                )
+                continue
+            self.logger.info(f"[provider] installing {spec!r} into {py}")
+            try:
+                ptk.PackageManager(python_path=py).install(spec)
+            except Exception:
+                self.logger.warning(
+                    f"[provider] install of {spec!r} failed", exc_info=True
+                )
+        try:
+            self.discover()
+        except Exception:
+            self.logger.debug(
+                "[provider] post-bootstrap discover failed", exc_info=True
+            )
+        return True
 
     def register(
         self,
@@ -230,6 +420,7 @@ class ExternalAppHandler(BaseHandler):
         show_kwargs: Optional[dict] = None,
         mode: str = "subprocess",
         tags: Optional[Iterable[str]] = None,
+        hidden_in: Optional[Iterable[str]] = None,
     ) -> None:
         """Pre-register an app so it can be launched by name.
 
@@ -243,7 +434,9 @@ class ExternalAppHandler(BaseHandler):
             install_spec: ``pip install`` target used when *module* is
                 not importable. PyPI name, ``git+https://...`` URL, or
                 any value pip accepts. If *None*, a missing module
-                raises ``RuntimeError`` at launch time.
+                raises ``RuntimeError`` at launch time. Usually left to
+                :meth:`discover`, which derives it automatically from the
+                app's distribution (``entry_point.dist.name``).
             python: Path to the Python interpreter to use for the
                 subprocess. Ignored in ``mode="in_process"``. ``None``
                 (default) uses :func:`_default_python`.
@@ -258,7 +451,17 @@ class ExternalAppHandler(BaseHandler):
                 (e.g. under a Maya main window).
             tags: Optional iterable of tags applied to this app's
                 :class:`HandlerEntry`. Surfaces in the browser's tag
-                filter just like .ui-backed tags.
+                filter just like .ui-backed tags. Purely semantic — tags
+                never affect *visibility* (see *hidden_in*).
+            hidden_in: Optional iterable of host context tags this app
+                should be hidden in. A host whose switchboard
+                ``context_tags`` intersects this set won't list the app
+                (it stays launchable by name). Exclusion semantics —
+                an empty set (the default) means "visible everywhere".
+                Kept separate from *tags* so a semantic tag can never
+                accidentally gate an app out of a host. Maya, for
+                instance, hides the Substance/Marmoset panels
+                (``hidden_in={"maya"}``) because it ships native bridges.
         """
         self._apps[name] = {
             "module": module,
@@ -268,6 +471,7 @@ class ExternalAppHandler(BaseHandler):
             "show_kwargs": show_kwargs,
             "mode": mode,
             "tags": frozenset(tags or ()),
+            "hidden_in": frozenset(hidden_in or ()),
         }
         self._notify_entries_changed()
 
@@ -301,7 +505,14 @@ class ExternalAppHandler(BaseHandler):
             external-app row is editable, just like .ui rows.
         """
         user_tags = self._user_tags()
+        # Host curation: a non-empty switchboard context hides any app
+        # gated against one of its tags (``hidden_in``). Mirrors the
+        # widget-level ``apply_visibility_policy`` — an empty context
+        # disables filtering, so standalone hosts list everything.
+        context = frozenset(getattr(self.sb, "context_tags", None) or ())
         for name, cfg in self._apps.items():
+            if context and (cfg.get("hidden_in") or frozenset()) & context:
+                continue
             mode = cfg.get("mode", "subprocess")
             kind = (
                 "external_in_process"
@@ -456,17 +667,30 @@ class ExternalAppHandler(BaseHandler):
             window — and shown/raised/activated when ``show=True``).
             Caller may re-parent or re-show but no longer has to.
         """
-        cfg = dict(self._apps.get(name, {})) if name else {}
-        for k, v in (
+        overrides = (
             ("module", module),
             ("entry", entry),
             ("install_spec", install_spec),
             ("python", python),
             ("show_kwargs", show_kwargs),
             ("mode", mode),
-        ):
-            if v is not None:
-                cfg[k] = v
+        )
+
+        def _resolve():
+            c = dict(self._apps.get(name, {})) if name else {}
+            for k, v in overrides:
+                if v is not None:
+                    c[k] = v
+            return c
+
+        cfg = _resolve()
+
+        # Bootstrap miss: a name the host never registered (because its
+        # provider package isn't installed yet). Install the provider(s)
+        # and re-discover, then re-resolve before giving up.
+        if name and not cfg.get("module") and self._providers:
+            if self._bootstrap_providers():
+                cfg = _resolve()
 
         if not cfg.get("module"):
             raise ValueError(
@@ -517,22 +741,28 @@ class ExternalAppHandler(BaseHandler):
         if not importable:
             spec = cfg.get("install_spec")
             if not spec:
-                raise RuntimeError(
-                    f"Module {cfg['module']!r} is not available in "
-                    f"{py} and no install_spec was provided."
-                )
-            self.logger.info(f"Installing {spec!r} into {py}")
-            try:
-                ptk.PackageManager(python_path=py).install(spec)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to install {spec!r} into {py}: {e}"
-                ) from e
-            if not self._is_importable(cfg["module"], py):
-                raise RuntimeError(
-                    f"Install of {spec!r} completed but {cfg['module']!r} "
-                    f"is still not importable in {py}."
-                )
+                # No per-app spec — a registered provider may still own this
+                # module. Install providers and retry once before failing.
+                if self._providers and self._bootstrap_providers(python=py):
+                    importable = self._is_importable(cfg["module"], py)
+                if not importable:
+                    raise RuntimeError(
+                        f"Module {cfg['module']!r} is not available in "
+                        f"{py} and no install_spec was provided."
+                    )
+            else:
+                self.logger.info(f"Installing {spec!r} into {py}")
+                try:
+                    ptk.PackageManager(python_path=py).install(spec)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to install {spec!r} into {py}: {e}"
+                    ) from e
+                if not self._is_importable(cfg["module"], py):
+                    raise RuntimeError(
+                        f"Install of {spec!r} completed but {cfg['module']!r} "
+                        f"is still not importable in {py}."
+                    )
 
         if run_mode == "in_process":
             cached = self._in_process_widgets.get(name) if name else None

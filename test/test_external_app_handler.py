@@ -205,15 +205,25 @@ class TestExternalAppUserTags(unittest.TestCase):
         )
 
 
+class _FakeDist:
+    """Stand-in for an ``EntryPoint.dist`` with just a ``.name``."""
+
+    def __init__(self, name):
+        self.name = name
+
+
 class _FakeEP:
     """Minimal stand-in for ``importlib.metadata.EntryPoint`` — only the
     fields ``ExternalAppHandler.discover`` reads."""
 
-    def __init__(self, name, module, attr, extras=()):
+    def __init__(self, name, module, attr, extras=(), dist=None, value=None):
         self.name = name
         self.module = module
         self.attr = attr
         self.extras = list(extras)
+        self.value = value if value is not None else f"{module}:{attr}"
+        if dist is not None:
+            self.dist = _FakeDist(dist)
 
 
 class TestExternalAppDiscovery(unittest.TestCase):
@@ -285,6 +295,183 @@ class TestExternalAppDiscovery(unittest.TestCase):
         names = {e.name for e in sb.iter_handler_entries()
                  if e.kind.startswith("external")}
         self.assertEqual(names, {"alpha", "beta"})
+
+
+class TestDiscoveryDerivesInstallSpecAndGates(unittest.TestCase):
+    """discover() should need zero host bookkeeping: the install spec comes
+    from the entry point's distribution, and ``hide_<host>`` extras become
+    visibility gates kept apart from semantic browser tags."""
+
+    def _patched_eps(self, inproc=()):
+        def _fn(group=None):
+            return list(inproc) if group == "uitk.external_apps.in_process" else []
+        return patch("importlib.metadata.entry_points", side_effect=_fn)
+
+    def test_install_spec_derived_from_distribution(self):
+        eps = [_FakeEP("compositor", "extapps.texture_maps.compositor",
+                       "CompositorUI", dist="extapps")]
+        with self._patched_eps(inproc=eps):
+            sb = _make_sb()
+        cfg = sb.handlers.external_app._apps["compositor"]
+        self.assertEqual(cfg["install_spec"], "extapps")
+
+    def test_hide_gate_partitioned_from_semantic_tags(self):
+        eps = [_FakeEP("substance", "extapps.substance_workflow", "SubUI",
+                       extras=["texturing", "hide_maya"], dist="extapps")]
+        with self._patched_eps(inproc=eps):
+            sb = _make_sb()
+        cfg = sb.handlers.external_app._apps["substance"]
+        # Semantic tag survives; the gate is stripped out of the tag set.
+        self.assertEqual(cfg["tags"], frozenset({"texturing"}))
+        self.assertEqual(cfg["hidden_in"], frozenset({"maya"}))
+
+
+class TestExternalAppContextVisibility(unittest.TestCase):
+    """entries() hides apps gated against the switchboard's context_tags —
+    the same host-curation semantics widgets get via apply_visibility_policy,
+    but driven by the dedicated ``hidden_in`` set so a semantic tag can
+    never accidentally hide an app.
+
+    Handlers are singletons keyed by ``id(switchboard)``; reuse can alias a
+    fresh ``Switchboard()`` onto a cached handler. setUp resets the handler
+    the sb is actually bound to and always mutates ``self.h.sb`` (which
+    ``entries()`` reads), so the tests are isolation-safe.
+    """
+
+    def setUp(self):
+        self.h = _make_sb().handlers.external_app
+        self.h._apps.clear()
+        self.h._providers.clear()
+        self.h._bootstrapped.clear()
+
+    def _context(self, tags):
+        self.h.sb.context_tags = set(tags)
+
+    def test_app_hidden_when_context_matches_gate(self):
+        self._context({"maya"})
+        self.h.register("compositor", module="m", entry="UI")        # no gate
+        self.h.register("substance", module="m2", entry="UI2", hidden_in={"maya"})
+        names = {e.name for e in self.h.entries()}
+        self.assertIn("compositor", names)
+        self.assertNotIn("substance", names)
+
+    def test_gated_app_shown_in_other_context(self):
+        self._context({"blender"})
+        self.h.register("substance", module="m2", entry="UI2", hidden_in={"maya"})
+        self.assertIn("substance", {e.name for e in self.h.entries()})
+
+    def test_empty_context_lists_everything(self):
+        self._context(set())
+        self.h.register("substance", module="m2", entry="UI2", hidden_in={"maya"})
+        self.assertIn("substance", {e.name for e in self.h.entries()})
+
+    def test_gated_app_still_launchable_by_name(self):
+        """Visibility filtering must not block a direct launch — the gate
+        only governs *listing*, not reachability."""
+        self._context({"maya"})
+        self.h.register("substance", module="m2", entry="UI2",
+                        hidden_in={"maya"}, mode="subprocess")
+        self.assertNotIn("substance", {e.name for e in self.h.entries()})
+        with patch.object(
+            ExternalAppHandler, "_is_importable", return_value=True
+        ), patch.object(ExternalAppHandler, "_spawn", return_value=MagicMock()):
+            self.assertIsNotNone(self.h.launch("substance"))
+
+
+class TestProviderBootstrap(unittest.TestCase):
+    """A provider package lets a host launch apps it never enumerated:
+    on a miss the handler installs the provider, re-discovers, and retries —
+    so no per-app module/entry list lives in host code.
+
+    setUp resets the (singleton) handler so accumulated ``_apps`` /
+    ``_bootstrapped`` from sibling tests can't leak in.
+    """
+
+    def setUp(self):
+        self.h = _make_sb().handlers.external_app
+        self.h._apps.clear()
+        self.h._providers.clear()
+        self.h._bootstrapped.clear()
+
+    def test_provider_group_discovered_from_entry_points(self):
+        prov = [_FakeEP("extapps", "extapps", None, value="extapps")]
+
+        def _fn(group=None):
+            return list(prov) if group == ExternalAppHandler.PROVIDER_GROUP else []
+
+        with patch("importlib.metadata.entry_points", side_effect=_fn):
+            sb = _make_sb()
+        h = sb.handlers.external_app
+        self.assertIn("extapps", h._providers)
+        self.assertEqual(h._providers["extapps"]["probe_module"], "extapps")
+
+    def test_unregistered_launch_installs_provider_then_launches(self):
+        h = self.h
+        h.add_provider("extapps", probe_module="extapps")
+
+        def fake_discover(self_, groups=None):
+            self_.register(
+                "compositor", module="extapps.texture_maps.compositor",
+                entry="CompositorUI", install_spec="extapps", mode="subprocess",
+            )
+            return 1
+
+        def fake_importable(module, python):
+            return module == "extapps.texture_maps.compositor"
+
+        pm_instance = MagicMock()
+        captured = {}
+
+        def fake_spawn(**kw):
+            captured.update(kw)
+            return MagicMock()
+
+        with patch.object(ExternalAppHandler, "discover", fake_discover), \
+             patch.object(
+                 ExternalAppHandler, "_is_importable", side_effect=fake_importable
+             ), patch("pythontk.PackageManager", return_value=pm_instance), \
+             patch.object(ExternalAppHandler, "_spawn", side_effect=fake_spawn):
+            h.launch("compositor")
+
+        pm_instance.install.assert_called_once_with("extapps")
+        self.assertEqual(captured["module"], "extapps.texture_maps.compositor")
+
+    def test_provider_attempted_only_once_per_session(self):
+        h = self.h
+        h.add_provider("extapps", probe_module="extapps")
+        pm_instance = MagicMock()
+        with patch.object(
+            ExternalAppHandler, "_is_importable", return_value=False
+        ), patch.object(
+            ExternalAppHandler, "discover", lambda self_, groups=None: 0
+        ), patch("pythontk.PackageManager", return_value=pm_instance):
+            with self.assertRaises(ValueError):
+                h.launch("ghost")
+            with self.assertRaises(ValueError):
+                h.launch("ghost")  # provider already tried — no reinstall
+        pm_instance.install.assert_called_once_with("extapps")
+
+    def test_present_provider_is_not_reinstalled(self):
+        """If the provider's probe module already imports, no install runs —
+        bootstrap still re-discovers in case discovery was stale."""
+        h = self.h
+        h.add_provider("extapps", probe_module="extapps")
+        pm_instance = MagicMock()
+
+        def fake_discover(self_, groups=None):
+            self_.register("compositor", module="extapps.c", entry="UI",
+                           mode="subprocess")
+            return 1
+
+        with patch.object(
+            ExternalAppHandler, "_is_importable", return_value=True
+        ), patch.object(ExternalAppHandler, "discover", fake_discover), \
+             patch("pythontk.PackageManager", return_value=pm_instance), \
+             patch.object(ExternalAppHandler, "_spawn", return_value=MagicMock()):
+            # 'compositor' isn't registered yet; provider probe imports OK so
+            # no install, but discover() during bootstrap surfaces it.
+            h.launch("compositor")
+        pm_instance.install.assert_not_called()
 
 
 class TestExternalAppHandlerRegistry(unittest.TestCase):

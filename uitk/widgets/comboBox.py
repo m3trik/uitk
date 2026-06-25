@@ -308,6 +308,85 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
             painter.restore()
 
 
+class _PopupItemClickCommitter(QtCore.QObject):
+    """Commit a deliberate item click in a ``ComboBox`` popup even inside
+    QComboBox's ``blockMouseReleaseTimer`` window.
+
+    ``QComboBoxPrivateContainer`` swallows the mouse-release that would select a
+    row for ``QApplication.doubleClickInterval()`` (~400 ms) after the popup
+    opens, so the *opening* click's release doesn't instantly pick the row under
+    the cursor. In a fast workflow — e.g. an option-box combo opened during a
+    marking-menu gesture, where the user clicks a row within that window — the
+    first item click is silently dropped: the press registers and the row
+    highlights, but the release never commits and the popup just sits open
+    (confirmed live: ``view pressed`` fires with no following ``activated``).
+
+    A press AND release on the *same valid row of the popup list* is an
+    unambiguous selection — unlike the opening click, whose press lands on the
+    combo, not the list. This filter (installed on the view's viewport, so it
+    runs before ``QComboBoxPrivateContainer``'s own filter) commits such a click
+    and consumes the event, bypassing the timer. The opening click (no preceding
+    list-press) and drag-to-select still fall through to Qt unchanged.
+    """
+
+    def __init__(self, combo):
+        super().__init__(combo)
+        self._combo = combo
+        self._armed = False
+
+    def eventFilter(self, obj, event):
+        etype = event.type()
+        if etype == QtCore.QEvent.Show:
+            # Fresh popup session — drop any press left armed by a previous one
+            # (e.g. a press then drag-off/Esc that never released on the list),
+            # so the next opening click can't be mistaken for a selection.
+            self._armed = False
+            return False
+        if etype == QtCore.QEvent.MouseButtonPress:
+            if event.button() == QtCore.Qt.LeftButton:
+                # Arm only when the press lands on a real selectable row. A press
+                # on empty space / a disabled row — or the opening click, which
+                # lands on the combo rather than the list viewport — must never be
+                # mistaken for a selection (matches "press AND release on the same
+                # valid row" above).
+                self._armed = self._valid_row_at(event.pos()) is not None
+            return False
+        if (
+            etype == QtCore.QEvent.MouseButtonRelease
+            and event.button() == QtCore.Qt.LeftButton
+        ):
+            armed, self._armed = self._armed, False
+            if armed:
+                row = self._valid_row_at(event.pos())
+                if row is not None:
+                    try:
+                        self._combo.hidePopup()
+                        self._combo.setCurrentIndex(row)
+                        try:  # activated overload differs across PySide2/6
+                            self._combo.activated[int].emit(row)
+                        except Exception:
+                            pass
+                        return True  # consume; bypass the block timer
+                    except RuntimeError:
+                        pass
+        return False
+
+    def _valid_row_at(self, pos):
+        """Row under *pos* in the popup list if it's a real, selectable item; else None."""
+        try:
+            index = self._combo.view().indexAt(pos)
+        except RuntimeError:
+            return None
+        flags = index.flags()
+        if (
+            index.isValid()
+            and (flags & QtCore.Qt.ItemIsEnabled)
+            and (flags & QtCore.Qt.ItemIsSelectable)
+        ):
+            return index.row()
+        return None
+
+
 class ComboBox(
     AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay
 ):
@@ -684,8 +763,23 @@ class ComboBox(
         # Ensure the host window is active so the first click in the popup selects
         # an item rather than being swallowed re-activating the window.
         self._activate_host_window()
+        self._ensure_item_click_filter(view)
         self.before_popup_shown.emit()
         super().showPopup()
+
+    def _ensure_item_click_filter(self, view):
+        """Install the popup item-click committer once.
+
+        See :class:`_PopupItemClickCommitter`: it lets a deliberate click on a
+        list row commit even inside QComboBox's ``blockMouseReleaseTimer``
+        window, so a fast click (e.g. an option-box combo opened mid
+        marking-menu gesture, where the user clicks within ~``doubleClickInterval``
+        of the popup opening) isn't silently dropped.
+        """
+        if getattr(self, "_item_click_filter", None) is not None:
+            return
+        self._item_click_filter = _PopupItemClickCommitter(self)
+        view.viewport().installEventFilter(self._item_click_filter)
 
     def keyPressEvent(self, event):
         if self.isEditable() and event.key() == QtCore.Qt.Key_Return:

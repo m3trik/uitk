@@ -61,12 +61,56 @@ def _build_display_map_smart_path(values) -> Optional[dict]:
     return display_map
 
 
+class RecentValueEntry:
+    """A recent value whose restore-data differs from its display string.
+
+    Most history entries are plain values (the value *is* what's shown and
+    restored). An entry is used only when a presenter needs to show one thing
+    while restoring another — e.g. a line edit that displays texture-set names
+    but carries the full ``os.pathsep``-joined file paths as ``data``.
+
+    Dedup/normalization key off :attr:`data`, so an entry compares equal to the
+    plain value it would restore. Mirrors ``PinValuesOption.PinnedValueEntry``.
+    """
+
+    __slots__ = ("data", "display")
+
+    def __init__(self, data, display=None):
+        self.data = data
+        self.display = display
+
+    def __eq__(self, other):
+        if isinstance(other, RecentValueEntry):
+            return normalize_value(self.data) == normalize_value(other.data)
+        return normalize_value(self.data) == normalize_value(other)
+
+    def __hash__(self):
+        n = normalize_value(self.data)
+        return hash(n if isinstance(n, str) else str(n))
+
+    def __repr__(self):
+        return f"RecentValueEntry(data={self.data!r}, display={self.display!r})"
+
+
+def _entry_data(value):
+    """The restore-data of *value* (its ``.data`` when an entry, else itself)."""
+    return value.data if isinstance(value, RecentValueEntry) else value
+
+
+def _entry_display(value):
+    """The explicit display of *value*, or ``None`` to derive one."""
+    return value.display if isinstance(value, RecentValueEntry) else None
+
+
 def normalize_value(value):
     """Normalize a value for comparison.
 
-    Strips whitespace and, for path-like strings, normalizes separators
-    and case so that ``C:/Dir`` and ``c:\\dir`` compare equal.
+    Unwraps a :class:`RecentValueEntry` to its data, strips whitespace and,
+    for path-like strings, normalizes separators and case so that ``C:/Dir``
+    and ``c:\\dir`` compare equal.
     """
+    if isinstance(value, RecentValueEntry):
+        value = value.data
     if isinstance(value, str):
         value = value.strip()
         if "/" in value or "\\" in value:
@@ -133,10 +177,24 @@ class RecentValuesStore:
             org="uitk", app="RecentValues", namespace=self._settings_key
         )
 
+    @staticmethod
+    def _serialize(value):
+        """Plain values persist as-is; entries persist as a tagged dict."""
+        if isinstance(value, RecentValueEntry):
+            return {"__recent_entry__": True, "data": value.data, "display": value.display}
+        return value
+
+    @staticmethod
+    def _deserialize(value):
+        """Rehydrate a tagged dict back into a :class:`RecentValueEntry`."""
+        if isinstance(value, dict) and value.get("__recent_entry__"):
+            return RecentValueEntry(value.get("data"), value.get("display"))
+        return value
+
     def _save(self):
         if not self._settings:
             return
-        self._settings.setValue("entries", list(self._values))
+        self._settings.setValue("entries", [self._serialize(v) for v in self._values])
         self._settings.sync()
 
     def _load(self):
@@ -147,7 +205,8 @@ class RecentValuesStore:
         seen = set()
         deduped = []
         for v in data:
-            if v is None:
+            v = self._deserialize(v)
+            if _entry_data(v) is None:
                 continue
             n = normalize_value(v)
             if n not in seen:
@@ -208,7 +267,7 @@ class RecentValuesStore:
 
     def record(self, value) -> None:
         """Insert *value* at the front (most-recent), dedup, trim, persist."""
-        if value is None or not str(value).strip():
+        if _entry_data(value) is None or not str(_entry_data(value)).strip():
             return
         n = normalize_value(value)
         self._values = [v for v in self._values if normalize_value(v) != n]
@@ -224,7 +283,7 @@ class RecentValuesStore:
         list). Unlike :meth:`record` it does not move an existing entry to
         the front.
         """
-        if value is None or not str(value).strip():
+        if _entry_data(value) is None or not str(_entry_data(value)).strip():
             return
         n = normalize_value(value)
         if any(normalize_value(v) == n for v in self._values):
@@ -283,19 +342,31 @@ class RecentValuesStore:
         values = list(values)
         fmt = self._display_format
 
+        # Entries carrying an explicit display bypass formatting entirely;
+        # the rest are formatted against their unwrapped data.
+        out = {v: _entry_display(v) for v in values if _entry_display(v) is not None}
+        plain = [v for v in values if v not in out]
+        data_of = {v: _entry_data(v) for v in plain}
+
         if callable(fmt):
-            return {v: fmt(v) for v in values}
+            out.update({v: fmt(data_of[v]) for v in plain})
+            return out
 
         if fmt == "basename":
-            return {v: os.path.basename(str(v)) for v in values}
+            out.update({v: os.path.basename(str(data_of[v])) for v in plain})
+            return out
 
         if fmt == "auto":
-            dm = _build_display_map_smart_path(values)
+            dm = _build_display_map_smart_path([data_of[v] for v in plain])
             if dm is not None:
-                return dm
+                out.update({v: dm[data_of[v]] for v in plain})
+                return out
             # fall through to truncation
 
-        return {
-            v: ptk.truncate(str(v), self.MAX_DISPLAY_LENGTH, mode="middle")
-            for v in values
-        }
+        out.update(
+            {
+                v: ptk.truncate(str(data_of[v]), self.MAX_DISPLAY_LENGTH, mode="middle")
+                for v in plain
+            }
+        )
+        return out

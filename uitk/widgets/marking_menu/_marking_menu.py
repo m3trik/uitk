@@ -2060,20 +2060,46 @@ class MarkingMenu(
 
             self.child_event_filter.install(w)
 
+    def _is_popup_menu_child(self, w) -> bool:
+        """True if *w* is displayed inside an interactive ``Menu`` popup (e.g. an
+        option-box dropdown) rather than directly on this marking menu.
+
+        Option-box controls are real start/submenu slot widgets (their ``.ui`` is
+        the submenu) merely *shown* in a popup ``Menu``, so they carry this menu's
+        ``child_event_filter``. But that popup owns its own input: running the
+        gesture child-handlers on it routes its releases through
+        :meth:`_handle_menu_item_release` — whose ``_action_dispatched`` latch,
+        left stuck ``True`` by the launching click (a popup press never resets it),
+        then SWALLOWS the release so the checkbox never toggles / the combobox
+        never selects — and hover-toggles its checkboxes. Such widgets must be
+        left to normal Qt input. Gated on the top-level window being a ``Menu`` so
+        ExpandableList sublist ToolTips (gesture surfaces, not ``Menu`` windows)
+        are unaffected.
+        """
+        from uitk.widgets.menu import Menu
+
+        try:
+            return isinstance(w.window(), Menu)
+        except RuntimeError:
+            return False
+
     def child_enterEvent(self, w, event) -> None:
         """Handle the enter event for child widgets."""
-        if isinstance(w, MenuButton) and w.target:
-            # Hover opens the button's own submenu — component-specific when the
-            # button carries filter tags (the polygons Edge button →
-            # "polygons#edge#submenu", not the base "polygons#submenu").
-            submenu_name = w.submenu_name()
-            submenu = self._cached_ui(submenu_name) if submenu_name != w.ui.objectName() else None
-            if submenu:
-                self._set_submenu(submenu, w)
+        # Skip the gesture behaviour (submenu-open, chk hover-toggle) for a widget
+        # shown inside an interactive Menu popup — it owns its own input.
+        if not self._is_popup_menu_child(w):
+            if isinstance(w, MenuButton) and w.target:
+                # Hover opens the button's own submenu — component-specific when the
+                # button carries filter tags (the polygons Edge button →
+                # "polygons#edge#submenu", not the base "polygons#submenu").
+                submenu_name = w.submenu_name()
+                submenu = self._cached_ui(submenu_name) if submenu_name != w.ui.objectName() else None
+                if submenu:
+                    self._set_submenu(submenu, w)
 
-        if w.base_name() == "chk" and w.ui.has_tags("submenu") and self.isVisible():
-            if isinstance(w, QtWidgets.QAbstractButton):
-                w.toggle()
+            if w.base_name() == "chk" and w.ui.has_tags("submenu") and self.isVisible():
+                if isinstance(w, QtWidgets.QAbstractButton):
+                    w.toggle()
 
         super_event = getattr(super(type(w), w), "enterEvent", None)
         if callable(super_event):
@@ -2081,7 +2107,7 @@ class MarkingMenu(
 
     def child_leaveEvent(self, w, event) -> None:
         """Handle the leave event for child widgets."""
-        if w.derived_type == QtWidgets.QPushButton:
+        if not self._is_popup_menu_child(w) and w.derived_type == QtWidgets.QPushButton:
             self._debounce_transition(clear_pending=True)
 
         super_event = getattr(super(type(w), w), "leaveEvent", None)
@@ -2117,6 +2143,15 @@ class MarkingMenu(
         drifted off ``w`` under a pumped host loop (Blender) or the chord release's
         event position missed the item the pointer is over (Maya).
         """
+        # A control shown inside an interactive Menu popup (option-box dropdown)
+        # owns its own input — never route its release through the gesture
+        # dispatch. The launching click leaves _action_dispatched stuck True (a
+        # popup press never resets it), so _handle_menu_item_release would SWALLOW
+        # this release and the checkbox/combobox would never actuate. Returning
+        # False lets the release reach the widget's own handler. See
+        # _is_popup_menu_child.
+        if self._is_popup_menu_child(w):
+            return False
         current_ui = self.sb.active_ui
         if self._input_logging_on:
             self.logger.debug(

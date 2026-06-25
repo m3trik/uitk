@@ -78,7 +78,7 @@ _Generated: 2026-06-25_
 
 ### `handlers/external_app_handler.py` — Register, install-on-demand, and launch external Python apps as subprocesses.
 - `class ExternalAppHandler(BaseHandler)`
-  - methods: discover, register, is_registered, unregister, entries, save_tags, close, is_visible, launch
+  - methods: discover, add_provider, register, is_registered, unregister, entries, save_tags, close, is_visible, launch
 
 ### `handlers/handler_entry.py` — Unified launchable-entry data class shared by all Switchboard handlers.
 - `class HandlerEntry`
@@ -228,7 +228,7 @@ _Generated: 2026-06-25_
 - `class LineEditFormatMixin`
   - methods: set_action_color, reset_action_color, set_validator, clear_validator, is_valid, validate_now
 - `class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`
-  - methods: contextMenuEvent, showEvent, hideEvent
+  - methods: set_value, value, data, clear_value, contextMenuEvent, showEvent, hideEvent
 
 ### `widgets/mainWindow.py`
 - `class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin)`
@@ -315,6 +315,7 @@ _Generated: 2026-06-25_
 
 ### `widgets/mixins/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
 - `normalize_value(value)`
+- `class RecentValueEntry`
 - `class RecentValuesStore`
   - methods: subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
 
@@ -435,6 +436,10 @@ _Generated: 2026-06-25_
 - `class ToggleOption(PersistedOption, ButtonOption)`
   - methods: is_on, set_on, setup_widget
 
+### `widgets/optionBox/options/value.py` — Inline editable value readout for OptionBox.
+- `class ValueOption(BaseOption)`
+  - methods: create_widget, setup_widget, on_wrap, refresh, set_wrapped_widget
+
 ### `widgets/optionBox/utils.py` — Utilities and helper functions for OptionBox.
 - `add_option_box(widget, show_clear=False, options=None, **kwargs)`
 - `add_clear_option(widget, **kwargs)`
@@ -442,7 +447,7 @@ _Generated: 2026-06-25_
 - `patch_widget_class(widget_class)`
 - `patch_common_widgets()`
 - `class OptionBoxManager(ptk.LoggingMixin)`
-  - methods: clear_option, clear_option, option_order, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, menu, enable_menu, disable_menu, add_option, container, remove
+  - methods: clear_option, clear_option, option_order, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, add_value, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, menu, enable_menu, disable_menu, add_option, container, remove
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
@@ -536,9 +541,16 @@ _Generated: 2026-06-25_
 - `class TransportControls(QtWidgets.QWidget)`
   - methods: play_controller, set_play_controller, set_interrupt_mode, interrupt_mode, button, attach_to_footer
 
+### `widgets/slider.py`
+- `class Slider(QtWidgets.QSlider, MenuMixin, OptionBoxMixin, AttributesMixin)`
+
 ### `widgets/spinBox.py`
 - `class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`
   - methods: value, setCustomDisplayValues, textFromValue, valueFromText, validate, setPrefix, stepBy
+
+### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
+- `class TableActions`
+  - methods: add, set, get, update_for_row_height
 
 ### `widgets/tableWidget.py`
 - `class HeaderMixin`
@@ -549,10 +561,6 @@ _Generated: 2026-06-25_
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`
   - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, get_selected_data, get_selection, register_menu_action, unregister_menu_action
-
-### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
-- `class TableActions`
-  - methods: add, set, get, update_for_row_height
 
 ### `widgets/textEdit.py`
 - `class TextEdit(QtWidgets.QTextEdit, MenuMixin, AttributesMixin)`

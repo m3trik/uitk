@@ -550,6 +550,97 @@ class TestMouseTrackingUpdateMethods(QtBaseTestCase):
         self.assertIn(button, self.tracker._widgets)
         self.assertIn(label, self.tracker._widgets)
 
+    def test_excludes_widgets_in_a_foreign_popup_window(self):
+        """Widgets that live in a SEPARATE top-level window must not be tracked,
+        even when Qt-parented under a tracked widget.
+
+        ``findChildren`` recurses across window boundaries, so an option-box
+        dropdown ``Menu`` (a ``Qt.Tool`` window whose Qt-parent is a tracked
+        button) would otherwise be pulled into ``_widgets`` — and the gesture
+        tracker would then ``grabMouse()`` its controls and post synthetic
+        releases to its checkboxes, killing their input. The tracker must only
+        own widgets in its own top-level window.
+        """
+        same_window_btn = QtWidgets.QPushButton(self.parent_widget)
+
+        # A separate top-level popup window, Qt-parented under a tracked button
+        # (mirrors OptionMenuOption: the menu's parent is the wrapped widget).
+        popup = self.track_widget(QtWidgets.QWidget(same_window_btn))
+        popup.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+        popup_checkbox = QtWidgets.QCheckBox(popup)
+
+        self.tracker.update_child_widgets()
+
+        self.assertIn(
+            same_window_btn,
+            self.tracker._widgets,
+            "a same-window child must still be tracked",
+        )
+        self.assertNotIn(
+            popup,
+            self.tracker._widgets,
+            "a foreign popup window must not be tracked",
+        )
+        self.assertNotIn(
+            popup_checkbox,
+            self.tracker._widgets,
+            "a control inside a foreign popup window must not be tracked",
+        )
+
+    def test_registered_external_widgets_survive_the_window_filter(self):
+        """Explicitly-registered foreign-window widgets (ExpandableList sublists)
+        must still be tracked — the same-window filter only drops *unregistered*
+        foreign windows."""
+        sublist = self.track_widget(QtWidgets.QWidget())
+        sublist.setWindowFlags(QtCore.Qt.ToolTip)
+        sublist_item = QtWidgets.QPushButton(sublist)
+        self.tracker.register_external_widgets([sublist])
+
+        self.tracker.update_child_widgets()
+
+        self.assertIn(sublist, self.tracker._widgets)
+        self.assertIn(sublist_item, self.tracker._widgets)
+
+    def test_excludes_combobox_popup_viewport(self):
+        """Foreign-window popup widgets must never be tracked. A ``QComboBox``
+        dropdown is a SEPARATE top-level window (``QComboBoxPrivateContainer``)
+        reached via ``findChildren`` from the tracked combo (the recursion
+        crosses window boundaries). Without the same-window filter the tracker
+        pulls the popup's ``QListView`` viewport into ``_widgets`` and would
+        ``grabMouse()`` it on hover — the same path that, for option-box controls
+        shown in a popup ``Menu``, grabs them and posts synthetic releases to
+        their QAbstractButtons (killing a checkbox's input). The popup's view and
+        viewport must never enter ``_widgets``.
+
+        NOTE: this guards the foreign-window-tracking invariant; it is NOT the
+        fix for an option-box combobox *selection* failing to commit — that
+        failure reproduces with MouseTracking dormant (no grab) and is unrelated
+        to this filter.
+        """
+        combo = QtWidgets.QComboBox(self.parent_widget)
+        combo.addItems(["a", "b", "c"])
+        combo.showPopup()
+        view = combo.view()
+        viewport = view.viewport()
+
+        # Sanity: the popup really is a foreign top-level window (else the test
+        # would pass vacuously even with the filter removed).
+        self.assertIsNot(view.window(), self.parent_widget.window())
+
+        self.tracker.update_child_widgets()
+
+        self.assertIn(combo, self.tracker._widgets, "the combo itself is tracked")
+        self.assertNotIn(
+            view, self.tracker._widgets, "the popup view must not be tracked"
+        )
+        self.assertNotIn(
+            viewport,
+            self.tracker._widgets,
+            "the popup viewport must not be tracked (else its clicks get grabbed)",
+        )
+
+        combo.hidePopup()  # don't leave an app-level popup grab for the next test
+
     def test_flush_hover_state_clears_tracking(self):
         """Should clear mouse_over sets when flushing."""
         # Add some widgets to tracking
@@ -676,6 +767,35 @@ class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
         b_global = self.btn_b.mapToGlobal(self.btn_b.rect().center())
         self._move(self.btn_b, b_global)
         self._assert_grab_handed_off(self.btn_b, previous=self.btn_a)
+
+    def test_no_grab_churn_when_cursor_stays_on_widget(self):
+        """Staying on one widget across MouseMoves must grab it ONCE, not
+        release+regrab every move.
+
+        The churn cleared ``_mouse_owner`` each move (via
+        ``_release_mouse_for_widgets``), defeating ``_grab_widget``'s
+        "already own it" guard, so the same widget was dropped and re-grabbed
+        continuously — wasted hot-path work and a native capture-change storm
+        (``ReleaseCapture`` on Win32) that can disrupt an in-progress
+        interaction. Asserts product state (the spy + ``_mouse_owner``), not the
+        OS grab, so it stays deterministic under the offscreen QPA.
+        """
+        self.parent.grabMouse()
+        a_global = self.btn_a.mapToGlobal(self.btn_a.rect().center())
+        self._move(self.btn_a, a_global)
+        self.assertIs(self.tracker._mouse_owner, self.btn_a)
+
+        # A second move resolving to the SAME widget must not release its grab.
+        released = []
+        self.btn_a.releaseMouse = lambda *a, **k: released.append(True)
+        try:
+            self._move(self.btn_a, a_global)
+        finally:
+            del self.btn_a.releaseMouse
+        self.assertEqual(
+            released, [], "staying on the same widget must not release its grab"
+        )
+        self.assertIs(self.tracker._mouse_owner, self.btn_a)
 
     def _assert_grab_handed_off(self, target, *, previous=None):
         """Assert MouseTracking handed the grab to ``target``.

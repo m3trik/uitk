@@ -20,7 +20,11 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._container = None
         self._clear_enabled = False
         self._menu = None
+        # Default order. "value" first so an inline ValueOption field sits flush
+        # against the wrapped widget, ahead of every icon button. Mirrors
+        # OptionBox._option_order (the fallback when no order is passed here).
         self._option_order = [
+            "value",
             "clear",
             "recent",
             "pin",
@@ -29,7 +33,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             "action",
             "browse",
             "menu",
-        ]  # Default order: clear, recent, pin, reset, toggle, action, browse, menu
+        ]
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -136,6 +140,21 @@ class OptionBoxManager(ptk.LoggingMixin):
         self.add_option(recent_option)
         return self
 
+    def _remove_options(self, predicate):
+        """Remove every option matching *predicate(option)* — pending and live.
+
+        The shared body of the ``replace=True`` path across set_action /
+        set_toggle / set_reset / add_value: each replaces only its own option
+        type, so they pass a type/predicate test and this drops the matches
+        from both the pending list and an already-wrapped option box.
+        """
+        self._pending_options = [
+            o for o in self._pending_options if not predicate(o)
+        ]
+        if self._option_box:
+            for o in [o for o in self._option_box.get_options() if predicate(o)]:
+                self._option_box.remove_option(o)
+
     def set_action(
         self,
         callback=None,
@@ -169,24 +188,10 @@ class OptionBoxManager(ptk.LoggingMixin):
         if replace:
             # Remove existing ActionOption instances (but NOT MenuOption
             # subclasses — those are managed by enable_menu/disable_menu).
-            def _is_pure_action(opt):
-                return isinstance(opt, ActionOption) and not isinstance(opt, MenuOption)
-
-            # Check pending options
-            self._pending_options = [
-                opt for opt in self._pending_options if not _is_pure_action(opt)
-            ]
-
-            # Check active options
-            if self._option_box:
-                options_to_remove = [
-                    opt
-                    for opt in self._option_box.get_options()
-                    if _is_pure_action(opt)
-                ]
-
-                for opt in options_to_remove:
-                    self._option_box.remove_option(opt)
+            self._remove_options(
+                lambda opt: isinstance(opt, ActionOption)
+                and not isinstance(opt, MenuOption)
+            )
 
         action_option = ActionOption(
             wrapped_widget=self._widget,
@@ -274,14 +279,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         from uitk.widgets.optionBox.options.toggle import ToggleOption
 
         if replace:
-            self._pending_options = [
-                opt for opt in self._pending_options if not isinstance(opt, ToggleOption)
-            ]
-            if self._option_box:
-                for opt in [
-                    o for o in self._option_box.get_options() if isinstance(o, ToggleOption)
-                ]:
-                    self._option_box.remove_option(opt)
+            self._remove_options(lambda o: isinstance(o, ToggleOption))
 
         kwargs = dict(
             wrapped_widget=self._widget,
@@ -308,6 +306,51 @@ class OptionBoxManager(ptk.LoggingMixin):
         """
         kwargs.setdefault("replace", False)
         return self.set_toggle(**kwargs)
+
+    def add_value(
+        self,
+        *,
+        width: int = 46,
+        decimals=None,
+        suffix: str = "",
+        order=None,
+        replace: bool = True,
+    ):
+        """Add an inline editable value field that mirrors the wrapped widget.
+
+        A compact, button-less spin box sits flush beside the wrapped widget
+        and stays in two-way sync with its value — dragging the widget updates
+        the field; typing in the field updates the widget (and lets it emit, so
+        any connected slot still fires). Pairs naturally with :class:`Slider`.
+
+        Args:
+            width: Fixed pixel width of the field.
+            decimals: Decimal places; ``None`` inherits the wrapped widget's
+                ``decimals()`` (else 0 — integer, e.g. a slider).
+            suffix: Optional unit suffix after the number (e.g. ``"°"``).
+            order: Explicit sort position. See :class:`BaseOption`.
+            replace: When ``True`` (default), removes any existing ValueOption
+                first. Pass ``False`` to stack more than one.
+
+        Returns:
+            self: For fluent chaining. Access the option via
+            ``find_option(ValueOption)``.
+        """
+        from uitk.widgets.optionBox.options.value import ValueOption
+
+        if replace:
+            self._remove_options(lambda o: isinstance(o, ValueOption))
+
+        self.add_option(
+            ValueOption(
+                wrapped_widget=self._widget,
+                width=width,
+                decimals=decimals,
+                suffix=suffix,
+                order=order,
+            )
+        )
+        return self
 
     def set_reset(
         self,
@@ -349,16 +392,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         from uitk.widgets.optionBox.options.reset import ResetOption
 
         if replace:
-            self._pending_options = [
-                o for o in self._pending_options if not isinstance(o, ResetOption)
-            ]
-            if self._option_box:
-                for o in [
-                    opt
-                    for opt in self._option_box.get_options()
-                    if isinstance(opt, ResetOption)
-                ]:
-                    self._option_box.remove_option(o)
+            self._remove_options(lambda o: isinstance(o, ResetOption))
 
         kwargs = dict(
             wrapped_widget=self._widget,

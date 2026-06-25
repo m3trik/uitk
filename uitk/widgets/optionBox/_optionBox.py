@@ -11,12 +11,14 @@ from .options.reset import ResetOption
 from .options.pin_values import PinValuesOption
 from .options.recent_values import RecentValuesOption
 from .options.toggle import ToggleOption
+from .options.value import ValueOption
 
 # Concrete option type -> grouping key, consulted by OptionBox._sort_options.
 # Built once at import; was previously rebuilt (with 7 local imports) on every
 # wrap() / _rebuild_layout() call. The option modules never import _optionBox,
 # so these top-level imports introduce no cycle.
 _TYPE_TO_KEY = {
+    ValueOption: "value",
     ClearOption: "clear",
     RecentValuesOption: "recent",
     PinValuesOption: "pin",
@@ -134,6 +136,9 @@ class OptionBox:
         self._show_clear_button = show_clear
         self._options = []
         self._option_order = option_order or [
+            # The inline value field sits flush against the wrapped widget,
+            # ahead of the icon buttons.
+            "value",
             "clear",
             "recent",
             "pin",
@@ -268,7 +273,13 @@ class OptionBox:
             if not hasattr(option, "widget"):
                 continue
             w = option.widget
-            w.setFixedSize(h, h)
+            # Most options are icon buttons forced to an h x h square. A
+            # non-square option (e.g. ValueOption's editable field) keeps its
+            # own width and is only height-matched to the row.
+            if getattr(option, "square", True):
+                w.setFixedSize(h, h)
+            else:
+                w.setFixedHeight(h)
             if not hasattr(w, "setIcon"):
                 continue
             # Use whatever icon name IconManager has on record (handles
