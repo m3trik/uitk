@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-06-22",
+  "generated_at": "2026-06-25",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -664,7 +664,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Drive enter/leave + grab handoff for whatever's under the cursor.",
-              "line": 312,
+              "line": 329,
               "deprecated": false
             },
             {
@@ -673,7 +673,7 @@
               "kind": "staticmethod",
               "signature": "(widget)",
               "summary": "Return True if the Qt widget and its C++ object still exist.",
-              "line": 361,
+              "line": 388,
               "deprecated": false
             },
             {
@@ -682,7 +682,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Filter mouse move and release events.",
-              "line": 519,
+              "line": 547,
               "deprecated": false
             }
           ]
@@ -968,7 +968,7 @@
         {
           "name": "ExternalAppHandler",
           "summary": "Switchboard handler for launching external Python apps.",
-          "line": 114,
+          "line": 122,
           "bases": [
             "BaseHandler"
           ],
@@ -979,16 +979,25 @@
               "kind": "method",
               "signature": "(self, groups: Optional[Iterable[str]] = None) -> int",
               "summary": "Auto-register every app advertised under a uitk entry-point group.",
-              "line": 158,
+              "line": 185,
+              "deprecated": false
+            },
+            {
+              "name": "add_provider",
+              "qualname": "ExternalAppHandler.add_provider",
+              "kind": "method",
+              "signature": "(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None",
+              "summary": "Register a provider package that ships discoverable apps.",
+              "line": 307,
               "deprecated": false
             },
             {
               "name": "register",
               "qualname": "ExternalAppHandler.register",
               "kind": "method",
-              "signature": "(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None) -> None",
+              "signature": "(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None) -> None",
               "summary": "Pre-register an app so it can be launched by name.",
-              "line": 222,
+              "line": 412,
               "deprecated": false
             },
             {
@@ -997,7 +1006,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 274,
+              "line": 478,
               "deprecated": false
             },
             {
@@ -1006,7 +1015,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Remove an app.",
-              "line": 277,
+              "line": 481,
               "deprecated": false
             },
             {
@@ -1015,7 +1024,7 @@
               "kind": "method",
               "signature": "(self) -> Iterable[HandlerEntry]",
               "summary": "Yield one :class:`HandlerEntry` per registered app.",
-              "line": 286,
+              "line": 490,
               "deprecated": false
             },
             {
@@ -1024,7 +1033,7 @@
               "kind": "method",
               "signature": "(self, name: str, tags: Iterable[str]) -> None",
               "summary": "Persist *tags* for *name* in the handler's config branch.",
-              "line": 356,
+              "line": 567,
               "deprecated": false
             },
             {
@@ -1033,7 +1042,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Hide an in-process widget;",
-              "line": 382,
+              "line": 593,
               "deprecated": false
             },
             {
@@ -1042,7 +1051,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 408,
+              "line": 619,
               "deprecated": false
             },
             {
@@ -1051,7 +1060,7 @@
               "kind": "method",
               "signature": "(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, show: bool = True, **_options)",
               "summary": "Launch a registered app, or an ad-hoc app from kwargs.",
-              "line": 425,
+              "line": 636,
               "deprecated": false
             }
           ]
@@ -2813,7 +2822,7 @@
         {
           "name": "ComboBox",
           "summary": "QComboBox with automatic Menu and OptionBox integration.",
-          "line": 311,
+          "line": 390,
           "bases": [
             "AlignedComboBox",
             "MenuMixin",
@@ -2829,7 +2838,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 378,
+              "line": 457,
               "deprecated": false
             },
             {
@@ -2838,7 +2847,7 @@
               "kind": "method",
               "signature": "(self, *args, **kwargs)",
               "summary": "",
-              "line": 382,
+              "line": 461,
               "deprecated": false
             },
             {
@@ -2847,7 +2856,7 @@
               "kind": "method",
               "signature": "(self, *args, **kwargs)",
               "summary": "",
-              "line": 386,
+              "line": 465,
               "deprecated": false
             },
             {
@@ -2856,7 +2865,7 @@
               "kind": "method",
               "signature": "(self, *args, **kwargs)",
               "summary": "",
-              "line": 390,
+              "line": 469,
               "deprecated": false
             },
             {
@@ -2865,7 +2874,7 @@
               "kind": "method",
               "signature": "(self, *args, **kwargs)",
               "summary": "",
-              "line": 394,
+              "line": 473,
               "deprecated": false
             },
             {
@@ -2874,7 +2883,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Text appended to the *displayed* current selection only.",
-              "line": 399,
+              "line": 478,
               "deprecated": false
             },
             {
@@ -2883,7 +2892,7 @@
               "kind": "method",
               "signature": "(self, value: str) -> None",
               "summary": "",
-              "line": 410,
+              "line": 489,
               "deprecated": false
             },
             {
@@ -2892,7 +2901,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 417,
+              "line": 496,
               "deprecated": false
             },
             {
@@ -2901,7 +2910,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 424,
+              "line": 503,
               "deprecated": false
             },
             {
@@ -2910,7 +2919,7 @@
               "kind": "method",
               "signature": "(self, value)",
               "summary": "",
-              "line": 428,
+              "line": 507,
               "deprecated": false
             },
             {
@@ -2919,7 +2928,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 432,
+              "line": 511,
               "deprecated": false
             },
             {
@@ -2928,7 +2937,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "Select the item whose rich or plain text matches *text*.",
-              "line": 436,
+              "line": 515,
               "deprecated": false
             },
             {
@@ -2937,7 +2946,7 @@
               "kind": "method",
               "signature": "(self, index, text)",
               "summary": "",
-              "line": 452,
+              "line": 531,
               "deprecated": false
             },
             {
@@ -2946,7 +2955,7 @@
               "kind": "method",
               "signature": "(self, i: Union[str, int], blockSignals: bool = False, strict: bool = False, fallback_index: int = None) -> None",
               "summary": "Set the current item by value or index, with optional fallback if not found.",
-              "line": 455,
+              "line": 534,
               "deprecated": false
             },
             {
@@ -2955,7 +2964,7 @@
               "kind": "method",
               "signature": "(self, index)",
               "summary": "",
-              "line": 499,
+              "line": 578,
               "deprecated": false
             },
             {
@@ -2964,7 +2973,7 @@
               "kind": "method",
               "signature": "(self, index)",
               "summary": "",
-              "line": 515,
+              "line": 594,
               "deprecated": false
             },
             {
@@ -2973,7 +2982,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 523,
+              "line": 602,
               "deprecated": false
             },
             {
@@ -2982,7 +2991,7 @@
               "kind": "method",
               "signature": "(self, editable, emit_signal=True)",
               "summary": "",
-              "line": 529,
+              "line": 608,
               "deprecated": false
             },
             {
@@ -2991,7 +3000,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 548,
+              "line": 627,
               "deprecated": false
             },
             {
@@ -3000,7 +3009,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "",
-              "line": 552,
+              "line": 631,
               "deprecated": false
             },
             {
@@ -3009,7 +3018,7 @@
               "kind": "method",
               "signature": "(self, item, data, ascending)",
               "summary": "",
-              "line": 558,
+              "line": 637,
               "deprecated": false
             },
             {
@@ -3018,7 +3027,7 @@
               "kind": "method",
               "signature": "(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, prefix=None, **kwargs)",
               "summary": "",
-              "line": 565,
+              "line": 644,
               "deprecated": false
             },
             {
@@ -3027,7 +3036,7 @@
               "kind": "method",
               "signature": "(self, index=None)",
               "summary": "",
-              "line": 646,
+              "line": 725,
               "deprecated": false
             },
             {
@@ -3036,7 +3045,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 671,
+              "line": 750,
               "deprecated": false
             },
             {
@@ -3045,7 +3054,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 690,
+              "line": 784,
               "deprecated": false
             }
           ]
@@ -4707,7 +4716,7 @@
         {
           "name": "LineEdit",
           "summary": "LineEdit with automatic Menu and OptionBox integration.",
-          "line": 202,
+          "line": 214,
           "bases": [
             "QtWidgets.QLineEdit",
             "MenuMixin",
@@ -4717,12 +4726,48 @@
           ],
           "members": [
             {
+              "name": "set_value",
+              "qualname": "LineEdit.set_value",
+              "kind": "method",
+              "signature": "(self, value, display=None)",
+              "summary": "Set the field's underlying value and an optional display string.",
+              "line": 281,
+              "deprecated": false
+            },
+            {
+              "name": "value",
+              "qualname": "LineEdit.value",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "The field's value: the stored data payload, or :meth:`text` if none.",
+              "line": 301,
+              "deprecated": false
+            },
+            {
+              "name": "data",
+              "qualname": "LineEdit.data",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "The stored data payload, or ``None`` when the text *is* the value.",
+              "line": 305,
+              "deprecated": false
+            },
+            {
+              "name": "clear_value",
+              "qualname": "LineEdit.clear_value",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Drop the stored data payload (leaves the visible text untouched).",
+              "line": 313,
+              "deprecated": false
+            },
+            {
               "name": "contextMenuEvent",
               "qualname": "LineEdit.contextMenuEvent",
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Override the standard context menu if there is a custom one.",
-              "line": 260,
+              "line": 324,
               "deprecated": false
             },
             {
@@ -4731,7 +4776,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle show event.",
-              "line": 267,
+              "line": 331,
               "deprecated": false
             },
             {
@@ -4740,7 +4785,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle hide event.",
-              "line": 272,
+              "line": 336,
               "deprecated": false
             }
           ]
@@ -5329,7 +5374,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 2063,
+              "line": 2086,
               "deprecated": false
             },
             {
@@ -5338,7 +5383,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 2082,
+              "line": 2108,
               "deprecated": false
             },
             {
@@ -5347,7 +5392,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Dispatch (or forward) a release delivered to a *grabbed* child.",
-              "line": 2091,
+              "line": 2117,
               "deprecated": false
             }
           ]
@@ -7107,15 +7152,22 @@
           "kind": "function",
           "signature": "(value)",
           "summary": "Normalize a value for comparison.",
-          "line": 64,
+          "line": 105,
           "deprecated": false
         }
       ],
       "classes": [
         {
+          "name": "RecentValueEntry",
+          "summary": "A recent value whose restore-data differs from its display string.",
+          "line": 64,
+          "bases": [],
+          "members": []
+        },
+        {
           "name": "RecentValuesStore",
           "summary": "Ordered, deduped, most-recent-first value history.",
-          "line": 77,
+          "line": 121,
           "bases": [],
           "members": [
             {
@@ -7124,7 +7176,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[], None]) -> None",
               "summary": "Register *callback* to be invoked (no args) after any mutation.",
-              "line": 162,
+              "line": 221,
               "deprecated": false
             },
             {
@@ -7133,7 +7185,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[], None]) -> None",
               "summary": "Remove a previously-registered *callback* (no-op if absent).",
-              "line": 167,
+              "line": 226,
               "deprecated": false
             },
             {
@@ -7142,7 +7194,7 @@
               "kind": "property",
               "signature": "(self) -> List",
               "summary": "A copy of the full history (most-recent first, raw values).",
-              "line": 188,
+              "line": 247,
               "deprecated": false
             },
             {
@@ -7151,7 +7203,7 @@
               "kind": "method",
               "signature": "(self, value) -> bool",
               "summary": "Whether *value* passes the configured validator (True if none).",
-              "line": 192,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -7160,7 +7212,7 @@
               "kind": "method",
               "signature": "(self) -> List",
               "summary": "History filtered to entries passing the validator (non-destructive).",
-              "line": 201,
+              "line": 260,
               "deprecated": false
             },
             {
@@ -7169,7 +7221,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "Insert *value* at the front (most-recent), dedup, trim, persist.",
-              "line": 209,
+              "line": 268,
               "deprecated": false
             },
             {
@@ -7178,7 +7230,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "Seed *value* (append if new);",
-              "line": 220,
+              "line": 279,
               "deprecated": false
             },
             {
@@ -7187,7 +7239,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "Remove *value* from the history (no-op if absent).",
-              "line": 238,
+              "line": 297,
               "deprecated": false
             },
             {
@@ -7196,7 +7248,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Drop all history.",
-              "line": 247,
+              "line": 306,
               "deprecated": false
             },
             {
@@ -7205,7 +7257,7 @@
               "kind": "method",
               "signature": "(self) -> List",
               "summary": "Drop every entry failing the validator;",
-              "line": 255,
+              "line": 314,
               "deprecated": false
             },
             {
@@ -7214,7 +7266,7 @@
               "kind": "method",
               "signature": "(self, values=None) -> dict",
               "summary": "Return ``{raw_value: display_string}`` for *values*.",
-              "line": 273,
+              "line": 332,
               "deprecated": false
             }
           ]
@@ -8391,7 +8443,7 @@
         {
           "name": "OptionBoxContainer",
           "summary": "Container widget that wraps a widget with option buttons.",
-          "line": 29,
+          "line": 31,
           "bases": [
             "QtWidgets.QWidget"
           ],
@@ -8402,7 +8454,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 47,
+              "line": 49,
               "deprecated": false
             },
             {
@@ -8411,7 +8463,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Re-fit to content when shown without a managing parent layout.",
-              "line": 52,
+              "line": 54,
               "deprecated": false
             },
             {
@@ -8420,7 +8472,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Watch the wrapped widget for enabled-state changes.",
-              "line": 86,
+              "line": 88,
               "deprecated": false
             }
           ]
@@ -8428,7 +8480,7 @@
         {
           "name": "OptionBox",
           "summary": "Plugin-based option manager that wraps widgets with action buttons.",
-          "line": 118,
+          "line": 120,
           "bases": [],
           "members": [
             {
@@ -8437,7 +8489,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin instance.",
-              "line": 158,
+              "line": 163,
               "deprecated": false
             },
             {
@@ -8446,7 +8498,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Remove an option plugin instance.",
-              "line": 169,
+              "line": 174,
               "deprecated": false
             },
             {
@@ -8455,7 +8507,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all registered option plugins.",
-              "line": 176,
+              "line": 181,
               "deprecated": false
             },
             {
@@ -8464,7 +8516,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get clear button state.",
-              "line": 344,
+              "line": 355,
               "deprecated": false
             },
             {
@@ -8473,7 +8525,7 @@
               "kind": "method",
               "signature": "(self, value)",
               "summary": "Set clear button visibility.",
-              "line": 349,
+              "line": 360,
               "deprecated": false
             },
             {
@@ -8482,7 +8534,7 @@
               "kind": "method",
               "signature": "(self, visible=True)",
               "summary": "Enable or disable the clear button.",
-              "line": 366,
+              "line": 377,
               "deprecated": false
             },
             {
@@ -8491,7 +8543,7 @@
               "kind": "method",
               "signature": "(self, wrapped_widget: QtWidgets.QWidget, frameless=False)",
               "summary": "Wrap target widget with option buttons.",
-              "line": 386,
+              "line": 397,
               "deprecated": false
             }
           ]
@@ -9150,7 +9202,7 @@
         {
           "name": "RecentValuesPopup",
           "summary": "Popup that displays recent values using the Menu widget.",
-          "line": 20,
+          "line": 22,
           "bases": [
             "QtCore.QObject"
           ],
@@ -9161,7 +9213,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the underlying Menu widget.",
-              "line": 56,
+              "line": 58,
               "deprecated": false
             },
             {
@@ -9170,7 +9222,7 @@
               "kind": "method",
               "signature": "(self, watched, event)",
               "summary": "Close popup when any parent widget is hidden or a window-ancestor moves.",
-              "line": 78,
+              "line": 80,
               "deprecated": false
             },
             {
@@ -9179,7 +9231,7 @@
               "kind": "method",
               "signature": "(self, on_value_selected=None, on_value_removed=None)",
               "summary": "Connect signal handlers.",
-              "line": 91,
+              "line": 93,
               "deprecated": false
             },
             {
@@ -9188,7 +9240,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 96,
+              "line": 98,
               "deprecated": false
             },
             {
@@ -9197,7 +9249,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 99,
+              "line": 101,
               "deprecated": false
             },
             {
@@ -9206,7 +9258,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 102,
+              "line": 104,
               "deprecated": false
             },
             {
@@ -9215,7 +9267,7 @@
               "kind": "method",
               "signature": "(self, pos)",
               "summary": "",
-              "line": 106,
+              "line": 108,
               "deprecated": false
             },
             {
@@ -9224,7 +9276,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 109,
+              "line": 111,
               "deprecated": false
             },
             {
@@ -9233,7 +9285,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 112,
+              "line": 114,
               "deprecated": false
             },
             {
@@ -9242,7 +9294,7 @@
               "kind": "method",
               "signature": "(self, value, is_current=False, display_text=None)",
               "summary": "Add a recent-value row.",
-              "line": 115,
+              "line": 117,
               "deprecated": false
             },
             {
@@ -9251,7 +9303,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 129,
+              "line": 131,
               "deprecated": false
             },
             {
@@ -9260,7 +9312,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 137,
+              "line": 139,
               "deprecated": false
             }
           ]
@@ -9268,7 +9320,7 @@
         {
           "name": "RecentValuesOption",
           "summary": "A history button that manages recent widget values.",
-          "line": 197,
+          "line": 199,
           "bases": [
             "ButtonOption"
           ],
@@ -9279,7 +9331,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The backing :class:`RecentValuesStore` (shareable across presenters).",
-              "line": 293,
+              "line": 295,
               "deprecated": false
             },
             {
@@ -9288,7 +9340,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 301,
+              "line": 303,
               "deprecated": false
             },
             {
@@ -9297,7 +9349,7 @@
               "kind": "method",
               "signature": "(self, value=None)",
               "summary": "Record a value into the recent list.",
-              "line": 458,
+              "line": 504,
               "deprecated": false
             },
             {
@@ -9306,7 +9358,7 @@
               "kind": "method",
               "signature": "(self, value)",
               "summary": "Programmatically seed a recent value (appends if not duplicate).",
-              "line": 468,
+              "line": 517,
               "deprecated": false
             },
             {
@@ -9315,7 +9367,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Set or update the wrapped widget, re-installing auto-record if enabled.",
-              "line": 472,
+              "line": 521,
               "deprecated": false
             },
             {
@@ -9324,7 +9376,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Return a copy of the recent values list (most-recent first).",
-              "line": 532,
+              "line": 581,
               "deprecated": false
             },
             {
@@ -9333,7 +9385,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all recent values.",
-              "line": 536,
+              "line": 585,
               "deprecated": false
             }
           ]
@@ -9439,6 +9491,68 @@
       ]
     },
     {
+      "relpath": "widgets/optionBox/options/value.py",
+      "summary": "Inline editable value readout for OptionBox.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "ValueOption",
+          "summary": "Inline, editable numeric field mirroring the wrapped widget's value.",
+          "line": 27,
+          "bases": [
+            "BaseOption"
+          ],
+          "members": [
+            {
+              "name": "create_widget",
+              "qualname": "ValueOption.create_widget",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Create the compact, button-less spin box field.",
+              "line": 69,
+              "deprecated": false
+            },
+            {
+              "name": "setup_widget",
+              "qualname": "ValueOption.setup_widget",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Mirror the wrapped widget into the field and wire field -> widget.",
+              "line": 82,
+              "deprecated": false
+            },
+            {
+              "name": "on_wrap",
+              "qualname": "ValueOption.on_wrap",
+              "kind": "method",
+              "signature": "(self, option_box, container)",
+              "summary": "",
+              "line": 88,
+              "deprecated": false
+            },
+            {
+              "name": "refresh",
+              "qualname": "ValueOption.refresh",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Re-sync the field from the wrapped widget's current value.",
+              "line": 93,
+              "deprecated": false
+            },
+            {
+              "name": "set_wrapped_widget",
+              "qualname": "ValueOption.set_wrapped_widget",
+              "kind": "method",
+              "signature": "(self, widget)",
+              "summary": "",
+              "line": 102,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "widgets/optionBox/utils.py",
       "summary": "Utilities and helper functions for OptionBox.",
       "functions": [
@@ -9448,7 +9562,7 @@
           "kind": "function",
           "signature": "(widget, show_clear=False, options=None, **kwargs)",
           "summary": "Add an option box to any widget with one function call.",
-          "line": 1025,
+          "line": 1059,
           "deprecated": false
         },
         {
@@ -9457,7 +9571,7 @@
           "kind": "function",
           "signature": "(widget, **kwargs)",
           "summary": "Add just a clear button to a text widget.",
-          "line": 1048,
+          "line": 1082,
           "deprecated": false
         },
         {
@@ -9466,7 +9580,7 @@
           "kind": "function",
           "signature": "(widget, menu, **kwargs)",
           "summary": "Add a menu option to any widget.",
-          "line": 1061,
+          "line": 1095,
           "deprecated": false
         },
         {
@@ -9475,7 +9589,7 @@
           "kind": "function",
           "signature": "(widget_class)",
           "summary": "Add option_box attribute to a widget class.",
-          "line": 1080,
+          "line": 1114,
           "deprecated": false
         },
         {
@@ -9484,7 +9598,7 @@
           "kind": "function",
           "signature": "()",
           "summary": "Patch common Qt widgets with option box support.",
-          "line": 1095,
+          "line": 1129,
           "deprecated": false
         }
       ],
@@ -9503,7 +9617,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get/set clear option state",
-              "line": 39,
+              "line": 43,
               "deprecated": false
             },
             {
@@ -9512,7 +9626,7 @@
               "kind": "method",
               "signature": "(self, enabled)",
               "summary": "Enable/disable clear option",
-              "line": 44,
+              "line": 48,
               "deprecated": false
             },
             {
@@ -9521,7 +9635,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get/set option ordering: ['clear', 'action'] or ['action', 'clear']",
-              "line": 50,
+              "line": 54,
               "deprecated": false
             },
             {
@@ -9530,7 +9644,7 @@
               "kind": "method",
               "signature": "(self, order)",
               "summary": "Set option ordering",
-              "line": 55,
+              "line": 59,
               "deprecated": false
             },
             {
@@ -9539,7 +9653,7 @@
               "kind": "method",
               "signature": "(self, settings_key: Optional[str] = None, *, double_click_to_edit: bool = False, single_click_restore: bool = False)",
               "summary": "Enable pin values option (fluent interface).",
-              "line": 87,
+              "line": 91,
               "deprecated": false
             },
             {
@@ -9548,7 +9662,7 @@
               "kind": "method",
               "signature": "(self, settings_key: Optional[str] = None, *, max_recent: int = 10, **kwargs)",
               "summary": "Enable recent values option (fluent interface).",
-              "line": 113,
+              "line": 117,
               "deprecated": false
             },
             {
@@ -9557,7 +9671,7 @@
               "kind": "method",
               "signature": "(self, callback=None, icon='option_box', tooltip='Options', text=None, replace=True, states=None, settings_key=None)",
               "summary": "Set the action handler (fluent interface).",
-              "line": 139,
+              "line": 158,
               "deprecated": false
             },
             {
@@ -9566,7 +9680,7 @@
               "kind": "method",
               "signature": "(self, callback=None, icon='option_box', tooltip='Options', text=None, states=None, settings_key=None)",
               "summary": "Add an action button without replacing existing ones.",
-              "line": 203,
+              "line": 208,
               "deprecated": false
             },
             {
@@ -9575,7 +9689,7 @@
               "kind": "method",
               "signature": "(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, gated_widgets=(), settings_key=None, replace: bool = True, on_toggled=None)",
               "summary": "Add a persisted binary toggle button (fluent interface).",
-              "line": 235,
+              "line": 240,
               "deprecated": false
             },
             {
@@ -9584,7 +9698,16 @@
               "kind": "method",
               "signature": "(self, **kwargs)",
               "summary": "Add a toggle without replacing existing ones.",
-              "line": 304,
+              "line": 302,
+              "deprecated": false
+            },
+            {
+              "name": "add_value",
+              "qualname": "OptionBoxManager.add_value",
+              "kind": "method",
+              "signature": "(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)",
+              "summary": "Add an inline editable value field that mirrors the wrapped widget.",
+              "line": 310,
               "deprecated": false
             },
             {
@@ -9593,7 +9716,7 @@
               "kind": "method",
               "signature": "(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)",
               "summary": "Add a per-widget *reset-to-default* button (fluent).",
-              "line": 312,
+              "line": 355,
               "deprecated": false
             },
             {
@@ -9602,7 +9725,7 @@
               "kind": "method",
               "signature": "(self, file_types=None, title='Browse', start_dir=None, mode='file', icon='folder', tooltip='Browse...', callback=None)",
               "summary": "Enable file/folder browse button (fluent interface).",
-              "line": 380,
+              "line": 414,
               "deprecated": false
             },
             {
@@ -9611,7 +9734,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Enable clear option (fluent interface)",
-              "line": 424,
+              "line": 458,
               "deprecated": false
             },
             {
@@ -9620,7 +9743,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Disable clear option (fluent interface)",
-              "line": 429,
+              "line": 463,
               "deprecated": false
             },
             {
@@ -9629,7 +9752,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all added options.",
-              "line": 434,
+              "line": 468,
               "deprecated": false
             },
             {
@@ -9638,7 +9761,7 @@
               "kind": "method",
               "signature": "(self, option_type)",
               "summary": "Find the first option of the given type.",
-              "line": 449,
+              "line": 483,
               "deprecated": false
             },
             {
@@ -9647,7 +9770,7 @@
               "kind": "method",
               "signature": "(self, order)",
               "summary": "Set option order (fluent interface)",
-              "line": 469,
+              "line": 503,
               "deprecated": false
             },
             {
@@ -9656,7 +9779,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Set clear button to appear first (fluent interface)",
-              "line": 478,
+              "line": 512,
               "deprecated": false
             },
             {
@@ -9665,7 +9788,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Check if option box is enabled",
-              "line": 483,
+              "line": 517,
               "deprecated": false
             },
             {
@@ -9674,7 +9797,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the actual option box widget",
-              "line": 488,
+              "line": 522,
               "deprecated": false
             },
             {
@@ -9683,7 +9806,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get or create a Menu instance for this option box.",
-              "line": 494,
+              "line": 528,
               "deprecated": false
             },
             {
@@ -9692,7 +9815,7 @@
               "kind": "method",
               "signature": "(self, create=False)",
               "summary": "Get menu, optionally creating if it doesn't exist.",
-              "line": 513,
+              "line": 547,
               "deprecated": false
             },
             {
@@ -9701,7 +9824,7 @@
               "kind": "method",
               "signature": "(self, value)",
               "summary": "Set an existing menu instance.",
-              "line": 530,
+              "line": 564,
               "deprecated": false
             },
             {
@@ -9710,7 +9833,7 @@
               "kind": "method",
               "signature": "(self, menu=None, **menu_kwargs)",
               "summary": "Enable menu option using the MenuOption plugin.",
-              "line": 541,
+              "line": 575,
               "deprecated": false
             },
             {
@@ -9719,7 +9842,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Disable menu option (fluent interface).",
-              "line": 658,
+              "line": 692,
               "deprecated": false
             },
             {
@@ -9728,7 +9851,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin to this option box.",
-              "line": 668,
+              "line": 702,
               "deprecated": false
             },
             {
@@ -9737,7 +9860,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the container widget (for layout management).",
-              "line": 837,
+              "line": 871,
               "deprecated": false
             },
             {
@@ -9746,7 +9869,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove option box completely",
-              "line": 1000,
+              "line": 1034,
               "deprecated": false
             }
           ]
@@ -12177,6 +12300,25 @@
               "deprecated": false
             }
           ]
+        }
+      ]
+    },
+    {
+      "relpath": "widgets/slider.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "Slider",
+          "summary": "QSlider with uitk's menu + option-box integration.",
+          "line": 9,
+          "bases": [
+            "QtWidgets.QSlider",
+            "MenuMixin",
+            "OptionBoxMixin",
+            "AttributesMixin"
+          ],
+          "members": []
         }
       ]
     },

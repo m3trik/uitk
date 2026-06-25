@@ -2,9 +2,12 @@
 # coding=utf-8
 """Tests for SettingsManager defaults and legacy registry migration.
 
-Touches the real registry — but only under test-prefixed orgs
-(``test_uitk_*``) so it can't disturb real user data. Every test cleans
-up its own keys in tearDown via ``QSettings.clear()``.
+Storage is sandboxed to a throwaway temp dir by the suite-wide conftest
+fixture (``_sandbox_qsettings``), so these tests cannot disturb the
+developer's real settings even when they construct ``SettingsManager()`` at
+the production ``(uitk, shared)`` location. As defense in depth the
+migration tests also pin ``_legacy_qsettings_pairs_for`` to test-prefixed
+orgs (``test_uitk_*``) and clean up their own keys in tearDown.
 """
 
 import unittest
@@ -32,16 +35,30 @@ def _wipe(org: str, app: str) -> None:
 
 
 class TestSettingsManagerDefaults(BaseTestCase):
-    """``SettingsManager`` with no args lands at the consolidated location."""
+    """``SettingsManager`` with no args lands at the consolidated location.
+
+    These assertions only inspect ``organizationName()`` /
+    ``applicationName()`` / ``namespace`` — they never read or write a
+    setting — so they need no clean store and MUST NOT clear the real
+    ``(uitk, shared)`` location, which holds the developer's live
+    marking-menu bindings, widget state, and theme. (A prior version wiped
+    it in setUp *and* tearDown, silently resetting real settings to defaults
+    on every suite run.) Construction is additionally kept from draining any
+    legacy data by pinning ``_legacy_qsettings_pairs_for`` to no-op.
+    """
+
+    _saved_pairs_fn = None
 
     def setUp(self):
         super().setUp()
+        # Never let construction migrate/drain real legacy registry data.
+        self._saved_pairs_fn = sm._legacy_qsettings_pairs_for
+        sm._legacy_qsettings_pairs_for = lambda new_org, new_app: []
         # Reset the process-cache so each test exercises the migration check.
         sm._MIGRATED_REGISTRY_PAIRS.clear()
-        _wipe(DEFAULT_ORG_NAME, DEFAULT_APP_NAME)
 
     def tearDown(self):
-        _wipe(DEFAULT_ORG_NAME, DEFAULT_APP_NAME)
+        sm._legacy_qsettings_pairs_for = self._saved_pairs_fn
         super().tearDown()
 
     def test_no_arg_construction_uses_uitk_shared(self):

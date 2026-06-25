@@ -165,19 +165,31 @@ class LineEditFormatMixin:
             return
         timer.start(self._validator_debounce_ms)
 
+    def _validation_value(self):
+        """The value validation runs against.
+
+        Defaults to the field text. Data-carrying hosts (e.g. :class:`LineEdit`
+        whose :meth:`set_value` shows a friendly display while storing a
+        distinct payload) override this to return that payload, so the
+        validator and the ``valid_tooltip`` callback see the real value rather
+        than the display string.
+        """
+        return self.text()
+
     def _run_validation(self):
         validator = getattr(self, "_validator_callable", None)
         if validator is None:
             return
-        text = self.text()
+        value = self._validation_value()
+        empty = not value
 
-        if not text and self._validator_empty_is_valid:
+        if empty and self._validator_empty_is_valid:
             ok = True
             self.reset_action_color()
             self.setToolTip(self._validator_empty_tooltip or "")
         else:
             try:
-                ok = bool(validator(text))
+                ok = bool(validator(value))
             except Exception:
                 ok = False
 
@@ -185,18 +197,18 @@ class LineEditFormatMixin:
                 self.set_action_color("reset")
                 tip = self._validator_valid_tooltip
                 if callable(tip):
-                    tip = tip(text)
-                self.setToolTip(tip if tip is not None else text)
+                    tip = tip(value)
+                self.setToolTip(tip if tip is not None else str(value))
             else:
                 self.set_action_color("invalid")
                 self.setToolTip(self._validator_invalid_tooltip)
 
-        self._last_validation_text = text
+        self._last_validation_text = value
         self._last_validation_result = ok
 
         emitter = getattr(self, "validated", None)
         if emitter is not None and hasattr(emitter, "emit"):
-            emitter.emit(ok, text)
+            emitter.emit(ok, value if isinstance(value, str) else str(value))
 
 
 class LineEdit(
@@ -251,11 +263,63 @@ class LineEdit(
         super().__init__(parent)
         self.setProperty("class", self.__class__.__name__)
 
+        # Optional hidden data payload — see ``set_value``/``value``/``data``.
+        # A manual edit clears it so the typed text becomes the value again.
+        self._value_data = None
+        self.textEdited.connect(self._invalidate_value_data)
+
         # OptionBox is also available via OptionBoxMixin
         # Users can access: self.option_box.menu, self.option_box.clear_option, etc.
 
         # Set any provided attributes
         self.set_attributes(**kwargs)
+
+    # ------------------------------------------------------------------
+    # Display / data split (Qt item-data style, single payload)
+    # ------------------------------------------------------------------
+
+    def set_value(self, value, display=None):
+        """Set the field's underlying value and an optional display string.
+
+        When *display* is given (and differs from ``str(value)``) the field
+        shows the friendlier *display* text while :meth:`value` / :meth:`data`
+        return the real *value* — e.g. a field that lists texture-set names
+        but carries the full file paths as data. When *display* is omitted the
+        field behaves exactly like ``setText(str(value))`` and carries no
+        separate payload (``text == value``).
+
+        A subsequent manual edit by the user clears the stored payload, so the
+        typed text becomes the value again.
+        """
+        text = str(value) if display is None else str(display)
+        if display is not None and str(display) != str(value):
+            self._value_data = value
+        else:
+            self._value_data = None
+        self.setText(text)
+
+    def value(self):
+        """The field's value: the stored data payload, or :meth:`text` if none."""
+        return self._value_data if self._value_data is not None else self.text()
+
+    def data(self):
+        """The stored data payload, or ``None`` when the text *is* the value.
+
+        Presenters use this to detect a display/data split: ``None`` means the
+        field carries no hidden payload and ``text()`` should be used directly.
+        """
+        return self._value_data
+
+    def clear_value(self):
+        """Drop the stored data payload (leaves the visible text untouched)."""
+        self._value_data = None
+
+    def _invalidate_value_data(self, *_args):
+        self._value_data = None
+
+    def _validation_value(self):
+        """Validate against the data payload when present, else the text."""
+        return self.value()
 
     def contextMenuEvent(self, event):
         """Override the standard context menu if there is a custom one."""

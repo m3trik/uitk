@@ -360,5 +360,92 @@ class SetCurrentIndexNegativePreservesBlockState(QtBaseTestCase):
         self.assertFalse(combo.signalsBlocked())
 
 
+class ItemClickCommitsWithinBlockWindow(QtBaseTestCase):
+    """A click on a popup row commits even within QComboBox's
+    ``blockMouseReleaseTimer`` window (~``doubleClickInterval`` after open).
+
+    Bug (live, option-box combo opened during a marking-menu gesture): the user
+    clicks a row fast — within the window where ``QComboBoxPrivateContainer``
+    blocks the *selecting* release so the opening click doesn't auto-pick a row.
+    The first item click was silently dropped (press registered + row
+    highlighted, but no commit; the popup just sat open). Reproduced headlessly:
+    open via a real click, then click a row immediately -> ``currentIndex``
+    unchanged. ``_PopupItemClickCommitter`` commits a deliberate press+release on
+    a valid row, bypassing the timer, while the opening click and drag-select
+    still fall through to Qt.
+    """
+
+    def _shown_combo(self):
+        from qtpy import QtWidgets
+        from qtpy.QtTest import QTest
+        from uitk.widgets.comboBox import ComboBox
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.resize(300, 200)
+        combo = ComboBox(host)
+        combo.addItems(["a", "b", "c"])
+        combo.move(10, 10)
+        combo.resize(120, 24)
+        host.show()
+        QTest.qWaitForWindowExposed(host)
+        combo.setCurrentIndex(0)
+        return combo
+
+    def _open(self, combo):
+        from qtpy import QtCore, QtWidgets
+        from qtpy.QtTest import QTest
+
+        QTest.mouseClick(combo, QtCore.Qt.LeftButton)
+        QtWidgets.QApplication.processEvents()
+        return combo.view().isVisible()
+
+    def _click_row(self, combo, row):
+        from qtpy import QtCore, QtWidgets
+        from qtpy.QtTest import QTest
+
+        view = combo.view()
+        rect = view.visualRect(combo.model().index(row, 0))
+        QTest.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=rect.center())
+        QtWidgets.QApplication.processEvents()
+
+    def test_immediate_item_click_commits(self):
+        combo = self._shown_combo()
+        if not self._open(combo):
+            self.skipTest("offscreen QPA did not display the popup")
+        fired = []
+        combo.activated.connect(fired.append)
+        self._click_row(combo, 2)  # no wait -> inside the block-timer window
+        self.assertEqual(
+            combo.currentIndex(), 2, "a fast item click must still commit"
+        )
+        self.assertEqual(
+            fired, [2], "activated must fire on the bypassed selection"
+        )
+
+    def test_opening_click_does_not_autoselect(self):
+        """The fix must NOT turn the popup-opening click into a selection — only
+        a press AND release that both land on the list commit."""
+        combo = self._shown_combo()
+        if not self._open(combo):
+            self.skipTest("offscreen QPA did not display the popup")
+        self.assertEqual(combo.currentIndex(), 0, "opening click must not select")
+        self.assertTrue(combo.view().isVisible(), "popup must stay open")
+
+    def test_popup_show_disarms_stale_press(self):
+        """A press left armed by a prior popup session (press then drag-off/Esc,
+        no release on the list) must be cleared when the popup re-opens, so the
+        next *opening* click — whose release lands on the row under the cursor —
+        isn't mistaken for a selection."""
+        from qtpy import QtCore
+        from uitk.widgets.comboBox import ComboBox, _PopupItemClickCommitter
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems(["a", "b", "c"])
+        committer = _PopupItemClickCommitter(combo)
+        committer._armed = True
+        committer.eventFilter(None, QtCore.QEvent(QtCore.QEvent.Show))
+        self.assertFalse(committer._armed, "popup Show must disarm a stale press")
+
+
 if __name__ == "__main__":
     unittest.main()

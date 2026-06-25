@@ -289,9 +289,26 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         parent = self.parent()
         if hasattr(parent, "currentWidget") and callable(parent.currentWidget):
             current = parent.currentWidget()
-            widgets = current.findChildren(QtWidgets.QWidget) if current else []
+            container = current if current else None
         else:
-            widgets = parent.findChildren(QtWidgets.QWidget)
+            container = parent
+        widgets = (
+            container.findChildren(QtWidgets.QWidget) if container is not None else []
+        )
+
+        # Keep only widgets in the SAME top-level window as the tracked container.
+        # findChildren() recurses the QObject parent tree ACROSS window
+        # boundaries, so a popup merely Qt-parented to a tracked widget — e.g. an
+        # option-box dropdown Menu (a Qt.Tool window whose parent is the wrapped
+        # button on a marking-menu page) — gets pulled in. The tracker would then
+        # grabMouse() that popup's controls on hover and post a synthetic release
+        # to its QAbstractButtons (checkboxes), killing their input. Such popups
+        # own their own input and must be ignored. Explicitly-registered
+        # foreign-window widgets (ExpandableList sublists) are re-added below via
+        # _extra_widgets, so this filter never drops those.
+        if container is not None:
+            ref_window = container.window()
+            widgets = [w for w in widgets if w.window() is ref_window]
 
         # External widgets (e.g. ExpandableList sublists reparented to the
         # window) are not in the parent's child tree, so we expand each one
@@ -335,10 +352,20 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         cursor_pos = QtGui.QCursor.pos()
         top_widget = QtWidgets.QApplication.widgetAt(cursor_pos)
 
-        self._release_mouse_for_widgets(self._mouse_over)
-
         is_tracked = top_widget in self._widgets
-        self._mouse_over = {top_widget} if is_tracked else set()
+        new_mouse_over = {top_widget} if is_tracked else set()
+
+        # Release only the widgets the cursor has LEFT. Releasing the widget
+        # we're still over — then re-grabbing it in _handle_mouse_grab below —
+        # churned releaseMouse()/grabMouse() on every MouseMove: each release
+        # cleared _mouse_owner, defeating _grab_widget's "already own it" guard,
+        # so the same widget was dropped and re-grabbed continuously. Every
+        # release posts a native capture-change (ReleaseCapture on Win32), so the
+        # churn was wasted hot-path work and a latent way to disrupt an
+        # in-progress interaction. The cross-widget handoff (the QSS :hover path)
+        # still fires because a real widget change leaves a non-empty difference.
+        self._release_mouse_for_widgets(self._mouse_over - new_mouse_over)
+        self._mouse_over = new_mouse_over
 
         for widget in self._prev_mouse_over - self._mouse_over:
             if self.is_widget_valid(widget):
@@ -459,9 +486,10 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
                 and top_widget.isVisible()
                 and self.should_capture_mouse(top_widget)
             ):
-                self.logger.info(
-                    f"Grabbing mouse for widget: {top_widget.objectName()}"
-                )
+                # No logging on this per-MouseMove hot path: _grab_widget emits
+                # the (input-logging-gated) "grab migrated" record only when the
+                # owner actually changes. The previous ungated info() +
+                # objectName() ran on every move even with logging disabled.
                 self._grab_widget(top_widget)
             elif self._mouse_owner and self._buttons_held():
                 # Keep the current owner if dragging

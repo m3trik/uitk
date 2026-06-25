@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.2.80"
+__version__ = "1.2.83"
 
 
 DEFAULT_INCLUDE = {
@@ -115,12 +115,14 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox.options.reset": "ResetOption",
     "widgets.optionBox.options.pin_values": "PinValuesOption",
     "widgets.optionBox.options.toggle": "ToggleOption",
+    "widgets.optionBox.options.value": "ValueOption",
     "widgets.optionBox.options.option_menu": ["OptionMenuOption", "ContextMenuOption"],
     "widgets.progressBar": "ProgressBar",
     "widgets.pushButton": "PushButton",
     "widgets.region": "Region",
     "widgets.row_selection_delegate": "RowSelectionBorderDelegate",
     "widgets.separator": "Separator",
+    "widgets.slider": "Slider",
     "widgets.tableWidget": "TableWidget",
     "widgets.textEdit": "TextEdit",
     "widgets.textEditLogHandler": "TextEditLogHandler",

@@ -11,7 +11,9 @@ from ._options import ButtonOption
 # code (and tests) import these names from this module.
 from uitk.widgets.mixins.recent_values_store import (
     RecentValuesStore,
+    RecentValueEntry,
     normalize_value as _normalize_value,
+    _entry_data,
     _is_filesystem_path,
     _build_display_map_smart_path,
 )
@@ -143,7 +145,7 @@ class RecentValuesPopup(QtCore.QObject):
     def _create_value_row(self, value, is_current=False, display_text=None):
         from uitk.widgets.mixins.icon_manager import IconManager
 
-        full_text = str(value)
+        full_text = str(_entry_data(value))
         if display_text is None:
             display_text = ptk.truncate(
                 full_text, self._MAX_DISPLAY_LENGTH, mode="middle"
@@ -405,9 +407,13 @@ class RecentValuesOption(ButtonOption):
 
         self._popup.clear()
 
-        current_value = self._get_widget_value()
+        # Build the current entry data-aware so it dedups against history by
+        # the value it would restore, not by its (possibly friendly) display.
+        current_value = self._current_widget_record()
         normalized_current = _normalize_value(current_value)
-        has_current = current_value is not None and str(current_value).strip()
+        has_current = (
+            current_value is not None and str(_entry_data(current_value)).strip()
+        )
 
         # Recent values excluding the current one
         others = [
@@ -438,8 +444,48 @@ class RecentValuesOption(ButtonOption):
     # ------------------------------------------------------------------
 
     def _restore_value(self, value):
-        self._set_widget_value(value)
+        widget = self.wrapped_widget
+        if isinstance(value, RecentValueEntry):
+            set_value = getattr(widget, "set_value", None)
+            if callable(set_value):
+                set_value(value.data, display=value.display)
+            else:
+                self._set_widget_value(value.data)
+        else:
+            self._set_widget_value(value)
         self.value_selected.emit(value)
+
+    # ------------------------------------------------------------------
+    # Data-aware widget read
+    # ------------------------------------------------------------------
+
+    def _get_widget_data(self):
+        """Return the wrapped widget's hidden data payload, or ``None``.
+
+        Data-carrying widgets (e.g. ``uitk.LineEdit`` after ``set_value`` with
+        a distinct display) expose ``data()`` returning the payload, or
+        ``None`` when the text *is* the value.
+        """
+        widget = self.wrapped_widget
+        getter = getattr(widget, "data", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                return None
+        return None
+
+    def _current_widget_record(self):
+        """The value to store/compare for the widget's current state.
+
+        Returns a :class:`RecentValueEntry` (display text + restore-data) when
+        the widget carries a distinct data payload, otherwise the plain text.
+        """
+        display = self._get_widget_value()
+        data = self._get_widget_data()
+        if data is not None and _normalize_value(data) != _normalize_value(display):
+            return RecentValueEntry(data, display=display)
+        return display
 
     def _remove_value(self, value):
         self._store.remove(value)  # store notifies -> button tooltip updates
@@ -458,11 +504,14 @@ class RecentValuesOption(ButtonOption):
     def record(self, value=None):
         """Record a value into the recent list.
 
-        If *value* is ``None`` the current widget value is used.
-        Duplicates are moved to the front (most-recent-first order).
+        If *value* is ``None`` the current widget value is used. When the
+        wrapped widget carries a distinct data payload (see
+        ``uitk.LineEdit.set_value``) the recorded entry keeps both the display
+        text and the restore-data. Duplicates are moved to the front
+        (most-recent-first order).
         """
         if value is None:
-            value = self._get_widget_value()
+            value = self._current_widget_record()
         self._store.record(value)
 
     def add_recent_value(self, value):

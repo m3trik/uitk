@@ -22,6 +22,7 @@ from qtpy import QtCore
 from uitk.widgets.mixins.settings_manager import SettingsManager
 from uitk.widgets.mixins.recent_values_store import (
     RecentValuesStore,
+    RecentValueEntry,
     normalize_value,
     _is_filesystem_path,
     _build_display_map_smart_path,
@@ -199,6 +200,46 @@ class TestPersistence(unittest.TestCase):
         s.record("a")
         # No persistence configured — nothing to assert beyond no crash.
         self.assertEqual(s.values, ["a"])
+
+
+class TestRecentValueEntry(unittest.TestCase):
+    """Entries carry a separate display string while deduping by their data."""
+
+    def test_entry_dedups_against_plain_value_by_data(self):
+        s = RecentValuesStore()
+        s.record("C:/a/Rock_Normal.png")
+        s.record(RecentValueEntry("C:/a/Rock_Normal.png", display="Rock"))
+        # Same data (case/sep-insensitive) → one entry, the latest wins.
+        self.assertEqual(len(s.values), 1)
+        self.assertIsInstance(s.values[0], RecentValueEntry)
+
+    def test_record_ignores_entry_with_empty_data(self):
+        s = RecentValuesStore()
+        s.record(RecentValueEntry("   ", display="x"))
+        s.record(RecentValueEntry(None, display="y"))
+        self.assertEqual(s.values, [])
+
+    def test_display_map_prefers_entry_display(self):
+        s = RecentValuesStore(display_format="basename")
+        entry = RecentValueEntry("C:/a/b/Rock_Normal.png", display="Rock set")
+        plain = "C:/x/proj1"
+        dm = s.display_map([entry, plain])
+        self.assertEqual(dm[entry], "Rock set")  # explicit display wins
+        self.assertEqual(dm[plain], "proj1")  # plain still formatted
+
+    def test_entry_survives_persistence_round_trip(self):
+        sm, path = _ini_settings()
+        try:
+            s1 = RecentValuesStore(settings=sm)
+            s1.record(RecentValueEntry("C:/a/Rock_Normal.png", display="Rock"))
+            s2 = RecentValuesStore(settings=sm)
+            self.assertEqual(len(s2.values), 1)
+            restored = s2.values[0]
+            self.assertIsInstance(restored, RecentValueEntry)
+            self.assertEqual(restored.display, "Rock")
+            self.assertEqual(restored.data, "C:/a/Rock_Normal.png")
+        finally:
+            os.unlink(path)
 
 
 class TestHelpersStillImportable(unittest.TestCase):

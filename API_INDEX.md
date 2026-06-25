@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-06-22_
+_Generated: 2026-06-25_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `configure_high_dpi() -> bool`
@@ -78,7 +78,7 @@ _Generated: 2026-06-22_
 
 ### `handlers/external_app_handler.py` — Register, install-on-demand, and launch external Python apps as subprocesses.
 - `class ExternalAppHandler(BaseHandler)`
-  - methods: discover, register, is_registered, unregister, entries, save_tags, close, is_visible, launch
+  - methods: discover, add_provider, register, is_registered, unregister, entries, save_tags, close, is_visible, launch
 
 ### `handlers/handler_entry.py` — Unified launchable-entry data class shared by all Switchboard handlers.
 - `class HandlerEntry`
@@ -228,7 +228,7 @@ _Generated: 2026-06-22_
 - `class LineEditFormatMixin`
   - methods: set_action_color, reset_action_color, set_validator, clear_validator, is_valid, validate_now
 - `class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`
-  - methods: contextMenuEvent, showEvent, hideEvent
+  - methods: set_value, value, data, clear_value, contextMenuEvent, showEvent, hideEvent
 
 ### `widgets/mainWindow.py`
 - `class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin)`
@@ -315,6 +315,7 @@ _Generated: 2026-06-22_
 
 ### `widgets/mixins/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
 - `normalize_value(value)`
+- `class RecentValueEntry`
 - `class RecentValuesStore`
   - methods: subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
 
@@ -435,6 +436,10 @@ _Generated: 2026-06-22_
 - `class ToggleOption(PersistedOption, ButtonOption)`
   - methods: is_on, set_on, setup_widget
 
+### `widgets/optionBox/options/value.py` — Inline editable value readout for OptionBox.
+- `class ValueOption(BaseOption)`
+  - methods: create_widget, setup_widget, on_wrap, refresh, set_wrapped_widget
+
 ### `widgets/optionBox/utils.py` — Utilities and helper functions for OptionBox.
 - `add_option_box(widget, show_clear=False, options=None, **kwargs)`
 - `add_clear_option(widget, **kwargs)`
@@ -442,7 +447,7 @@ _Generated: 2026-06-22_
 - `patch_widget_class(widget_class)`
 - `patch_common_widgets()`
 - `class OptionBoxManager(ptk.LoggingMixin)`
-  - methods: clear_option, clear_option, option_order, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, menu, enable_menu, disable_menu, add_option, container, remove
+  - methods: clear_option, clear_option, option_order, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, add_value, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, menu, enable_menu, disable_menu, add_option, container, remove
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
@@ -535,6 +540,9 @@ _Generated: 2026-06-22_
   - methods: set_fps, is_playing, play, stop
 - `class TransportControls(QtWidgets.QWidget)`
   - methods: play_controller, set_play_controller, set_interrupt_mode, interrupt_mode, button, attach_to_footer
+
+### `widgets/slider.py`
+- `class Slider(QtWidgets.QSlider, MenuMixin, OptionBoxMixin, AttributesMixin)`
 
 ### `widgets/spinBox.py`
 - `class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`

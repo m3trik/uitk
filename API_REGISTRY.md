@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-06-22_
+_Generated: 2026-06-25_
 
 ## Index
 
@@ -85,6 +85,7 @@ _Generated: 2026-06-22_
 - [`widgets/optionBox/options/recent_values.py`](#widgets--optionBox--options--recent_values) — Recent Values option for OptionBox — shows a selectable history list.
 - [`widgets/optionBox/options/reset.py`](#widgets--optionBox--options--reset) — Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
 - [`widgets/optionBox/options/toggle.py`](#widgets--optionBox--options--toggle) — Toggle option for OptionBox — a persisted binary on/off button.
+- [`widgets/optionBox/options/value.py`](#widgets--optionBox--options--value) — Inline editable value readout for OptionBox.
 - [`widgets/optionBox/utils.py`](#widgets--optionBox--utils) — Utilities and helper functions for OptionBox.
 - [`widgets/progressBar.py`](#widgets--progressBar)
 - [`widgets/pushButton.py`](#widgets--pushButton)
@@ -104,6 +105,7 @@ _Generated: 2026-06-22_
 - [`widgets/sequencer/_sequencer.py`](#widgets--sequencer--_sequencer) — An NLE-style timeline sequencer widget.
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
+- [`widgets/slider.py`](#widgets--slider)
 - [`widgets/spinBox.py`](#widgets--spinBox)
 - [`widgets/table_actions.py`](#widgets--table_actions) — Reusable action-column management for :class:`TableWidget`.
 - [`widgets/tableWidget.py`](#widgets--tableWidget)
@@ -285,9 +287,10 @@ Common infrastructure for Switchboard handlers.
 
 Register, install-on-demand, and launch external Python apps as subprocesses.
 
-- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L114)** — Switchboard handler for launching external Python apps.
+- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L122)** — Switchboard handler for launching external Python apps.
   - `ExternalAppHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every app advertised under a uitk entry-point group.
-  - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None) -> None` — Pre-register an app so it can be launched by name.
+  - `ExternalAppHandler.add_provider(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None` — Register a provider package that ships discoverable apps.
+  - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None) -> None` — Pre-register an app so it can be launched by name.
   - `ExternalAppHandler.is_registered(self, name: str) -> bool`
   - `ExternalAppHandler.unregister(self, name: str) -> None` — Remove an app.
   - `ExternalAppHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per registered app.
@@ -561,7 +564,7 @@ HTML formatting helpers shared by uitk's rich-text widgets.
   - `AlignedComboBox.setHeaderAlignment(self, alignment)` — Set the alignment for header text.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L311)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L390)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.clear(self)`
   - `ComboBox.addItem(self, *args, **kwargs)`
   - `ComboBox.addItems(self, *args, **kwargs)`
@@ -815,7 +818,11 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `LineEditFormatMixin.clear_validator(self)` — Remove any installed validator and reset visual state.
   - `LineEditFormatMixin.is_valid(self)` *(property)* — Last validation result, or ``None`` if no validator is set.
   - `LineEditFormatMixin.validate_now(self)` — Cancel any pending debounce and validate the current text now.
-- **[`class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L202)** — LineEdit with automatic Menu and OptionBox integration.
+- **[`class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L214)** — LineEdit with automatic Menu and OptionBox integration.
+  - `LineEdit.set_value(self, value, display=None)` — Set the field's underlying value and an optional display string.
+  - `LineEdit.value(self)` — The field's value: the stored data payload, or :meth:`text` if none.
+  - `LineEdit.data(self)` — The stored data payload, or ``None`` when the text *is* the value.
+  - `LineEdit.clear_value(self)` — Drop the stored data payload (leaves the visible text untouched).
   - `LineEdit.contextMenuEvent(self, event)` — Override the standard context menu if there is a custom one.
   - `LineEdit.showEvent(self, event)` — Handle show event.
   - `LineEdit.hideEvent(self, event)` — Handle hide event.
@@ -1141,8 +1148,9 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 
 Widget-free *recent values* model — the shared source of truth for value history.
 
-- [`normalize_value(value)`](uitk/uitk/widgets/mixins/recent_values_store.py#L64) — Normalize a value for comparison.
-- **[`class RecentValuesStore`](uitk/uitk/widgets/mixins/recent_values_store.py#L77)** — Ordered, deduped, most-recent-first value history.
+- [`normalize_value(value)`](uitk/uitk/widgets/mixins/recent_values_store.py#L105) — Normalize a value for comparison.
+- **[`class RecentValueEntry`](uitk/uitk/widgets/mixins/recent_values_store.py#L64)** — A recent value whose restore-data differs from its display string.
+- **[`class RecentValuesStore`](uitk/uitk/widgets/mixins/recent_values_store.py#L121)** — Ordered, deduped, most-recent-first value history.
   - `RecentValuesStore.subscribe(self, callback: Callable[[], None]) -> None` — Register *callback* to be invoked (no args) after any mutation.
   - `RecentValuesStore.unsubscribe(self, callback: Callable[[], None]) -> None` — Remove a previously-registered *callback* (no-op if absent).
   - `RecentValuesStore.values(self) -> List` *(property)* — A copy of the full history (most-recent first, raw values).
@@ -1330,11 +1338,11 @@ Shared modifier-driven wheel-step handling for spin-box widgets.
 
 OptionBox - Plugin-based container for wrapping widgets with action buttons.
 
-- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L29)** — Container widget that wraps a widget with option buttons.
+- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L31)** — Container widget that wraps a widget with option buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.showEvent(self, event)` — Re-fit to content when shown without a managing parent layout.
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled-state changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L118)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L120)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
@@ -1453,7 +1461,7 @@ Pin Values option for OptionBox - allows pinning/saving widget values.
 
 Recent Values option for OptionBox — shows a selectable history list.
 
-- **[`class RecentValuesPopup(QtCore.QObject)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L20)** — Popup that displays recent values using the Menu widget.
+- **[`class RecentValuesPopup(QtCore.QObject)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L22)** — Popup that displays recent values using the Menu widget.
   - `RecentValuesPopup.menu(self)` *(property)* — Get the underlying Menu widget.
   - `RecentValuesPopup.eventFilter(self, watched, event)` — Close popup when any parent widget is hidden or a window-ancestor moves.
   - `RecentValuesPopup.connect_signals(self, on_value_selected=None, on_value_removed=None)` — Connect signal handlers.
@@ -1466,7 +1474,7 @@ Recent Values option for OptionBox — shows a selectable history list.
   - `RecentValuesPopup.add_recent_value(self, value, is_current=False, display_text=None)` — Add a recent-value row.
   - `RecentValuesPopup.add_separator(self)`
   - `RecentValuesPopup.add_empty_message(self)`
-- **[`class RecentValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L197)** — A history button that manages recent widget values.
+- **[`class RecentValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L199)** — A history button that manages recent widget values.
   - `RecentValuesOption.store(self)` *(property)* — The backing :class:`RecentValuesStore` (shareable across presenters).
   - `RecentValuesOption.create_widget(self)`
   - `RecentValuesOption.record(self, value=None)` — Record a value into the recent list.
@@ -1496,16 +1504,28 @@ Toggle option for OptionBox — a persisted binary on/off button.
   - `ToggleOption.set_on(self, value: bool, *, emit: bool = True) -> None` — Programmatically set the toggle state.
   - `ToggleOption.setup_widget(self)`
 
+<a id="widgets--optionBox--options--value"></a>
+### `widgets/optionBox/options/value.py`
+
+Inline editable value readout for OptionBox.
+
+- **[`class ValueOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/value.py#L27)** — Inline, editable numeric field mirroring the wrapped widget's value.
+  - `ValueOption.create_widget(self)` — Create the compact, button-less spin box field.
+  - `ValueOption.setup_widget(self)` — Mirror the wrapped widget into the field and wire field -> widget.
+  - `ValueOption.on_wrap(self, option_box, container)`
+  - `ValueOption.refresh(self)` — Re-sync the field from the wrapped widget's current value.
+  - `ValueOption.set_wrapped_widget(self, widget)`
+
 <a id="widgets--optionBox--utils"></a>
 ### `widgets/optionBox/utils.py`
 
 Utilities and helper functions for OptionBox.
 
-- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1025) — Add an option box to any widget with one function call.
-- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1048) — Add just a clear button to a text widget.
-- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1061) — Add a menu option to any widget.
-- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1080) — Add option_box attribute to a widget class.
-- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1095) — Patch common Qt widgets with option box support.
+- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1059) — Add an option box to any widget with one function call.
+- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1082) — Add just a clear button to a text widget.
+- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1095) — Add a menu option to any widget.
+- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1114) — Add option_box attribute to a widget class.
+- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1129) — Patch common Qt widgets with option box support.
 - **[`class OptionBoxManager(ptk.LoggingMixin)`](uitk/uitk/widgets/optionBox/utils.py#L10)** — Elegant manager for option box functionality accessible as widget.option_box
   - `OptionBoxManager.clear_option(self)` *(property)* — Get/set clear option state
   - `OptionBoxManager.clear_option(self, enabled)` — Enable/disable clear option
@@ -1517,6 +1537,7 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.add_action(self, callback=None, icon='option_box', tooltip='Options', text=None, states=None, settings_key=None)` — Add an action button without replacing existing ones.
   - `OptionBoxManager.set_toggle(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, gated_widgets=(), settings_key=None, replace: bool = True, on_toggled=None)` — Add a persisted binary toggle button (fluent interface).
   - `OptionBoxManager.add_toggle(self, **kwargs)` — Add a toggle without replacing existing ones.
+  - `OptionBoxManager.add_value(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)` — Add an inline editable value field that mirrors the wrapped widget.
   - `OptionBoxManager.set_reset(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)` — Add a per-widget *reset-to-default* button (fluent).
   - `OptionBoxManager.browse(self, file_types=None, title='Browse', start_dir=None, mode='file', icon='folder', tooltip='Browse...', callback=None)` — Enable file/folder browse button (fluent interface).
   - `OptionBoxManager.enable_clear(self)` — Enable clear option (fluent interface)
@@ -1888,6 +1909,11 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TransportControls.interrupt_mode(self) -> str`
   - `TransportControls.button(self, name: str) -> Optional[QtWidgets.QToolButton]` — Lookup a button by name (e.g.
   - `TransportControls.attach_to_footer(self, footer, side: str = 'right') -> None` — Insert this row into *footer*'s main layout on the given side.
+
+<a id="widgets--slider"></a>
+### `widgets/slider.py`
+
+- **[`class Slider(QtWidgets.QSlider, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/slider.py#L9)** — QSlider with uitk's menu + option-box integration.
 
 <a id="widgets--spinBox"></a>
 ### `widgets/spinBox.py`

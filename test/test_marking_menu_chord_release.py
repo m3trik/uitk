@@ -641,5 +641,87 @@ class MarkingMenuHideRelinquishesControl(QtBaseTestCase):
             self.mm._release_input_grab()  # must not raise
 
 
+class MarkingMenuIgnoresPopupMenuChildren(QtBaseTestCase):
+    """A control shown inside an interactive ``Menu`` popup (an option-box
+    dropdown) must NOT be driven by the gesture child-handlers.
+
+    Live root cause (verified by instrumenting a real Maya): the option box
+    displays real start/submenu slot widgets inside a popup ``Menu``, so they
+    carry this menu's ``child_event_filter``. Routing their release through
+    ``_handle_menu_item_release`` swallowed it — ``_action_dispatched`` is left
+    stuck ``True`` by the launching click (a popup press never resets it), so the
+    latch returned ``True`` (consumed) and the checkbox never toggled / the
+    combobox never selected. (Re-opening the marking menu ran ``_on_activation_press``
+    which cleared the latch — the user's "fix".) The gate skips such popup-``Menu``
+    children so their release reaches their own handler. Distinct from
+    ExpandableList sublist ToolTips, which are gesture surfaces (not ``Menu``).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._drain_qt_events()
+        self.parent = QtWidgets.QWidget()
+        self.parent.resize(400, 400)
+        self.parent.show()
+        self.track_widget(self.parent)
+        self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
+        QtWidgets.QWidget.show(self.mm)
+        self.track_widget(self.mm)
+        # A live start/submenu so the owned-item dispatch path would otherwise
+        # engage on the release.
+        self.mm.sb.current_ui = self.mm.sb.get_ui("maya")
+
+    def _popup_with_checkbox(self, name):
+        from uitk.widgets.menu import Menu
+
+        popup = self.track_widget(Menu(name=name, parent=self.parent))
+        popup.add("QCheckBox", setText="cb")
+        popup._setup_as_popup()  # Qt.Tool window, like the real option-box menu
+        return popup, popup.findChild(QtWidgets.QCheckBox)
+
+    def _release(self, w):
+        ev = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonRelease,
+            QtCore.QPointF(5, 5),
+            QtCore.QPointF(5, 5),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+        )
+        return self.mm.child_mouseButtonReleaseEvent(w, ev)
+
+    def test_release_on_popup_menu_child_not_swallowed_by_stuck_latch(self):
+        _popup, cb = self._popup_with_checkbox("opt_menu")
+        # The stuck-latch state left by the launching click.
+        self.mm._action_dispatched = True
+
+        # Force the owned-item resolution so that WITHOUT the gate the release
+        # would reach _handle_menu_item_release, whose stuck _action_dispatched
+        # latch returns True (swallow). The gate must short-circuit before that.
+        with mock.patch.object(
+            self.mm, "_resolve_release_target", return_value=(cb, QtCore.QPoint(5, 5))
+        ):
+            consumed = self._release(cb)
+
+        self.assertFalse(
+            consumed,
+            "a popup-Menu child's release must propagate to the widget, not be "
+            "swallowed by the stale _action_dispatched latch",
+        )
+
+    def test_is_popup_menu_child_only_true_inside_a_menu_window(self):
+        _popup, cb_in_menu = self._popup_with_checkbox("opt_menu2")
+        cb_on_mm = self.track_widget(QtWidgets.QCheckBox(self.mm))
+
+        self.assertTrue(
+            self.mm._is_popup_menu_child(cb_in_menu),
+            "a control whose top-level window is a Menu is a popup child",
+        )
+        self.assertFalse(
+            self.mm._is_popup_menu_child(cb_on_mm),
+            "a control on the marking menu itself is a real gesture item",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
