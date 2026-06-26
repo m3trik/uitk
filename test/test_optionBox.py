@@ -460,6 +460,59 @@ class TestRecentValuesDisplayFormat(QtBaseTestCase):
         self.assertEqual(widget.text(), raw)
 
 
+class TestRecentValuesExcludesCurrent(QtBaseTestCase):
+    """The popup lists *previously used* values only — never the widget's
+    current value, since re-selecting the value you already have is a no-op.
+
+    Bug: the current value was shown as a pinned row at the top of the popup.
+    Added: 2026-06-25
+    """
+
+    def _populate(self, current_text, history):
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        widget.setText(current_text)
+        option = RecentValuesOption(wrapped_widget=widget)
+        for v in history:
+            option.add_recent_value(v)
+        option._popup = RecentValuesPopup(parent=widget)
+        self.track_widget(option._popup.menu)
+        option._populate_popup()
+        return option
+
+    def _row_texts(self, option):
+        return [
+            b.text()
+            for b in option._popup.menu.findChildren(
+                QtWidgets.QPushButton, "recentValueButton"
+            )
+        ]
+
+    def test_current_value_not_listed(self):
+        option = self._populate("B", ["A", "B", "C"])
+        self.assertEqual(self._row_texts(option), ["A", "C"])
+
+    def test_no_current_row_or_separator(self):
+        menu = self._populate("B", ["A", "B", "C"])._popup.menu
+        self.assertEqual(
+            menu.findChildren(QtWidgets.QWidget, "recentValueRow_current"), []
+        )
+        self.assertEqual(
+            menu.findChildren(QtWidgets.QFrame, "recentValuesSeparator"), []
+        )
+
+    def test_empty_message_when_only_current(self):
+        option = self._populate("B", ["B"])
+        self.assertEqual(self._row_texts(option), [])
+        self.assertEqual(
+            len(
+                option._popup.menu.findChildren(
+                    QtWidgets.QLabel, "recentValuesEmptyLabel"
+                )
+            ),
+            1,
+        )
+
+
 class TestRecentValuesRowPadding(QtBaseTestCase):
     """Tests for right padding in recent value popup rows.
 
@@ -1808,6 +1861,94 @@ class TestOptionBoxInitPerfRegressions(QtBaseTestCase):
             1,
             "the right-border trim must appear exactly once on the wrapped widget",
         )
+
+
+class TestOptionMenuClickableRows(QtBaseTestCase):
+    """``(label, callback)`` entries must render as real, clickable rows.
+
+    Bug: ``OptionMenuOption`` / ``ContextMenuOption`` added items via
+    ``menu.add(label, callback)``. ``Menu.add`` maps a non-widget string to a
+    QLabel (no hover, no ``clicked`` signal) and stores the callback as inert
+    item-DATA that is never invoked -- so the rows were dead (no hover, clicks
+    did nothing). Fixed by building actual buttons and wiring ``clicked``.
+    Fixed: 2026-06-25
+    """
+
+    def test_static_items_are_clickable_buttons(self):
+        from uitk.widgets.optionBox.options.option_menu import OptionMenuOption
+
+        fired = []
+        opt = OptionMenuOption(
+            menu_items=[("Do It", lambda: fired.append("do")), "separator"]
+        )
+        self.track_widget(opt.menu)
+        rows = opt.menu.get_items()
+        self.assertEqual([type(r).__name__ for r in rows], ["QPushButton"])
+        self.assertEqual(rows[0].text(), "Do It")
+        rows[0].click()
+        self.assertEqual(fired, ["do"], "row click did not invoke the callback")
+
+    def test_context_items_rebuild_as_clickable_and_fire(self):
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        host = self.track_widget(QtWidgets.QLineEdit())
+        fired = []
+        opt = ContextMenuOption(
+            wrapped_widget=host,
+            menu_provider=lambda w: [
+                ("Alpha", lambda: fired.append("a")),
+                ("Beta", lambda: fired.append("b")),
+            ],
+        )
+        self.track_widget(opt.menu)
+        opt._show_menu()  # populate + show the real menu
+
+        rows = opt.menu.get_items()
+        self.assertTrue(rows and all(hasattr(r, "clicked") for r in rows),
+                        "context-menu rows are not clickable buttons")
+        self.assertEqual([r.text() for r in rows], ["Alpha", "Beta"])
+
+        beta = next(r for r in rows if r.text() == "Beta")
+        beta.click()
+        self.assertEqual(fired, ["b"], "clicking a context-menu row did nothing")
+
+    def test_clicking_a_row_hides_the_menu(self):
+        # A context action menu should dismiss itself once an item is chosen.
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        host = self.track_widget(QtWidgets.QLineEdit())
+        opt = ContextMenuOption(
+            wrapped_widget=host,
+            menu_provider=lambda w: [("Only", lambda: None)],
+        )
+        self.track_widget(opt.menu)
+        opt._show_menu()
+        row = opt.menu.get_items()[0]
+        row.click()
+        self.assertFalse(opt.menu.isVisible(), "menu stayed open after an action")
+
+    def test_menu_is_built_lazily(self):
+        # Init-perf regression: constructing the option must NOT build the
+        # dropdown Menu (creating it applies the menu QSS + chrome, an init cost
+        # paid even if the user never opens it). It is created on first
+        # access / show only.
+        from uitk.widgets.optionBox.options.option_menu import (
+            ContextMenuOption,
+            OptionMenuOption,
+        )
+
+        host = self.track_widget(QtWidgets.QLineEdit())
+        ctx = ContextMenuOption(wrapped_widget=host, menu_provider=lambda w: [])
+        self.assertIsNone(ctx._menu, "ContextMenuOption built its menu eagerly")
+
+        static = OptionMenuOption(menu_items=[("X", lambda: None)])
+        self.assertIsNone(static._menu, "OptionMenuOption built its menu eagerly")
+
+        # First access materialises it (and populates static rows).
+        self.track_widget(ctx.menu)
+        self.track_widget(static.menu)
+        self.assertIsNotNone(ctx._menu)
+        self.assertEqual([r.text() for r in static.menu.get_items()], ["X"])
 
 
 # -----------------------------------------------------------------------------

@@ -244,7 +244,7 @@ Added widgets are accessible by `objectName` on the menu: `menu.btn_apply.clicke
 ```python
 widget.menu.add_apply_button = True    # "Apply" bar at bottom
 widget.menu.add_defaults_button = True # "Reset to defaults"
-widget.menu.add_presets = True         # Preset combo + save/load
+widget.menu.add_presets = True         # Preset combo + option-box toolbar (Refresh/Save/⋯-menu)
 widget.menu.add_presets = "~/.myapp/presets"  # or a custom dir
 ```
 

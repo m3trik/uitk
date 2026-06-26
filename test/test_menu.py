@@ -287,6 +287,56 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         menu = self.track_widget(Menu(hide_on_leave=True))
         self.assertTrue(menu.hide_on_leave)
 
+    def _outside_point(self, menu):
+        """A global point well outside *menu*'s rect (so the rect test fails)."""
+        from qtpy import QtGui
+
+        return QtGui.QCursor, QtCore.QPoint(
+            menu.x() + menu.width() + 500, menu.y() + menu.height() + 500
+        )
+
+    def test_hide_on_leave_keeps_open_over_nested_popup(self):
+        """A separate top-level popup whose QObject parent chain leads back into
+        the menu (a ComboBox dropdown, an option-box ⋯ menu) must NOT trigger
+        hide_on_leave when the cursor moves onto it. ``isAncestorOf`` is
+        same-window-only and misses such popups; the parent-chain walk catches
+        them."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        # A separate top-level popup parented (in the QObject tree) under the menu.
+        inner = QtWidgets.QWidget(menu)
+        popup = QtWidgets.QWidget(inner)
+        popup.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=popup
+        ):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(), "menu hid despite the cursor being over a nested popup"
+        )
+
+    def test_hide_on_leave_hides_when_cursor_truly_outside(self):
+        """Sanity counterpart: an unrelated widget (no parent chain to the menu)
+        still lets hide_on_leave close the menu."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(), "menu should hide when the cursor is truly outside"
+        )
+
 
 class TestMenuFactoryMethods(QtBaseTestCase):
     """Tests for Menu factory methods."""

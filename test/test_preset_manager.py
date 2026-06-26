@@ -685,40 +685,86 @@ class TestBuiltinTier(BaseTestCase):
     # wire_combo: built-in handling in the GUI selector
     # ------------------------------------------------------------------
     def _wire_combo(self):
-        """Wire a real WidgetComboBox to ``self.mgr`` and return it.
+        """Wire a real ``ComboBox`` to ``self.mgr`` and return it.
 
         Adds a user preset ("custom") alongside the shipped built-in
         ("studio") so both tiers are present in the combo.
         """
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
         self.mgr.save("custom")  # a user preset to contrast with the built-in
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         self.mgr.wire_combo(combo)
         return combo
 
     @staticmethod
-    def _action_state(combo, label):
-        """Enabled state of the actions-section button named *label*.
+    def _menu_labels(combo):
+        """Labels the ⋯-menu provider yields for the current selection.
 
-        Matches on accessibleName since the preset combo uses icon-only buttons
-        (no visible text).
+        Built-ins yield only ``Open Folder`` (they can't be renamed/deleted);
+        user presets yield ``Rename / Open Folder / Delete``.
         """
-        last = combo._model.rowCount() - 1
-        inner = combo._row_containers.get(last).property("_embedded_widget")
-        lay = inner.layout()
-        for i in range(lay.count()):
-            btn = lay.itemAt(i).widget()
-            if btn.accessibleName() == label:
-                return btn.isEnabled()
-        raise AssertionError(f"no action button {label!r}")
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        opt = combo.option_box.find_option(ContextMenuOption)
+        return [label for label, _ in opt._menu_provider(combo)]
+
+    @staticmethod
+    def _menu_callback(combo, label):
+        """The ⋯-menu callback bound to *label* for the current selection."""
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        opt = combo.option_box.find_option(ContextMenuOption)
+        for lbl, cb in opt._menu_provider(combo):
+            if lbl == label:
+                return cb
+        raise AssertionError(f"no menu item {label!r}")
+
+    def test_wire_combo_does_not_build_menu_eagerly(self):
+        # Init-perf regression: wiring a preset combo must not build the ⋯
+        # menu's dropdown Menu (applying its QSS/chrome) at wrap time -- it is
+        # only needed when the user opens it. Building it eagerly was a
+        # measurable chunk of the redesign's added init cost under a heavy DCC
+        # stylesheet.
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        combo = self._wire_combo()
+        opt = combo.option_box.find_option(ContextMenuOption)
+        self.assertIsNone(opt._menu, "the ⋯ menu was built eagerly during wire_combo")
+
+    def test_wire_combo_menu_rows_are_clickable_and_fire(self):
+        # Real-dispatch regression (not the provider-closure proxy the other
+        # menu tests use): the rendered ⋯-menu rows must be clickable buttons
+        # that actually run their action. Before the fix they were inert
+        # QLabels (no hover, no clicked signal, callback stored as dead data),
+        # so clicking Delete did nothing in the live UI.
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        combo = self._wire_combo()
+        combo.setCurrentIndex(combo.findText("custom"))  # a deletable user preset
+
+        opt = combo.option_box.find_option(ContextMenuOption)
+        opt._show_menu()  # populate + show the real menu
+        rows = opt.menu.get_items()
+
+        self.assertTrue(rows, "menu rendered no rows")
+        self.assertTrue(
+            all(hasattr(r, "clicked") for r in rows),
+            "⋯-menu rows are inert (not clickable buttons)",
+        )
+        self.assertIn("custom", self.mgr.list())
+        delete_row = next(r for r in rows if r.text() == "Delete")
+        delete_row.click()
+        self.assertNotIn(
+            "custom", self.mgr.list(), "clicking Delete did not remove the preset"
+        )
 
     def test_wire_combo_italicises_builtins(self):
         combo = self._wire_combo()
+        model = combo.model()
         items = {
-            combo._model.item(i).text(): combo._model.item(i)
-            for i in range(combo._model.rowCount() - combo._action_row_count)
+            model.item(i).text(): model.item(i) for i in range(model.rowCount())
         }
         # Built-in shown italic; user preset is not. Text stays the raw name in
         # both cases so load/rename/delete still resolve.
@@ -729,66 +775,172 @@ class TestBuiltinTier(BaseTestCase):
         self.assertTrue(items["studio"].icon().isNull(), "built-in should carry no icon")
         self.assertTrue(items["custom"].icon().isNull(), "user preset should carry no icon")
 
-    def test_wire_combo_disables_rename_delete_for_builtin(self):
+    def test_wire_combo_shadowed_builtin_is_not_italicised(self):
+        # A user preset that shadows a built-in of the same name is editable, so
+        # it must NOT be marked read-only (italic). The batched built-in
+        # detection must honour the shadow (in built-in AND in user => user),
+        # matching source() semantics.
+        from uitk.widgets.comboBox import ComboBox
+
+        self.mgr.save("studio")  # user preset shadowing the built-in "studio"
+        self.assertEqual(self.mgr.source("studio"), "user", "precondition: shadowed")
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        model = combo.model()
+        item = next(
+            model.item(i)
+            for i in range(model.rowCount())
+            if model.item(i).text() == "studio"
+        )
+        self.assertFalse(
+            item.font().italic(),
+            "a user preset shadowing a built-in must not be italicised",
+        )
+
+    def test_wire_combo_menu_hides_rename_delete_for_builtin(self):
         combo = self._wire_combo()
 
         combo.setCurrentIndex(combo.findText("studio"))  # built-in
-        self.assertFalse(self._action_state(combo, "Rename"))
-        self.assertFalse(self._action_state(combo, "Delete"))
-        self.assertTrue(self._action_state(combo, "Save"))  # override allowed
-        self.assertTrue(self._action_state(combo, "Open"))
+        # A read-only built-in can't be renamed/deleted -> only Open is offered.
+        self.assertEqual(self._menu_labels(combo), ["Open Folder"])
 
         combo.setCurrentIndex(combo.findText("custom"))  # user
-        self.assertTrue(self._action_state(combo, "Rename"))
-        self.assertTrue(self._action_state(combo, "Delete"))
+        self.assertEqual(
+            self._menu_labels(combo), ["Rename", "Open Folder", "Delete"]
+        )
 
     @staticmethod
-    def _action_buttons(combo):
-        last = combo._model.rowCount() - 1
-        inner = combo._row_containers.get(last).property("_embedded_widget")
-        lay = inner.layout()
-        return [lay.itemAt(i).widget() for i in range(lay.count())]
+    def _toolbar_buttons(combo):
+        """The option-box toolbar buttons wrapping *combo*, in layout order.
 
-    def test_wire_combo_actions_are_icon_only_single_row_with_refresh(self):
+        Index 0 of the container layout is the combo; 1.. are the option
+        widgets (Refresh, Save, ⋯-menu).
+        """
+        container = combo.option_box.container
+        layout = container.layout()
+        return [layout.itemAt(i).widget() for i in range(1, layout.count())]
+
+    def test_wire_combo_toolbar_is_refresh_save_menu(self):
         combo = self._wire_combo()
-        btns = self._action_buttons(combo)
-        names = [b.accessibleName() for b in btns]
-        self.assertEqual(names, ["Rename", "Refresh", "Delete", "Open", "Save"])
-        # icon-only -> no visible text; single row -> no separator row.
+        btns = self._toolbar_buttons(combo)
+        self.assertEqual(len(btns), 3, "toolbar = [refresh][save][menu]")
+        tips = [b.toolTip() for b in btns]
+        self.assertTrue(tips[0].startswith("Reload"), f"button0 not Refresh: {tips[0]!r}")
+        self.assertTrue(tips[1].startswith("Save"), f"button1 not Save: {tips[1]!r}")
+        self.assertIn("rename", tips[2].lower(), f"button2 not the menu: {tips[2]!r}")
+        # All icon-only -> no visible text.
         self.assertTrue(all(b.text() == "" for b in btns), "buttons must be icon-only")
-        self.assertEqual(combo._action_row_count, 1, "separator removed -> one action row")
+
+    def test_unbounded_combo_height_is_clamped(self):
+        # Regression: a preset combo dropped into a *stretchy* container (a
+        # menu's "Menu Actions" group via add_presets) has no vertical limit and
+        # balloons — the option-box icon buttons are sized to the combo height,
+        # so they became huge squares and squeezed the dropdown to nothing.
+        # wire_combo pins an unbounded combo to its natural row height.
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.assertGreaterEqual(combo.maximumHeight(), 16777215, "combo starts unbounded")
+        self.mgr.wire_combo(combo)
+        self.assertLess(combo.maximumHeight(), 16777215, "height left unbounded")
+        self.assertEqual(
+            combo.maximumHeight(), combo.minimumHeight(), "height not pinned"
+        )
+
+    def test_explicit_combo_height_is_preserved(self):
+        # An in-panel caller that sets its own row height (e.g. 19px) must keep
+        # it — the clamp only applies to unbounded combos.
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        combo.setMaximumHeight(19)
+        self.mgr.wire_combo(combo)
+        self.assertEqual(combo.maximumHeight(), 19, "explicit max height clobbered")
+
+    def test_menu_is_cursor_centred_without_chrome(self):
+        # The ⋯ menu (Rename / Open / Delete) is a plain action list: centred on
+        # the cursor, no header / footer / apply-defaults chrome.
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        combo = self._wire_combo()
+        opt = combo.option_box.find_option(ContextMenuOption)
+        menu = opt.menu
+        self.assertEqual(menu.position, "cursorPos", "menu not cursor-centred")
+        self.assertFalse(menu.add_header, "menu should have no header")
+        self.assertFalse(getattr(menu, "add_footer", False), "menu should have no footer")
+        self.assertFalse(menu.add_apply_button, "menu should have no apply button")
+        self.assertFalse(menu.add_defaults_button, "menu should have no defaults button")
+
+    def _refresh_button(self, combo):
+        return self._toolbar_buttons(combo)[0]
+
+    def _save_button(self, combo):
+        return self._toolbar_buttons(combo)[1]
+
+    @staticmethod
+    def _pick(combo, name):
+        """Simulate a user picking *name* from the dropdown (fires load).
+
+        Selection-load is wired to ``activated`` (user-only), so a plain
+        ``setCurrentIndex`` would not load — emit ``activated`` to mimic a pick.
+        """
+        idx = combo.findText(name)
+        combo.setCurrentIndex(idx)
+        combo.activated[int].emit(idx)
+
+    @staticmethod
+    def _inline_commit(combo, text):
+        """Type *text* into the editable combo and commit (as Enter would)."""
+        combo.lineEdit().setText(text)
+        combo.setEditable(False)  # emits on_editing_finished -> commit
 
     def test_wire_combo_refresh_reloads_current_preset(self):
-        # Refresh re-applies the selected preset's stored values to the widgets.
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        # Refresh re-applies the active preset's stored values to the widgets.
+        from uitk.widgets.comboBox import ComboBox
 
         self.chk.setChecked(True)
         self.spn.setValue(42)
         self.mgr.save("custom")  # captures chk=True, spn=42
 
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         self.mgr.wire_combo(combo)
-        combo.setCurrentIndex(combo.findText("custom"))  # loads -> spn 42
+        self._pick(combo, "custom")  # user pick loads -> spn 42
         self.assertEqual(self.spn.value(), 42)
 
         self.spn.setValue(7)  # user edits away from the preset
-        for b in self._action_buttons(combo):
-            if b.accessibleName() == "Refresh":
-                b.click()
-                break
+        self._refresh_button(combo).click()
         self.assertEqual(self.spn.value(), 42, "Refresh must reload the selected preset")
+
+    def test_wire_combo_inline_save_creates_user_preset(self):
+        combo = self._wire_combo()
+        self.spn.setValue(9)
+        self._save_button(combo).click()  # enter inline edit
+        self.assertTrue(combo.isEditable(), "Save enters inline edit mode")
+        self._inline_commit(combo, "fresh")
+        self.assertEqual(self.mgr.source("fresh"), "user", "inline Save wrote a user preset")
+        self.assertEqual(self.mgr.active_preset, "fresh")
+        self.assertEqual(combo.currentText(), "fresh")
+        self.assertFalse(self.mgr.is_modified(), "marker clean right after save")
+
+    def test_wire_combo_inline_rename_moves_user_preset(self):
+        combo = self._wire_combo()  # has user "custom" + builtin "studio"
+        self._pick(combo, "custom")
+        rename_cb = self._menu_callback(combo, "Rename")
+        rename_cb()  # begin inline rename, seeded with "custom"
+        self.assertTrue(combo.isEditable())
+        self.assertEqual(combo.lineEdit().text(), "custom")
+        self._inline_commit(combo, "renamed")
+        self.assertTrue(self.mgr.exists("renamed"))
+        self.assertFalse(self.mgr.exists("custom"))
+        self.assertEqual(combo.currentText(), "renamed")
 
     # ------------------------------------------------------------------
     # active-preset memory + modified ("dirty") marker
     # ------------------------------------------------------------------
-    def _click_action(self, combo, label):
-        for b in self._action_buttons(combo):
-            if b.accessibleName() == label:
-                b.click()
-                return
-        raise AssertionError(f"no action button {label!r}")
-
     def test_active_preset_persists_across_managers(self):
         # Loading records the active preset in the .active sidecar; a fresh
         # manager over the same dirs reads it back (cross-session restore).
@@ -804,7 +956,7 @@ class TestBuiltinTier(BaseTestCase):
     def test_wire_combo_restores_selection_without_applying_values(self):
         # The crux of idea 1: restoring the *selection* must NOT re-apply the
         # preset values (widgets restore themselves from session state).
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
         self.mgr.load("studio")  # active -> studio; chk True, spn 5
         self.chk.setChecked(False)
@@ -815,7 +967,7 @@ class TestBuiltinTier(BaseTestCase):
             widgets=[self.chk, self.spn],
             builtin_dir=str(self.builtin),
         )
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         mgr2.wire_combo(combo)
 
@@ -827,12 +979,12 @@ class TestBuiltinTier(BaseTestCase):
         self.assertEqual(combo.current_text_suffix, " *")
 
     def test_modified_marker_set_on_edit_and_cleared_on_refresh(self):
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         self.mgr.wire_combo(combo)
-        combo.setCurrentIndex(combo.findText("studio"))  # load -> spn 5
+        self._pick(combo, "studio")  # load -> spn 5
         self.assertFalse(self.mgr.is_modified())
         self.assertEqual(combo.current_text_suffix, "")
 
@@ -840,19 +992,19 @@ class TestBuiltinTier(BaseTestCase):
         self.assertTrue(self.mgr.is_modified())
         self.assertEqual(combo.current_text_suffix, " *")
 
-        self._click_action(combo, "Refresh")  # revert
+        self._refresh_button(combo).click()  # revert
         self.assertEqual(self.spn.value(), 5)
         self.assertFalse(self.mgr.is_modified())
         self.assertEqual(combo.current_text_suffix, "")
 
     def test_modified_marker_cleared_on_save_over_active(self):
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
         self.mgr.save("draft")  # a user preset to make active
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         self.mgr.wire_combo(combo)
-        combo.setCurrentIndex(combo.findText("draft"))
+        self._pick(combo, "draft")
         self.spn.setValue(13)
         self.assertTrue(self.mgr.is_modified())
         # Saving over the active preset bakes the edit -> marker clears.
@@ -864,40 +1016,40 @@ class TestBuiltinTier(BaseTestCase):
         # Regression for the live "Refresh does nothing" bug: after a session
         # restore the combo index can be -1 while the active preset is known.
         # The old index-based Refresh no-oped; it must key off active_preset.
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         self.mgr.wire_combo(combo)
-        combo.setCurrentIndex(combo.findText("studio"))  # active -> studio
+        self._pick(combo, "studio")  # active -> studio
         self.spn.setValue(7)
         combo.blockSignals(True)
         combo.setCurrentIndex(-1)  # simulate post-restore / no visible selection
         combo.blockSignals(False)
         self.assertEqual(combo.currentIndex(), -1)
 
-        self._click_action(combo, "Refresh")
+        self._refresh_button(combo).click()
         self.assertEqual(self.spn.value(), 5)  # restored despite index -1
 
     def test_wire_combo_placeholder_when_no_active(self):
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         self.mgr.wire_combo(combo)  # nothing loaded -> no active preset
         self.assertEqual(combo.currentIndex(), -1)
         self.assertEqual(combo.placeholderText(), "Presets…")
 
     def test_delete_active_clears_pointer_and_marker(self):
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
         self.mgr.save("draft")
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         self.mgr.wire_combo(combo)
-        combo.setCurrentIndex(combo.findText("draft"))
+        self._pick(combo, "draft")
         self.assertEqual(self.mgr.active_preset, "draft")
-        self._click_action(combo, "Delete")
+        self._menu_callback(combo, "Delete")()
         self.assertIsNone(self.mgr.active_preset)
         self.assertEqual(combo.current_text_suffix, "")
         self.assertEqual(combo.currentIndex(), -1)
@@ -1010,11 +1162,10 @@ class TestSemanticPresetMode(BaseTestCase):
         return mgr, state
 
     @staticmethod
-    def _action_buttons(combo):
-        last = combo._model.rowCount() - 1
-        inner = combo._row_containers.get(last).property("_embedded_widget")
-        lay = inner.layout()
-        return [lay.itemAt(i).widget() for i in range(lay.count())]
+    def _refresh_button(combo):
+        """The Refresh button (first option-box toolbar button)."""
+        layout = combo.option_box.container.layout()
+        return layout.itemAt(1).widget()
 
     def test_semantic_active_persists_across_managers(self):
         mgr, state = self._shared_state_mgr()
@@ -1039,22 +1190,318 @@ class TestSemanticPresetMode(BaseTestCase):
         self.assertFalse(mgr.is_modified())
 
     def test_semantic_refresh_discards_edits_even_when_index_minus_one(self):
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
         mgr, state = self._shared_state_mgr()
-        combo = WidgetComboBox()
+        combo = ComboBox()
         self.addCleanup(combo.deleteLater)
         mgr.wire_combo(combo)
-        combo.setCurrentIndex(combo.findText("specular"))  # load
+        idx = combo.findText("specular")
+        combo.setCurrentIndex(idx)
+        combo.activated[int].emit(idx)  # user pick loads
         state["align_downscale"] = 9
         combo.blockSignals(True)
         combo.setCurrentIndex(-1)
         combo.blockSignals(False)
-        for b in self._action_buttons(combo):
-            if b.accessibleName() == "Refresh":
-                b.click()
-                break
+        self._refresh_button(combo).click()
         self.assertEqual(state["align_downscale"], 2)  # restored from preset
+
+
+class TestCaptureScope(BaseTestCase):
+    """Per-instance capture ``scope`` + ``include`` / ``exclude`` filtering.
+
+    Drives the standalone value path (the fake window has no ``state``) so the
+    scope-selection and name-filter logic is exercised without a real
+    ``StateManager`` / registered widgets. End-to-end StateManager integration
+    for the real scene_exporter window is covered by a live-Maya probe.
+    """
+
+    class _FakeWindow:
+        """Stands in for a uitk ``MainWindow``.
+
+        Exposes ``widgets`` (the registered set) and ``state`` (``None`` here, so
+        the standalone value path is exercised). ``state`` being present is what
+        marks it as a window-parent to ``PresetManager._resolve_window``.
+        """
+
+        def __init__(self, widgets):
+            self.widgets = set(widgets)
+            self.state = None
+
+        def objectName(self):  # liveness probe in PresetManager._resolve_window
+            return "FakeWindow"
+
+    class _FakeMenu:
+        """Stands in for a uitk ``Menu``: ``get_items`` + ``owner_window``."""
+
+        def __init__(self, items, window):
+            self._items = list(items)
+            self._window = window
+
+        def get_items(self):
+            return list(self._items)
+
+        def owner_window(self):
+            return self._window
+
+    def setUp(self):
+        super().setUp()
+        from qtpy import QtWidgets
+
+        self._tmp = Path(tempfile.mkdtemp(prefix="presets_scope_"))
+
+        def _mk(cls, name, restore=True, **attrs):
+            w = cls()
+            w.setObjectName(name)
+            w.restore_state = restore
+            self.addCleanup(w.deleteLater)
+            for k, v in attrs.items():
+                getattr(w, k)(v)
+            return w
+
+        # Menu-hosted widgets (registered in the window's set in production).
+        self.menu_chk = _mk(QtWidgets.QCheckBox, "menu_chk")
+        # Panel widgets — what a menu-scoped preset misses today.
+        self.panel_chk = _mk(QtWidgets.QCheckBox, "panel_chk")
+        self.panel_txt = _mk(QtWidgets.QLineEdit, "panel_txt")
+        self.path_txt = _mk(QtWidgets.QLineEdit, "path_txt")  # to be excluded
+        # A non-restorable widget must never be captured in window scope.
+        self.transient = _mk(QtWidgets.QCheckBox, "transient", restore=False)
+
+        self.window = self._FakeWindow(
+            [self.menu_chk, self.panel_chk, self.panel_txt, self.path_txt, self.transient]
+        )
+        self.menu = self._FakeMenu([self.menu_chk], self.window)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def _mgr(self, scope="auto"):
+        mgr = PresetManager(parent=self.menu, preset_dir=str(self._tmp / "u"))
+        mgr.scope = scope
+        return mgr
+
+    @staticmethod
+    def _names(widgets):
+        return {w.objectName() for w in widgets}
+
+    def test_auto_scope_is_menu_only_for_a_menu_parent(self):
+        # Regression guard: existing add_presets callers (reference_manager,
+        # color_manager) stay menu-scoped under the default.
+        mgr = self._mgr("auto")
+        self.assertEqual(self._names(mgr._get_widgets()), {"menu_chk"})
+
+    def test_window_scope_captures_panel_and_menu_widgets(self):
+        mgr = self._mgr("window")
+        # Whole window minus the non-restorable transient.
+        self.assertEqual(
+            self._names(mgr._get_widgets()),
+            {"menu_chk", "panel_chk", "panel_txt", "path_txt"},
+        )
+
+    def test_menu_scope_is_explicitly_menu_only(self):
+        mgr = self._mgr("menu")
+        self.assertEqual(self._names(mgr._get_widgets()), {"menu_chk"})
+
+    def test_exclude_drops_named_widget(self):
+        mgr = self._mgr("window")
+        mgr.exclude("path_txt")
+        self.assertNotIn("path_txt", self._names(mgr._get_widgets()))
+        self.assertIn("panel_chk", self._names(mgr._get_widgets()))
+
+    def test_exclude_accepts_widget_instances(self):
+        mgr = self._mgr("window")
+        mgr.exclude(self.path_txt)
+        self.assertNotIn("path_txt", self._names(mgr._get_widgets()))
+
+    def test_include_is_an_allowlist(self):
+        mgr = self._mgr("window")
+        mgr.include("panel_chk")
+        self.assertEqual(self._names(mgr._get_widgets()), {"panel_chk"})
+
+    def test_window_scope_round_trip_restores_panel_widgets(self):
+        mgr = self._mgr("window")
+        mgr.exclude("path_txt")
+        self.panel_chk.setChecked(True)
+        self.panel_txt.setText("hello")
+        self.path_txt.setText("C:/machine/specific")
+        mgr.save("tmpl")
+
+        # Mutate everything, then load the template back.
+        self.panel_chk.setChecked(False)
+        self.panel_txt.setText("")
+        self.path_txt.setText("C:/other")
+        mgr.load("tmpl")
+
+        self.assertTrue(self.panel_chk.isChecked())          # restored
+        self.assertEqual(self.panel_txt.text(), "hello")     # restored
+        self.assertEqual(self.path_txt.text(), "C:/other")   # excluded, untouched
+
+    def test_value_filter_only_applies_to_explicit_window_scope(self):
+        # Back-compat guard: the legacy auto/MainWindow path
+        # (``PresetManager(parent=window)`` — MainWindow.presets, curtain) must
+        # keep its restore_state-only set; only explicit "window" scope drops
+        # non-value widgets. Else those tools' saved presets silently change.
+        from qtpy import QtWidgets
+
+        btn = QtWidgets.QPushButton()
+        btn.setObjectName("btn_action")
+        btn.restore_state = True
+        self.addCleanup(btn.deleteLater)
+        win = self._FakeWindow([self.panel_chk, btn])
+        mgr = PresetManager(parent=win, preset_dir=str(self._tmp / "u2"))
+
+        # auto + window parent -> MainWindow mode, NO value-type filter.
+        self.assertEqual(mgr.scope, "auto")
+        self.assertIn("btn_action", self._names(mgr._get_widgets()))
+
+        # explicit window scope -> value-type filter drops the button.
+        mgr.scope = "window"
+        names = self._names(mgr._get_widgets())
+        self.assertNotIn("btn_action", names)
+        self.assertIn("panel_chk", names)
+
+    def test_invalid_scope_rejected(self):
+        mgr = self._mgr("auto")
+        with self.assertRaises(ValueError):
+            mgr.scope = "everything"
+
+
+class TestLoadPersistsSessionState(BaseTestCase):
+    """MainWindow (``StateManager``) path: loading a preset persists the applied
+    values to QSettings so the active preset survives to the next session.
+
+    Regression for "the template is active in the combo but its widget values
+    aren't restored next session": the bulk apply was fully suppressed, so the
+    loaded preset never became session state and the next session restored the
+    stale *pre-load* values while the active-name sidecar still pointed at the
+    template. Previously this state path was only exercised by a live-Maya probe.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from qtpy import QtCore
+        from uitk.widgets.mixins.state_manager import StateManager
+
+        self._tmp = Path(tempfile.mkdtemp(prefix="preset_session_"))
+        self.user = self._tmp / "user"
+        self.user.mkdir(parents=True)
+        (self.user / "unity_basic.json").write_text(
+            json.dumps({"_meta": {"version": 1}, "chk_a": True, "spn_b": 5}),
+            encoding="utf-8",
+        )
+        self.store = QtCore.QSettings(
+            str(self._tmp / "state.ini"), QtCore.QSettings.IniFormat
+        )
+        self.sm = StateManager(self.store)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def _make_widgets(self):
+        from qtpy import QtWidgets
+
+        chk = QtWidgets.QCheckBox()
+        chk.setObjectName("chk_a")
+        chk.restore_state = True
+        chk.derived_type = QtWidgets.QCheckBox
+        chk.default_signals = lambda: "toggled"
+        spn = QtWidgets.QSpinBox()
+        spn.setObjectName("spn_b")
+        spn.setMaximum(100)
+        spn.restore_state = True
+        spn.derived_type = QtWidgets.QSpinBox
+        spn.default_signals = lambda: "valueChanged"
+        self.addCleanup(chk.deleteLater)
+        self.addCleanup(spn.deleteLater)
+        return chk, spn
+
+    def _mgr(self, widgets):
+        mgr = PresetManager(preset_dir=str(self.user), widgets=widgets)
+        mgr.state = self.sm  # MainWindow mode
+        return mgr
+
+    def _seed_manual_state(self, chk, spn):
+        chk.setChecked(False)
+        spn.setValue(0)
+        self.sm.save(chk)
+        self.sm.save(spn)
+
+    def test_load_writes_applied_values_to_qsettings(self):
+        chk, spn = self._make_widgets()
+        mgr = self._mgr([chk, spn])
+        self._seed_manual_state(chk, spn)  # store holds the stale 0
+        mgr.load("unity_basic")
+        # The applied value is now the persisted session state, not the stale 0.
+        self.assertEqual(int(self.store.value("spn_b/valueChanged")), 5)
+
+    def test_active_template_restores_in_next_session(self):
+        chk, spn = self._make_widgets()
+        mgr = self._mgr([chk, spn])
+        self._seed_manual_state(chk, spn)
+        mgr.load("unity_basic")
+        self.store.sync()
+
+        # Next session: fresh widgets restore from QSettings; name from sidecar.
+        chk2, spn2 = self._make_widgets()
+        self.sm.load(chk2)
+        self.sm.load(spn2)
+        mgr2 = self._mgr([chk2, spn2])
+        self.assertEqual(mgr2.active_preset, "unity_basic")
+        self.assertTrue(chk2.isChecked())
+        self.assertEqual(spn2.value(), 5)
+
+    def test_manual_edit_after_load_coexists_with_template(self):
+        chk, spn = self._make_widgets()
+        mgr = self._mgr([chk, spn])
+        self._seed_manual_state(chk, spn)
+        mgr.load("unity_basic")  # chk True, spn 5
+        spn.setValue(9)
+        self.sm.save(spn)  # the change signal does this in production
+        self.store.sync()
+
+        chk2, spn2 = self._make_widgets()
+        self.sm.load(chk2)
+        self.sm.load(spn2)
+        self.assertTrue(chk2.isChecked())  # template value survived
+        self.assertEqual(spn2.value(), 9)  # manual edit survived
+
+    def test_window_scope_adopts_state_and_persists(self):
+        """The actual scene_exporter path (not a proxy): a *menu-parented*,
+        ``scope="window"`` manager adopts the window's ``StateManager`` during
+        ``_get_widgets`` and persists the loaded preset to it."""
+
+        class _Win:
+            def __init__(self, widgets, state):
+                self.widgets = set(widgets)
+                self.state = state
+
+            def objectName(self):
+                return "scene_exporter"
+
+        class _Menu:
+            def __init__(self, window):
+                self._window = window
+
+            def get_items(self):
+                return []
+
+            def owner_window(self):
+                return self._window
+
+        chk, spn = self._make_widgets()
+        win = _Win([chk, spn], self.sm)
+        mgr = PresetManager(parent=_Menu(win), preset_dir=str(self.user))
+        mgr.scope = "window"
+        self.assertIsNone(mgr.state)  # not adopted until a scope resolve
+
+        self._seed_manual_state(chk, spn)  # stale 0 in the store
+        mgr.load("unity_basic")
+
+        self.assertIs(mgr.state, self.sm)  # adopted via window scope
+        self.assertEqual(int(self.store.value("spn_b/valueChanged")), 5)  # persisted
 
 
 if __name__ == "__main__":

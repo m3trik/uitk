@@ -2,10 +2,9 @@
 # coding=utf-8
 from typing import Callable, List, Optional
 from qtpy import QtWidgets, QtCore, QtGui
-from uitk.widgets.mixins.style_sheet import StyleSheet
 from uitk.widgets.editors.editor_panel import EditorPanel
-from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
+from uitk.widgets.hotkey_capture_delegate import install_hotkey_capture
 
 
 # End-user-facing scopes. Widget/widget_children remain decorator-only.
@@ -52,79 +51,6 @@ class CollisionConflict:
             f"breaks_binding={self.breaks_binding}, "
             f"clear_action={'set' if self.clear_action else 'None'})"
         )
-
-
-class KeyCaptureDialog(QtWidgets.QDialog):
-    """Modal dialog to capture a key sequence."""
-
-    def __init__(self, parent=None, current_sequence=""):
-        super().__init__(parent)
-        self.setWindowTitle("Assign Shortcut")
-        self.setWindowIcon(
-            self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
-        )
-        self.resize(300, 150)
-        self._sequence = current_sequence
-
-        layout = QtWidgets.QVBoxLayout(self)
-
-        lbl = QtWidgets.QLabel("Press the key combination you want to assign:")
-        lbl.setAlignment(QtCore.Qt.AlignCenter)
-        layout.addWidget(lbl)
-
-        self.key_display = QtWidgets.QLabel(current_sequence or "None")
-        self.key_display.setAlignment(QtCore.Qt.AlignCenter)
-        font = self.key_display.font()
-        font.setPointSize(14)
-        font.setBold(True)
-        self.key_display.setFont(font)
-        self.key_display.setStyleSheet(
-            "color: #4CAF50; border: 2px solid #555; padding: 10px; border-radius: 5px;"
-        )
-        layout.addWidget(self.key_display)
-
-        btn_layout = QtWidgets.QHBoxLayout()
-        self.btn_clear = QtWidgets.QPushButton("Clear")
-        self.btn_clear.clicked.connect(self.clear_key)
-        self.btn_cancel = QtWidgets.QPushButton("Cancel")
-        self.btn_cancel.clicked.connect(self.reject)
-        self.btn_ok = QtWidgets.QPushButton("OK")
-        self.btn_ok.clicked.connect(self.accept)
-
-        btn_layout.addWidget(self.btn_clear)
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.btn_cancel)
-        btn_layout.addWidget(self.btn_ok)
-        layout.addLayout(btn_layout)
-
-        self.style = StyleSheet(self)
-        self.style.set(theme="dark")
-
-    def keyPressEvent(self, event):
-        """Capture key press event."""
-        key = event.key()
-        modifiers = event.modifiers()
-
-        if key in (
-            QtCore.Qt.Key_Control,
-            QtCore.Qt.Key_Shift,
-            QtCore.Qt.Key_Alt,
-            QtCore.Qt.Key_Meta,
-        ):
-            return
-
-        sequence = QtGui.QKeySequence(key | modifiers)
-        text = sequence.toString(QtGui.QKeySequence.NativeText)
-
-        self._sequence = text
-        self.key_display.setText(text)
-
-    def clear_key(self):
-        self._sequence = ""
-        self.key_display.setText("None")
-
-    def get_sequence(self):
-        return self._sequence
 
 
 class HotkeyEditor(EditorPanel):
@@ -203,11 +129,25 @@ class HotkeyEditor(EditorPanel):
         # Match the UI Browser table's row height for a consistent look.
         self.table.verticalHeader().setDefaultSectionSize(22)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        # Explicit double-click only: the default triggers include
+        # AnyKeyPressed/EditKeyPressed, so a stray keystroke on a selected
+        # row would open the capture editor and silently rebind the
+        # shortcut. install_hotkey_capture opens the editor on double-click
+        # regardless of triggers.
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         # SelectRows + the global QSS per-cell ``:selected`` border would
         # draw inner seams between adjacent cells of a selected row; the
         # row-spanning delegate paints one continuous outline instead.
         self.table.setItemDelegate(RowSelectionBorderDelegate(self.table))
-        self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
+        # The Shortcut column (1) is edited in-cell: double-click opens a
+        # key-capture editor instead of a modal dialog. ``bordered`` keeps
+        # the row-spanning selection outline on that column.
+        install_hotkey_capture(
+            self.table,
+            1,
+            lambda row, _col, seq: self._apply_shortcut(row, seq),
+            bordered=True,
+        )
         self.body_layout.addWidget(self.table, 1)
 
         # Body layout spacing (2px) is set by EditorPanel; tighten every
@@ -402,7 +342,11 @@ class HotkeyEditor(EditorPanel):
             # Shortcut
             item_seq = QtWidgets.QTableWidgetItem(current_seq)
             item_seq.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_seq.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+            item_seq.setFlags(
+                QtCore.Qt.ItemIsEnabled
+                | QtCore.Qt.ItemIsSelectable
+                | QtCore.Qt.ItemIsEditable
+            )
             if current_seq != default_seq:
                 item_seq.setForeground(
                     QtGui.QBrush(QtGui.QColor("#4CAF50"))
@@ -436,33 +380,30 @@ class HotkeyEditor(EditorPanel):
             )
             self.table.setCellWidget(i, 4, reset_btn)
 
-    def on_cell_double_clicked(self, row, column):
-        """Handle editing the shortcut."""
-        if column != 1:
+    def _apply_shortcut(self, row: int, new_seq: str) -> None:
+        """Apply a captured sequence to the binding on ``row``.
+
+        Shared commit path for the in-cell capture editor: reads the
+        method/scope from the row, runs collision resolution, persists
+        the binding, and repopulates. No-ops when the row is gone or the
+        sequence is unchanged.
+        """
+        item_name = self.table.item(row, 0)
+        if item_name is None:
+            return  # row rebuilt out from under us
+        method_name = item_name.toolTip().replace("Method: ", "")
+        seq_item = self.table.item(row, 1)
+        current_seq = seq_item.text() if seq_item is not None else ""
+        if new_seq == current_seq:
             return
 
         ui_name = self.cmb_ui.currentText()
         target_ui = self.sb.get_ui(ui_name)
 
-        item_name = self.table.item(row, 0)
-        method_name = item_name.toolTip().replace("Method: ", "")
-        current_seq = self.table.item(row, 1).text()
-
-        # Recover scope from the cell widget
         scope_btn = self.table.cellWidget(row, 2)
         current_scope = (
-            scope_btn.property("scope_name")
-            if scope_btn is not None
-            else "window"
+            scope_btn.property("scope_name") if scope_btn is not None else "window"
         )
-
-        dlg = KeyCaptureDialog(self, current_seq)
-        if dlg.exec_() != QtWidgets.QDialog.Accepted:
-            return
-
-        new_seq = dlg.get_sequence()
-        if new_seq == current_seq:
-            return
 
         if not self._resolve_collisions(
             target_ui, method_name, new_seq, current_scope

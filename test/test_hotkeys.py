@@ -346,5 +346,177 @@ class TestShortcutScope(QtBaseTestCase):
         self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
 
 
+class TestResolveApplicationHost(QtBaseTestCase):
+    """Unit tests for resolve_application_host.
+
+    Application-scoped shortcuts must be owned by an always-visible window;
+    Qt disables a shortcut whose owner widget is hidden, regardless of scope.
+    """
+
+    def test_prefers_named_dcc_host(self):
+        from uitk.widgets.mixins.shortcuts import resolve_application_host
+
+        maya = self.track_widget(QtWidgets.QWidget())
+        maya.setObjectName("MayaWindow")
+        maya.show()
+        QtWidgets.QApplication.processEvents()
+
+        hidden = self.track_widget(QtWidgets.QWidget())  # parentless, never shown
+        host = resolve_application_host(hidden)
+        self.assertIs(host, maya)
+        self.assertTrue(host.isVisible())
+
+    def test_falls_back_to_any_visible_top_level(self):
+        from uitk.widgets.mixins.shortcuts import resolve_application_host
+
+        visible = self.track_widget(QtWidgets.QWidget())
+        visible.setObjectName("SomeStandaloneMainWindow")
+        visible.show()
+        QtWidgets.QApplication.processEvents()
+
+        hidden = self.track_widget(QtWidgets.QWidget())
+        host = resolve_application_host(hidden)
+        self.assertTrue(host.isVisible(), "resolved host must be visible")
+        self.assertIsNot(host, hidden)
+
+    def test_never_returns_none(self):
+        from uitk.widgets.mixins.shortcuts import resolve_application_host
+
+        w = self.track_widget(QtWidgets.QWidget())
+        self.assertIsNotNone(resolve_application_host(w))
+
+
+class TestApplicationScopeOwner(QtBaseTestCase):
+    """Regression: 'hotkey editor application scope does nothing'.
+
+    An application-scoped shortcut must be owned by a *visible* host window,
+    not the slot UI — which is hidden whenever the tool isn't open, exactly
+    when application scope is meant to fire. A QShortcut whose owner widget is
+    hidden is inert even at Qt.ApplicationShortcut scope.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example  # built but not shown (hidden)
+        QtWidgets.QApplication.processEvents()
+
+    def tearDown(self):
+        if getattr(self, "ui", None):
+            self.ui.close()
+        super().tearDown()
+
+    def _first_slot(self):
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+        return registry[0]["method"]
+
+    def test_application_scope_owner_is_visible_when_ui_hidden(self):
+        slot_name = self._first_slot()
+        self.ui.hide()
+        host = self.track_widget(QtWidgets.QWidget())
+        host.setObjectName("MayaWindow")
+        host.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+G", "application")
+
+        slots = self.sb.get_slots_instance(self.ui)
+        sc = slots._connected_shortcuts.get(slot_name)
+        self.assertIsNotNone(sc)
+        self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
+        owner = sc.parent()
+        self.assertIsNotNone(owner)
+        self.assertTrue(
+            owner.isVisible(), "application-scope shortcut owner must be visible"
+        )
+        self.assertIsNot(owner, self.ui, "must not be owned by the hidden slot UI")
+        self.assertIs(owner, host)
+
+    def test_window_scope_owner_is_the_ui(self):
+        slot_name = self._first_slot()
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+H", "window")
+
+        slots = self.sb.get_slots_instance(self.ui)
+        sc = slots._connected_shortcuts.get(slot_name)
+        self.assertEqual(sc.context(), QtCore.Qt.WindowShortcut)
+        self.assertIs(sc.parent(), self.ui)
+
+    def test_toggle_window_to_application_reowns_to_visible_host(self):
+        slot_name = self._first_slot()
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+
+        # Start window-scoped: owned by the slot UI.
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+J", "window")
+        slots = self.sb.get_slots_instance(self.ui)
+        self.assertIs(slots._connected_shortcuts[slot_name].parent(), self.ui)
+
+        # Hide the UI and flip to application scope: must be re-owned by a
+        # visible host so the binding survives the UI being closed.
+        self.ui.hide()
+        host = self.track_widget(QtWidgets.QWidget())
+        host.setObjectName("MayaWindow")
+        host.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+J", "application")
+        sc = slots._connected_shortcuts[slot_name]
+        self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
+        self.assertIs(sc.parent(), host)
+        self.assertTrue(sc.parent().isVisible())
+
+
+class TestGlobalShortcutDispose(QtBaseTestCase):
+    """`GlobalShortcut.dispose()` must drop the static `_instances` ref.
+
+    `__init__` registers each instance in the class-level `_instances` set;
+    that strong ref kept disposed wrappers alive forever (`deleteLater` can't
+    collect a still-referenced object), a slow leak across rebinds. `dispose`
+    (and the ShortcutManager paths that call it) must clear the ref.
+    """
+
+    def test_dispose_removes_from_instances(self):
+        from uitk.widgets.mixins.shortcuts import GlobalShortcut
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        sc = GlobalShortcut("Ctrl+Alt+Shift+F10", host)
+        self.assertIn(sc, GlobalShortcut._instances)
+        sc.dispose()
+        self.assertNotIn(sc, GlobalShortcut._instances)
+
+    def test_manager_remove_and_clear_dispose_global(self):
+        from uitk.widgets.mixins.shortcuts import ShortcutManager, GlobalShortcut
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        mgr = ShortcutManager(host)
+
+        gs = mgr.add_global_shortcut("Ctrl+Alt+Shift+F11")
+        self.assertIn(gs, GlobalShortcut._instances)
+        mgr.remove_shortcut("Ctrl+Alt+Shift+F11")
+        self.assertNotIn(gs, GlobalShortcut._instances)
+
+        gs2 = mgr.add_global_shortcut("Ctrl+Alt+Shift+F12")
+        self.assertIn(gs2, GlobalShortcut._instances)
+        mgr.clear_all()
+        self.assertNotIn(gs2, GlobalShortcut._instances)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@
 """Tests for HotkeyEditor preset management."""
 import json
 import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -38,17 +39,17 @@ class TestHotkeyEditorPresets(QtBaseTestCase):
         self.ui.show()
         QtWidgets.QApplication.processEvents()
         self.editor = HotkeyEditor(self.sb, parent=None)
-        # Override preset_dir to a temp location
-        self._test_preset_dir = Path(__file__).parent / "temp_tests" / "hotkey_presets"
-        self._test_preset_dir.mkdir(parents=True, exist_ok=True)
-        # Patch the property on the subclass so EditorPanel's original
-        # is still accessible via MRO after cleanup.
-        HotkeyEditor.preset_dir = property(lambda self_: self._test_preset_dir)
+        # Redirect storage to a unique temp dir through the real preset_dir
+        # setter (which routes the underlying PresetManager), so save/load go
+        # to the temp tree instead of the shared consolidated root.
+        temp_root = Path(__file__).parent / "temp_tests"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        self._test_preset_dir = Path(
+            tempfile.mkdtemp(prefix="hotkey_presets_", dir=temp_root)
+        )
+        self.editor.preset_dir = self._test_preset_dir
 
     def tearDown(self):
-        # Remove subclass override so EditorPanel.preset_dir is visible again
-        if "preset_dir" in HotkeyEditor.__dict__:
-            delattr(HotkeyEditor, "preset_dir")
         if hasattr(self, "editor") and self.editor:
             self.editor.close()
         if hasattr(self, "ui") and self.ui:

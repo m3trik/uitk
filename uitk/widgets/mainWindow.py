@@ -562,6 +562,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if not signal:
             return
 
+        # A stable-identity combo's change signal delivers an INDEX, but its
+        # persisted form is the text/data identity (see StateManager.restore_by).
+        # Re-derive it so sibling-surface stores and live mirrors match what
+        # StateManager.save writes; index-mode widgets (every other widget) are
+        # untouched — the branch is a no-op for them.
+        if self.state._restore_mode(widget) != "index":
+            value = self.state._get_current_value(widget)
+            if value is None or value == "":
+                return  # no current selection → don't clobber the stored identity
+
         key = f"{name}/{signal}"
         # get_ui_relatives already excludes self.
         for relative_name in self.sb.get_ui_relatives(

@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Regression tests for the base uitk ComboBox widget."""
+import re
 import unittest
 
 from conftest import QtBaseTestCase, setup_qt_application
@@ -445,6 +446,54 @@ class ItemClickCommitsWithinBlockWindow(QtBaseTestCase):
         committer._armed = True
         committer.eventFilter(None, QtCore.QEvent(QtCore.QEvent.Show))
         self.assertFalse(committer._armed, "popup Show must disarm a stale press")
+
+
+class OpenBoxDistinctFromView(QtBaseTestCase):
+    """While the popup is open, the closed-box background (``QComboBox:on``)
+    must differ from the popup view background (``QComboBox QAbstractItemView``).
+
+    Both previously resolved to ``{WIDGET_BACKGROUND}``, so the box and the open
+    dropdown shared one color and read as a single block. ``:on`` now reuses the
+    hover background to stay visually distinct. Asserts the resolved colors —
+    not which token is used — so the contract survives a token rename.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        StyleSheet.reset_overrides()
+
+    def tearDown(self):
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        StyleSheet.reset_overrides()
+        super().tearDown()
+
+    @staticmethod
+    def _background(qss, selector):
+        block = re.search(re.escape(selector) + r"\s*\{[^}]*\}", qss)
+        assert block, f"selector {selector!r} not found in stylesheet"
+        bg = re.search(r"background-color:\s*([^;]+);", block.group(0))
+        assert bg, f"no background-color in {selector!r} block"
+        return bg.group(1).strip()
+
+    def test_open_box_background_differs_from_view(self):
+        from uitk.widgets.comboBox import ComboBox
+        from uitk.widgets.mixins.style_sheet import StyleSheet
+
+        for theme in ("light", "dark"):
+            combo = self.track_widget(ComboBox())
+            StyleSheet().set(combo, theme=theme)
+            qss = combo.styleSheet()
+            on_bg = self._background(qss, "QComboBox:on")
+            view_bg = self._background(qss, "QComboBox QAbstractItemView")
+            self.assertNotEqual(
+                on_bg,
+                view_bg,
+                f"[{theme}] open combobox must not share the view background "
+                f"(both resolved to {on_bg})",
+            )
 
 
 if __name__ == "__main__":

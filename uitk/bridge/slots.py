@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from qtpy import QtCore, QtWidgets
 
 from uitk.widgets.pushButton import PushButton
-from uitk.widgets.widgetComboBox import WidgetComboBox
+from uitk.widgets.comboBox import ComboBox
 from uitk.widgets.separator import Separator
 from uitk.widgets.mixins.preset_manager import PresetManager
 
@@ -254,7 +254,7 @@ class BridgeSlotsBase:
         self._preset_mgr: Optional[PresetManager] = None
         self._preset_store = None  # set in _build_preset_controls (semantic mode)
         self._semantic_presets = False
-        self._preset_combo: Optional[WidgetComboBox] = None
+        self._preset_combo: Optional[ComboBox] = None
         self._output_dir_edit: Optional[QtWidgets.QLineEdit] = None
         self._param_visibility_settled = False
         self._param_group: Optional[QtWidgets.QGroupBox] = None
@@ -577,7 +577,7 @@ class BridgeSlotsBase:
         """Insert a user-preset combobox + 'Reset to Defaults' button above b000."""
         layout = self.ui.grp_process.layout()
 
-        combo = WidgetComboBox(self.ui.grp_process)
+        combo = ComboBox(self.ui.grp_process)
         combo.setObjectName("cmb_user_presets")
         combo.setMinimumHeight(19)
         combo.setMaximumHeight(19)

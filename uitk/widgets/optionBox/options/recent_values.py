@@ -114,27 +114,16 @@ class RecentValuesPopup(QtCore.QObject):
     def width(self):
         return self._menu.width()
 
-    def add_recent_value(self, value, is_current=False, display_text=None):
+    def add_recent_value(self, value, display_text=None):
         """Add a recent-value row.
 
         Args:
             value: The raw value to store/restore.
-            is_current: Whether this is the current widget value.
             display_text: Override text shown on the button.
                 If ``None``, falls back to default truncation.
         """
-        row = self._create_value_row(
-            value, is_current=is_current, display_text=display_text
-        )
+        row = self._create_value_row(value, display_text=display_text)
         self._menu.add(row)
-
-    def add_separator(self):
-        separator = QtWidgets.QFrame()
-        separator.setObjectName("recentValuesSeparator")
-        separator.setFrameShape(QtWidgets.QFrame.HLine)
-        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
-        separator.setFixedHeight(1)
-        self._menu.add(separator)
 
     def add_empty_message(self):
         label = QtWidgets.QLabel("No recent values")
@@ -142,7 +131,7 @@ class RecentValuesPopup(QtCore.QObject):
         label.setAlignment(QtCore.Qt.AlignCenter)
         self._menu.add(label)
 
-    def _create_value_row(self, value, is_current=False, display_text=None):
+    def _create_value_row(self, value, display_text=None):
         from uitk.widgets.mixins.icon_manager import IconManager
 
         full_text = str(_entry_data(value))
@@ -153,9 +142,7 @@ class RecentValuesPopup(QtCore.QObject):
 
         container = QtWidgets.QWidget()
         container.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
-        container.setObjectName(
-            "recentValueRow_current" if is_current else "recentValueRow"
-        )
+        container.setObjectName("recentValueRow")
         layout = QtWidgets.QHBoxLayout(container)
         layout.setContentsMargins(1, 0, 8, 0)
         layout.setSpacing(4)
@@ -407,36 +394,20 @@ class RecentValuesOption(ButtonOption):
 
         self._popup.clear()
 
-        # Build the current entry data-aware so it dedups against history by
-        # the value it would restore, not by its (possibly friendly) display.
-        current_value = self._current_widget_record()
-        normalized_current = _normalize_value(current_value)
-        has_current = (
-            current_value is not None and str(_entry_data(current_value)).strip()
-        )
-
-        # Recent values excluding the current one
+        # The popup restores a *previously used* value, so the widget's current
+        # value is intentionally excluded — re-selecting the value you already
+        # have is a no-op. Dedup against history by the restore-data, not by the
+        # (possibly friendly) display string.
+        normalized_current = _normalize_value(self._current_widget_record())
         others = [
             v for v in self._store.values if _normalize_value(v) != normalized_current
         ]
 
-        # Build a display map for all visible values
-        all_values = ([current_value] if has_current else []) + others
-        display_map = self._store.display_map(all_values)
-
-        # Show current value at the top if not empty
-        if has_current:
-            self._popup.add_recent_value(
-                current_value,
-                is_current=True,
-                display_text=display_map.get(current_value),
-            )
-            self._popup.add_separator()
-
+        display_map = self._store.display_map(others)
         for v in others:
             self._popup.add_recent_value(v, display_text=display_map.get(v))
 
-        if not has_current and not others:
+        if not others:
             self._popup.add_empty_message()
 
     # ------------------------------------------------------------------

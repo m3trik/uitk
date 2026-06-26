@@ -105,6 +105,13 @@ class PresetManager(ptk.LoggingMixin):
         else:
             self._preset_dir = None
 
+        # Path whose legacy-migration + mkdir have already been run, so repeated
+        # ``preset_dir`` reads (the ``_store`` property rebuilds per access, and
+        # ``source()`` is called per preset name while marking built-ins) don't
+        # re-hit the filesystem on every access. Writes self-heal the dir at the
+        # PresetStore layer, so reads never need to re-ensure it.
+        self._ensured_dir = None
+
         # Read-only, shipped presets (a panel's ``presets/`` dir by convention,
         # passed explicitly). ``None`` / a missing dir ⇒ the built-in tier is
         # simply absent and only user presets show. Layered under user presets by
@@ -128,6 +135,19 @@ class PresetManager(ptk.LoggingMixin):
         self._modified: Optional[bool] = None
         self._on_modified_callbacks: List[Callable[[bool], None]] = []
         self._value_change_widgets: Set[int] = set()
+
+        # Capture scope + name-based allow/deny lists (see ``scope``, ``include``,
+        # ``exclude``). ``_scope`` selects which widget set a save/load operates
+        # on; ``_include_names`` (an allowlist; ``None`` = no allowlist) and
+        # ``_exclude_names`` (a denylist) refine it by ``objectName``. The
+        # always-excluded preset combo lives in ``_excluded_widgets`` (instances)
+        # and is filtered independently. ``_window`` caches the resolved owning
+        # MainWindow for ``"window"`` scope so its registered-widget set and
+        # ``StateManager`` are reused across calls.
+        self._scope: str = "auto"
+        self._include_names: Optional[Set[str]] = None
+        self._exclude_names: Set[str] = set()
+        self._window: Optional[QtWidgets.QWidget] = None
 
     @staticmethod
     def _resolve_preset_dir(raw: Union[str, Path]) -> Path:
@@ -223,9 +243,9 @@ class PresetManager(ptk.LoggingMixin):
         ``get_items()`` method (e.g. a ``Menu``), widgets are
         auto-discovered at save/load time — no explicit list needed.
 
-        When the parent is a ``Menu``, a ``WidgetComboBox`` is
-        automatically created and wired as the preset selector — no
-        manual ``wire_combo`` call is required.
+        When the parent is a ``Menu``, a ``ComboBox`` is automatically
+        created and wired as the preset selector — no manual ``wire_combo``
+        call is required.
 
         Parameters:
             preset_dir: Directory for storing preset JSON files
@@ -258,10 +278,10 @@ class PresetManager(ptk.LoggingMixin):
 
         # Auto-create and wire a preset combo when parent is a Menu
         if hasattr(self.parent, "add") and hasattr(self.parent, "get_items"):
-            from uitk.widgets.widgetComboBox import WidgetComboBox
+            from uitk.widgets.comboBox import ComboBox
 
             combo = self.parent.add(
-                WidgetComboBox,
+                ComboBox,
                 setObjectName="cmb_presets",
                 setToolTip="Load a saved configuration preset.",
             )
@@ -307,8 +327,14 @@ class PresetManager(ptk.LoggingMixin):
                     "preset_dir must be provided for standalone PresetManager"
                 )
 
-        _maybe_migrate_legacy(self._preset_dir)
-        self._preset_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure (migrate + create) once per resolved path. A reassigned dir
+        # has a different value than ``_ensured_dir`` and re-ensures; writes
+        # self-heal the dir at the PresetStore layer (its save/active-write both
+        # mkdir), so skipping the per-read FS calls is safe.
+        if self._ensured_dir != self._preset_dir:
+            _maybe_migrate_legacy(self._preset_dir)
+            self._preset_dir.mkdir(parents=True, exist_ok=True)
+            self._ensured_dir = self._preset_dir
         return self._preset_dir
 
     @preset_dir.setter
@@ -334,6 +360,105 @@ class PresetManager(ptk.LoggingMixin):
                 cb()
             except Exception as e:
                 self.logger.debug(f"Preset change callback error: {e}")
+
+    # ------------------------------------------------------------------
+    # Capture scope + include / exclude
+    # ------------------------------------------------------------------
+
+    _VALID_SCOPES = ("auto", "menu", "window", "explicit")
+
+    @property
+    def scope(self) -> str:
+        """Which widget set a save/load operates on.
+
+        - ``"auto"`` (default): legacy implicit resolution — explicit list, else
+          the *parent* menu's items, else the parent window's registered set.
+          Preserves prior behavior for every existing caller.
+        - ``"menu"``: force the parent menu's ``get_items()`` (today's
+          ``add_presets`` behavior, made explicit).
+        - ``"window"``: capture the owning ``MainWindow``'s registered widgets
+          (``restore_state=True``), regardless of where the manager's *parent*
+          sits. This is what lets a header-menu preset capture panel widgets.
+        - ``"explicit"``: only the widgets passed via ``widgets=`` /
+          :meth:`from_widgets` / :meth:`setup`.
+
+        Refine any scope with :meth:`include` / :meth:`exclude`.
+        """
+        return self._scope
+
+    @scope.setter
+    def scope(self, value: str) -> None:
+        if value not in self._VALID_SCOPES:
+            raise ValueError(
+                f"scope must be one of {self._VALID_SCOPES}, got {value!r}"
+            )
+        self._scope = value
+
+    @staticmethod
+    def _as_object_names(items) -> Set[str]:
+        """Coerce a mix of ``objectName`` strings / widget instances to names."""
+        names: Set[str] = set()
+        for item in items:
+            if isinstance(item, str):
+                if item:
+                    names.add(item)
+            else:  # assume a QWidget
+                name = item.objectName() if hasattr(item, "objectName") else ""
+                if name:
+                    names.add(name)
+        return names
+
+    def exclude(self, *names_or_widgets) -> "PresetManager":
+        """Exclude widgets (by ``objectName`` or instance) from capture/restore.
+
+        Names are preferred — they resolve at save/load time, so widgets that
+        don't exist yet at config time still match. Additive across calls.
+        Returns *self* for chaining.
+        """
+        self._exclude_names |= self._as_object_names(names_or_widgets)
+        return self
+
+    def include(self, *names_or_widgets) -> "PresetManager":
+        """Restrict capture/restore to *only* these widgets (allowlist).
+
+        Once any ``include`` is set, everything not listed is excluded. Names or
+        instances both accepted; additive across calls. Returns *self*.
+        """
+        if self._include_names is None:
+            self._include_names = set()
+        self._include_names |= self._as_object_names(names_or_widgets)
+        return self
+
+    def _passes_filters(self, name: str) -> bool:
+        """True when *name* survives the include allowlist + exclude denylist."""
+        if self._include_names is not None and name not in self._include_names:
+            return False
+        return name not in self._exclude_names
+
+    def _resolve_window(self) -> Optional[QtWidgets.QWidget]:
+        """Resolve (and cache) the owning ``MainWindow`` for ``"window"`` scope.
+
+        Duck-typed: a window exposes both ``widgets`` and ``state``. The *parent*
+        is the window itself in MainWindow mode; in menu mode it's the menu,
+        which exposes :meth:`Menu.owner_window` — that resolver survives the
+        live-DCC popup-reparent race a plain ``parent().window()`` walk loses to.
+        """
+        win = self._window
+        if win is not None:
+            try:
+                win.objectName()  # dead C++ wrapper -> RuntimeError
+                return win
+            except RuntimeError:
+                self._window = None
+
+        parent = self.parent
+        if parent is None:
+            return None
+        if hasattr(parent, "widgets") and hasattr(parent, "state"):
+            self._window = parent
+        elif hasattr(parent, "owner_window"):
+            self._window = parent.owner_window()
+        return self._window
 
     # ------------------------------------------------------------------
     # Active preset + modified ("dirty") tracking
@@ -558,8 +683,15 @@ class PresetManager(ptk.LoggingMixin):
     ) -> int:
         """Load a named preset and apply its values to the matching widgets.
 
-        Session auto-save is suppressed during application so that loading
-        a preset does not overwrite the user's QSettings session state.
+        In MainWindow mode the applied values are then **persisted** to the
+        per-widget QSettings session state, so the loaded preset survives to the
+        next session: the preset combo restores only the active *name* (see
+        :meth:`wire_combo`), and the values come from session state. Saves are
+        suppressed *during* the bulk apply so a mid-apply slot cascade can't
+        persist a half-applied state -- the final, consistent values are written
+        once afterwards. (Without this the name would restore but the widgets
+        would revert to their pre-load values -- "template active, values not
+        restored".)
 
         Parameters:
             name: The preset name to load.
@@ -611,7 +743,10 @@ class PresetManager(ptk.LoggingMixin):
         applied = 0
 
         if self.state is not None:
-            # MainWindow path: delegate to StateManager with suppress_save
+            # MainWindow path: apply under suppress_save (so a mid-apply slot
+            # cascade can't persist a half-applied state), then persist the
+            # final values so the loaded preset becomes the session state.
+            applied_widgets: List[QtWidgets.QWidget] = []
             with self.state.suppress_save():
                 for obj_name, value in data.items():
                     widget = widget_map.get(obj_name)
@@ -626,8 +761,13 @@ class PresetManager(ptk.LoggingMixin):
                     try:
                         self.state.apply(widget, value)
                         applied += 1
+                        applied_widgets.append(widget)
                     finally:
                         widget.block_signals_on_restore = original_block
+            # Persist outside the suppression so the loaded preset survives to
+            # the next session (one write per widget of its final applied value).
+            for widget in applied_widgets:
+                self.state.save(widget)
         else:
             # Standalone path: direct widget value set
             blocked: List[QtWidgets.QWidget] = []
@@ -723,60 +863,111 @@ class PresetManager(ptk.LoggingMixin):
     def _get_widgets(
         self, scope: Optional[QtWidgets.QWidget] = None
     ) -> Set[QtWidgets.QWidget]:
-        """Return the set of restorable widgets within the given scope.
+        """Return the set of restorable widgets the current :attr:`scope` selects.
 
-        Resolution order:
+        The source set is chosen by :attr:`scope`:
 
-        1. **Explicit list** — if *widgets* was provided via constructor or
-           ``setup()``, use that list directly.
-        2. **Menu auto-discovery** — if the *parent* has a ``get_items()``
-           method (e.g. a ``Menu``), iterate its items and keep only those
-           whose type is supported by ``_get_widget_value``.
-        3. **MainWindow registered set** — filter by ``restore_state`` and
-           optional *scope* containment.
+        - ``"explicit"`` — the constructor / ``setup()`` widget list.
+        - ``"menu"`` — the parent menu's ``get_items()`` (only value-bearing).
+        - ``"window"`` — the owning ``MainWindow``'s registered, ``restore_state``
+          widgets (resolved even when the manager's *parent* is a menu).
+        - ``"auto"`` (default) — legacy order: explicit list, else menu items,
+          else the parent window's registered set.
 
-        In all cases, widgets in ``_excluded_widgets`` (e.g. the preset
-        combo wired via ``wire_combo``) are omitted.
+        The source is then filtered by the always-excluded instance set
+        (``_excluded_widgets`` — e.g. the preset combo), the name-based exclude
+        denylist, and the include allowlist (see :meth:`exclude` / :meth:`include`).
 
         Parameters:
-            scope: A container widget to limit the search. If None, all
-                registered widgets on the parent are returned.
+            scope: An optional container widget to further limit a window-scoped
+                search to that subtree.
 
         Returns:
             A set of widgets.
         """
-        if self._explicit_widgets is not None:
-            return {
-                w
-                for w in self._explicit_widgets
-                if w.objectName() and w not in self._excluded_widgets
-            }
-
-        # Menu auto-discovery
-        if hasattr(self.parent, "get_items"):
-            return {
-                w
-                for w in self.parent.get_items()
-                if w.objectName()
-                and w not in self._excluded_widgets
-                and self._get_widget_value(w) is not None
-            }
-
-        # MainWindow registered set
-        registered = getattr(self.parent, "widgets", set())
-
-        if scope is not None and scope is not self.parent:
-            scope_children = set(scope.findChildren(QtWidgets.QWidget))
-            candidates = registered & scope_children
-        else:
-            candidates = registered
-
+        candidates = self._scope_candidates(scope)
         return {
             w
             for w in candidates
-            if getattr(w, "restore_state", False)
-            and w.objectName()
+            if w.objectName()
             and w not in self._excluded_widgets
+            and self._passes_filters(w.objectName())
+        }
+
+    def _scope_candidates(
+        self, scope: Optional[QtWidgets.QWidget]
+    ) -> Set[QtWidgets.QWidget]:
+        """Resolve the raw candidate widget set for the current :attr:`scope`.
+
+        Per-source typing rules are applied here (menus: value-bearing items;
+        windows: ``restore_state``, value-bearing only under explicit ``"window"``
+        scope); the name/instance filters are layered on by :meth:`_get_widgets`.
+        """
+        mode = self._scope
+        if mode == "explicit":
+            return set(self._explicit_widgets or [])
+        if mode == "menu":
+            return self._menu_candidates()
+        if mode == "window":
+            # Explicit window scope is the opinionated "capture the panel's
+            # state" mode: keep only value-bearing widgets (drop buttons /
+            # group boxes / chrome).
+            return self._window_candidates(scope, value_only=True)
+
+        # "auto" — legacy implicit resolution order. The window branch here is
+        # the back-compat MainWindow mode (``PresetManager(parent=window, …)``,
+        # e.g. ``MainWindow.presets`` / curtain); it keeps the prior
+        # ``restore_state``-only set, NO value-type filter, so existing presets
+        # aren't silently re-scoped.
+        if self._explicit_widgets is not None:
+            return set(self._explicit_widgets)
+        if hasattr(self.parent, "get_items"):
+            return self._menu_candidates()
+        return self._window_candidates(scope, value_only=False)
+
+    def _menu_candidates(self) -> Set[QtWidgets.QWidget]:
+        """Value-bearing items of the parent menu (empty if parent isn't a menu)."""
+        parent = self.parent
+        if not hasattr(parent, "get_items"):
+            return set()
+        return {w for w in parent.get_items() if self._get_widget_value(w) is not None}
+
+    def _window_candidates(
+        self, scope: Optional[QtWidgets.QWidget], value_only: bool
+    ) -> Set[QtWidgets.QWidget]:
+        """Registered, ``restore_state`` widgets of the owning ``MainWindow``.
+
+        Resolving the window (vs. reading ``parent.widgets`` directly) is what
+        lets a *menu*-parented manager reach the whole window. Binds the window's
+        ``StateManager`` so capture/apply use the same get/set semantics as
+        session state (index guards, ``currentData``, …).
+
+        ``value_only`` keeps only *value-bearing* widgets — stateful inputs
+        (checkboxes, combos, line edits, …), not action buttons, group boxes,
+        header chrome, or size grips, all of which carry ``restore_state`` but no
+        meaningful value. It's on for explicit ``"window"`` scope (clean panel
+        capture) and off for the legacy auto/MainWindow path (back-compat).
+        """
+        window = self._resolve_window()
+        registered = getattr(window, "widgets", None)
+        if registered is None:  # fallback: parent itself is/has the set
+            registered = getattr(self.parent, "widgets", set())
+        registered = registered or set()
+
+        # Adopt the window's StateManager for value get/set when available and
+        # not already supplied — turns the standalone path into MainWindow mode.
+        if self.state is None and window is not None:
+            self.state = getattr(window, "state", None)
+
+        if scope is not None and scope is not window and scope is not self.parent:
+            scope_children = set(scope.findChildren(QtWidgets.QWidget))
+            registered = registered & scope_children
+
+        return {
+            w
+            for w in registered
+            if getattr(w, "restore_state", False)
+            and (not value_only or self._get_widget_value(w) is not None)
         }
 
     # ------------------------------------------------------------------
@@ -820,35 +1011,95 @@ class PresetManager(ptk.LoggingMixin):
     # Combo-box wiring
     # ------------------------------------------------------------------
 
-    def wire_combo(self, combo, on_loaded=None) -> None:
-        """Wire a ``WidgetComboBox`` as a fully-functional preset selector.
+    # Default object name + tooltip for combos built by :meth:`make_preset_combo`.
+    PRESET_COMBO_NAME = "cmb_presets"
+    PRESET_COMBO_TOOLTIP = "Load a saved configuration preset."
 
-        Adds a single row of compact, icon-only actions —
-        **Rename / Refresh / Delete / Open / Save** — to the combo's action
-        section, populates it with existing presets, and connects selection
-        changes to ``load()``. *Refresh* re-applies the **active** preset
-        (``mgr.active_preset``), discarding any edits.
+    def make_preset_combo(
+        self,
+        parent: Optional[QtWidgets.QWidget] = None,
+        name: Optional[str] = None,
+        tooltip: Optional[str] = None,
+        on_loaded: Optional[Callable[[], None]] = None,
+    ) -> "QtWidgets.QWidget":
+        """Create a fully-wired preset selector and return its layout container.
 
-        Built-in (shipped, read-only) presets are shown italicised in the list,
-        and **Rename / Delete are disabled** while one is selected — they can't
-        act on a read-only preset, so greying them out is clearer than letting a
-        click silently no-op. **Refresh / Open / Save** stay enabled (Save
-        writes a user preset that shadows the built-in — the "duplicate to edit"
-        flow).
+        The single DRY entry point for the canonical preset template: builds a
+        uitk :class:`~uitk.widgets.comboBox.ComboBox`, wires it via
+        :meth:`wire_combo`, and returns the :attr:`option_box` *container*
+        (combo + Refresh / Save / menu toolbar) ready to drop into a layout.
+
+        The combo itself is reachable as ``container.preset_combo`` for callers
+        that need to reference it (e.g. to query the current selection).
+
+        Parameters:
+            parent: Parent for the combo (and thus the container).
+            name: ``objectName`` for the combo (default :attr:`PRESET_COMBO_NAME`).
+            tooltip: Combo tooltip (default :attr:`PRESET_COMBO_TOOLTIP`).
+            on_loaded: Forwarded to :meth:`wire_combo`.
+
+        Returns:
+            The ``OptionBoxContainer`` holding the combo and its toolbar.
+        """
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = ComboBox(parent)
+        combo.setObjectName(name or self.PRESET_COMBO_NAME)
+        combo.setToolTip(tooltip or self.PRESET_COMBO_TOOLTIP)
+        combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+        container = self.wire_combo(combo, on_loaded=on_loaded)
+        # Stash the combo on the container so callers don't have to dig through
+        # the option-box layout to reach it.
+        if container is not None:
+            container.preset_combo = combo
+        return container
+
+    def wire_combo(self, combo, on_loaded=None):
+        """Wire a uitk ``ComboBox`` as a fully-functional preset selector.
+
+        Builds the canonical preset template: the combo's :attr:`option_box`
+        gains a compact, icon-only toolbar -- **Refresh**, **Save**, and a
+        **menu** (Rename / Open folder / Delete) -- and the combo is populated
+        with the available presets and connected so a user pick loads it.
+        *Refresh* re-applies the **active** preset (``mgr.active_preset``),
+        discarding any edits.
+
+        **Inline naming (no pop-up dialogs).** *Save* and *Rename* put the combo
+        into edit mode in-place: the line edit is focused and pre-filled, and
+        pressing **Enter** commits (clicking away cancels). Save writes the
+        current values under the typed name -- same name overwrites, a new name
+        creates a new entry. Rename moves the selected user preset to the typed
+        name (values unchanged).
+
+        Built-in (shipped, read-only) presets are shown italicised in the list;
+        **Rename / Delete are hidden from the menu** while one is selected (they
+        can't act on a read-only preset). *Refresh / Open / Save* stay available
+        -- Save writes a user preset that shadows the built-in (the "duplicate to
+        edit" flow).
 
         The combo shows the *active preset name* as its selected item, restored
-        from the persisted :attr:`active_preset` on wire (selection only — no
+        from the persisted :attr:`active_preset` on wire (selection only -- no
         values are re-applied, since widgets restore themselves from session
         state). When the live values diverge from the active preset a ``" *"``
         suffix is shown (see :meth:`is_modified`); Save / Refresh clear it. When
-        no preset is active the combo shows the ``"Presets…"`` placeholder, or
+        no preset is active the combo shows the ``"Presets..."`` placeholder, or
         ``"No saved presets"`` when none exist.
 
         Parameters:
-            combo: A ``WidgetComboBox`` to populate and wire.
+            combo: A uitk :class:`~uitk.widgets.comboBox.ComboBox` to populate
+                and wire. (A ``WidgetComboBox`` works too -- it subclasses
+                ``ComboBox`` -- but the plain ``ComboBox`` is canonical.)
             on_loaded: Optional callable invoked (with no arguments) after
                 a preset is successfully loaded.  When omitted, widget
                 signals are left unblocked so slot handlers fire naturally.
+
+        Returns:
+            The :attr:`option_box` container (combo + toolbar). Place this in
+            your layout. When *combo* was already sitting in a layout, the
+            container has already replaced it in-place and the return can be
+            ignored.
         """
         mgr = self
 
@@ -857,15 +1108,27 @@ class PresetManager(ptk.LoggingMixin):
 
             Sets the model item's font/tooltip rather than its text, so
             ``itemText`` stays the raw preset name for load/rename/delete. The
-            italic is via ``Qt.FontRole`` (dropdown list only) — the collapsed
+            italic is via ``Qt.FontRole`` (dropdown list only) -- the collapsed
             display keeps the widget font, so the dropdown arrow is unaffected.
             """
+            model = combo.model()
+            if not hasattr(model, "item"):
+                return
+            # Resolve the read-only built-in set ONCE (two directory globs)
+            # rather than probing ``source(nm)`` per name -- each call rebuilt
+            # the store and stat'd both tiers, so a preset-heavy panel paid
+            # O(N) store builds + stats here on every refresh. A name is a
+            # read-only built-in iff it ships as a built-in AND is not shadowed
+            # by a user preset of the same name (mirrors ``source`` semantics).
+            store = mgr._store
+            builtin_names = set(store.list(tier="builtin"))
+            user_names = set(store.list(tier="user"))
             italic = QtGui.QFont(combo.font())
             italic.setItalic(True)
             for i, nm in enumerate(names):
-                if mgr.source(nm) != "builtin":
+                if nm not in builtin_names or nm in user_names:
                     continue
-                item = combo._model.item(i)
+                item = model.item(i)
                 if item is not None:
                     item.setFont(italic)
                     item.setToolTip(f"{nm} (built-in, read-only)")
@@ -876,9 +1139,10 @@ class PresetManager(ptk.LoggingMixin):
             Parameters:
                 select_name: If given, select this preset after repopulating.
                     If ``None``, the persisted **active preset** is re-selected
-                    (idea: restore only the *selection* \u2014 widget values restore
+                    (idea: restore only the *selection* -- widget values restore
                     themselves from session state). Selection is set with
-                    signals blocked, so **no values are applied**.
+                    signals blocked, so **no values are applied** (selection-load
+                    is keyed off the user-only ``activated`` signal).
             """
             if select_name is None:
                 select_name = mgr.active_preset
@@ -892,38 +1156,27 @@ class PresetManager(ptk.LoggingMixin):
                     # findText -> -1 when the (stale) name is gone, which falls
                     # through to the placeholder rather than a silent item-0.
                     combo.setCurrentIndex(combo.findText(select_name) if select_name else -1)
-                    combo.setPlaceholderText("Presets\u2026")
+                    combo.setPlaceholderText("Presets…")
                 else:
+                    combo.setCurrentIndex(-1)
                     combo.setPlaceholderText("No saved presets")
             finally:
                 combo.blockSignals(False)
-            # clear() destroys all model rows including the action section;
-            # rebuild so the action buttons reappear at the bottom.
-            combo._rebuild_actions_section()
-            update_action_states()
             # Selection was set with signals blocked (no value apply); sync the
             # dirty baseline from the active preset and refresh the marker.
             mgr._resync_active()
 
-        def update_action_states():
-            """Enable Rename/Delete only for the *user* preset that's selected.
-
-            Built-ins are read-only and "no selection" has nothing to act on,
-            so both are disabled in those cases. The bound buttons follow the
-            action state automatically (see ``_bind_button_to_action``).
-            """
+        def selected_name() -> str:
+            """The currently-selected preset name (``""`` when none)."""
             idx = combo.currentIndex()
-            name = combo.itemText(idx) if idx >= 0 else ""
-            is_user = bool(name) and mgr.source(name) == "user"
-            rename_action.setEnabled(is_user)
-            delete_action.setEnabled(is_user)
+            return combo.itemText(idx) if idx >= 0 else ""
 
         def apply_preset(name):
             """(Re)apply preset *name*'s values to the widgets (no-op if falsy).
 
             When ``on_loaded`` is provided, block signals during load and fire
             the single consolidated callback afterwards. Otherwise, let signals
-            propagate so normal slot handlers (e.g. checkbox → refresh) fire.
+            propagate so normal slot handlers (e.g. checkbox -> refresh) fire.
             """
             if not name:
                 return
@@ -932,7 +1185,12 @@ class PresetManager(ptk.LoggingMixin):
                 on_loaded()
 
         def on_selected(idx):
-            update_action_states()
+            """User picked a preset from the dropdown -> load it.
+
+            Wired to ``activated`` (user-only), never ``currentIndexChanged``,
+            so programmatic selection during ``refresh`` / inline-edit commit
+            never triggers a (potentially clobbering) reload.
+            """
             if idx >= 0:
                 apply_preset(combo.itemText(idx))
 
@@ -941,49 +1199,67 @@ class PresetManager(ptk.LoggingMixin):
 
             Keyed off ``mgr.active_preset`` rather than the combo's
             ``currentIndex`` so Refresh still works after a session restore (or
-            any state that left the index at -1) — the index-based version
+            any state that left the index at -1) -- the index-based version
             silently no-oped, which read as "Refresh is broken".
             """
             apply_preset(mgr.active_preset)
 
+        def begin_inline_edit(mode: str, seed: str):
+            """Enter in-place edit mode pre-filled with *seed* for *mode*.
+
+            *mode* (``"save"`` / ``"rename"``) is consumed by
+            :func:`on_edit_committed` on the next Enter. Clicking away fires no
+            commit (``ComboBox.focusOutEvent`` exits edit mode silently).
+            """
+            mgr._pending_preset_action = mode
+            combo.setEditable(True)
+            line_edit = combo.lineEdit()
+            if line_edit is not None:
+                line_edit.setText(seed or "")
+                line_edit.selectAll()
+                line_edit.setFocus()
+
         def on_save():
-            parent_w = combo.window() or combo
-            # Built-ins blank the seed so Save acts as duplicate-to-edit
-            # rather than silently shadowing a read-only default.
-            current = combo.currentText()
-            seed = "" if mgr.source(current) == "builtin" else current
-            name, ok = QtWidgets.QInputDialog.getText(
-                parent_w, "Save Preset", "Preset name:", text=seed
-            )
-            if ok and name.strip():
-                name = name.strip()
+            """Start an inline Save: type a name + Enter (same name overwrites)."""
+            current = selected_name()
+            # A built-in blanks the seed so Save acts as duplicate-to-edit
+            # rather than re-typing the read-only default's name.
+            seed = "" if (current and mgr.source(current) == "builtin") else current
+            begin_inline_edit("save", seed)
+
+        def on_rename():
+            """Start an inline Rename of the selected user preset."""
+            current = selected_name()
+            if not current or mgr.source(current) != "user":
+                return
+            begin_inline_edit("rename", current)
+
+        def on_edit_committed(text: str):
+            """Dispatch the committed inline-edit text per the pending action."""
+            mode = getattr(mgr, "_pending_preset_action", None)
+            mgr._pending_preset_action = None
+            if mode is None:
+                return
+            name = (text or "").strip()
+            if mode == "save":
+                if not name:
+                    return
                 mgr.save(name)
                 # The saved preset becomes active; its values == what we just
                 # wrote, so the marker is clean.
                 mgr.active_preset = name
                 refresh(select_name=name)
-
-        def on_rename():
-            idx = combo.currentIndex()
-            if idx < 0:
-                return
-            current = combo.itemText(idx)
-            if not current:
-                return
-            parent_w = combo.window() or combo
-            new_name, ok = QtWidgets.QInputDialog.getText(
-                parent_w, "Rename Preset", "New name:", text=current
-            )
-            if ok and new_name.strip() and new_name.strip() != current:
-                new_name = new_name.strip()
-                mgr.rename(current, new_name)
-                refresh(select_name=new_name)
+            elif mode == "rename":
+                old = selected_name() or mgr.active_preset
+                if name and old and name != old and mgr.source(old) == "user":
+                    if mgr.rename(old, name):
+                        refresh(select_name=name)
+                        return
+                # Invalid / unchanged / cancelled -- restore the display.
+                refresh()
 
         def on_delete():
-            idx = combo.currentIndex()
-            if idx < 0:
-                return
-            current = combo.itemText(idx)
+            current = selected_name()
             if not current:
                 return
             mgr.delete(current)
@@ -994,58 +1270,93 @@ class PresetManager(ptk.LoggingMixin):
             preset_dir = mgr.preset_dir
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(preset_dir)))
 
-        self._excluded_widgets.add(combo)
-        self._refresh_combo = refresh
+        def build_menu_items(_widget):
+            """Menu items, rebuilt per open so built-ins hide Rename/Delete.
 
-        # A single row of compact, icon-only buttons (no separator).
-        # wire_combo is WidgetComboBox-only (it also drives ._model /
-        # ._rebuild_actions_section below).
-        combo.action_icon_only = True
-        combo.show_action_separator = False
-
-        actions = combo.actions.add(
-            {
-                "Rename": on_rename,
-                "Refresh": on_refresh,
-                "Delete": on_delete,
-                "Open": on_open_folder,
-                "Save": on_save,
-            }
-        )
-        rename_action, refresh_action, delete_action, open_action, save_action = actions
-        combo.action_columns = len(actions)  # all on one row
-        for action, tip in (
-            (rename_action, "Rename the selected user preset."),
-            (refresh_action, "Reload the selected preset."),
-            (delete_action, "Delete the selected user preset."),
-            (open_action, "Open the preset folder in the file explorer."),
-            (save_action, "Save the current settings as a preset."),
-        ):
-            action.setToolTip(tip)
-        # Apply SVG icons matching the order above.
-        try:
-            from uitk.widgets.mixins.icon_manager import IconManager
-
-            for action, icon_name in zip(
-                actions, ("edit", "refresh", "trash", "folder", "save")
-            ):
-                action.setIcon(IconManager.get(icon_name, size=(16, 16)))
-            combo._rebuild_actions_section()
-        except Exception:
-            pass
+            A read-only built-in (or no selection) can't be renamed or deleted,
+            so those entries are omitted rather than shown disabled -- cleaner
+            for a short pop-up menu.
+            """
+            current = selected_name()
+            is_user = bool(current) and mgr.source(current) == "user"
+            items = []
+            if is_user:
+                items.append(("Rename", on_rename))
+            items.append(("Open Folder", on_open_folder))
+            if is_user:
+                items.append(("Delete", on_delete))
+            return items
 
         def update_marker(modified: bool):
             """Reflect the modified ('dirty') state as an asterisk on the combo's
             displayed current text (item data is left untouched)."""
             combo.current_text_suffix = " *" if modified else ""
 
+        self._excluded_widgets.add(combo)
+        self._refresh_combo = refresh
+
+        # Bound the combo's height so the option-box icon buttons (sized to the
+        # combo's height) stay compact. A combo dropped into a *stretchy*
+        # container — e.g. a menu's "Menu Actions" group (``add_presets``) — has
+        # no vertical limit and expands to fill it, which would balloon the
+        # square icon buttons and squeeze the dropdown to nothing. Pin it to the
+        # natural row height (its size hint) unless the caller already set an
+        # explicit maximum (the in-panel rows that pass a fixed height).
+        hint_h = combo.sizeHint().height()
+        if hint_h > 0 and combo.maximumHeight() >= 16777215:  # QWIDGETSIZE_MAX
+            combo.setFixedHeight(hint_h)
+
+        # The compact option-box toolbar: Refresh, Save, then a menu holding
+        # Rename / Open / Delete. ActionOptions sort before the menu option, and
+        # insertion order is preserved within the action group, so the rendered
+        # left-to-right order is exactly [refresh][save][menu]. The menu is a
+        # cursor-centred pop-up with no header / footer / apply chrome (a plain
+        # action list), matching a right-click context menu.
+        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
+
+        combo.option_box.add_action(
+            callback=on_refresh,
+            icon="refresh",
+            tooltip="Reload the active preset (discard edits).",
+        )
+        combo.option_box.add_action(
+            callback=on_save,
+            icon="save",
+            tooltip="Save the current settings as a preset (type a name, Enter).",
+        )
+        combo.option_box.add_option(
+            ContextMenuOption(
+                wrapped_widget=combo,
+                menu_provider=build_menu_items,
+                icon="menu",
+                tooltip="Preset actions: rename, open folder, delete.",
+                position="cursorPos",
+                add_header=False,
+                add_footer=False,
+                add_apply_button=False,
+                add_defaults_button=False,
+                match_parent_width=False,
+            )
+        )
+
         mgr.on_modified_changed(update_marker)
         # Live marker updates for the menu / standalone (widget-state) paths;
         # no-op in semantic mode (the caller wires its own param widgets).
         mgr.connect_value_widgets()
 
+        # Inline Save / Rename commit on Enter (see ComboBox.on_editing_finished).
+        combo.on_editing_finished.connect(on_edit_committed)
+
         refresh()
-        combo.currentIndexChanged.connect(on_selected)
+        # ``activated`` is user-only -- programmatic selection (refresh, inline
+        # commit) never reloads, so an overwrite-Save can't clobber the live
+        # values with the pre-save snapshot.
+        try:
+            combo.activated[int].connect(on_selected)
+        except (TypeError, KeyError):
+            combo.activated.connect(on_selected)
+
+        return combo.option_box.container
 
 
 # ------------------------------------------------------------------

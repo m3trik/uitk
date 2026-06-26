@@ -1862,23 +1862,22 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Check if cursor is within widget bounds OR over a child widget
         cursor_inside = self.rect().contains(cursor_pos)
 
-        # Also check if cursor is over a child widget (for nested widgets)
+        # Also treat the cursor as "inside" when it's over any descendant of
+        # this menu — including a *separate top-level popup* such as a ComboBox
+        # dropdown or an option-box ⋯ menu opened from a widget inside this menu.
+        # ``isAncestorOf`` only matches widgets in the SAME window, so it misses
+        # those popups (the menu would close the moment the cursor moved onto
+        # one). Walking ``widget_at``'s QObject parent chain back to ``self``
+        # catches every nested popup uniformly (the chain crosses window
+        # boundaries; the visual ancestor test does not).
         if not cursor_inside:
             widget_at = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-            if widget_at:
-                if self.isAncestorOf(widget_at):
+            w = widget_at
+            while w is not None:
+                if w is self:
                     cursor_inside = True
-                else:
-                    # Check for ComboBox popups (which are separate windows)
-                    # This prevents the menu from closing when interacting with a dropdown
-                    for combo in self.findChildren(QtWidgets.QComboBox):
-                        if combo.view() and combo.view().isVisible():
-                            # Check if widget_at is the view or part of it (e.g. viewport)
-                            if widget_at == combo.view() or combo.view().isAncestorOf(
-                                widget_at
-                            ):
-                                cursor_inside = True
-                                break
+                    break
+                w = w.parent()
 
         if cursor_inside:
             # Mouse has entered the menu
@@ -2012,6 +2011,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
+
+    def owner_window(self) -> Optional[QtWidgets.QWidget]:
+        """Public alias for the owning ``MainWindow``, or ``None``.
+
+        Thin wrapper over :meth:`_resolve_registration_window` so collaborators
+        (e.g. a window-scoped :class:`PresetManager`) can reach the host window
+        through the same reparent-race-robust resolver used for dynamic-widget
+        registration, without depending on a private method.
+        """
+        return self._resolve_registration_window()
 
     def _resolve_registration_window(self) -> Optional[QtWidgets.QWidget]:
         """Return the owning MainWindow for dynamic-widget registration.
@@ -2200,7 +2209,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     def add_presets(self) -> bool:
         """Whether the presets combo is enabled.
 
-        When ``True``, a ``WidgetComboBox`` preset selector is placed
+        When ``True``, a ``ComboBox`` preset selector is placed
         in the *Menu Actions* container at the bottom of the menu
         (alongside the *Restore Defaults* and *Apply* buttons).  The
         actual setup is deferred to the first ``showEvent``.
@@ -2227,13 +2236,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         Called lazily from ``showEvent`` the first time the menu is
         shown while :attr:`add_presets` is ``True``.
         """
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
         # Ensure layout exists (may not if add_presets is set before add())
         self._ensure_layout_created()
 
         # Create combo directly and place it into the action container
-        combo = WidgetComboBox()
+        combo = ComboBox()
         combo.setObjectName("cmb_presets")
         combo.setToolTip("Load a saved configuration preset.")
         combo.setSizePolicy(
@@ -2246,7 +2255,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
 
-        # Wire combo with save/rename/delete/open-folder actions
+        # Wire the combo with the Refresh / Save / ⋯-menu option-box toolbar.
+        # wire_combo wraps the combo in its option-box container; since the
+        # combo is already in the action-container layout, the wrap replaces it
+        # in place (the button_manager still tracks the combo, nested inside).
         self.presets.wire_combo(combo)
 
         # Make the combo accessible as self.cmb_presets (mirrors self.add() behaviour)
