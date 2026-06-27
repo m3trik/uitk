@@ -1950,6 +1950,92 @@ class TestOptionMenuClickableRows(QtBaseTestCase):
         self.assertIsNotNone(ctx._menu)
         self.assertEqual([r.text() for r in static.menu.get_items()], ["X"])
 
+    def test_footer_deferred_until_show(self):
+        # Init-perf regression (chrome deferral, Milestone A): the Menu footer
+        # (the heaviest single sub-widget) must NOT be built during
+        # construction / add() — only on first show. Most option-box menus are
+        # never opened, so building chrome at register time is wasted work.
+        from uitk.widgets.menu import Menu
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=parent, trigger_button="none"))
+        menu.setTitle("Opts")  # the ubiquitous tbXXX_init pattern
+        menu.add("QLabel", setText="Item A")
+
+        self.assertIsNotNone(menu.gridLayout, "scaffold must exist after add()")
+        self.assertIsNone(menu.footer, "footer must be deferred until first show")
+
+        # setVisible(True) runs _prepare_for_show() synchronously, so we assert
+        # product state (footer built) rather than an offscreen OS outcome.
+        menu.setVisible(True)
+        try:
+            self.assertIsNotNone(menu.footer, "footer must be built on first show")
+        finally:
+            menu.setVisible(False)
+
+    def test_header_deferred_and_title_survives(self):
+        # Chrome deferral (Milestone B): the header builds on first show, and a
+        # setTitle() issued before the header exists is stashed and applied when
+        # the header is built (the tbXXX_init pattern sets the title up front).
+        from uitk.widgets.menu import Menu
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=parent, trigger_button="none"))
+        menu.setTitle("Opts")
+        menu.add("QLabel", setText="Item A")
+
+        self.assertIsNone(menu.header, "header must be deferred until first show")
+        self.assertEqual(
+            menu.title(), "Opts", "pending title must be readable before show"
+        )
+
+        menu.setVisible(True)
+        try:
+            self.assertIsNotNone(menu.header, "header must be built on first show")
+            self.assertEqual(
+                menu.title(), "Opts", "stashed title must apply to the header"
+            )
+        finally:
+            menu.setVisible(False)
+
+    def test_ensure_chrome_builds_immediately(self):
+        # The public escape hatch used by modal dialogs / channels_slots: build
+        # the chrome up front (before show) so .header is available to configure.
+        from uitk.widgets.menu import Menu
+
+        menu = self.track_widget(Menu(trigger_button="none"))
+        menu.setTitle("Create Attribute")
+        self.assertIsNone(menu.header, "precondition: header deferred")
+
+        menu.ensure_chrome()
+        self.assertIsNotNone(menu.header, "ensure_chrome must build the header")
+        self.assertIsNotNone(menu.footer, "ensure_chrome must build the footer")
+        self.assertEqual(menu.title(), "Create Attribute")
+        # The channels_slots pin->hide swap must not raise now that the header exists.
+        menu.header.config_buttons("hide")
+
+    def test_headerless_menu_stays_chromeless(self):
+        # add_header/add_footer False must never grow chrome, even after a show
+        # (Header.menu builds such sub-menus — guards against chrome recursion).
+        from uitk.widgets.menu import Menu
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(
+            Menu(
+                parent=parent,
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+            )
+        )
+        menu.add("QLabel", setText="X")
+        menu.setVisible(True)
+        try:
+            self.assertIsNone(menu.header, "add_header=False must stay header-less")
+            self.assertIsNone(menu.footer, "add_footer=False must stay footer-less")
+        finally:
+            menu.setVisible(False)
+
 
 # -----------------------------------------------------------------------------
 # Interactive Demo (Legacy)

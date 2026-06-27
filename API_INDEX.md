@@ -274,7 +274,7 @@ _Generated: 2026-06-27_
 - `class MenuPositioner`
   - methods: center_on_cursor, position_at_coordinate, position_relative_to_widget, apply_width_matching, position_and_match_width
 - `class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`
-  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, trigger_button, presets, presets, hide_on_leave, hide_on_leave, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, owner_window, add_defaults_button, add_defaults_button, add_presets, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
+  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, trigger_button, presets, presets, hide_on_leave, hide_on_leave, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, ensure_chrome, owner_window, add_defaults_button, add_defaults_button, add_presets, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
 
 ### `widgets/menuButton.py`
 - `class MenuButton(QtWidgets.QPushButton, AttributesMixin)`

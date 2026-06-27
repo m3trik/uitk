@@ -1011,6 +1011,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Menu.setCentralWidget(self, widget, overwrite=False)`
   - `Menu.centralWidget(self)` — Return the central widget.
   - `Menu.init_layout(self)` — Initialize the menu layout.
+  - `Menu.ensure_chrome(self) -> None` — Force-build the deferred Header/Footer now.
   - `Menu.owner_window(self) -> Optional[QtWidgets.QWidget]` — Public alias for the owning ``MainWindow``, or ``None``.
   - `Menu.add_defaults_button(self) -> bool` *(property)* — Whether the 'Restore Defaults' button is enabled.
   - `Menu.add_defaults_button(self, value: bool) -> None`
@@ -1019,7 +1020,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Menu.get_all_children(self)`
   - `Menu.is_pinned(self) -> bool` *(property)* — Check if the menu is pinned (should not auto-hide).
   - `Menu.contains_items(self) -> bool` *(property)* — Check if the QMenu contains any genuine items.
-  - `Menu.title(self) -> str` — Get the menu's title text.
+  - `Menu.title(self) -> str` — Get the menu's title text (the pending value if the header isn't built yet).
   - `Menu.setTitle(self, title='') -> None` — Set the menu's title to the given string.
   - `Menu.get_items(self, types=None)` — Get all items in the list, optionally filtered by type.
   - `Menu.get_item(self, identifier)` — Return a QAction or QWidgetAction by index or text.

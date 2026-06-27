@@ -798,6 +798,35 @@ class TestMenuPersistentMode(QtBaseTestCase):
         menu = self.track_widget(Menu())
         self.assertFalse(menu.is_persistent_mode)
 
+    def test_persistent_mode_on_deferred_header_menu_keeps_header(self):
+        """Regression (chrome deferral): an add_header=True menu that enters
+        persistent mode BEFORE its first show must build its permanent header
+        into the frame layout and keep it when persistent mode is disabled.
+
+        Without the fix, the had_header snapshot reads the (still-deferred,
+        None) header as False, the fallback injects a header into the
+        centralWidgetLayout, and disable_persistent_mode then deletes the
+        menu's permanent header.
+        """
+        menu = self.track_widget(Menu(add_header=True))
+        self.assertIsNone(menu.header, "precondition: header deferred until shown")
+
+        menu.enable_persistent_mode()
+        self.assertIsNotNone(menu.header, "persistent mode must build the header")
+        # The permanent header belongs in the frame layout (the normal
+        # first-show build site), not the add_header=False centralWidget fallback.
+        self.assertGreaterEqual(
+            menu._frame_layout.indexOf(menu.header),
+            0,
+            "header must live in the frame layout, not the headerless fallback",
+        )
+
+        menu.disable_persistent_mode()
+        self.assertIsNotNone(
+            menu.header,
+            "disabling persistent mode must not delete the permanent header",
+        )
+
 
 class TestMenuHideMethod(QtBaseTestCase):
     """Tests for Menu hide method."""
