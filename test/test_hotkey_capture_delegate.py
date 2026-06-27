@@ -66,6 +66,25 @@ class TestHotkeyCaptureEdit(QtBaseTestCase):
         _press(editor, QtCore.Qt.Key_Backspace)
         self.assertEqual(editor.sequence(), "")
 
+    def test_accepts_shortcut_override(self):
+        """The editor swallows ShortcutOverride so a chord is captured, not fired.
+
+        Qt sends a ShortcutOverride to the focus widget before triggering any
+        QShortcut. Accepting it cancels the shortcut and delivers the key as a
+        normal press — without this, an already-assigned application-scoped
+        shortcut fires its slot instead of the key being captured (the
+        re-assign-a-taken-key bug).
+        """
+        editor = HotkeyCaptureEdit()
+        event = QtGui.QKeyEvent(
+            QtCore.QEvent.ShortcutOverride,
+            QtCore.Qt.Key_S,
+            QtCore.Qt.ControlModifier,
+        )
+        handled = editor.event(event)
+        self.assertTrue(handled, "ShortcutOverride should be handled")
+        self.assertTrue(event.isAccepted(), "ShortcutOverride should be accepted")
+
 
 class TestInstallHotkeyCapture(QtBaseTestCase):
     """The turnkey ``install_hotkey_capture`` helper on a real table."""

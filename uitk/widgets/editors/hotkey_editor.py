@@ -72,8 +72,17 @@ class HotkeyEditor(EditorPanel):
 
         FIXED_H = 20
 
-        # Preset row
-        self.init_preset_row("hotkey_presets")
+        # Preset row, tucked into the header ⋯-menu so the body stays focused
+        # on the shortcut table. The dirty-check reads only already-loaded UIs
+        # (peek, no build) — an unbuilt UI has no live edits to differ from the
+        # preset. Without this, opening the editor would build every registered
+        # UI just to test "modified". Saving still captures every UI
+        # (loaded_only=False).
+        self.init_preset_row(
+            "hotkey_presets",
+            modified_value_provider=lambda: self.export_shortcuts(loaded_only=True),
+            in_header_menu=True,
+        )
 
         # UI Selection
         ui_layout = QtWidgets.QHBoxLayout()
@@ -171,12 +180,19 @@ class HotkeyEditor(EditorPanel):
     # Shortcut export / import
     # ------------------------------------------------------------------
 
-    def export_shortcuts(self) -> dict:
+    def export_shortcuts(self, loaded_only: bool = False) -> dict:
         """Export all user-customised shortcuts across loaded UIs.
 
         Each binding exports as ``{"seq": str, "scope": str}``. The legacy
         string-only shape (``method_name: sequence``) remains supported on
         import for back-compat with older presets.
+
+        Parameters:
+            loaded_only: When True, read only UIs already instantiated this
+                session (``peek``, never ``get_ui``) — an unbuilt UI has no
+                live edits to capture. Used for the cheap dirty-check
+                (:attr:`PresetManager.modified_value_provider`); save passes
+                False so the preset is a complete snapshot of every UI.
 
         Returns:
             ``{ui_name: {method_name: {"seq": str, "scope": str}, ...}, ...}``
@@ -190,7 +206,11 @@ class HotkeyEditor(EditorPanel):
             )
         )
         for ui_name in all_names:
-            target_ui = self.sb.get_ui(ui_name)
+            target_ui = (
+                self.sb.loaded_ui.peek(ui_name)
+                if loaded_only
+                else self.sb.get_ui(ui_name)
+            )
             if not target_ui:
                 continue
             registry = self.sb.get_shortcut_registry(target_ui)
@@ -356,8 +376,15 @@ class HotkeyEditor(EditorPanel):
             # Scope toggle (Window / Application). Decorator-only scopes
             # (widget, widget_children) are surfaced as a disabled label so
             # users see what's set without being able to override unsafely.
+            # Disabled too when no key is bound — scope only means something
+            # once there's a sequence to fire, and it gates whether reusing
+            # the key elsewhere is an actual collision.
             scope_btn = self._make_scope_toggle(
-                target_ui, method_name, current_scope, default_scope
+                target_ui,
+                method_name,
+                current_scope,
+                default_scope,
+                has_sequence=bool(current_seq),
             )
             self.table.setCellWidget(i, 2, scope_btn)
 
@@ -411,6 +438,7 @@ class HotkeyEditor(EditorPanel):
             return
 
         self.sb.set_user_shortcut(target_ui, method_name, new_seq, current_scope)
+        self._preset_mgr.refresh_modified_state()
         self.footer.setStatusText(
             f"Assigned {new_seq or 'None'} to {item_name.text()}"
         )
@@ -419,6 +447,7 @@ class HotkeyEditor(EditorPanel):
     def reset_shortcut(self, ui, method_name, default_seq, default_scope="window"):
         """Reset sequence and scope to decorator defaults."""
         self.sb.set_user_shortcut(ui, method_name, default_seq, default_scope)
+        self._preset_mgr.refresh_modified_state()
         self.populate()
 
     # ------------------------------------------------------------------
@@ -426,17 +455,29 @@ class HotkeyEditor(EditorPanel):
     # ------------------------------------------------------------------
 
     def _make_scope_toggle(
-        self, target_ui, method_name: str, current_scope: str, default_scope: str
+        self,
+        target_ui,
+        method_name: str,
+        current_scope: str,
+        default_scope: str,
+        has_sequence: bool = True,
     ) -> QtWidgets.QPushButton:
         """Build a square icon button that flips between Window and Application scope.
 
         Decorator-only scopes (widget, widget_children) render as a disabled
         icon so users see what's set but can't override into a less-safe scope.
+        When ``has_sequence`` is False (no key bound) the button is disabled —
+        scope is only meaningful once a sequence exists to fire.
         """
         icon_name = SCOPE_ICONS.get(current_scope, "window")
         tooltip = SCOPE_TOOLTIPS.get(current_scope, f"Scope: {current_scope}")
         btn = self.icon_button(icon_name=icon_name, tooltip=tooltip)
         btn.setProperty("scope_name", current_scope)
+
+        if not has_sequence:
+            btn.setEnabled(False)
+            btn.setToolTip("Assign a shortcut before choosing its scope.")
+            return btn
 
         if current_scope not in USER_SCOPES:
             btn.setEnabled(False)
@@ -453,7 +494,13 @@ class HotkeyEditor(EditorPanel):
         return btn
 
     def _on_scope_toggle(self, target_ui, method_name: str, default_scope: str):
-        """Flip scope between Window and Application, with collision check."""
+        """Flip scope between Window and Application — applied immediately.
+
+        A scope flip is a reversible mode change, so it does *not* pop the
+        conflict modal (that is reserved for binding a key). Any conflict the
+        new scope introduces is surfaced inline in the footer; the user can flip
+        back or change the sequence.
+        """
         # Locate the row by method name and read current state
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
@@ -462,23 +509,25 @@ class HotkeyEditor(EditorPanel):
             if item.toolTip().replace("Method: ", "") != method_name:
                 continue
 
+            label = item.text()
             current_seq = self.table.item(row, 1).text()
             scope_btn = self.table.cellWidget(row, 2)
             current_scope = scope_btn.property("scope_name")
 
-            new_scope = (
-                "application" if current_scope == "window" else "window"
-            )
+            new_scope = "application" if current_scope == "window" else "window"
 
-            if not self._resolve_collisions(
-                target_ui, method_name, current_seq, new_scope
-            ):
-                return
-
+            conflicts = self._collect_conflicts(method_name, current_seq, new_scope)
             self.sb.set_user_shortcut(
                 target_ui, method_name, current_seq, new_scope
             )
+            self._preset_mgr.refresh_modified_state()
             self.populate()
+
+            msg = f"{label} → {SCOPE_LABELS.get(new_scope, new_scope)} scope"
+            if conflicts:
+                others = ", ".join(dict.fromkeys(c.description for c in conflicts))
+                msg += f" — now conflicts with {others}"
+            self.footer.setStatusText(msg)
             return
 
     # ------------------------------------------------------------------
@@ -505,40 +554,50 @@ class HotkeyEditor(EditorPanel):
         if checker in self._collision_checkers:
             self._collision_checkers.remove(checker)
 
+    def _collect_conflicts(
+        self, method_name: str, sequence: str, scope: str
+    ) -> List[CollisionConflict]:
+        """Run every collision checker and return their conflicts (no prompt)."""
+        if not sequence:
+            return []
+        ui_name = self.cmb_ui.currentText()
+        conflicts: List[CollisionConflict] = []
+        for checker in self._collision_checkers:
+            try:
+                conflicts.extend(checker(sequence, scope, ui_name, method_name) or [])
+            except Exception as exc:  # noqa: BLE001
+                self.sb.logger.warning(
+                    f"[hotkey_editor] Collision checker {checker} raised: {exc}"
+                )
+        return conflicts
+
     def _resolve_collisions(
         self, target_ui, method_name: str, sequence: str, scope: str
     ) -> bool:
-        """Run all collision checkers and prompt the user when conflicts exist.
+        """Prompt the user when the proposed binding conflicts.
 
         Returns:
             True when the caller should proceed with the assignment, False when
             the user cancelled.
         """
-        if not sequence:
-            return True
-
-        ui_name = self.cmb_ui.currentText()
-        conflicts: List[CollisionConflict] = []
-        for checker in self._collision_checkers:
-            try:
-                result = checker(sequence, scope, ui_name, method_name) or []
-            except Exception as exc:  # noqa: BLE001
-                self.sb.logger.warning(
-                    f"[hotkey_editor] Collision checker {checker} raised: {exc}"
-                )
-                continue
-            conflicts.extend(result)
-
+        conflicts = self._collect_conflicts(method_name, sequence, scope)
         if not conflicts:
             return True
-
         return self._prompt_conflicts(sequence, scope, conflicts)
 
     def _prompt_conflicts(
         self, sequence: str, scope: str, conflicts: List[CollisionConflict]
     ) -> bool:
-        """Show a modal listing conflicts; return True to proceed."""
+        """Show a modal listing conflicts; return True to proceed.
+
+        Offers, as the conflicts allow: *Clear conflicting & assign* (clears
+        uitk duplicates), *Assign & free Maya binding* (also unbinds Maya's
+        hotkey — enabled only when Maya's active set is editable; shown disabled
+        with the reason on a locked set), and *Assign anyway*.
+        """
         breaks = [c for c in conflicts if c.breaks_binding and c.clear_action]
+        maya_clearable = [c for c in conflicts if c.source == "maya" and c.clear_action]
+        maya_locked = [c for c in conflicts if c.source == "maya" and not c.clear_action]
         soft = [c for c in conflicts if not (c.breaks_binding and c.clear_action)]
 
         lines = [f"<b>{sequence}</b> ({SCOPE_LABELS.get(scope, scope)}) conflicts:"]
@@ -559,16 +618,28 @@ class HotkeyEditor(EditorPanel):
         box.setIcon(QtWidgets.QMessageBox.Warning)
         box.setText(body)
 
+        clear_btn = None
         if breaks:
             clear_btn = box.addButton(
-                "Clear conflicting && assign",
-                QtWidgets.QMessageBox.AcceptRole,
+                "Clear conflicting && assign", QtWidgets.QMessageBox.AcceptRole
             )
-        else:
-            clear_btn = None
-        proceed_btn = box.addButton(
-            "Assign anyway", QtWidgets.QMessageBox.AcceptRole
-        )
+        # "Assign & free Maya binding" — also unbinds Maya's hotkey. Enabled only
+        # on an editable set (the conflict carries a clear_action); on a locked
+        # set the option is shown disabled with its reason, not silently absent.
+        maya_btn = None
+        if maya_clearable:
+            maya_btn = box.addButton(
+                "Assign && free Maya binding", QtWidgets.QMessageBox.AcceptRole
+            )
+        elif maya_locked:
+            locked_btn = box.addButton(
+                "Free Maya binding (set locked)", QtWidgets.QMessageBox.AcceptRole
+            )
+            locked_btn.setEnabled(False)
+            locked_btn.setToolTip(
+                "Switch Maya to a custom (non-default) hotkey set to clear its binding."
+            )
+        proceed_btn = box.addButton("Assign anyway", QtWidgets.QMessageBox.AcceptRole)
         cancel_btn = box.addButton(QtWidgets.QMessageBox.Cancel)
         box.setDefaultButton(cancel_btn)
 
@@ -577,28 +648,45 @@ class HotkeyEditor(EditorPanel):
 
         if clicked is cancel_btn:
             return False
-        if clicked is clear_btn:
-            for c in breaks:
+
+        def _run_clears(items):
+            for c in items:
                 try:
                     c.clear_action()
                 except Exception as exc:  # noqa: BLE001
                     self.sb.logger.warning(
                         f"[hotkey_editor] clear_action raised: {exc}"
                     )
+
+        if clicked is clear_btn:
+            _run_clears(breaks)
+        elif clicked is maya_btn:
+            # Free Maya's key AND clear uitk duplicates for a fully clean assign.
+            _run_clears(breaks + maya_clearable)
         return True
 
     def _builtin_internal_collision_checker(
         self, sequence: str, scope: str, ui_name: str, method_name: str
     ) -> List[CollisionConflict]:
-        """Detect collisions across all loaded UIs in this Switchboard.
+        """Detect collisions against the already-loaded UIs in this Switchboard.
+
+        Only UIs instantiated this session are checked (``loaded_ui.peek``,
+        never ``get_ui``): an unbuilt UI has registered no ``QShortcut``, so its
+        bindings are inert and cannot actually collide at runtime — and building
+        every registered UI on each keystroke is what made assigning a shortcut
+        slow/crash-prone and re-ran the native-menu build procs. The currently
+        edited UI (and any the user has navigated to) is loaded, so live
+        conflicts are still caught.
 
         Rules:
-          - Application scope collides with everything.
+          - Application scope collides with everything (it fires app-wide).
           - Window scope collides only with Window/Application bindings on the
-            same UI (different windows are independent focus targets).
-          - Genuine duplicates (same sequence, same target window, both same
-            scope) are flagged ``breaks_binding=True`` with a clear_action so
-            the user can auto-resolve.
+            same UI (different windows are independent focus targets, so the
+            same key is safe to reuse across them).
+          - Every collision that survives those rules is genuinely ambiguous,
+            so all are flagged ``breaks_binding=True`` with a clear_action — the
+            user is always offered to overwrite the conflicting uitk binding,
+            mirroring the Maya checker's clear option.
         """
         conflicts: List[CollisionConflict] = []
         if not sequence:
@@ -613,8 +701,8 @@ class HotkeyEditor(EditorPanel):
         )
 
         for other_ui_name in candidate_names:
-            other_ui = self.sb.get_ui(other_ui_name)
-            if not other_ui:
+            other_ui = self.sb.loaded_ui.peek(other_ui_name)
+            if other_ui is None:
                 continue
             registry = self.sb.get_shortcut_registry(other_ui)
             if not registry:
@@ -629,7 +717,15 @@ class HotkeyEditor(EditorPanel):
                     continue  # same row
 
                 same_window = other_ui_name == ui_name
-                # Scope overlap rules
+                # Scope overlap rules. A binding only *actually* collides when
+                # the two can both match the same key in an overlapping context
+                # Qt cannot disambiguate:
+                #   - Either side application-scoped → fires app-wide, so it
+                #     overlaps every other binding on that key (the "safe unless
+                #     application wide" rule from the scope UX).
+                #   - Both window-scoped → overlap only within the *same* window;
+                #     different windows are independent focus targets, so the
+                #     same key is safe to reuse there.
                 if scope == "application" or other_scope == "application":
                     overlaps = True
                 elif scope == "window" and other_scope == "window":
@@ -639,25 +735,25 @@ class HotkeyEditor(EditorPanel):
                 if not overlaps:
                     continue
 
-                breaks = scope == other_scope and (
-                    scope == "application" or same_window
-                )
+                # Everything that reaches here overlaps ambiguously, so it is a
+                # genuine collision the user should be offered to overwrite —
+                # exactly the parity with the Maya checker's clear option. Carry
+                # a clear_action that frees the *other* binding so the dialog's
+                # "Clear conflicting && assign" path can resolve it.
                 desc = (
                     f"{other_ui_name}.{other_method} "
                     f"({SCOPE_LABELS.get(other_scope, other_scope)})"
                 )
-                clear = None
-                if breaks:
-                    clear = (
-                        lambda ui=other_ui, m=other_method, dscope=entry.get(
-                            "default_scope", "window"
-                        ): self.sb.set_user_shortcut(ui, m, "", dscope)
-                    )
+                clear = (
+                    lambda ui=other_ui, m=other_method, dscope=entry.get(
+                        "default_scope", "window"
+                    ): self.sb.set_user_shortcut(ui, m, "", dscope)
+                )
                 conflicts.append(
                     CollisionConflict(
                         source="uitk",
                         description=desc,
-                        breaks_binding=breaks,
+                        breaks_binding=True,
                         clear_action=clear,
                     )
                 )

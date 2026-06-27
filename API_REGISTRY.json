@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-06-25",
+  "generated_at": "2026-06-27",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -1607,14 +1607,14 @@
         {
           "name": "Shortcut",
           "summary": "Decorator to assign a keyboard shortcut to a slot method.",
-          "line": 32,
+          "line": 33,
           "bases": [],
           "members": []
         },
         {
           "name": "SwitchboardShortcutMixin",
           "summary": "Mixin for managing keyboard shortcuts for Switchboard Slots.",
-          "line": 76,
+          "line": 77,
           "bases": [],
           "members": [
             {
@@ -1623,7 +1623,7 @@
               "kind": "method",
               "signature": "(self, ui: QtWidgets.QWidget, slots_instance: object) -> None",
               "summary": "Scan a Slots instance and register shortcuts for decorated methods.",
-              "line": 79,
+              "line": 80,
               "deprecated": false
             },
             {
@@ -1632,7 +1632,7 @@
               "kind": "method",
               "signature": "(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]",
               "summary": "Get a registry of all assignable slots and their shortcut status.",
-              "line": 226,
+              "line": 240,
               "deprecated": false
             },
             {
@@ -1641,7 +1641,7 @@
               "kind": "method",
               "signature": "(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None",
               "summary": "Update a shortcut setting dynamically and live-update the active QShortcut.",
-              "line": 324,
+              "line": 341,
               "deprecated": false
             }
           ]
@@ -2542,6 +2542,79 @@
       ]
     },
     {
+      "relpath": "widgets/choice_capture_delegate.py",
+      "summary": "In-cell choice (dropdown) capture for item views.",
+      "functions": [
+        {
+          "name": "install_choice_capture",
+          "qualname": "install_choice_capture",
+          "kind": "function",
+          "signature": "(table: QtWidgets.QTableWidget, column: int, choices: Iterable[str], on_capture, *, editable: bool = True, bordered: bool = False) -> ChoiceCaptureDelegate",
+          "summary": "Wire in-cell dropdown capture onto a table column.",
+          "line": 117,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "ChoiceCaptureDelegate",
+          "summary": "Item delegate that edits a cell via an in-cell dropdown.",
+          "line": 36,
+          "bases": [
+            "QtWidgets.QStyledItemDelegate"
+          ],
+          "members": [
+            {
+              "name": "set_choices",
+              "qualname": "ChoiceCaptureDelegate.set_choices",
+              "kind": "method",
+              "signature": "(self, choices: Iterable[str]) -> None",
+              "summary": "Replace the dropdown's option list (applies to the next edit).",
+              "line": 59,
+              "deprecated": false
+            },
+            {
+              "name": "createEditor",
+              "qualname": "ChoiceCaptureDelegate.createEditor",
+              "kind": "method",
+              "signature": "(self, parent, option, index)",
+              "summary": "",
+              "line": 63,
+              "deprecated": false
+            },
+            {
+              "name": "setEditorData",
+              "qualname": "ChoiceCaptureDelegate.setEditorData",
+              "kind": "method",
+              "signature": "(self, editor, index)",
+              "summary": "",
+              "line": 77,
+              "deprecated": false
+            },
+            {
+              "name": "setModelData",
+              "qualname": "ChoiceCaptureDelegate.setModelData",
+              "kind": "method",
+              "signature": "(self, editor, model, index)",
+              "summary": "",
+              "line": 92,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "BorderedChoiceCaptureDelegate",
+          "summary": ":class:`ChoiceCaptureDelegate` that paints the row-spanning",
+          "line": 103,
+          "bases": [
+            "ChoiceCaptureDelegate",
+            "RowSelectionBorderDelegate"
+          ],
+          "members": []
+        }
+      ]
+    },
+    {
       "relpath": "widgets/collapsableGroup.py",
       "summary": "",
       "functions": [],
@@ -3208,7 +3281,7 @@
         {
           "name": "EditorPanel",
           "summary": "Windowed editor with optional preset management.",
-          "line": 24,
+          "line": 27,
           "bases": [
             "WindowPanel"
           ],
@@ -3217,9 +3290,9 @@
               "name": "init_preset_row",
               "qualname": "EditorPanel.init_preset_row",
               "kind": "method",
-              "signature": "(self, dir_name)",
-              "summary": "Add a preset management row to the body layout.",
-              "line": 41,
+              "signature": "(self, dir_name, *, modified_value_provider=None, in_header_menu=False)",
+              "summary": "Add the canonical preset row (combo + option-box toolbar).",
+              "line": 44,
               "deprecated": false
             },
             {
@@ -3228,7 +3301,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "The directory where this editor's preset files live.",
-              "line": 106,
+              "line": 128,
               "deprecated": false
             },
             {
@@ -3237,7 +3310,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "Redirect this editor's preset directory.",
-              "line": 121,
+              "line": 142,
               "deprecated": false
             },
             {
@@ -3246,7 +3319,7 @@
               "kind": "method",
               "signature": "(self) -> dict",
               "summary": "Override to provide data for preset saving.",
-              "line": 145,
+              "line": 157,
               "deprecated": false
             },
             {
@@ -3255,7 +3328,7 @@
               "kind": "method",
               "signature": "(self, data: dict)",
               "summary": "Override to apply data from a loaded preset.",
-              "line": 149,
+              "line": 161,
               "deprecated": false
             },
             {
@@ -3263,8 +3336,8 @@
               "qualname": "EditorPanel.save_preset",
               "kind": "method",
               "signature": "(self, name: str) -> Path",
-              "summary": "Save current state to a named preset.",
-              "line": 154,
+              "summary": "Save the current state under *name* and return the file path.",
+              "line": 172,
               "deprecated": false
             },
             {
@@ -3272,8 +3345,8 @@
               "qualname": "EditorPanel.load_preset",
               "kind": "method",
               "signature": "(self, name: str) -> bool",
-              "summary": "Load a preset and apply it.",
-              "line": 163,
+              "summary": "Load *name* and apply it;",
+              "line": 176,
               "deprecated": false
             },
             {
@@ -3281,8 +3354,8 @@
               "qualname": "EditorPanel.delete_preset",
               "kind": "method",
               "signature": "(self, name: str) -> bool",
-              "summary": "",
-              "line": 177,
+              "summary": "Delete a user preset;",
+              "line": 183,
               "deprecated": false
             },
             {
@@ -3290,8 +3363,8 @@
               "qualname": "EditorPanel.rename_preset",
               "kind": "method",
               "signature": "(self, old: str, new: str) -> bool",
-              "summary": "",
-              "line": 184,
+              "summary": "Rename a user preset;",
+              "line": 187,
               "deprecated": false
             }
           ]
@@ -3306,51 +3379,14 @@
         {
           "name": "CollisionConflict",
           "summary": "A single conflict reported by a collision checker.",
-          "line": 21,
+          "line": 20,
           "bases": [],
           "members": []
         },
         {
-          "name": "KeyCaptureDialog",
-          "summary": "Modal dialog to capture a key sequence.",
-          "line": 57,
-          "bases": [
-            "QtWidgets.QDialog"
-          ],
-          "members": [
-            {
-              "name": "keyPressEvent",
-              "qualname": "KeyCaptureDialog.keyPressEvent",
-              "kind": "method",
-              "signature": "(self, event)",
-              "summary": "Capture key press event.",
-              "line": 103,
-              "deprecated": false
-            },
-            {
-              "name": "clear_key",
-              "qualname": "KeyCaptureDialog.clear_key",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "",
-              "line": 122,
-              "deprecated": false
-            },
-            {
-              "name": "get_sequence",
-              "qualname": "KeyCaptureDialog.get_sequence",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "",
-              "line": 126,
-              "deprecated": false
-            }
-          ]
-        },
-        {
           "name": "HotkeyEditor",
           "summary": "UI for editing global shortcuts with preset support.",
-          "line": 130,
+          "line": 56,
           "bases": [
             "EditorPanel"
           ],
@@ -3361,7 +3397,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 223,
+              "line": 172,
               "deprecated": false
             },
             {
@@ -3370,16 +3406,16 @@
               "kind": "method",
               "signature": "(self, data)",
               "summary": "",
-              "line": 226,
+              "line": 175,
               "deprecated": false
             },
             {
               "name": "export_shortcuts",
               "qualname": "HotkeyEditor.export_shortcuts",
               "kind": "method",
-              "signature": "(self) -> dict",
+              "signature": "(self, loaded_only: bool = False) -> dict",
               "summary": "Export all user-customised shortcuts across loaded UIs.",
-              "line": 234,
+              "line": 183,
               "deprecated": false
             },
             {
@@ -3388,7 +3424,7 @@
               "kind": "method",
               "signature": "(self, data: dict) -> int",
               "summary": "Bulk-apply shortcut bindings from a preset dict.",
-              "line": 268,
+              "line": 228,
               "deprecated": false
             },
             {
@@ -3397,7 +3433,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Refresh data each time the editor is shown.",
-              "line": 304,
+              "line": 264,
               "deprecated": false
             },
             {
@@ -3406,7 +3442,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Populate the UI combobox with every registered UI.",
-              "line": 317,
+              "line": 277,
               "deprecated": false
             },
             {
@@ -3415,16 +3451,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Populate the table with shortcuts for the selected UI.",
-              "line": 338,
-              "deprecated": false
-            },
-            {
-              "name": "on_cell_double_clicked",
-              "qualname": "HotkeyEditor.on_cell_double_clicked",
-              "kind": "method",
-              "signature": "(self, row, column)",
-              "summary": "Handle editing the shortcut.",
-              "line": 439,
+              "line": 298,
               "deprecated": false
             },
             {
@@ -3433,7 +3460,7 @@
               "kind": "method",
               "signature": "(self, ui, method_name, default_seq, default_scope='window')",
               "summary": "Reset sequence and scope to decorator defaults.",
-              "line": 478,
+              "line": 447,
               "deprecated": false
             },
             {
@@ -3442,7 +3469,7 @@
               "kind": "method",
               "signature": "(self, checker: Callable) -> None",
               "summary": "Register a collision checker.",
-              "line": 547,
+              "line": 537,
               "deprecated": false
             },
             {
@@ -3451,7 +3478,7 @@
               "kind": "method",
               "signature": "(self, checker: Callable) -> None",
               "summary": "Unregister a previously added collision checker.",
-              "line": 562,
+              "line": 552,
               "deprecated": false
             }
           ]
@@ -4609,6 +4636,107 @@
       ]
     },
     {
+      "relpath": "widgets/hotkey_capture_delegate.py",
+      "summary": "In-cell key-combination capture for item views.",
+      "functions": [
+        {
+          "name": "install_hotkey_capture",
+          "qualname": "install_hotkey_capture",
+          "kind": "function",
+          "signature": "(table: QtWidgets.QTableWidget, column: int, on_capture, *, bordered: bool = False) -> HotkeyCaptureDelegate",
+          "summary": "Wire in-cell hotkey capture onto a table column.",
+          "line": 157,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "HotkeyCaptureEdit",
+          "summary": "Read-only line edit that captures a single key chord.",
+          "line": 33,
+          "bases": [
+            "QtWidgets.QLineEdit"
+          ],
+          "members": [
+            {
+              "name": "sequence",
+              "qualname": "HotkeyCaptureEdit.sequence",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Captured sequence string, ``\"\"`` for cleared, or ``None``.",
+              "line": 59,
+              "deprecated": false
+            },
+            {
+              "name": "event",
+              "qualname": "HotkeyCaptureEdit.event",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "Swallow ``ShortcutOverride`` so every chord is captured, not fired.",
+              "line": 63,
+              "deprecated": false
+            },
+            {
+              "name": "keyPressEvent",
+              "qualname": "HotkeyCaptureEdit.keyPressEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 83,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "HotkeyCaptureDelegate",
+          "summary": "Item delegate that edits a cell via in-cell key capture.",
+          "line": 108,
+          "bases": [
+            "QtWidgets.QStyledItemDelegate"
+          ],
+          "members": [
+            {
+              "name": "createEditor",
+              "qualname": "HotkeyCaptureDelegate.createEditor",
+              "kind": "method",
+              "signature": "(self, parent, option, index)",
+              "summary": "",
+              "line": 119,
+              "deprecated": false
+            },
+            {
+              "name": "setEditorData",
+              "qualname": "HotkeyCaptureDelegate.setEditorData",
+              "kind": "method",
+              "signature": "(self, editor, index)",
+              "summary": "",
+              "line": 128,
+              "deprecated": false
+            },
+            {
+              "name": "setModelData",
+              "qualname": "HotkeyCaptureDelegate.setModelData",
+              "kind": "method",
+              "signature": "(self, editor, model, index)",
+              "summary": "",
+              "line": 131,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "BorderedHotkeyCaptureDelegate",
+          "summary": ":class:`HotkeyCaptureDelegate` that paints the row-spanning",
+          "line": 143,
+          "bases": [
+            "HotkeyCaptureDelegate",
+            "RowSelectionBorderDelegate"
+          ],
+          "members": []
+        }
+      ]
+    },
+    {
       "relpath": "widgets/label.py",
       "summary": "",
       "functions": [],
@@ -4814,7 +4942,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or…",
-              "line": 178,
+              "line": 179,
               "deprecated": false
             },
             {
@@ -4823,7 +4951,7 @@
               "kind": "method",
               "signature": "(self, central_widget: QtWidgets.QWidget) -> None",
               "summary": "Initializes the window flags based on the central widget.",
-              "line": 189,
+              "line": 190,
               "deprecated": false
             },
             {
@@ -4832,7 +4960,7 @@
               "kind": "method",
               "signature": "(self, target: Union[str, QtWidgets.QWidget] = None, add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
               "summary": "Edit tags on a widget or a tag string.",
-              "line": 197,
+              "line": 198,
               "deprecated": false
             },
             {
@@ -4841,7 +4969,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the window is pinned (resists hide requests).",
-              "line": 254,
+              "line": 255,
               "deprecated": false
             },
             {
@@ -4850,7 +4978,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 259,
+              "line": 260,
               "deprecated": false
             },
             {
@@ -4859,7 +4987,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set pin state (method form for signal connections).",
-              "line": 263,
+              "line": 264,
               "deprecated": false
             },
             {
@@ -4868,7 +4996,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Alias for pinned property.",
-              "line": 268,
+              "line": 269,
               "deprecated": false
             },
             {
@@ -4877,7 +5005,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Request to hide, respecting pin state.",
-              "line": 280,
+              "line": 281,
               "deprecated": false
             },
             {
@@ -4886,7 +5014,7 @@
               "kind": "property",
               "signature": "(self) -> list",
               "summary": "Returns a list of the slots connected to the widget's signals.",
-              "line": 298,
+              "line": 299,
               "deprecated": false
             },
             {
@@ -4895,7 +5023,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-initialized PresetManager for saving/loading named presets.",
-              "line": 307,
+              "line": 308,
               "deprecated": false
             },
             {
@@ -4904,7 +5032,7 @@
               "kind": "method",
               "signature": "(self, _)",
               "summary": "No-op setter so the switchboard can harmlessly reassign.",
-              "line": 320,
+              "line": 321,
               "deprecated": false
             },
             {
@@ -4913,7 +5041,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Checks if the parent of the widget is a QStackedWidget.",
-              "line": 325,
+              "line": 326,
               "deprecated": false
             },
             {
@@ -4922,7 +5050,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Returns True if the widget is the currently active UI, False otherwise.",
-              "line": 330,
+              "line": 331,
               "deprecated": false
             },
             {
@@ -4931,7 +5059,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Sets the widget as the currently active UI if value is True.",
-              "line": 335,
+              "line": 336,
               "deprecated": false
             },
             {
@@ -4940,7 +5068,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None",
               "summary": "Registers a widget with the main window, initializing it and connecting its signals.",
-              "line": 348,
+              "line": 349,
               "deprecated": false
             },
             {
@@ -4949,7 +5077,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Executes all deferred methods, in priority order.",
-              "line": 474,
+              "line": 475,
               "deprecated": false
             },
             {
@@ -4958,7 +5086,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[], Any]) -> None",
               "summary": "Run *callback* once this window's child widgets are registered.",
-              "line": 486,
+              "line": 487,
               "deprecated": false
             },
             {
@@ -4967,7 +5095,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, force=False) -> None",
               "summary": "Restores the state of a given widget if it has a restore_state attribute.",
-              "line": 504,
+              "line": 505,
               "deprecated": false
             },
             {
@@ -4976,7 +5104,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Persist a widget's value and mirror it across related surfaces.",
-              "line": 528,
+              "line": 529,
               "deprecated": false
             },
             {
@@ -4985,7 +5113,7 @@
               "kind": "method",
               "signature": "(self, watched, event) -> bool",
               "summary": "Override the event filter to register widgets when they are polished.",
-              "line": 601,
+              "line": 612,
               "deprecated": false
             },
             {
@@ -4994,7 +5122,7 @@
               "kind": "method",
               "signature": "(self, delta: int) -> None",
               "summary": "Apply a signed pixel delta to the window's height.",
-              "line": 691,
+              "line": 702,
               "deprecated": false
             },
             {
@@ -5003,7 +5131,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Snap the window's height to its layout's natural content size.",
-              "line": 711,
+              "line": 722,
               "deprecated": false
             },
             {
@@ -5012,16 +5140,16 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Save the current window geometry (size and position) to settings.",
-              "line": 743,
+              "line": 754,
               "deprecated": false
             },
             {
               "name": "restore_window_geometry",
               "qualname": "MainWindow.restore_window_geometry",
               "kind": "method",
-              "signature": "(self) -> None",
+              "signature": "(self) -> bool",
               "summary": "Restore the window geometry (size and position) from settings.",
-              "line": 763,
+              "line": 774,
               "deprecated": false
             },
             {
@@ -5030,7 +5158,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear any saved window geometry from settings.",
-              "line": 798,
+              "line": 821,
               "deprecated": false
             },
             {
@@ -5039,7 +5167,7 @@
               "kind": "method",
               "signature": "(self, visible: bool) -> None",
               "summary": "Override setVisible to respect pin state when hiding.",
-              "line": 856,
+              "line": 879,
               "deprecated": false
             },
             {
@@ -5048,7 +5176,7 @@
               "kind": "method",
               "signature": "(self, pos=None, app_exec=False) -> None",
               "summary": "Show the MainWindow.",
-              "line": 862,
+              "line": 885,
               "deprecated": false
             },
             {
@@ -5057,7 +5185,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the show event to initialize untracked widgets and restore their states.",
-              "line": 883,
+              "line": 906,
               "deprecated": false
             },
             {
@@ -5066,7 +5194,7 @@
               "kind": "method",
               "signature": "(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None",
               "summary": "Registers all child widgets starting from the given widget (or central widget if None).",
-              "line": 931,
+              "line": 957,
               "deprecated": false
             },
             {
@@ -5075,7 +5203,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the focus event to set the current UI when this window gains focus.",
-              "line": 948,
+              "line": 974,
               "deprecated": false
             },
             {
@@ -5084,7 +5212,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 954,
+              "line": 980,
               "deprecated": false
             },
             {
@@ -5093,7 +5221,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on resize so pinned/non-hidden windows persist size.",
-              "line": 958,
+              "line": 984,
               "deprecated": false
             },
             {
@@ -5102,7 +5230,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on move so pinned/non-hidden windows persist position.",
-              "line": 964,
+              "line": 990,
               "deprecated": false
             },
             {
@@ -5111,7 +5239,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement hideEvent to emit custom signal when window is hidden.",
-              "line": 970,
+              "line": 996,
               "deprecated": false
             },
             {
@@ -5120,7 +5248,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement closeEvent to save window geometry and emit custom signal.",
-              "line": 994,
+              "line": 1020,
               "deprecated": false
             },
             {
@@ -5129,7 +5257,7 @@
               "kind": "method",
               "signature": "(self, style: str) -> None",
               "summary": "Overrides the setStyleSheet method to respect locking.",
-              "line": 1002,
+              "line": 1028,
               "deprecated": false
             },
             {
@@ -5138,7 +5266,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Resets the window's stylesheet to its original state.",
-              "line": 1016,
+              "line": 1042,
               "deprecated": false
             }
           ]
@@ -6066,12 +6194,21 @@
               "deprecated": false
             },
             {
+              "name": "owner_window",
+              "qualname": "Menu.owner_window",
+              "kind": "method",
+              "signature": "(self) -> Optional[QtWidgets.QWidget]",
+              "summary": "Public alias for the owning ``MainWindow``, or ``None``.",
+              "line": 2064,
+              "deprecated": false
+            },
+            {
               "name": "add_defaults_button",
               "qualname": "Menu.add_defaults_button",
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the 'Restore Defaults' button is enabled.",
-              "line": 2181,
+              "line": 2239,
               "deprecated": false
             },
             {
@@ -6080,7 +6217,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 2190,
+              "line": 2248,
               "deprecated": false
             },
             {
@@ -6089,7 +6226,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the presets combo is enabled.",
-              "line": 2200,
+              "line": 2258,
               "deprecated": false
             },
             {
@@ -6098,7 +6235,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 2219,
+              "line": 2277,
               "deprecated": false
             },
             {
@@ -6107,7 +6244,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 2295,
+              "line": 2356,
               "deprecated": false
             },
             {
@@ -6116,7 +6253,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Check if the menu is pinned (should not auto-hide).",
-              "line": 2300,
+              "line": 2361,
               "deprecated": false
             },
             {
@@ -6125,7 +6262,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Check if the QMenu contains any genuine items.",
-              "line": 2320,
+              "line": 2381,
               "deprecated": false
             },
             {
@@ -6134,7 +6271,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the menu's title text.",
-              "line": 2372,
+              "line": 2433,
               "deprecated": false
             },
             {
@@ -6143,7 +6280,7 @@
               "kind": "method",
               "signature": "(self, title='') -> None",
               "summary": "Set the menu's title to the given string.",
-              "line": 2378,
+              "line": 2439,
               "deprecated": false
             },
             {
@@ -6152,7 +6289,7 @@
               "kind": "method",
               "signature": "(self, types=None)",
               "summary": "Get all items in the list, optionally filtered by type.",
-              "line": 2390,
+              "line": 2451,
               "deprecated": false
             },
             {
@@ -6161,7 +6298,7 @@
               "kind": "method",
               "signature": "(self, identifier)",
               "summary": "Return a QAction or QWidgetAction by index or text.",
-              "line": 2426,
+              "line": 2487,
               "deprecated": false
             },
             {
@@ -6170,7 +6307,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> Optional[str]",
               "summary": "Get the textual representation of a widget.",
-              "line": 2458,
+              "line": 2519,
               "deprecated": false
             },
             {
@@ -6179,7 +6316,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Get data associated with a widget in the list or its sublists.",
-              "line": 2488,
+              "line": 2549,
               "deprecated": false
             },
             {
@@ -6188,7 +6325,7 @@
               "kind": "method",
               "signature": "(self, widget, data)",
               "summary": "Set data associated with a widget in the list or its sublists.",
-              "line": 2504,
+              "line": 2565,
               "deprecated": false
             },
             {
@@ -6197,7 +6334,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Remove a widget from the layout.",
-              "line": 2516,
+              "line": 2577,
               "deprecated": false
             },
             {
@@ -6206,7 +6343,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear all items in the list.",
-              "line": 2536,
+              "line": 2597,
               "deprecated": false
             },
             {
@@ -6215,7 +6352,7 @@
               "kind": "method",
               "signature": "(self, x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map], data: Any = None, row: Optional[int] = None, col: int = 0, rowSpan: int = 1, colSpan: Optional[int] = None, **kwargs) -> Union[QtWidgets.QWidget, list]",
               "summary": "Add an item or multiple items to the list.",
-              "line": 2562,
+              "line": 2623,
               "deprecated": false
             },
             {
@@ -6224,7 +6361,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 2862,
+              "line": 2923,
               "deprecated": false
             },
             {
@@ -6233,7 +6370,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle show event with positioning (optimized for performance).",
-              "line": 2899,
+              "line": 2960,
               "deprecated": false
             },
             {
@@ -6242,7 +6379,7 @@
               "kind": "method",
               "signature": "(self, force: bool = False) -> bool",
               "summary": "Hide the menu, respecting the pinned state.",
-              "line": 2999,
+              "line": 3060,
               "deprecated": false
             },
             {
@@ -6251,7 +6388,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle hide event.",
-              "line": 3020,
+              "line": 3081,
               "deprecated": false
             },
             {
@@ -6260,7 +6397,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Handle events for the menu and its children.",
-              "line": 3126,
+              "line": 3187,
               "deprecated": false
             },
             {
@@ -6269,7 +6406,7 @@
               "kind": "method",
               "signature": "(self, widget: Optional[QtWidgets.QWidget] = None, *, button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton) -> None",
               "summary": "Toggle visibility using the same rules as the parent click event.",
-              "line": 3166,
+              "line": 3227,
               "deprecated": false
             }
           ]
@@ -6936,7 +7073,7 @@
           "kind": "function",
           "signature": "() -> str",
           "summary": "Return Qt's per-application writable config directory.",
-          "line": 1061,
+          "line": 1402,
           "deprecated": false
         },
         {
@@ -6945,7 +7082,7 @@
           "kind": "function",
           "signature": "() -> str",
           "summary": "Return Qt's host-independent writable config directory.",
-          "line": 1078,
+          "line": 1419,
           "deprecated": false
         },
         {
@@ -6954,7 +7091,7 @@
           "kind": "function",
           "signature": "() -> Path",
           "summary": "Root directory under which every relative ``preset_dir`` is resolved.",
-          "line": 1206,
+          "line": 1547,
           "deprecated": false
         }
       ],
@@ -6973,7 +7110,7 @@
               "kind": "classmethod",
               "signature": "(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'",
               "summary": "Create a standalone PresetManager for an explicit list of widgets.",
-              "line": 184,
+              "line": 211,
               "deprecated": false
             },
             {
@@ -6982,7 +7119,7 @@
               "kind": "method",
               "signature": "(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'",
               "summary": "Configure and optionally auto-wire a preset combo.",
-              "line": 204,
+              "line": 231,
               "deprecated": false
             },
             {
@@ -6991,7 +7128,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "The directory where preset files are stored.",
-              "line": 273,
+              "line": 300,
               "deprecated": false
             },
             {
@@ -7000,7 +7137,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "Set the preset directory (accepts str, Path, or None for auto-derive).",
-              "line": 315,
+              "line": 348,
               "deprecated": false
             },
             {
@@ -7009,7 +7146,43 @@
               "kind": "method",
               "signature": "(self, callback) -> None",
               "summary": "Register a callback invoked when presets are modified.",
-              "line": 322,
+              "line": 355,
+              "deprecated": false
+            },
+            {
+              "name": "scope",
+              "qualname": "PresetManager.scope",
+              "kind": "property",
+              "signature": "(self) -> str",
+              "summary": "Which widget set a save/load operates on.",
+              "line": 378,
+              "deprecated": false
+            },
+            {
+              "name": "scope",
+              "qualname": "PresetManager.scope",
+              "kind": "method",
+              "signature": "(self, value: str) -> None",
+              "summary": "",
+              "line": 397,
+              "deprecated": false
+            },
+            {
+              "name": "exclude",
+              "qualname": "PresetManager.exclude",
+              "kind": "method",
+              "signature": "(self, *names_or_widgets) -> 'PresetManager'",
+              "summary": "Exclude widgets (by ``objectName`` or instance) from capture/restore.",
+              "line": 418,
+              "deprecated": false
+            },
+            {
+              "name": "include",
+              "qualname": "PresetManager.include",
+              "kind": "method",
+              "signature": "(self, *names_or_widgets) -> 'PresetManager'",
+              "summary": "Restrict capture/restore to *only* these widgets (allowlist).",
+              "line": 428,
               "deprecated": false
             },
             {
@@ -7018,7 +7191,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[str]",
               "summary": "Name of the preset currently in use, or ``None``.",
-              "line": 343,
+              "line": 475,
               "deprecated": false
             },
             {
@@ -7027,7 +7200,7 @@
               "kind": "method",
               "signature": "(self, name: Optional[str]) -> None",
               "summary": "",
-              "line": 355,
+              "line": 487,
               "deprecated": false
             },
             {
@@ -7036,7 +7209,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "True when live values diverge from the active preset's stored values.",
-              "line": 376,
+              "line": 508,
               "deprecated": false
             },
             {
@@ -7045,7 +7218,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[bool], None]) -> None",
               "summary": "Register *callback(bool)* invoked when the modified state flips.",
-              "line": 402,
+              "line": 534,
               "deprecated": false
             },
             {
@@ -7054,7 +7227,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Recompute the modified state;",
-              "line": 406,
+              "line": 538,
               "deprecated": false
             },
             {
@@ -7063,7 +7236,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Wire managed widgets' change signals so the dirty marker updates live.",
-              "line": 422,
+              "line": 554,
               "deprecated": false
             },
             {
@@ -7072,7 +7245,7 @@
               "kind": "method",
               "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path",
               "summary": "Save the current widget values as a named preset.",
-              "line": 479,
+              "line": 611,
               "deprecated": false
             },
             {
@@ -7081,7 +7254,7 @@
               "kind": "method",
               "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int",
               "summary": "Load a named preset and apply its values to the matching widgets.",
-              "line": 553,
+              "line": 696,
               "deprecated": false
             },
             {
@@ -7090,7 +7263,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "Return a sorted list of available preset names across both tiers.",
-              "line": 659,
+              "line": 817,
               "deprecated": false
             },
             {
@@ -7099,7 +7272,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Optional[str]",
               "summary": "Which tier *name* resolves from: ``\"user\"``, ``\"builtin\"``, or ``None``.",
-              "line": 667,
+              "line": 825,
               "deprecated": false
             },
             {
@@ -7108,7 +7281,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Delete a *user* preset (built-ins are read-only).",
-              "line": 674,
+              "line": 832,
               "deprecated": false
             },
             {
@@ -7117,7 +7290,7 @@
               "kind": "method",
               "signature": "(self, old_name: str, new_name: str) -> bool",
               "summary": "Rename a *user* preset.",
-              "line": 689,
+              "line": 847,
               "deprecated": false
             },
             {
@@ -7126,16 +7299,25 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Check whether a named preset exists in either tier.",
-              "line": 707,
+              "line": 865,
+              "deprecated": false
+            },
+            {
+              "name": "make_preset_combo",
+              "qualname": "PresetManager.make_preset_combo",
+              "kind": "method",
+              "signature": "(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None) -> 'QtWidgets.QWidget'",
+              "summary": "Create a fully-wired preset selector and return its layout container.",
+              "line": 1036,
               "deprecated": false
             },
             {
               "name": "wire_combo",
               "qualname": "PresetManager.wire_combo",
               "kind": "method",
-              "signature": "(self, combo, on_loaded=None) -> None",
-              "summary": "Wire a ``WidgetComboBox`` as a fully-functional preset selector.",
-              "line": 823,
+              "signature": "(self, combo, on_loaded=None)",
+              "summary": "Wire a uitk ``ComboBox`` as a fully-functional preset selector.",
+              "line": 1077,
               "deprecated": false
             }
           ]
@@ -7401,12 +7583,21 @@
           "deprecated": false
         },
         {
+          "name": "resolve_application_host",
+          "qualname": "resolve_application_host",
+          "kind": "function",
+          "signature": "(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]",
+          "summary": "Return an always-visible top-level window to own an application shortcut.",
+          "line": 49,
+          "deprecated": false
+        },
+        {
           "name": "create_standard_shortcuts_config",
           "qualname": "create_standard_shortcuts_config",
           "kind": "function",
           "signature": "() -> List[Tuple[QtGui.QKeySequence, str, str]]",
           "summary": "Create a standard set of shortcut configurations",
-          "line": 640,
+          "line": 712,
           "deprecated": false
         },
         {
@@ -7415,7 +7606,7 @@
           "kind": "function",
           "signature": "(widget, shortcuts_to_apply: Optional[List[str]] = None)",
           "summary": "Apply standard shortcuts to a widget that has corresponding methods",
-          "line": 663,
+          "line": 735,
           "deprecated": false
         }
       ],
@@ -7423,7 +7614,7 @@
         {
           "name": "GlobalShortcut",
           "summary": "A robust global shortcut handler that detects both press and release events.",
-          "line": 44,
+          "line": 96,
           "bases": [
             "QtCore.QObject"
           ],
@@ -7434,7 +7625,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Monitor global events for the specific key release.",
-              "line": 148,
+              "line": 200,
               "deprecated": false
             },
             {
@@ -7443,7 +7634,7 @@
               "kind": "method",
               "signature": "(self, enabled: bool)",
               "summary": "",
-              "line": 179,
+              "line": 231,
               "deprecated": false
             },
             {
@@ -7452,7 +7643,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence])",
               "summary": "",
-              "line": 185,
+              "line": 237,
               "deprecated": false
             },
             {
@@ -7461,7 +7652,16 @@
               "kind": "method",
               "signature": "(self, context: QtCore.Qt.ShortcutContext)",
               "summary": "Live-update the underlying QShortcut's context.",
-              "line": 194,
+              "line": 246,
+              "deprecated": false
+            },
+            {
+              "name": "dispose",
+              "qualname": "GlobalShortcut.dispose",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Disable, unregister, and schedule deletion of this shortcut.",
+              "line": 254,
               "deprecated": false
             }
           ]
@@ -7469,7 +7669,7 @@
         {
           "name": "ShortcutManager",
           "summary": "Centralized shortcut management with clear separation of concerns",
-          "line": 203,
+          "line": 272,
           "bases": [],
           "members": [
             {
@@ -7478,7 +7678,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut) -> QtWidgets.QShortcut",
               "summary": "Add a keyboard shortcut with optional description and context",
-              "line": 211,
+              "line": 280,
               "deprecated": false
             },
             {
@@ -7487,7 +7687,7 @@
               "kind": "method",
               "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
               "summary": "Add multiple shortcuts from a configuration list",
-              "line": 251,
+              "line": 320,
               "deprecated": false
             },
             {
@@ -7496,7 +7696,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut",
               "summary": "Add a global shortcut (robust press/release detection).",
-              "line": 282,
+              "line": 351,
               "deprecated": false
             },
             {
@@ -7505,7 +7705,7 @@
               "kind": "method",
               "signature": "(self, key_label: str, description: str) -> None",
               "summary": "Register a display-only entry (e.g.",
-              "line": 315,
+              "line": 384,
               "deprecated": false
             },
             {
@@ -7514,7 +7714,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Remove a specific shortcut",
-              "line": 332,
+              "line": 401,
               "deprecated": false
             },
             {
@@ -7523,7 +7723,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove all shortcuts",
-              "line": 361,
+              "line": 435,
               "deprecated": false
             },
             {
@@ -7532,7 +7732,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable) -> None",
               "summary": "Register a callback invoked after any shortcut is rebound.",
-              "line": 371,
+              "line": 443,
               "deprecated": false
             },
             {
@@ -7541,7 +7741,7 @@
               "kind": "method",
               "signature": "(self, old_key: str, new_key: str) -> bool",
               "summary": "Change the key sequence for an existing shortcut.",
-              "line": 381,
+              "line": 453,
               "deprecated": false
             },
             {
@@ -7550,7 +7750,7 @@
               "kind": "method",
               "signature": "(self, parent=None, title: str = 'Shortcuts') -> None",
               "summary": "Open an editor window for viewing and editing registered shortcuts.",
-              "line": 406,
+              "line": 478,
               "deprecated": false
             },
             {
@@ -7559,7 +7759,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Get information about all registered shortcuts",
-              "line": 424,
+              "line": 496,
               "deprecated": false
             },
             {
@@ -7568,7 +7768,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Check if a shortcut is registered",
-              "line": 432,
+              "line": 504,
               "deprecated": false
             },
             {
@@ -7577,7 +7777,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]",
               "summary": "Get a specific shortcut object",
-              "line": 447,
+              "line": 519,
               "deprecated": false
             }
           ]
@@ -7585,7 +7785,7 @@
         {
           "name": "ShortcutMixin",
           "summary": "Mixin class that provides easy shortcut management for any Qt widget",
-          "line": 468,
+          "line": 540,
           "bases": [],
           "members": [
             {
@@ -7594,7 +7794,7 @@
               "kind": "property",
               "signature": "(self) -> ShortcutManager",
               "summary": "Lazy initialization of shortcut manager",
-              "line": 490,
+              "line": 562,
               "deprecated": false
             },
             {
@@ -7603,7 +7803,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut) -> QtWidgets.QShortcut",
               "summary": "Add a keyboard shortcut",
-              "line": 496,
+              "line": 568,
               "deprecated": false
             },
             {
@@ -7612,7 +7812,7 @@
               "kind": "method",
               "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
               "summary": "Add multiple shortcuts from configuration",
-              "line": 518,
+              "line": 590,
               "deprecated": false
             },
             {
@@ -7621,7 +7821,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Remove a shortcut",
-              "line": 532,
+              "line": 604,
               "deprecated": false
             },
             {
@@ -7630,7 +7830,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear all shortcuts",
-              "line": 536,
+              "line": 608,
               "deprecated": false
             },
             {
@@ -7639,7 +7839,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Get all shortcuts information",
-              "line": 541,
+              "line": 613,
               "deprecated": false
             },
             {
@@ -7648,7 +7848,7 @@
               "kind": "method",
               "signature": "(self, menu: QtWidgets.QMenu, submenu_title: str = 'Keyboard Shortcuts') -> QtWidgets.QMenu",
               "summary": "Add shortcuts information to a context menu",
-              "line": 547,
+              "line": 619,
               "deprecated": false
             },
             {
@@ -7657,7 +7857,7 @@
               "kind": "method",
               "signature": "(self, menu: Optional[QtWidgets.QMenu] = None, actions_config: Optional[List[Tuple[str, Callable, Optional[Union[str, QtGui.QKeySequence]]]]] = None, auto_match_shortcuts: bool = True) -> QtWidgets.QMenu",
               "summary": "Add menu actions with inline shortcut display",
-              "line": 572,
+              "line": 644,
               "deprecated": false
             },
             {
@@ -7666,7 +7866,7 @@
               "kind": "method",
               "signature": "(self, actions_config, **kwargs)",
               "summary": "Convenience method to create a new context menu with shortcuts",
-              "line": 630,
+              "line": 702,
               "deprecated": false
             },
             {
@@ -7675,7 +7875,7 @@
               "kind": "method",
               "signature": "(self, menu, actions_config, **kwargs)",
               "summary": "Convenience method to add actions to an existing menu",
-              "line": 634,
+              "line": 706,
               "deprecated": false
             }
           ]
@@ -7831,7 +8031,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Apply the given value to the widget using ValueManager.",
-              "line": 77,
+              "line": 125,
               "deprecated": false
             },
             {
@@ -7840,7 +8040,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Context manager that temporarily suppresses QSettings writes.",
-              "line": 137,
+              "line": 219,
               "deprecated": false
             },
             {
@@ -7849,7 +8049,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any = None) -> None",
               "summary": "Save the current value of the widget to QSettings.",
-              "line": 171,
+              "line": 253,
               "deprecated": false
             },
             {
@@ -7858,7 +8058,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> None",
               "summary": "Serialize and persist ``value`` at an explicit state ``key``.",
-              "line": 195,
+              "line": 287,
               "deprecated": false
             },
             {
@@ -7867,7 +8067,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Load the saved value from QSettings and apply it to the widget.",
-              "line": 242,
+              "line": 334,
               "deprecated": false
             },
             {
@@ -7876,7 +8076,7 @@
               "kind": "method",
               "signature": "(self, block_signals: bool = False) -> None",
               "summary": "Reset all widgets with stored defaults to their original values.",
-              "line": 274,
+              "line": 370,
               "deprecated": false
             },
             {
@@ -7885,7 +8085,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Reset a widget to its default value.",
-              "line": 318,
+              "line": 414,
               "deprecated": false
             },
             {
@@ -7894,7 +8094,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Removes the stored state for the widget from QSettings.",
-              "line": 343,
+              "line": 439,
               "deprecated": false
             },
             {
@@ -7903,7 +8103,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> bool",
               "summary": "Check if a widget has a stored default value.",
-              "line": 350,
+              "line": 446,
               "deprecated": false
             },
             {
@@ -7912,7 +8112,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Capture the current widget value as its default.",
-              "line": 354,
+              "line": 450,
               "deprecated": false
             },
             {
@@ -7921,7 +8121,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Explicitly set a widget's default value.",
-              "line": 371,
+              "line": 467,
               "deprecated": false
             },
             {
@@ -7930,7 +8130,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> None",
               "summary": "Persist an arbitrary key/value pair through QSettings.",
-              "line": 386,
+              "line": 482,
               "deprecated": false
             },
             {
@@ -7939,7 +8139,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: Any = None) -> Any",
               "summary": "Retrieve a previously stored custom key/value pair.",
-              "line": 403,
+              "line": 499,
               "deprecated": false
             },
             {
@@ -7948,7 +8148,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> None",
               "summary": "Remove a single custom key from storage.",
-              "line": 418,
+              "line": 514,
               "deprecated": false
             }
           ]
@@ -8936,7 +9136,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Create the menu button widget.",
-              "line": 72,
+              "line": 129,
               "deprecated": false
             },
             {
@@ -8945,7 +9145,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Setup the widget after creation.",
-              "line": 91,
+              "line": 148,
               "deprecated": false
             },
             {
@@ -8954,7 +9154,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Update wrapped widget and reparent menu if needed.",
-              "line": 95,
+              "line": 152,
               "deprecated": false
             },
             {
@@ -8962,8 +9162,8 @@
               "qualname": "OptionMenuOption.menu",
               "kind": "property",
               "signature": "(self)",
-              "summary": "Get the underlying Menu instance.",
-              "line": 113,
+              "summary": "The underlying Menu instance (built on first access).",
+              "line": 170,
               "deprecated": false
             }
           ]
@@ -8971,7 +9171,7 @@
         {
           "name": "ContextMenuOption",
           "summary": "A context menu option that shows a menu based on wrapped widget state.",
-          "line": 122,
+          "line": 179,
           "bases": [
             "OptionMenuOption"
           ],
@@ -9292,18 +9492,9 @@
               "name": "add_recent_value",
               "qualname": "RecentValuesPopup.add_recent_value",
               "kind": "method",
-              "signature": "(self, value, is_current=False, display_text=None)",
+              "signature": "(self, value, display_text=None)",
               "summary": "Add a recent-value row.",
               "line": 117,
-              "deprecated": false
-            },
-            {
-              "name": "add_separator",
-              "qualname": "RecentValuesPopup.add_separator",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "",
-              "line": 131,
               "deprecated": false
             },
             {
@@ -9312,7 +9503,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 139,
+              "line": 128,
               "deprecated": false
             }
           ]
@@ -9320,7 +9511,7 @@
         {
           "name": "RecentValuesOption",
           "summary": "A history button that manages recent widget values.",
-          "line": 199,
+          "line": 186,
           "bases": [
             "ButtonOption"
           ],
@@ -9331,7 +9522,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The backing :class:`RecentValuesStore` (shareable across presenters).",
-              "line": 295,
+              "line": 282,
               "deprecated": false
             },
             {
@@ -9340,7 +9531,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 303,
+              "line": 290,
               "deprecated": false
             },
             {
@@ -9349,7 +9540,7 @@
               "kind": "method",
               "signature": "(self, value=None)",
               "summary": "Record a value into the recent list.",
-              "line": 504,
+              "line": 475,
               "deprecated": false
             },
             {
@@ -9358,7 +9549,7 @@
               "kind": "method",
               "signature": "(self, value)",
               "summary": "Programmatically seed a recent value (appends if not duplicate).",
-              "line": 517,
+              "line": 488,
               "deprecated": false
             },
             {
@@ -9367,7 +9558,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Set or update the wrapped widget, re-installing auto-record if enabled.",
-              "line": 521,
+              "line": 492,
               "deprecated": false
             },
             {
@@ -9376,7 +9567,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Return a copy of the recent values list (most-recent first).",
-              "line": 581,
+              "line": 552,
               "deprecated": false
             },
             {
@@ -9385,7 +9576,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all recent values.",
-              "line": 585,
+              "line": 556,
               "deprecated": false
             }
           ]
@@ -12409,6 +12600,57 @@
       ]
     },
     {
+      "relpath": "widgets/table_actions.py",
+      "summary": "Reusable action-column management for :class:`TableWidget`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TableActions",
+          "summary": "Manages action columns on a :class:`TableWidget`.",
+          "line": 139,
+          "bases": [],
+          "members": [
+            {
+              "name": "add",
+              "qualname": "TableActions.add",
+              "kind": "method",
+              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
+              "summary": "Register an action column.",
+              "line": 163,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "TableActions.set",
+              "kind": "method",
+              "signature": "(self, row: int, col: int, state_name: str) -> None",
+              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
+              "line": 209,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "TableActions.get",
+              "kind": "method",
+              "signature": "(self, row: int, col: int) -> Optional[str]",
+              "summary": "Return the current state name for a cell, or ``None``.",
+              "line": 273,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 338,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "widgets/tableWidget.py",
       "summary": "",
       "functions": [],
@@ -12953,57 +13195,6 @@
               "signature": "(self, object_name: str)",
               "summary": "",
               "line": 1329,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/table_actions.py",
-      "summary": "Reusable action-column management for :class:`TableWidget`.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "TableActions",
-          "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 139,
-          "bases": [],
-          "members": [
-            {
-              "name": "add",
-              "qualname": "TableActions.add",
-              "kind": "method",
-              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
-              "summary": "Register an action column.",
-              "line": 163,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "TableActions.set",
-              "kind": "method",
-              "signature": "(self, row: int, col: int, state_name: str) -> None",
-              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 209,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "TableActions.get",
-              "kind": "method",
-              "signature": "(self, row: int, col: int) -> Optional[str]",
-              "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 273,
-              "deprecated": false
-            },
-            {
-              "name": "update_for_row_height",
-              "qualname": "TableActions.update_for_row_height",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Re-size action columns and icons to fit the current row height.",
-              "line": 338,
               "deprecated": false
             }
           ]

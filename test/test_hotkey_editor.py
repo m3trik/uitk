@@ -76,6 +76,120 @@ class TestHotkeyEditorPresets(QtBaseTestCase):
         if registry:
             self.assertTrue(has_entries, "Expected example UI in export data")
 
+    def test_dirty_check_peeks_not_builds(self):
+        """``export_shortcuts(loaded_only=True)`` reads already-loaded UIs via
+        ``peek`` and never calls ``get_ui`` — so the preset dirty-check cannot
+        build every registered UI (the cause of the slow editor launch).
+        """
+        from unittest import mock
+
+        with mock.patch.object(self.sb, "get_ui", wraps=self.sb.get_ui) as spy:
+            data = self.editor.export_shortcuts(loaded_only=True)
+        spy.assert_not_called()
+        self.assertIsInstance(data, dict)
+
+    def test_modified_provider_wired_to_cheap_export(self):
+        """The editor wires ``PresetManager.modified_value_provider`` to the
+        cheap (``loaded_only``) export, so computing the modified marker on open
+        never builds every UI.
+        """
+        from unittest import mock
+
+        mgr = self.editor._preset_mgr
+        self.assertIsNotNone(mgr.modified_value_provider)
+        with mock.patch.object(self.sb, "get_ui", wraps=self.sb.get_ui) as spy:
+            mgr.modified_value_provider()
+        spy.assert_not_called()
+
+    def test_collision_checker_peeks_not_builds(self):
+        """The internal collision checker reads only already-loaded UIs (peek),
+        never ``get_ui`` — assigning a shortcut must not build every registered
+        UI (the cause of the assign slowness/crash and native-menu MEL errors).
+        """
+        from unittest import mock
+
+        with mock.patch.object(self.sb, "get_ui", wraps=self.sb.get_ui) as spy:
+            self.editor._builtin_internal_collision_checker(
+                "Ctrl+Alt+9", "window", "example", "nope"
+            )
+        spy.assert_not_called()
+
+    def test_scope_toggle_is_modeless(self):
+        """Toggling a binding's scope applies immediately and never pops the
+        conflict modal — even when a checker reports a conflict (the modal is
+        reserved for binding a key).
+        """
+        from unittest import mock
+        from uitk.widgets.editors.hotkey_editor import CollisionConflict
+
+        for i in range(self.editor.cmb_ui.count()):
+            if "example" in self.editor.cmb_ui.itemText(i).lower():
+                self.editor.cmb_ui.setCurrentIndex(i)
+                break
+        self.editor.populate()
+        if self.editor.table.rowCount() == 0:
+            self.skipTest("no example slots in table")
+
+        # Give row 0 a sequence (in the table) so the toggle runs a conflict check.
+        self.editor.table.item(0, 1).setText("Ctrl+Alt+5")
+        method = self.editor.table.item(0, 0).toolTip().replace("Method: ", "")
+        self.editor.add_collision_checker(
+            lambda *a, **k: [CollisionConflict("uitk", "dup", breaks_binding=True)]
+        )
+        with mock.patch.object(self.editor, "_prompt_conflicts") as prompt, mock.patch.object(
+            self.sb, "set_user_shortcut"
+        ) as setsc:
+            self.editor._on_scope_toggle(self.ui, method, "window")
+        prompt.assert_not_called()  # modeless — no modal on a scope flip
+        setsc.assert_called_once()  # but the toggle was applied
+
+    def test_conflict_dialog_offers_maya_clear_when_editable(self):
+        """A Maya conflict carrying a clear_action gets an 'Assign & free Maya
+        binding' button; clicking it runs the Maya clear and proceeds.
+        """
+        from unittest import mock
+        from uitk.widgets.editors.hotkey_editor import CollisionConflict
+        import uitk.widgets.editors.hotkey_editor as he
+
+        cleared = []
+        conf = CollisionConflict(
+            "maya", "Maya 'cut'", breaks_binding=False,
+            clear_action=lambda: cleared.append("maya"),
+        )
+        buttons = {}
+        box = mock.MagicMock()
+        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(a[0], mock.Mock())
+        box.clickedButton.side_effect = lambda: buttons.get("Assign && free Maya binding")
+        MB = mock.MagicMock(return_value=box)
+        MB.Cancel, MB.Warning, MB.AcceptRole = "CANCEL", "WARN", "ACCEPT"
+        with mock.patch.object(he.QtWidgets, "QMessageBox", MB):
+            proceed = self.editor._prompt_conflicts("Ctrl+S", "window", [conf])
+        self.assertTrue(proceed)
+        self.assertEqual(cleared, ["maya"])
+        self.assertIn("Assign && free Maya binding", buttons)
+
+    def test_conflict_dialog_disables_maya_clear_when_locked(self):
+        """A Maya conflict with no clear_action (locked set) shows the option
+        disabled rather than absent, and clears nothing on 'Assign anyway'.
+        """
+        from unittest import mock
+        from uitk.widgets.editors.hotkey_editor import CollisionConflict
+        import uitk.widgets.editors.hotkey_editor as he
+
+        conf = CollisionConflict("maya", "Maya 'cut' (locked)", breaks_binding=False)
+        buttons = {}
+        box = mock.MagicMock()
+        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(a[0], mock.Mock())
+        box.clickedButton.side_effect = lambda: buttons.get("Assign anyway")
+        MB = mock.MagicMock(return_value=box)
+        MB.Cancel, MB.Warning, MB.AcceptRole = "CANCEL", "WARN", "ACCEPT"
+        with mock.patch.object(he.QtWidgets, "QMessageBox", MB):
+            proceed = self.editor._prompt_conflicts("Ctrl+S", "window", [conf])
+        self.assertTrue(proceed)
+        locked = buttons.get("Free Maya binding (set locked)")
+        self.assertIsNotNone(locked, "locked Maya button should be present")
+        locked.setEnabled.assert_called_with(False)
+
     def test_import_applies_shortcuts(self):
         """import_shortcuts should call set_user_shortcut for each entry."""
         registry = self.sb.get_shortcut_registry(self.ui)
@@ -305,6 +419,96 @@ class TestHotkeyEditorPresets(QtBaseTestCase):
         self.assertTrue(any(c.breaks_binding for c in conflicts))
         breaking = next(c for c in conflicts if c.breaks_binding)
         self.assertIsNotNone(breaking.clear_action)
+
+    def test_builtin_checker_offers_overwrite_for_app_vs_window(self):
+        """An Application binding collides with a Window binding on the same key,
+        and the conflict is overwritable (breaks_binding + clear_action).
+
+        'Safe unless application wide': once either side is app-scoped the key
+        genuinely conflicts, so the user must be offered the overwrite path —
+        not just a soft 'may fire alongside' note.
+        """
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if len(registry) < 2:
+            self.skipTest("Need at least two slots to test internal collision")
+
+        first = registry[0]["method"]
+        second = registry[1]["method"]
+        ui_name = self.editor.cmb_ui.currentText() or ""
+
+        # First slot grabs Ctrl+Alt+W at *application* scope.
+        self.sb.set_user_shortcut(self.ui, first, "Ctrl+Alt+W", "application")
+
+        # Assigning the same key to the second slot at *window* scope collides.
+        conflicts = self.editor._builtin_internal_collision_checker(
+            "Ctrl+Alt+W", "window", ui_name, second
+        )
+        self.assertTrue(conflicts, "app-vs-window same key must collide")
+        self.assertTrue(all(c.breaks_binding for c in conflicts))
+        self.assertTrue(all(c.clear_action for c in conflicts))
+
+    def test_builtin_checker_allows_window_dupes_across_uis(self):
+        """Two Window-scoped bindings on the same key in *different* UIs are
+        safe — different windows are independent focus targets, so no conflict
+        is reported (the scope rule that keeps reuse possible)."""
+        registry = self.sb.get_shortcut_registry(self.ui)
+        if not registry:
+            self.skipTest("No slots available in example")
+        first = registry[0]["method"]
+        self.sb.set_user_shortcut(self.ui, first, "Ctrl+Alt+Q", "window")
+
+        # Probe as if assigning the same Window key in a *different* UI.
+        conflicts = self.editor._builtin_internal_collision_checker(
+            "Ctrl+Alt+Q", "window", "some_other_ui", "other_method"
+        )
+        self.assertEqual(
+            conflicts, [], "window dupes across different UIs are safe"
+        )
+
+    def test_scope_button_disabled_without_sequence(self):
+        """Scope toggles are disabled on rows with no bound key, enabled on rows
+        that have one — scope is only meaningful once a sequence exists."""
+        for i in range(self.editor.cmb_ui.count()):
+            if "example" in self.editor.cmb_ui.itemText(i).lower():
+                self.editor.cmb_ui.setCurrentIndex(i)
+                break
+        self.editor.populate()
+        if self.editor.table.rowCount() == 0:
+            self.skipTest("no example slots in table")
+
+        from uitk.widgets.editors.hotkey_editor import USER_SCOPES
+
+        saw_bound, saw_unbound = False, False
+        for row in range(self.editor.table.rowCount()):
+            seq = self.editor.table.item(row, 1).text()
+            btn = self.editor.table.cellWidget(row, 2)
+            scope = btn.property("scope_name")
+            if not seq:
+                saw_unbound = True
+                self.assertFalse(
+                    btn.isEnabled(), "scope button should be disabled with no key"
+                )
+            elif scope in USER_SCOPES:
+                saw_bound = True
+                self.assertTrue(
+                    btn.isEnabled(),
+                    "scope button should be enabled for a bound user-scoped row",
+                )
+        self.assertTrue(
+            saw_bound or saw_unbound, "expected at least one scope button to check"
+        )
+
+    # ------------------------------------------------------------------
+    # Preset row placement (header ⋯-menu)
+    # ------------------------------------------------------------------
+
+    def test_preset_row_lives_in_header_menu(self):
+        """The hotkey editor tucks its preset selector into the header ⋯-menu,
+        not the body — the header gains a menu button and the combo stays
+        reachable."""
+        self.assertIn("menu", self.editor.header.buttons)
+        self.assertIsNotNone(self.editor._cmb_preset)
+        self.assertTrue(self.editor.header.menu.contains_items)
 
     # ------------------------------------------------------------------
     # UI listing & on-demand load

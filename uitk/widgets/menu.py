@@ -1841,12 +1841,62 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._leave_timer.setInterval(100)  # Check every 100ms
         self._leave_timer.timeout.connect(self._check_cursor_position)
 
+    def _widget_in_subtree(self, widget: Optional[QtWidgets.QWidget]) -> bool:
+        """True when *widget* is this menu or any descendant of it.
+
+        Walks the QObject parent chain (not the visual-ancestor test) so it
+        also matches widgets living in a *separate top-level popup* opened from
+        inside the menu — a ComboBox dropdown, an option-box ⋯ menu — whose
+        chain crosses the window boundary back to ``self``. ``isAncestorOf``
+        is same-window-only and misses those.
+        """
+        w = widget
+        while w is not None:
+            if w is self:
+                return True
+            w = w.parent()
+        return False
+
+    # Widget types whose focus means the user is actively entering a value, so
+    # a stray mouse-leave must not tear the menu down mid-edit. The inline
+    # preset Save/Rename field is a ``QLineEdit`` (an editable ComboBox focuses
+    # its internal ``QLineEdit``); spin boxes edit through ``QAbstractSpinBox``.
+    # Non-text widgets (buttons, plain combos, checkboxes) are intentionally
+    # excluded — a click that merely parks focus on one of them must still let
+    # the fast hide-on-leave fire when the cursor leaves.
+    _EDIT_FOCUS_TYPES = (
+        QtWidgets.QLineEdit,
+        QtWidgets.QTextEdit,
+        QtWidgets.QPlainTextEdit,
+        QtWidgets.QAbstractSpinBox,
+    )
+
+    def _text_edit_in_progress(self) -> bool:
+        """True when a *text-entry* widget inside this menu's subtree has focus.
+
+        Used to suppress ``hide_on_leave`` while the user is actively editing
+        one of the menu's widgets — e.g. typing a new name into the preset
+        combo's inline Save/Rename line edit. Without this guard a transient
+        mouse-leave hid the popup mid-edit, ending the edit prematurely and (on
+        a Save seeded with the active preset's own name) silently overwriting
+        that template with its unchanged name before the user could retype it.
+        """
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return False
+        focus = app.focusWidget()
+        return isinstance(focus, self._EDIT_FOCUS_TYPES) and self._widget_in_subtree(
+            focus
+        )
+
     def _check_cursor_position(self):
         """Check if cursor is outside menu bounds and hide if so.
 
         Only hides if the mouse has entered the menu at least once.
         This prevents immediate hiding when menu is positioned away from cursor.
-        Also respects the pinned state - won't hide if pinned.
+        Also respects the pinned state — won't hide if pinned — and never hides
+        while keyboard focus is on one of the menu's widgets (an in-progress
+        edit), so a stray mouse-leave can't dismiss the popup mid-interaction.
         """
         if not self.isVisible():
             self._leave_timer.stop()
@@ -1859,25 +1909,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Get cursor position relative to this widget
         cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
 
-        # Check if cursor is within widget bounds OR over a child widget
+        # Check if cursor is within widget bounds OR over a descendant — the
+        # latter includes a *separate top-level popup* (ComboBox dropdown,
+        # option-box ⋯ menu) opened from a widget inside this menu, reached via
+        # the QObject parent chain that crosses the window boundary back to self.
         cursor_inside = self.rect().contains(cursor_pos)
-
-        # Also treat the cursor as "inside" when it's over any descendant of
-        # this menu — including a *separate top-level popup* such as a ComboBox
-        # dropdown or an option-box ⋯ menu opened from a widget inside this menu.
-        # ``isAncestorOf`` only matches widgets in the SAME window, so it misses
-        # those popups (the menu would close the moment the cursor moved onto
-        # one). Walking ``widget_at``'s QObject parent chain back to ``self``
-        # catches every nested popup uniformly (the chain crosses window
-        # boundaries; the visual ancestor test does not).
         if not cursor_inside:
-            widget_at = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-            w = widget_at
-            while w is not None:
-                if w is self:
-                    cursor_inside = True
-                    break
-                w = w.parent()
+            cursor_inside = self._widget_in_subtree(
+                QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+            )
 
         if cursor_inside:
             # Mouse has entered the menu
@@ -1886,7 +1926,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     "_check_cursor_position: Mouse entered menu for first time"
                 )
             self._mouse_has_entered = True
-        elif self._mouse_has_entered:
+            return
+
+        # Cursor is outside. Before hiding, honor active text entry: if a
+        # line edit / spin box inside the menu has focus the user is mid-edit —
+        # tearing the menu down here is what produced the accidental preset
+        # overwrite. The menu still hides normally once the edit ends.
+        if self._text_edit_in_progress():
+            return
+
+        if self._mouse_has_entered:
             # Only hide if mouse has entered at least once before
             self.logger.debug("_check_cursor_position: Cursor outside menu, hiding")
             self.hide()

@@ -82,6 +82,7 @@ class PresetManager(ptk.LoggingMixin):
         builtin_dir: Optional[Union[str, Path]] = None,
         value_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         value_applier: Optional[Callable[[Dict[str, Any]], int]] = None,
+        modified_value_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ):
         super().__init__()
         self.set_log_level(log_level)
@@ -99,6 +100,12 @@ class PresetManager(ptk.LoggingMixin):
         # (built-in + user tiers) and :meth:`wire_combo` are unchanged.
         self.value_provider = value_provider
         self.value_applier = value_applier
+        # Optional *cheaper* capture used only by the dirty-check (``is_modified``);
+        # falls back to ``value_provider`` when None. Lets an editor whose full
+        # capture is expensive (e.g. the hotkey editor would build every
+        # registered UI) compare "modified" against a cheap subset — typically
+        # the already-loaded UIs — while ``save`` still captures everything.
+        self.modified_value_provider = modified_value_provider
 
         if preset_dir is not None:
             self._preset_dir = self._resolve_preset_dir(preset_dir)
@@ -508,7 +515,7 @@ class PresetManager(ptk.LoggingMixin):
         """
         if not self._active_snapshot:
             return False
-        current = self._capture_values()
+        current = self._capture_values(for_modified=True)
         for key, stored in self._active_snapshot.items():
             if key in current and self._normalize(current[key]) != self._normalize(
                 stored
@@ -642,7 +649,10 @@ class PresetManager(ptk.LoggingMixin):
         return filepath
 
     def _capture_values(
-        self, scope: Optional[QtWidgets.QWidget] = None
+        self,
+        scope: Optional[QtWidgets.QWidget] = None,
+        *,
+        for_modified: bool = False,
     ) -> Dict[str, Any]:
         """Snapshot the current managed values as a flat ``{key: value}`` dict.
 
@@ -651,10 +661,18 @@ class PresetManager(ptk.LoggingMixin):
         the keys are :class:`AttributeSpec` names from *value_provider*;
         otherwise they are widget ``objectName`` s. Only JSON-serializable,
         non-``None`` values are kept (matching what reaches disk).
+
+        When *for_modified* is set and a :attr:`modified_value_provider` is
+        configured, that cheaper provider is used instead of *value_provider*,
+        so the dirty-check can compare against a subset (e.g. only the
+        already-loaded UIs) without paying *save*'s full-capture cost.
         """
         values: Dict[str, Any] = {}
-        if self.value_provider is not None:
-            for key, value in self.value_provider().items():
+        provider = self.value_provider
+        if for_modified and self.modified_value_provider is not None:
+            provider = self.modified_value_provider
+        if provider is not None:
+            for key, value in provider().items():
                 if value is not None and _is_serializable(value):
                     values[key] = value
             return values
@@ -1063,8 +1081,9 @@ class PresetManager(ptk.LoggingMixin):
         gains a compact, icon-only toolbar -- **Refresh**, **Save**, and a
         **menu** (Rename / Open folder / Delete) -- and the combo is populated
         with the available presets and connected so a user pick loads it.
-        *Refresh* re-applies the **active** preset (``mgr.active_preset``),
-        discarding any edits.
+        *Refresh* re-scans the preset directory (picking up files added or
+        removed by hand) and re-applies the **active** preset
+        (``mgr.active_preset``), discarding any edits.
 
         **Inline naming (no pop-up dialogs).** *Save* and *Rename* put the combo
         into edit mode in-place: the line edit is focused and pre-filled, and
@@ -1195,14 +1214,25 @@ class PresetManager(ptk.LoggingMixin):
                 apply_preset(combo.itemText(idx))
 
         def on_refresh():
-            """Reload the **active** preset (re-apply its values), discarding edits.
+            """Re-scan the preset dir, then reload the **active** preset's values.
 
-            Keyed off ``mgr.active_preset`` rather than the combo's
-            ``currentIndex`` so Refresh still works after a session restore (or
-            any state that left the index at -1) -- the index-based version
-            silently no-oped, which read as "Refresh is broken".
+            Repopulates the combo from disk first (via :func:`refresh`) so
+            presets added to or removed from the preset directory *outside* the
+            UI -- a user dropping in or deleting ``*.json`` files by hand -- are
+            picked up. Then re-applies the active preset's values, discarding
+            any edits.
+
+            The value re-apply is keyed off ``mgr.active_preset`` rather than the
+            combo's ``currentIndex`` so Refresh still works after a session
+            restore (or any state that left the index at -1) -- the index-based
+            version silently no-oped, which read as "Refresh is broken". It is
+            skipped when the active preset no longer exists on disk (e.g. its
+            file was just deleted by hand), so there's no spurious warning.
             """
-            apply_preset(mgr.active_preset)
+            refresh()
+            active = mgr.active_preset
+            if active and mgr.exists(active):
+                apply_preset(active)
 
         def begin_inline_edit(mode: str, seed: str):
             """Enter in-place edit mode pre-filled with *seed* for *mode*.
@@ -1317,7 +1347,7 @@ class PresetManager(ptk.LoggingMixin):
         combo.option_box.add_action(
             callback=on_refresh,
             icon="refresh",
-            tooltip="Reload the active preset (discard edits).",
+            tooltip="Rescan presets folder and reload the active preset (discard edits).",
         )
         combo.option_box.add_action(
             callback=on_save,

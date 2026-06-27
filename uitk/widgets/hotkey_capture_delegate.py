@@ -60,6 +60,26 @@ class HotkeyCaptureEdit(QtWidgets.QLineEdit):
         """Captured sequence string, ``""`` for cleared, or ``None``."""
         return self._sequence
 
+    def event(self, event):
+        """Swallow ``ShortcutOverride`` so every chord is captured, not fired.
+
+        While this editor has focus the next key chord *is* the binding the
+        user is assigning — it must arrive as a key press, never trigger an
+        existing ``QShortcut``. Qt sends a ``ShortcutOverride`` to the focus
+        widget before shortcut processing; accepting it cancels the shortcut
+        and delivers the key as a normal press (routed to
+        :meth:`keyPressEvent`). Without this, an already-bound
+        application-scoped shortcut (owned by an always-visible host window,
+        so it fires regardless of which window is focused) activates its slot
+        instead of being captured — the bug where re-assigning a taken key was
+        impossible. Esc/Return still close the editor via the delegate's own
+        event filter; suppressing the override only affects shortcut firing.
+        """
+        if event.type() == QtCore.QEvent.ShortcutOverride:
+            event.accept()
+            return True
+        return super().event(event)
+
     def keyPressEvent(self, event):
         key = event.key()
         modifiers = event.modifiers()

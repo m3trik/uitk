@@ -337,6 +337,85 @@ class TestMenuHideOnLeave(QtBaseTestCase):
             menu.isVisible(), "menu should hide when the cursor is truly outside"
         )
 
+    def test_hide_on_leave_keeps_open_while_child_widget_focused(self):
+        """A stray mouse-leave must NOT hide the menu while keyboard focus is on
+        one of its widgets (an in-progress edit).
+
+        Reproduces the preset-template overwrite: the unpinned popup hosts the
+        preset combo whose inline Save line edit is focused and pre-filled with
+        the active preset's name. Hiding mid-edit ended the edit prematurely and
+        re-saved over that template. The focus guard keeps the popup open."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        # A descendant being edited (parent chain leads back to the menu).
+        editing = QtWidgets.QLineEdit(menu)
+        unrelated = self.track_widget(QtWidgets.QWidget())  # cursor genuinely off
+        _, far = self._outside_point(menu)
+        with patch.object(
+            QtGui.QCursor, "pos", staticmethod(lambda: far)
+        ), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ), patch.object(
+            QtWidgets.QApplication, "focusWidget", return_value=editing
+        ):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(),
+            "menu hid while one of its widgets had focus (mid-edit)",
+        )
+
+    def test_hide_on_leave_still_hides_when_focus_outside_subtree(self):
+        """Counterpart: focus on a widget *outside* the menu doesn't keep it open
+        — the focus guard only suppresses hides during genuine interaction."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        outside_focus = self.track_widget(QtWidgets.QLineEdit())
+        _, far = self._outside_point(menu)
+        with patch.object(
+            QtGui.QCursor, "pos", staticmethod(lambda: far)
+        ), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ), patch.object(
+            QtWidgets.QApplication, "focusWidget", return_value=outside_focus
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "menu should still hide when focus is outside its subtree",
+        )
+
+    def test_hide_on_leave_still_hides_when_focused_child_is_not_text(self):
+        """The guard is scoped to text entry: a click that merely parks focus on
+        a non-text child (button, plain combo) must NOT keep the popup open —
+        the fast hide-on-leave UX is preserved for everything but live edits."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        button = QtWidgets.QPushButton(menu)  # focused, in subtree, but not text
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with patch.object(
+            QtGui.QCursor, "pos", staticmethod(lambda: far)
+        ), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ), patch.object(
+            QtWidgets.QApplication, "focusWidget", return_value=button
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "menu should still hide when the focused child isn't a text editor",
+        )
+
 
 class TestMenuFactoryMethods(QtBaseTestCase):
     """Tests for Menu factory methods."""

@@ -192,6 +192,80 @@ class TestShortcutAssignment(QtBaseTestCase):
         self.assertEqual(entry["current"], test_shortcut)
 
 
+class TestClearedShortcutBinding(QtBaseTestCase):
+    """Clearing a binding that has a non-empty decorator default truly clears it.
+
+    Regression: an empty-string override was read with ``if override:`` (falsy),
+    so a cleared binding fell through to its decorator default — overwriting or
+    clearing a shortcut left the old/default sequence showing in the editor and
+    still live. A *present* empty override now means "no shortcut"; only a
+    *missing* override reverts to the default.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.switchboard import Shortcut
+
+        class _DefaultShortcutSlots(ExampleSlots):
+            @Shortcut("Ctrl+Alt+9")
+            def probe_default_action(self):
+                pass
+
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=_DefaultShortcutSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+        # The sandboxed QSettings store is session-scoped, so an override a
+        # sibling test wrote for this (stable) class/key leaks in. Clear it so
+        # every test starts from a clean "no override" baseline.
+        self._key = "shortcuts._DefaultShortcutSlots.probe_default_action"
+        if hasattr(self.ui, "settings"):
+            self.ui.settings.clear(self._key)
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            if hasattr(self.ui, "settings"):
+                self.ui.settings.clear(self._key)
+            self.ui.close()
+        super().tearDown()
+
+    def _entry(self):
+        reg = self.sb.get_shortcut_registry(self.ui)
+        return next((r for r in reg if r["method"] == "probe_default_action"), None)
+
+    def test_default_present_without_override(self):
+        """No override → the decorator default is the current sequence."""
+        entry = self._entry()
+        self.assertIsNotNone(entry, "decorated method missing from registry")
+        self.assertEqual(entry["default"], "Ctrl+Alt+9")
+        self.assertEqual(entry["current"], "Ctrl+Alt+9")
+
+    def test_clear_overrides_the_default(self):
+        """Overwrite then clear → current is empty, NOT the default (the bug)."""
+        self.sb.set_user_shortcut(self.ui, "probe_default_action", "Ctrl+Alt+8")
+        self.assertEqual(self._entry()["current"], "Ctrl+Alt+8")
+        self.sb.set_user_shortcut(self.ui, "probe_default_action", "")
+        self.assertEqual(self._entry()["current"], "")
+
+    def test_cleared_binding_creates_no_qshortcut(self):
+        """A cleared binding tears down its live QShortcut and registers none."""
+        self.sb.set_user_shortcut(self.ui, "probe_default_action", "")
+        slots = self.sb.get_slots_instance(self.ui)
+        self.assertNotIn(
+            "probe_default_action", getattr(slots, "_connected_shortcuts", {})
+        )
+
+
 class TestHotkeyEditor(QtBaseTestCase):
     """Test the HotkeyEditor UI with real Switchboard."""
 

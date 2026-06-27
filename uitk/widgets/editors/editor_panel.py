@@ -41,7 +41,9 @@ class EditorPanel(WindowPanel):
     _preset_mgr: "PresetManager | None" = None
     _cmb_preset = None
 
-    def init_preset_row(self, dir_name):
+    def init_preset_row(
+        self, dir_name, *, modified_value_provider=None, in_header_menu=False
+    ):
         """Add the canonical preset row (combo + option-box toolbar).
 
         Call this from the subclass constructor at the desired vertical
@@ -64,6 +66,18 @@ class EditorPanel(WindowPanel):
             ``<presets_root>/uitk/<dir_name>/``. ``PresetManager`` handles
             root resolution, the ``M3TRIK_PRESETS_ROOT`` override, and
             legacy migration.
+        modified_value_provider : callable, optional
+            Cheaper capture used *only* by the dirty-check
+            (:meth:`PresetManager.is_modified`); falls back to the save-time
+            ``export_preset_data`` when omitted. Supply one for editors whose
+            full export is expensive (e.g. the hotkey editor, which would
+            otherwise build every registered UI just to test "modified").
+        in_header_menu : bool, optional
+            When True the preset row is tucked into the :class:`Header`'s
+            ⋯-menu popup instead of occupying a row in the body — keeping
+            the body focused on the editor's primary content. The header's
+            ``menu`` button is added automatically if absent. Defaults to
+            False (preset row in the body).
         """
 
         def _apply_import(data):
@@ -77,6 +91,7 @@ class EditorPanel(WindowPanel):
             preset_dir=f"uitk/{dir_name}",
             value_provider=self.export_preset_data,
             value_applier=_apply_import,
+            modified_value_provider=modified_value_provider,
         )
 
         # One-call build of the canonical preset row (combo + option-box
@@ -90,7 +105,22 @@ class EditorPanel(WindowPanel):
         preset_layout = QtWidgets.QHBoxLayout()
         preset_layout.addWidget(QtWidgets.QLabel("Preset:"))
         preset_layout.addWidget(container)
-        self._body_layout.addLayout(preset_layout)
+
+        if in_header_menu:
+            # Drop the whole row into the header's ⋯-menu popup. The menu
+            # accepts a single widget, so wrap the label+combo row. Zero the
+            # wrapper margins so the row sits flush in the compact popup (the
+            # body path keeps the default layout margins). Ensure a menu button
+            # exists (the default editor header is ["hide"] only); its
+            # visibility auto-syncs to content via on_item_added.
+            preset_layout.setContentsMargins(0, 0, 0, 0)
+            row = QtWidgets.QWidget()
+            row.setLayout(preset_layout)
+            if "menu" not in self.header.buttons:
+                self.header.config_buttons("menu", *self.header.buttons.keys())
+            self.header.menu.add(row)
+        else:
+            self._body_layout.addLayout(preset_layout)
 
     # ── Preset directory ─────────────────────────────────────────
 

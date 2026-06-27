@@ -826,7 +826,7 @@ class TestBuiltinTier(BaseTestCase):
         btns = self._toolbar_buttons(combo)
         self.assertEqual(len(btns), 3, "toolbar = [refresh][save][menu]")
         tips = [b.toolTip() for b in btns]
-        self.assertTrue(tips[0].startswith("Reload"), f"button0 not Refresh: {tips[0]!r}")
+        self.assertTrue(tips[0].startswith("Rescan"), f"button0 not Refresh: {tips[0]!r}")
         self.assertTrue(tips[1].startswith("Save"), f"button1 not Save: {tips[1]!r}")
         self.assertIn("rename", tips[2].lower(), f"button2 not the menu: {tips[2]!r}")
         # All icon-only -> no visible text.
@@ -915,6 +915,46 @@ class TestBuiltinTier(BaseTestCase):
         self._refresh_button(combo).click()
         self.assertEqual(self.spn.value(), 42, "Refresh must reload the selected preset")
 
+    def test_refresh_picks_up_preset_added_to_dir_by_hand(self):
+        # A preset file dropped into the dir outside the UI must show up in the
+        # combo after Refresh (not only on the next wire).
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)  # combo: ["studio"] (built-in only)
+        self.assertEqual(combo.findText("manual"), -1)
+
+        # Simulate the user copying a preset file into the dir by hand.
+        (self.user / "manual.json").write_text(
+            json.dumps({"_meta": {"version": 1}, "chk_a": True, "spn_b": 9}),
+            encoding="utf-8",
+        )
+        self._refresh_button(combo).click()
+        self.assertGreaterEqual(
+            combo.findText("manual"), 0,
+            "Refresh must re-scan the dir for hand-added presets",
+        )
+
+    def test_refresh_drops_preset_removed_from_dir_by_hand(self):
+        # A user preset deleted from the dir outside the UI must drop out of the
+        # combo after Refresh, with no error even when it was the active preset.
+        from uitk.widgets.comboBox import ComboBox
+
+        self.mgr.save("custom")  # a user preset on disk
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        self._pick(combo, "custom")  # active -> custom
+        self.assertGreaterEqual(combo.findText("custom"), 0)
+
+        (self.user / "custom.json").unlink()  # user deletes the file by hand
+        self._refresh_button(combo).click()
+        self.assertEqual(
+            combo.findText("custom"), -1,
+            "Refresh must drop presets removed from the dir",
+        )
+
     def test_wire_combo_inline_save_creates_user_preset(self):
         combo = self._wire_combo()
         self.spn.setValue(9)
@@ -937,6 +977,37 @@ class TestBuiltinTier(BaseTestCase):
         self.assertTrue(self.mgr.exists("renamed"))
         self.assertFalse(self.mgr.exists("custom"))
         self.assertEqual(combo.currentText(), "renamed")
+
+    def test_inline_save_cancelled_by_focus_out_does_not_overwrite(self):
+        """Backstop for the accidental-overwrite report: an inline Save edit that
+        ends via focus-out (what an involuntary popup hide does to the field)
+        must NOT commit — the active preset's file is left untouched even though
+        the field was pre-filled with that preset's own name.
+
+        Pairs with ``Menu`` hide-on-leave's focus guard (which keeps the popup
+        open mid-edit in the first place): the guard prevents the hide, this
+        proves the commit path stays inert if a hide happens anyway."""
+        from qtpy import QtGui, QtCore
+
+        combo = self._wire_combo()  # user "custom" + builtin "studio"
+        self.spn.setValue(5)
+        self.mgr.save("custom")  # custom.json now holds spn_b == 5
+        self._pick(combo, "custom")  # active -> custom
+
+        self._save_button(combo).click()  # inline Save, seeded with "custom"
+        self.assertTrue(combo.isEditable())
+        self.assertEqual(combo.lineEdit().text(), "custom")
+
+        self.spn.setValue(99)  # a value a stray commit would clobber "custom" with
+        # Simulate the popup hiding and stealing focus from the line edit.
+        combo.focusOutEvent(QtGui.QFocusEvent(QtCore.QEvent.FocusOut))
+
+        self.assertFalse(combo.isEditable(), "focus-out should exit edit mode")
+        stored = json.loads((self.user / "custom.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            stored.get("spn_b"), 5,
+            "focus-out cancel overwrote the active preset with the in-progress value",
+        )
 
     # ------------------------------------------------------------------
     # active-preset memory + modified ("dirty") marker
@@ -1205,6 +1276,69 @@ class TestSemanticPresetMode(BaseTestCase):
         combo.blockSignals(False)
         self._refresh_button(combo).click()
         self.assertEqual(state["align_downscale"], 2)  # restored from preset
+
+    # ------------------------------------------------------------------
+    # modified_value_provider: cheaper capture for the dirty-check only
+    # ------------------------------------------------------------------
+    def test_modified_value_provider_used_only_for_dirty_check(self):
+        """``is_modified`` uses the cheaper ``modified_value_provider``; ``save``
+        still uses the full ``value_provider``. This is the seam that lets the
+        hotkey editor test 'modified' against only the loaded UIs yet save a
+        complete snapshot of every UI.
+        """
+        full_calls, cheap_calls = [], []
+        state = {"align_downscale": 2, "depth_filter": "moderate"}
+
+        def full_provider():
+            full_calls.append(1)
+            return dict(state)
+
+        def cheap_provider():
+            cheap_calls.append(1)
+            return {"align_downscale": state["align_downscale"]}  # subset
+
+        mgr = PresetManager(
+            preset_dir=str(self.user),
+            builtin_dir=str(self.builtin),
+            value_provider=full_provider,
+            value_applier=lambda d: len(d),
+            modified_value_provider=cheap_provider,
+        )
+        mgr.load("specular")  # baseline = {align_downscale: 2, depth_filter: moderate}
+        full_calls.clear()
+        cheap_calls.clear()
+
+        # Dirty-check goes through the cheap provider only.
+        self.assertFalse(mgr.is_modified())
+        self.assertEqual(cheap_calls, [1])
+        self.assertEqual(full_calls, [], "is_modified must not call the full provider")
+
+        # An edit visible to the cheap subset flips the marker (still no full call).
+        state["align_downscale"] = 9
+        full_calls.clear()
+        cheap_calls.clear()
+        self.assertTrue(mgr.is_modified())
+        self.assertEqual(full_calls, [])
+
+        # Save captures via the FULL provider (complete snapshot).
+        full_calls.clear()
+        mgr.save("specular")
+        self.assertTrue(full_calls, "save must capture via the full value_provider")
+
+    def test_is_modified_falls_back_to_value_provider(self):
+        """With no ``modified_value_provider``, ``is_modified`` uses ``value_provider``."""
+        calls = []
+        state = {"align_downscale": 2, "depth_filter": "moderate"}
+        mgr = PresetManager(
+            preset_dir=str(self.user),
+            builtin_dir=str(self.builtin),
+            value_provider=lambda: (calls.append(1), dict(state))[1],
+            value_applier=lambda d: len(d),
+        )
+        mgr.load("specular")
+        calls.clear()
+        mgr.is_modified()
+        self.assertEqual(calls, [1], "is_modified falls back to value_provider")
 
 
 class TestCaptureScope(BaseTestCase):

@@ -145,7 +145,12 @@ class SwitchboardShortcutMixin:
 
             if hasattr(ui, "settings"):
                 user_override = ui.settings.value(settings_key)
-                if user_override:
+                # A *present* override wins, including an empty string — that is
+                # an explicit "no shortcut" (the user cleared a binding that has
+                # a non-empty decorator default). Only a *missing* override
+                # (``None``) falls through to the default. ``if user_override:``
+                # would wrongly resurrect the default for a cleared binding.
+                if user_override is not None:
                     final_sequence = user_override
                 scope_override = ui.settings.value(scope_settings_key)
                 # Validate against known scopes so legacy/garbage values
@@ -305,7 +310,10 @@ class SwitchboardShortcutMixin:
             if hasattr(ui, "settings"):
                 settings_key = f"shortcuts.{slots_cls_name}.{name}"
                 override = ui.settings.value(settings_key)
-                if override:
+                # Present-but-empty ("") is an explicit clear (no shortcut);
+                # only a missing override (None) reverts to the default. See
+                # the matching note in ``_register_shortcuts``.
+                if override is not None:
                     current = override
                 scope_override = ui.settings.value(f"{settings_key}.scope")
                 # Only honour overrides that map to a known scope. Anything
