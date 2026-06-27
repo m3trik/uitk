@@ -38,6 +38,18 @@ class StateManager(ptk.LoggingMixin):
     _INDEX_SIGNAL = "currentIndexChanged"
     _NO_SELECTION = -1
 
+    # Combo persistence modes (opt in per widget via ``widget.restore_by``).
+    #
+    # ``"index"`` (default) stores ``currentIndexChanged``'s integer index --
+    # correct only for a *static* item list. ``"text"`` / ``"data"`` store the
+    # selected item's text / ``itemData`` instead -- a STABLE identity that
+    # survives the list being reordered, grown, or shrunk between sessions.
+    # Use them for a combo whose items are rebuilt at runtime (e.g. populated
+    # from a directory scan): an index saved against one population silently
+    # selects the wrong item -- or, when the list is now shorter, falls out of
+    # range and resets the combo to item 0 -- on the next session's restore.
+    _RESTORE_MODES = ("index", "text", "data")
+
     def __init__(self, qsettings: QtCore.QSettings, log_level="WARNING"):
         super().__init__()
         self.set_log_level(log_level)
@@ -64,8 +76,26 @@ class StateManager(ptk.LoggingMixin):
             return None
         return f"{prefix}{name}/{signal_name}"
 
+    @classmethod
+    def _restore_mode(cls, widget: QtWidgets.QWidget) -> str:
+        """Resolve a widget's combo-persistence mode (see :data:`_RESTORE_MODES`).
+
+        Reads ``widget.restore_by`` (default / unrecognized -> ``"index"``), so
+        every existing widget keeps the prior index-based behavior unless it
+        explicitly opts in.
+        """
+        mode = getattr(widget, "restore_by", "index") or "index"
+        return mode if mode in cls._RESTORE_MODES else "index"
+
     def _get_current_value(self, widget: QtWidgets.QWidget) -> Any:
         """Get the current value from the widget using ValueManager."""
+        # Stable-identity combo modes capture text / data, not the index, so the
+        # stored value matches what :meth:`apply` looks up on restore.
+        mode = self._restore_mode(widget)
+        if mode == "text" and hasattr(widget, "currentText"):
+            return widget.currentText()
+        if mode == "data" and hasattr(widget, "currentData"):
+            return widget.currentData()
         signal_name = widget.derived_type and widget.default_signals()
         if signal_name:
             # Use signal-based approach for compatibility
@@ -74,8 +104,33 @@ class StateManager(ptk.LoggingMixin):
             # Fallback to direct value getting
             return ValueManager.get_value(widget)
 
+    @contextmanager
+    def _restore_signal_scope(self, widget: QtWidgets.QWidget):
+        """Block/unblock *widget* per ``block_signals_on_restore`` for a value
+        application, then restore the caller's prior blocked state.
+
+        Default (``False``) leaves signals live so dependent slots fire on
+        restore. Saving/restoring the prior state (rather than force-unblocking)
+        keeps an outer ``blockSignals(True)`` context — e.g. ``init_slot`` —
+        intact afterwards. Shared by :meth:`apply` and :meth:`_apply_combo_identity`.
+        """
+        block_signals = getattr(widget, "block_signals_on_restore", False)
+        previously_blocked = widget.signalsBlocked()
+        widget.blockSignals(block_signals)
+        try:
+            yield
+        finally:
+            widget.blockSignals(previously_blocked)
+
     def apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
         """Apply the given value to the widget using ValueManager."""
+        # Stable-identity combo modes select by text / data (not index), which
+        # sidesteps the out-of-range index guard below entirely.
+        mode = self._restore_mode(widget)
+        if mode != "index" and hasattr(widget, "setCurrentIndex"):
+            self._apply_combo_identity(widget, value, mode)
+            return
+
         signal_name = widget.derived_type and widget.default_signals()
 
         # A stored index can outrun a not-yet-populated model (e.g. a
@@ -105,33 +160,60 @@ class StateManager(ptk.LoggingMixin):
                 )
                 return
 
-        # Check if widget wants signals blocked during restore (default: False).
-        # Explicitly manage the widget's blocked state so that an outer context
-        # (e.g. init_slot wrapping in blockSignals(True)) can't silently
-        # suppress connected slot invocations during state restore.
-        block_signals = getattr(widget, "block_signals_on_restore", False)
-        previously_blocked = widget.signalsBlocked()
-        widget.blockSignals(block_signals)
+        # Honor ``block_signals_on_restore`` (default False) so an outer
+        # blockSignals(True) — e.g. init_slot — can't silently suppress the
+        # connected slot during state restore.
+        with self._restore_signal_scope(widget):
+            try:
+                if signal_name:
+                    # Use signal-based approach for compatibility with existing behavior
+                    ValueManager.set_value_by_signal(
+                        widget, value, signal_name, block_signals=False
+                    )
+                else:
+                    # Fallback to direct value setting
+                    ValueManager.set_value(widget, value, block_signals=False)
 
-        try:
-            if signal_name:
-                # Use signal-based approach for compatibility with existing behavior
-                ValueManager.set_value_by_signal(
-                    widget, value, signal_name, block_signals=False
+                # Force visual update since signals may be blocked
+                widget.update()
+            except Exception as e:
+                self.logger.debug(
+                    f"Could not apply value '{value}' to widget {widget}: {e}"
                 )
-            else:
-                # Fallback to direct value setting
-                ValueManager.set_value(widget, value, block_signals=False)
 
-            # Force visual update since signals may be blocked
-            widget.update()
+    def _apply_combo_identity(self, widget: QtWidgets.QWidget, value: Any, mode: str) -> None:
+        """Select a combo item by stable identity (``text`` / ``data``).
 
-        except Exception as e:
-            self.logger.debug(
-                f"Could not apply value '{value}' to widget {widget}: {e}"
-            )
-        finally:
-            widget.blockSignals(previously_blocked)
+        The text/data counterpart of :meth:`apply`'s index path: it resolves the
+        target item via ``findText`` / ``findData`` and selects it, honoring
+        ``block_signals_on_restore`` exactly as the index path does (default
+        ``False`` -> the selection signal fires so dependent slots run on
+        restore). A value that's no longer present -- e.g. the saved preset was
+        deleted between sessions -- is a no-op: the combo keeps its current
+        selection rather than being forced to item 0.
+        """
+        # ``None`` is the *absence* of a stored selection, not a request to pick
+        # an item literally named "None" (which ``findText(str(None))`` would do).
+        if value is None:
+            return
+        with self._restore_signal_scope(widget):
+            try:
+                if mode == "text":
+                    index = widget.findText(str(value))
+                else:  # "data"
+                    index = widget.findData(value)
+                if index is not None and index >= 0:
+                    widget.setCurrentIndex(index)
+                    widget.update()
+                else:
+                    self.logger.debug(
+                        f"Restore-by-{mode}: {value!r} not in {widget.objectName()}; "
+                        "keeping current selection."
+                    )
+            except Exception as e:
+                self.logger.debug(
+                    f"Could not restore {widget.objectName()} by {mode}={value!r}: {e}"
+                )
 
     @contextmanager
     def suppress_save(self):
@@ -183,8 +265,18 @@ class StateManager(ptk.LoggingMixin):
         if self._save_suppressed:
             return
 
-        if value is None:
+        # In a stable-identity combo mode the change signal still delivers an
+        # INDEX (``currentIndexChanged``); ignore it and capture the text/data
+        # identity instead, so what's stored matches what ``apply`` restores.
+        mode = self._restore_mode(widget)
+        if value is None or mode != "index":
             value = self._get_current_value(widget)
+            # Don't persist a transient "no selection" (empty text / absent
+            # data) -- the identity-mode analog of the index mode's -1 guard.
+            # A repopulate that briefly empties the combo would otherwise wipe
+            # the stored selection before the real value is re-applied.
+            if mode != "index" and (value is None or value == ""):
+                return
 
         key = self._get_state_key(widget)
         if not key:
@@ -258,7 +350,11 @@ class StateManager(ptk.LoggingMixin):
                 # lossy — e.g. decoding the bool ``True`` would raise and
                 # silently fall back. Guarding on ``str`` keeps the raw
                 # QSettings path working without double-decoding.
-                if isinstance(value, str):
+                #
+                # Stable-identity combo modes store the item *text*/*data*
+                # verbatim; skip decoding so a preset literally named "123" or
+                # "true" stays that string instead of becoming int/bool.
+                if isinstance(value, str) and self._restore_mode(widget) == "index":
                     try:
                         parsed_value = json.loads(value)
                     except json.JSONDecodeError:

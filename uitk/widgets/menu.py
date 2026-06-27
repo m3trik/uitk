@@ -1841,12 +1841,62 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._leave_timer.setInterval(100)  # Check every 100ms
         self._leave_timer.timeout.connect(self._check_cursor_position)
 
+    def _widget_in_subtree(self, widget: Optional[QtWidgets.QWidget]) -> bool:
+        """True when *widget* is this menu or any descendant of it.
+
+        Walks the QObject parent chain (not the visual-ancestor test) so it
+        also matches widgets living in a *separate top-level popup* opened from
+        inside the menu — a ComboBox dropdown, an option-box ⋯ menu — whose
+        chain crosses the window boundary back to ``self``. ``isAncestorOf``
+        is same-window-only and misses those.
+        """
+        w = widget
+        while w is not None:
+            if w is self:
+                return True
+            w = w.parent()
+        return False
+
+    # Widget types whose focus means the user is actively entering a value, so
+    # a stray mouse-leave must not tear the menu down mid-edit. The inline
+    # preset Save/Rename field is a ``QLineEdit`` (an editable ComboBox focuses
+    # its internal ``QLineEdit``); spin boxes edit through ``QAbstractSpinBox``.
+    # Non-text widgets (buttons, plain combos, checkboxes) are intentionally
+    # excluded — a click that merely parks focus on one of them must still let
+    # the fast hide-on-leave fire when the cursor leaves.
+    _EDIT_FOCUS_TYPES = (
+        QtWidgets.QLineEdit,
+        QtWidgets.QTextEdit,
+        QtWidgets.QPlainTextEdit,
+        QtWidgets.QAbstractSpinBox,
+    )
+
+    def _text_edit_in_progress(self) -> bool:
+        """True when a *text-entry* widget inside this menu's subtree has focus.
+
+        Used to suppress ``hide_on_leave`` while the user is actively editing
+        one of the menu's widgets — e.g. typing a new name into the preset
+        combo's inline Save/Rename line edit. Without this guard a transient
+        mouse-leave hid the popup mid-edit, ending the edit prematurely and (on
+        a Save seeded with the active preset's own name) silently overwriting
+        that template with its unchanged name before the user could retype it.
+        """
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return False
+        focus = app.focusWidget()
+        return isinstance(focus, self._EDIT_FOCUS_TYPES) and self._widget_in_subtree(
+            focus
+        )
+
     def _check_cursor_position(self):
         """Check if cursor is outside menu bounds and hide if so.
 
         Only hides if the mouse has entered the menu at least once.
         This prevents immediate hiding when menu is positioned away from cursor.
-        Also respects the pinned state - won't hide if pinned.
+        Also respects the pinned state — won't hide if pinned — and never hides
+        while keyboard focus is on one of the menu's widgets (an in-progress
+        edit), so a stray mouse-leave can't dismiss the popup mid-interaction.
         """
         if not self.isVisible():
             self._leave_timer.stop()
@@ -1859,26 +1909,15 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Get cursor position relative to this widget
         cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
 
-        # Check if cursor is within widget bounds OR over a child widget
+        # Check if cursor is within widget bounds OR over a descendant — the
+        # latter includes a *separate top-level popup* (ComboBox dropdown,
+        # option-box ⋯ menu) opened from a widget inside this menu, reached via
+        # the QObject parent chain that crosses the window boundary back to self.
         cursor_inside = self.rect().contains(cursor_pos)
-
-        # Also check if cursor is over a child widget (for nested widgets)
         if not cursor_inside:
-            widget_at = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-            if widget_at:
-                if self.isAncestorOf(widget_at):
-                    cursor_inside = True
-                else:
-                    # Check for ComboBox popups (which are separate windows)
-                    # This prevents the menu from closing when interacting with a dropdown
-                    for combo in self.findChildren(QtWidgets.QComboBox):
-                        if combo.view() and combo.view().isVisible():
-                            # Check if widget_at is the view or part of it (e.g. viewport)
-                            if widget_at == combo.view() or combo.view().isAncestorOf(
-                                widget_at
-                            ):
-                                cursor_inside = True
-                                break
+            cursor_inside = self._widget_in_subtree(
+                QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+            )
 
         if cursor_inside:
             # Mouse has entered the menu
@@ -1887,7 +1926,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     "_check_cursor_position: Mouse entered menu for first time"
                 )
             self._mouse_has_entered = True
-        elif self._mouse_has_entered:
+            return
+
+        # Cursor is outside. Before hiding, honor active text entry: if a
+        # line edit / spin box inside the menu has focus the user is mid-edit —
+        # tearing the menu down here is what produced the accidental preset
+        # overwrite. The menu still hides normally once the edit ends.
+        if self._text_edit_in_progress():
+            return
+
+        if self._mouse_has_entered:
             # Only hide if mouse has entered at least once before
             self.logger.debug("_check_cursor_position: Cursor outside menu, hiding")
             self.hide()
@@ -2012,6 +2060,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
+
+    def owner_window(self) -> Optional[QtWidgets.QWidget]:
+        """Public alias for the owning ``MainWindow``, or ``None``.
+
+        Thin wrapper over :meth:`_resolve_registration_window` so collaborators
+        (e.g. a window-scoped :class:`PresetManager`) can reach the host window
+        through the same reparent-race-robust resolver used for dynamic-widget
+        registration, without depending on a private method.
+        """
+        return self._resolve_registration_window()
 
     def _resolve_registration_window(self) -> Optional[QtWidgets.QWidget]:
         """Return the owning MainWindow for dynamic-widget registration.
@@ -2200,7 +2258,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     def add_presets(self) -> bool:
         """Whether the presets combo is enabled.
 
-        When ``True``, a ``WidgetComboBox`` preset selector is placed
+        When ``True``, a ``ComboBox`` preset selector is placed
         in the *Menu Actions* container at the bottom of the menu
         (alongside the *Restore Defaults* and *Apply* buttons).  The
         actual setup is deferred to the first ``showEvent``.
@@ -2227,13 +2285,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         Called lazily from ``showEvent`` the first time the menu is
         shown while :attr:`add_presets` is ``True``.
         """
-        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
 
         # Ensure layout exists (may not if add_presets is set before add())
         self._ensure_layout_created()
 
         # Create combo directly and place it into the action container
-        combo = WidgetComboBox()
+        combo = ComboBox()
         combo.setObjectName("cmb_presets")
         combo.setToolTip("Load a saved configuration preset.")
         combo.setSizePolicy(
@@ -2246,7 +2304,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if not self._button_manager.container.parent():
             self.centralWidgetLayout.addWidget(self._button_manager.container)
 
-        # Wire combo with save/rename/delete/open-folder actions
+        # Wire the combo with the Refresh / Save / ⋯-menu option-box toolbar.
+        # wire_combo wraps the combo in its option-box container; since the
+        # combo is already in the action-container layout, the wrap replaces it
+        # in place (the button_manager still tracks the combo, nested inside).
         self.presets.wire_combo(combo)
 
         # Make the combo accessible as self.cmb_presets (mirrors self.add() behaviour)

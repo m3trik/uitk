@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-06-25_
+_Generated: 2026-06-27_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `configure_high_dpi() -> bool`
@@ -151,6 +151,12 @@ _Generated: 2026-06-25_
 - `class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOverlay)`
   - methods: set_checkbox_rich_text_style, checkState, setCheckState, hitButton, mousePressEvent
 
+### `widgets/choice_capture_delegate.py` — In-cell choice (dropdown) capture for item views.
+- `install_choice_capture(table: QtWidgets.QTableWidget, column: int, choices: Iterable[str], on_capture, *, editable: bool = True, bordered: bool = False) -> ChoiceCaptureDelegate`
+- `class ChoiceCaptureDelegate(QtWidgets.QStyledItemDelegate)`
+  - methods: set_choices, createEditor, setEditorData, setModelData
+- `class BorderedChoiceCaptureDelegate(ChoiceCaptureDelegate, RowSelectionBorderDelegate)`
+
 ### `widgets/collapsableGroup.py`
 - `class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin)`
   - methods: toggle_expand, setLayout, addWidget, addLayout, sizeHint, paintEvent
@@ -183,10 +189,8 @@ _Generated: 2026-06-25_
 
 ### `widgets/editors/hotkey_editor.py`
 - `class CollisionConflict`
-- `class KeyCaptureDialog(QtWidgets.QDialog)`
-  - methods: keyPressEvent, clear_key, get_sequence
 - `class HotkeyEditor(EditorPanel)`
-  - methods: export_preset_data, import_preset_data, export_shortcuts, import_shortcuts, showEvent, refresh_ui_list, populate, on_cell_double_clicked, reset_shortcut, add_collision_checker, remove_collision_checker
+  - methods: export_preset_data, import_preset_data, export_shortcuts, import_shortcuts, showEvent, refresh_ui_list, populate, reset_shortcut, add_collision_checker, remove_collision_checker
 
 ### `widgets/editors/shortcut_editor.py` — Editor windows used by :meth:`ShortcutManager.show_editor`.
 - `class KeyCaptureDialog(QtWidgets.QDialog)`
@@ -219,6 +223,14 @@ _Generated: 2026-06-25_
 ### `widgets/header.py`
 - `class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`
   - methods: menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent
+
+### `widgets/hotkey_capture_delegate.py` — In-cell key-combination capture for item views.
+- `install_hotkey_capture(table: QtWidgets.QTableWidget, column: int, on_capture, *, bordered: bool = False) -> HotkeyCaptureDelegate`
+- `class HotkeyCaptureEdit(QtWidgets.QLineEdit)`
+  - methods: sequence, event, keyPressEvent
+- `class HotkeyCaptureDelegate(QtWidgets.QStyledItemDelegate)`
+  - methods: createEditor, setEditorData, setModelData
+- `class BorderedHotkeyCaptureDelegate(HotkeyCaptureDelegate, RowSelectionBorderDelegate)`
 
 ### `widgets/label.py`
 - `class Label(QtWidgets.QLabel, MenuMixin, OptionBoxMixin, AttributesMixin)`
@@ -262,7 +274,7 @@ _Generated: 2026-06-25_
 - `class MenuPositioner`
   - methods: center_on_cursor, position_at_coordinate, position_relative_to_widget, apply_width_matching, position_and_match_width
 - `class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`
-  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, trigger_button, presets, presets, hide_on_leave, hide_on_leave, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, add_defaults_button, add_defaults_button, add_presets, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
+  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, trigger_button, presets, presets, hide_on_leave, hide_on_leave, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, owner_window, add_defaults_button, add_defaults_button, add_presets, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
 
 ### `widgets/menuButton.py`
 - `class MenuButton(QtWidgets.QPushButton, AttributesMixin)`
@@ -311,7 +323,7 @@ _Generated: 2026-06-25_
 - `QStandardPaths_genericConfigLocation() -> str`
 - `get_presets_root() -> Path`
 - `class PresetManager(ptk.LoggingMixin)`
-  - methods: from_widgets, setup, preset_dir, preset_dir, on_change, active_preset, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, wire_combo
+  - methods: from_widgets, setup, preset_dir, preset_dir, on_change, scope, scope, exclude, include, active_preset, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, make_preset_combo, wire_combo
 
 ### `widgets/mixins/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
 - `normalize_value(value)`
@@ -326,10 +338,11 @@ _Generated: 2026-06-25_
 ### `widgets/mixins/shortcuts.py` — Generic keyboard-shortcut primitives, usable by any Qt widget.
 - `context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`
 - `scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`
+- `resolve_application_host(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]`
 - `create_standard_shortcuts_config() -> List[Tuple[QtGui.QKeySequence, str, str]]`
 - `apply_standard_shortcuts(widget, shortcuts_to_apply: Optional[List[str]] = None)`
 - `class GlobalShortcut(QtCore.QObject)`
-  - methods: eventFilter, setEnabled, setKey, setContext
+  - methods: eventFilter, setEnabled, setKey, setContext, dispose
 - `class ShortcutManager`
   - methods: add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut
 - `class ShortcutMixin`
@@ -424,7 +437,7 @@ _Generated: 2026-06-25_
 
 ### `widgets/optionBox/options/recent_values.py` — Recent Values option for OptionBox — shows a selectable history list.
 - `class RecentValuesPopup(QtCore.QObject)`
-  - methods: menu, eventFilter, connect_signals, clear, show, close, move, adjustSize, width, add_recent_value, add_separator, add_empty_message
+  - methods: menu, eventFilter, connect_signals, clear, show, close, move, adjustSize, width, add_recent_value, add_empty_message
 - `class RecentValuesOption(ButtonOption)`
   - methods: store, create_widget, record, add_recent_value, set_wrapped_widget, recent_values, clear_recent_values
 

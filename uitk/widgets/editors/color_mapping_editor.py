@@ -33,7 +33,7 @@ from uitk.widgets.mixins.preset_manager import PresetManager
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
-from uitk.widgets.widgetComboBox import WidgetComboBox
+from uitk.widgets.comboBox import ComboBox
 
 ColorValue = Union[str, Tuple[str, str]]
 
@@ -459,7 +459,7 @@ class ColorMappingDialog(QtWidgets.QDialog):
         )
 
         self._preset_manager: Optional[PresetManager] = None
-        self._preset_combo: Optional[WidgetComboBox] = None
+        self._preset_combo: Optional[ComboBox] = None
         if preset_dir is not None:
             self._setup_presets(preset_dir)
 
@@ -502,7 +502,7 @@ class ColorMappingDialog(QtWidgets.QDialog):
             finally:
                 self._preset_manager.metadata_provider = saved_provider
 
-        self._preset_combo = WidgetComboBox(self._footer)
+        self._preset_combo = ComboBox(self._footer)
         self._preset_combo.setObjectName("cmb_color_presets")
         self._preset_combo.setToolTip("Load a saved color preset.")
         self._preset_combo.setMinimumWidth(140)

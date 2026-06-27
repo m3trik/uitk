@@ -182,7 +182,7 @@ Implementation in [SlotWrapper._invoke](../uitk/switchboard/slots.py).
 
 **Problem**: let users save/load the current combination of N widgets' values by name.
 
-**Solution**: `widget.menu.add_presets = True` on any widget's menu enables a preset bar (combo + save + load + delete). Or use `PresetManager` directly.
+**Solution**: `widget.menu.add_presets = True` on any widget's menu enables the preset template — a `ComboBox` whose `option_box` carries a compact toolbar: **Refresh**, **Save**, and a **⋯ menu** (Rename / Open folder / Delete). Save and Rename name presets *inline* (type into the combo + Enter — no pop-up dialog). Or use `PresetManager` directly.
 
 ### Menu-embedded (zero ceremony)
 

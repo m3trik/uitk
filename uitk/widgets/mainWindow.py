@@ -61,14 +61,15 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 "footer" in the central widget) is always adopted regardless of
                 this flag. Defaults to False — embed the Footer in the .ui file.
             ensure_on_screen: Whether to ensure the window is fully on screen when shown. Defaults to True.
-            fit_to_content_on_show: On first show, snap the window height to its
-                content so there's no trailing vertical dead space — the gap above
-                a footer (when present), or the empty band at the bottom of a
-                footerless window. Most visible after a persisted session resize
-                is restored larger than the content. A restored geometry's width
-                and position are kept; only the excess height is trimmed. Set
-                False for windows whose extra height is meaningful (e.g. a
-                growable list / scroll area). Defaults to True.
+            fit_to_content_on_show: When the window has no saved geometry to
+                restore — its first-ever show, or a window that opts out of
+                restore — snap the height to its content so there's no trailing
+                vertical dead space (the gap above a footer, or the empty band at
+                the bottom of a footerless window). Skipped once a geometry is
+                restored: that size is the user's own and stays authoritative, so
+                a deliberately-expanded height persists across sessions with no
+                per-window opt-out needed (e.g. a growable list / table). Defaults
+                to True.
             default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
             settings: Optional SettingsManager to use. Defaults to a new instance.
             **kwargs: Additional keyword arguments
@@ -562,6 +563,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if not signal:
             return
 
+        # A stable-identity combo's change signal delivers an INDEX, but its
+        # persisted form is the text/data identity (see StateManager.restore_by).
+        # Re-derive it so sibling-surface stores and live mirrors match what
+        # StateManager.save writes; index-mode widgets (every other widget) are
+        # untouched — the branch is a no-op for them.
+        if self.state._restore_mode(widget) != "index":
+            value = self.state._get_current_value(widget)
+            if value is None or value == "":
+                return  # no current selection → don't clobber the stored identity
+
         key = f"{name}/{signal}"
         # get_ui_relatives already excludes self.
         for relative_name in self.sb.get_ui_relatives(
@@ -760,10 +771,19 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             f"[save_window_geometry]: Saved window geometry for {self.objectName()}"
         )
 
-    def restore_window_geometry(self) -> None:
-        """Restore the window geometry (size and position) from settings."""
+    def restore_window_geometry(self) -> bool:
+        """Restore the window geometry (size and position) from settings.
+
+        Returns:
+            bool: True when a valid saved geometry was applied -- the restored
+                size is then the user's own and is authoritative, so the caller
+                must not re-fit it. False when there was nothing usable to
+                restore (no saved data, a failed or degenerate restore, or an
+                error); the window falls back to ``adjustSize`` and the caller
+                is free to fit it to content.
+        """
         if not self.restore_window_size:
-            return
+            return False
 
         # Get QByteArray directly using the clean API
         geometry = self.settings.getByteArray("window_geometry")
@@ -777,23 +797,26 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                             f"[restore_window_geometry]: Rejected 0-size geometry for {self.objectName()}, using adjustSize"
                         )
                         self.adjustSize()
-                    else:
-                        self.logger.debug(
-                            f"[restore_window_geometry]: Restored window geometry for {self.objectName()}"
-                        )
-                else:
+                        return False
                     self.logger.debug(
-                        f"[restore_window_geometry]: Failed to restore window geometry for {self.objectName()}"
+                        f"[restore_window_geometry]: Restored window geometry for {self.objectName()}"
                     )
+                    return True
+                self.logger.debug(
+                    f"[restore_window_geometry]: Failed to restore window geometry for {self.objectName()}"
+                )
+                return False
             except Exception as e:
                 self.logger.warning(
                     f"[restore_window_geometry]: Error restoring geometry: {e}"
                 )
+                return False
         else:
             self.logger.debug(
                 f"[restore_window_geometry]: No valid geometry data found for {self.objectName()}, using adjustSize"
             )
             self.adjustSize()
+            return False
 
     def clear_saved_geometry(self) -> None:
         """Clear any saved window geometry from settings."""
@@ -895,8 +918,9 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 if callable(enforce):
                     enforce(suppress_resize=True)
 
+            restored = False
             if self.restore_window_size:
-                self.restore_window_geometry()
+                restored = self.restore_window_geometry()
 
             self.logger.debug(f"[showEvent]: Registering children on first show.")
             try:
@@ -905,14 +929,16 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             except Exception as e:
                 self.logger.debug(f"[showEvent]: Error during register_children: {e}")
 
-            # Snap the window height to its content on first show so there's no
-            # trailing vertical dead space — the gap above a footer, or the empty
-            # band at the bottom of a footerless window. Most visible after a
-            # restored session resize is larger than the content. A restored
-            # geometry contributes width + position; only the excess height is
-            # trimmed, so this runs regardless of restore. Before
-            # _ensure_on_screen so repositioning accounts for the final height.
-            if self.fit_to_content_on_show:
+            # Snap the window height to its content so there's no trailing
+            # vertical dead space — the gap above a footer, or the empty band at
+            # the bottom of a footerless window — but ONLY when no saved geometry
+            # was restored. A restored size is the user's own (it may have been
+            # hand-resized taller to see more rows); re-fitting it would discard
+            # that height every session — the "window won't keep its size" bug.
+            # With no saved size (first-ever show, or a restore opt-out) the fit
+            # still trims dead space. Before _ensure_on_screen so repositioning
+            # accounts for the final height.
+            if self.fit_to_content_on_show and not restored:
                 self.fit_height_to_content()
 
             if self.ensure_on_screen:

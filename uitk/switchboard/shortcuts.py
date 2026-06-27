@@ -25,6 +25,7 @@ from uitk.widgets.mixins.shortcuts import (
     GlobalShortcut,
     SCOPE_NAME_TO_CONTEXT,
     context_to_scope_name,
+    resolve_application_host,
     scope_name_to_context,
 )
 
@@ -144,7 +145,12 @@ class SwitchboardShortcutMixin:
 
             if hasattr(ui, "settings"):
                 user_override = ui.settings.value(settings_key)
-                if user_override:
+                # A *present* override wins, including an empty string — that is
+                # an explicit "no shortcut" (the user cleared a binding that has
+                # a non-empty decorator default). Only a *missing* override
+                # (``None``) falls through to the default. ``if user_override:``
+                # would wrongly resurrect the default for a cleared binding.
+                if user_override is not None:
                     final_sequence = user_override
                 scope_override = ui.settings.value(scope_settings_key)
                 # Validate against known scopes so legacy/garbage values
@@ -178,7 +184,15 @@ class SwitchboardShortcutMixin:
     ):
         """Internal helper to create and connect the QShortcut object."""
         parent = ui  # Default parent is the Main Window
-        if context == QtCore.Qt.WidgetShortcut:
+        if context == QtCore.Qt.ApplicationShortcut:
+            # Application scope must fire even when this slot's window is hidden
+            # (that's the whole point of "anywhere in the host app"). A QShortcut
+            # is disabled while its owner widget is hidden — regardless of scope —
+            # so own it by an always-visible host window instead of the slot UI,
+            # which is hidden whenever the tool isn't open. See
+            # resolve_application_host for the Qt rationale.
+            parent = resolve_application_host(ui)
+        elif context == QtCore.Qt.WidgetShortcut:
             # If strictly widget scoped, we might need a specific widget provided.
             # But normally Switchboard shortcuts are Window scoped (Global implementations).
             pass
@@ -296,7 +310,10 @@ class SwitchboardShortcutMixin:
             if hasattr(ui, "settings"):
                 settings_key = f"shortcuts.{slots_cls_name}.{name}"
                 override = ui.settings.value(settings_key)
-                if override:
+                # Present-but-empty ("") is an explicit clear (no shortcut);
+                # only a missing override (None) reverts to the default. See
+                # the matching note in ``_register_shortcuts``.
+                if override is not None:
                     current = override
                 scope_override = ui.settings.value(f"{settings_key}.scope")
                 # Only honour overrides that map to a known scope. Anything
@@ -377,18 +394,22 @@ class SwitchboardShortcutMixin:
         else:
             target_context = default_context
 
-        # 3. Live Re-bind
+        # 3. Live re-bind — recreate rather than mutate in place.
+        #
+        # A scope change can require a *different owner widget* than the live
+        # shortcut has: switching to application scope must re-own the shortcut
+        # by an always-visible host window (a hidden owner disables it even at
+        # ApplicationShortcut scope), and switching back to window scope must
+        # re-own it by this UI. QShortcut.setContext alone can't do that, so
+        # tear the old one down and rebuild it with the correct owner for the
+        # target context. Recreation is cheap (one QShortcut) and keeps the
+        # creation logic in a single place.
         existing_shortcuts = getattr(slots_instance, "_connected_shortcuts", {})
-        shortcut = existing_shortcuts.get(slot_name)
+        old = existing_shortcuts.pop(slot_name, None)
+        if old is not None:
+            self._dispose_shortcut(old)
 
-        if shortcut:
-            shortcut.setKey(QtGui.QKeySequence(sequence))
-            shortcut.setContext(target_context)
-            self.logger.info(
-                f"[set_user_shortcut] Rebound {slot_name} to {sequence} "
-                f"({context_to_scope_name(target_context)})"
-            )
-        elif method:
+        if sequence and method:
             self._create_switchboard_shortcut(
                 ui,
                 slots_instance,
@@ -398,3 +419,26 @@ class SwitchboardShortcutMixin:
                 target_context,
                 meta.get("robust", False),
             )
+            self.logger.info(
+                f"[set_user_shortcut] Rebound {slot_name} to {sequence} "
+                f"({context_to_scope_name(target_context)})"
+            )
+
+    @staticmethod
+    def _dispose_shortcut(shortcut) -> None:
+        """Tear down a QShortcut/GlobalShortcut created by this mixin.
+
+        Disable first so the outgoing shortcut is inert immediately — its
+        replacement is created right after, and a still-live old shortcut on
+        the same sequence could otherwise fire (or fire ambiguously) in the
+        window before ``deleteLater`` is processed. GlobalShortcut also needs
+        its static self-reference dropped, which ``dispose`` handles.
+        """
+        try:
+            if isinstance(shortcut, GlobalShortcut):
+                shortcut.dispose()
+            else:
+                shortcut.setEnabled(False)
+                shortcut.deleteLater()
+        except RuntimeError:
+            pass  # underlying C++ object already gone

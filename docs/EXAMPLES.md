@@ -235,7 +235,7 @@ def btn_open_init(self, widget):
     # (Called from _load below.)
 ```
 
-The preset menu gives users Save / Load / Delete actions for free. For "recent files", save the current path as a preset each time:
+The preset toolbar gives users Refresh / Save inline and a ⋯ menu with Rename / Open folder / Delete — for free. For "recent files", save the current path as a preset each time:
 
 ```python
 def _load(self, path):

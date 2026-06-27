@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-06-25_
+_Generated: 2026-06-27_
 
 ## Index
 
@@ -33,6 +33,7 @@ _Generated: 2026-06-25_
 - [`widgets/_html_style.py`](#widgets--_html_style) — HTML formatting helpers shared by uitk's rich-text widgets.
 - [`widgets/attributeWindow/_attributeWindow.py`](#widgets--attributeWindow--_attributeWindow)
 - [`widgets/checkBox.py`](#widgets--checkBox)
+- [`widgets/choice_capture_delegate.py`](#widgets--choice_capture_delegate) — In-cell choice (dropdown) capture for item views.
 - [`widgets/collapsableGroup.py`](#widgets--collapsableGroup)
 - [`widgets/colorSwatch.py`](#widgets--colorSwatch)
 - [`widgets/comboBox.py`](#widgets--comboBox)
@@ -46,6 +47,7 @@ _Generated: 2026-06-25_
 - [`widgets/expandableList.py`](#widgets--expandableList)
 - [`widgets/footer.py`](#widgets--footer)
 - [`widgets/header.py`](#widgets--header)
+- [`widgets/hotkey_capture_delegate.py`](#widgets--hotkey_capture_delegate) — In-cell key-combination capture for item views.
 - [`widgets/label.py`](#widgets--label)
 - [`widgets/lineEdit.py`](#widgets--lineEdit)
 - [`widgets/mainWindow.py`](#widgets--mainWindow)
@@ -393,8 +395,8 @@ Mixin that exposes the bundled editor windows on the Switchboard.
 
 Switchboard-side keyboard shortcut machinery.
 
-- **[`class Shortcut`](uitk/uitk/switchboard/shortcuts.py#L32)** — Decorator to assign a keyboard shortcut to a slot method.
-- **[`class SwitchboardShortcutMixin`](uitk/uitk/switchboard/shortcuts.py#L76)** — Mixin for managing keyboard shortcuts for Switchboard Slots.
+- **[`class Shortcut`](uitk/uitk/switchboard/shortcuts.py#L33)** — Decorator to assign a keyboard shortcut to a slot method.
+- **[`class SwitchboardShortcutMixin`](uitk/uitk/switchboard/shortcuts.py#L77)** — Mixin for managing keyboard shortcuts for Switchboard Slots.
   - `SwitchboardShortcutMixin.register_slots_shortcuts(self, ui: QtWidgets.QWidget, slots_instance: object) -> None` — Scan a Slots instance and register shortcuts for decorated methods.
   - `SwitchboardShortcutMixin.get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]` — Get a registry of all assignable slots and their shortcut status.
   - `SwitchboardShortcutMixin.set_user_shortcut(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None` — Update a shortcut setting dynamically and live-update the active QShortcut.
@@ -525,6 +527,19 @@ HTML formatting helpers shared by uitk's rich-text widgets.
   - `CheckBox.hitButton(self, pos: QtCore.QPoint) -> bool` — Overridden method from QAbstractButton, used internally by Qt to decide whether a mouse press event
   - `CheckBox.mousePressEvent(self, event)` — Overridden method from QWidget to handle mouse press events.
 
+<a id="widgets--choice_capture_delegate"></a>
+### `widgets/choice_capture_delegate.py`
+
+In-cell choice (dropdown) capture for item views.
+
+- [`install_choice_capture(table: QtWidgets.QTableWidget, column: int, choices: Iterable[str], on_capture, *, editable: bool = True, bordered: bool = False) -> ChoiceCaptureDelegate`](uitk/uitk/widgets/choice_capture_delegate.py#L117) — Wire in-cell dropdown capture onto a table column.
+- **[`class ChoiceCaptureDelegate(QtWidgets.QStyledItemDelegate)`](uitk/uitk/widgets/choice_capture_delegate.py#L36)** — Item delegate that edits a cell via an in-cell dropdown.
+  - `ChoiceCaptureDelegate.set_choices(self, choices: Iterable[str]) -> None` — Replace the dropdown's option list (applies to the next edit).
+  - `ChoiceCaptureDelegate.createEditor(self, parent, option, index)`
+  - `ChoiceCaptureDelegate.setEditorData(self, editor, index)`
+  - `ChoiceCaptureDelegate.setModelData(self, editor, model, index)`
+- **[`class BorderedChoiceCaptureDelegate(ChoiceCaptureDelegate, RowSelectionBorderDelegate)`](uitk/uitk/widgets/choice_capture_delegate.py#L103)** — :class:`ChoiceCaptureDelegate` that paints the row-spanning
+
 <a id="widgets--collapsableGroup"></a>
 ### `widgets/collapsableGroup.py`
 
@@ -619,34 +634,29 @@ Reusable color-mapping editor widget.
 
 Editor panel: WindowPanel + optional preset save/load row.
 
-- **[`class EditorPanel(WindowPanel)`](uitk/uitk/widgets/editors/editor_panel.py#L24)** — Windowed editor with optional preset management.
-  - `EditorPanel.init_preset_row(self, dir_name)` — Add a preset management row to the body layout.
+- **[`class EditorPanel(WindowPanel)`](uitk/uitk/widgets/editors/editor_panel.py#L27)** — Windowed editor with optional preset management.
+  - `EditorPanel.init_preset_row(self, dir_name, *, modified_value_provider=None, in_header_menu=False)` — Add the canonical preset row (combo + option-box toolbar).
   - `EditorPanel.preset_dir(self) -> Path` *(property)* — The directory where this editor's preset files live.
   - `EditorPanel.preset_dir(self, value) -> None` — Redirect this editor's preset directory.
   - `EditorPanel.export_preset_data(self) -> dict` — Override to provide data for preset saving.
   - `EditorPanel.import_preset_data(self, data: dict)` — Override to apply data from a loaded preset.
-  - `EditorPanel.save_preset(self, name: str) -> Path` — Save current state to a named preset.
-  - `EditorPanel.load_preset(self, name: str) -> bool` — Load a preset and apply it.
-  - `EditorPanel.delete_preset(self, name: str) -> bool`
-  - `EditorPanel.rename_preset(self, old: str, new: str) -> bool`
+  - `EditorPanel.save_preset(self, name: str) -> Path` — Save the current state under *name* and return the file path.
+  - `EditorPanel.load_preset(self, name: str) -> bool` — Load *name* and apply it;
+  - `EditorPanel.delete_preset(self, name: str) -> bool` — Delete a user preset;
+  - `EditorPanel.rename_preset(self, old: str, new: str) -> bool` — Rename a user preset;
 
 <a id="widgets--editors--hotkey_editor"></a>
 ### `widgets/editors/hotkey_editor.py`
 
-- **[`class CollisionConflict`](uitk/uitk/widgets/editors/hotkey_editor.py#L21)** — A single conflict reported by a collision checker.
-- **[`class KeyCaptureDialog(QtWidgets.QDialog)`](uitk/uitk/widgets/editors/hotkey_editor.py#L57)** — Modal dialog to capture a key sequence.
-  - `KeyCaptureDialog.keyPressEvent(self, event)` — Capture key press event.
-  - `KeyCaptureDialog.clear_key(self)`
-  - `KeyCaptureDialog.get_sequence(self)`
-- **[`class HotkeyEditor(EditorPanel)`](uitk/uitk/widgets/editors/hotkey_editor.py#L130)** — UI for editing global shortcuts with preset support.
+- **[`class CollisionConflict`](uitk/uitk/widgets/editors/hotkey_editor.py#L20)** — A single conflict reported by a collision checker.
+- **[`class HotkeyEditor(EditorPanel)`](uitk/uitk/widgets/editors/hotkey_editor.py#L56)** — UI for editing global shortcuts with preset support.
   - `HotkeyEditor.export_preset_data(self)`
   - `HotkeyEditor.import_preset_data(self, data)`
-  - `HotkeyEditor.export_shortcuts(self) -> dict` — Export all user-customised shortcuts across loaded UIs.
+  - `HotkeyEditor.export_shortcuts(self, loaded_only: bool = False) -> dict` — Export all user-customised shortcuts across loaded UIs.
   - `HotkeyEditor.import_shortcuts(self, data: dict) -> int` — Bulk-apply shortcut bindings from a preset dict.
   - `HotkeyEditor.showEvent(self, event)` — Refresh data each time the editor is shown.
   - `HotkeyEditor.refresh_ui_list(self)` — Populate the UI combobox with every registered UI.
   - `HotkeyEditor.populate(self)` — Populate the table with shortcuts for the selected UI.
-  - `HotkeyEditor.on_cell_double_clicked(self, row, column)` — Handle editing the shortcut.
   - `HotkeyEditor.reset_shortcut(self, ui, method_name, default_seq, default_scope='window')` — Reset sequence and scope to decorator defaults.
   - `HotkeyEditor.add_collision_checker(self, checker: Callable) -> None` — Register a collision checker.
   - `HotkeyEditor.remove_collision_checker(self, checker: Callable) -> None` — Unregister a previously added collision checker.
@@ -801,6 +811,22 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `Header.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this header to the top of a QWidget or QMainWindow's centralWidget if appropriate.
   - `Header.hideEvent(self, event)` — Reset minimize/collapse state when header (and window) is hidden.
 
+<a id="widgets--hotkey_capture_delegate"></a>
+### `widgets/hotkey_capture_delegate.py`
+
+In-cell key-combination capture for item views.
+
+- [`install_hotkey_capture(table: QtWidgets.QTableWidget, column: int, on_capture, *, bordered: bool = False) -> HotkeyCaptureDelegate`](uitk/uitk/widgets/hotkey_capture_delegate.py#L157) — Wire in-cell hotkey capture onto a table column.
+- **[`class HotkeyCaptureEdit(QtWidgets.QLineEdit)`](uitk/uitk/widgets/hotkey_capture_delegate.py#L33)** — Read-only line edit that captures a single key chord.
+  - `HotkeyCaptureEdit.sequence(self)` — Captured sequence string, ``""`` for cleared, or ``None``.
+  - `HotkeyCaptureEdit.event(self, event)` — Swallow ``ShortcutOverride`` so every chord is captured, not fired.
+  - `HotkeyCaptureEdit.keyPressEvent(self, event)`
+- **[`class HotkeyCaptureDelegate(QtWidgets.QStyledItemDelegate)`](uitk/uitk/widgets/hotkey_capture_delegate.py#L108)** — Item delegate that edits a cell via in-cell key capture.
+  - `HotkeyCaptureDelegate.createEditor(self, parent, option, index)`
+  - `HotkeyCaptureDelegate.setEditorData(self, editor, index)`
+  - `HotkeyCaptureDelegate.setModelData(self, editor, model, index)`
+- **[`class BorderedHotkeyCaptureDelegate(HotkeyCaptureDelegate, RowSelectionBorderDelegate)`](uitk/uitk/widgets/hotkey_capture_delegate.py#L143)** — :class:`HotkeyCaptureDelegate` that paints the row-spanning
+
 <a id="widgets--label"></a>
 ### `widgets/label.py`
 
@@ -854,7 +880,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MainWindow.adjust_height_by(self, delta: int) -> None` — Apply a signed pixel delta to the window's height.
   - `MainWindow.fit_height_to_content(self) -> None` — Snap the window's height to its layout's natural content size.
   - `MainWindow.save_window_geometry(self) -> None` — Save the current window geometry (size and position) to settings.
-  - `MainWindow.restore_window_geometry(self) -> None` — Restore the window geometry (size and position) from settings.
+  - `MainWindow.restore_window_geometry(self) -> bool` — Restore the window geometry (size and position) from settings.
   - `MainWindow.clear_saved_geometry(self) -> None` — Clear any saved window geometry from settings.
   - `MainWindow.setVisible(self, visible: bool) -> None` — Override setVisible to respect pin state when hiding.
   - `MainWindow.show(self, pos=None, app_exec=False) -> None` — Show the MainWindow.
@@ -985,6 +1011,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Menu.setCentralWidget(self, widget, overwrite=False)`
   - `Menu.centralWidget(self)` — Return the central widget.
   - `Menu.init_layout(self)` — Initialize the menu layout.
+  - `Menu.owner_window(self) -> Optional[QtWidgets.QWidget]` — Public alias for the owning ``MainWindow``, or ``None``.
   - `Menu.add_defaults_button(self) -> bool` *(property)* — Whether the 'Restore Defaults' button is enabled.
   - `Menu.add_defaults_button(self, value: bool) -> None`
   - `Menu.add_presets(self) -> bool` *(property)* — Whether the presets combo is enabled.
@@ -1119,15 +1146,19 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1061) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1078) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L1206) — Root directory under which every relative ``preset_dir`` is resolved.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1402) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1419) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L1547) — Root directory under which every relative ``preset_dir`` is resolved.
 - **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L17)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
   - `PresetManager.preset_dir(self) -> Path` *(property)* — The directory where preset files are stored.
   - `PresetManager.preset_dir(self, value) -> None` — Set the preset directory (accepts str, Path, or None for auto-derive).
   - `PresetManager.on_change(self, callback) -> None` — Register a callback invoked when presets are modified.
+  - `PresetManager.scope(self) -> str` *(property)* — Which widget set a save/load operates on.
+  - `PresetManager.scope(self, value: str) -> None`
+  - `PresetManager.exclude(self, *names_or_widgets) -> 'PresetManager'` — Exclude widgets (by ``objectName`` or instance) from capture/restore.
+  - `PresetManager.include(self, *names_or_widgets) -> 'PresetManager'` — Restrict capture/restore to *only* these widgets (allowlist).
   - `PresetManager.active_preset(self) -> Optional[str]` *(property)* — Name of the preset currently in use, or ``None``.
   - `PresetManager.active_preset(self, name: Optional[str]) -> None`
   - `PresetManager.is_modified(self) -> bool` — True when live values diverge from the active preset's stored values.
@@ -1141,7 +1172,8 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
   - `PresetManager.delete(self, name: str) -> bool` — Delete a *user* preset (built-ins are read-only).
   - `PresetManager.rename(self, old_name: str, new_name: str) -> bool` — Rename a *user* preset.
   - `PresetManager.exists(self, name: str) -> bool` — Check whether a named preset exists in either tier.
-  - `PresetManager.wire_combo(self, combo, on_loaded=None) -> None` — Wire a ``WidgetComboBox`` as a fully-functional preset selector.
+  - `PresetManager.make_preset_combo(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None) -> 'QtWidgets.QWidget'` — Create a fully-wired preset selector and return its layout container.
+  - `PresetManager.wire_combo(self, combo, on_loaded=None)` — Wire a uitk ``ComboBox`` as a fully-functional preset selector.
 
 <a id="widgets--mixins--recent_values_store"></a>
 ### `widgets/mixins/recent_values_store.py`
@@ -1185,14 +1217,16 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
 
 - [`context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`](uitk/uitk/widgets/mixins/shortcuts.py#L34) — Convert a Qt.ShortcutContext to its persistence string.
 - [`scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`](uitk/uitk/widgets/mixins/shortcuts.py#L39) — Convert a persisted scope string to a Qt.ShortcutContext.
-- [`create_standard_shortcuts_config() -> List[Tuple[QtGui.QKeySequence, str, str]]`](uitk/uitk/widgets/mixins/shortcuts.py#L640) — Create a standard set of shortcut configurations
-- [`apply_standard_shortcuts(widget, shortcuts_to_apply: Optional[List[str]] = None)`](uitk/uitk/widgets/mixins/shortcuts.py#L663) — Apply standard shortcuts to a widget that has corresponding methods
-- **[`class GlobalShortcut(QtCore.QObject)`](uitk/uitk/widgets/mixins/shortcuts.py#L44)** — A robust global shortcut handler that detects both press and release events.
+- [`resolve_application_host(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]`](uitk/uitk/widgets/mixins/shortcuts.py#L49) — Return an always-visible top-level window to own an application shortcut.
+- [`create_standard_shortcuts_config() -> List[Tuple[QtGui.QKeySequence, str, str]]`](uitk/uitk/widgets/mixins/shortcuts.py#L712) — Create a standard set of shortcut configurations
+- [`apply_standard_shortcuts(widget, shortcuts_to_apply: Optional[List[str]] = None)`](uitk/uitk/widgets/mixins/shortcuts.py#L735) — Apply standard shortcuts to a widget that has corresponding methods
+- **[`class GlobalShortcut(QtCore.QObject)`](uitk/uitk/widgets/mixins/shortcuts.py#L96)** — A robust global shortcut handler that detects both press and release events.
   - `GlobalShortcut.eventFilter(self, obj, event)` — Monitor global events for the specific key release.
   - `GlobalShortcut.setEnabled(self, enabled: bool)`
   - `GlobalShortcut.setKey(self, key_sequence: Union[str, QtGui.QKeySequence])`
   - `GlobalShortcut.setContext(self, context: QtCore.Qt.ShortcutContext)` — Live-update the underlying QShortcut's context.
-- **[`class ShortcutManager`](uitk/uitk/widgets/mixins/shortcuts.py#L203)** — Centralized shortcut management with clear separation of concerns
+  - `GlobalShortcut.dispose(self) -> None` — Disable, unregister, and schedule deletion of this shortcut.
+- **[`class ShortcutManager`](uitk/uitk/widgets/mixins/shortcuts.py#L272)** — Centralized shortcut management with clear separation of concerns
   - `ShortcutManager.add_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut) -> QtWidgets.QShortcut` — Add a keyboard shortcut with optional description and context
   - `ShortcutManager.add_shortcuts_batch(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]` — Add multiple shortcuts from a configuration list
   - `ShortcutManager.add_global_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut` — Add a global shortcut (robust press/release detection).
@@ -1205,7 +1239,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
   - `ShortcutManager.get_shortcuts_info(self) -> Dict[str, str]` — Get information about all registered shortcuts
   - `ShortcutManager.has_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool` — Check if a shortcut is registered
   - `ShortcutManager.get_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]` — Get a specific shortcut object
-- **[`class ShortcutMixin`](uitk/uitk/widgets/mixins/shortcuts.py#L468)** — Mixin class that provides easy shortcut management for any Qt widget
+- **[`class ShortcutMixin`](uitk/uitk/widgets/mixins/shortcuts.py#L540)** — Mixin class that provides easy shortcut management for any Qt widget
   - `ShortcutMixin.shortcut_manager(self) -> ShortcutManager` *(property)* — Lazy initialization of shortcut manager
   - `ShortcutMixin.add_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut) -> QtWidgets.QShortcut` — Add a keyboard shortcut
   - `ShortcutMixin.add_shortcuts_from_config(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]` — Add multiple shortcuts from configuration
@@ -1424,8 +1458,8 @@ Option Menu - A dropdown menu option for OptionBox.
   - `OptionMenuOption.create_widget(self)` — Create the menu button widget.
   - `OptionMenuOption.setup_widget(self)` — Setup the widget after creation.
   - `OptionMenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
-  - `OptionMenuOption.menu(self)` *(property)* — Get the underlying Menu instance.
-- **[`class ContextMenuOption(OptionMenuOption)`](uitk/uitk/widgets/optionBox/options/option_menu.py#L122)** — A context menu option that shows a menu based on wrapped widget state.
+  - `OptionMenuOption.menu(self)` *(property)* — The underlying Menu instance (built on first access).
+- **[`class ContextMenuOption(OptionMenuOption)`](uitk/uitk/widgets/optionBox/options/option_menu.py#L179)** — A context menu option that shows a menu based on wrapped widget state.
 
 <a id="widgets--optionBox--options--pin_values"></a>
 ### `widgets/optionBox/options/pin_values.py`
@@ -1471,10 +1505,9 @@ Recent Values option for OptionBox — shows a selectable history list.
   - `RecentValuesPopup.move(self, pos)`
   - `RecentValuesPopup.adjustSize(self)`
   - `RecentValuesPopup.width(self)`
-  - `RecentValuesPopup.add_recent_value(self, value, is_current=False, display_text=None)` — Add a recent-value row.
-  - `RecentValuesPopup.add_separator(self)`
+  - `RecentValuesPopup.add_recent_value(self, value, display_text=None)` — Add a recent-value row.
   - `RecentValuesPopup.add_empty_message(self)`
-- **[`class RecentValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L199)** — A history button that manages recent widget values.
+- **[`class RecentValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L186)** — A history button that manages recent widget values.
   - `RecentValuesOption.store(self)` *(property)* — The backing :class:`RecentValuesStore` (shareable across presenters).
   - `RecentValuesOption.create_widget(self)`
   - `RecentValuesOption.record(self, value=None)` — Record a value into the recent list.

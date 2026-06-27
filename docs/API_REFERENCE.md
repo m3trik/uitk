@@ -497,7 +497,8 @@ PresetManager.from_widgets(preset_dir, widgets)
 | `load(name: str)` | Apply a preset |
 | `delete(name: str)` | Remove preset file |
 | `list_presets() -> list[str]` | Names of available presets |
-| `wire_combo(combo, on_loaded=None)` | Bind a combobox to save/load UI |
+| `wire_combo(combo, on_loaded=None)` | Wire a `ComboBox` as a preset selector (option-box toolbar: Refresh/Save/⋯-menu, inline naming). Returns the option-box container. |
+| `make_preset_combo(parent=None, name=None, tooltip=None, on_loaded=None)` | Build + wire a preset `ComboBox`; returns its option-box container (`container.preset_combo` reaches the combo). |
 
 `preset_dir` accepts absolute paths, `~` expansion, `$ENV` variables, or short names resolved under `QStandardPaths.AppConfigLocation`.
 

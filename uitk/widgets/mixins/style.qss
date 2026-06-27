@@ -427,8 +427,11 @@ QComboBox::open {
     selection-color: {TEXT_CHECKED};
 }
 QComboBox:on {
+    /* Popup open: tint the closed box with the hover background so it stays
+       visually distinct from the view (which uses {WIDGET_BACKGROUND}) --
+       otherwise box and dropdown share one color and read as a single blob. */
     padding-top: 3px;
-    background-color: {WIDGET_BACKGROUND};
+    background-color: {WIDGET_BACKGROUND_HOVER};
     border: {BORDER_W} solid {BORDER_COLOR};
 }
 QComboBox::down-arrow {

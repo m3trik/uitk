@@ -41,6 +41,58 @@ def scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext:
     return SCOPE_NAME_TO_CONTEXT.get(name, QtCore.Qt.WindowShortcut)
 
 
+# Known DCC host top-level window object names, searched when resolving an
+# always-visible owner for application-scoped shortcuts.
+_HOST_WINDOW_NAMES = ("MayaWindow", "3dsMaxWindow")
+
+
+def resolve_application_host(
+    widget: Optional[QtWidgets.QWidget],
+) -> Optional[QtWidgets.QWidget]:
+    """Return an always-visible top-level window to own an application shortcut.
+
+    Qt deactivates a ``QShortcut`` whenever its owner widget is hidden — even at
+    ``Qt.ApplicationShortcut`` scope, because the visibility check runs *before*
+    the context check (see ``QShortcutMap::correctContextWidget``). Tool UIs are
+    usually hidden when idle, which is exactly when an application-scoped
+    shortcut is meant to fire, so owning the shortcut by the slot window makes it
+    silently inert. Owning it by the host's main window (which stays visible)
+    makes the shortcut genuinely application-wide.
+
+    Resolution order:
+        1. A known DCC host top-level (``MayaWindow`` / ``3dsMaxWindow``).
+        2. The nearest visible top-level ancestor of *widget*.
+        3. Any visible top-level window.
+        4. *widget* itself (last resort — preserves prior behaviour).
+    """
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        return widget
+
+    # 1. Known DCC host windows are the canonical application owner.
+    for w in app.topLevelWidgets():
+        if w.objectName() in _HOST_WINDOW_NAMES and w.isVisible():
+            return w
+
+    # 2. Nearest visible top-level ancestor of the widget (DCC-agnostic).
+    w = widget
+    seen: set = set()
+    while w is not None and id(w) not in seen:
+        seen.add(id(w))
+        win = w.window()
+        if win is not None and win.isWindow() and win.isVisible():
+            return win
+        w = w.parentWidget()
+
+    # 3. Any visible top-level window (e.g. a standalone app's main window).
+    for w in app.topLevelWidgets():
+        if w.isWindow() and w.isVisible():
+            return w
+
+    # 4. Last resort: keep prior behaviour rather than dropping the shortcut.
+    return widget
+
+
 class GlobalShortcut(QtCore.QObject):
     """A robust global shortcut handler that detects both press and release events.
 
@@ -129,10 +181,10 @@ class GlobalShortcut(QtCore.QObject):
 
             # Search top levels for common host windows
             for widget in app.topLevelWidgets():
-                if isinstance(widget, QtWidgets.QWidget) and widget.objectName() in [
-                    "MayaWindow",
-                    "3dsMaxWindow",
-                ]:
+                if (
+                    isinstance(widget, QtWidgets.QWidget)
+                    and widget.objectName() in _HOST_WINDOW_NAMES
+                ):
                     return widget
 
         return explicit_parent
@@ -198,6 +250,23 @@ class GlobalShortcut(QtCore.QObject):
         scope without recreating the shortcut.
         """
         self._shortcut.setContext(context)
+
+    def dispose(self) -> None:
+        """Disable, unregister, and schedule deletion of this shortcut.
+
+        Symmetric with ``__init__`` adding ``self`` to the static
+        ``_instances`` set: that strong self-reference keeps the wrapper alive,
+        so ``deleteLater`` alone can never collect it — every caller that drops
+        a ``GlobalShortcut`` must drop the static ref too. Centralised here so
+        the lifecycle stays in one place (forgetting the discard was a real
+        leak). Disabling first makes the shortcut inert immediately, before the
+        deferred deletion is processed.
+        """
+        self.setEnabled(False)
+        GlobalShortcut._instances.discard(self)
+        if self._shortcut is not None:
+            self._shortcut.deleteLater()
+        self.deleteLater()
 
 
 class ShortcutManager:
@@ -344,26 +413,29 @@ class ShortcutManager:
             key = QtGui.QKeySequence(key_sequence).toString()
 
         if key in self.shortcuts:
-            shortcut_data = self.shortcuts[key]
-            # Handle GlobalShortcut explicit cleanup if needed, though deleteLater works for QObject
-            if isinstance(shortcut_data["shortcut"], GlobalShortcut):
-                # Remove from static set if we kept it there, but we didn't implement remove method there.
-                # Just rely on GC and deleteLater.
-                pass
-
-            sc = shortcut_data["shortcut"]
-            if sc is not None:
-                sc.deleteLater()
+            sc = self.shortcuts[key]["shortcut"]
+            self._dispose(sc)
             del self.shortcuts[key]
             return True
         return False
 
+    @staticmethod
+    def _dispose(sc) -> None:
+        """Tear down a managed shortcut, disabling it first so it is inert
+        immediately. GlobalShortcut also needs its static ``_instances`` ref
+        dropped (via ``dispose``) or it can't be collected."""
+        if sc is None:
+            return
+        if isinstance(sc, GlobalShortcut):
+            sc.dispose()
+        else:
+            sc.setEnabled(False)
+            sc.deleteLater()
+
     def clear_all(self) -> None:
         """Remove all shortcuts"""
         for shortcut_data in self.shortcuts.values():
-            sc = shortcut_data["shortcut"]
-            if sc is not None:
-                sc.deleteLater()
+            self._dispose(shortcut_data["shortcut"])
         self.shortcuts.clear()
 
     # -- change notification -----------------------------------------------

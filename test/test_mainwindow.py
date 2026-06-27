@@ -482,30 +482,33 @@ class TestMainWindowGeometry(QtBaseTestCase):
         # Cleanup stored settings
         window2.clear_saved_geometry()
 
-    def test_fit_on_show_keeps_restored_width_and_trims_height(self):
-        """On-show fit preserves a restored geometry's width but trims its height.
+    @staticmethod
+    def _short_content():
+        """Central widget whose natural height (~40px) is far below a resize."""
+        w = QtWidgets.QWidget()
+        lyt = QtWidgets.QVBoxLayout(w)
+        lyt.setContentsMargins(0, 0, 0, 0)
+        label = QtWidgets.QLabel("content")
+        label.setFixedHeight(40)
+        lyt.addWidget(label)
+        return w
 
-        The contract behind fit_to_content_on_show=True running regardless of a
-        restored size: a saved geometry contributes width + position; the fit
-        only removes vertical dead space. Uses real content so the fit actually
-        fires (an empty central widget would make fit_height_to_content no-op).
+    def test_restored_geometry_is_authoritative_over_fit(self):
+        """A restored size survives on-show fit — both width AND height kept.
+
+        The DRY contract: once a geometry is saved (the user resized the window),
+        that size is authoritative on the next session and fit_to_content_on_show
+        does NOT trim it. This is what lets a growable list/table window keep a
+        hand-expanded height across sessions with NO per-window opt-out — the bug
+        the Macro Manager previously needed fit_to_content_on_show=False to dodge.
         """
         from uitk.widgets.mainWindow import MainWindow
 
-        name = "TestFitKeepsWidth"
-
-        def _content():
-            w = QtWidgets.QWidget()
-            lyt = QtWidgets.QVBoxLayout(w)
-            lyt.setContentsMargins(0, 0, 0, 0)
-            label = QtWidgets.QLabel("content")
-            label.setFixedHeight(40)
-            lyt.addWidget(label)
-            return w
+        name = "TestRestoredAuthoritative"
 
         # --- Session 1: stretch wide + tall (well past the 40px content), save ---
         window1 = self.track_widget(
-            MainWindow(name, self.sb, central_widget=_content())
+            MainWindow(name, self.sb, central_widget=self._short_content())
         )
         window1.clear_saved_geometry()
         window1.show()
@@ -515,25 +518,51 @@ class TestMainWindowGeometry(QtBaseTestCase):
         window1.hide()  # saves 500x600
         QtWidgets.QApplication.processEvents()
 
-        # --- Session 2: restore, then fit on show ---
+        # --- Session 2: restore on show; fit must be skipped (fit default True) ---
         window2 = self.track_widget(
-            MainWindow(name, self.sb, central_widget=_content())
+            MainWindow(name, self.sb, central_widget=self._short_content())
         )
+        self.assertTrue(window2.fit_to_content_on_show, "fit stays at its default")
         window2.show()
         QtWidgets.QApplication.processEvents()
 
-        # Width (and position) from the restore survive the fit.
+        # The deliberately-expanded height is NOT trimmed back to content.
         self.assertEqual(window2.width(), 500)
-        # Vertical dead space is trimmed: height drops far below the saved 600
-        # and snaps to the content minimum.
-        self.assertLess(window2.height(), 600)
-        self.assertLessEqual(
-            abs(window2.height() - window2.minimumSizeHint().height()), 2,
-            f"Height should snap to content: height={window2.height()}, "
-            f"minHint={window2.minimumSizeHint().height()}",
+        self.assertEqual(
+            window2.height(), 600,
+            f"Restored height must survive fit: height={window2.height()} "
+            f"(content min={window2.minimumSizeHint().height()})",
         )
 
         window2.clear_saved_geometry()
+
+    def test_first_show_without_saved_geometry_fits_to_content(self):
+        """With nothing to restore, on-show fit still trims trailing dead space.
+
+        Guards the other half of the contract: the fix only skips the fit when a
+        geometry was *restored*; a first-ever show (no saved size) must still snap
+        to content so there's no dead band below the content.
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        name = "TestFirstShowFits"
+
+        window = self.track_widget(
+            MainWindow(name, self.sb, central_widget=self._short_content())
+        )
+        window.clear_saved_geometry()  # ensure first-ever show (nothing restored)
+        window.resize(500, 600)  # oversize before show; fit should trim it
+        window.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertLess(window.height(), 600)
+        self.assertLessEqual(
+            abs(window.height() - window.minimumSizeHint().height()), 2,
+            f"Height should snap to content: height={window.height()}, "
+            f"minHint={window.minimumSizeHint().height()}",
+        )
+
+        window.clear_saved_geometry()
 
     def test_restore_disabled_ignores_saved_geometry_on_show(self):
         """A restore_window_size=False window must not apply saved geometry on show.
