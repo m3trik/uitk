@@ -691,6 +691,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.gridLayout: Optional[QtWidgets.QGridLayout] = None
         self.centralWidgetLayout: Optional[QtWidgets.QVBoxLayout] = None
         self._central_widget: Optional[QtWidgets.QWidget] = None
+        self._frame_layout: Optional[QtWidgets.QVBoxLayout] = None
+        self._pending_title: Optional[str] = None
         self.style: Optional[StyleSheet] = None
         self.header: Optional[Header] = None
         self.footer: Optional[Footer] = None
@@ -744,7 +746,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if kwargs:
             self.set_attributes(**kwargs)
 
-        # Build UI immediately
+        # Build the scaffold immediately; chrome (Header/Footer) is deferred to first show.
         self.init_layout()
         self.style = StyleSheet(self, log_level="WARNING")
 
@@ -918,6 +920,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         defaults.update(menu_kwargs)
 
         menu = Menu(parent=top_parent, name=title, **defaults)
+        # Modal dialogs configure the header up front and show immediately, so
+        # build the deferred chrome now rather than waiting for first show.
+        menu.ensure_chrome()
 
         if min_size:
             menu.setMinimumSize(*min_size)
@@ -1163,7 +1168,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._persistent_state = {
             "prevent_hide": self.prevent_hide,
             "hide_on_leave": self.hide_on_leave,
-            "had_header": bool(self.header),
+            "had_header": self.add_header or bool(self.header),
         }
 
         self._persistent_mode = True
@@ -1172,8 +1177,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.prevent_hide = True
         self.hide_on_leave = False
 
-        # Ensure the menu has a header to host the hide button
-        self._ensure_layout_created()
+        # Ensure the menu has a header to host the hide button. _ensure_chrome
+        # builds it into the frame layout for add_header=True menus; the fallback
+        # below injects one for headerless (add_header=False) menus.
+        self._ensure_chrome()
         if not self.header:
             self.header = Header(config_buttons=["pin"])
             if self.centralWidgetLayout:
@@ -1614,6 +1621,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         appearance and the "rapid flashing window" users see when apply
         buttons / defaults buttons / size adjustments fire visibly.
         """
+        # Build the deferred chrome (Header/Footer) first, while still hidden,
+        # so the apply/defaults setup and height passes below measure the final layout.
+        self._ensure_chrome()
+
         if (
             self.contains_items
             and self._trigger_button is not False
@@ -1778,17 +1789,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             )
             self._layout.addWidget(self._frame)
 
-            # Create inner layout inside the frame (with spacing for border)
-            frame_layout = QtWidgets.QVBoxLayout(self._frame)
+            # Create inner layout inside the frame (with spacing for border).
+            # Stashed on self so deferred chrome (_ensure_chrome) can insert into it on show.
+            self._frame_layout = QtWidgets.QVBoxLayout(self._frame)
+            frame_layout = self._frame_layout
             # One extra pixel inside the frame keeps children off the painted border
             frame_layout.setContentsMargins(1, 1, 1, 1)
             frame_layout.setSpacing(1)
             frame_layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
 
-            # Add header to top area
-            if self.add_header:
-                self.header = Header(config_buttons=["pin"])
-                frame_layout.addWidget(self.header)
+            # Header is deferred to first show — see _ensure_chrome().
 
             # Create a central widget WITHOUT parent first to avoid tree overhead
             # Parent will be assigned when added to layout
@@ -1818,10 +1828,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # Add central widget to frame layout
             frame_layout.addWidget(self._central_widget)
 
-            # Add footer to bottom area (always last)
-            if self.add_footer:
-                self.footer = Footer(add_size_grip=True)
-                frame_layout.addWidget(self.footer)
+            # Footer is deferred to first show — see _ensure_chrome().
 
         finally:
             # Restore signal blocking state
@@ -1834,6 +1841,40 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             # Activate layout now that setup is complete
             if self._layout:
                 self._layout.activate()
+
+    def _ensure_chrome(self):
+        """Build the deferred chrome (Header + Footer) on first show.
+        Idempotent — guarded per sub-widget, safe to call repeatedly.
+
+        Header/Footer are the heaviest part of a Menu and most option-box menus
+        are never opened, so they are built here — right before paint, via
+        ``_prepare_for_show`` — instead of eagerly during ``register_children``.
+        """
+        if self._frame_layout is None:
+            self._ensure_layout_created()
+        fl = self._frame_layout
+        if fl is None:
+            return
+
+        if self.add_header and self.header is None:
+            self.header = Header(config_buttons=["pin"])
+            fl.insertWidget(0, self.header)  # ABOVE the central widget
+            if self._pending_title is not None:
+                self.header.setText(self._pending_title)
+                self._pending_title = None
+
+        if self.add_footer and self.footer is None:
+            self.footer = Footer(add_size_grip=True)
+            fl.addWidget(self.footer)  # LAST → below the central widget
+
+    def ensure_chrome(self) -> None:
+        """Force-build the deferred Header/Footer now.
+
+        For callers that read ``.header`` / ``.footer`` BEFORE the menu is shown
+        (e.g. modal dialogs that configure the header up front). Normal menus do
+        not need this — chrome builds automatically on first show.
+        """
+        self._ensure_chrome()
 
     def _setup_leave_timer(self):
         """Set up timer for auto-hide on mouse leave."""
@@ -2431,22 +2472,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.hide()
 
     def title(self) -> str:
-        """Get the menu's title text."""
-        if self.header is None:
-            return ""
-        return self.header.text()
+        """Get the menu's title text (the pending value if the header isn't built yet)."""
+        if self.header is not None:
+            return self.header.text()
+        return self._pending_title or ""
 
     def setTitle(self, title="") -> None:
         """Set the menu's title to the given string.
-        If no title is given, the function will attempt to use the menu parents text.
+
+        If the header hasn't been built yet (chrome is deferred to first show),
+        the title is stashed and applied when the header is created.
 
         Parameters:
             title (str): Text to apply to the menu's title.
         """
-        # Ensure layout is created so header exists
-        self._ensure_layout_created()
         if self.header is not None:
             self.header.setText(title)
+        else:
+            # Chrome is deferred to first show; stash and apply when it builds.
+            self._pending_title = title
 
     def get_items(self, types=None):
         """Get all items in the list, optionally filtered by type.
@@ -2971,6 +3015,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.logger.debug(
                 f"showEvent: Active window before show: {self._active_window_before_show}"
             )
+
+        # Safety net: if a path showed the menu without routing through
+        # setVisible()/_prepare_for_show(), build the chrome now (idempotent).
+        self._ensure_chrome()
 
         # Always start unpinned when showing to avoid stale state from previous sessions
         if self.header and hasattr(self.header, "reset_pin_state"):

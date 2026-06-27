@@ -6028,7 +6028,7 @@
               "kind": "classmethod",
               "signature": "(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)",
               "summary": "Factory method: Create a standalone context menu with sensible defaults.",
-              "line": 772,
+              "line": 774,
               "deprecated": false
             },
             {
@@ -6037,7 +6037,7 @@
               "kind": "classmethod",
               "signature": "(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)",
               "summary": "Factory method: Create a dropdown menu for option boxes.",
-              "line": 793,
+              "line": 795,
               "deprecated": false
             },
             {
@@ -6046,7 +6046,7 @@
               "kind": "classmethod",
               "signature": "(cls, config: MenuConfig)",
               "summary": "Create a Menu from a MenuConfig object.",
-              "line": 807,
+              "line": 809,
               "deprecated": false
             },
             {
@@ -6055,7 +6055,7 @@
               "kind": "staticmethod",
               "signature": "(content_fn, parent=None, title='', buttons=None, size=None, min_size=None, center=True, **menu_kwargs)",
               "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 838,
+              "line": 840,
               "deprecated": false
             },
             {
@@ -6064,7 +6064,7 @@
               "kind": "property",
               "signature": "(self) -> Union[QtCore.Qt.MouseButton, tuple, None, bool]",
               "summary": "Get the current trigger button(s).",
-              "line": 1042,
+              "line": 1047,
               "deprecated": false
             },
             {
@@ -6073,7 +6073,7 @@
               "kind": "method",
               "signature": "(self, value: Union[QtCore.Qt.MouseButton, str, tuple, list, None]) -> None",
               "summary": "Set the trigger button(s).",
-              "line": 1054,
+              "line": 1059,
               "deprecated": false
             },
             {
@@ -6082,7 +6082,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-initialized PresetManager namespace for saving/loading named presets.",
-              "line": 1090,
+              "line": 1095,
               "deprecated": false
             },
             {
@@ -6091,7 +6091,7 @@
               "kind": "method",
               "signature": "(self, _)",
               "summary": "No-op setter so the switchboard can harmlessly reassign.",
-              "line": 1112,
+              "line": 1117,
               "deprecated": false
             },
             {
@@ -6100,7 +6100,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Get whether menu auto-hides when mouse leaves.",
-              "line": 1117,
+              "line": 1122,
               "deprecated": false
             },
             {
@@ -6109,7 +6109,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set whether menu auto-hides when mouse leaves.",
-              "line": 1126,
+              "line": 1131,
               "deprecated": false
             },
             {
@@ -6118,7 +6118,7 @@
               "kind": "method",
               "signature": "(self, hide_button_tooltip: str = 'Hide menu') -> None",
               "summary": "Keep the menu visible until the user explicitly hides it.",
-              "line": 1147,
+              "line": 1152,
               "deprecated": false
             },
             {
@@ -6127,7 +6127,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore default hide behaviour after persistent mode.",
-              "line": 1184,
+              "line": 1191,
               "deprecated": false
             },
             {
@@ -6136,7 +6136,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Return True when persistent mode is active.",
-              "line": 1210,
+              "line": 1217,
               "deprecated": false
             },
             {
@@ -6145,7 +6145,7 @@
               "kind": "method",
               "signature": "(self, visible: bool) -> None",
               "summary": "Override to apply deferred popup setup before becoming visible.",
-              "line": 1565,
+              "line": 1572,
               "deprecated": false
             },
             {
@@ -6154,7 +6154,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Show the menu.",
-              "line": 1648,
+              "line": 1659,
               "deprecated": false
             },
             {
@@ -6163,7 +6163,7 @@
               "kind": "method",
               "signature": "(self, anchor_widget: Optional[QtWidgets.QWidget] = None, position: Union[str, QtCore.QPoint, tuple, list] = 'bottom') -> None",
               "summary": "Show this menu as a popup at the specified position.",
-              "line": 1668,
+              "line": 1679,
               "deprecated": false
             },
             {
@@ -6172,7 +6172,7 @@
               "kind": "method",
               "signature": "(self, widget, overwrite=False)",
               "summary": "",
-              "line": 1733,
+              "line": 1744,
               "deprecated": false
             },
             {
@@ -6181,7 +6181,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the central widget.",
-              "line": 1745,
+              "line": 1756,
               "deprecated": false
             },
             {
@@ -6190,7 +6190,16 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Initialize the menu layout.",
-              "line": 1749,
+              "line": 1760,
+              "deprecated": false
+            },
+            {
+              "name": "ensure_chrome",
+              "qualname": "Menu.ensure_chrome",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Force-build the deferred Header/Footer now.",
+              "line": 1870,
               "deprecated": false
             },
             {
@@ -6199,7 +6208,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Public alias for the owning ``MainWindow``, or ``None``.",
-              "line": 2064,
+              "line": 2105,
               "deprecated": false
             },
             {
@@ -6208,7 +6217,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the 'Restore Defaults' button is enabled.",
-              "line": 2239,
+              "line": 2280,
               "deprecated": false
             },
             {
@@ -6217,7 +6226,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 2248,
+              "line": 2289,
               "deprecated": false
             },
             {
@@ -6226,7 +6235,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the presets combo is enabled.",
-              "line": 2258,
+              "line": 2299,
               "deprecated": false
             },
             {
@@ -6235,7 +6244,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "",
-              "line": 2277,
+              "line": 2318,
               "deprecated": false
             },
             {
@@ -6244,7 +6253,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 2356,
+              "line": 2397,
               "deprecated": false
             },
             {
@@ -6253,7 +6262,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Check if the menu is pinned (should not auto-hide).",
-              "line": 2361,
+              "line": 2402,
               "deprecated": false
             },
             {
@@ -6262,7 +6271,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Check if the QMenu contains any genuine items.",
-              "line": 2381,
+              "line": 2422,
               "deprecated": false
             },
             {
@@ -6270,8 +6279,8 @@
               "qualname": "Menu.title",
               "kind": "method",
               "signature": "(self) -> str",
-              "summary": "Get the menu's title text.",
-              "line": 2433,
+              "summary": "Get the menu's title text (the pending value if the header isn't built yet).",
+              "line": 2474,
               "deprecated": false
             },
             {
@@ -6280,7 +6289,7 @@
               "kind": "method",
               "signature": "(self, title='') -> None",
               "summary": "Set the menu's title to the given string.",
-              "line": 2439,
+              "line": 2480,
               "deprecated": false
             },
             {
@@ -6289,7 +6298,7 @@
               "kind": "method",
               "signature": "(self, types=None)",
               "summary": "Get all items in the list, optionally filtered by type.",
-              "line": 2451,
+              "line": 2495,
               "deprecated": false
             },
             {
@@ -6298,7 +6307,7 @@
               "kind": "method",
               "signature": "(self, identifier)",
               "summary": "Return a QAction or QWidgetAction by index or text.",
-              "line": 2487,
+              "line": 2531,
               "deprecated": false
             },
             {
@@ -6307,7 +6316,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> Optional[str]",
               "summary": "Get the textual representation of a widget.",
-              "line": 2519,
+              "line": 2563,
               "deprecated": false
             },
             {
@@ -6316,7 +6325,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Get data associated with a widget in the list or its sublists.",
-              "line": 2549,
+              "line": 2593,
               "deprecated": false
             },
             {
@@ -6325,7 +6334,7 @@
               "kind": "method",
               "signature": "(self, widget, data)",
               "summary": "Set data associated with a widget in the list or its sublists.",
-              "line": 2565,
+              "line": 2609,
               "deprecated": false
             },
             {
@@ -6334,7 +6343,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Remove a widget from the layout.",
-              "line": 2577,
+              "line": 2621,
               "deprecated": false
             },
             {
@@ -6343,7 +6352,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear all items in the list.",
-              "line": 2597,
+              "line": 2641,
               "deprecated": false
             },
             {
@@ -6352,7 +6361,7 @@
               "kind": "method",
               "signature": "(self, x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map], data: Any = None, row: Optional[int] = None, col: int = 0, rowSpan: int = 1, colSpan: Optional[int] = None, **kwargs) -> Union[QtWidgets.QWidget, list]",
               "summary": "Add an item or multiple items to the list.",
-              "line": 2623,
+              "line": 2667,
               "deprecated": false
             },
             {
@@ -6361,7 +6370,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 2923,
+              "line": 2967,
               "deprecated": false
             },
             {
@@ -6370,7 +6379,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle show event with positioning (optimized for performance).",
-              "line": 2960,
+              "line": 3004,
               "deprecated": false
             },
             {
@@ -6379,7 +6388,7 @@
               "kind": "method",
               "signature": "(self, force: bool = False) -> bool",
               "summary": "Hide the menu, respecting the pinned state.",
-              "line": 3060,
+              "line": 3108,
               "deprecated": false
             },
             {
@@ -6388,7 +6397,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle hide event.",
-              "line": 3081,
+              "line": 3129,
               "deprecated": false
             },
             {
@@ -6397,7 +6406,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Handle events for the menu and its children.",
-              "line": 3187,
+              "line": 3235,
               "deprecated": false
             },
             {
@@ -6406,7 +6415,7 @@
               "kind": "method",
               "signature": "(self, widget: Optional[QtWidgets.QWidget] = None, *, button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton) -> None",
               "summary": "Toggle visibility using the same rules as the parent click event.",
-              "line": 3227,
+              "line": 3275,
               "deprecated": false
             }
           ]
@@ -12600,6 +12609,57 @@
       ]
     },
     {
+      "relpath": "widgets/table_actions.py",
+      "summary": "Reusable action-column management for :class:`TableWidget`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TableActions",
+          "summary": "Manages action columns on a :class:`TableWidget`.",
+          "line": 139,
+          "bases": [],
+          "members": [
+            {
+              "name": "add",
+              "qualname": "TableActions.add",
+              "kind": "method",
+              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
+              "summary": "Register an action column.",
+              "line": 163,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "TableActions.set",
+              "kind": "method",
+              "signature": "(self, row: int, col: int, state_name: str) -> None",
+              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
+              "line": 209,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "TableActions.get",
+              "kind": "method",
+              "signature": "(self, row: int, col: int) -> Optional[str]",
+              "summary": "Return the current state name for a cell, or ``None``.",
+              "line": 273,
+              "deprecated": false
+            },
+            {
+              "name": "update_for_row_height",
+              "qualname": "TableActions.update_for_row_height",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-size action columns and icons to fit the current row height.",
+              "line": 338,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "widgets/tableWidget.py",
       "summary": "",
       "functions": [],
@@ -13144,57 +13204,6 @@
               "signature": "(self, object_name: str)",
               "summary": "",
               "line": 1329,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/table_actions.py",
-      "summary": "Reusable action-column management for :class:`TableWidget`.",
-      "functions": [],
-      "classes": [
-        {
-          "name": "TableActions",
-          "summary": "Manages action columns on a :class:`TableWidget`.",
-          "line": 139,
-          "bases": [],
-          "members": [
-            {
-              "name": "add",
-              "qualname": "TableActions.add",
-              "kind": "method",
-              "signature": "(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None",
-              "summary": "Register an action column.",
-              "line": 163,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "TableActions.set",
-              "kind": "method",
-              "signature": "(self, row: int, col: int, state_name: str) -> None",
-              "summary": "Set a cell to a named state, updating its icon, tooltip, and style.",
-              "line": 209,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "TableActions.get",
-              "kind": "method",
-              "signature": "(self, row: int, col: int) -> Optional[str]",
-              "summary": "Return the current state name for a cell, or ``None``.",
-              "line": 273,
-              "deprecated": false
-            },
-            {
-              "name": "update_for_row_height",
-              "qualname": "TableActions.update_for_row_height",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Re-size action columns and icons to fit the current row height.",
-              "line": 338,
               "deprecated": false
             }
           ]
