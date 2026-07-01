@@ -1,15 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for ColorSwatch widget and ColorId default swatch colors.
+"""Unit tests for the ColorSwatch widget.
 
 Tests cover:
 - Swatch creation and default color initialization
 - Color property getter/setter
 - Single click selects (checks) the swatch without opening color dialog
 - Double click opens color dialog
+- keep_square aspect lock
 - Settings save/load round-trip
-- Default swatch color palette from ColorId
-- get_color_difference pure logic
 
 Run standalone: python -m test.test_color_swatch
 """
@@ -340,115 +339,12 @@ class TestColorSwatchSettings(QtBaseTestCase):
 
 
 # =============================================================================
-# Default Swatch Palette
-# =============================================================================
-
-
-def _mock_mayatk_modules():
-    """Build a sys.modules patch dict that stubs the mayatk package chain.
-
-    Stubs maya.cmds so color_id can be imported without Maya, while
-    using the real mayatk source from the monorepo.
-    """
-    import sys
-    import types
-    import os
-    from unittest.mock import MagicMock
-
-    # Ensure mayatk source is importable
-    mayatk_root = os.path.normpath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "mayatk")
-    )
-    if mayatk_root not in sys.path:
-        sys.path.insert(0, mayatk_root)
-
-    mock_maya = types.ModuleType("maya")
-    mock_cmds = MagicMock()
-
-    return {
-        "maya": mock_maya,
-        "maya.cmds": mock_cmds,
-    }
-
-
-class TestDefaultSwatchColors(QtBaseTestCase):
-    """Tests for the DEFAULT_SWATCH_COLORS palette on ColorId."""
-
-    def test_palette_has_12_colors(self):
-        """Should have exactly 12 default swatch colors."""
-        with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_id import ColorId
-
-            self.assertEqual(len(ColorId.DEFAULT_SWATCH_COLORS), 12)
-
-    def test_palette_colors_are_valid_rgb_tuples(self):
-        """Each default color should be a valid (R, G, B) tuple with values 0-255."""
-        with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_id import ColorId
-
-            for color in ColorId.DEFAULT_SWATCH_COLORS:
-                self.assertIsInstance(color, tuple)
-                self.assertEqual(len(color), 3)
-                for ch in color:
-                    self.assertGreaterEqual(ch, 0)
-                    self.assertLessEqual(ch, 255)
-
-    def test_palette_colors_are_all_distinct(self):
-        """Each default swatch color should be unique."""
-        with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_id import ColorId
-
-            colors = ColorId.DEFAULT_SWATCH_COLORS
-            self.assertEqual(len(colors), len(set(colors)))
-
-    def test_palette_colors_are_desaturated(self):
-        """Default colors should be muted (not fully saturated primary colors)."""
-        with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_id import ColorId
-
-            for color in ColorId.DEFAULT_SWATCH_COLORS:
-                qc = QtGui.QColor(*color)
-                # Saturation < 255 means desaturated
-                self.assertLess(
-                    qc.saturation(),
-                    200,
-                    f"Color {color} is too saturated ({qc.saturation()})",
-                )
-
-
-# =============================================================================
-# ColorUtils.get_color_difference (pure logic, no Maya)
-# =============================================================================
-
-
-class TestGetColorDifference(unittest.TestCase):
-    """Tests for get_color_difference static method."""
-
-    def _get_cls(self):
-        with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_id import ColorUtils
-
-            return ColorUtils
-
-    def test_identical_colors_return_zero(self):
-        """get_color_difference of identical colors should be 0."""
-        cls = self._get_cls()
-        self.assertAlmostEqual(cls.get_color_difference((1, 0, 0), (1, 0, 0)), 0.0)
-
-    def test_opposite_colors_return_one(self):
-        """get_color_difference of black vs white (normalized) should be 1.0."""
-        cls = self._get_cls()
-        self.assertAlmostEqual(cls.get_color_difference((0, 0, 0), (1, 1, 1)), 1.0)
-
-    def test_partial_difference(self):
-        """get_color_difference should compute average channel difference."""
-        cls = self._get_cls()
-        # (0.5, 0.5, 0.5) vs (0.0, 0.0, 0.0) => avg diff = 0.5
-        self.assertAlmostEqual(
-            cls.get_color_difference((0.5, 0.5, 0.5), (0.0, 0.0, 0.0)), 0.5
-        )
-
-
+# NOTE: The default swatch palette (ColorId.DEFAULT_SWATCH_COLORS) and
+# ColorUtils.get_color_difference live in mayatk (display_utils/color_id.py),
+# a *downstream* package. Their tests belong there (mayatk/test/
+# test_display_extras.py) — not here — so uitk's CI never depends on a mayatk
+# symbol that hasn't published yet. The ColorSwatch widget itself is
+# palette-agnostic; callers pass colors in.
 # =============================================================================
 
 if __name__ == "__main__":

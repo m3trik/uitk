@@ -40,7 +40,11 @@ jobs:
           pip install -e . --no-deps
 
       - name: Run tests
-        # mayatk installed because test_color_swatch imports it.
+        # mayatk installed because several tests import stable mayatk symbols
+        # (bridge slots, ui handler, marking menu, preset manager). Tests must
+        # NOT import a mayatk symbol renamed/added in the *current* cascade —
+        # CI runs against the last *published* mayatk, which publishes AFTER
+        # uitk, so such a symbol won't exist yet (its tests belong in mayatk).
         # test_marking_menu_integration.py is skipped: it drives Qt button
         # press/release sequences via QTest, and Qt's offscreen platform
         # plugin doesn't propagate release events the same way a real
