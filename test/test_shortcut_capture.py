@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for in-cell hotkey capture (uitk.widgets.hotkey_capture_delegate).
+"""Tests for in-cell shortcut capture (uitk.widgets.delegates.shortcut_capture).
 
 Regression coverage for the PySide6 crash where ``key | modifiers``
 (int | Qt.KeyboardModifier) routed through a deprecated ``__ror__`` and
@@ -11,9 +11,9 @@ import unittest
 
 from qtpy import QtWidgets, QtCore, QtGui
 from conftest import QtBaseTestCase, setup_qt_application
-from uitk.widgets.hotkey_capture_delegate import (
-    HotkeyCaptureEdit,
-    install_hotkey_capture,
+from uitk.widgets.delegates.shortcut_capture import (
+    ShortcutCaptureEdit,
+    install_shortcut_capture,
 )
 
 app = setup_qt_application()
@@ -30,12 +30,12 @@ def _press(widget, key, modifiers=QtCore.Qt.NoModifier):
     widget.keyPressEvent(event)
 
 
-class TestHotkeyCaptureEdit(QtBaseTestCase):
+class TestShortcutCaptureEdit(QtBaseTestCase):
     """The in-cell capture editor."""
 
     def test_modifier_chord_does_not_raise_and_captures(self):
         """Ctrl+K captures cleanly (regression: no QKeyCombination crash)."""
-        editor = HotkeyCaptureEdit()
+        editor = ShortcutCaptureEdit()
         fired = []
         editor.chordCaptured.connect(lambda: fired.append(editor.sequence()))
 
@@ -46,13 +46,13 @@ class TestHotkeyCaptureEdit(QtBaseTestCase):
         self.assertIn("Ctrl", editor.sequence())
 
     def test_bare_key_captures(self):
-        editor = HotkeyCaptureEdit()
+        editor = ShortcutCaptureEdit()
         _press(editor, QtCore.Qt.Key_F5)
         self.assertEqual(editor.sequence(), "F5")
 
     def test_lone_modifier_is_ignored(self):
         """A modifier with no real key must not commit a sequence."""
-        editor = HotkeyCaptureEdit()
+        editor = ShortcutCaptureEdit()
         fired = []
         editor.chordCaptured.connect(lambda: fired.append(True))
 
@@ -62,7 +62,7 @@ class TestHotkeyCaptureEdit(QtBaseTestCase):
         self.assertIsNone(editor.sequence())
 
     def test_backspace_clears(self):
-        editor = HotkeyCaptureEdit()
+        editor = ShortcutCaptureEdit()
         _press(editor, QtCore.Qt.Key_Backspace)
         self.assertEqual(editor.sequence(), "")
 
@@ -75,7 +75,7 @@ class TestHotkeyCaptureEdit(QtBaseTestCase):
         shortcut fires its slot instead of the key being captured (the
         re-assign-a-taken-key bug).
         """
-        editor = HotkeyCaptureEdit()
+        editor = ShortcutCaptureEdit()
         event = QtGui.QKeyEvent(
             QtCore.QEvent.ShortcutOverride,
             QtCore.Qt.Key_S,
@@ -86,8 +86,8 @@ class TestHotkeyCaptureEdit(QtBaseTestCase):
         self.assertTrue(event.isAccepted(), "ShortcutOverride should be accepted")
 
 
-class TestInstallHotkeyCapture(QtBaseTestCase):
-    """The turnkey ``install_hotkey_capture`` helper on a real table."""
+class TestInstallShortcutCapture(QtBaseTestCase):
+    """The turnkey ``install_shortcut_capture`` helper on a real table."""
 
     def _table(self):
         table = QtWidgets.QTableWidget(1, 2)
@@ -101,14 +101,14 @@ class TestInstallHotkeyCapture(QtBaseTestCase):
     def test_capture_emits_row_col_sequence(self):
         table = self._table()
         captured = []
-        install_hotkey_capture(
+        install_shortcut_capture(
             table, 1, lambda r, c, s: captured.append((r, c, s))
         )
 
         table.editItem(table.item(0, 1))
         QtWidgets.QApplication.processEvents()
         editor = table.viewport().focusWidget()
-        self.assertIsInstance(editor, HotkeyCaptureEdit)
+        self.assertIsInstance(editor, ShortcutCaptureEdit)
 
         _press(editor, QtCore.Qt.Key_J, QtCore.Qt.ControlModifier)
         # captured signal is deferred one tick (singleShot) so a slot may
@@ -122,16 +122,16 @@ class TestInstallHotkeyCapture(QtBaseTestCase):
 
     def test_bordered_delegate_captures(self):
         """bordered=True (composes RowSelectionBorderDelegate) still captures."""
-        from uitk.widgets.hotkey_capture_delegate import (
-            BorderedHotkeyCaptureDelegate,
+        from uitk.widgets.delegates.shortcut_capture import (
+            BorderedShortcutCaptureDelegate,
         )
 
         table = self._table()
         captured = []
-        delegate = install_hotkey_capture(
+        delegate = install_shortcut_capture(
             table, 1, lambda r, c, s: captured.append(s), bordered=True
         )
-        self.assertIsInstance(delegate, BorderedHotkeyCaptureDelegate)
+        self.assertIsInstance(delegate, BorderedShortcutCaptureDelegate)
 
         table.editItem(table.item(0, 1))
         QtWidgets.QApplication.processEvents()
@@ -147,14 +147,14 @@ class TestInstallHotkeyCapture(QtBaseTestCase):
         table = self._table()
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         captured = []
-        install_hotkey_capture(
+        install_shortcut_capture(
             table, 1, lambda r, c, s: captured.append(s)
         )
 
         table.editItem(table.item(0, 1))
         QtWidgets.QApplication.processEvents()
         editor = table.viewport().focusWidget()
-        self.assertIsInstance(editor, HotkeyCaptureEdit)
+        self.assertIsInstance(editor, ShortcutCaptureEdit)
 
         _press(editor, QtCore.Qt.Key_G)
         QtWidgets.QApplication.processEvents()
@@ -170,7 +170,7 @@ class TestInstallHotkeyCapture(QtBaseTestCase):
         table = self._table()
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         captured = []
-        install_hotkey_capture(table, 1, lambda r, c, s: captured.append(s))
+        install_shortcut_capture(table, 1, lambda r, c, s: captured.append(s))
 
         table.setCurrentCell(0, 1)
         # Route a letter key through the table the way a focused view would.
@@ -185,7 +185,7 @@ class TestInstallHotkeyCapture(QtBaseTestCase):
             table.state(), QtWidgets.QAbstractItemView.EditingState
         )
         self.assertNotIsInstance(
-            table.viewport().focusWidget(), HotkeyCaptureEdit
+            table.viewport().focusWidget(), ShortcutCaptureEdit
         )
         self.assertEqual(captured, [])
 

@@ -9,16 +9,16 @@ that interprets the next key chord as a shortcut, commits it, and closes
 immediately — no dialog, no OK button.
 
 Reusable by any ``QTableWidget`` / ``QTableView`` column via
-:func:`install_hotkey_capture`. Consumers receive the captured sequence
+:func:`install_shortcut_capture`. Consumers receive the captured sequence
 through the delegate's ``captured(row, col, sequence)`` signal and decide
 how to persist it (uitk shortcut registry, Maya hotkey set, etc.).
 
 Two delegate flavours:
 
-* :class:`HotkeyCaptureDelegate` — default cell painting.
-* :class:`BorderedHotkeyCaptureDelegate` — also paints the row-spanning
+* :class:`ShortcutCaptureDelegate` — default cell painting.
+* :class:`BorderedShortcutCaptureDelegate` — also paints the row-spanning
   selection border from
-  :class:`uitk.widgets.row_selection_delegate.RowSelectionBorderDelegate`,
+  :class:`uitk.widgets.delegates.row_selection.RowSelectionBorderDelegate`,
   for tables that install that delegate elsewhere (so the captured column
   doesn't fall back to the QSS blue selection fill and break the outline).
 """
@@ -26,11 +26,11 @@ from __future__ import annotations
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
+from uitk.widgets.delegates.row_selection import RowSelectionBorderDelegate
 from uitk.widgets.mixins.convert import ConvertMixin
 
 
-class HotkeyCaptureEdit(QtWidgets.QLineEdit):
+class ShortcutCaptureEdit(QtWidgets.QLineEdit):
     """Read-only line edit that captures a single key chord.
 
     Every key press is interpreted as a shortcut rather than literal
@@ -105,7 +105,7 @@ class HotkeyCaptureEdit(QtWidgets.QLineEdit):
         self.chordCaptured.emit()
 
 
-class HotkeyCaptureDelegate(QtWidgets.QStyledItemDelegate):
+class ShortcutCaptureDelegate(QtWidgets.QStyledItemDelegate):
     """Item delegate that edits a cell via in-cell key capture.
 
     Emits ``captured(row, col, sequence)`` when the user commits a chord.
@@ -117,7 +117,7 @@ class HotkeyCaptureDelegate(QtWidgets.QStyledItemDelegate):
     captured = QtCore.Signal(int, int, str)
 
     def createEditor(self, parent, option, index):
-        editor = HotkeyCaptureEdit(parent)
+        editor = ShortcutCaptureEdit(parent)
         editor.chordCaptured.connect(lambda e=editor: self._commit(e))
         return editor
 
@@ -140,28 +140,28 @@ class HotkeyCaptureDelegate(QtWidgets.QStyledItemDelegate):
         QtCore.QTimer.singleShot(0, lambda: self.captured.emit(row, col, seq))
 
 
-class BorderedHotkeyCaptureDelegate(HotkeyCaptureDelegate, RowSelectionBorderDelegate):
-    """:class:`HotkeyCaptureDelegate` that paints the row-spanning
+class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorderDelegate):
+    """:class:`ShortcutCaptureDelegate` that paints the row-spanning
     selection border.
 
     Use on tables that install
-    :class:`~uitk.widgets.row_selection_delegate.RowSelectionBorderDelegate`
+    :class:`~uitk.widgets.delegates.row_selection.RowSelectionBorderDelegate`
     as their general delegate, so the captured column keeps the same
     transparent-selection outline instead of the QSS blue fill. Capture
-    behaviour resolves to :class:`HotkeyCaptureDelegate`; ``paint`` to
+    behaviour resolves to :class:`ShortcutCaptureDelegate`; ``paint`` to
     :class:`RowSelectionBorderDelegate` (both share the single
     ``QStyledItemDelegate`` Qt base, so the MRO is unambiguous).
     """
 
 
-def install_hotkey_capture(
+def install_shortcut_capture(
     table: QtWidgets.QTableWidget,
     column: int,
     on_capture,
     *,
     bordered: bool = False,
-) -> HotkeyCaptureDelegate:
-    """Wire in-cell hotkey capture onto a table column.
+) -> ShortcutCaptureDelegate:
+    """Wire in-cell shortcut capture onto a table column.
 
     Installs the capture delegate on ``column`` and opens it on a
     double-click of that column — independent of the table's
@@ -182,13 +182,13 @@ def install_hotkey_capture(
         on_capture: Callable ``(row, col, sequence) -> None`` invoked once
             a chord is committed. ``sequence`` is a NativeText shortcut
             string, ``""`` when cleared.
-        bordered: Use :class:`BorderedHotkeyCaptureDelegate` for tables
+        bordered: Use :class:`BorderedShortcutCaptureDelegate` for tables
             that paint the row-spanning selection border elsewhere.
 
     Returns:
         The installed delegate (already connected to ``on_capture``).
     """
-    delegate_cls = BorderedHotkeyCaptureDelegate if bordered else HotkeyCaptureDelegate
+    delegate_cls = BorderedShortcutCaptureDelegate if bordered else ShortcutCaptureDelegate
     delegate = delegate_cls(table)
     delegate.captured.connect(on_capture)
     table.setItemDelegateForColumn(column, delegate)

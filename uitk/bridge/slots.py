@@ -295,8 +295,8 @@ class BridgeSlotsBase:
         option box wraps it, so the wrap reparents it in place via
         ``replaceWidget`` (preserving the stretch factor) while it is already
         layout-managed. Wrapping a *parentless* edit instead lets it briefly show
-        as a top-level widget, whose ``OptionBoxContainer.showEvent`` schedules a
-        ``_refit_to_content`` that collapses + absolutely-positions the container
+        as a top-level widget, whose ``OptionBoxContainer.showEvent`` schedules an
+        ``_adjust_to_content`` that collapses + absolutely-positions the container
         — leaving the field right-shifted instead of filling the row.
         """
         layout = self.ui.grp_process.layout()

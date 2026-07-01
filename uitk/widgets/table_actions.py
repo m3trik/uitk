@@ -42,6 +42,10 @@ from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
 from qtpy import QtWidgets, QtGui, QtCore
 
 from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.widgets.delegates.centered_icon import (
+    fill_cell_background,
+    paint_centered_icon,
+)
 
 if TYPE_CHECKING:
     from uitk.widgets.tableWidget import TableWidget
@@ -83,6 +87,12 @@ class _CenteredIconDelegate(QtWidgets.QStyledItemDelegate):
         # and makes non-selectable action cells look interactive.
         opt.state &= ~QtWidgets.QStyle.State_Selected
 
+        # Paint a per-state ``background`` tint ourselves — the stylesheet
+        # style's CE_ItemViewItem drops the item brush for the QSS ``::item``
+        # rules; cleared from ``opt`` so drawControl doesn't double-fill.
+        fill_cell_background(painter, option.rect, index)
+        opt.backgroundBrush = QtGui.QBrush()
+
         # Clear icon/text and the corresponding feature flags so the
         # style only paints the cell background + selection state.
         # ``super().paint()`` would re-run ``initStyleOption`` on its
@@ -96,44 +106,14 @@ class _CenteredIconDelegate(QtWidgets.QStyledItemDelegate):
         style = widget.style() if widget else QtWidgets.QApplication.style()
         style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, widget)
 
-        if icon.isNull():
-            return
-
-        cell = option.rect
-        # Prefer the view's iconSize (= option.decorationSize) when set;
-        # fall back to a square that fits within the cell minus a small
-        # visual margin.
-        target_size = option.decorationSize
-        if not target_size.isValid() or target_size.width() <= 0:
-            edge = max(8, min(cell.width(), cell.height()) - 4)
-            target_size = QtCore.QSize(edge, edge)
-
-        actual = icon.actualSize(target_size)
-        if actual.width() <= 0 or actual.height() <= 0:
-            edge = max(8, min(cell.width(), cell.height()) - 4)
-            actual = QtCore.QSize(edge, edge)
-        # Clamp so we never overflow the cell.
-        actual = QtCore.QSize(
-            min(actual.width(), cell.width()),
-            min(actual.height(), cell.height()),
+        # Centered-icon painting is shared with CenteredIconActionDelegate.
+        paint_centered_icon(
+            painter,
+            icon,
+            option.rect,
+            option.decorationSize,
+            hover=bool(option.state & QtWidgets.QStyle.State_MouseOver),
         )
-
-        pixmap = icon.pixmap(actual)
-
-        # Hover feedback: brighten the icon's own pixels (not the
-        # surrounding cell) so faint "deactivated" tones don't blend
-        # into a row-wide highlight. SourceAtop fills only opaque
-        # pixels, leaving the cell background untouched.
-        if option.state & QtWidgets.QStyle.State_MouseOver:
-            pixmap = pixmap.copy()
-            p = QtGui.QPainter(pixmap)
-            p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceAtop)
-            p.fillRect(pixmap.rect(), QtGui.QColor(255, 255, 255, 110))
-            p.end()
-
-        x = cell.x() + (cell.width() - pixmap.width()) // 2
-        y = cell.y() + (cell.height() - pixmap.height()) // 2
-        painter.drawPixmap(x, y, pixmap)
 
 
 class TableActions:

@@ -1,8 +1,8 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for in-cell choice capture (uitk.widgets.choice_capture_delegate).
+"""Tests for in-cell choice capture (uitk.widgets.delegates.choice_capture).
 
-The dropdown sibling of the hotkey capture delegate: a plain cell that
+The dropdown sibling of the shortcut capture delegate: a plain cell that
 opens a ``QComboBox`` editor on double-click and commits the picked /
 typed value via ``captured(row, col, value)`` — replacing a persistent
 combo cell widget (which grabs hover/select).
@@ -11,7 +11,7 @@ import unittest
 
 from qtpy import QtWidgets, QtCore
 from conftest import QtBaseTestCase, setup_qt_application
-from uitk.widgets.choice_capture_delegate import (
+from uitk.widgets.delegates.choice_capture import (
     ChoiceCaptureDelegate,
     BorderedChoiceCaptureDelegate,
     install_choice_capture,

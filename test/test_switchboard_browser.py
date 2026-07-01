@@ -129,13 +129,21 @@ class ModelListsRegistry(BrowserBase):
 
 
 class SearchScope(BrowserBase):
-    def test_search_substring_with_glob_wrap(self):
-        self.browser._search.setText("alph")
+    def test_search_substring_with_explicit_wildcards(self):
+        # Strict matching: a substring search needs explicit * wildcards.
+        self.browser._search.setText("*alph*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["alpha"])
 
+    def test_search_bare_term_is_exact(self):
+        # A bare term matches exactly — so a partial name against the
+        # name+tags haystack finds nothing without wildcards.
+        self.browser._search.setText("alph")
+        self.browser._apply_filter()
+        self.assertEqual(self.proxy_names(), [])
+
     def test_search_comma_delimited(self):
-        self.browser._search.setText("alph,bet")
+        self.browser._search.setText("*alph*, *bet*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["alpha", "beta"])
 
@@ -146,22 +154,31 @@ class SearchScope(BrowserBase):
 
     def test_scope_tags_only(self):
         self.browser.set_search_scope(SCOPE_TAGS)
-        self.browser._search.setText("rig")
+        self.browser._search.setText("*rig*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["alpha"])
 
     def test_scope_name_only_excludes_tag_match(self):
         self.browser.set_search_scope(SCOPE_NAME)
-        self.browser._search.setText("anim")
+        self.browser._search.setText("*anim*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), [])
 
     def test_scope_both(self):
         self.browser.set_search_scope(SCOPE_BOTH)
-        self.browser._search.setText("anim")
+        self.browser._search.setText("*anim*")
         self.browser._apply_filter()
         # alpha and beta both have anim tag; haystack=name+tags so both match
         self.assertEqual(self.proxy_names(), ["alpha", "beta"])
+
+    def test_search_inline_negation_excludes(self):
+        # "!term" inside the field carves out an inline exclusion: keep the anim
+        # rows but drop alpha. Proves the FilterOption ->
+        # filter_list(negate_prefix=...) wiring end-to-end.
+        self.browser.set_search_scope(SCOPE_BOTH)
+        self.browser._search.setText("*anim*, !*alpha*")
+        self.browser._apply_filter()
+        self.assertEqual(self.proxy_names(), ["beta"])
 
 
 class TagChipFilter(BrowserBase):
@@ -273,36 +290,37 @@ class SelfExclusion(BrowserBase):
 
 class FilterEnableToggle(BrowserBase):
     def test_filter_disabled_ignores_text_query(self):
-        # alpha matches "alph" while the search filter is enabled
-        self.browser._search.setText("alph")
+        # alpha matches "*alph*" while the search filter is enabled
+        self.browser._search.setText("*alph*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["alpha"])
         # Disable the search filter — text query should be ignored
-        self.browser._set_search_filter_enabled(False)
+        self.browser._search_filter.set_on(False)
         self.assertEqual(self.proxy_names(), ["alpha", "beta", "gamma"])
         # Re-enable — query takes effect again
-        self.browser._set_search_filter_enabled(True)
+        self.browser._search_filter.set_on(True)
         self.assertEqual(self.proxy_names(), ["alpha"])
 
     def test_filter_enabled_persists(self):
-        self.browser._set_search_filter_enabled(False)
+        self.browser._search_filter.set_on(False)
         self.assertFalse(
             self.sb.settings.branch("ui_browser").value(
                 "search.filter_enabled", True
             )
         )
 
-    def test_exclude_filter_disabled_ignores_exclude_query(self):
-        self.browser._exclude.setText("alph")
+    def test_disabling_filter_ignores_inline_exclusion(self):
+        # An inline !exclusion is part of the text filter, so toggling the
+        # filter off reveals everything (the exclusion stops applying too).
+        self.browser._search.setText("!*alph*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["beta", "gamma"])
-        self.browser._set_exclude_filter_enabled(False)
+        self.browser._search_filter.set_on(False)
         self.assertEqual(self.proxy_names(), ["alpha", "beta", "gamma"])
 
     def test_chip_filter_still_applies_when_text_filter_disabled(self):
         # Hide-by-tag and chip filters operate independently of the text filter
-        self.browser._set_search_filter_enabled(False)
-        self.browser._set_exclude_filter_enabled(False)
+        self.browser._search_filter.set_on(False)
         self.browser._on_chip_toggled("rig", True)  # only alpha has rig
         self.assertEqual(self.proxy_names(), ["alpha"])
 
@@ -334,29 +352,24 @@ class LaunchDefaults(BrowserBase):
         self.assertEqual(self.browser._cmb_theme.currentText(), "dark")
 
 
-class ExcludeFilter(BrowserBase):
+class InlineExclude(BrowserBase):
+    """Exclusion via the single search field's ``!term`` syntax (no exclude row)."""
+
     def test_exclude_substring_drops_matches(self):
-        self.browser._exclude.setText("alph")
+        self.browser._search.setText("!*alph*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["beta", "gamma"])
 
     def test_exclude_glob(self):
-        self.browser._exclude.setText("a*")
+        self.browser._search.setText("!a*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["beta", "gamma"])
 
     def test_exclude_combined_with_include(self):
-        # Include any of {alpha, beta, gamma}; exclude beta
-        self.browser._search.setText("a")  # matches alpha + beta + gamma
-        self.browser._exclude.setText("beta")
+        # Include anything containing 'a'; exclude beta — all in one field.
+        self.browser._search.setText("*a*, !*beta*")
         self.browser._apply_filter()
         self.assertEqual(self.proxy_names(), ["alpha", "gamma"])
-
-    def test_exclude_persisted(self):
-        self.browser._exclude.setText("foo")
-        self.assertEqual(
-            self.sb.settings.branch("ui_browser").value("exclude.text"), "foo"
-        )
 
 
 class LaunchParenting(BrowserBase):
@@ -569,10 +582,8 @@ class HeaderMenuAndPresets(BrowserBase):
 
     def test_export_preset_data_round_trip(self):
         # Mutate state, export, reset, import — should round-trip.
-        self.browser._search.setText("alph")
-        self.browser._exclude.setText("xyz")
+        self.browser._search.setText("alph, !xyz")
         self.browser.set_search_scope(SCOPE_TAGS)
-        self.browser.set_exclude_scope(SCOPE_NAME)
         self.browser._show.setCurrentText(SHOW_ALL)
         self.browser._toggle_hide_ui("alpha", hide=True)
         self.browser._toggle_hide_tag("rig", hide=True)
@@ -583,9 +594,7 @@ class HeaderMenuAndPresets(BrowserBase):
 
         # Now reset to a different state
         self.browser._search.setText("")
-        self.browser._exclude.setText("")
         self.browser.set_search_scope(SCOPE_NAME)
-        self.browser.set_exclude_scope(SCOPE_BOTH)
         self.browser._show.setCurrentText(SHOW_VISIBLE)
         self.browser.hidden_uis = set()
         self.browser.hidden_tags = set()
@@ -595,14 +604,8 @@ class HeaderMenuAndPresets(BrowserBase):
         # Re-import the snapshot
         self.browser._import_preset_data(snapshot)
 
-        self.assertEqual(self.browser._search.text(), "alph")
-        self.assertEqual(self.browser._exclude.text(), "xyz")
-        self.assertEqual(
-            self.browser._scope_for(self.browser._search), SCOPE_TAGS
-        )
-        self.assertEqual(
-            self.browser._scope_for(self.browser._exclude), SCOPE_NAME
-        )
+        self.assertEqual(self.browser._search.text(), "alph, !xyz")
+        self.assertEqual(self.browser._search_filter.scope, SCOPE_TAGS)
         self.assertEqual(self.browser._show.currentText(), SHOW_ALL)
         self.assertIn("alpha", self.browser.hidden_uis)
         self.assertIn("rig", self.browser.hidden_tags)
@@ -613,6 +616,19 @@ class HeaderMenuAndPresets(BrowserBase):
         # Sparse preset (only the search.text field) should not raise.
         self.browser._import_preset_data({"search": {"text": "expo"}})
         self.assertEqual(self.browser._search.text(), "expo")
+
+    def test_import_preset_data_tolerates_legacy_exclude_section(self):
+        # A pre-consolidation preset carried a separate "exclude" section; the
+        # single-field browser must ignore it without raising and still apply
+        # the search section.
+        self.browser._import_preset_data(
+            {
+                "search": {"text": "keep", "filter_enabled": True},
+                "exclude": {"text": "drop", "scope": SCOPE_NAME},
+            }
+        )
+        self.assertEqual(self.browser._search.text(), "keep")
+        self.assertFalse(hasattr(self.browser, "_exclude"))
 
     def test_preset_manager_metadata_provider_wired(self):
         # The PresetManager on the header menu must have our hooks set.
@@ -918,7 +934,7 @@ class TagCellRenderingAndPerf(BrowserBase):
         standard blue selection fill the user expects on the browser.
         Locked in to catch a future re-inheritance.
         """
-        from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
+        from uitk.widgets.delegates.row_selection import RowSelectionBorderDelegate
         self.assertNotIsInstance(
             self.browser._row_delegate, RowSelectionBorderDelegate,
             "Browser delegate must NOT inherit RowSelectionBorderDelegate "

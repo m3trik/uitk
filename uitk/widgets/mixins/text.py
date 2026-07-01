@@ -1,6 +1,183 @@
 # !/usr/bin/python
 # coding=utf-8
+"""Text rendering for uitk widgets.
+
+Hosts the stateless :class:`RichTextFormatter` (the single source of truth
+for uitk's HTML/rich-text vocabulary) alongside the widget mixins that
+render it — :class:`RichText` and :class:`TextOverlay` — plus the
+:class:`TextTruncation` font-metrics helper.
+"""
+from typing import Optional, Union
+
 from qtpy import QtWidgets, QtCore, QtGui
+
+
+def _load_log_colors() -> dict:
+    """Return pythontk's logging severity palette, or ``{}`` if unavailable.
+
+    Sourced from pythontk's logging colours so the message boxes, text
+    views, footers, and console logs all share one palette. Optional at
+    this layer — a minimal environment without pythontk falls back to the
+    per-token literal colours in :attr:`RichTextFormatter.PREFIX_SEVERITY`.
+    """
+    try:
+        from pythontk.core_utils.logging_mixin import LoggingMixin
+
+        return dict(LoggingMixin.LOG_COLORS)
+    except Exception:  # noqa: BLE001 -- pythontk logging optional at this layer.
+        return {}
+
+
+class RichTextFormatter:
+    """Stateless HTML pipeline shared by uitk's rich-text widgets.
+
+    Pure class-method transforms used by :class:`MessageBox` (QLabel body)
+    and :class:`TextViewBox` (QTextEdit body), and the single source of
+    truth for uitk's styled-tag vocabulary so message boxes, text views,
+    footers, and console logs all render the same palette. Both consumers
+    route through Qt's QTextDocument engine, so the same pipeline yields
+    matching output in either widget.
+
+    Backgrounds are returned as CSS strings (see :meth:`resolve_background`)
+    rather than baked into the HTML: ``background-color`` on inline
+    ``<font>`` / ``<span>`` tags is unreliable across Qt builds, so the host
+    widget applies the value via QSS on a stable selector instead.
+
+    Retheme by subclassing and overriding the class attributes
+    (``LOG_COLORS``, ``PREFIX_SEVERITY``, ``INLINE_STYLES``,
+    ``DEFAULT_BACKGROUND_RGB``); the transform logic resolves against them
+    at call time, so no method needs touching.
+    """
+
+    #: Severity -> colour. SSoT = pythontk's logging colours; ``{}`` falls
+    #: back to the per-token literals in :attr:`PREFIX_SEVERITY`.
+    LOG_COLORS = _load_log_colors()
+
+    #: Level-prefix token -> (``LOG_COLORS`` severity key, literal fallback).
+    #: Resolved against ``LOG_COLORS`` at call time, so overriding the palette
+    #: restyles the prefixes for free.
+    PREFIX_SEVERITY = {
+        "Error:": ("ERROR", "red"),
+        "Warning:": ("WARNING", "yellow"),
+        "Note:": ("NOTICE", "blue"),
+        "Result:": ("RESULT", "green"),
+    }
+
+    #: Bare HTML tag -> style-bearing equivalent.
+    INLINE_STYLES = {
+        "<p>": '<p style="color:white;">',
+        "<hl>": '<hl style="color:yellow; font-weight: bold;">',
+        "<body>": '<body style="color;">',
+        "<b>": '<b style="font-weight: bold;">',
+        "<strong>": '<strong style="font-weight: bold;">',
+        "<mark>": '<font style="background-color: grey;">',
+        "</mark>": "</font>",
+    }
+
+    #: Default background fill (R, G, B); see :meth:`resolve_background`.
+    DEFAULT_BACKGROUND_RGB = (50, 50, 50)
+
+    @classmethod
+    def prefix_styles(cls) -> dict:
+        """Map each level-prefix token to its coloured ``<hl>`` span."""
+        return {
+            token: f'<hl style="color:{cls.LOG_COLORS.get(key, fallback)};">{token}</hl>'
+            for token, (key, fallback) in cls.PREFIX_SEVERITY.items()
+        }
+
+    @classmethod
+    def apply_prefix_styles(cls, string: str) -> str:
+        """Replace level-prefix tokens (``Error:``, ``Warning:`` ...) with styled spans."""
+        for token, span in cls.prefix_styles().items():
+            string = string.replace(token, span)
+        return string
+
+    @classmethod
+    def apply_inline_styles(cls, string: str) -> str:
+        """Replace bare HTML tags with their style-bearing equivalents."""
+        for bare, styled in cls.INLINE_STYLES.items():
+            string = string.replace(bare, styled)
+        return string
+
+    @staticmethod
+    def wrap_font_color(string: str, color: str) -> str:
+        return f"<font color={color}>{string}</font>"
+
+    @staticmethod
+    def wrap_font_size(string: str, size) -> str:
+        return f"<font size={size}>{string}</font>"
+
+    @classmethod
+    def resolve_background(cls, background) -> Optional[str]:
+        """Convert a background parameter to a CSS colour string or ``None``.
+
+        Parameters:
+            background: ``False`` / ``0`` -> ``None`` (no background);
+                ``True`` -> opaque default dark grey;
+                ``float`` in [0, 1] -> that opacity on the default dark grey;
+                ``str`` -> returned verbatim (any valid CSS colour).
+        """
+        if background is False or background == 0:
+            return None
+        r, g, b = cls.DEFAULT_BACKGROUND_RGB
+        if background is True:
+            return f"rgba({r},{g},{b},255)"
+        if isinstance(background, (int, float)):
+            alpha = max(0, min(255, int(background * 255)))
+            return f"rgba({r},{g},{b},{alpha})"
+        return background
+
+    @classmethod
+    def format(
+        cls,
+        string: str,
+        *,
+        align: str = "left",
+        font_color: str = "white",
+        font_size: Union[int, str, None] = None,
+    ) -> str:
+        """Apply the standard uitk HTML pipeline to a string.
+
+        Wraps in an alignment ``<div>`` (when no ``align=`` is already
+        present), substitutes prefix tokens and known tags, then optionally
+        wraps in ``<font color>`` / ``<font size>``.
+
+        Parameters:
+            string: Raw HTML or plain text.
+            align: Alignment used only when *string* has no ``align=``.
+            font_color: Foreground colour. Pass ``None`` or ``""`` to skip.
+            font_size: ``<font size=N>`` value. Pass ``None`` to leave the
+                host widget's native font size in effect.
+        """
+        if "align=" not in string:
+            string = f"<div align='{align}'>{string}</div>"
+        s = cls.apply_prefix_styles(string)
+        s = cls.apply_inline_styles(s)
+        if font_color:
+            s = cls.wrap_font_color(s, font_color)
+        if font_size is not None:
+            s = cls.wrap_font_size(s, font_size)
+        return s
+
+
+def _make_translucent_label(parent) -> QtWidgets.QLabel:
+    """Build a rich-text QLabel inside a zero-margin QHBoxLayout on *parent*.
+
+    Shared scaffold for :class:`RichText` and :class:`TextOverlay`: a
+    translucent, click-through QLabel that renders Qt rich text as an
+    overlay on the host widget. The layout is parented to (and owned by)
+    *parent*; the configured label is returned for the caller to style and
+    track.
+    """
+    layout = QtWidgets.QHBoxLayout(parent)
+    layout.setContentsMargins(0, 0, 0, 0)
+
+    label = QtWidgets.QLabel(parent)
+    label.setTextFormat(QtCore.Qt.RichText)
+    label.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+    label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+    layout.addWidget(label)
+    return label
 
 
 class TextTruncation:
@@ -448,17 +625,15 @@ class TextTruncation:
 
 
 class RichText:
-    """Rich text support for widgets.
-    TextMixin with rich text formatting will be set as rich text, otherwise it will be handled as usual.
+    """Rich-text support mixin for widgets.
 
-    ex. <font style="color: rgb(80,180,100)">Operation successful.</font>
-    ex. <hl style="color:red;">Error:</hl>
-    ex. '<p style="color:white;">'
-    ex. '<b style="font-weight: bold;">'
-    ex. '<strong style="font-weight: bold;">'
-    ex. '<mark style="background-color: grey">'
-    escape: '<' replace with &lt;
-    escape: '>' replace with &gt;
+    When the text contains HTML tags it is rendered as Qt rich text via an
+    overlay QLabel; otherwise it falls through to the widget's normal text
+    handling. The styled-tag vocabulary (``<hl>``, ``<mark>``, the severity
+    prefixes, ...) is defined once on :class:`RichTextFormatter` — the SSoT
+    the rich-text widgets format against.
+
+    Escape literal angle brackets as ``&lt;`` / ``&gt;``.
     """
 
     has_rich_text = False
@@ -508,22 +683,11 @@ class RichText:
             )  # return standard widget sizeHint
 
     def _createRichTextLabel(self, index):
-        """Return a QLabel and inside a QHBoxLayout."""
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        # layout.setSpacing(0)
-
-        label = QtWidgets.QLabel(self)
-        label.setTextFormat(QtCore.Qt.RichText)
+        """Return a translucent rich-text QLabel inside a QHBoxLayout."""
+        label = _make_translucent_label(self)
         self.richTextLabelDict[index] = label
 
-        label.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-        # label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        layout.addWidget(label)
-
         self.set_rich_text_style(index)
-
         self.has_rich_text = True
 
         return label
@@ -657,16 +821,7 @@ class TextOverlay:
             return self._textOverlayLabel
 
         except AttributeError:
-            layout = QtWidgets.QHBoxLayout(self)
-            layout.setContentsMargins(0, 0, 0, 0)
-
-            self._textOverlayLabel = QtWidgets.QLabel(self)
-            self._textOverlayLabel.setTextFormat(QtCore.Qt.RichText)
-
-            self._textOverlayLabel.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-            self._textOverlayLabel.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-            layout.addWidget(self._textOverlayLabel)
-
+            self._textOverlayLabel = _make_translucent_label(self)
             self._textOverlayLabel.setStyleSheet(
                 """
                     QLabel {

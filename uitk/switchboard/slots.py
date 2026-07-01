@@ -333,8 +333,20 @@ class SlotWrapper:
         the UI) is honoured for rapid-fire signals.
         """
 
-        # History Tracking
+        # History Tracking. slot_history keeps bare methods (back-compat:
+        # prev_slot consumers read __doc__/__name__ off them). The live wrapper
+        # — which carries the widget context repeat_last() needs — is captured
+        # separately. Suppressed while repeat_last() re-dispatches so a repeat
+        # bound as a slot can't capture itself.
         self.sb.slot_history(add=self.slot)
+        if not getattr(self.sb, "_suppress_slot_capture", False):
+            self.sb._last_slot_wrapper = self
+            # Capture the exact args/kwargs this slot ran with so repeat_last()
+            # can replay it faithfully. Many slots take a signal payload as a
+            # required positional (e.g. a list slot's clicked ``item``); a bare
+            # wrapper() re-call would drop it and raise TypeError.
+            self._last_invocation_args = args
+            self._last_invocation_kwargs = kwargs
 
         # Wait cursor for the slot's duration. setOverrideCursor pushes
         # onto Qt's cursor stack; the matching restore in ``finally``
@@ -1201,36 +1213,13 @@ class SwitchboardSlotsMixin:
         Returns:
             (object/list): Slot method(s) based on index or slice.
         """
-        # Keep original list length restricted to last 'length' elements
-        self._slot_history = self._slot_history[-length:]
-        # Append new entries to the history
+        hist = self._slot_history
+        hist.maxlen = length
         if add:
-            self._slot_history.extend(ptk.make_iterable(add))
-        # Remove entries from the history
+            hist.add(add)
         if remove:
-            remove_items = ptk.make_iterable(remove)
-            for item in remove_items:
-                try:
-                    self._slot_history.remove(item)
-                except ValueError:
-                    self.logger.debug(f"Item '{item}' not found in slot history.")
-        # Remove any previous duplicates if they exist; keeping the last added element.
-        if not allow_duplicates:
-            self._slot_history = list(dict.fromkeys(self._slot_history[::-1]))[::-1]
-
-        history = self._slot_history
-        if inc or exc:
-            history = ptk.filter_list(
-                history, inc, exc, lambda m: m.__name__, check_unmapped=True
-            )
-
-        if index is None:
-            return history  # Return entire list if index is None
-        else:
-            try:
-                return history[index]  # Return slot(s) based on the index
-            except IndexError:
-                return [] if isinstance(index, int) else None
+            hist.remove(remove)
+        return hist.get(index, allow_duplicates=allow_duplicates, inc=inc, exc=exc)
 
 
 # --------------------------------------------------------------------------------------------

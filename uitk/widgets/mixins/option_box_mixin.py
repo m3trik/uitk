@@ -138,6 +138,29 @@ class OptionBoxMixin:
                 mgr.set_action(handler)
             return self
 
+        def disable(self, **kwargs) -> "OptionBoxMixin._OptionsWrapper":
+            """Add a universal disable button (see ``OptionBoxManager.set_disable``).
+
+            Toggles the wrapped widget's enabled state while the button stays
+            clickable, so it can always be re-enabled.
+            """
+            mgr = self._mgr
+            if mgr is not None:
+                mgr.set_disable(**kwargs)
+            return self
+
+        def filter(self, **kwargs) -> "OptionBoxMixin._OptionsWrapper":
+            """Turn the wrapped text widget into a filter field.
+
+            See ``OptionBoxManager.set_filter`` — adds a filter on/off toggle,
+            text persistence, and an optional scope cycle. Skipped with a warning
+            on a non-text host (``FilterOption.is_compatible``).
+            """
+            mgr = self._mgr
+            if mgr is not None:
+                mgr.set_filter(**kwargs)
+            return self
+
         def option_menu(
             self,
             *,

@@ -14,9 +14,20 @@ from .overlay import Overlay
 from ._resolver import parse_binding_keys, resolve_target_menu, count_buttons
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.menuButton import MenuButton
-from uitk.widgets.mixins.shortcuts import GlobalShortcut
+from uitk.widgets.mixins.shortcuts import GlobalShortcut, host_namespace_suffix
 from uitk.compile import precompile_async
 from uitk.loaders import CompiledLoader
+
+
+# Tags marking the marking menu's own gesture surfaces — the radial
+# start/submenu UIs, hosted as stacked-widget pages. The fade pass, the
+# activation-release hide sweep, and the navigation paths all skip UIs carrying
+# these so the active surface stays bright / open. Module-scoped (not a class
+# attr) so the methods that read it stay callable when borrowed onto a
+# lightweight test double, and because the same convention is shared with the
+# switchboard (see ``_core`` / ``ui_handler``) rather than being
+# MarkingMenu-specific.
+_MARKING_MENU_TAGS = ("startmenu", "submenu")
 
 
 class MarkingMenu(
@@ -94,6 +105,24 @@ class MarkingMenu(
     # path unless a repro is actively being recorded. NOT the log level: the class
     # logger sits at NOTSET, which makes isEnabledFor(DEBUG) unreliable as a gate.
     _input_logging_on: bool = False
+
+    # The mouse-button gestures whose target menu the host's "Menu Bindings"
+    # combos edit. Surfaced in the unified shortcut editor as hidden, read-only
+    # entries (the routing table is not a key trigger — the combos stay its
+    # editor), so "everything is in the register" without cluttering the default
+    # view. The key-only default menu is intentionally absent (it isn't a mouse
+    # chord; its trigger is the activation key, which has its own visible entry).
+    _ROUTE_GESTURES = (
+        ("left", ("LeftButton",)),
+        ("middle", ("MiddleButton",)),
+        ("right", ("RightButton",)),
+        ("left_right", ("LeftButton", "RightButton")),
+    )
+    _BUTTON_LABELS = {
+        "LeftButton": "Left",
+        "MiddleButton": "Middle",
+        "RightButton": "Right",
+    }
 
     def __init__(
         self,
@@ -227,6 +256,13 @@ class MarkingMenu(
         self.key_show = self._activation_key
         self.key_close = QtCore.Qt.Key_Escape
         self._windows_to_restore = set()
+        # The dim pass is a once-per-hold snapshot: it runs on key_show press
+        # and must NOT re-run while the key is held (a QShortcut auto-repeats by
+        # default). Re-running would re-snapshot and dim windows/menus opened
+        # *during* the hold — which are the current operation and must stay
+        # bright. A separate bool (not `bool(_windows_to_restore)`) is required
+        # so an empty snapshot still blocks a re-run.
+        self._dim_snapshot_taken = False
 
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
@@ -239,17 +275,12 @@ class MarkingMenu(
         self._pending_show_timer.setSingleShot(True)
         self._pending_show_timer.timeout.connect(self._perform_transition)
 
-        # Auto-install shortcut if parent is provided
+        # Auto-install the activation shortcut if a parent is provided. Extracted
+        # to _install_activation_shortcut so set_activation_key can re-create it on
+        # the new key; the host is remembered for that re-install.
+        self._activation_parent = parent
         if parent:
-            if not self.key_show:
-                self.logger.warning("key_show is invalid; defaulting to F12 shortcut")
-                self.key_show = QtCore.Qt.Key_F12
-
-            self._shortcut_instance = GlobalShortcut(
-                self.key_show, parent, context=QtCore.Qt.ApplicationShortcut
-            )
-            self._shortcut_instance.pressed.connect(self._on_activation_press)
-            self._shortcut_instance.released.connect(self._on_activation_release)
+            self._install_activation_shortcut()
 
     def _on_activation_press(self, buttons=None):
         """Handle the global shortcut press event.
@@ -379,7 +410,7 @@ class MarkingMenu(
 
         # Hide any visible standalone windows that aren't pinned.
         for win in list(self.sb.visible_windows):
-            if win is not self and not win.has_tags(["startmenu", "submenu"]):
+            if win is not self and not win.has_tags(_MARKING_MENU_TAGS):
                 if hasattr(win, "request_hide"):
                     win.request_hide()
 
@@ -465,9 +496,12 @@ class MarkingMenu(
         resolves to a UI it doesn't even have. Namespacing by ``context_tags``
         (``..._maya`` / ``..._blender``) keeps each DCC's binding set independent;
         an empty/absent context (standalone) keeps the legacy un-suffixed key.
+
+        The host suffix is computed by the shared :func:`host_namespace_suffix`,
+        the same one the shortcut/command store uses — so the two binding systems
+        can never disagree on a host's identity.
         """
-        tags = sorted(context_tags or ())
-        return "marking_menu_bindings" + ("_" + "_".join(tags) if tags else "")
+        return "marking_menu_bindings" + host_namespace_suffix(context_tags)
 
     @property
     def _bindings_store(self):
@@ -528,7 +562,7 @@ class MarkingMenu(
         """
         # First check if it's a stacked menu
         ui = self.sb.get_ui(name)
-        if ui and ui.has_tags(["startmenu", "submenu"]):
+        if ui and ui.has_tags(_MARKING_MENU_TAGS):
             # Ensure proper styling is applied (WindowManager owns the styling logic)
             self.ui_handler.apply_styles(ui)
             return ui
@@ -601,6 +635,214 @@ class MarkingMenu(
 
             self.logger.warning(
                 "No activation key found in bindings. Include Key_* in at least one binding."
+            )
+
+        # Keep the unified shortcut-editor register in step with the live bindings
+        # (activation key + chord→menu targets). Cheap and bind=False, so no
+        # QShortcut churn; guarded for a switchboard predating the API.
+        self._register_shortcut_editor_bindings()
+
+    def _install_activation_shortcut(self) -> None:
+        """(Re)create the application-scoped GlobalShortcut that shows the menu on
+        the current activation key.
+
+        Disposes any prior instance first, so changing the activation key never
+        leaves the old key live. Shared by construction and
+        :meth:`set_activation_key`; a no-op without a host parent.
+        """
+        parent = getattr(self, "_activation_parent", None)
+        if parent is None:
+            return
+        # Re-derive the live key from the freshly-parsed activation key so a
+        # set_activation_key change actually MOVES the shortcut — reading a
+        # cached self.key_show would re-bind the old key (the shortcut would stay
+        # on F12 after the user picked F11). Fall back to F12 when the bindings
+        # carry no valid activation key.
+        if not self._activation_key:
+            self.logger.warning("No valid activation key found; defaulting to F12.")
+        self.key_show = self._activation_key or QtCore.Qt.Key_F12
+        if self._shortcut_instance is not None:
+            try:
+                self._shortcut_instance.dispose()
+            except Exception:
+                self.logger.debug(
+                    "disposing prior activation shortcut failed", exc_info=True
+                )
+        self._shortcut_instance = GlobalShortcut(
+            self.key_show, parent, context=QtCore.Qt.ApplicationShortcut
+        )
+        self._shortcut_instance.pressed.connect(self._on_activation_press)
+        self._shortcut_instance.released.connect(self._on_activation_release)
+
+    def set_activation_key(self, new_key: str) -> None:
+        """Rebind the marking menu's activation key across every chord.
+
+        The activation key (``key_show``) is the shared prefix of *every* binding
+        key (``Key_F12|LeftButton`` …), so changing it is a cross-cutting rewrite,
+        not a single edit: each chord's ``Key_*`` part is swapped, the set is
+        re-persisted (rebuilding the resolver + re-registering the editor entries),
+        and the live activation ``GlobalShortcut`` is re-installed on the new key.
+        Centralized here so the Settings panel and the shortcut editor share one
+        implementation — the single source of truth for "what shows the menu".
+
+        Accepts a Qt key name (``"Key_F11"``) or a bare / NativeText key
+        (``"F11"``, auto-prefixed). A no-op when empty, unchanged, or not a valid
+        ``QtCore.Qt.Key_*`` — the menu must always keep a working activation key
+        (an invalid one leaves ``_activation_key`` None and the menu un-triggerable).
+        """
+        if not new_key:
+            return
+        new_part = new_key if str(new_key).startswith("Key_") else f"Key_{new_key}"
+        if not hasattr(QtCore.Qt, new_part):
+            self.logger.warning(
+                f"Ignoring invalid activation key {new_key!r} (no QtCore.Qt.{new_part})."
+            )
+            return
+        old_part = self._activation_key_str
+        if new_part == old_part:
+            return
+
+        rebound = {}
+        for chord_key, menu in self.bindings.items():
+            parts = [new_part if p == old_part else p for p in chord_key.split("|")]
+            rebound["|".join(parts)] = menu
+        # Persist -> _bindings_store.changed -> _build_bindings (reparse + refresh
+        # the register). Then move the live activation shortcut onto the new key.
+        self.bindings = rebound
+        self._install_activation_shortcut()
+
+    def start_menu_names(self, short: bool = True) -> list:
+        """Available ``#startmenu`` UI names, sorted.
+
+        The set the host's "Menu Bindings" combos pick a target menu from.
+        ``short=True`` strips the ``#startmenu`` tag ("cameras"); ``False`` keeps
+        the registered filename ("cameras#startmenu"). Centralizes what the host's
+        settings slot used to compute inline (``_get_startmenus``).
+        """
+        filenames = self.sb.registry.ui_registry.get("filename") or []
+        names = sorted(f for f in filenames if "#startmenu" in f)
+        return [n.replace("#startmenu", "") for n in names] if short else names
+
+    # -- unified shortcut-editor register ("hotkey register" integration) ---
+
+    def _activation_key_display(self) -> str:
+        """Current activation key as an editor / NativeText string ("F12")."""
+        return (self._activation_key_str or "Key_F12").replace("Key_", "")
+
+    def _default_activation_key_str(self) -> str:
+        """The *default* activation key ("F12") from the construction bindings —
+        the editor's reset/default target for the activation-key entry."""
+        for chord_key in self.default_bindings:
+            for part in str(chord_key).split("|"):
+                if part.startswith("Key_"):
+                    return part.replace("Key_", "")
+        return "F12"
+
+    def _chord_key_for(self, buttons) -> str:
+        """The normalized binding key for the current activation key + *buttons*."""
+        return "|".join(sorted([self._activation_key_str or "Key_F12", *buttons]))
+
+    def _route_display(self, buttons) -> str:
+        """Human chord for a route, e.g. ``"F12 + Left"`` — the read-only trigger
+        shown in the editor's Shortcut column (a gesture is still a trigger)."""
+        key_disp = self._activation_key_display()
+        if not buttons:
+            return key_disp
+        btns = " + ".join(self._BUTTON_LABELS.get(b, b) for b in buttons)
+        return f"{key_disp} + {btns}"
+
+    def get_route_target(self, buttons=()) -> str:
+        """Full target menu (…#startmenu) bound to the activation key + *buttons*
+        gesture, or "" when unbound.
+
+        ``buttons`` is a sequence of Qt button-flag names (``("LeftButton",)``,
+        ``("LeftButton", "RightButton")``); ``()`` = the key-only default.
+        Key-agnostic — resolved against the *current* activation key, so it stays
+        correct after :meth:`set_activation_key`. This is why the host's Menu
+        Bindings combos bind by gesture rather than a captured key string.
+        """
+        return self.bindings.get(self._chord_key_for(buttons), "") or ""
+
+    def set_route_target(self, buttons, menu: str) -> None:
+        """Bind the activation key + *buttons* gesture to *menu* (a …#startmenu UI
+        name). Persists via the host-namespaced store (auto rebuild + notify)."""
+        bindings = dict(self.bindings)
+        bindings[self._chord_key_for(buttons)] = menu
+        self.bindings = bindings
+
+    def _route_target(self, buttons) -> str:
+        """Short (tag-stripped) target menu for a route, or "" when unset."""
+        return self.get_route_target(buttons).replace("#startmenu", "")
+
+    def _register_shortcut_editor_bindings(self) -> None:
+        """Surface the marking-menu bindings in the unified shortcut editor.
+
+        Registers the activation key as a **visible, editable** external binding
+        (its edit routes back through :meth:`set_activation_key`), and each
+        chord→menu route as a **hidden, read-only** entry (edited via the host's
+        "Menu Bindings" combos — a routing table isn't a key trigger). All are
+        ``bind=False``: the register creates no ``QShortcut``; the marking menu's
+        own activation ``GlobalShortcut`` owns the real key (a second one would
+        collide — the ambiguous-overload failure). Re-run on every binding change
+        so shown values/targets stay live. No-op without an activation key, or on a
+        switchboard predating the external-binding API (older uitk / a test double).
+        """
+        sb = getattr(self, "sb", None)
+        if (
+            sb is None
+            or not hasattr(sb, "register_command")
+            or not self._activation_key_str
+        ):
+            return
+        try:
+            sb.register_command(
+                "marking_menu_show",
+                label="Show Marking Menu",
+                doc="Hold to open the marking menu.",
+                sequence=self._default_activation_key_str(),
+                scope="application",
+                bind=False,
+                clearable=False,  # set_activation_key("") no-ops — the menu must
+                # always keep a working activation key, so don't offer a clear.
+                value_getter=self._activation_key_display,
+                on_rebind=lambda seq, _scope: self.set_activation_key(seq),
+            )
+            for gesture, buttons in self._ROUTE_GESTURES:
+                target = self._route_target(buttons)
+                gesture_label = " + ".join(
+                    self._BUTTON_LABELS.get(b, b) for b in buttons
+                )
+                chord = self._route_display(buttons)
+                sb.register_command(
+                    f"marking_menu_route_{gesture}",
+                    # The action names WHAT the gesture opens (the target menu) —
+                    # not the mouse button; the chord itself is in the Shortcut
+                    # column. A fuller description rides the hover tooltip.
+                    label=(
+                        f"Marking Menu: {target.title()}"
+                        if target
+                        else f"Marking Menu ({gesture_label}) — unbound"
+                    ),
+                    doc=(
+                        f"Opens the {target} menu on {chord} — set targets in "
+                        "Settings ▸ Menu Bindings."
+                        if target
+                        else f"The {gesture_label} gesture is unbound."
+                    ),
+                    sequence=chord,  # default == current, so it isn't flagged "modified"
+                    scope="application",
+                    bind=False,
+                    hidden=True,
+                    editable=False,
+                    value_getter=(lambda b=buttons: self._route_display(b)),
+                )
+        except TypeError:
+            # register_command predates the external-binding kwargs — the Settings
+            # combos remain the sole binding editor.
+            self.logger.debug(
+                "register_command lacks external-binding support; marking-menu "
+                "bindings not surfaced in the editor.",
+                exc_info=True,
             )
 
     def addWidget(self, widget: QtWidgets.QWidget) -> None:
@@ -707,7 +949,7 @@ class MarkingMenu(
             f"has_header={hasattr(ui, 'header')}"
         )
 
-        if ui.has_tags(["startmenu", "submenu"]):  # StackedWidget
+        if ui.has_tags(_MARKING_MENU_TAGS):  # StackedWidget
             ui.style.set(theme="dark", style_class="translucentBgNoBorder")
             ui.ensure_on_screen = False
             # Stacked menus are transient — they hide on every transition
@@ -770,7 +1012,7 @@ class MarkingMenu(
         if not found_ui:
             raise ValueError(f"UI not found: {ui}")
 
-        is_stacked = found_ui.has_tags(["startmenu", "submenu"])
+        is_stacked = found_ui.has_tags(_MARKING_MENU_TAGS)
 
         # Apply appropriate initialization based on UI type
         if not found_ui.is_initialized:
@@ -1126,7 +1368,7 @@ class MarkingMenu(
                 # category button like 'key' resolves (on release) to the native
                 # Maya 'key' menu — an untagged window — so this opens it
                 # standalone; a bare submenu target opens in the overlay.
-                is_standalone = not menu.has_tags(["startmenu", "submenu"])
+                is_standalone = not menu.has_tags(_MARKING_MENU_TAGS)
                 self.show(menu, force=is_standalone)
                 return True
 
@@ -1134,7 +1376,7 @@ class MarkingMenu(
         if hasattr(widget, "clicked"):
             ui = getattr(widget, "ui", None)
             base_name = getattr(widget, "base_name", lambda: None)()
-            ui_is_menu = bool(ui and ui.has_tags(["startmenu", "submenu"]))
+            ui_is_menu = bool(ui and ui.has_tags(_MARKING_MENU_TAGS))
             if ui_is_menu and base_name != "chk":
                 # The leaf's slot actually fires here — a release hitting a leaf
                 # whose owning ``ui`` isn't a live menu falls through to the
@@ -1214,7 +1456,7 @@ class MarkingMenu(
         if count_buttons(self._to_int(event.buttons())) != 1:
             return False
         current_ui = self.sb.active_ui
-        if not (current_ui and current_ui.has_tags(["startmenu", "submenu"])):
+        if not (current_ui and current_ui.has_tags(_MARKING_MENU_TAGS)):
             return False
         target = self._owned_item_at(event.globalPos(), current_ui)
         return isinstance(target, QtWidgets.QAbstractButton)
@@ -1268,7 +1510,7 @@ class MarkingMenu(
             self.grabMouse()
 
         current_ui = self.sb.active_ui
-        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
+        if current_ui and current_ui.has_tags(_MARKING_MENU_TAGS):
             # Only start a new gesture if there isn't one already — otherwise
             # chord transitions (e.g. holding F12, tapping LMB) would rebind
             # start_pos to the cursor on every press, drifting the menu with
@@ -1310,7 +1552,7 @@ class MarkingMenu(
     def mouseDoubleClickEvent(self, event) -> None:
         """ """
         current_ui = self.sb.active_ui
-        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
+        if current_ui and current_ui.has_tags(_MARKING_MENU_TAGS):
             if event.button() == QtCore.Qt.LeftButton:
                 if event.modifiers() == QtCore.Qt.ControlModifier:
                     self.left_mouse_double_click_ctrl.emit()
@@ -1390,7 +1632,7 @@ class MarkingMenu(
         if (
             self._to_int(event.buttons()) != 0
             and current_ui
-            and current_ui.has_tags(["startmenu", "submenu"])
+            and current_ui.has_tags(_MARKING_MENU_TAGS)
         ):
             self._defer_chord_release(event)
             return True
@@ -1480,7 +1722,7 @@ class MarkingMenu(
                 f"{self._input_state()}"
             )
 
-        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
+        if current_ui and current_ui.has_tags(_MARKING_MENU_TAGS):
             # Release over an owned interactive item dispatches the click
             # IMMEDIATELY — on the FIRST release of a chord, with NO wait for any
             # other held button. This is the proven v1.0.66 order: it resolved
@@ -1620,7 +1862,7 @@ class MarkingMenu(
             self._init_ui(found_ui)
 
         # Determine Type: Marking Menu or Standalone Window?
-        is_marking_menu = found_ui.has_tags(["startmenu", "submenu"])
+        is_marking_menu = found_ui.has_tags(_MARKING_MENU_TAGS)
 
         if is_marking_menu:
             return self._show_marking_menu(found_ui, **kwargs)
@@ -1761,7 +2003,7 @@ class MarkingMenu(
             and invoker is not self
             and invoker is not widget
             and invoker.isVisible()
-            and not invoker.has_tags(["startmenu", "submenu"])
+            and not invoker.has_tags(_MARKING_MENU_TAGS)
             and widget.parent() is not invoker
         ):
             widget.setParent(invoker, QtCore.Qt.Window)
@@ -1813,7 +2055,7 @@ class MarkingMenu(
                 f"tags={getattr(current_ui, 'tags', None)}"
             )
             try:
-                if current_ui.has_tags(["startmenu", "submenu"]):
+                if current_ui.has_tags(_MARKING_MENU_TAGS):
                     header = current_ui.header
                     if header:
                         try:
@@ -1993,29 +2235,79 @@ class MarkingMenu(
             self._submenu_cache.clear()
         self._last_ui_history_check = None
 
-    def dim_other_windows(self) -> None:
-        """Dim all visible windows except the current one."""
-        if not self.isVisible():
-            return
+    def _set_dimmed(self, w, dimmed: bool) -> None:
+        """Fade (or restore) a single window/menu, guarded against deletion.
 
-        for win in self.sb.visible_windows:
-            if win is not self and not win.has_tags(["startmenu", "submenu"]):
-                self._windows_to_restore.add(win)
-                win.setWindowOpacity(0.15)
-                win.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        One primitive for both dimmed targets — top-level MainWindows and
+        their open Menus (which are separate Tool windows and so don't inherit
+        a parent's composited opacity). The try/except absorbs the case where
+        a target's C++ object was destroyed mid-hold (more likely now that
+        short-lived menus join the set).
+        """
+        try:
+            w.setWindowOpacity(0.15 if dimmed else 1.0)
+            w.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, dimmed)
+        except RuntimeError:
+            pass
+
+    def _dim_targets(self):
+        """Yield each background window/menu to fade for the current hold.
+
+        Two independent axes:
+
+        * **Windows** — every *visible* loaded window backgrounds, except the
+          marking menu's own radial surfaces (``startmenu``/``submenu``), which
+          are the active gesture surface and stay bright.
+        * **Menus** — the open menus of *every* loaded window, surface-tagged or
+          not. A ``Menu`` is a separate top-level Tool window and is never part
+          of the radial gesture, so an option-box popup backgrounds whether it
+          was launched from a standalone window or hosted on a submenu surface
+          (its owner is the surface window, so gating menus on the surface tag
+          would wrongly spare it). Menus also outlive their parent's visibility
+          (orphaned menus are intentional — hide the window, keep a small tool
+          menu open), so iterating ``loaded_ui`` rather than ``visible_windows``
+          reaches both the orphaned and the surface-hosted cases.
+
+        ``menus(visible=True)`` reads the registration-time association (the
+        WeakSet the menu joined on show); it never triggers lazy menu creation
+        and never re-resolves a reparented menu's owner. ``self`` is skipped
+        whole — the marking menu dims nothing of its own.
+        """
+        for win in self.sb.loaded_ui.values():
+            if win is self:
+                continue
+            # The radial surfaces are the active gesture surface — never dim the
+            # *window*. But a popup hosted on one (an option-box menu) is not
+            # part of the gesture, so its menus still background below.
+            if win.isVisible() and not win.has_tags(_MARKING_MENU_TAGS):
+                yield win
+            yield from win.menus(visible=True)
+
+    def dim_other_windows(self) -> None:
+        """Fade every background window and menu, once per hold.
+
+        Once-per-hold snapshot (see ``_dim_snapshot_taken``): only windows and
+        menus already open at key_show press are faded; ``self`` and anything
+        opened during the hold stay bright. See :meth:`_dim_targets` for what is
+        selected and why it spans the menus of hidden parents.
+        """
+        if not self.isVisible() or self._dim_snapshot_taken:
+            return
+        self._dim_snapshot_taken = True
+
+        for target in self._dim_targets():
+            self._windows_to_restore.add(target)
+            self._set_dimmed(target, True)
 
         if self._windows_to_restore:
             self.logger.debug(f"Dimming other windows: {self._windows_to_restore}")
 
     def restore_other_windows(self) -> None:
-        """Restore all previously dimmed windows."""
-        if not self._windows_to_restore:
-            return
-
+        """Restore everything dimmed by the last :meth:`dim_other_windows`."""
         for win in self._windows_to_restore:
-            win.setWindowOpacity(1.0)
-            win.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
+            self._set_dimmed(win, False)
         self._windows_to_restore.clear()
+        self._dim_snapshot_taken = False
         self.logger.debug("Restored previously dimmed windows.")
 
     # ---------------------------------------------------------------------------------------------
@@ -2039,7 +2331,7 @@ class MarkingMenu(
         for w in ptk.make_iterable(widgets):
             try:
                 if (w.derived_type not in filtered_types) or (
-                    not w.ui.has_tags(["startmenu", "submenu"])
+                    not w.ui.has_tags(_MARKING_MENU_TAGS)
                 ):
                     continue
             except AttributeError:
@@ -2160,7 +2452,7 @@ class MarkingMenu(
                 f"current_ui={current_ui.objectName() if current_ui else None!r} | "
                 f"{self._input_state()}"
             )
-        if current_ui and current_ui.has_tags(["startmenu", "submenu"]):
+        if current_ui and current_ui.has_tags(_MARKING_MENU_TAGS):
             # Owned item → dispatch the click IMMEDIATELY on the first release,
             # regardless of any other held button (same order as the menu-grab
             # path; the chord tolerance governs navigation only, never an

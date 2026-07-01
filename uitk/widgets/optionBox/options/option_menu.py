@@ -161,10 +161,17 @@ class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
             self._menu.setParent(widget, self._menu.windowFlags())
 
     def _show_menu(self):
-        """Show the menu at the button position."""
+        """Show the menu at the button position.
+
+        When this option's button lives inside another ``Menu`` (e.g. the
+        option-box popup), the dropdown is adopted into that host so the host's
+        ``hide_on_leave`` keeps it open while the user interacts with the
+        dropdown — see :meth:`ButtonOption._adopt_popup_into_enclosing_menu`.
+        """
         if self._widget:
             menu = self._ensure_menu()
             menu.show_as_popup(anchor_widget=self._widget, position=menu.position)
+            self._adopt_popup_into_enclosing_menu(menu)
 
     @property
     def menu(self):

@@ -59,6 +59,26 @@ class WindowPanel(QtWidgets.QWidget):
     ):
         super().__init__(None)
 
+        # Size / geometry state, initialized up front (before any child
+        # widgets) so an early resize/move event during construction finds
+        # these attributes already present. ``_geometry_settings`` stays None
+        # until a subclass opts into persistence via :meth:`persist_geometry`
+        # — then the window's size and position are saved (debounced) on
+        # resize / move / hide / close and restored on first show, so a
+        # user-adjusted size survives across sessions. WindowPanel is a plain
+        # QWidget (unlike MainWindow, which bakes this in), so its editors
+        # previously always reopened at the constructor default; this brings
+        # the same behaviour here without coupling the base to a Switchboard
+        # (the settings store is injected).
+        self._size_initialized = False
+        self._restoring = False
+        self._geometry_settings = None
+        self._geometry_key = "window_geometry"
+        self._geometry_save_timer = QtCore.QTimer(self)
+        self._geometry_save_timer.setSingleShot(True)
+        self._geometry_save_timer.setInterval(500)
+        self._geometry_save_timer.timeout.connect(self.save_window_geometry)
+
         # Panels behave like normal app windows parented to the host. A
         # subclass that genuinely needs to float above its host (a
         # transient picker, a tool palette) can opt in with on_top=True.
@@ -122,8 +142,8 @@ class WindowPanel(QtWidgets.QWidget):
 
         # Style is exposed via the ``style`` lazy property; theme is
         # applied on first ``showEvent`` so panels constructed but never
-        # shown skip the QSS work entirely.
-        self._size_initialized = False
+        # shown skip the QSS work entirely (see ``_size_initialized`` above,
+        # which also gates the first-show geometry restore / content fit).
 
     @property
     def style(self) -> "StyleSheet":
@@ -168,7 +188,21 @@ class WindowPanel(QtWidgets.QWidget):
 
         if not self._size_initialized:
             self._size_initialized = True
-            QtCore.QTimer.singleShot(0, self._fit_to_content)
+            # A saved user size is authoritative: restore it and skip the
+            # content-fit. Re-fitting a hand-resized window to content is
+            # exactly what discarded the adjusted size every session. Only fit
+            # when there's nothing to restore — a first-ever show, or a panel
+            # that never opted into persistence.
+            # Guard the debounced save: restoreGeometry() emits resize/move
+            # events that would otherwise re-schedule a save of the just-restored
+            # size (a redundant write; mirrors MainWindow's restore guard).
+            self._restoring = True
+            try:
+                restored = self.restore_window_geometry()
+            finally:
+                self._restoring = False
+            if not restored:
+                QtCore.QTimer.singleShot(0, self._fit_to_content)
 
     def _fit_to_content(self):
         """Resize the window to snugly fit its primary content.
@@ -196,6 +230,110 @@ class WindowPanel(QtWidgets.QWidget):
         max_h = int(screen.availableGeometry().height() * 0.85) if screen else 800
         ideal = table_h + chrome
         self.resize(self.width(), min(ideal, max_h))
+
+    # ── Geometry persistence (opt-in) ────────────────────────────
+
+    def persist_geometry(self, settings, key: str = "window_geometry") -> None:
+        """Enable saving / restoring this window's geometry via *settings*.
+
+        Lets the window's size and position survive across sessions. Call once
+        from a subclass constructor **before** the first show, so a
+        previously-saved size is restored on that show.
+
+        Parameters
+        ----------
+        settings : SettingsManager
+            Store geometry is written to / read from — typically an editor's
+            own ``sb.settings.branch(...)``. Passing ``None`` leaves
+            persistence disabled (the default), so the window fits to content
+            as before.
+        key : str
+            Settings key holding the serialized geometry (a raw QByteArray).
+            Distinct keys let sibling launch-variants that share one settings
+            branch each remember their own size (e.g. the full vs. focused
+            shortcut editor).
+        """
+        self._geometry_settings = settings
+        self._geometry_key = key
+
+    def save_window_geometry(self) -> None:
+        """Persist the current size + position, when persistence is enabled.
+
+        No-op before the first show (nothing meaningful to save yet), for a
+        degenerate size (e.g. mid-reparent), or while the header has minimized
+        the window — so a transient / rolled-up geometry never overwrites the
+        user's real one.
+        """
+        if self._geometry_settings is None or not self._size_initialized:
+            return
+        if self.width() <= 0 or self.height() <= 0:
+            return
+        if self.property("_header_minimized"):
+            return
+        self._geometry_settings.setByteArray(self._geometry_key, self.saveGeometry())
+
+    def restore_window_geometry(self) -> bool:
+        """Restore a previously-saved geometry.
+
+        Returns
+        -------
+        bool
+            True when a valid saved geometry was applied — the restored size
+            is then the user's own and authoritative, so the caller must not
+            re-fit it to content. False when there was nothing usable to
+            restore (persistence off, no saved data, or a failed / degenerate
+            restore); the window is then free to fit to content.
+        """
+        if self._geometry_settings is None:
+            return False
+        geometry = self._geometry_settings.getByteArray(self._geometry_key)
+        if not geometry or not isinstance(geometry, QtCore.QByteArray):
+            return False
+        try:
+            if not self.restoreGeometry(geometry):
+                return False
+        except Exception:  # noqa: BLE001 — corrupt/foreign blob; fall back to fit
+            return False
+        # Reject a restore that produced a degenerate size.
+        if self.width() <= 0 or self.height() <= 0:
+            return False
+        return True
+
+    def clear_saved_geometry(self) -> None:
+        """Forget any saved geometry (no-op when persistence is disabled)."""
+        if self._geometry_settings is not None:
+            self._geometry_settings.clear(self._geometry_key)
+
+    def _schedule_geometry_save(self) -> None:
+        """(Re)start the debounced geometry save — no-op until persistence is
+        enabled and the window has had its first show, or while restoring (the
+        restore's own resize/move must not re-save)."""
+        if (
+            self._geometry_settings is not None
+            and self._size_initialized
+            and not self._restoring
+        ):
+            self._geometry_save_timer.start()
+
+    def resizeEvent(self, event):
+        """Debounce-save geometry on resize once persistence is enabled."""
+        super().resizeEvent(event)
+        self._schedule_geometry_save()
+
+    def moveEvent(self, event):
+        """Debounce-save geometry on move once persistence is enabled."""
+        super().moveEvent(event)
+        self._schedule_geometry_save()
+
+    def hideEvent(self, event):
+        """Persist geometry on hide — the editors' normal 'close' path."""
+        self.save_window_geometry()
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        """Persist geometry on close."""
+        self.save_window_geometry()
+        super().closeEvent(event)
 
     @property
     def header(self):

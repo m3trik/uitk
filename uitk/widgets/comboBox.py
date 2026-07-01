@@ -40,12 +40,12 @@ class CustomStyle(QtWidgets.QProxyStyle):
                     opt.text = self.combo_box.header_text
                     opt.displayAlignment = self.combo_box.header_alignment
                 elif current_index >= 0:
-                    opt.text = self.combo_box.itemText(current_index)
-                    # Append a display-only suffix (e.g. " *" for unsaved edits)
-                    # to the painted text; item data / itemText stay untouched.
-                    suffix = getattr(self.combo_box, "current_text_suffix", "")
-                    if suffix:
-                        opt.text = f"{opt.text}{suffix}"
+                    # Prefix/suffix are display-only (see
+                    # ``format_current_display_text``); item data / itemText and
+                    # the dropdown popup items stay untouched.
+                    opt.text = self.combo_box.format_current_display_text(
+                        self.combo_box.itemText(current_index)
+                    )
 
         super().drawControl(element, opt, painter, widget)
 
@@ -159,6 +159,23 @@ class AlignedComboBox(QtWidgets.QComboBox):
         if match:
             return int(match.group(1))
         return 0
+
+    def format_current_display_text(self, text: str) -> str:
+        """Compose the text painted for the *current* selection only.
+
+        Wraps the item's text with :attr:`current_text_prefix` (left) and
+        :attr:`current_text_suffix` (right) for the collapsed-combo paint,
+        leaving ``itemText`` / item data and the dropdown popup items
+        untouched. Read via ``getattr`` so a bare :class:`AlignedComboBox`
+        (which defines neither adornment) returns the text unchanged.
+        """
+        prefix = getattr(self, "current_text_prefix", "")
+        if prefix:
+            text = f"{prefix}{text}"
+        suffix = getattr(self, "current_text_suffix", "")
+        if suffix:
+            text = f"{text}{suffix}"
+        return text
 
     def paintEvent(self, event):
         """Custom paint event to draw header text when no selection."""
@@ -412,6 +429,7 @@ class ComboBox(
         self.has_header = False
         self.header_text = None
         self._current_text_suffix = ""
+        self._current_text_prefix = ""
         self.editable = editable
 
         self.currentIndexChanged.connect(self.check_index)
@@ -490,6 +508,25 @@ class ComboBox(
         value = value or ""
         if value != self._current_text_suffix:
             self._current_text_suffix = value
+            self.update()
+
+    @property
+    def current_text_prefix(self) -> str:
+        """Text prepended to the *displayed* current selection only.
+
+        The left-side twin of :attr:`current_text_suffix`: it changes what the
+        collapsed combo paints (via the style's ``drawControl``), not
+        ``itemText`` / item data or the dropdown popup items. Lets a label such
+        as ``"Target UI:  "`` ride on the current item in place of a separate
+        ``QLabel``, keeping the popup clean. Setting it repaints.
+        """
+        return self._current_text_prefix
+
+    @current_text_prefix.setter
+    def current_text_prefix(self, value: str) -> None:
+        value = value or ""
+        if value != self._current_text_prefix:
+            self._current_text_prefix = value
             self.update()
 
     @property

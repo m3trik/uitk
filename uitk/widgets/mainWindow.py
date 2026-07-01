@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import sys
+import weakref
 from typing import Any, Callable, Optional, Union, List
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
@@ -107,6 +108,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         self.default_slot_timeout = default_slot_timeout
         self.footer: Optional[Footer] = None
         self.widgets = set()
+        # Child Menu instances that have shown themselves under this window.
+        # Held weakly so a destroyed menu prunes itself; populated by
+        # register_menu() (called from Menu.showEvent). Lets collaborators
+        # (e.g. the marking menu's window-dim pass) enumerate a window's open
+        # menus — which are top-level Tool windows, so they don't inherit the
+        # MainWindow's composited opacity and must be faded separately.
+        self._menus = weakref.WeakSet()
         self.restore_widget_states = True
         self.restored_widgets = set()
         # Cache of StateManagers for sibling presentation surfaces (panel /
@@ -409,6 +417,58 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
 
         # self.logger.debug(f"[register_widget]: {widget.objectName()} ({widget.type})")
         # self.register_children(widget)
+
+    def register_menu(self, menu: QtWidgets.QWidget) -> None:
+        """Track a child Menu under this window.
+
+        Idempotent (the backing store is a ``WeakSet``) and self-pruning when
+        the menu is destroyed, so callers can register on every show without
+        bookkeeping. Called by :meth:`Menu.showEvent` the first time a menu
+        materialises as a popup. See :meth:`menus` for retrieval.
+        """
+        if menu is not None:
+            self._menus.add(menu)
+
+    def menus(
+        self,
+        *,
+        visible: Optional[bool] = None,
+        pinned: Optional[bool] = None,
+        persistent: Optional[bool] = None,
+    ) -> List[QtWidgets.QWidget]:
+        """Return this window's tracked child menus, filtered by status.
+
+        Each keyword is a tri-state filter: ``None`` ignores that axis,
+        otherwise the menu's matching status must equal the given bool.
+
+        Parameters:
+            visible: Filter on ``menu.isVisible()`` (open menus → ``True``).
+            pinned: Filter on ``menu.is_pinned``.
+            persistent: Filter on ``menu.is_persistent_mode``.
+
+        Returns:
+            list: Matching Menu instances. Iteration order is unspecified.
+
+        Note:
+            This never triggers lazy menu creation — only menus that have
+            already shown themselves are tracked, so reading them can't
+            instantiate a deferred menu (and re-introduce the popup flash
+            that deferral exists to avoid).
+        """
+        out = []
+        for m in self._menus:
+            try:
+                if visible is not None and m.isVisible() != visible:
+                    continue
+                if pinned is not None and bool(m.is_pinned) != pinned:
+                    continue
+                if persistent is not None and bool(m.is_persistent_mode) != persistent:
+                    continue
+            except RuntimeError:
+                # Underlying C++ object deleted mid-iteration; skip.
+                continue
+            out.append(m)
+        return out
 
     def _add_child_destroyed_signal(self, widget) -> None:
         """Initializes the signal for a given widget that will be emitted when the widget is destroyed.

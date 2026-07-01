@@ -32,7 +32,7 @@ from uitk.widgets.mixins.icon_manager import IconManager
 from uitk.widgets.mixins.preset_manager import PresetManager
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
-from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
+from uitk.widgets.delegates.row_selection import RowSelectionBorderDelegate
 from uitk.widgets.comboBox import ComboBox
 
 ColorValue = Union[str, Tuple[str, str]]
@@ -168,7 +168,7 @@ class ColorMappingEditor(QtWidgets.QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         # Row-spanning selection border via shared delegate — see
-        # row_selection_delegate.py. Color swatches in the cells make the
+        # delegates/row_selection.py. Color swatches in the cells make the
         # per-cell QSS :selected outline read as broken row chrome.
         self._table.setItemDelegate(RowSelectionBorderDelegate(self._table))
         layout.addWidget(self._table, 1)

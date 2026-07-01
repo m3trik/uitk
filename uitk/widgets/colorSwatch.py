@@ -17,6 +17,7 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
 
         self._initialColor = color
         self._settings = None
+        self._keep_square = False
 
         # Connect the custom signal to the initialization method
         self.initializeRequested.connect(
@@ -50,6 +51,30 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
         self.updateBackgroundColor()
         self.saveColor()
         self.colorChanged.emit(self._color)
+
+    @property
+    def keep_square(self):
+        """Whether the swatch keeps a 1:1 aspect ratio, tracking its width."""
+        return self._keep_square
+
+    @keep_square.setter
+    def keep_square(self, value):
+        # Opt-in: when True the swatch pins its height to its current width on
+        # every resize, so it stays square as its grid column stretches. Off by
+        # default so explicit setFixedSize callers are left untouched.
+        self._keep_square = bool(value)
+        if self._keep_square:
+            self._apply_square()
+
+    def _apply_square(self):
+        w = self.width()
+        if w > 0 and self.height() != w:
+            self.setFixedHeight(w)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._keep_square:
+            self._apply_square()
 
     @property
     def settings(self):

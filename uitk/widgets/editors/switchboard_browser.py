@@ -28,6 +28,7 @@ import pythontk as ptk
 from uitk.compile import precompile_async
 from uitk.handlers.handler_entry import HandlerEntry
 from uitk.widgets.editors.editor_panel import EditorPanel
+from uitk.widgets.optionBox.options.filter import FilterOption, NEGATE_PREFIX
 from uitk.widgets.pushButton import PushButton
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -539,7 +540,7 @@ SCOPE_NAME = "name"
 SCOPE_TAGS = "tags"
 SCOPE_BOTH = "name + tags"
 
-# Tri-state scope cycle used by the search/exclude action buttons. The
+# Tri-state scope cycle used by the search field's scope action button. The
 # index into ``SCOPES`` is what gets persisted; the icon mapping signals
 # the active scope at a glance — a clean uppercase "A" for text matching,
 # an asterisk (the universal wildcard / "match all") for the combined
@@ -673,65 +674,48 @@ class SwitchboardBrowser(EditorPanel):
         # Menu (option-box menus, header menu) reaches it via parent walk.
         self.state = _BrowserState()
 
-        # Persistent filter-enabled state for each text field. Chip filters
-        # and the hide list always apply; only the text-query gates flip.
-        self._search_filter_enabled = bool(
-            self._settings.value("search.filter_enabled", True)
-        )
-        self._exclude_filter_enabled = bool(
-            self._settings.value("exclude.filter_enabled", True)
-        )
-
         self._model = SwitchboardBrowserModel(self.sb, parent=self)
 
         # ── Search row ─────────────────────────────────────────────────
-        self._search = self._build_filter_lineedit(
-            object_name="le_search",
-            placeholder="Search (comma-separated; supports * ?)",
-            tooltip=(
-                "Search the registered UI list.\n"
-                "\n"
-                "• Multi-term: separate terms with commas — any matching term\n"
-                "  keeps the row, e.g.  alpha, beta  matches either.\n"
-                "• Wildcards:\n"
-                "    *      any sequence of characters\n"
-                "    ?      any single character\n"
-                "    [seq]  any character in the set, e.g. [abc]\n"
-                "  Bare terms are wrapped as *term* (substring match).\n"
-                "• Click the filter icon to toggle the filter on/off without\n"
-                "  clearing the text. Click the scope icon to cycle through\n"
-                "  Name / Name+Tags / Tags."
-            ),
-            text_settings_key="search.text",
-            scope_settings_key="search.scope",
-            on_text_changed=self._apply_filter,
-            on_filter_toggle=self._set_search_filter_enabled,
-            initial_filter_enabled=self._search_filter_enabled,
+        # A single filter field covers include + exclude: include terms keep
+        # matching rows, and a term prefixed with ! excludes inline (honoured in
+        # _row_passes_filter via filter_list(negate_prefix=…)) — so there's no
+        # separate exclude row. The option-box carries a FilterOption (filter
+        # on/off toggle + scope cycle + text persistence); its menu is never
+        # accessed (every option is a button, so a dropdown would be empty).
+        self._search = self.sb.registered_widgets.LineEdit()
+        self._search.setObjectName("le_search")
+        self._search.setPlaceholderText(
+            "Search (exact; * for substring; ! excludes)"
         )
+        self._search.setToolTip(
+            "Search the registered UI list.\n"
+            "\n"
+            "• Multi-term: separate terms with commas — any matching term\n"
+            "  keeps the row, e.g.  *char*, *light*  matches either.\n"
+            "• Matching is exact unless you add wildcards:\n"
+            "    *      any sequence  (*char* = contains, char* = starts with)\n"
+            "    ?      any single character\n"
+            "    [seq]  any character in the set, e.g. [abc]\n"
+            "• Prefix a term with ! to exclude it, e.g.  *mesh*, !*temp*\n"
+            "  keeps rows containing 'mesh' but drops any containing 'temp'.\n"
+            "• Click the filter icon to toggle the filter on/off without\n"
+            "  clearing the text. Click the scope icon to cycle through\n"
+            "  Name / Name+Tags / Tags."
+        )
+        self._search.option_box.set_filter(
+            settings=self._settings,
+            text_key="search.text",
+            on_changed=self._apply_filter,
+            enabled_key="search.filter_enabled",
+            on_toggled=lambda _on: self._apply_filter(),
+            scopes=[{"key": k, "icon": SCOPE_ICONS[k]} for k in SCOPES],
+            scope_key="search.scope",
+            default_scope=SCOPE_BOTH,
+            on_scope_changed=lambda _new: self._apply_filter(),
+        )
+        self._search_filter = self._search.option_box.find_option(FilterOption)
         self.body_layout.addWidget(self._search)
-
-        # ── Exclude row ────────────────────────────────────────────────
-        # Mirrors the search row's controls so a user can shape both halves
-        # of the filter independently (e.g. include scope = name only,
-        # exclude scope = tags only).
-        self._exclude = self._build_filter_lineedit(
-            object_name="le_exclude",
-            placeholder="Exclude (comma-separated; supports * ?)",
-            tooltip=(
-                "Hide rows that match any of these patterns.\n"
-                "Same wildcard / multi-term syntax as the search field above.\n"
-                "\n"
-                "• Click the filter icon to toggle the exclude on/off.\n"
-                "• Click the scope icon to choose what the patterns match\n"
-                "  against (Name / Name+Tags / Tags)."
-            ),
-            text_settings_key="exclude.text",
-            scope_settings_key="exclude.scope",
-            on_text_changed=self._apply_filter,
-            on_filter_toggle=self._set_exclude_filter_enabled,
-            initial_filter_enabled=self._exclude_filter_enabled,
-        )
-        self.body_layout.addWidget(self._exclude)
 
         # ── Tag chips ──────────────────────────────────────────────────
         self._chip_scroll = QtWidgets.QScrollArea()
@@ -856,158 +840,9 @@ class SwitchboardBrowser(EditorPanel):
     def hidden_tags(self, value: Iterable[str]) -> None:
         self._settings.setValue("hidden_tags", sorted(set(value)))
 
-    # ── Search / Exclude line-edit factory ──────────────────────────────────
-
-    def _build_filter_lineedit(
-        self,
-        *,
-        object_name: str,
-        placeholder: str,
-        tooltip: str,
-        text_settings_key: str,
-        scope_settings_key: str,
-        on_text_changed,
-        on_filter_toggle,
-        initial_filter_enabled: bool,
-    ):
-        """Construct a LineEdit with the filter-on/off + scope-cycle controls.
-
-        Both the search and exclude rows share the same UX, so the construction
-        is factored into a single helper. Each LineEdit gets two action buttons
-        on its option-box:
-
-            1. Filter on/off — two-state cycle (enabled / dimmed-disabled).
-            2. Scope — three-state cycle (Name / Name+Tags / Tags) whose icon
-               reflects the active scope at a glance.
-
-        The option-box ``menu`` is intentionally never accessed: every option
-        the user can toggle is a button, so a dropdown would only show an empty
-        popup. Skipping ``.menu`` also skips the menu-button, keeping the
-        right edge of the LineEdit clean.
-        """
-        from uitk.widgets.optionBox.options.action import ActionOption
-        from uitk.widgets.optionBox.options.toggle import ToggleOption
-
-        le = self.sb.registered_widgets.LineEdit()
-        le.setObjectName(object_name)
-        le.setPlaceholderText(placeholder)
-        le.setToolTip(tooltip)
-        saved_text = self._settings.value(text_settings_key, "") or ""
-        if saved_text:
-            le.setText(saved_text)
-
-        # textChanged: drive the filter and persist verbatim text. Persisting
-        # in the same lambda avoids spawning a second slot just for save.
-        le.textChanged.connect(
-            lambda v, k=text_settings_key: self._settings.setValue(k, v)
-        )
-        le.textChanged.connect(lambda _v: on_text_changed())
-
-        # ── Filter on/off toggle ──────────────────────────────────────
-        # ToggleOption owns the on/off visuals (theme-coloured icon when on,
-        # error-red when off) so the user can see which control caused the
-        # filter to stop. Persistence stays in self._settings (presets need
-        # to see it), so settings_key=False.
-        filter_toggle = ToggleOption(
-            wrapped_widget=le,
-            icon="filter",
-            tooltip_on="Filter enabled. Click to disable.",
-            tooltip_off="Filter disabled. Click to enable.",
-            initial=initial_filter_enabled,
-            settings_key=False,
-        )
-        filter_toggle.toggled.connect(on_filter_toggle)
-        le.option_box.add_option(filter_toggle)
-
-        # ── Scope tri-state action button ──────────────────────────────
-        # Icon = SCOPE_ICONS[currently active scope]. Click cycles to
-        # the next scope; the per-state callback writes the *new* scope
-        # value before the visual state advances, so icon + active scope
-        # stay in lock-step.
-        saved_scope = self._settings.value(scope_settings_key, SCOPE_BOTH)
-        if saved_scope not in SCOPES:
-            saved_scope = SCOPE_BOTH
-        scope_states = []
-        for i, current in enumerate(SCOPES):
-            nxt = SCOPES[(i + 1) % len(SCOPES)]
-            scope_states.append(
-                {
-                    "icon": SCOPE_ICONS[current],
-                    "tooltip": (
-                        f"Scope: matches {current}. " f"Click to switch to '{nxt}'."
-                    ),
-                    "callback": (
-                        lambda s=nxt, k=scope_settings_key: self._set_scope(k, s)
-                    ),
-                }
-            )
-
-        scope_action = ActionOption(
-            wrapped_widget=le,
-            states=scope_states,
-            settings_key=False,
-        )
-        # Sync visible state to the persisted scope before adding so the
-        # initial render shows the correct icon.
-        scope_action._current_state = SCOPES.index(saved_scope)
-        le.option_box.add_option(scope_action)
-
-        # Stash references on the LineEdit so other call sites (filter
-        # predicate, presets) read current values from a single source.
-        le._filter_toggle = filter_toggle
-        le._scope_action = scope_action
-        le._scope_settings_key = scope_settings_key
-        le._text_settings_key = text_settings_key
-
-        return le
-
-    def _set_scope(self, settings_key: str, value: str) -> None:
-        """Slot called by a scope action button — persist + re-filter.
-
-        The action button itself owns its visual cycle, so we don't touch
-        ``_current_state`` here. External callers that want to *programmatically*
-        change a scope (presets, tests) should use :meth:`set_search_scope`
-        / :meth:`set_exclude_scope` which keep the visual state in sync.
-        """
-        if value not in SCOPES:
-            return
-        self._settings.setValue(settings_key, value)
-        self._apply_filter()
-
-    def _set_scope_external(self, le, value: str) -> None:
-        """Programmatically set a LineEdit's scope, syncing the action visual."""
-        if value not in SCOPES:
-            return
-        self._settings.setValue(le._scope_settings_key, value)
-        action = getattr(le, "_scope_action", None)
-        if action is not None:
-            action._current_state = SCOPES.index(value)
-            if action._widget is not None:
-                action._apply_state()
-        self._apply_filter()
-
     def set_search_scope(self, value: str) -> None:
         """Public helper: set the search-line-edit scope to ``value``."""
-        self._set_scope_external(self._search, value)
-
-    def set_exclude_scope(self, value: str) -> None:
-        """Public helper: set the exclude-line-edit scope to ``value``."""
-        self._set_scope_external(self._exclude, value)
-
-    def _set_search_filter_enabled(self, enabled: bool) -> None:
-        self._search_filter_enabled = bool(enabled)
-        self._settings.setValue("search.filter_enabled", self._search_filter_enabled)
-        self._apply_filter()
-
-    def _set_exclude_filter_enabled(self, enabled: bool) -> None:
-        self._exclude_filter_enabled = bool(enabled)
-        self._settings.setValue("exclude.filter_enabled", self._exclude_filter_enabled)
-        self._apply_filter()
-
-    def _scope_for(self, le) -> str:
-        """Read the persisted scope for a LineEdit built by ``_build_filter_lineedit``."""
-        v = self._settings.value(le._scope_settings_key, SCOPE_BOTH)
-        return v if v in SCOPES else SCOPE_BOTH
+        self._search_filter.set_scope(value, notify=True)
 
     # ── Header menu (Refresh + Show + Launch + Theme + Presets) ─────────────
 
@@ -1219,20 +1054,14 @@ class SwitchboardBrowser(EditorPanel):
         """Serialize all browser state into a JSON-safe dict.
 
         Used as ``PresetManager.metadata_provider`` so the preset captures
-        cross-menu state (search/exclude line edits, scopes, filter toggles,
-        hide lists, launch options, theme, …) rather than only widgets in
-        the header menu.
+        cross-menu state (search field, scope, filter toggle, hide lists,
+        launch options, theme, …) rather than only widgets in the header menu.
         """
         return {
             "search": {
                 "text": self._search.text(),
-                "scope": self._scope_for(self._search),
-                "filter_enabled": self._search_filter_enabled,
-            },
-            "exclude": {
-                "text": self._exclude.text(),
-                "scope": self._scope_for(self._exclude),
-                "filter_enabled": self._exclude_filter_enabled,
+                "scope": self._search_filter.scope,
+                "filter_enabled": self._search_filter.is_on,
             },
             "show_mode": self._show.currentText(),
             "active_tag_filters": sorted(self._active_tag_filters),
@@ -1258,48 +1087,31 @@ class SwitchboardBrowser(EditorPanel):
         # ``version`` and our keys). Tolerate missing keys for forward /
         # backward compat.
 
-        # ── Search / exclude line edits ──
-        for le, section in [
-            (self._search, data.get("search") or {}),
-            (self._exclude, data.get("exclude") or {}),
-        ]:
-            text = section.get("text")
-            if text is not None:
-                le.blockSignals(True)
-                try:
-                    le.setText(text)
-                finally:
-                    le.blockSignals(False)
-                self._settings.setValue(le._text_settings_key, text)
-            scope = section.get("scope")
-            if scope in SCOPES:
-                self._settings.setValue(le._scope_settings_key, scope)
-                action = getattr(le, "_scope_action", None)
-                if action is not None:
-                    action._current_state = SCOPES.index(scope)
-                    if action._widget is not None:
-                        action._apply_state()
-
-        # ── Filter-enabled flags ──
-        # Sync the ToggleOption visuals via set_on(..., emit=False) so the
-        # restored icon state reflects the preset without re-firing the
-        # toggled callback (which would write to settings again).
-        if "search" in data and "filter_enabled" in data["search"]:
-            self._search_filter_enabled = bool(data["search"]["filter_enabled"])
-            self._settings.setValue(
-                "search.filter_enabled", self._search_filter_enabled
-            )
-            toggle = getattr(self._search, "_filter_toggle", None)
-            if toggle is not None:
-                toggle.set_on(self._search_filter_enabled, emit=False)
-        if "exclude" in data and "filter_enabled" in data["exclude"]:
-            self._exclude_filter_enabled = bool(data["exclude"]["filter_enabled"])
-            self._settings.setValue(
-                "exclude.filter_enabled", self._exclude_filter_enabled
-            )
-            toggle = getattr(self._exclude, "_filter_toggle", None)
-            if toggle is not None:
-                toggle.set_on(self._exclude_filter_enabled, emit=False)
+        # ── Search filter field ──
+        # The field's text, scope, and on/off flag are owned by its
+        # FilterOption. set_scope / set_on persist + sync the button visuals;
+        # set_on uses emit=False so restoring the icon state doesn't re-fire the
+        # toggled callback. Text is set with signals blocked (a single
+        # _apply_filter runs at the end), so persist it explicitly. (A legacy
+        # preset's separate "exclude" section is tolerated but ignored — the one
+        # search field now covers exclusion inline via !term.)
+        section = data.get("search") or {}
+        filt = self._search_filter
+        text = section.get("text")
+        if text is not None:
+            self._search.blockSignals(True)
+            try:
+                self._search.setText(text)
+            finally:
+                self._search.blockSignals(False)
+            if filt.text_key is not None:
+                self._settings.setValue(filt.text_key, text)
+        scope = section.get("scope")
+        if scope in SCOPES:
+            filt.set_scope(scope)
+        enabled = section.get("filter_enabled")
+        if enabled is not None:
+            filt.set_on(bool(enabled), emit=False)
 
         # ── Show combo + theme combo ──
         for combo, val in [
@@ -1901,14 +1713,6 @@ class SwitchboardBrowser(EditorPanel):
             return " ".join(sorted(all_tags))
         return name + " " + " ".join(sorted(all_tags))
 
-    @staticmethod
-    def _to_patterns(text: str):
-        # Bare terms become ``*term*`` (substring match); terms that already
-        # carry a glob / character-class pass through verbatim. Applied to
-        # both include and exclude patterns.
-        terms = [t.strip() for t in text.split(",") if t.strip()]
-        return [t if any(c in t for c in "*?[") else f"*{t}*" for t in terms]
-
     def _row_passes_filter(self, name: str, all_tags: Set[str]) -> bool:
         # Hide-mode predicate
         mode = self._show.currentText()
@@ -1922,31 +1726,19 @@ class SwitchboardBrowser(EditorPanel):
         if self._active_tag_filters and not self._active_tag_filters <= all_tags:
             return False
 
-        # Search (include) — gated by its own filter-enabled toggle.
-        if self._search_filter_enabled:
-            inc_text = self._search.text().strip()
-            if inc_text:
-                inc_patterns = self._to_patterns(inc_text)
-                inc_haystack = self._haystack(
-                    name, all_tags, self._scope_for(self._search)
-                )
-                if not ptk.filter_list(
-                    [inc_haystack], inc=inc_patterns, ignore_case=True
-                ):
-                    return False
-
-        # Exclude — independent toggle and scope so the user can, e.g.,
-        # search by name but exclude by tag.
-        if self._exclude_filter_enabled:
-            exc_text = self._exclude.text().strip()
-            if exc_text:
-                exc_patterns = self._to_patterns(exc_text)
-                exc_haystack = self._haystack(
-                    name, all_tags, self._scope_for(self._exclude)
-                )
-                if not ptk.filter_list(
-                    [exc_haystack], exc=exc_patterns, ignore_case=True
-                ):
-                    return False
+        # Text filter — the FilterOption returns None when its toggle is off or
+        # the field is empty (match everything). ``negate_prefix`` lets a
+        # ``!term`` carve out an inline exclusion, so one field covers both
+        # include and exclude (e.g.  anim, !test).
+        patterns = self._search_filter.patterns()
+        if patterns:
+            haystack = self._haystack(name, all_tags, self._search_filter.scope)
+            if not ptk.filter_list(
+                [haystack],
+                inc=patterns,
+                ignore_case=True,
+                negate_prefix=NEGATE_PREFIX,
+            ):
+                return False
 
         return True

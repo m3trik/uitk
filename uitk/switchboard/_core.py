@@ -20,6 +20,7 @@ from uitk.switchboard.editors import SwitchboardEditorsMixin
 from uitk.switchboard.style import SwitchboardStyleMixin
 
 # Generic infrastructure (shared with non-Switchboard widgets):
+from uitk.switchboard.history import History
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.settings_manager import SettingsManager
@@ -239,8 +240,38 @@ class Switchboard(
         self.configurable = self.settings.branch("configurable")  # Persistent config
 
         self._current_ui = None
-        self._ui_history = []  # Ordered ui history.
-        self._slot_history = []  # Previously called slots.
+        # Ordered UI history. Weak refs so a closed UI is freed (the prior list
+        # held strong refs, pinning up to maxlen windows alive and defeating the
+        # weakref design of loaded_ui).
+        self._ui_history = History(maxlen=200, key=lambda u: u.objectName(), weak=True)
+        # Previously-called slots (bound methods). Strong refs — a slot's
+        # lifetime is tied to its UI, which the UI history already governs.
+        self._slot_history = History(
+            maxlen=200, key=lambda m: m.__name__, filter_unmapped=True
+        )
+        # Last slot invocation, captured as its live SlotWrapper (widget context
+        # intact) so repeat_last() can re-run it. The slot_history above keeps
+        # bare methods for back-compat; the wrapper is what knows how to invoke.
+        self._last_slot_wrapper = None
+        # Set while repeat_last() re-dispatches so the re-run doesn't overwrite
+        # the captured wrapper (a repeat bound as a slot would capture itself).
+        self._suppress_slot_capture = False
+        # UI-less, shortcut-bindable commands (see SwitchboardShortcutMixin):
+        # name -> spec, and name -> live GlobalShortcut. Bound lazily once a
+        # host window exists (on_ui_loaded), so registration order is free.
+        self._commands: dict = {}
+        self._command_shortcuts: dict = {}
+        self.on_ui_loaded.connect(self._bind_pending_commands)
+        # Cold-start standins for *application*-scoped slot shortcuts whose owning
+        # UI hasn't been built yet: (ui_name, method) -> GlobalShortcut. An
+        # app-scoped binding should fire from a fresh session without first
+        # opening its tool, but register_slots_shortcuts only runs when the UI
+        # is built. These host-owned standins build-then-invoke on press and are
+        # disposed the moment the real UI builds (its real shortcut takes over).
+        # Scanned once, on the first on_ui_loaded with a visible host.
+        self._deferred_slot_shortcuts: dict = {}
+        self._deferred_slots_scanned: bool = False
+        self.on_ui_loaded.connect(self._bind_deferred_slot_shortcuts)
         self._synced_pairs = set()  # Hashed values representing synced widgets.
         self.convert = ConvertMixin()
 
@@ -276,6 +307,36 @@ class Switchboard(
                 UiHandler.instance(switchboard=self),
                 getattr(UiHandler, "DEFAULTS", {}),
             )
+
+        # Shortcut/command overrides are persisted host-namespaced (Maya and
+        # Blender share one QSettings backend). Fold any legacy un-suffixed
+        # overrides into this host's namespace BEFORE commands register/bind, so
+        # a persisted binding from a pre-namespacing session still applies.
+        # Best-effort: a settings-store hiccup must degrade to "no migration",
+        # never crash the whole UI at construction.
+        try:
+            self._migrate_shortcuts_to_host_namespace()
+        except Exception:
+            self.logger.warning(
+                "[shortcuts] host-namespace migration failed", exc_info=True
+            )
+
+        # Built-in navigation commands — UI-less, shortcut-bindable actions that
+        # surface in the shortcut editor for every host. Both ship **unbound**:
+        # the user assigns a key in the editor (no surprise default binding).
+        # Host packages add their own via register_command().
+        self.register_command(
+            "reopen_last_ui",
+            self.show_prev_ui,
+            label="Reopen Last UI",
+            doc="Re-show the last non-transient UI.",
+        )
+        self.register_command(
+            "repeat_last_command",
+            self.repeat_last,
+            label="Repeat Last Command",
+            doc="Re-invoke the last slot.",
+        )
 
     # Methods every launchable handler must expose. Validated by
     # ``register_handler`` (duck-typed; subclassing
@@ -424,8 +485,16 @@ class Switchboard(
             return
 
         self._current_ui = ui
-        self._ui_history.append(ui)
-        del self._ui_history[:-200]  # cap history growth at the write site
+        self._ui_history.add(ui)  # History caps + holds weakly
+
+        # A UI becoming current means a window is now on screen — a reliable
+        # moment to bind any command / cold-start slot standin that deferred
+        # for lack of a visible host. ``on_ui_loaded`` fires while a UI is still
+        # hidden, so a persisted app-scoped binding can otherwise miss its only
+        # bind chance on a host that shows no window until after load. Both
+        # methods are cheap no-ops once everything is bound.
+        self._bind_pending_commands()
+        self._bind_deferred_slot_shortcuts()
 
     @property
     def prev_ui(self) -> QtWidgets.QWidget:
@@ -1028,33 +1097,77 @@ class Switchboard(
         """Get the UI history.
 
         Read-only: deduplication and filtering produce a view; the stored
-        history is only mutated by the ``current_ui`` setter.
+        history is only mutated by the ``current_ui`` setter. Dead (closed)
+        UIs are pruned from the underlying weak store on access.
         """
-        history = list(self._ui_history)
-        if not allow_duplicates:
-            # Keep the most recent occurrence of each UI, preserving order.
-            history = list(dict.fromkeys(history[::-1]))[::-1]
-        if inc or exc:
-            history = ptk.filter_list(history, inc, exc, lambda u: u.objectName())
+        return self._ui_history.get(
+            index, allow_duplicates=allow_duplicates, inc=inc, exc=exc
+        )
 
-        if index is None:
-            self.logger.debug("[ui_history] Returning full UI history list")
-            return history
-        else:
+    def show_prev_ui(self) -> Optional[QtWidgets.QWidget]:
+        """Re-show the most-recent non-transient UI that isn't already on screen.
+
+        Walks UI history newest-first and shows the first window that is hidden
+        (so "reopen last UI" brings back a just-closed tool) and isn't a marking-
+        menu surface (``startmenu``/``submenu``). A window already visible is
+        skipped — there's nothing to reopen — so repeated presses step back
+        through hidden windows instead of re-showing the one on screen.
+
+        Note it deliberately does *not* skip ``_current_ui``: a reopened window
+        gains focus and becomes the current UI, so the old "skip the current
+        one" rule left it unreopenable once closed — pressing the shortcut worked
+        once and then did nothing (the reported bug). Visibility, not currency,
+        is the right gate. Returns the UI shown, or ``None`` when every history
+        entry is already visible or transient.
+        """
+        for ui in reversed(self.ui_history(allow_duplicates=False)):
             try:
-                result = history[index]
-                if isinstance(result, list):
-                    self.logger.debug(
-                        f"[ui_history] Returning history slice: {[u.objectName() for u in result]}"
-                    )
-                else:
-                    self.logger.debug(
-                        f"[ui_history] Returning UI: {result.objectName()}"
-                    )
-                return result
-            except IndexError:
-                self.logger.debug(f"[ui_history] Index out of range: {index}")
-                return [] if isinstance(index, int) else None
+                if ui.has_tags(["startmenu", "submenu"]) or ui.isVisible():
+                    continue
+                ui.show()
+            except RuntimeError:
+                # Live Python wrapper over a deleted C++ window (DCC teardown /
+                # module reload). The weak store only prunes GC'd wrappers, so
+                # skip this stale entry and try the next.
+                continue
+            self.logger.debug(f"[show_prev_ui] Re-showing {ui.objectName()}")
+            return ui
+        self.logger.debug("[show_prev_ui] No previous UI to re-show")
+        return None
+
+    def repeat_last(self):
+        """Re-invoke the last slot with the exact args it last ran with.
+
+        ``prev_slot`` only yields the bound method — calling it bare loses both
+        the injected ``widget`` and any signal payload the slot took as a
+        required positional (e.g. a list slot's clicked ``item``), so a repeat
+        would raise ``TypeError``. The live ``SlotWrapper`` snapshots its last
+        invocation's args/kwargs; this replays them through the normal dispatch
+        path (wait cursor, timeout, history). Returns the slot's return value,
+        or ``None`` if no slot has run yet.
+        """
+        wrapper = self._last_slot_wrapper
+        if wrapper is None:
+            self.logger.debug("[repeat_last] No slot to repeat")
+            return None
+        # Replay with the exact args/kwargs the slot last ran with (incl. any
+        # signal payload such as a list slot's required ``item``). Calling the
+        # wrapper bare drops those and raises TypeError for slots that require
+        # a positional. Go through _invoke so the wait cursor / timeout still
+        # apply but debounce is bypassed (a repeat should fire immediately).
+        args = getattr(wrapper, "_last_invocation_args", ())
+        kwargs = getattr(wrapper, "_last_invocation_kwargs", {})
+        self._suppress_slot_capture = True
+        try:
+            return wrapper._invoke(*args, **kwargs)
+        except RuntimeError:
+            # The slot's widget/UI was torn down since it last ran (dead C++
+            # wrapper). Repeating is undefined — fail soft rather than crash a
+            # shortcut/command handler.
+            self.logger.debug("[repeat_last] last slot's widget is gone")
+            return None
+        finally:
+            self._suppress_slot_capture = False
 
 
 # --------------------------------------------------------------------------------------------
