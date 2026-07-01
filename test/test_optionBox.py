@@ -213,6 +213,65 @@ class TestOptionBoxOverlayRefit(QtBaseTestCase):
         )
 
 
+class TestOptionBoxLayoutSeating(QtBaseTestCase):
+    """The wrapped container must fill its layout cell like the widget it replaced."""
+
+    def test_container_inherits_wrapped_size_policy(self):
+        """The container must size like the widget it replaced, both axes — else
+        an Expanding field sits at content width (horizontal) or a text edit
+        stops filling (vertical), no longer reaching the cell edge."""
+        field = QtWidgets.QLineEdit()  # QLineEdit is horizontally Expanding
+        self.assertEqual(
+            field.sizePolicy().horizontalPolicy(),
+            QtWidgets.QSizePolicy.Expanding,
+        )
+        opt = OptionBox(options=[])
+        container = self.track_widget(opt.wrap(field))
+        self.assertEqual(
+            container.sizePolicy().horizontalPolicy(),
+            QtWidgets.QSizePolicy.Expanding,
+            "container must inherit the wrapped widget's horizontal policy",
+        )
+
+        # Vertical axis: a wrapped Expanding text edit must yield an Expanding
+        # container so it fills vertically too.
+        text = QtWidgets.QTextEdit()
+        self.assertEqual(
+            text.sizePolicy().verticalPolicy(), QtWidgets.QSizePolicy.Expanding
+        )
+        opt2 = OptionBox(options=[])
+        container2 = self.track_widget(opt2.wrap(text))
+        self.assertEqual(
+            container2.sizePolicy().verticalPolicy(),
+            QtWidgets.QSizePolicy.Expanding,
+            "container must inherit the wrapped widget's vertical policy",
+        )
+
+    def test_update_sizing_does_not_resize_layout_managed_container(self):
+        """The Resize-driven re-square (``_update_sizing``) must not shrink a
+        layout-managed container — that fights the parent layout and leaves the
+        field short of the cell edge."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        row = QtWidgets.QHBoxLayout(parent)
+        field = QtWidgets.QLineEdit()
+        row.addWidget(field)
+        opt = OptionBox(options=[])
+        container = self.track_widget(opt.wrap(field))
+        parent.resize(400, 60)
+        parent.show()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+        filled = container.width()
+        # Simulate the wrapped-widget Resize eventFilter firing a re-square.
+        opt._update_sizing()
+        self.assertEqual(
+            container.width(),
+            filled,
+            "_update_sizing must leave a layout-managed container's width alone",
+        )
+
+
 class TestPinValuesOptionCreation(QtBaseTestCase):
     """Tests for PinValuesOption creation and initialization."""
 
@@ -1289,6 +1348,81 @@ class TestToggleOption(QtBaseTestCase):
         _, toggle = self._make_toggle()
         self.assertEqual(toggle._disabled_color, expected)
 
+    def test_button_stays_live_when_wrapped_disabled(self):
+        """Regression: disabling the wrapped widget must NOT cascade-disable the
+        toggle button — otherwise the toggle traps itself and can't re-enable
+        the widget (the shortcut-editor 'show all' symptom)."""
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        toggle = ToggleOption(wrapped_widget=widget, settings_key=False)
+        opt = OptionBox(options=[toggle])
+        container = self.track_widget(opt.wrap(widget))
+        btn = toggle.widget
+        self.assertTrue(btn.isEnabled())
+
+        # Disable the wrapped widget — the container syncs option-button state.
+        widget.setEnabled(False)
+        container._sync_option_buttons_enabled()
+        self.assertTrue(
+            btn.isEnabled(),
+            "Toggle button must stay clickable so the user can re-enable the widget",
+        )
+
+    def test_active_color_override_used_when_on(self):
+        """active_color overrides the auto-theme tint for the on state; the off
+        state still uses disabled_color."""
+        from uitk.widgets.mixins.icon_manager import IconManager
+
+        calls = []
+        orig = IconManager.swap_icon.__func__
+
+        def spy(cls, w, name, color=None, auto_theme=True, fallback_size=(16, 16)):
+            calls.append((color, auto_theme))
+            return orig(
+                cls, w, name, color=color, auto_theme=auto_theme,
+                fallback_size=fallback_size,
+            )
+
+        IconManager.swap_icon = classmethod(spy)
+        try:
+            _, toggle = self._make_toggle(
+                initial=True, active_color="#123456", disabled_color="#abcdef"
+            )
+            _ = toggle.widget  # setup -> _apply_visuals (on state)
+            self.assertEqual(calls[-1], ("#123456", False))
+            toggle.set_on(False)
+            self.assertEqual(calls[-1], ("#abcdef", False))
+        finally:
+            IconManager.swap_icon = classmethod(orig)
+
+    def test_gate_wrapped_disables_wrapped_and_keeps_button_live(self):
+        """gate_wrapped=True disables the wrapped widget while the toggle button
+        stays clickable, so it can always be toggled back on."""
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        toggle = ToggleOption(
+            wrapped_widget=widget,
+            initial=True,
+            gate_wrapped=True,
+            settings_key=False,
+        )
+        opt = OptionBox(options=[toggle])
+        container = self.track_widget(opt.wrap(widget))
+        btn = toggle.widget
+        self.assertTrue(widget.isEnabled())
+
+        toggle.set_on(False)
+        container._sync_option_buttons_enabled()
+        self.assertFalse(
+            widget.isEnabled(), "gate_wrapped must disable the wrapped widget when off"
+        )
+        self.assertTrue(btn.isEnabled(), "button must stay live to re-enable")
+
+        toggle.set_on(True)
+        self.assertTrue(widget.isEnabled())
+
     def test_persistence_round_trip(self):
         from uitk.widgets.optionBox.options.toggle import ToggleOption
 
@@ -1313,6 +1447,91 @@ class TestToggleOption(QtBaseTestCase):
             toggle2._settings.sync()
 
 
+class TestDisableOption(QtBaseTestCase):
+    """Tests for DisableOption — the universal 'disable this widget' button."""
+
+    def _make_disable(self, **kwargs):
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        kwargs.setdefault("settings_key", False)
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        option = DisableOption(wrapped_widget=widget, **kwargs)
+        return widget, option
+
+    def test_shares_binary_toggle_base_but_not_toggle_option(self):
+        """DisableOption is a *sibling* of ToggleOption (both share
+        BinaryToggleOption) — deliberately NOT a subclass, to avoid an
+        isinstance subclass relationship between two concrete ABCMeta options."""
+        from uitk.widgets.optionBox.options.toggle import (
+            BinaryToggleOption,
+            ToggleOption,
+        )
+
+        _, option = self._make_disable()
+        # MRO membership is plain (not ABCMeta-cache dependent); isinstance
+        # against the leaf ToggleOption is safe (leaf classes have no subclasses).
+        self.assertIn(BinaryToggleOption, type(option).__mro__)
+        self.assertNotIsInstance(option, ToggleOption)
+
+    def test_default_icon_is_ban(self):
+        _, option = self._make_disable()
+        self.assertEqual(option._icon_on, "ban")
+
+    def test_disables_wrapped_widget_and_keeps_button_live(self):
+        widget, option = self._make_disable(initial=True)
+        opt = OptionBox(options=[option])
+        container = self.track_widget(opt.wrap(widget))
+        btn = option.widget
+        self.assertTrue(widget.isEnabled())
+
+        option.set_on(False)  # disable
+        container._sync_option_buttons_enabled()
+        self.assertFalse(widget.isEnabled(), "DisableOption off should disable the widget")
+        self.assertTrue(
+            btn.isEnabled(), "ban button must stay clickable so the user can re-enable"
+        )
+
+        option.set_on(True)  # re-enable
+        self.assertTrue(widget.isEnabled())
+
+    def test_initial_false_starts_disabled(self):
+        widget, option = self._make_disable(initial=False)
+        _ = option.widget  # trigger setup_widget → _apply_gating
+        self.assertFalse(widget.isEnabled())
+
+    def test_toggled_emits_enabled_state(self):
+        widget, option = self._make_disable(initial=True)
+        _ = option.widget
+        seen = []
+        option.toggled.connect(seen.append)
+        option.set_on(False)
+        option.set_on(True)
+        self.assertEqual(seen, [False, True])
+
+    def test_tooltips_swap_with_state(self):
+        """Exercises GatingMixin._apply_icon_state in both branches."""
+        _, option = self._make_disable(
+            initial=True, tooltip_on="ENABLED", tooltip_off="DISABLED"
+        )
+        _ = option.widget
+        self.assertEqual(option._widget.toolTip(), "ENABLED")
+        option.set_on(False)
+        self.assertEqual(option._widget.toolTip(), "DISABLED")
+        option.set_on(True)
+        self.assertEqual(option._widget.toolTip(), "ENABLED")
+
+    def test_extra_gated_widgets_disabled_alongside_wrapped(self):
+        gated = self.track_widget(QtWidgets.QLineEdit())
+        widget, option = self._make_disable(initial=True, gated_widgets=[gated])
+        _ = option.widget
+        option.set_on(False)
+        self.assertFalse(widget.isEnabled())
+        self.assertFalse(gated.isEnabled())
+        option.set_on(True)
+        self.assertTrue(widget.isEnabled())
+        self.assertTrue(gated.isEnabled())
+
+
 class TestOptionBoxManagerToggle(QtBaseTestCase):
     """Tests for the OptionBoxManager.set_toggle() / add_toggle() fluent API."""
 
@@ -1323,6 +1542,29 @@ class TestOptionBoxManagerToggle(QtBaseTestCase):
         mgr = OptionBoxManager(widget)
         widget._option_box_manager = mgr
         return widget, mgr
+
+    def test_set_disable_adds_disable_option(self):
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        _, mgr = self._make_manager()
+        mgr.set_disable(settings_key=False)
+        disables = [o for o in mgr._pending_options if isinstance(o, DisableOption)]
+        self.assertEqual(len(disables), 1)
+
+    def test_set_toggle_does_not_remove_disable_option(self):
+        """set_toggle(replace=True) replaces only plain toggles, not a coexisting
+        DisableOption (which is-a ToggleOption)."""
+        from uitk.widgets.optionBox.options.disable import DisableOption
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        _, mgr = self._make_manager()
+        mgr.set_disable(settings_key=False)
+        mgr.set_toggle(settings_key=False)  # replace=True by default
+
+        disables = [o for o in mgr._pending_options if isinstance(o, DisableOption)]
+        plain_toggles = [o for o in mgr._pending_options if type(o) is ToggleOption]
+        self.assertEqual(len(disables), 1, "DisableOption must survive set_toggle()")
+        self.assertEqual(len(plain_toggles), 1)
 
     def test_set_toggle_returns_self(self):
         _, mgr = self._make_manager()
@@ -2035,6 +2277,51 @@ class TestOptionMenuClickableRows(QtBaseTestCase):
             self.assertIsNone(menu.footer, "add_footer=False must stay footer-less")
         finally:
             menu.setVisible(False)
+
+
+class TestOptionMenuAdoptedByHost(QtBaseTestCase):
+    """An option-menu dropdown opened from inside a host Menu must be adopted
+    into the host's hover family, so the host's hide_on_leave keeps it open
+    while the user interacts with the dropdown (the dropdown is parented to the
+    wrapped widget — a sibling of the host — so it is otherwise outside the
+    host's subtree)."""
+
+    def test_dropdown_is_adopted_into_enclosing_menu(self):
+        from uitk.widgets.menu import Menu
+        from uitk.widgets.optionBox.options.option_menu import OptionMenuOption
+
+        host = self.track_widget(Menu(hide_on_leave=True))
+        option = OptionMenuOption(menu_items=[("Row", lambda: None)])
+        # Materialize the option's button and place it inside the host menu so
+        # nearest_enclosing() can find the host.
+        host.add(option.widget)
+        host.show()
+
+        option._show_menu()
+
+        family = list(host._iter_transient_family())
+        self.assertIn(
+            option.menu, family, "dropdown was not adopted into the host menu's family"
+        )
+        self.assertGreaterEqual(
+            host.leave_grace_samples, 3, "host did not gain the gap-crossing grace"
+        )
+
+    def test_standalone_dropdown_has_no_host(self):
+        """When the option's button is NOT inside a Menu, the dropdown stands
+        alone (no adoption, no crash)."""
+        from uitk.widgets.menu import Menu
+        from uitk.widgets.optionBox.options.option_menu import OptionMenuOption
+
+        plain_host = self.track_widget(QtWidgets.QWidget())
+        option = OptionMenuOption(menu_items=[("Row", lambda: None)])
+        button = option.widget
+        button.setParent(plain_host)  # in a bare container, not a Menu
+        self.track_widget(option.menu)
+
+        option._show_menu()  # must not raise
+
+        self.assertIsNone(Menu.nearest_enclosing(button))
 
 
 # -----------------------------------------------------------------------------

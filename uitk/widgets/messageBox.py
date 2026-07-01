@@ -2,7 +2,7 @@
 # coding=utf-8
 from qtpy import QtCore, QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets._html_style import format_rich_text, resolve_background
+from uitk.widgets.mixins.text import RichTextFormatter
 
 
 class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
@@ -168,7 +168,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
                 MessageBox's themed QSS is preserved.
             fontSize (int): The font size of the text.
         """
-        s = format_rich_text(
+        s = RichTextFormatter.format(
             string, align=self.align, font_color=fontColor, font_size=fontSize
         )
         super().setText(s)
@@ -182,7 +182,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         label = self.findChild(QtWidgets.QLabel, "qt_msgbox_label")
         if label is None:
             return
-        bg_css = resolve_background(background)
+        bg_css = RichTextFormatter.resolve_background(background)
         if bg_css:
             label.setStyleSheet(
                 f"background-color: {bg_css}; padding: 8px;"

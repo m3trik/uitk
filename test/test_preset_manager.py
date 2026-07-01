@@ -536,6 +536,41 @@ class TestLegacyMigration(BaseTestCase):
         self.assertFalse((self._new_root / "style_presets").exists(),
                          "orphaned sibling still at root after recovery")
 
+    def test_renamed_domain_carries_presets_forward(self):
+        """A renamed preset domain carries the user's saved snapshots into the
+        new dir (hotkey_presets -> shortcut_presets) on first ensure."""
+        from uitk.widgets.mixins.preset_manager import _maybe_migrate_renamed_domain
+
+        old = self._new_root / "hotkey_presets"
+        old.mkdir(parents=True)
+        (old / "vim.json").write_text(json.dumps({"esc": "Esc"}), encoding="utf-8")
+
+        new = self._new_root / "shortcut_presets"
+        _maybe_migrate_renamed_domain(new)
+
+        self.assertTrue((new / "vim.json").exists(),
+                        "renamed-domain preset not carried into the new dir")
+        self.assertFalse(old.exists(),
+                         "fully-carried old domain dir should be removed")
+
+    def test_renamed_domain_never_clobbers_existing(self):
+        """A preset already under the new name wins — a post-rename edit is
+        never overwritten by the old domain's copy."""
+        from uitk.widgets.mixins.preset_manager import _maybe_migrate_renamed_domain
+
+        old = self._new_root / "hotkey_presets"
+        old.mkdir(parents=True)
+        (old / "vim.json").write_text(json.dumps({"v": "old"}), encoding="utf-8")
+        new = self._new_root / "shortcut_presets"
+        new.mkdir(parents=True)
+        (new / "vim.json").write_text(json.dumps({"v": "new"}), encoding="utf-8")
+
+        _maybe_migrate_renamed_domain(new)
+
+        self.assertEqual(
+            json.loads((new / "vim.json").read_text(encoding="utf-8"))["v"], "new",
+            "post-rename edit was clobbered by the old domain copy")
+
     def test_pre_wrap_drops_interim_artifacts(self):
         """``.migrated`` / ``.migration/`` at root level don't get wrapped into uitk/."""
         # Plant a real pre-wrap dir + dead-state artifacts at the same level.

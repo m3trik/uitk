@@ -70,7 +70,7 @@ class EditorPanel(WindowPanel):
             Cheaper capture used *only* by the dirty-check
             (:meth:`PresetManager.is_modified`); falls back to the save-time
             ``export_preset_data`` when omitted. Supply one for editors whose
-            full export is expensive (e.g. the hotkey editor, which would
+            full export is expensive (e.g. the shortcut editor, which would
             otherwise build every registered UI just to test "modified").
         in_header_menu : bool, optional
             When True the preset row is tucked into the :class:`Header`'s
@@ -86,7 +86,7 @@ class EditorPanel(WindowPanel):
 
         # Semantic mode: a preset is the dict the subclass exports, fed back
         # to it on load — no managed-widget list, so editors persist their own
-        # serialized config (theme overrides, hotkey maps, …) directly.
+        # serialized config (theme overrides, shortcut maps, …) directly.
         self._preset_mgr = PresetManager(
             preset_dir=f"uitk/{dir_name}",
             value_provider=self.export_preset_data,
@@ -101,14 +101,19 @@ class EditorPanel(WindowPanel):
             name="cmb_preset", tooltip="Load a saved preset."
         )
         self._cmb_preset = container.preset_combo
+        # "Preset:" rides on the combo's current item as a display-only prefix
+        # (painted on the collapsed selection, absent from the dropdown items)
+        # instead of a separate QLabel — mirrors the "Target UI:" combo in the
+        # shortcut editor. The dirty marker keeps using current_text_suffix
+        # (" *"), so a modified preset reads "Preset:  name *".
+        self._cmb_preset.current_text_prefix = "Preset:  "
 
         preset_layout = QtWidgets.QHBoxLayout()
-        preset_layout.addWidget(QtWidgets.QLabel("Preset:"))
         preset_layout.addWidget(container)
 
         if in_header_menu:
             # Drop the whole row into the header's ⋯-menu popup. The menu
-            # accepts a single widget, so wrap the label+combo row. Zero the
+            # accepts a single widget, so wrap the combo row. Zero the
             # wrapper margins so the row sits flush in the compact popup (the
             # body path keeps the default layout margins). Ensure a menu button
             # exists (the default editor header is ["hide"] only); its

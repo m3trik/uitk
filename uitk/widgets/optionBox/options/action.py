@@ -302,3 +302,9 @@ class MenuOption(ActionOption):
 
         position = getattr(self._menu, "position", "bottom")
         self._menu.show_as_popup(anchor_widget=self._widget, position=position)
+
+        # If this button lives inside another Menu (nested option box), adopt
+        # this menu into that host so its hide_on_leave keeps it open while the
+        # user interacts here. No-op for the common case where the button sits
+        # in a bare option-box container.
+        self._adopt_popup_into_enclosing_menu(self._menu)

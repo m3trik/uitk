@@ -3,7 +3,7 @@
 """Tests for ``SwitchboardEditorsMixin`` — the ``sb.editors`` registry.
 
 Covers:
-- Editor name registry (``style``, ``hotkey``, ``browser``)
+- Editor name registry (``style``, ``shortcut``, ``browser``)
 - Lazy instantiation + caching
 - Auto-recovery when the underlying Qt object is destroyed
 - ``show()`` shows + raises the cached editor
@@ -64,7 +64,9 @@ class EditorsProperty(_Base):
 
     def test_known_editor_names(self):
         names = set(self.sb.editors.names())
-        self.assertEqual(names, {"style", "hotkey", "browser"})
+        self.assertEqual(
+            names, {"style", "shortcut", "global_shortcuts", "browser"}
+        )
 
 
 class EditorsGet(_Base):
@@ -76,11 +78,42 @@ class EditorsGet(_Base):
         # The browser was given our switchboard, not a fresh one
         self.assertIs(editor.sb, self.sb)
 
-    def test_get_hotkey_passes_switchboard(self):
-        from uitk.widgets.editors.hotkey_editor import HotkeyEditor
+    def test_get_shortcut_passes_switchboard(self):
+        from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
 
-        editor = self.sb.editors.get("hotkey")
-        self.assertIsInstance(editor, HotkeyEditor)
+        editor = self.sb.editors.get("shortcut")
+        self.assertIsInstance(editor, ShortcutEditor)
+        self.assertIsNone(editor._focus)  # full editor, not focused
+
+    def test_get_global_shortcuts_is_focused_commands_editor(self):
+        # Same ShortcutEditor class, built with the focused-commands flag and
+        # cached separately from the full "shortcut" editor.
+        from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
+
+        editor = self.sb.editors.get("global_shortcuts")
+        self.assertIsInstance(editor, ShortcutEditor)
+        self.assertEqual(editor._focus, "commands")
+        self.assertIsNot(editor, self.sb.editors.get("shortcut"))
+
+    def test_global_shortcuts_combo_stripped_to_commands(self):
+        # Focused mode strips the UI combo to the single locked ⌘ Commands entry
+        # (no other UIs, no show-all toggle overlay to orphan) rather than hiding
+        # the combo.
+        editor = self.sb.editors.get("global_shortcuts")
+        editor.refresh_ui_list()
+        self.assertEqual(editor.cmb_ui.count(), 1)
+        self.assertEqual(editor.cmb_ui.itemText(0), editor._COMMANDS_LABEL)
+
+    def test_global_shortcuts_hides_scope_description_ui_columns(self):
+        # The focused launcher drops Scope, Description, and UI — leaving just
+        # Action + Shortcut (+ Reset). refresh_ui_list runs the Commands populate,
+        # which must NOT re-reveal the UI column in focused mode.
+        editor = self.sb.editors.get("global_shortcuts")
+        editor.refresh_ui_list()
+        for col in (editor.COL_SCOPE, editor.COL_DESCRIPTION, editor.COL_UI):
+            self.assertTrue(editor.table.isColumnHidden(col), col)
+        for col in (editor.COL_ACTION, editor.COL_SHORTCUT):
+            self.assertFalse(editor.table.isColumnHidden(col), col)
 
     def test_get_style_no_switchboard_arg(self):
         # StyleEditor's constructor doesn't accept a switchboard, so the
@@ -103,7 +136,7 @@ class EditorsGet(_Base):
         # caller can self-correct.
         msg = str(ctx.exception)
         self.assertIn("style", msg)
-        self.assertIn("hotkey", msg)
+        self.assertIn("shortcut", msg)
         self.assertIn("browser", msg)
 
 
@@ -138,10 +171,10 @@ class EditorsShortcuts(_Base):
 
         self.assertIsInstance(self.sb.editors.style, StyleEditor)
 
-    def test_property_hotkey(self):
-        from uitk.widgets.editors.hotkey_editor import HotkeyEditor
+    def test_property_shortcut(self):
+        from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
 
-        self.assertIsInstance(self.sb.editors.hotkey, HotkeyEditor)
+        self.assertIsInstance(self.sb.editors.shortcut, ShortcutEditor)
 
     def test_property_browser(self):
         from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser

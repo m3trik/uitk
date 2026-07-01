@@ -3,7 +3,7 @@
 """In-cell choice (dropdown) capture for item views.
 
 The dropdown sibling of
-:mod:`uitk.widgets.hotkey_capture_delegate`: instead of a *persistent*
+:mod:`uitk.widgets.delegates.shortcut_capture`: instead of a *persistent*
 ``QComboBox`` cell widget — which paints over the cell, eats hover/select
 events, and reads as a permanently-armed control — the cell stays a plain
 item and a combo editor opens only on demand. Double-click (or
@@ -16,12 +16,12 @@ Reusable by any ``QTableWidget`` / ``QTableView`` column via
 through the delegate's ``captured(row, col, value)`` signal and decide how
 to persist it.
 
-Two delegate flavours, matching the hotkey module:
+Two delegate flavours, matching the shortcut-capture module:
 
 * :class:`ChoiceCaptureDelegate` — default cell painting.
 * :class:`BorderedChoiceCaptureDelegate` — also paints the row-spanning
   selection border from
-  :class:`uitk.widgets.row_selection_delegate.RowSelectionBorderDelegate`,
+  :class:`uitk.widgets.delegates.row_selection.RowSelectionBorderDelegate`,
   for tables that install that delegate elsewhere.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from typing import Iterable, List
 
 from qtpy import QtCore, QtWidgets
 
-from uitk.widgets.row_selection_delegate import RowSelectionBorderDelegate
+from uitk.widgets.delegates.row_selection import RowSelectionBorderDelegate
 
 
 class ChoiceCaptureDelegate(QtWidgets.QStyledItemDelegate):
@@ -40,7 +40,7 @@ class ChoiceCaptureDelegate(QtWidgets.QStyledItemDelegate):
     The emit is deferred one event-loop tick so a slot may safely rebuild
     the view (e.g. ``setRowCount(0)``) without the editor being torn down
     mid-commit — identical to
-    :class:`uitk.widgets.hotkey_capture_delegate.HotkeyCaptureDelegate`.
+    :class:`uitk.widgets.delegates.shortcut_capture.ShortcutCaptureDelegate`.
 
     Args:
         parent: Owning object (typically the view).
@@ -105,7 +105,7 @@ class BorderedChoiceCaptureDelegate(ChoiceCaptureDelegate, RowSelectionBorderDel
     selection border.
 
     Use on tables that install
-    :class:`~uitk.widgets.row_selection_delegate.RowSelectionBorderDelegate`
+    :class:`~uitk.widgets.delegates.row_selection.RowSelectionBorderDelegate`
     as their general delegate, so the choice column keeps the same
     transparent-selection outline instead of the QSS blue fill. Edit
     behaviour resolves to :class:`ChoiceCaptureDelegate`; ``paint`` to
@@ -133,9 +133,9 @@ def install_choice_capture(
     ``table.editItem(item)`` (e.g. a context-menu action) route through the
     same delegate and fire ``on_capture`` identically.
 
-    Mirrors :func:`uitk.widgets.hotkey_capture_delegate.install_hotkey_capture`
+    Mirrors :func:`uitk.widgets.delegates.shortcut_capture.install_shortcut_capture`
     so a table can give its enum/category columns the same double-click-to-
-    edit feel as its hotkey column, instead of a persistent combo cell widget.
+    edit feel as its shortcut column, instead of a persistent combo cell widget.
 
     Recommended: set the table to ``NoEditTriggers``. The default triggers
     include ``AnyKeyPressed``/``EditKeyPressed``, so a stray keystroke on a

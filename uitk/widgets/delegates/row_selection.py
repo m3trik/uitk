@@ -6,8 +6,8 @@ The default QSS selection is a filled blue
 (``QAbstractItemView::item:selected``), which obliterates colour-coded
 cell backgrounds — color swatches in
 :class:`uitk.widgets.editors.color_mapping_editor.ColorMappingEditor`,
-status palettes in :class:`uitk.widgets.editors.hotkey_editor`, tag
-chips in :class:`uitk.widgets.editors.shortcut_editor`, etc.
+status palettes in
+:class:`uitk.widgets.editors.shortcut_editor.registry_editor.ShortcutEditor`, etc.
 
 This delegate mutes ``State_Selected`` before invoking the base paint
 (so the QSS fill never lands) and instead draws a single continuous

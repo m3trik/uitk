@@ -4,10 +4,9 @@ from typing import Any, Callable, Mapping, Optional
 
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.text import RichText, TextOverlay
+from uitk.widgets.mixins.text import RichText, TextOverlay, RichTextFormatter
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.progressBar import ProgressBar
-from uitk.widgets._html_style import LOG_COLORS
 
 try:
     from pythontk.str_utils import StrUtils
@@ -36,14 +35,14 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
     PROGRESS_BAR_HEIGHT = 3
 
     # Foreground colour per status severity, sourced from pythontk's
-    # ``LOG_COLORS`` (via _html_style) so the footer, message boxes, and console
-    # logs share one palette. ``info`` (``None``) leaves the theme default text
-    # colour in place. Used by ``setStatusText(..., level=...)``.
+    # ``LOG_COLORS`` (via ``RichTextFormatter``) so the footer, message boxes,
+    # and console logs share one palette. ``info`` (``None``) leaves the theme
+    # default text colour in place. Used by ``setStatusText(..., level=...)``.
     LEVEL_COLORS = {
         "info": None,
-        "success": LOG_COLORS.get("SUCCESS", "#7ec77e"),
-        "warning": LOG_COLORS.get("WARNING", "#e0b341"),
-        "error": LOG_COLORS.get("ERROR", "#e06c6c"),
+        "success": RichTextFormatter.LOG_COLORS.get("SUCCESS", "#7ec77e"),
+        "warning": RichTextFormatter.LOG_COLORS.get("WARNING", "#e0b341"),
+        "error": RichTextFormatter.LOG_COLORS.get("ERROR", "#e06c6c"),
     }
 
     def __init__(

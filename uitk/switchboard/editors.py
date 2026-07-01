@@ -3,7 +3,7 @@
 """Mixin that exposes the bundled editor windows on the Switchboard.
 
 The Switchboard ships three top-level editor windows that operate on its
-state — :class:`StyleEditor`, :class:`HotkeyEditor`, and
+state — :class:`StyleEditor`, :class:`ShortcutEditor`, and
 :class:`SwitchboardBrowser`. Without a central exposure point each caller
 re-implements the same five-line pattern of "cache, probe for deletion,
 recreate if dead, show, raise". This mixin centralizes that:
@@ -38,11 +38,26 @@ class _EditorRegistry:
     """
 
     # Editor names → factory specs. Each spec is a (module_path, class_name,
-    # needs_switchboard) triple resolved lazily so importing the mixin
-    # doesn't drag every editor module into memory.
+    # needs_switchboard[, kwargs]) tuple resolved lazily so importing the mixin
+    # doesn't drag every editor module into memory. The optional 4th element is a
+    # dict of extra constructor kwargs (e.g. a focused-launch flag).
     _EDITORS: Dict[str, tuple] = {
         "style": ("uitk.widgets.editors.style_editor", "StyleEditor", False),
-        "hotkey": ("uitk.widgets.editors.hotkey_editor", "HotkeyEditor", True),
+        "shortcut": (
+            "uitk.widgets.editors.shortcut_editor.registry_editor",
+            "ShortcutEditor",
+            True,
+        ),
+        # The same editor pinned to the ⌘ Commands view with the UI selector
+        # hidden — a focused "global shortcuts" panel (marking-menu activation key
+        # + navigation commands). Cached separately from "shortcut" so the full
+        # customiser and this focused view are independent windows.
+        "global_shortcuts": (
+            "uitk.widgets.editors.shortcut_editor.registry_editor",
+            "ShortcutEditor",
+            True,
+            {"focus": "commands"},
+        ),
         "browser": (
             "uitk.widgets.editors.switchboard_browser",
             "SwitchboardBrowser",
@@ -157,8 +172,8 @@ class _EditorRegistry:
         return self.get("style")
 
     @property
-    def hotkey(self) -> "QtWidgets.QWidget":
-        return self.get("hotkey")
+    def shortcut(self) -> "QtWidgets.QWidget":
+        return self.get("shortcut")
 
     @property
     def browser(self) -> "QtWidgets.QWidget":
@@ -183,7 +198,9 @@ class _EditorRegistry:
 
     def _build(self, name: str):
         """Instantiate the editor by name, importing its module on demand."""
-        module_path, class_name, needs_switchboard = self._EDITORS[name]
+        spec = self._EDITORS[name]
+        module_path, class_name, needs_switchboard = spec[0], spec[1], spec[2]
+        extra_kwargs = spec[3] if len(spec) > 3 else {}
         import importlib
 
         module = importlib.import_module(module_path)
@@ -191,9 +208,9 @@ class _EditorRegistry:
 
         parent = self._resolve_parent()
         if needs_switchboard:
-            instance = cls(switchboard=self._sb, parent=parent)
+            instance = cls(switchboard=self._sb, parent=parent, **extra_kwargs)
         else:
-            instance = cls(parent=parent)
+            instance = cls(parent=parent, **extra_kwargs)
 
         for hook in self._post_build_hooks.get(name, ()):
             try:

@@ -11,6 +11,8 @@ from .options.reset import ResetOption
 from .options.pin_values import PinValuesOption
 from .options.recent_values import RecentValuesOption
 from .options.toggle import ToggleOption
+from .options.disable import DisableOption
+from .options.filter import FilterOption
 from .options.value import ValueOption
 
 # Concrete option type -> grouping key, consulted by OptionBox._sort_options.
@@ -23,7 +25,18 @@ _TYPE_TO_KEY = {
     RecentValuesOption: "recent",
     PinValuesOption: "pin",
     ResetOption: "reset",
+    # ToggleOption and DisableOption are *leaf* classes (no subclasses) sharing
+    # a BinaryToggleOption base. Both are keyed here directly rather than via the
+    # base: isinstance() against a class that HAS subclasses triggers CPython's
+    # ABCMeta __subclasses__() recursion, which cross-contaminates the abc
+    # caches of these QObject/ABCMeta options. Keying off the leaves avoids it.
     ToggleOption: "toggle",
+    DisableOption: "toggle",
+    # FilterOption is a third leaf sibling on BinaryToggleOption (its on/off
+    # button is itself a toggle). Keyed off the leaf for the same ABCMeta-cache
+    # reason as ToggleOption/DisableOption. Its sibling scope ActionOption sorts
+    # as "action", so the scope button naturally follows the filter toggle.
+    FilterOption: "toggle",
     BrowseOption: "browse",
 }
 
@@ -69,16 +82,33 @@ class OptionBoxContainer(QtWidgets.QWidget):
         parent = self.parentWidget()
         if parent is not None and parent.layout() is not None:
             return  # layout-managed — sizing is the parent's responsibility
-        QtCore.QTimer.singleShot(0, self._refit_to_content)
+        # Defer one tick so the QSS settles, then collapse to the content hint.
+        QtCore.QTimer.singleShot(0, self._adjust_to_content)
 
-    def _refit_to_content(self):
-        """Collapse to the content size hint, preserving the center point."""
+    def _adjust_to_content(self):
+        """Fit a *self-positioned* container to its content, preserving center.
+
+        Only an absolute-positioned container (the marking-menu overlay) is
+        resized here: ``adjustSize`` collapses it to the content hint and, since
+        that keeps the top-left and drifts the center left as it narrows, we
+        restore the center so a re-fit — on first show or a later height change
+        routed through ``_update_sizing`` — stays put.
+
+        A **layout-managed** container is left untouched: its parent layout owns
+        its width and position, so calling ``adjustSize`` here would fight the
+        layout and leave the field short of the cell edge. Both the show-time
+        refit and the post-wrap resizing share this method, so the rule lives in
+        one place.
+        """
         try:
+            parent = self.parentWidget()
+            if parent is not None and parent.layout() is not None:
+                return  # layout-managed — parent owns geometry; don't fight it
             layout = self.layout()
             if layout is None:
                 return
-            center = self.geometry().center()
             layout.activate()
+            center = self.geometry().center()
             self.adjustSize()
             new = self.size()
             self.move(center.x() - new.width() // 2, center.y() - new.height() // 2)
@@ -86,9 +116,20 @@ class OptionBoxContainer(QtWidgets.QWidget):
             pass  # underlying C++ object already deleted
 
     def eventFilter(self, obj, event):
-        """Watch the wrapped widget for enabled-state changes."""
-        if event.type() == QtCore.QEvent.EnabledChange:
+        """Watch the wrapped widget for enabled-state and height changes."""
+        etype = event.type()
+        if etype == QtCore.QEvent.EnabledChange:
             self._sync_option_buttons_enabled()
+        elif etype == QtCore.QEvent.Resize:
+            # Re-square the option buttons to the wrapped widget's new height so
+            # they track a height change applied *after* wrap (e.g. a later
+            # ``setFixedHeight`` on the wrapped combo). Only on an actual height
+            # change — width-only resizes leave the square buttons untouched, and
+            # re-fitting their icons on every resize would be wasteful.
+            if event.oldSize().height() != event.size().height():
+                mgr = getattr(self, "_option_box", None)
+                if mgr is not None:
+                    mgr._update_sizing()
         return super().eventFilter(obj, event)
 
     def _sync_option_buttons_enabled(self):
@@ -293,7 +334,9 @@ class OptionBox:
                 extent = IconManager.fit_size(h, margin=self._ICON_MARGIN)
                 w.setIconSize(QtCore.QSize(extent, extent))
         if self.container:
-            self.container.adjustSize()
+            # Center-preserving so re-squaring on a post-wrap height change
+            # doesn't drift an absolute-positioned (overlay) container left.
+            self.container._adjust_to_content()
 
     def _assign_option_object_name(self, option_widget, option):
         """Ensure option widgets have stable, descriptive object names."""
@@ -421,6 +464,19 @@ class OptionBox:
                     "border: none; background: transparent; margin: 0px; padding: 0px;"
                 )
 
+            # The container stands in for the wrapped widget in its parent
+            # layout, so it must size the same way: inherit the wrapped widget's
+            # size policy in both axes. An Expanding LineEdit that filled its cell
+            # would otherwise become a Preferred container that sits at content
+            # width and no longer reaches the cell edge — and likewise an
+            # Expanding QTextEdit would stop filling vertically. Only the policy
+            # types are mirrored (the container keeps its own control type).
+            wrapped_policy = wrapped_widget.sizePolicy()
+            policy = container.sizePolicy()
+            policy.setHorizontalPolicy(wrapped_policy.horizontalPolicy())
+            policy.setVerticalPolicy(wrapped_policy.verticalPolicy())
+            container.setSizePolicy(policy)
+
             # Replace original widget in parent layout
             if parent and parent.layout():
                 parent.layout().replaceWidget(wrapped_widget, container)
@@ -460,9 +516,13 @@ class OptionBox:
             h = wrapped_widget.height() or wrapped_widget.sizeHint().height()
             wrapped_widget.setMinimumHeight(h)
             self.container = container
+            # Back-reference so the container's event filter can re-square the
+            # option buttons when the wrapped widget's height changes later.
+            container._option_box = self
             # Render icons at their display size now that final geometry is known.
             self._update_sizing()
-            # Propagate wrapped widget disabled state to option buttons
+            # Propagate wrapped widget disabled state + height changes to the
+            # option buttons.
             wrapped_widget.installEventFilter(container)
             container._sync_option_buttons_enabled()
             container.show()

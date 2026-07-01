@@ -9,9 +9,11 @@ for direct use by widgets without involving Switchboard:
 
 * :class:`GlobalShortcut` — robust press/release detection via event filter.
 * :class:`ShortcutManager` — per-widget registry of shortcuts.
-* :class:`ShortcutMixin` — convenience mixin around :class:`ShortcutManager`.
-* :func:`create_standard_shortcuts_config`, :func:`apply_standard_shortcuts`.
 * Scope-name helpers (string ↔ ``Qt.ShortcutContext``) used by both layers.
+
+This is the lower layer: it has no Switchboard dependency, so the split
+is by layer (primitives vs. orchestration), not duplication — merging the
+two would force the widget layer to import :mod:`uitk.switchboard`.
 """
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from qtpy import QtCore, QtGui, QtWidgets
@@ -39,6 +41,23 @@ def context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str:
 def scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext:
     """Convert a persisted scope string to a Qt.ShortcutContext."""
     return SCOPE_NAME_TO_CONTEXT.get(name, QtCore.Qt.WindowShortcut)
+
+
+def host_namespace_suffix(context_tags) -> str:
+    """Settings-key suffix namespacing persisted state by host context.
+
+    QSettings is shared across processes by ``(org, app)``, so without a per-host
+    suffix a Maya and a Blender session read/write the SAME keys and their
+    bindings collide. Returns ``"_maya"`` / ``"_blender"`` (tags sorted + joined)
+    for a non-empty ``context_tags``, or ``""`` for standalone.
+
+    Single source of the convention, shared by the marking-menu binding store
+    (``MarkingMenu._binding_store_key``) and the shortcut/command store
+    (``SwitchboardShortcutMixin._shortcut_ns``) so the two can't drift — drift
+    would re-introduce the cross-host collision both are guarding against.
+    """
+    tags = sorted(context_tags or ())
+    return ("_" + "_".join(tags)) if tags else ""
 
 
 # Known DCC host top-level window object names, searched when resolving an
@@ -91,6 +110,48 @@ def resolve_application_host(
 
     # 4. Last resort: keep prior behaviour rather than dropping the shortcut.
     return widget
+
+
+def find_duplicate_application_shortcuts(app=None) -> Dict[str, int]:
+    """Return ``{sequence: count}`` for key sequences bound by more than one
+    *enabled, application-scoped* ``QShortcut`` in the running application.
+
+    An application-scoped shortcut fires regardless of which window has focus, so
+    two enabled ones on the same sequence are ambiguous — Qt logs an "Ambiguous
+    shortcut overload" and fires **neither**. That is the exact failure mode that
+    silently killed repeat-last in Maya (one app shortcut was created per slot
+    instance, so several identical ``Ctrl+Shift+R`` shortcuts stacked up).
+
+    Use it as a diagnostic or a test invariant: a healthy application returns an
+    empty dict. Empty key sequences (an unbound ``QShortcut``) are ignored, and
+    so are window-/widget-scoped shortcuts (those are disambiguated by focus, so
+    the same key is legitimately reusable across windows). Returns ``{}`` when no
+    ``QApplication`` exists.
+    """
+    app = app or QtWidgets.QApplication.instance()
+    if app is None:
+        return {}
+    # QShortcut moved QtWidgets -> QtGui in Qt6; accept whichever the binding has.
+    shortcut_types = tuple(
+        t
+        for t in (getattr(QtWidgets, "QShortcut", None), getattr(QtGui, "QShortcut", None))
+        if isinstance(t, type)
+    )
+    counts: Dict[str, int] = {}
+    seen: set = set()
+    for w in app.allWidgets():
+        for child in w.children():
+            if not isinstance(child, shortcut_types) or id(child) in seen:
+                continue
+            seen.add(id(child))
+            if not child.isEnabled():
+                continue
+            if child.context() != QtCore.Qt.ApplicationShortcut:
+                continue
+            seq = child.key().toString()
+            if seq:
+                counts[seq] = counts.get(seq, 0) + 1
+    return {seq: n for seq, n in counts.items() if n > 1}
 
 
 class GlobalShortcut(QtCore.QObject):
@@ -283,6 +344,7 @@ class ShortcutManager:
         action: Callable,
         description: str = "",
         context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut,
+        hidden: bool = False,
     ) -> QtWidgets.QShortcut:
         """Add a keyboard shortcut with optional description and context
 
@@ -291,6 +353,9 @@ class ShortcutManager:
             action: Function to call when shortcut is activated
             description: Optional description for documentation
             context: Shortcut context (Widget, Window, Application)
+            hidden: When True, the binding is omitted from the shortcut editor's
+                default view (still revealed by its "Show hidden" toggle, and
+                still collision-checked). For functional/semantic keys.
 
         Returns:
             The created QShortcut object
@@ -312,6 +377,7 @@ class ShortcutManager:
             "description": description,
             "context": context,
             "default_key": shortcut_key,
+            "hidden": hidden,
         }
 
         self._notify_change()
@@ -473,24 +539,39 @@ class ShortcutManager:
         self._notify_change()
         return True
 
-    # -- editor dialog -----------------------------------------------------
+    # -- editor window -----------------------------------------------------
 
     def show_editor(self, parent=None, title: str = "Shortcuts") -> None:
-        """Open an editor window for viewing and editing registered shortcuts."""
-        # The editor dialog lives in uitk.widgets.editors and pulls in
-        # EditorPanel + IconManager — load on demand so importing this
-        # module stays lightweight.
-        from uitk.widgets.editors.shortcut_editor import ShortcutEditorDialog
+        """Open the unified shortcut editor for this manager's bindings.
 
-        if hasattr(self, "_editor") and self._editor is not None:
+        Routes through the one :class:`ShortcutEditor` (via
+        :class:`ManagerSwitchboardFacade`) so a standalone widget gets the same
+        editor — filtering, hidden/editable handling, collision checks — as
+        Switchboard slots/commands, instead of a bespoke dialog. Loaded on
+        demand so importing this module stays Switchboard-free and lightweight.
+        """
+        from uitk.widgets.editors.shortcut_editor.manager_facade import (
+            ManagerSwitchboardFacade,
+        )
+        from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
+
+        if getattr(self, "_editor", None) is not None:
             try:
                 self._editor.show()
+                self._editor.raise_()
                 return
             except RuntimeError:
-                pass
-        self._editor = ShortcutEditorDialog(
-            self, parent=parent or self.widget, title=title
+                pass  # underlying C++ editor was destroyed — rebuild below
+        facade = ManagerSwitchboardFacade(self, ui_name=title)
+        self._editor = ShortcutEditor(facade, parent=parent or self.widget)
+        # Focused-view column tailoring: a manager binding's description is
+        # already its Action-column name (Description would be empty), and its
+        # scope is fixed by the owner widget (not per-row editable, so the Scope
+        # column's toggles would all be inert) — hide both.
+        self._editor.set_columns_hidden(
+            (self._editor.COL_DESCRIPTION, self._editor.COL_SCOPE)
         )
+        self._editor.setWindowTitle(title)
         self._editor.show()
 
     def get_shortcuts_info(self) -> Dict[str, str]:
@@ -536,219 +617,40 @@ class ShortcutManager:
             return self.shortcuts[key]["shortcut"]
         return None
 
+    # -- unified shortcut-editor integration -------------------------------
 
-class ShortcutMixin:
-    """Mixin class that provides easy shortcut management for any Qt widget
+    def get_registry(self) -> List[Dict]:
+        """Registry entries for this manager's shortcuts, in the shared editor
+        shape (:meth:`SwitchboardShortcutMixin._build_shortcut_entries`).
 
-    Usage:
-        class MyWidget(QtWidgets.QWidget, ShortcutMixin):
-            def __init__(self):
-                super().__init__()
-                self.setup_shortcuts()
-
-            def setup_shortcuts(self):
-                self.add_shortcut("Ctrl+S", self.save, "Save file")
-                self.add_shortcuts_from_config([
-                    ("Ctrl+O", self.open_file, "Open file"),
-                    ("Ctrl+N", self.new_file, "New file"),
-                ])
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._shortcut_manager: Optional[ShortcutManager] = None
-
-    @property
-    def shortcut_manager(self) -> ShortcutManager:
-        """Lazy initialization of shortcut manager"""
-        if self._shortcut_manager is None:
-            self._shortcut_manager = ShortcutManager(self)
-        return self._shortcut_manager
-
-    def add_shortcut(
-        self,
-        key_sequence: Union[str, QtGui.QKeySequence],
-        action: Callable,
-        description: str = "",
-        context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut,
-    ) -> QtWidgets.QShortcut:
-        """Add a keyboard shortcut
-
-        Parameters:
-            key_sequence: Key combination
-            action: Function to call
-            description: Optional description
-            context: Shortcut context
-
-        Returns:
-            The created QShortcut object
+        Lets the one unified :class:`ShortcutEditor` render + edit a manager's
+        bindings exactly like Switchboard slots/commands — the DRY replacement
+        for the bespoke :class:`ShortcutEditorDialog`. The entry's ``method`` is
+        the current sequence (the manager keys by sequence, which is unique), so
+        the editor can route a rebind back through :meth:`rebind_shortcut`
+        (old sequence -> new). ``read_only`` info rows surface as ``editable``
+        False (shown but locked); ``hidden`` rows obey the editor's Show-hidden
+        toggle.
         """
-        return self.shortcut_manager.add_shortcut(
-            key_sequence, action, description, context
-        )
-
-    def add_shortcuts_from_config(
-        self,
-        shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]],
-    ) -> List[QtWidgets.QShortcut]:
-        """Add multiple shortcuts from configuration
-
-        Parameters:
-            shortcuts_config: List of (key_sequence, action, description) tuples
-
-        Returns:
-            List of created shortcuts
-        """
-        return self.shortcut_manager.add_shortcuts_batch(shortcuts_config)
-
-    def remove_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool:
-        """Remove a shortcut"""
-        return self.shortcut_manager.remove_shortcut(key_sequence)
-
-    def clear_all_shortcuts(self) -> None:
-        """Clear all shortcuts"""
-        if self._shortcut_manager:
-            self._shortcut_manager.clear_all()
-
-    def get_shortcuts_info(self) -> Dict[str, str]:
-        """Get all shortcuts information"""
-        if self._shortcut_manager:
-            return self._shortcut_manager.get_shortcuts_info()
-        return {}
-
-    def add_shortcuts_to_context_menu(
-        self, menu: QtWidgets.QMenu, submenu_title: str = "Keyboard Shortcuts"
-    ) -> QtWidgets.QMenu:
-        """Add shortcuts information to a context menu
-
-        Parameters:
-            menu: The menu to add shortcuts info to
-            submenu_title: Title for the shortcuts submenu
-
-        Returns:
-            The created shortcuts submenu
-        """
-        shortcuts_menu = menu.addMenu(submenu_title)
-        shortcuts_info = self.get_shortcuts_info()
-
-        if shortcuts_info:
-            for shortcut, description in shortcuts_info.items():
-                action = shortcuts_menu.addAction(f"{shortcut}: {description}")
-                action.setEnabled(False)  # Make it non-clickable, just informational
-        else:
-            action = shortcuts_menu.addAction("No shortcuts registered")
-            action.setEnabled(False)
-
-        return shortcuts_menu
-
-    def add_menu_actions_with_shortcuts(
-        self,
-        menu: Optional[QtWidgets.QMenu] = None,
-        actions_config: Optional[
-            List[Tuple[str, Callable, Optional[Union[str, QtGui.QKeySequence]]]]
-        ] = None,
-        auto_match_shortcuts: bool = True,
-    ) -> QtWidgets.QMenu:
-        """Add menu actions with inline shortcut display
-
-        This single method can:
-        1. Create a new menu with actions (if menu=None)
-        2. Add actions to an existing menu (if menu provided)
-        3. Auto-match registered shortcuts with callbacks
-        4. Use provided shortcut hints
-
-        Parameters:
-            menu: Existing menu to add to, or None to create new menu
-            actions_config: List of tuples (text, callback, [shortcut_key])
-            auto_match_shortcuts: Whether to auto-match registered shortcuts with callbacks
-
-        Returns:
-            The menu (created or provided)
-        """
-        if menu is None:
-            menu = QtWidgets.QMenu()
-
-        if not actions_config:
-            return menu
-
-        for config in actions_config:
-            if len(config) >= 2:
-                text = config[0]
-                callback = config[1]
-                shortcut_key = config[2] if len(config) > 2 else None
-
-                # Auto-match shortcut if none provided and auto-match is enabled
-                if shortcut_key is None and auto_match_shortcuts:
-                    for key, info in self.shortcut_manager.shortcuts.items():
-                        if info["action"] == callback:
-                            shortcut_key = key
-                            break
-
-                # Create the action
-                action = menu.addAction(text)
-                action.triggered.connect(callback)
-
-                # Set shortcut for inline display if available
-                if shortcut_key:
-                    if isinstance(shortcut_key, str):
-                        key_sequence = QtGui.QKeySequence(shortcut_key)
-                    else:
-                        key_sequence = QtGui.QKeySequence(shortcut_key)
-                    action.setShortcut(key_sequence)
-
-        return menu
-
-    # Convenience methods for common use cases
-    def create_context_menu(self, actions_config, **kwargs):
-        """Convenience method to create a new context menu with shortcuts"""
-        return self.add_menu_actions_with_shortcuts(None, actions_config, **kwargs)
-
-    def add_actions_to_menu(self, menu, actions_config, **kwargs):
-        """Convenience method to add actions to an existing menu"""
-        return self.add_menu_actions_with_shortcuts(menu, actions_config, **kwargs)
-
-
-# Convenience function for standard shortcuts
-def create_standard_shortcuts_config() -> List[Tuple[QtGui.QKeySequence, str, str]]:
-    """Create a standard set of shortcut configurations
-
-    Returns:
-        List of (key_sequence, method_name, description) tuples for common actions
-    """
-    return [
-        (QtGui.QKeySequence.Copy, "copy", "Copy"),
-        (QtGui.QKeySequence.Cut, "cut", "Cut"),
-        (QtGui.QKeySequence.Paste, "paste", "Paste"),
-        (QtGui.QKeySequence.SelectAll, "selectAll", "Select All"),
-        (QtGui.QKeySequence.Undo, "undo", "Undo"),
-        (QtGui.QKeySequence.Redo, "redo", "Redo"),
-        (QtGui.QKeySequence.Find, "find", "Find"),
-        (QtGui.QKeySequence.Save, "save", "Save"),
-        (QtGui.QKeySequence.Open, "open", "Open"),
-        (QtGui.QKeySequence.New, "new", "New"),
-        (QtGui.QKeySequence.Close, "close", "Close"),
-        (QtGui.QKeySequence.Quit, "quit", "Quit"),
-        (QtGui.QKeySequence.Refresh, "refresh", "Refresh"),
-    ]
-
-
-def apply_standard_shortcuts(widget, shortcuts_to_apply: Optional[List[str]] = None):
-    """Apply standard shortcuts to a widget that has corresponding methods
-
-    Parameters:
-        widget: Widget that implements ShortcutMixin
-        shortcuts_to_apply: List of method names to apply shortcuts for.
-                          If None, applies all available standard shortcuts.
-    """
-    if not hasattr(widget, "add_shortcut"):
-        raise TypeError(
-            "Widget must implement ShortcutMixin to use apply_standard_shortcuts"
-        )
-
-    standard_config = create_standard_shortcuts_config()
-
-    for key_seq, method_name, description in standard_config:
-        if shortcuts_to_apply is None or method_name in shortcuts_to_apply:
-            if hasattr(widget, method_name):
-                method = getattr(widget, method_name)
-                widget.add_shortcut(key_seq, method, description)
+        entries: List[Dict] = []
+        for key, data in self.shortcuts.items():
+            scope = context_to_scope_name(
+                data.get("context", QtCore.Qt.WidgetShortcut)
+            )
+            entries.append(
+                {
+                    "class": "",  # a manager has no Slots-class namespace
+                    "method": key,  # stable id within a render = current seq
+                    "name": data.get("description") or key,
+                    "current": key,
+                    "default": data.get("default_key", key),
+                    "current_scope": scope,
+                    "default_scope": scope,
+                    # The description is the Action-column name; leave doc empty
+                    # so the editor's Description column isn't a duplicate of it.
+                    "doc": "",
+                    "hidden": bool(data.get("hidden", False)),
+                    "editable": not bool(data.get("read_only", False)),
+                }
+            )
+        return entries

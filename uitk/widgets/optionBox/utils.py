@@ -246,7 +246,10 @@ class OptionBoxManager(ptk.LoggingMixin):
         tooltip_off: str = "Disabled. Click to enable.",
         initial: bool = True,
         disabled_color: Optional[str] = None,
+        active_color: Optional[str] = None,
         gated_widgets=(),
+        gate_wrapped: bool = False,
+        keep_enabled_when_wrapped_disabled: bool = True,
         settings_key=None,
         replace: bool = True,
         on_toggled=None,
@@ -262,8 +265,16 @@ class OptionBoxManager(ptk.LoggingMixin):
             initial: Starting state. Overridden by any persisted value.
             disabled_color: Hex tint for the off state. ``None`` uses the
                 project's default error red (``Palette.status()["error"]``).
+            active_color: Hex tint for the on state. ``None`` uses the auto
+                theme colour.
             gated_widgets: Optional widgets to disable while the toggle is
                 off. Caller owns lifecycle.
+            gate_wrapped: When ``True``, the wrapped widget itself is disabled
+                while the toggle is off (the button stays live to re-enable it).
+                Use for a filter/enable toggle that should grey out its own
+                field when off.
+            keep_enabled_when_wrapped_disabled: Keep the button clickable when
+                its wrapped widget is disabled (default ``True``).
             settings_key: Persistence namespace. ``str`` for explicit key,
                 ``None`` to auto-derive from wrapped widget's objectName,
                 ``False`` to opt out.
@@ -279,6 +290,8 @@ class OptionBoxManager(ptk.LoggingMixin):
         from uitk.widgets.optionBox.options.toggle import ToggleOption
 
         if replace:
+            # ToggleOption and DisableOption are siblings, so this never touches
+            # a DisableOption (managed via set_disable()).
             self._remove_options(lambda o: isinstance(o, ToggleOption))
 
         kwargs = dict(
@@ -289,10 +302,14 @@ class OptionBoxManager(ptk.LoggingMixin):
             tooltip_off=tooltip_off,
             initial=initial,
             gated_widgets=gated_widgets,
+            gate_wrapped=gate_wrapped,
+            keep_enabled_when_wrapped_disabled=keep_enabled_when_wrapped_disabled,
             settings_key=settings_key,
         )
         if disabled_color is not None:
             kwargs["disabled_color"] = disabled_color
+        if active_color is not None:
+            kwargs["active_color"] = active_color
         toggle = ToggleOption(**kwargs)
         if on_toggled is not None:
             toggle.toggled.connect(on_toggled)
@@ -306,6 +323,168 @@ class OptionBoxManager(ptk.LoggingMixin):
         """
         kwargs.setdefault("replace", False)
         return self.set_toggle(**kwargs)
+
+    def set_filter(
+        self,
+        *,
+        settings,
+        text_key: str,
+        on_changed,
+        enabled_key: Optional[str] = None,
+        initial_enabled: bool = True,
+        on_toggled=None,
+        tooltip_on: str = "Filter enabled. Click to disable.",
+        tooltip_off: str = "Filter disabled. Click to enable.",
+        scopes=None,
+        scope_key: Optional[str] = None,
+        default_scope: Optional[str] = None,
+        on_scope_changed=None,
+        replace: bool = True,
+    ):
+        """Turn the wrapped text widget into a filter field (fluent interface).
+
+        Adds a :class:`FilterOption` — the single, reusable home for the "filter
+        line-edit" pattern (search/exclude rows, action filters, …). The wrapped
+        widget gets a filter on/off toggle (the field dims while off), text that
+        persists + restores via ``settings``, and — when ``scopes`` is given — a
+        scope-cycle button beside the toggle.
+
+        Requires a text-bearing wrapped widget; an incompatible host is skipped
+        with a warning (see :meth:`FilterOption.is_compatible`).
+
+        Args:
+            settings: ``QSettings``-like store backing text/scope/enabled state.
+            text_key: Key under which the verbatim text is persisted per edit.
+            on_changed: Called (no args) after each edit — wire to the re-filter.
+            enabled_key: Optional key persisting the on/off flag. ``None`` leaves
+                on/off non-persistent.
+            initial_enabled: Starting on/off state (overridden by persistence).
+            on_toggled: Optional callable connected to the toggle's
+                ``toggled(bool)`` signal (e.g. ``lambda _on: self._apply_filter()``).
+            tooltip_on / tooltip_off: Toggle-button tooltips.
+            scopes: Optional ``[{"key", "icon"}, …]`` for an N-state scope cycle.
+            scope_key / default_scope / on_scope_changed: Required with ``scopes``.
+            replace: When ``True`` (default), removes any existing FilterOption
+                (and its scope button) first.
+
+        Returns:
+            self: For fluent chaining. Retrieve the option via
+            ``find_option(FilterOption)`` to read ``is_on`` / ``patterns()`` /
+            ``scope``.
+        """
+        from uitk.widgets.optionBox.options.filter import FilterOption
+
+        if replace:
+            existing = self.find_option(FilterOption)
+            if existing is not None and existing.scope_action is not None:
+                scope_action = existing.scope_action
+                self._remove_options(lambda o: o is scope_action)
+            self._remove_options(lambda o: isinstance(o, FilterOption))
+
+        option = FilterOption(
+            wrapped_widget=self._widget,
+            settings=settings,
+            text_key=text_key,
+            on_changed=on_changed,
+            enabled_key=enabled_key,
+            initial_enabled=initial_enabled,
+            on_toggled=on_toggled,
+            tooltip_on=tooltip_on,
+            tooltip_off=tooltip_off,
+            scopes=scopes,
+            scope_key=scope_key,
+            default_scope=default_scope,
+            on_scope_changed=on_scope_changed,
+        )
+        self.add_option(option)
+        # Add the sibling scope button only when the host is compatible — i.e.
+        # only when add_option accepted the FilterOption itself. The scope
+        # ActionOption is compatible with anything (default gate), so without
+        # this it would be added as an orphan on a non-text host. Gating on the
+        # same condition the FilterOption gate uses is correct regardless of
+        # ``replace`` (a find_option(FilterOption) identity check would return a
+        # *prior* filter on a replace=False second call and wrongly skip this one).
+        if option.scope_action is not None and FilterOption.is_compatible(self._widget):
+            self.add_option(option.scope_action)
+        return self
+
+    def set_disable(
+        self,
+        *,
+        icon: str = "ban",
+        tooltip_on: str = "Enabled. Click to disable.",
+        tooltip_off: str = "Disabled. Click to enable.",
+        initial: bool = True,
+        gate_wrapped: bool = True,
+        gated_widgets=(),
+        disabled_color: Optional[str] = None,
+        active_color: Optional[str] = None,
+        settings_key=None,
+        replace: bool = True,
+        on_toggled=None,
+    ):
+        """Add a universal *disable* button (fluent interface).
+
+        Toggles the wrapped widget's enabled state while keeping the button
+        itself clickable, so it can always be re-enabled. The icon (default the
+        ``ban`` glyph) tints to the project error colour while disabled. This is
+        the centralized primitive for "disable this widget" across the codebase
+        — prefer it over a bare ``setEnabled(False)`` paired with a sibling
+        toggle (which traps itself; see :class:`DisableOption`).
+
+        Args:
+            icon: Icon name (default ``"ban"``).
+            tooltip_on / tooltip_off: Tooltips for the enabled / disabled states.
+            initial: Starting state (``True`` = enabled). Overridden by any
+                persisted value.
+            gate_wrapped: Disable the wrapped widget itself (default ``True``).
+            gated_widgets: Additional widgets to disable in sync.
+            disabled_color: Hex tint while disabled (``None`` = project error
+                red).
+            active_color: Hex tint while enabled (``None`` = auto theme colour).
+            settings_key: Persistence namespace. ``str`` explicit, ``None``
+                auto-derive from the wrapped widget's objectName, ``False`` to
+                opt out.
+            replace: When ``True`` (default), removes any existing
+                DisableOption first.
+            on_toggled: Optional callable connected to ``toggled(bool)``
+                (``True`` = now enabled).
+
+        Returns:
+            self: For fluent chaining. Retrieve via ``find_option(DisableOption)``.
+        """
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        if replace:
+            self._remove_options(lambda o: isinstance(o, DisableOption))
+
+        kwargs = dict(
+            wrapped_widget=self._widget,
+            icon=icon,
+            tooltip_on=tooltip_on,
+            tooltip_off=tooltip_off,
+            initial=initial,
+            gate_wrapped=gate_wrapped,
+            gated_widgets=gated_widgets,
+            settings_key=settings_key,
+        )
+        if disabled_color is not None:
+            kwargs["disabled_color"] = disabled_color
+        if active_color is not None:
+            kwargs["active_color"] = active_color
+        option = DisableOption(**kwargs)
+        if on_toggled is not None:
+            option.toggled.connect(on_toggled)
+        self.add_option(option)
+        return self
+
+    def add_disable(self, **kwargs):
+        """Add a disable button without replacing existing ones.
+
+        Convenience wrapper around ``set_disable(replace=False)``.
+        """
+        kwargs.setdefault("replace", False)
+        return self.set_disable(**kwargs)
 
     def add_value(
         self,
@@ -737,6 +916,23 @@ class OptionBoxManager(ptk.LoggingMixin):
 
             def _log_step(step_name):
                 pass
+
+        # Compatibility gate: an option type may declare it only applies to
+        # certain hosts (e.g. FilterOption needs a text field). Skip + warn
+        # rather than silently mis-wiring an incompatible widget. This is the
+        # "plugins only seen by compatible widgets" hook (BaseOption.is_compatible).
+        is_compatible = getattr(type(option), "is_compatible", None)
+        if callable(is_compatible):
+            try:
+                compatible = is_compatible(self._widget)
+            except Exception:
+                compatible = True  # never let a buggy check block a valid option
+            if not compatible:
+                self.logger.warning(
+                    f"{type(option).__name__} is not compatible with "
+                    f"{type(self._widget).__name__}; skipping."
+                )
+                return self
 
         # If already wrapped, add option directly to option box
         if self._is_wrapped and self._option_box:

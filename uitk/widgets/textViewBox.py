@@ -17,7 +17,7 @@ name via :attr:`clicked_button`.
 from qtpy import QtCore, QtGui, QtWidgets
 
 from uitk.widgets.windowPanel import WindowPanel
-from uitk.widgets._html_style import format_rich_text, resolve_background
+from uitk.widgets.mixins.text import RichTextFormatter
 
 
 class _ViewerTextEdit(QtWidgets.QTextBrowser):
@@ -240,12 +240,12 @@ class TextViewBox(WindowPanel):
         viewer content does not benefit from MessageBox's larger
         default.
         """
-        s = format_rich_text(
+        s = RichTextFormatter.format(
             string, align=self.align, font_color=fontColor, font_size=fontSize
         )
         self.text_edit.setHtml(s)
 
-        bg_css = resolve_background(background)
+        bg_css = RichTextFormatter.resolve_background(background)
         if bg_css:
             self.text_edit.setStyleSheet(
                 f"QTextEdit {{ background-color: {bg_css}; }}"
@@ -260,7 +260,7 @@ class TextViewBox(WindowPanel):
         fontSize=None,
     ) -> None:
         """Append a paragraph without clearing existing content."""
-        s = format_rich_text(
+        s = RichTextFormatter.format(
             string, align=self.align, font_color=fontColor, font_size=fontSize
         )
         self.text_edit.append(s)

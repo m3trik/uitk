@@ -448,6 +448,68 @@ class ItemClickCommitsWithinBlockWindow(QtBaseTestCase):
         self.assertFalse(committer._armed, "popup Show must disarm a stale press")
 
 
+class CurrentTextPrefixSuffix(QtBaseTestCase):
+    """``current_text_prefix`` / ``current_text_suffix`` adorn the *painted*
+    current selection only — never ``itemText`` / item data or the dropdown
+    popup. Lets a label like ``"Target UI:  "`` ride on the current item in
+    place of a separate ``QLabel`` while the popup and stored values stay clean.
+    """
+
+    def test_prefix_and_suffix_compose_display_only(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("polygons")
+        combo.setCurrentIndex(0)
+        combo.current_text_prefix = "Target UI:  "
+        combo.current_text_suffix = " *"
+
+        # The painted (display-only) text carries both adornments...
+        self.assertEqual(
+            combo.format_current_display_text(combo.itemText(0)),
+            "Target UI:  polygons *",
+        )
+        # ...while the model value the editor reads stays untouched, so
+        # currentText()-driven lookups (populate / load / save) are unaffected.
+        self.assertEqual(combo.itemText(0), "polygons")
+        self.assertEqual(combo.currentText(), "polygons")
+
+    def test_prefix_does_not_touch_item_text_or_data(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("Polygons", "polygons")  # display text, item data
+        combo.setCurrentIndex(0)
+        combo.current_text_prefix = "Target UI:  "
+
+        self.assertEqual(combo.itemText(0), "Polygons")
+        self.assertEqual(combo.itemData(0), "polygons")
+
+    def test_no_adornments_returns_text_unchanged(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        self.assertEqual(combo.format_current_display_text("polygons"), "polygons")
+
+    def test_setter_is_idempotent_and_normalizes_none(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.current_text_prefix = None  # normalizes to ""
+        self.assertEqual(combo.current_text_prefix, "")
+        combo.current_text_prefix = "Target UI:  "
+        self.assertEqual(combo.current_text_prefix, "Target UI:  ")
+
+    def test_base_aligned_combobox_has_no_adornments(self):
+        """``format_current_display_text`` lives on the base so the style's
+        ``drawControl`` can call it for either class; a bare ``AlignedComboBox``
+        (no prefix/suffix attrs) must return the text unchanged via getattr."""
+        from uitk.widgets.comboBox import AlignedComboBox
+
+        combo = self.track_widget(AlignedComboBox())
+        self.assertEqual(combo.format_current_display_text("x"), "x")
+
+
 class OpenBoxDistinctFromView(QtBaseTestCase):
     """While the popup is open, the closed-box background (``QComboBox:on``)
     must differ from the popup view background (``QComboBox QAbstractItemView``).

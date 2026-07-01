@@ -416,6 +416,251 @@ class TestMenuHideOnLeave(QtBaseTestCase):
             "menu should still hide when the focused child isn't a text editor",
         )
 
+    def test_unentered_menu_auto_dismisses_after_grace(self):
+        """A menu that opened away from the cursor and was never entered must
+        still auto-dismiss after the longer 'unentered' grace.
+
+        Reproduces the field bug: an option menu opens anchored to the button
+        the user clicked, so the cursor is on the button, not the menu body. If
+        the user never mouses over the menu, ``_mouse_has_entered`` stays False
+        and the old hard guard kept the menu open forever despite the cursor
+        being far outside. The menu now dismisses after ``unentered_grace_samples``
+        outside samples — preserving 'don't yank it before the user can reach
+        it' (the grace) while guaranteeing it never lingers."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = False  # never entered
+        menu._outside_samples = 0
+        menu.unentered_grace_samples = 3  # shrink for the test
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ):
+            for _ in range(menu.unentered_grace_samples - 1):
+                menu._check_cursor_position()
+                self.assertTrue(
+                    menu.isVisible(),
+                    "un-entered menu hid before its grace elapsed (too eager)",
+                )
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "un-entered menu must auto-dismiss after its grace, not linger forever",
+        )
+
+    def test_editor_item_demoted_so_menu_hides_on_leave(self):
+        """A spin box / line edit in a hide_on_leave menu must not passively
+        auto-grab focus and wedge the menu open.
+
+        The field bug: the Merge option menu (contains a QDoubleSpinBox) never
+        hid on leave, while Separate (checkboxes only) always did. The spin box
+        auto-grabbed focus on show, so ``_text_edit_in_progress`` read True even
+        though the user never engaged it. Editor items are now demoted to
+        ClickFocus in hide_on_leave menus."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        spin = menu.add("QDoubleSpinBox", setObjectName="s002")
+        menu.show()
+        self.assertEqual(
+            menu.get_items()[0].focusPolicy(),
+            QtCore.Qt.ClickFocus,
+            "editor item should be demoted to ClickFocus in a hide_on_leave menu",
+        )
+        menu._mouse_has_entered = True
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "spin-box option menu must hide on leave (passive editor focus must not block it)",
+        )
+
+    def test_actively_focused_editor_still_blocks_hide_on_leave(self):
+        """The demotion drops only *passive* auto-focus: once the user clicks
+        into an editor (active editing), hide_on_leave is still suppressed so the
+        in-progress edit isn't torn down by a stray mouse-leave."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        spin = menu.add("QDoubleSpinBox")
+        menu.show()
+        menu._mouse_has_entered = True
+        spin.setFocus(QtCore.Qt.MouseFocusReason)  # user clicked into it
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ), patch.object(QtWidgets.QApplication, "focusWidget", return_value=spin):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(),
+            "menu must stay open while an editor is actively focused (edit in progress)",
+        )
+
+
+class TestMenuTransientFamily(QtBaseTestCase):
+    """Tests for the transient popup family (hover-coordinated child popups).
+
+    A child popup opened from within a menu (an option-menu dropdown, a
+    context menu, a value popup) is frequently parented to the *wrapped
+    widget* — a sibling of the menu — so it falls outside the menu's QObject
+    subtree. ``adopt_transient`` re-establishes the relationship logically so
+    ``hide_on_leave`` keeps the menu open while the pointer is over the child,
+    and hiding the menu cascades to the child.
+    """
+
+    def _outside_point(self, menu):
+        from qtpy import QtGui
+
+        return QtGui.QCursor, QtCore.QPoint(
+            menu.x() + menu.width() + 500, menu.y() + menu.height() + 500
+        )
+
+    def test_sibling_popup_is_outside_family_until_adopted(self):
+        """Reproduces the bug: a sibling popup (parented to a separate widget,
+        not under the menu) is NOT seen as 'inside', so hide_on_leave would
+        close the menu when the cursor moves onto it — until it is adopted."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        # A SIBLING popup: parented to host, NOT into the menu's subtree.
+        sibling = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        sibling.show()
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=sibling
+        ):
+            self.assertFalse(
+                menu._pointer_in_family(far),
+                "sibling popup must read as outside the family before adoption",
+            )
+            menu.adopt_transient(sibling)
+            self.assertTrue(
+                menu._pointer_in_family(far),
+                "after adoption the sibling popup must read as inside the family",
+            )
+
+    def test_adopt_transient_keeps_menu_open_on_leave_to_child(self):
+        """With the child adopted, a leave-check while the cursor is over the
+        child must NOT hide the menu."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        child = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        child.show()
+        menu.adopt_transient(child)
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=child
+        ):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(),
+            "menu hid despite the cursor being over an adopted child popup",
+        )
+
+    def test_adoption_raises_leave_grace(self):
+        """A plain menu hides on the first outside sample (grace=1); adopting a
+        child raises the grace so a brief gap-crossing can't dismiss it."""
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        self.assertEqual(menu.leave_grace_samples, 1)
+        child = self.track_widget(Menu(parent=host))
+        menu.adopt_transient(child)
+        self.assertGreaterEqual(menu.leave_grace_samples, 3)
+
+    def test_leave_grace_requires_sustained_outside(self):
+        """Once a child is adopted (grace>=3), the menu only hides after the
+        cursor stays outside the whole family for several consecutive samples."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        child = self.track_widget(Menu(parent=host))
+        child.setGeometry(0, 0, 40, 40)
+        child.show()
+        menu.adopt_transient(child)
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        ):
+            for _ in range(menu.leave_grace_samples - 1):
+                menu._check_cursor_position()
+                self.assertTrue(
+                    menu.isVisible(), "menu hid before the leave grace elapsed"
+                )
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(), "menu should hide after sustained leave of the family"
+        )
+
+    def test_hide_cascades_to_adopted_children(self):
+        """Hiding the menu must hide its adopted children (no orphan popups)."""
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        child = self.track_widget(Menu(parent=host))
+        child.show()
+        menu.adopt_transient(child)
+        self.assertTrue(child.isVisible())
+        menu.hide(force=True)
+        self.assertFalse(child.isVisible(), "adopted child was orphaned on parent hide")
+
+    def test_pointer_in_family_survives_destroyed_child(self):
+        """A child destroyed without notice must be pruned, not crash the check."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        child = Menu(parent=host)
+        child.show()
+        menu.adopt_transient(child)
+        child.deleteLater()
+        self._drain_qt_events()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        _, far = self._outside_point(menu)
+        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
+            QtWidgets.QApplication, "widgetAt", return_value=None
+        ):
+            # Must not raise on the deleted child, and must report no family hit.
+            self.assertFalse(menu._pointer_in_family(far))
+        self.assertEqual(list(menu._living_transients()), [])
+
+    def test_adopt_transient_is_idempotent_and_ignores_bad_input(self):
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host))
+        child = self.track_widget(Menu(parent=host))
+        menu.adopt_transient(child)
+        menu.adopt_transient(child)  # duplicate
+        menu.adopt_transient(menu)  # self
+        menu.adopt_transient("not-a-widget")  # wrong type
+        menu.adopt_transient(None)
+        self.assertEqual([c for c in menu._living_transients()], [child])
+
+    def test_nearest_enclosing_menu(self):
+        menu = self.track_widget(Menu())
+        button = menu.add("QPushButton", setText="x")
+        self.assertIs(Menu.nearest_enclosing(button), menu)
+        stray = self.track_widget(QtWidgets.QPushButton())
+        self.assertIsNone(Menu.nearest_enclosing(stray))
+        self.assertIsNone(Menu.nearest_enclosing(None))
+
 
 class TestMenuFactoryMethods(QtBaseTestCase):
     """Tests for Menu factory methods."""

@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for ColorSwatch widget and ColorManager default swatch colors.
+"""Unit tests for ColorSwatch widget and ColorId default swatch colors.
 
 Tests cover:
 - Swatch creation and default color initialization
@@ -8,7 +8,7 @@ Tests cover:
 - Single click selects (checks) the swatch without opening color dialog
 - Double click opens color dialog
 - Settings save/load round-trip
-- Default swatch color palette from ColorManager
+- Default swatch color palette from ColorId
 - get_color_difference pure logic
 
 Run standalone: python -m test.test_color_swatch
@@ -195,6 +195,61 @@ class TestColorSwatchClickBehavior(QtBaseTestCase):
 
 
 # =============================================================================
+# keep_square aspect lock
+# =============================================================================
+
+
+class TestColorSwatchKeepSquare(QtBaseTestCase):
+    """Tests for the opt-in keep_square aspect lock."""
+
+    def test_keep_square_off_by_default(self):
+        """Swatches should not constrain their aspect unless asked to."""
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        swatch = self.track_widget(ColorSwatch(setObjectName="test_square_off"))
+        app.processEvents()
+        self.assertFalse(swatch.keep_square)
+
+    def test_keep_square_makes_swatch_square_in_grid(self):
+        """A keep_square swatch should track its column width and stay square."""
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        container = self.track_widget(QtWidgets.QWidget())
+        grid = QtWidgets.QGridLayout(container)
+        grid.setSpacing(2)
+        grid.setContentsMargins(0, 0, 0, 0)
+        swatches = []
+        for i in range(6):
+            sw = ColorSwatch(setObjectName=f"test_square_{i}")
+            sw.keep_square = True
+            grid.addWidget(sw, 0, i)
+            swatches.append(sw)
+
+        for width in (200, 300):
+            container.resize(width, 80)
+            container.show()
+            for _ in range(5):
+                app.processEvents()
+            for sw in swatches:
+                self.assertEqual(
+                    sw.height(),
+                    sw.width(),
+                    f"swatch not square at container width {width}: "
+                    f"{sw.width()}x{sw.height()}",
+                )
+
+    def test_keep_square_settable_via_kwargs(self):
+        """keep_square should be settable through the set_attributes kwargs path."""
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        swatch = self.track_widget(
+            ColorSwatch(setObjectName="test_square_kwarg", keep_square=True)
+        )
+        app.processEvents()
+        self.assertTrue(swatch.keep_square)
+
+
+# =============================================================================
 # Settings Save/Load
 # =============================================================================
 
@@ -292,7 +347,7 @@ class TestColorSwatchSettings(QtBaseTestCase):
 def _mock_mayatk_modules():
     """Build a sys.modules patch dict that stubs the mayatk package chain.
 
-    Stubs maya.cmds so color_manager can be imported without Maya, while
+    Stubs maya.cmds so color_id can be imported without Maya, while
     using the real mayatk source from the monorepo.
     """
     import sys
@@ -317,21 +372,21 @@ def _mock_mayatk_modules():
 
 
 class TestDefaultSwatchColors(QtBaseTestCase):
-    """Tests for the DEFAULT_SWATCH_COLORS palette on ColorManager."""
+    """Tests for the DEFAULT_SWATCH_COLORS palette on ColorId."""
 
     def test_palette_has_12_colors(self):
         """Should have exactly 12 default swatch colors."""
         with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_manager import ColorManager
+            from mayatk.display_utils.color_id import ColorId
 
-            self.assertEqual(len(ColorManager.DEFAULT_SWATCH_COLORS), 12)
+            self.assertEqual(len(ColorId.DEFAULT_SWATCH_COLORS), 12)
 
     def test_palette_colors_are_valid_rgb_tuples(self):
         """Each default color should be a valid (R, G, B) tuple with values 0-255."""
         with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_manager import ColorManager
+            from mayatk.display_utils.color_id import ColorId
 
-            for color in ColorManager.DEFAULT_SWATCH_COLORS:
+            for color in ColorId.DEFAULT_SWATCH_COLORS:
                 self.assertIsInstance(color, tuple)
                 self.assertEqual(len(color), 3)
                 for ch in color:
@@ -341,17 +396,17 @@ class TestDefaultSwatchColors(QtBaseTestCase):
     def test_palette_colors_are_all_distinct(self):
         """Each default swatch color should be unique."""
         with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_manager import ColorManager
+            from mayatk.display_utils.color_id import ColorId
 
-            colors = ColorManager.DEFAULT_SWATCH_COLORS
+            colors = ColorId.DEFAULT_SWATCH_COLORS
             self.assertEqual(len(colors), len(set(colors)))
 
     def test_palette_colors_are_desaturated(self):
         """Default colors should be muted (not fully saturated primary colors)."""
         with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_manager import ColorManager
+            from mayatk.display_utils.color_id import ColorId
 
-            for color in ColorManager.DEFAULT_SWATCH_COLORS:
+            for color in ColorId.DEFAULT_SWATCH_COLORS:
                 qc = QtGui.QColor(*color)
                 # Saturation < 255 means desaturated
                 self.assertLess(
@@ -371,7 +426,7 @@ class TestGetColorDifference(unittest.TestCase):
 
     def _get_cls(self):
         with patch.dict("sys.modules", _mock_mayatk_modules()):
-            from mayatk.display_utils.color_manager import ColorUtils
+            from mayatk.display_utils.color_id import ColorUtils
 
             return ColorUtils
 

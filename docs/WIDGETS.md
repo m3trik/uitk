@@ -95,7 +95,7 @@ Complex packages:
 | Package | What it provides |
 |:---|:---|
 | [`sequencer/`](#sequencer-package) | Full video/animation timeline — `SequencerWidget`, `ClipData`, `TrackData`, `ScrubPlayer`, keyframes, markers, transport controls |
-| [`editors/`](#editors-package) | `ColorMappingEditor`, `HotkeyEditor`, `StyleEditor`, `EditorPanel` |
+| [`editors/`](#editors-package) | `ColorMappingEditor`, `ShortcutEditor`, `StyleEditor`, `EditorPanel` |
 | [`marking_menu/`](MARKING_MENU.md) | Radial gesture menu — see dedicated doc |
 | [`optionBox/`](#option-box-system) | Pluggable option system — `ClearOption`, `BrowseOption`, `PinValuesOption`, `RecentValuesOption`, `OptionMenuOption`, `ContextMenuOption`, `ActionOption`, `MenuOption` |
 
@@ -472,17 +472,17 @@ Real-world integration: [mayatk's shot_sequencer_slots.py](https://github.com/m3
 | Class | Purpose |
 |:---|:---|
 | `ColorMappingEditor` / `ColorMappingDialog` | Bidirectional `dict[str, QColor]` editor |
-| `HotkeyEditor` | Keybinding capture and persistence |
+| `ShortcutEditor` | Shortcut/keybinding capture and persistence |
 | `StyleEditor` | Live theme palette tweaker |
 | `EditorPanel` | Collapsible multi-editor container |
 
 ```python
 from uitk.widgets.editors.style_editor import StyleEditor
-from uitk.widgets.editors.hotkey_editor import HotkeyEditor
+from uitk.widgets.editors.shortcut_editor import ShortcutEditor
 
 panel = EditorPanel()
 panel.add(StyleEditor())
-panel.add(HotkeyEditor())
+panel.add(ShortcutEditor())
 ```
 
 ---

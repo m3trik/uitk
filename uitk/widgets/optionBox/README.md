@@ -97,7 +97,7 @@ red (`pythontk.Palette.status()["error"]`) when off, so the user can see at a
 glance which control caused a dependent filter / widget / process to stop.
 
 ```python
-from uitk.widgets.optionBox.options import ToggleOption
+from uitk import ToggleOption
 
 toggle = ToggleOption(
     wrapped_widget=line_edit,
@@ -122,11 +122,38 @@ line_edit.option_box.set_toggle(
 ```
 
 `gated_widgets=[widget, ...]` will disable the listed widgets while the
-toggle is off. The toggle does **not** clear or disable its `wrapped_widget`
-by default — that loses typed input.
+toggle is off. By default the toggle does **not** disable its own
+`wrapped_widget` (that loses typed input); pass `gate_wrapped=True` to include
+it. Whenever a toggle disables a widget, the button must stay clickable so the
+user can re-enable it — `keep_enabled_when_wrapped_disabled=True` (the default)
+sets the `keepEnabledWhenWrappedDisabled` property the container's enabled-sync
+honours, so the button is never cascade-disabled with its row.
 
 `set_on(value, emit=False)` flips state silently (preset restore, tests).
 Use `find_option(ToggleOption)` to retrieve it from an OptionBoxManager.
+
+### DisableOption
+The universal **"disable this widget"** button — the centralized primitive for
+greying a control out from its option box. It is a *sibling* of `ToggleOption`
+(both built on `BinaryToggleOption`): "on" means the wrapped widget is
+**enabled**, and clicking **disables** it (plus any extra `gated_widgets`) while
+the button itself stays live, so it can always be re-enabled. Uses the universal
+`ban` glyph and tints to the project error colour while disabled.
+
+```python
+# Fluent — disables `line_edit` itself; the ban button stays clickable.
+line_edit.option_box.set_disable()
+line_edit.options.disable(gated_widgets=[sibling])   # also gate siblings
+
+# Direct
+from uitk import DisableOption, OptionBox
+option_box = OptionBox(options=[DisableOption(wrapped_widget=line_edit)])
+```
+
+Prefer this over a bare `widget.setEnabled(False)` paired with a separate toggle:
+a toggle that disables its own row will trap itself unless it sets the keep-live
+property, which `DisableOption` does for you. Emits `toggled(bool)` (`True` =
+now enabled); retrieve via `find_option(DisableOption)`.
 
 ### ResetOption
 A per-widget **reset-to-default** button with a modifier-gated **bypass**

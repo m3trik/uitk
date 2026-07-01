@@ -297,10 +297,6 @@ class PinnedValuesPopup(QtCore.QObject):
 
     def _show_context_menu(self, pos, entry, stack, button):
         """Show context menu for a pinned value."""
-        # Temporarily disable hide_on_leave to prevent menu closing during context menu
-        original_hide_on_leave = self._menu.hide_on_leave
-        self._menu.hide_on_leave = False
-
         menu = QtWidgets.QMenu(self._menu)
 
         if entry.alias:
@@ -315,10 +311,16 @@ class PinnedValuesPopup(QtCore.QObject):
                 lambda: self._remove_alias_inline(stack, button, entry)
             )
 
+        # Keep the popup open while its context menu is up by adopting the
+        # context menu into the popup's hover family. Replaces an older band-aid
+        # that toggled hide_on_leave off/on around the blocking exec_ — the
+        # family check keeps the popup alive while the pointer is over the
+        # context menu, and the menu re-arms hide_on_leave automatically.
+        self._menu.adopt_transient(menu)
         menu.exec_(button.mapToGlobal(pos))
-
-        # Restore hide_on_leave after context menu closes
-        self._menu.hide_on_leave = original_hide_on_leave
+        # One-shot: destroy it so it doesn't linger (parented to the popup) as a
+        # hidden member of the hover family until the popup itself closes.
+        menu.deleteLater()
 
     def _remove_alias_inline(self, stack, button, entry):
         """Remove alias inline without going through edit mode."""

@@ -346,7 +346,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             if not v.get("read_only")
         ]
 
-    # -- consume assigned hotkeys so they don't leak to the host app --------
+    # -- consume assigned shortcuts so they don't leak to the host app --------
 
     @property
     def window_shortcuts(self) -> bool:

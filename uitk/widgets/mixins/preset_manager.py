@@ -340,6 +340,7 @@ class PresetManager(ptk.LoggingMixin):
         # mkdir), so skipping the per-read FS calls is safe.
         if self._ensured_dir != self._preset_dir:
             _maybe_migrate_legacy(self._preset_dir)
+            _maybe_migrate_renamed_domain(self._preset_dir)
             self._preset_dir.mkdir(parents=True, exist_ok=True)
             self._ensured_dir = self._preset_dir
         return self._preset_dir
@@ -1539,7 +1540,7 @@ _LEGACY_PRESET_PATHS: Dict[str, str] = {
     "mayatk/shot_manifest_colors": "~/.mayatk/presets/shot_manifest_colors",
     "extapps/texture_maps/packer": "~/.pythontk/presets/map_packer",
     "uitk/style_presets": "{APPCONFIG}/uitk/style_presets",
-    "uitk/hotkey_presets": "{APPCONFIG}/uitk/hotkey_presets",
+    "uitk/shortcut_presets": "{APPCONFIG}/uitk/hotkey_presets",
     "uitk/switchboard_browser/presets": "{APPCONFIG}/uitk/switchboard_browser/presets",
 }
 
@@ -1956,6 +1957,54 @@ def _maybe_migrate_legacy(new_dir: Path) -> None:
                          matched_key, legacy_pkg_root, e)
 
     _mark_migrated(matched_key)
+
+
+# Intra-root preset-domain renames: { new_leaf_dir: prior_leaf_dir } under the
+# same parent. When the new domain dir is first ensured, presets saved under the
+# prior name (same parent) are carried across so *renaming* a preset domain keeps
+# the user's snapshots. Distinct from _LEGACY_PRESET_PATHS (which pulls from
+# external pre-consolidation roots); this is a same-root rename.
+_RENAMED_PRESET_DOMAINS: Dict[str, str] = {
+    # 2026-06: the global key-binding editor's domain was renamed from
+    # "hotkey_presets" to "shortcut_presets" (hotkey -> shortcut terminology).
+    "shortcut_presets": "hotkey_presets",
+}
+
+
+def _maybe_migrate_renamed_domain(new_dir: Path) -> None:
+    """Move presets from a renamed sibling domain into *new_dir*, once.
+
+    Looks up *new_dir*'s leaf name in :data:`_RENAMED_PRESET_DOMAINS`; when it
+    was renamed from a prior leaf, a same-parent dir under that prior name is
+    merged in via :func:`_merge_move` (which never overwrites an existing
+    destination file, so a post-rename edit always wins). Interim migration
+    artifacts are dropped rather than carried. Best-effort: I/O failures are
+    swallowed so preset loading stays robust.
+    """
+    old_name = _RENAMED_PRESET_DOMAINS.get(new_dir.name)
+    if not old_name:
+        return
+    old_dir = new_dir.with_name(old_name)
+    if old_dir == new_dir or not old_dir.is_dir():
+        return
+    try:
+        new_dir.mkdir(parents=True, exist_ok=True)
+        for item in list(old_dir.iterdir()):
+            if item.name in _INTERIM_STATE_ARTIFACTS:
+                try:
+                    item.unlink()
+                except OSError:
+                    pass
+                continue
+            _merge_move(item, new_dir / item.name)
+        try:
+            old_dir.rmdir()  # removed only if fully carried (no collisions left)
+        except OSError:
+            pass
+    except OSError as e:
+        _log.warning(
+            "preset domain rename %s -> %s failed: %s", old_name, new_dir.name, e
+        )
 
 
 # -----------------------------------------------------------------------------

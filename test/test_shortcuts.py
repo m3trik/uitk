@@ -6,17 +6,17 @@ Uses the real Switchboard with the examples module to test:
 - Shortcut registration via @shortcut decorator
 - Registry generation from connected slots
 - User shortcut assignment and persistence
-- HotkeyEditor UI functionality
+- ShortcutEditor UI functionality
 """
 import unittest
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 
 # Base Test
 from conftest import QtBaseTestCase
 
 # Code to Test
 from uitk.switchboard import Switchboard
-from uitk.widgets.editors.hotkey_editor import HotkeyEditor
+from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
 from uitk.switchboard import Shortcut
 from uitk.examples.example import ExampleSlots
 
@@ -266,8 +266,216 @@ class TestClearedShortcutBinding(QtBaseTestCase):
         )
 
 
-class TestHotkeyEditor(QtBaseTestCase):
-    """Test the HotkeyEditor UI with real Switchboard."""
+class TestUndecoratedSlotShortcutPersistence(QtBaseTestCase):
+    """Regression: an editor-assigned shortcut on an UNDECORATED slot was dead
+    next session until the user reassigned it.
+
+    ``register_slots_shortcuts`` (which re-creates a UI's shortcuts every time
+    the UI is built) bailed at ``if not default_sequence: continue`` for every
+    slot lacking a ``@Shortcut`` default — *before* reading the persisted user
+    override. So a shortcut bound via the editor to a plain widget slot (the
+    common case) was silently dropped on the next session's rebuild. The
+    override is now read before that bail; only a slot with neither a default
+    nor an override is skipped.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module, slot_source=ExampleSlots
+        )
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+        # cmb_options is a real ExampleSlots slot with NO @Shortcut decorator.
+        self.method = "cmb_options"
+        self.key = f"shortcuts.ExampleSlots.{self.method}"
+        # Sandboxed QSettings is process-scoped; clear any leaked override so
+        # every run starts from a clean "no binding" baseline.
+        if hasattr(self.ui, "settings"):
+            self.ui.settings.clear(self.key)
+            self.ui.settings.clear(self.key + ".scope")
+
+    def tearDown(self):
+        if getattr(self, "ui", None):
+            if hasattr(self.ui, "settings"):
+                self.ui.settings.clear(self.key)
+                self.ui.settings.clear(self.key + ".scope")
+            self.ui.close()
+        super().tearDown()
+
+    def test_method_ships_undecorated(self):
+        # Guard: the regression only exists for a slot with no decorator default.
+        entry = next(
+            e
+            for e in self.sb.get_shortcut_registry(self.ui)
+            if e["method"] == self.method
+        )
+        self.assertFalse(entry["default"], "test slot must ship without a default")
+
+    def test_persisted_override_recreated_on_rebuild(self):
+        slots = self.sb.get_slots_instance(self.ui)
+        # No decorator default -> nothing bound for it after the initial build.
+        self.assertNotIn(self.method, getattr(slots, "_connected_shortcuts", {}))
+
+        # A previous session persisted an application-scoped binding via the editor.
+        self.ui.settings.setValue(self.key, "Ctrl+Alt+J")
+        self.ui.settings.setValue(self.key + ".scope", "application")
+
+        # The per-session rebuild step must now re-create it from settings
+        # (previously it bailed before reading the override).
+        self.sb.register_slots_shortcuts(self.ui, slots)
+
+        sc = slots._connected_shortcuts.get(self.method)
+        self.assertIsNotNone(
+            sc, "undecorated slot's persisted shortcut was not re-created"
+        )
+        self.assertEqual(sc.key().toString(), "Ctrl+Alt+J")
+        self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
+
+    def test_unbound_undecorated_slot_still_skipped(self):
+        # No default AND no override -> nothing to bind (must not create a
+        # shortcut for every plain method just because the bail moved).
+        slots = self.sb.get_slots_instance(self.ui)
+        self.sb.register_slots_shortcuts(self.ui, slots)
+        self.assertNotIn(self.method, getattr(slots, "_connected_shortcuts", {}))
+
+
+class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
+    """Cold-start standins for application-scoped slot shortcuts.
+
+    An app-scoped shortcut bound to a slot is normally created by
+    ``register_slots_shortcuts`` when its UI builds — but tool UIs are lazy, so
+    on a fresh session (before the tool is opened) the binding had no live
+    shortcut and the shortcut was dead though the editor still listed it. The
+    switchboard now scans persisted app-scoped overrides at the first
+    ``on_ui_loaded`` and owns a host-window standin per binding that
+    builds-then-invokes on press, disposed the moment the real UI builds.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module, slot_source=ExampleSlots
+        )
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+
+    def tearDown(self):
+        if getattr(self, "ui", None):
+            self.ui.close()
+        super().tearDown()
+
+    def test_ui_names_with_shortcut_overrides_parses_keys(self):
+        keys = [
+            "paneA/shortcuts.FooSlots.do_x",
+            "paneA/shortcuts.FooSlots.do_x.scope",
+            "paneB/some_widget/clicked",  # a state key, not a shortcut
+        ]
+        for k in keys:
+            self.sb.settings.setValue(k, "x")
+        try:
+            names = self.sb._ui_names_with_shortcut_overrides()
+            self.assertIn("paneA", names)
+            self.assertNotIn("paneB", names)
+        finally:
+            for k in keys:
+                self.sb.settings.clear(k)
+
+    def test_scan_creates_standin_only_for_app_scoped_unbound_unbuilt(self):
+        from unittest import mock
+
+        self.sb._deferred_slots_scanned = False
+        self.sb._deferred_slot_shortcuts.clear()
+        entries = [
+            {"method": "act_app", "current": "Ctrl+Alt+0", "current_scope": "application"},
+            {"method": "act_win", "current": "Ctrl+Alt+1", "current_scope": "window"},
+            {"method": "act_empty", "current": "", "current_scope": "application"},
+        ]
+        with mock.patch.object(
+            self.sb, "_ui_names_with_shortcut_overrides", return_value={"ghost_ui"}
+        ), mock.patch.object(
+            self.sb, "get_static_shortcut_registry", return_value=entries
+        ):
+            self.sb._bind_deferred_slot_shortcuts()
+
+        keys = set(self.sb._deferred_slot_shortcuts)
+        self.assertIn(("ghost_ui", "act_app"), keys)  # app-scoped -> standin
+        self.assertNotIn(("ghost_ui", "act_win"), keys)  # window-scoped -> none
+        self.assertNotIn(("ghost_ui", "act_empty"), keys)  # unbound -> none
+        # cleanup the live standin we created
+        self.sb._dispose_deferred_slot_shortcuts("ghost_ui")
+
+    def test_scan_skips_already_built_ui(self):
+        from unittest import mock
+
+        self.sb._deferred_slots_scanned = False
+        self.sb._deferred_slot_shortcuts.clear()
+        # 'example' IS loaded (setUp), so it must be skipped — its real
+        # shortcuts own the keys; a standin would be ambiguous.
+        with mock.patch.object(
+            self.sb, "_ui_names_with_shortcut_overrides", return_value={"example"}
+        ), mock.patch.object(
+            self.sb, "get_static_shortcut_registry"
+        ) as static:
+            self.sb._bind_deferred_slot_shortcuts()
+        static.assert_not_called()
+        self.assertEqual(self.sb._deferred_slot_shortcuts, {})
+
+    def test_register_slots_shortcuts_disposes_standins_for_built_ui(self):
+        from uitk.widgets.mixins.shortcuts import GlobalShortcut
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        QtWidgets.QApplication.processEvents()
+        gs = GlobalShortcut(
+            QtGui.QKeySequence("Ctrl+Alt+9"),
+            host,
+            context=QtCore.Qt.ApplicationShortcut,
+        )
+        self.sb._deferred_slot_shortcuts[("example", "cmb_options")] = gs
+
+        # Building/registering the example UI must dispose its standin.
+        slots = self.sb.get_slots_instance(self.ui)
+        self.sb.register_slots_shortcuts(self.ui, slots)
+
+        self.assertNotIn(("example", "cmb_options"), self.sb._deferred_slot_shortcuts)
+        self.assertNotIn(gs, GlobalShortcut._instances)  # truly disposed
+
+    def test_deferred_callback_builds_and_invokes_with_widget_injection(self):
+        from unittest import mock
+
+        fired = []
+
+        class _Inst:
+            def act(self, widget=None):
+                fired.append(widget)
+
+        cb = self.sb._make_deferred_slot_callback("ghost_ui", "act")
+        with mock.patch.object(
+            self.sb, "get_ui", return_value=object()
+        ), mock.patch.object(self.sb, "get_slots_instance", return_value=_Inst()):
+            cb()
+        self.assertEqual(fired, [None])  # widget injected as None on a bare trigger
+
+
+class TestShortcutEditor(QtBaseTestCase):
+    """Test the ShortcutEditor UI with real Switchboard."""
 
     @classmethod
     def setUpClass(cls):
@@ -285,7 +493,7 @@ class TestHotkeyEditor(QtBaseTestCase):
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
         QtWidgets.QApplication.processEvents()
-        self.editor = HotkeyEditor(self.sb, parent=None)
+        self.editor = ShortcutEditor(self.sb, parent=None)
 
     def tearDown(self):
         if hasattr(self, "editor") and self.editor:
@@ -461,7 +669,7 @@ class TestResolveApplicationHost(QtBaseTestCase):
 
 
 class TestApplicationScopeOwner(QtBaseTestCase):
-    """Regression: 'hotkey editor application scope does nothing'.
+    """Regression: 'shortcut editor application scope does nothing'.
 
     An application-scoped shortcut must be owned by a *visible* host window,
     not the slot UI — which is hidden whenever the tool isn't open, exactly
@@ -590,6 +798,300 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
         self.assertIn(gs2, GlobalShortcut._instances)
         mgr.clear_all()
         self.assertNotIn(gs2, GlobalShortcut._instances)
+
+
+class TestShortcutManagerRegistry(QtBaseTestCase):
+    """``ShortcutManager.get_registry`` emits the shared editor entry shape so
+    the one unified ShortcutEditor can render a manager's bindings."""
+
+    def _mgr(self):
+        from uitk.widgets.mixins.shortcuts import ShortcutManager
+
+        host = self.track_widget(QtWidgets.QWidget())
+        return ShortcutManager(host)
+
+    def test_registry_entry_shape(self):
+        mgr = self._mgr()
+        mgr.add_shortcut("Ctrl+G", lambda: None, "Do G")
+        entry = {e["method"]: e for e in mgr.get_registry()}["Ctrl+G"]
+        # Same keys the editor's _build_row consumes.
+        for field in (
+            "method", "name", "current", "default",
+            "current_scope", "default_scope", "doc", "hidden", "editable",
+        ):
+            self.assertIn(field, entry)
+        self.assertEqual(entry["name"], "Do G")
+        self.assertEqual(entry["current"], "Ctrl+G")
+        self.assertTrue(entry["editable"])
+        self.assertFalse(entry["hidden"])
+
+    def test_info_entry_is_non_editable(self):
+        mgr = self._mgr()
+        mgr.add_info_entry("Ctrl+Shift+LMB", "Switch to shot at cursor")
+        entry = {e["method"]: e for e in mgr.get_registry()}["Ctrl+Shift+LMB"]
+        self.assertFalse(entry["editable"])  # read_only -> locked
+        self.assertEqual(entry["name"], "Switch to shot at cursor")
+
+    def test_hidden_flag_propagates(self):
+        mgr = self._mgr()
+        mgr.add_shortcut("Ctrl+H", lambda: None, "Hidden one", hidden=True)
+        entry = {e["method"]: e for e in mgr.get_registry()}["Ctrl+H"]
+        self.assertTrue(entry["hidden"])
+
+    def test_scope_reflects_context(self):
+        mgr = self._mgr()
+        mgr.add_shortcut(
+            "Ctrl+W", lambda: None, "Win", QtCore.Qt.WindowShortcut
+        )
+        entry = {e["method"]: e for e in mgr.get_registry()}["Ctrl+W"]
+        self.assertEqual(entry["current_scope"], "window")
+
+
+class TestShortcutManagerEditorIntegration(QtBaseTestCase):
+    """``ShortcutManager.show_editor`` opens the ONE unified ShortcutEditor (via
+    ManagerSwitchboardFacade), not a bespoke dialog — the DRY merge."""
+
+    def _editor_for(self, *binds, infos=()):
+        from uitk.widgets.mixins.shortcuts import ShortcutManager
+
+        host = self.track_widget(QtWidgets.QWidget())
+        mgr = ShortcutManager(host)
+        for b in binds:
+            mgr.add_shortcut(*b)
+        for label, desc in infos:
+            mgr.add_info_entry(label, desc)
+        mgr.show_editor(title="Sequencer Shortcuts")
+        ed = mgr._editor
+        self.track_widget(ed)
+        ed._set_show_hidden(False)  # deterministic regardless of persisted pref
+        return mgr, ed
+
+    def _rows(self, ed):
+        return [
+            ed.table.item(r, 0).text()
+            for r in range(ed.table.rowCount())
+            if ed.table.item(r, 0) and ed.table.columnSpan(r, 0) == 1
+        ]
+
+    def test_opens_unified_editor_in_manager_mode(self):
+        from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
+
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        self.assertIsInstance(ed, ShortcutEditor)
+        self.assertTrue(ed._manager_mode)
+        # Manager mode has no preset row and no Assigned/Commands pseudo-views.
+        self.assertIsNone(getattr(ed, "_preset_mgr", None))
+        self.assertEqual(
+            [ed.cmb_ui.itemText(i) for i in range(ed.cmb_ui.count())],
+            ["Sequencer Shortcuts"],
+        )
+        self.assertIn("Do G", self._rows(ed))
+
+    def test_hidden_binding_obeys_show_hidden_toggle(self):
+        _mgr, ed = self._editor_for(
+            ("Ctrl+G", lambda: None, "Visible"),
+            ("Ctrl+H", lambda: None, "Hidden", QtCore.Qt.WidgetShortcut, True),
+        )
+        self.assertNotIn("Hidden", self._rows(ed))
+        ed._set_show_hidden(True)
+        self.assertIn("Hidden", self._rows(ed))
+
+    def test_rebind_routes_through_manager(self):
+        mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        ed._apply_shortcut(0, "Ctrl+J")
+        self.assertIn("Ctrl+J", mgr.shortcuts)
+        self.assertNotIn("Ctrl+G", mgr.shortcuts)
+
+    def test_clearing_is_not_destructive(self):
+        # A manager binding has no "listed but unbound" state, so clearing must
+        # not delete it (and its action) outright — empty input is ignored.
+        mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        ed._apply_shortcut(0, "")
+        self.assertIn("Ctrl+G", mgr.shortcuts)
+
+    def test_reset_column_precedes_description(self):
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        headers = [
+            ed.table.horizontalHeaderItem(c).text()
+            for c in range(ed.table.columnCount())
+        ]
+        # Scope + Reset are icon-only columns with blank headers; the assertion
+        # of interest is the order — Reset precedes Description (a prior regression
+        # swapped them).
+        self.assertEqual(
+            headers, ["Action", "Shortcut", "", "", "Description", "UI"]
+        )
+        self.assertLess(ed.COL_RESET, ed.COL_DESCRIPTION)
+
+    def test_manager_view_hides_description_column(self):
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        self.assertTrue(ed.table.isColumnHidden(ed.COL_DESCRIPTION))
+
+    def test_manager_view_hides_scope_column(self):
+        # A manager binding's scope is fixed by its owner widget (not per-row
+        # editable), so the focused view hides the Scope column entirely rather
+        # than showing inert toggles.
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        self.assertTrue(ed.table.isColumnHidden(ed.COL_SCOPE))
+
+    def test_set_columns_hidden_api_round_trips(self):
+        # Use a column visible by default in manager mode (Scope is hidden there)
+        # so the hide→show round-trip exercises both directions meaningfully.
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        self.assertFalse(ed.table.isColumnHidden(ed.COL_SHORTCUT))
+        ed.set_columns_hidden(ed.COL_SHORTCUT)
+        self.assertTrue(ed.table.isColumnHidden(ed.COL_SHORTCUT))
+        ed.set_columns_hidden(ed.COL_SHORTCUT, hidden=False)
+        self.assertFalse(ed.table.isColumnHidden(ed.COL_SHORTCUT))
+
+    def test_manager_header_menu_has_view_section_only(self):
+        from uitk.widgets.separator import Separator
+
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        titles = [
+            s.title for s in ed.header.menu.findChildren(Separator) if s.title
+        ]
+        self.assertEqual(titles, ["View"])  # no Presets section in manager mode
+        self.assertEqual(
+            ed._show_hidden_checkbox.maximumHeight(), ed.HEADER_WIDGET_HEIGHT
+        )
+
+    def test_show_hidden_lives_in_header_menu(self):
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        # The checkbox exists and drives _set_show_hidden (not on the filter row).
+        self.assertTrue(hasattr(ed, "_show_hidden_checkbox"))
+        ed._show_hidden_checkbox.setChecked(True)
+        self.assertTrue(ed._show_hidden)
+        ed._show_hidden_checkbox.setChecked(False)
+        self.assertFalse(ed._show_hidden)
+
+    def test_description_not_duplicated_into_doc_column(self):
+        _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
+        for r in range(ed.table.rowCount()):
+            it = ed.table.item(r, 0)
+            if it and it.text() == "Do G":
+                desc = ed.table.item(r, ed.COL_DESCRIPTION)
+                self.assertEqual(desc.text(), "")  # Description col is empty
+                break
+        else:
+            self.fail("row not found")
+
+    def test_info_entry_locked_normal_binding_rebindable_scope_fixed(self):
+        _mgr, ed = self._editor_for(
+            ("Ctrl+G", lambda: None, "Do G"),
+            infos=(("Ctrl+Shift+LMB", "Switch to shot"),),
+        )
+        by_name = {}
+        for r in range(ed.table.rowCount()):
+            it = ed.table.item(r, 0)
+            if it and ed.table.columnSpan(r, 0) == 1:
+                by_name[it.text()] = r
+        # Info row: not rebindable, scope locked.
+        ir = by_name["Switch to shot"]
+        self.assertFalse(
+            bool(ed.table.item(ir, 1).flags() & QtCore.Qt.ItemIsEditable)
+        )
+        self.assertFalse(ed.scope_interactive(ir))
+        # Normal row: rebindable, but scope is owner-fixed (locked).
+        nr = by_name["Do G"]
+        self.assertTrue(
+            bool(ed.table.item(nr, 1).flags() & QtCore.Qt.ItemIsEditable)
+        )
+        self.assertFalse(ed.scope_interactive(nr))
+
+
+class TestStaticShortcutRegistry(QtBaseTestCase):
+    """``get_static_shortcut_registry`` lists a UI's slots WITHOUT building it,
+    matching the live registry's methods/defaults and reading the same
+    persisted overrides."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module, slot_source=ExampleSlots
+        )
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+
+    def tearDown(self):
+        if getattr(self, "ui", None):
+            self.ui.close()
+        super().tearDown()
+
+    def test_static_matches_live_methods_and_defaults(self):
+        live = {e["method"]: e for e in self.sb.get_shortcut_registry(self.ui)}
+        static = {
+            e["method"]: e for e in self.sb.get_static_shortcut_registry("example")
+        }
+        if not live:
+            self.skipTest("example UI exposes no shortcut slots")
+
+        # Static may legitimately miss slots bound to widgets created in code
+        # (the documented fidelity caveat), so it must be a subset — never
+        # inventing slots the live tree doesn't have.
+        self.assertTrue(
+            set(static) <= set(live),
+            f"static listed slots absent from live: {set(static) - set(live)}",
+        )
+        # @shortcut-decorated methods come from the class, so they must always
+        # appear statically.
+        decorated = {m for m, e in live.items() if e["default"]}
+        self.assertTrue(
+            decorated <= set(static),
+            f"static dropped decorated slots: {decorated - set(static)}",
+        )
+        for method in static:
+            for field in ("class", "name", "default", "default_scope", "doc"):
+                self.assertEqual(
+                    static[method][field],
+                    live[method][field],
+                    f"static/live mismatch for {method!r} field {field!r}",
+                )
+
+    def test_static_registry_does_not_instantiate(self):
+        from unittest import mock
+
+        # Evict the example UI so a static read can't lean on the loaded copy.
+        del self.sb.loaded_ui["example"]
+        with mock.patch.object(self.sb, "get_ui", wraps=self.sb.get_ui) as spy:
+            static = self.sb.get_static_shortcut_registry("example")
+        spy.assert_not_called()
+        self.assertIsInstance(static, list)
+        self.assertIsNone(
+            self.sb.loaded_ui.peek("example"),
+            "a static read must not instantiate the UI",
+        )
+
+    def test_static_reads_persisted_override(self):
+        """An override persisted by the live UI must be read by the static path,
+        proving both use the same per-UI QSettings namespace."""
+        live = self.sb.get_shortcut_registry(self.ui)
+        if not live:
+            self.skipTest("example UI exposes no shortcut slots")
+        method = live[0]["method"]
+
+        self.sb.set_user_shortcut(self.ui, method, "Ctrl+Alt+7", "application")
+        if hasattr(self.ui.settings, "sync"):
+            self.ui.settings.sync()
+
+        static = {
+            e["method"]: e for e in self.sb.get_static_shortcut_registry("example")
+        }
+        self.assertEqual(static[method]["current"], "Ctrl+Alt+7")
+        self.assertEqual(static[method]["current_scope"], "application")
+
+    def test_unknown_ui_returns_empty(self):
+        self.assertEqual(
+            self.sb.get_static_shortcut_registry("no_such_ui_xyz"), []
+        )
 
 
 if __name__ == "__main__":

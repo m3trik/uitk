@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.2.90"
+__version__ = "1.2.93"
 
 
 DEFAULT_INCLUDE = {
@@ -115,12 +115,30 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox.options.reset": "ResetOption",
     "widgets.optionBox.options.pin_values": "PinValuesOption",
     "widgets.optionBox.options.toggle": "ToggleOption",
+    "widgets.optionBox.options.disable": "DisableOption",
     "widgets.optionBox.options.value": "ValueOption",
     "widgets.optionBox.options.option_menu": ["OptionMenuOption", "ContextMenuOption"],
     "widgets.progressBar": "ProgressBar",
     "widgets.pushButton": "PushButton",
     "widgets.region": "Region",
-    "widgets.row_selection_delegate": "RowSelectionBorderDelegate",
+    # Item-view delegates (uitk.widgets.delegates) — RowSelectionBorderDelegate
+    # is the base; the capture delegates build on it and ship Bordered* variants.
+    "widgets.delegates.row_selection": "RowSelectionBorderDelegate",
+    "widgets.delegates.centered_icon": [
+        "CenteredIconActionDelegate",
+        "paint_centered_icon",
+        "fill_cell_background",
+    ],
+    "widgets.delegates.shortcut_capture": [
+        "ShortcutCaptureDelegate",
+        "BorderedShortcutCaptureDelegate",
+        "install_shortcut_capture",
+    ],
+    "widgets.delegates.choice_capture": [
+        "ChoiceCaptureDelegate",
+        "BorderedChoiceCaptureDelegate",
+        "install_choice_capture",
+    ],
     "widgets.separator": "Separator",
     "widgets.slider": "Slider",
     "widgets.tableWidget": "TableWidget",
@@ -141,10 +159,15 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.option_box_mixin": "OptionBoxMixin",
     "widgets.mixins.recent_values_store": "RecentValuesStore",
     "widgets.mixins.settings_manager": "SettingsManager",
-    "widgets.mixins.shortcuts": ["ShortcutManager", "ShortcutMixin"],
+    "widgets.mixins.shortcuts": "ShortcutManager",
     "widgets.mixins.state_manager": "StateManager",
     "widgets.mixins.style_sheet": "StyleSheet",
-    "widgets.mixins.text": ["TextTruncation", "RichText", "TextOverlay"],
+    "widgets.mixins.text": [
+        "RichTextFormatter",
+        "TextTruncation",
+        "RichText",
+        "TextOverlay",
+    ],
     "widgets.mixins.value_manager": "ValueManager",
 }
 

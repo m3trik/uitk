@@ -24,46 +24,30 @@ wrapped control disabled while off (e.g. a write-only field).
 
 from typing import Iterable, Optional, Union
 
-import pythontk as ptk
 from qtpy import QtCore
 
-from ._options import ButtonOption
+from ._options import ButtonOption, GatingMixin, _DEFAULT_DISABLED_COLOR
 from ._persistence import PersistedOption
 
 
-_DEFAULT_DISABLED_COLOR: str = ptk.Palette.status()["error"][0]  # soft coral
+class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption):
+    """Shared base for binary on/off option buttons.
 
+    Implements the full state machine — ``is_on`` / :meth:`set_on`, click
+    handling, persistence, gating, and the icon/tooltip swap — for any option
+    that is fundamentally a *stateful boolean*. :class:`ToggleOption` (a generic
+    persisted toggle) and :class:`DisableOption` (the universal "disable this
+    widget" button) are **siblings** built on this base, rather than one being a
+    subclass of the other. Keeping them siblings is deliberate: it avoids an
+    ``isinstance`` subclass relationship between two concrete option types, which
+    (because the option hierarchy uses ``ABCMeta``) can trip CPython's abc
+    subclass-cache and intermittently mis-report ``issubclass``. ``_sort_options``
+    keys off the two leaf classes (see ``_optionBox._TYPE_TO_KEY``) so both still
+    group as a "toggle".
 
-class ToggleOption(PersistedOption, ButtonOption):
-    """Persisted binary toggle button.
-
-    Args:
-        wrapped_widget: The widget this option is attached to (used for
-            objectName-based persistence keying and parenting).
-        icon: Icon name (drawn theme-coloured when on, dimmed-red when off).
-            Defaults to ``"filter"`` since that is the most common toggle
-            use-case; pass any other icon name for non-filter toggles.
-        icon_off: Optional alternate icon shown in the off state. When omitted
-            the same icon is shown in the off-state color.
-        tooltip_on: Tooltip while the toggle is on.
-        tooltip_off: Tooltip while the toggle is off.
-        initial: Starting state (default ``True``). Overridden by any value
-            previously persisted under ``settings_key``.
-        disabled_color: Hex string used to tint the icon when off. Defaults
-            to ``pythontk.Palette.status()["error"][0]`` (soft coral red fg).
-        gated_widgets: Optional iterable of widgets to disable while the
-            toggle is off. Caller owns lifecycle — toggle does not restore
-            gated state on destruction.
-        settings_key: Persistence namespace. ``str`` for explicit key,
-            ``None`` to auto-derive from the wrapped widget's objectName,
-            or ``False`` to opt out (consumer owns external storage).
-        order: Explicit sort position. See :class:`BaseOption`.
-
-    Signals:
-        toggled(bool): Emitted whenever the on/off state changes from a
-            user click or a ``set_on(...)`` call with ``emit=True``. Not
-            emitted for initial-state or persisted-state restoration.
-    """
+    Subclasses typically only set ``SETTINGS_APP`` and tweak the default icon /
+    tooltips / gating; the constructor and behaviour live here (see
+    :class:`ToggleOption` for the full argument reference)."""
 
     SETTINGS_APP = "ToggleOption"
 
@@ -79,7 +63,10 @@ class ToggleOption(PersistedOption, ButtonOption):
         tooltip_off: str = "Disabled. Click to enable.",
         initial: bool = True,
         disabled_color: str = _DEFAULT_DISABLED_COLOR,
+        active_color: Optional[str] = None,
         gated_widgets: Iterable = (),
+        gate_wrapped: bool = False,
+        keep_enabled_when_wrapped_disabled: bool = True,
         settings_key: Optional[Union[str, bool]] = None,
         order: Optional[int] = None,
     ):
@@ -99,9 +86,17 @@ class ToggleOption(PersistedOption, ButtonOption):
         self._icon_off = icon_off or icon
         self._tooltip_on = tooltip_on
         self._tooltip_off = tooltip_off
-        self._disabled_color = disabled_color
-        self._gated_widgets = list(gated_widgets)
         self._is_on = bool(initial)
+
+        # Gating behaviour (gated widgets, keep-live flag, disabled tint, icon
+        # swap) lives in GatingMixin — shared by both subclasses.
+        self._init_gating(
+            gated_widgets=gated_widgets,
+            gate_wrapped=gate_wrapped,
+            disabled_color=disabled_color,
+            active_color=active_color,
+            keep_enabled_when_wrapped_disabled=keep_enabled_when_wrapped_disabled,
+        )
 
         self._init_persistence(settings_key)
         self._load_state()  # may override _is_on before any UI exists
@@ -129,7 +124,7 @@ class ToggleOption(PersistedOption, ButtonOption):
             return
         self._is_on = new
         self._apply_visuals()
-        self._apply_gating()
+        self._apply_gating(self._is_on)
         self._save_state()
         if emit:
             self.toggled.emit(self._is_on)
@@ -144,10 +139,13 @@ class ToggleOption(PersistedOption, ButtonOption):
         # is unambiguous and the bound method isn't stored on ``self.callback``.
         super().setup_widget()
         self._widget.clicked.connect(self._handle_click)
+        # Keep the button clickable even when its wrapped widget is disabled
+        # (otherwise gate_wrapped / an externally-disabled host would trap it).
+        self._install_keep_enabled()
         # Apply current state visuals + gating now that the widget exists.
         # Done unconditionally on setup so initial=False is reflected.
         self._apply_visuals()
-        self._apply_gating()
+        self._apply_gating(self._is_on)
 
     def _handle_click(self):
         # User-driven flip — delegate to set_on so post-state work
@@ -159,36 +157,14 @@ class ToggleOption(PersistedOption, ButtonOption):
     # ------------------------------------------------------------------
 
     def _apply_visuals(self):
-        if not self._widget:
-            return
-        from uitk.widgets.mixins.icon_manager import IconManager
-
-        if self._is_on:
-            IconManager.swap_icon(
-                self._widget,
-                self._icon_on,
-                color=None,
-                auto_theme=True,
-                fallback_size=(15, 15),
-            )
-            self._widget.setToolTip(self._tooltip_on)
-        else:
-            IconManager.swap_icon(
-                self._widget,
-                self._icon_off,
-                color=self._disabled_color,
-                auto_theme=False,
-                fallback_size=(15, 15),
-            )
-            self._widget.setToolTip(self._tooltip_off)
-
-    def _apply_gating(self):
-        for w in self._gated_widgets:
-            try:
-                w.setEnabled(self._is_on)
-            except RuntimeError:
-                # Underlying C++ widget already deleted; skip.
-                pass
+        # Icon/tooltip swap lives in GatingMixin._apply_icon_state.
+        self._apply_icon_state(
+            self._is_on,
+            self._icon_on,
+            self._icon_off,
+            tooltip_active=self._tooltip_on,
+            tooltip_inactive=self._tooltip_off,
+        )
 
     def _save_state(self):
         if not self._settings:
@@ -206,3 +182,49 @@ class ToggleOption(PersistedOption, ButtonOption):
         if isinstance(saved, str):
             saved = saved.lower() in ("1", "true", "yes")
         self._is_on = bool(saved)
+
+
+class ToggleOption(BinaryToggleOption):
+    """Persisted binary toggle button.
+
+    Args:
+        wrapped_widget: The widget this option is attached to (used for
+            objectName-based persistence keying and parenting).
+        icon: Icon name (drawn theme-coloured when on, dimmed-red when off).
+            Defaults to ``"filter"`` since that is the most common toggle
+            use-case; pass any other icon name for non-filter toggles.
+        icon_off: Optional alternate icon shown in the off state. When omitted
+            the same icon is shown in the off-state color.
+        tooltip_on: Tooltip while the toggle is on.
+        tooltip_off: Tooltip while the toggle is off.
+        initial: Starting state (default ``True``). Overridden by any value
+            previously persisted under ``settings_key``.
+        disabled_color: Hex string used to tint the icon when off. Defaults
+            to ``pythontk.Palette.status()["error"][0]`` (soft coral red fg).
+        active_color: Hex string used to tint the icon when on. ``None``
+            (default) uses the auto theme colour.
+        gated_widgets: Optional iterable of widgets to disable while the
+            toggle is off. Caller owns lifecycle — toggle does not restore
+            gated state on destruction.
+        gate_wrapped: When ``True``, the wrapped widget itself is included in
+            the gated set (disabled while off). Pairs with
+            ``keep_enabled_when_wrapped_disabled`` so the button stays live.
+        keep_enabled_when_wrapped_disabled: When ``True`` (default), the toggle
+            button stays clickable even when the wrapped widget is disabled —
+            so a toggle that disables its own row can always re-enable it. The
+            container's enabled-sync honours this via the
+            ``keepEnabledWhenWrappedDisabled`` widget property.
+        settings_key: Persistence namespace. ``str`` for explicit key,
+            ``None`` to auto-derive from the wrapped widget's objectName,
+            or ``False`` to opt out (consumer owns external storage).
+        order: Explicit sort position. See :class:`BaseOption`.
+
+    Signals:
+        toggled(bool): Emitted whenever the on/off state changes from a
+            user click or a ``set_on(...)`` call with ``emit=True``. Not
+            emitted for initial-state or persisted-state restoration.
+    """
+
+    # The full state machine lives in BinaryToggleOption; ToggleOption is the
+    # generic persisted toggle (filter-style defaults inherited from the base).
+    SETTINGS_APP = "ToggleOption"
