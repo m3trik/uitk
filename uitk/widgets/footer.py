@@ -4,7 +4,7 @@ from typing import Any, Callable, Mapping, Optional
 
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.text import RichText, TextOverlay, RichTextFormatter
+from uitk.widgets.mixins.text import RichTextFormatter
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.progressBar import ProgressBar
 

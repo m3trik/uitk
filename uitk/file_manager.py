@@ -24,7 +24,7 @@ Example:
 import os
 import inspect
 from collections import namedtuple
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Any, Optional, Union, Tuple
 import pythontk as ptk
 
 

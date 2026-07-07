@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtWidgets, QtGui, QtCore
+from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.settings_manager import SettingsManager
 

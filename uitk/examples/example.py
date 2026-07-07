@@ -413,7 +413,7 @@ class ExampleSlots(ptk.LoggingMixin):
         # Reflect file path in the text field (blocked to avoid triggering nav).
         src = getattr(obj, "__file__", None) or self._module_file(obj)
         if src:
-            blocker = QtCore.QSignalBlocker(self.ui.txt_input)
+            blocker = QtCore.QSignalBlocker(self.ui.txt_input)  # noqa: F841 -- RAII guard
             self.ui.txt_input.setText(src)
             del blocker
 

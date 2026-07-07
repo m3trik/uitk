@@ -14,7 +14,7 @@ formatter functions in :mod:`uitk.bridge.formatters`.
 Re-exports the most-used names so callers can ``from uitk.bridge import
 AttributeSpec, BridgeSlotsBase, ...`` without spelunking submodules.
 """
-from uitk.bridge.spec import (
+from uitk.bridge.spec import (  # noqa: F401 -- re-export surface
     AttributeSpec,
     KindHandler,
     register_kind,
@@ -25,22 +25,22 @@ from uitk.bridge.spec import (
     set_value,
     connect_changed,
 )
-from uitk.bridge.formatters import (
+from uitk.bridge.formatters import (  # noqa: F401 -- re-export surface
     python_literal,
     lua_literal,
     js_literal,
     cli_raw,
 )
-from uitk.bridge.parameters import (
+from uitk.bridge.parameters import (  # noqa: F401 -- re-export surface
     referenced_keys,
     defaults,
     render_context,
 )
-from uitk.bridge.tooltip import (
+from uitk.bridge.tooltip import (  # noqa: F401 -- re-export surface
     format_param_tooltip,
     template_description,
 )
-from uitk.bridge.slots import BridgeSlotsBase
+from uitk.bridge.slots import BridgeSlotsBase  # noqa: F401 -- re-export surface
 
 
 # Friendlier alias for bridge consumers -- the dataclass IS the bridge

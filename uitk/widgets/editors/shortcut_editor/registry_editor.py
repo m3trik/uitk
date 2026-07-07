@@ -1577,7 +1577,7 @@ class ShortcutEditor(EditorPanel):
             locked_btn.setToolTip(
                 "Switch Maya to a custom (non-default) hotkey set to clear its binding."
             )
-        proceed_btn = box.addButton("Assign anyway", QtWidgets.QMessageBox.AcceptRole)
+        box.addButton("Assign anyway", QtWidgets.QMessageBox.AcceptRole)
         cancel_btn = box.addButton(QtWidgets.QMessageBox.Cancel)
         box.setDefaultButton(cancel_btn)
 

@@ -5,11 +5,13 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from contextlib import contextmanager
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Union, TYPE_CHECKING
 
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+
+if TYPE_CHECKING:
+    from uitk.widgets.mixins.state_manager import StateManager
 
 _log = logging.getLogger(__name__)
 

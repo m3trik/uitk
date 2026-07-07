@@ -863,7 +863,7 @@ class ExternalAppHandler(BaseHandler):
         if getattr(widget, "_uitk_external_visibility_wired", False):
             return
         try:
-            from qtpy import QtCore as _QtCore
+            import qtpy  # noqa: F401 -- availability probe (headless callers)
         except ImportError:
             return
         filt = _VisibilityForwarder(self, name, parent=widget)

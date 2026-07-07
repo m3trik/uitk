@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.menu_mixin import MenuMixin

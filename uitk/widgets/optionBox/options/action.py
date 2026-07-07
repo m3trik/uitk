@@ -2,7 +2,6 @@
 # coding=utf-8
 """Action option for OptionBox - provides customizable action buttons."""
 
-from qtpy import QtWidgets
 from ._options import ButtonOption
 
 

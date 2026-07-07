@@ -943,7 +943,7 @@ class TreeWidget(
                 if isinstance(value, (dict, list)):
                     self._add_recursive(value, item)
                 else:
-                    child_item = self.create_item(str(value), value, item)
+                    self.create_item(str(value), value, item)
 
         elif isinstance(data, (list, tuple)):
             for item_data in data:

@@ -37,7 +37,7 @@ Usage::
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
 

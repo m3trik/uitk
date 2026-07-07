@@ -334,7 +334,6 @@ class TextTruncation:
         elif elide_mode == QtCore.Qt.ElideMiddle:
             if len(suffix) >= max_chars:
                 return suffix[:max_chars]
-            available = max_chars - len(suffix)
 
             # Try to keep first and last words
             if len(words) >= 2:
@@ -373,8 +372,6 @@ class TextTruncation:
         """
         if not path or len(path) <= max_chars:
             return path
-
-        import os
 
         # Handle different path separators
         separator = "\\" if "\\" in path else "/"
@@ -715,7 +712,7 @@ class RichText:
         """ """
         try:
             label = self.richTextLabelDict[index]
-        except KeyError as error:
+        except KeyError:
             label = self._createRichTextLabel(index)
 
         return label

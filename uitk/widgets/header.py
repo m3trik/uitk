@@ -653,21 +653,7 @@ class Header(
 
     def show_menu(self):
         """Show the menu."""
-        menu = self.menu
-        grid = menu.gridLayout
-
-        if grid:
-            for i in range(grid.count()):
-                item = grid.itemAt(i)
-                widget = item.widget() if item else None
-                if widget:
-                    row, col, rowSpan, colSpan = grid.getItemPosition(i)
-                    text = (
-                        widget.text()
-                        if hasattr(widget, "text") and callable(widget.text)
-                        else ""
-                    )
-        menu.show_as_popup(position="cursorPos")
+        self.menu.show_as_popup(position="cursorPos")
 
     def toggle_collapse(self):
         """Toggle between collapsed (header only) and expanded window states."""
@@ -751,7 +737,6 @@ class Header(
 
         # Use setFixedHeight to force the exact collapsed height.
         # This overrides any layout size hints that might resist the resize.
-        w = fixed_width if fixed_width is not None else window.width()
         window.setMinimumSize(0, 0)
         window.setMaximumSize(16777215, 16777215)
         window.setFixedHeight(new_height)

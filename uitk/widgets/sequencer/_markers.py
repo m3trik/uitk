@@ -3,7 +3,7 @@
 """MarkerItem — named marker on the timeline with drag and context menu."""
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
 
@@ -14,7 +14,6 @@ from uitk.widgets.sequencer._data import (
     MarkerData,
     _RULER_HEIGHT,
     _styled_menu,
-    _menu_exec_pos,
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
 from uitk.widgets.sequencer._draggable import DraggableItemMixin, snap_time

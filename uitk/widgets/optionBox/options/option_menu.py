@@ -108,8 +108,6 @@ class OptionMenuOption(ButtonOption, ptk.LoggingMixin):
             QtWidgets.QPushButton | None: The created row, or None when the
             entry maps to no clickable row.
         """
-        from qtpy import QtWidgets
-
         if isinstance(item, str):  # e.g. "separator" -- no separator row yet
             return None
         if not (isinstance(item, (tuple, list)) and len(item) >= 2):
