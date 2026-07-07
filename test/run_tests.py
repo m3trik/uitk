@@ -288,7 +288,13 @@ class TestSuiteRunner:
 
         # Create badge URL (shields.io format)
         badge_url = f"https://img.shields.io/badge/tests-{status}-{color}.svg"
-        badge_markdown = f"[![Tests]({badge_url})](test/)"
+        # Link target computed relative to the README's location
+        # (docs/README.md -> ../test/), so a regenerate can't break the link.
+        link_target = (
+            Path(os.path.relpath(PACKAGE_ROOT / "test", README_PATH.parent)).as_posix()
+            + "/"
+        )
+        badge_markdown = f"[![Tests]({badge_url})]({link_target})"
 
         try:
             content = README_PATH.read_text(encoding="utf-8")

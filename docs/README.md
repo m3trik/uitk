@@ -2,7 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/tests-1817%20passed-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/tests-2405%20passed-brightgreen.svg)](../test/)
 
 # uitk
 
@@ -11,6 +11,12 @@
 <!-- short_description_end -->
 
 Built on `qtpy` (PySide2 / PySide6). Runs standalone or hosted inside DCCs (Maya, Blender, 3ds Max) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells.
+
+## Why
+
+UITK comes from years of building artist tooling for DCC pipelines, where you don't need one big application — you need *dozens of small ones*, and each traditionally pays the same Qt tax before doing anything useful: load the `.ui`, `findChild()` every widget, `.connect()` every signal, restore and save state, style it, handle standalone-vs-hosted. None of that code is the tool, and hand-rolling it per tool is how toolkits drift into thirty apps by thirty authors.
+
+UITK's intent is to make the *well-behaved* version of a tool the cheapest one to build: names do the wiring, persistence and theming are defaults rather than features, and one shared convention makes a fleet of tools feel like a single application. Every convention has an escape hatch (`@Signals`, handlers, per-widget opt-outs), so growing out of the defaults never means fighting them.
 
 ## Install
 
@@ -28,6 +34,7 @@ python -m uitk.examples.example
 
 ## Quickstart
 
+<!-- sync:quickstart -->
 ```python
 from uitk import Switchboard
 
@@ -47,6 +54,9 @@ sb.loaded_ui.editor.show(pos="screen", app_exec=True)
 ```
 
 Widget `btn_save` in `editor.ui` is connected to `EditorSlots.btn_save` because the names match.
+<!-- /sync:quickstart -->
+
+No `.connect()` calls. No `findChild()`. No manual state restore.
 
 ---
 

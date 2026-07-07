@@ -180,7 +180,7 @@ ui.restore_window_size = False
 
 Windows geometry (size + position) also persists, debounced to 500ms.
 
-For named preset save/load, see [Presets in the Cookbook](COOKBOOK.md#presets).
+For named preset save/load, see [Presets in the Cookbook](COOKBOOK.md#presets--named-value-sets).
 
 ---
 
