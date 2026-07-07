@@ -1120,6 +1120,44 @@ class TestBrowseOptionIntegration(QtBaseTestCase):
         self.assertTrue(callable(getattr(browse, "browse", None)))
 
 
+class TestOptionBoxManagerWrapRetryTeardown(QtBaseTestCase):
+    """The wrap-retry timer (parentless widget, wrap deferred) must not fire
+    into a widget destroyed before it ever got a parent."""
+
+    def test_retry_timer_survives_widget_destruction(self):
+        """Regression: the retry loop used a bare ``QTimer.singleShot`` with
+        no owner, so a pending retry kept firing after the widget's C++
+        object was deleted — ``widget.parent()`` then raised ``RuntimeError:
+        Internal C++ object (QLineEdit) already deleted`` (observed live
+        during a full-suite run: a widget wrapped with no parent yet, then
+        torn down by test teardown before one attached)."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        widget = QtWidgets.QLineEdit()  # deliberately parentless
+        mgr = OptionBoxManager(widget)
+        mgr.set_action(lambda: None, icon="play")  # populates _pending_options
+        self.assertTrue(mgr._wrap_retry_scheduled, "retry loop wasn't armed")
+
+        widget.deleteLater()
+        self._drain_qt_events()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+        captured = []
+        original_hook = sys.excepthook
+        sys.excepthook = lambda *exc_info: captured.append(exc_info)
+        try:
+            from qtpy.QtTest import QTest
+
+            QTest.qWait(100)  # past several 15ms retry intervals
+        finally:
+            sys.excepthook = original_hook
+
+        self.assertFalse(
+            captured,
+            f"wrap-retry timer fired into a deleted widget: {captured}",
+        )
+
+
 class TestOptionBoxManagerBrowse(QtBaseTestCase):
     """Tests for the OptionBoxManager.browse() fluent API.
 
