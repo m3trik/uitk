@@ -142,6 +142,11 @@ DEFAULT_INCLUDE = {
     "widgets.separator": "Separator",
     "widgets.slider": "Slider",
     "widgets.tableWidget": "TableWidget",
+    "widgets.scriptOutput": [
+        "ScriptOutput",
+        "ScriptHighlighter",
+        "ScriptHighlightRule",
+    ],
     "widgets.textEdit": "TextEdit",
     "widgets.textEditLogHandler": "TextEditLogHandler",
     "widgets.textViewBox": "TextViewBox",
