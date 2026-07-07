@@ -2,7 +2,7 @@
 # coding=utf-8
 """Pin Values option for OptionBox - allows pinning/saving widget values."""
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets, QtCore
 from ._options import ButtonOption
 
 
@@ -589,7 +589,6 @@ class PinValuesOption(ButtonOption):
         # Get current value
         current_value = self._get_widget_value()
         current_entry = self._get_entry_for_value(current_value)
-        current_is_pinned = current_entry is not None
         has_current = current_value is not None and str(current_value).strip()
 
         # Add current value row (pass entry if pinned, otherwise raw value)

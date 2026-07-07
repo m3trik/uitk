@@ -113,7 +113,7 @@ class TextEditLogHandler(logging.Handler):
                     self.widget.repaint()
                     QtWidgets.QApplication.processEvents()
             else:
-                print(f"Logging error: widget does not support append.")
+                print("Logging error: widget does not support append.")
         except Exception as e:
             print(f"QtTextEditHandler error: {e}")
 

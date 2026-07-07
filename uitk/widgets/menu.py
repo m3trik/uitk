@@ -5,9 +5,12 @@ import inspect
 import warnings
 import weakref
 from dataclasses import dataclass, field
-from typing import Optional, Union, Callable, Dict, Any, Tuple
+from typing import Optional, Union, Callable, Dict, Any, Tuple, TYPE_CHECKING
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+
+if TYPE_CHECKING:
+    from uitk.widgets.collapsableGroup import CollapsableGroup
 
 # Opt-in live diagnostic for hide_on_leave. Set UITK_MENU_LEAVE_DEBUG=1 (e.g.
 # via Maya.env so it is present before uitk imports) to have every leave-poll
@@ -708,6 +711,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Helpers and caches
         self._button_manager = ActionButtonManager(self)
         self._leave_timer: Optional[QtCore.QTimer] = None
+        self._leave_start_timer: Optional[QtCore.QTimer] = None
         self._last_parent_geometry = None
         self._cached_menu_position = None
         self._popup_configured = False  # Track if popup setup has been done
@@ -1911,6 +1915,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._leave_timer = QtCore.QTimer(self)
         self._leave_timer.setInterval(100)  # Check every 100ms
         self._leave_timer.timeout.connect(self._check_cursor_position)
+
+    def _arm_leave_timer(self):
+        """Start the leave-poll timer after showEvent's initial grace period."""
+        if self._leave_timer:
+            self._leave_timer.start()
 
     def _widget_in_subtree(self, widget: Optional[QtWidgets.QWidget]) -> bool:
         """True when *widget* is this menu or any descendant of it.
@@ -3373,11 +3382,16 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Add grace period before first check to prevent immediate hide when menu
         # appears at cursor position but cursor hasn't entered menu bounds yet
         if self._leave_timer:
-            # Delay timer start by 200ms to give user time to move cursor into menu
-            # Note: _mouse_has_entered was already set above based on cursor position
-            QtCore.QTimer.singleShot(
-                200, lambda: self._leave_timer.start() if self._leave_timer else None
-            )
+            # Delay timer start by 200ms to give user time to move cursor into menu.
+            # Note: _mouse_has_entered was already set above based on cursor position.
+            # A QTimer parented to self (not a bare singleShot free function) so the
+            # deferred call is destroyed along with the menu instead of firing into
+            # an already-deleted _leave_timer (singleShot has no owner to cancel it).
+            if self._leave_start_timer is None:
+                self._leave_start_timer = QtCore.QTimer(self)
+                self._leave_start_timer.setSingleShot(True)
+                self._leave_start_timer.timeout.connect(self._arm_leave_timer)
+            self._leave_start_timer.start(200)
 
         # Register with the owning MainWindow so it can enumerate its open
         # menus (e.g. for the marking menu's window-dim pass). Once per menu:

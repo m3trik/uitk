@@ -3,7 +3,7 @@
 """Timeline view, scene, and track-header widgets."""
 from __future__ import annotations
 
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
 
@@ -14,7 +14,6 @@ from uitk.widgets.sequencer._data import (
     _TRACK_HEIGHT,
     _TRACK_PADDING,
     _RULER_HEIGHT,
-    _SHOT_LANE_HEIGHT,
     _styled_menu,
     paint_pattern,
 )
@@ -47,8 +46,6 @@ class _ElidingLabel(QtWidgets.QLabel):
         self.update()
 
     def paintEvent(self, event):
-        from qtpy.QtWidgets import QStyle
-
         painter = QtGui.QPainter(self)
         metrics = painter.fontMetrics()
         available = self.width() - 2  # small margin

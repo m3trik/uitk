@@ -803,7 +803,13 @@ class Switchboard(
             tags=tags,
             path=path,
             log_level=self.logger.level,
-            settings=self.settings.branch(name),
+            # Host-namespaced (see SwitchboardShortcutMixin._host_namespaced_branch):
+            # QSettings is shared across processes by (org, app), so without this a
+            # Maya and a Blender session loading a same-named panel (e.g. "mirror")
+            # would read/write the SAME widget-state keys and collide -- mirrors the
+            # fix already applied to shortcuts/marking-menu bindings so all three
+            # can't drift apart.
+            settings=self.settings.branch(self._host_namespaced_branch(name)),
             **kwargs,
         )
         self.loaded_ui[name] = main_window

@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from typing import Union, List, Set
+from typing import Union, List
 from qtpy import QtWidgets
 import pythontk as ptk
 

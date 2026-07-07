@@ -43,7 +43,7 @@ Switchboard chooses between the two delegates via its ``loader`` kwarg.
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 from qtpy import QtUiTools, QtWidgets
 import pythontk as ptk

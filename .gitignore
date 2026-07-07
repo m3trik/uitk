@@ -183,5 +183,8 @@ uitk/slots/maya/shader_utils_maya/resources/hdr/aircraft_workshop_01_4k.exr
 
 test/temp_tests/
 
+# Runtime API-surface dump (drift-gate build artifact — never committed)
+API_RUNTIME.json
+
 # Test runner output (regenerated each run)
 test/logs/

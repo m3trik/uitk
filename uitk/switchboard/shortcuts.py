@@ -120,10 +120,11 @@ class SwitchboardShortcutMixin:
     # ─────────────────────────────────────────────────────────────────
 
     def _host_suffix(self) -> str:
-        """Host-context suffix for shortcut/command keys: ``"_maya"`` /
-        ``"_blender"`` / ``""`` (standalone). Delegates to the shared
-        :func:`host_namespace_suffix` so it stays identical to the marking-menu
-        binding store's scheme (drift would re-introduce cross-host collisions)."""
+        """Host-context suffix: ``"_maya"`` / ``"_blender"`` / ``""`` (standalone).
+        Delegates to the shared :func:`host_namespace_suffix` so it stays identical
+        to the marking-menu binding store's scheme (drift would re-introduce
+        cross-host collisions). Underpins both :meth:`_shortcut_ns` (shortcut/command
+        keys) and :meth:`_host_namespaced_branch` (per-panel widget-state branches)."""
         return host_namespace_suffix(getattr(self, "context_tags", None))
 
     def _shortcut_ns(self) -> str:
@@ -132,6 +133,19 @@ class SwitchboardShortcutMixin:
         write path, the read/registry path, and the deferred-bind scan can't
         drift apart — drift would re-introduce the cross-host collision."""
         return f"shortcuts{self._host_suffix()}."
+
+    def _host_namespaced_branch(self, name: str) -> str:
+        """Host-namespace a per-panel settings BRANCH name (e.g. ``"mirror"`` ->
+        ``"mirror_maya"``), the widget-state analog of :meth:`_shortcut_ns`.
+
+        Single source of truth for ``Switchboard.add_ui`` (the branch a loaded
+        UI's ``ui.settings``/``ui.state`` actually uses),
+        ``MainWindow._relative_state`` (the not-loaded sibling fallback), and
+        ``get_shortcut_registry`` (reads overrides from that same branch without
+        force-loading the UI) — drift between them would re-introduce the
+        cross-host collision this namespacing exists to prevent.
+        """
+        return name + self._host_suffix()
 
     def _migrate_shortcuts_to_host_namespace(self) -> None:
         """One-shot: copy legacy un-suffixed ``shortcuts.*`` overrides into this
@@ -145,6 +159,16 @@ class SwitchboardShortcutMixin:
         host that already has a namespaced key wins — a value the user changed
         post-migration is never clobbered. Standalone (no suffix) keeps the
         legacy keys as-is. Idempotent via a per-host marker.
+
+        Writes TWO twins per legacy key: one under the legacy key's own branch
+        (``head``, for a global bucket like ``commands``/``configurable`` that
+        ``Switchboard.add_ui`` never renames) and one under ``head + suffix``
+        (for a per-panel branch — ``add_ui`` now host-namespaces the branch
+        itself, so a window/widget-scope override must land where the loaded
+        UI's ``ui.settings`` will actually look for it). The extra twin under a
+        global bucket is simply unused dead data — nothing ever branches
+        ``"commands" + suffix`` — so writing both unconditionally is safe
+        without needing to know which ``head`` values are panel names.
         """
         suffix = self._host_suffix()
         if not suffix:
@@ -158,9 +182,11 @@ class SwitchboardShortcutMixin:
             head, sep, tail = key.partition("/")
             if not sep or not tail.startswith(legacy_prefix):
                 continue
-            twin = f"{head}/{host_prefix}{tail[len(legacy_prefix):]}"
-            if self.settings.value(twin) is None:
-                self.settings.setValue(twin, self.settings.value(key))
+            leaf = tail[len(legacy_prefix):]
+            for twin_head in (head, self._host_namespaced_branch(head)):
+                twin = f"{twin_head}/{host_prefix}{leaf}"
+                if self.settings.value(twin) is None:
+                    self.settings.setValue(twin, self.settings.value(key))
         self.configurable.setValue(marker, True)
 
     def register_slots_shortcuts(
@@ -528,10 +554,11 @@ class SwitchboardShortcutMixin:
             if getattr(func, "_shortcut_meta", {}).get("sequence"):
                 slot_method_names.add(name)
 
-        # Read overrides from the SAME per-UI settings branch the loaded UI
-        # uses (``self.settings.branch(name)`` at load time), so a binding
-        # persisted while the UI was open is reflected here without rebuilding.
-        settings = self.settings.branch(ui_name)
+        # Read overrides from the SAME per-UI, host-namespaced settings branch
+        # the loaded UI uses (see ``Switchboard.add_ui`` /
+        # ``_host_namespaced_branch``), so a binding persisted while the UI was
+        # open is reflected here without rebuilding.
+        settings = self.settings.branch(self._host_namespaced_branch(ui_name))
         return self._build_shortcut_entries(
             slots_cls.__name__,
             slot_method_names,

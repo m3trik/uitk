@@ -1,7 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
-from typing import Any, Optional
 
 
 class ValueManager:
@@ -340,7 +339,6 @@ class ValueManager:
 if __name__ == "__main__":
     """Test the WidgetValueManager functionality."""
     import sys
-    from qtpy import QtWidgets
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 

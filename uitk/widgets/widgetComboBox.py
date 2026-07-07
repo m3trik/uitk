@@ -2,9 +2,8 @@
 # coding=utf-8
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
 from uitk.switchboard import Signals
@@ -1068,7 +1067,7 @@ class WidgetComboBox(ComboBox):
                     widget = item_value
 
                 label = self._infer_label(widget, None)
-                row = self._add_widget_item(widget, label, item_data, ascending)
+                self._add_widget_item(widget, label, item_data, ascending)
                 added_items.append(widget)
                 return widget
             else:
@@ -1079,10 +1078,8 @@ class WidgetComboBox(ComboBox):
 
                 if ascending:
                     self._model.insertRow(0, row_item)
-                    row = 0
                 else:
                     self._model.appendRow(row_item)
-                    row = self._model.rowCount() - 1
 
                 added_items.append(item_value)
                 return item_value
@@ -1253,8 +1250,6 @@ class WidgetComboBox(ComboBox):
         else:
             self._model.appendRow(row_item)
             row = self._model.rowCount() - 1
-
-        index = self._model.index(row, 0)
 
         container = self._wrap_widget(widget)
         self._set_index_widget(row, container)

@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from typing import Union, Optional, Type
+from typing import Union, Optional
 from qtpy import QtWidgets, QtCore, QtGui
 
 

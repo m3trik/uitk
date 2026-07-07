@@ -20,7 +20,10 @@ def main():
     # 1. Connect to Maya (Launch if needed)
     mc = MayaConnection.get_instance()
     # Using defaults: port 7002
-    success = mc.connect(mode="auto", launch=True, force_new_instance=False)
+    # Session safety (see root/mayatk CLAUDE.md): never attach to an existing
+    # Maya session — force_new_instance=False is forbidden even for manual
+    # interactive scripts, since a stray run could clobber unsaved DCC work.
+    success = mc.connect(mode="auto", launch=True, force_new_instance=True)
     
     if not success:
         print("ERROR: Could not connect to or launch Maya.")

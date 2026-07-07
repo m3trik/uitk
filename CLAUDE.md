@@ -18,6 +18,10 @@
 - Upstream: [pythontk](../pythontk/API_INDEX.md)
 - Cross-package shadows: [`m3trik/docs/API_SHADOWS.md`](../m3trik/docs/API_SHADOWS.md)
 
+## Docs
+
+Hand-written docs are ledgered in [`docs/DOCMAP.md`](docs/DOCMAP.md) (status, module→doc coverage, backlog); workflow contract: [`docs/MAINTAINING.md`](docs/MAINTAINING.md). After any docs or public-API change: `python ../m3trik/scripts/check_docs.py --root .` must exit 0 (fix-or-ledger, like the parity sweep).
+
 ## Architecture
 
 - `uitk/widgets/` — reusable widgets.

@@ -4,7 +4,7 @@ import contextlib
 import inspect
 import traceback
 from functools import wraps
-from typing import Optional, Union, Type, Callable, Any
+from typing import Optional, Union, Type, Callable
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from uitk.switchboard.utils import (

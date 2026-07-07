@@ -3,6 +3,7 @@
 import sys
 import os
 import tempfile
+import weakref
 from typing import Optional
 from qtpy import QtCore, QtWidgets, QtGui
 import pythontk as ptk
@@ -61,8 +62,16 @@ class MarkingMenu(
     HANDLERS = {"ui": UiHandler}
 
     _in_transition: bool = False
-    _instances: dict = {}
+    # Per-instance cache, rebound in __init__. The class-level default exists
+    # ONLY as a fallback for test fixtures that bypass __init__ — production
+    # instances must never share it: a second instance (dev reload) resolving
+    # nav targets through a shared cache dispatches into the old instance's
+    # hollowed native-menu wrappers ("MenuButtons stop launching").
     _submenu_cache: dict = {}
+    # Every not-yet-retired instance in this process. A new instance retires
+    # the others at construction — see retire().
+    _live_instances: "weakref.WeakSet" = weakref.WeakSet()
+    _retired: bool = False
     _last_ui_history_check: QtWidgets.QWidget = None
     _pending_show_timer: QtCore.QTimer = None
     _shortcut_instance: Optional["GlobalShortcut"] = None
@@ -143,6 +152,7 @@ class MarkingMenu(
         super().__init__(parent=parent)
         self.logger.setLevel(log_level)
         self._bindings = {}
+        self._submenu_cache = {}  # per-instance; see the class-attr note
         self._activation_key = None
         self._activation_key_held = False
         self._initial_bindings = bindings  # Store for after sb is set up
@@ -282,6 +292,40 @@ class MarkingMenu(
         if parent:
             self._install_activation_shortcut()
 
+        # A process hosts at most ONE input-owning marking menu. A second
+        # instance (a dev reload constructs a new TclMaya/TclBlender in the
+        # same DCC session) must RETIRE the previous one: its still-live
+        # activation GlobalShortcut otherwise keeps servicing the gesture with
+        # stale caches — wrappers whose native-menu content this instance's
+        # builds re-wrap — so a chord release is consumed but launches nothing.
+        for _other in list(MarkingMenu._live_instances):
+            if _other is not self:
+                _other.retire()
+        MarkingMenu._live_instances.add(self)
+
+    def retire(self) -> None:
+        """Deactivate this instance because a newer MarkingMenu now owns
+        activation input (re-instantiation in the same process — the dev-reload
+        situation).
+
+        Disposes the activation ``GlobalShortcut``, cancels pending timers,
+        and ends any live gesture (``hide`` releases grabs); the activation
+        callbacks become no-ops. Irreversible by design — construct a new
+        instance rather than reviving a retired one.
+        """
+        if self._retired:
+            return
+        self._retired = True
+        MarkingMenu._live_instances.discard(self)
+        self._dispose_activation_shortcut()
+        self._cancel_chord_release_timer()
+        if self._pending_show_timer is not None:
+            self._pending_show_timer.stop()
+        try:
+            self.hide()
+        except Exception:
+            self.logger.debug("retire: hide failed", exc_info=True)
+
     def _on_activation_press(self, buttons=None):
         """Handle the global shortcut press event.
 
@@ -292,6 +336,8 @@ class MarkingMenu(
                 only reflects events Qt itself has seen. ``None`` (the Qt
                 shortcut path) falls back to the Qt query.
         """
+        if self._retired:
+            return
         if buttons is None:
             buttons = QtWidgets.QApplication.mouseButtons()
         try:
@@ -393,6 +439,8 @@ class MarkingMenu(
 
     def _on_activation_release(self):
         """Handle the global shortcut release event."""
+        if self._retired:
+            return
         if self._input_logging_on:
             self.logger.debug(
                 f"[handoff] _on_activation_release (the 'tap key_show again' fix path) "
@@ -642,14 +690,32 @@ class MarkingMenu(
         # QShortcut churn; guarded for a switchboard predating the API.
         self._register_shortcut_editor_bindings()
 
+    def _dispose_activation_shortcut(self) -> None:
+        """Dispose the live activation ``GlobalShortcut`` (if any) and clear it.
+        Shared by re-install (:meth:`_install_activation_shortcut`) and
+        :meth:`retire`."""
+        if self._shortcut_instance is None:
+            return
+        try:
+            self._shortcut_instance.dispose()
+        except Exception:
+            self.logger.debug(
+                "disposing prior activation shortcut failed", exc_info=True
+            )
+        self._shortcut_instance = None
+
     def _install_activation_shortcut(self) -> None:
         """(Re)create the application-scoped GlobalShortcut that shows the menu on
         the current activation key.
 
         Disposes any prior instance first, so changing the activation key never
         leaves the old key live. Shared by construction and
-        :meth:`set_activation_key`; a no-op without a host parent.
+        :meth:`set_activation_key`; a no-op without a host parent — or on a
+        retired instance (a stale editor callback must not re-arm activation
+        on an instance a newer MarkingMenu has replaced).
         """
+        if self._retired:
+            return
         parent = getattr(self, "_activation_parent", None)
         if parent is None:
             return
@@ -661,13 +727,7 @@ class MarkingMenu(
         if not self._activation_key:
             self.logger.warning("No valid activation key found; defaulting to F12.")
         self.key_show = self._activation_key or QtCore.Qt.Key_F12
-        if self._shortcut_instance is not None:
-            try:
-                self._shortcut_instance.dispose()
-            except Exception:
-                self.logger.debug(
-                    "disposing prior activation shortcut failed", exc_info=True
-                )
+        self._dispose_activation_shortcut()
         self._shortcut_instance = GlobalShortcut(
             self.key_show, parent, context=QtCore.Qt.ApplicationShortcut
         )
@@ -2343,7 +2403,7 @@ class MarkingMenu(
                 QtWidgets.QCheckBox,
                 QtWidgets.QRadioButton,
             ):
-                self.sb.center_widget(w, padding_x=25)
+                self.sb.center_widget(w, padding_x=35)
                 if isinstance(w, MenuButton):
                     w.ui.style.set(widget=w)
 

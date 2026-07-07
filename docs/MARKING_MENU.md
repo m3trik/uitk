@@ -223,7 +223,7 @@ This lets you build nested radial menus entirely in Qt Designer — no Python wi
 
 ## Widget centering
 
-Within a `#startmenu` / `#submenu`, interactable widgets (`QPushButton`, `QLabel`, `QCheckBox`, `QRadioButton`) are automatically centered around the cursor when the menu opens, and given a `padding_x` of 25. This is done in `add_child_event_filter` ([_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py)).
+Within a `#startmenu` / `#submenu`, interactable widgets (`QPushButton`, `QLabel`, `QCheckBox`, `QRadioButton`) are automatically centered around the cursor when the menu opens, and given a `padding_x` of 35 via `center_widget` — a content-fit resize that also raises a too-small `maximumWidth`/`maximumHeight` rather than let it silently truncate the request (a stale Designer-authored ceiling used to clamp buttons back below their own `minimumSizeHint`, cramming the label against the edges). This is done in `add_child_event_filter` ([_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py)).
 
 `Region` widgets (from `uitk.Region`) inside menus get `visible_on_mouse_over = True` — they act as invisible reveal zones that can contain arbitrary content.
 

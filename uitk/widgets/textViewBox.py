@@ -31,7 +31,7 @@ class _ViewerTextEdit(QtWidgets.QTextBrowser):
     Hosts like Maya install application-level ``ShortcutOverride`` handlers
     that swallow ``Ctrl+C`` before the widget can run its built-in copy
     action — leaving the user with only the context-menu Copy. Mirroring
-    the pattern from :class:`mayatk.env_utils.script_output.ScriptOutput`,
+    the pattern from :class:`uitk.widgets.scriptOutput.ScriptOutput`,
     we accept the ``ShortcutOverride`` event ourselves whenever a selection
     exists, which tells Qt to dispatch the subsequent KeyPress to *us*
     rather than treating it as a host shortcut.

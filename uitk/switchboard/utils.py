@@ -116,8 +116,8 @@ class SwitchboardUtilsMixin:
             pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
             offset_x (int, optional): The desired offset percentage on the x axis. Defaults to 0.
             offset_y (int, optional): The desired offset percentage on the y axis. Defaults to 0.
-            padding_x (int, optional): Additional width from the widget's minimum size or relative widget. If not specified, the widget's current width is used.
-            padding_y (int, optional): Additional height from the widget's minimum size or relative widget. If not specified, the widget's current height is used.
+            padding_x (int, optional): Additional width from the widget's minimum size or relative widget. If not specified, the widget's current width is used. A maximumWidth too small to fit the result is raised to fit, unless minimumWidth == maximumWidth (a deliberate fixed-size lock, left untouched).
+            padding_y (int, optional): Additional height from the widget's minimum size or relative widget. If not specified, the widget's current height is used. Same maximumHeight handling as padding_x.
             relative (QWidget, optional): If given, use this widget's current size as the base size for resizing.
         """
         # Resize the widget if padding values are provided
@@ -128,10 +128,31 @@ class SwitchboardUtilsMixin:
             x = w.minimumSizeHint().width() if padding_x is not None else w.width()
             y = w.minimumSizeHint().height() if padding_y is not None else w.height()
 
-            widget.resize(
-                x + (padding_x if padding_x is not None else 0),
-                y + (padding_y if padding_y is not None else 0),
-            )
+            target_w = x + (padding_x if padding_x is not None else 0)
+            target_h = y + (padding_y if padding_y is not None else 0)
+
+            # padding_x/padding_y request a content-fit size; a stale
+            # Designer-authored maximumSize (sized for different/shorter
+            # text) would otherwise silently truncate widget.resize() below,
+            # defeating that request. Raise the ceiling rather than let it --
+            # but only where maximumWidth/Height is acting as a loose ceiling
+            # (minimum < maximum). Where the two are equal, that's a
+            # deliberate fixed-size lock (e.g. a square icon tile) rather
+            # than a stale leftover, and must not be widened out from under it.
+            if (
+                padding_x is not None
+                and target_w > widget.maximumWidth()
+                and widget.maximumWidth() > widget.minimumWidth()
+            ):
+                widget.setMaximumWidth(target_w)
+            if (
+                padding_y is not None
+                and target_h > widget.maximumHeight()
+                and widget.maximumHeight() > widget.minimumHeight()
+            ):
+                widget.setMaximumHeight(target_h)
+
+            widget.resize(target_w, target_h)
             p2 = widget.rect().center()
             diff = p1 - p2
             widget.move(widget.pos() + diff)

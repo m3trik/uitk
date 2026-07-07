@@ -161,6 +161,25 @@ class OptionBoxMixin:
                 mgr.set_filter(**kwargs)
             return self
 
+        def affix(
+            self,
+            *,
+            default: str = "auto",
+            on_change: Optional[Callable] = None,
+            **kwargs,
+        ) -> "OptionBoxMixin._OptionsWrapper":
+            """Add an inline affix-mode picker to the wrapped text field.
+
+            See ``OptionBoxManager.set_affix`` — pairs the field with a compact
+            "Auto / Suffix / Prefix" combobox and exposes the selection via
+            ``widget.option_box.affix_mode`` / ``.resolve_affix()``. Skipped with
+            a warning on a non-text host (``AffixOption.is_compatible``).
+            """
+            mgr = self._mgr
+            if mgr is not None:
+                mgr.set_affix(default=default, on_change=on_change, **kwargs)
+            return self
+
         def option_menu(
             self,
             *,

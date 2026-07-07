@@ -1,10 +1,8 @@
 import os
 import copy
-import logging
 from typing import Optional, Dict, Any, Union, List, Tuple, Iterable
-import pythontk as ptk
 from uitk import Switchboard
-from uitk.handlers.base_handler import BaseHandler, LaunchableHandlerProtocol
+from uitk.handlers.base_handler import BaseHandler
 from uitk.handlers.handler_entry import HandlerEntry
 from qtpy import QtWidgets, QtCore, QtGui
 

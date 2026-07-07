@@ -22,7 +22,7 @@ after the view is fully configured.  Works on ``QTableView``,
 """
 from __future__ import annotations
 
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtGui, QtWidgets
 
 
 class RowSelectionBorderDelegate(QtWidgets.QStyledItemDelegate):

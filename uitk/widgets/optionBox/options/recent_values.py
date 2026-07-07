@@ -9,7 +9,7 @@ from ._options import ButtonOption
 # Canonical home for the storage/formatting logic is the widget-free
 # RecentValuesStore. Re-exported here for backward compatibility \u2014 earlier
 # code (and tests) import these names from this module.
-from uitk.widgets.mixins.recent_values_store import (
+from uitk.widgets.mixins.recent_values_store import (  # noqa: F401 -- re-export surface
     RecentValuesStore,
     RecentValueEntry,
     normalize_value as _normalize_value,

@@ -504,6 +504,37 @@ class TestMenuHideOnLeave(QtBaseTestCase):
             "menu must stay open while an editor is actively focused (edit in progress)",
         )
 
+    def test_deferred_leave_timer_arm_survives_menu_destruction(self):
+        """showEvent defers arming the leave-poll timer by 200ms. If the menu
+        (and its child _leave_timer) is destroyed before that fires, the
+        deferred callback must be a no-op — not a dangling call into an
+        already-deleted QTimer. Regression: a bare QTimer.singleShot has no
+        owner to cancel it when the widget dies; only a QTimer parented to the
+        menu is destroyed along with it."""
+        import sys
+
+        from qtpy.QtTest import QTest
+
+        menu = Menu(hide_on_leave=True)
+        menu.show()
+
+        menu.deleteLater()
+        self._drain_qt_events()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+        captured = []
+        original_hook = sys.excepthook
+        sys.excepthook = lambda *exc_info: captured.append(exc_info)
+        try:
+            QTest.qWait(260)  # past the 200ms grace period
+        finally:
+            sys.excepthook = original_hook
+
+        self.assertFalse(
+            captured,
+            f"deferred leave-timer arm raised into a deleted menu: {captured}",
+        )
+
 
 class TestMenuTransientFamily(QtBaseTestCase):
     """Tests for the transient popup family (hover-coordinated child popups).

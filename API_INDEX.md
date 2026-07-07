@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-01_
+_Generated: 2026-07-07_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `configure_high_dpi() -> bool`
@@ -98,7 +98,7 @@ _Generated: 2026-07-01_
 
 ### `switchboard/_core.py`
 - `class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin)`
-  - methods: register_handler, iter_handler_entries, active_ui, current_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last
+  - methods: register_handler, iter_handler_entries, active_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last
 
 ### `switchboard/editors.py` — Mixin that exposes the bundled editor windows on the Switchboard.
 - `class SwitchboardEditorsMixin`
@@ -106,7 +106,7 @@ _Generated: 2026-07-01_
 
 ### `switchboard/history.py` — Ordered, capped history with optional weak storage and key-based filtering.
 - `class History`
-  - methods: maxlen, maxlen, add, remove, clear, view, get
+  - methods: maxlen, add, remove, clear, view, get
 
 ### `switchboard/names.py`
 - `class SwitchboardNameMixin`
@@ -153,7 +153,7 @@ _Generated: 2026-07-01_
 
 ### `widgets/colorSwatch.py`
 - `class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin)`
-  - methods: color, color, keep_square, keep_square, resizeEvent, settings, settings, saveColor, loadColor, canSaveLoadColor, initializeColor, updateBackgroundColor, mouseDoubleClickEvent
+  - methods: color, keep_square, resizeEvent, settings, saveColor, loadColor, canSaveLoadColor, initializeColor, updateBackgroundColor, mouseDoubleClickEvent
 
 ### `widgets/comboBox.py`
 - `class CustomStyle(QtWidgets.QProxyStyle)`
@@ -161,7 +161,7 @@ _Generated: 2026-07-01_
 - `class AlignedComboBox(QtWidgets.QComboBox)`
   - methods: setHeaderText, setHeaderAlignment, get_stylesheet_property, format_current_display_text, paintEvent
 - `class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`
-  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_suffix, current_text_prefix, current_text_prefix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
+  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
 
 ### `widgets/delegates/centered_icon.py` — Centered icon painting for item-view cells.
 - `fill_cell_background(painter, rect, index)`
@@ -199,7 +199,7 @@ _Generated: 2026-07-01_
 
 ### `widgets/editors/editor_panel.py` — Editor panel: WindowPanel + optional preset save/load row.
 - `class EditorPanel(WindowPanel)`
-  - methods: init_preset_row, preset_dir, preset_dir, export_preset_data, import_preset_data, save_preset, load_preset, delete_preset, rename_preset
+  - methods: init_preset_row, preset_dir, export_preset_data, import_preset_data, save_preset, load_preset, delete_preset, rename_preset
 
 ### `widgets/editors/shortcut_editor/manager_facade.py` — Adapter that lets the unified :class:`ShortcutEditor` render a standalone
 - `class ManagerSwitchboardFacade`
@@ -219,7 +219,7 @@ _Generated: 2026-07-01_
 - `class SwitchboardBrowserModel(QtCore.QAbstractTableModel)`
   - methods: refresh_after_launch, rowCount, columnCount, headerData, data, flags, setData, entry_for_name, all_unique_tags
 - `class SwitchboardBrowser(EditorPanel)`
-  - methods: hidden_uis, hidden_uis, hidden_tags, hidden_tags, set_search_scope, launch_options, hide_inherited_tags, showEvent
+  - methods: hidden_uis, hidden_tags, set_search_scope, launch_options, hide_inherited_tags, showEvent
 
 ### `widgets/expandableList.py`
 - `class ExpandableList(QtWidgets.QWidget, AttributesMixin)`
@@ -227,7 +227,7 @@ _Generated: 2026-07-01_
 
 ### `widgets/footer.py`
 - `class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`
-  - methods: container_layout, alignment, update_font_size, font, add_widget, add_action_button, progress_bar, status_label, size_grip, size_grip, setText, text, setStatusText, setDefaultStatusText, statusText, start_progress, update_progress, finish_progress, cancel_progress, set_progress_total, progress, resizeEvent, showEvent, attach_to
+  - methods: container_layout, alignment, update_font_size, font, add_widget, add_action_button, progress_bar, status_label, size_grip, setText, text, setStatusText, setDefaultStatusText, statusText, start_progress, update_progress, finish_progress, cancel_progress, set_progress_total, progress, resizeEvent, showEvent, attach_to
 - `class FooterProgressContext`
 - `class FooterStatusController`
   - methods: set_resolver, set_truncation, update
@@ -248,11 +248,11 @@ _Generated: 2026-07-01_
 
 ### `widgets/mainWindow.py`
 - `class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin)`
-  - methods: setCentralWidget, initialize_window_flags, edit_tags, pinned, pinned, set_pinned, is_pinned, request_hide, slots, presets, presets, is_stacked_widget, is_current_ui, is_current_ui, register_widget, register_menu, menus, trigger_deferred, run_when_ready, perform_restore_state, sync_widget_values, eventFilter, adjust_height_by, fit_height_to_content, save_window_geometry, restore_window_geometry, clear_saved_geometry, setVisible, show, showEvent, register_children, focusInEvent, focusOutEvent, resizeEvent, moveEvent, hideEvent, closeEvent, setStyleSheet, reset_style
+  - methods: setCentralWidget, initialize_window_flags, edit_tags, pinned, set_pinned, is_pinned, request_hide, slots, presets, is_stacked_widget, is_current_ui, register_widget, register_menu, menus, trigger_deferred, run_when_ready, perform_restore_state, sync_widget_values, eventFilter, adjust_height_by, fit_height_to_content, save_window_geometry, restore_window_geometry, clear_saved_geometry, setVisible, show, showEvent, register_children, focusInEvent, focusOutEvent, resizeEvent, moveEvent, hideEvent, closeEvent, setStyleSheet, reset_style
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`
-  - methods: instance, default_bindings, bindings, bindings, on_bindings_changed, ui_handler, get, set_activation_key, start_menu_names, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
+  - methods: retire, instance, default_bindings, bindings, on_bindings_changed, ui_handler, get, set_activation_key, start_menu_names, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
 - `normalize_key(parts) -> str`
@@ -278,7 +278,7 @@ _Generated: 2026-07-01_
 - `class MenuPositioner`
   - methods: center_on_cursor, position_at_coordinate, position_relative_to_widget, apply_width_matching, position_and_match_width
 - `class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`
-  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, trigger_button, presets, presets, hide_on_leave, hide_on_leave, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, ensure_chrome, adopt_transient, nearest_enclosing, owner_window, add_defaults_button, add_defaults_button, add_presets, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
+  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, presets, hide_on_leave, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, ensure_chrome, adopt_transient, nearest_enclosing, owner_window, add_defaults_button, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
 
 ### `widgets/menuButton.py`
 - `class MenuButton(QtWidgets.QPushButton, AttributesMixin)`
@@ -304,7 +304,7 @@ _Generated: 2026-07-01_
 - `class CustomDockWidget(QDockWidget)`
   - methods: handle_top_level_change, eventFilter
 - `class DockingMixin(QObject)`
-  - methods: docking_enabled, docking_enabled, dock_position, dock_position, dock, dock_positions, update_docking_position, eventFilter
+  - methods: docking_enabled, dock_position, dock, dock_positions, update_docking_position, eventFilter
 
 ### `widgets/mixins/feedback.py` — Mixin: transient HUD-style feedback for any QWidget.
 - `class FeedbackMixin`
@@ -327,7 +327,7 @@ _Generated: 2026-07-01_
 - `QStandardPaths_genericConfigLocation() -> str`
 - `get_presets_root() -> Path`
 - `class PresetManager(ptk.LoggingMixin)`
-  - methods: from_widgets, setup, preset_dir, preset_dir, on_change, scope, scope, exclude, include, active_preset, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, make_preset_combo, wire_combo
+  - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, make_preset_combo, wire_combo
 
 ### `widgets/mixins/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
 - `normalize_value(value)`
@@ -398,7 +398,7 @@ _Generated: 2026-07-01_
 - `class OptionBoxContainer(QtWidgets.QWidget)`
   - methods: changeEvent, showEvent, eventFilter
 - `class OptionBox`
-  - methods: add_option, remove_option, get_options, show_clear, show_clear, set_clear_button_visible, wrap
+  - methods: add_option, remove_option, get_options, show_clear, set_clear_button_visible, wrap
 
 ### `widgets/optionBox/options/_options.py`
 - `class OptionButton(QtWidgets.QPushButton, AttributesMixin)`
@@ -414,13 +414,17 @@ _Generated: 2026-07-01_
 
 ### `widgets/optionBox/options/action.py` — Action option for OptionBox - provides customizable action buttons.
 - `class ActionOption(ButtonOption)`
-  - methods: create_widget, set_action_handler, current_state, current_state, set_states
+  - methods: create_widget, set_action_handler, current_state, set_states
 - `class MenuOption(ActionOption)`
   - methods: set_menu, set_wrapped_widget
 
+### `widgets/optionBox/options/affix.py` — Affix-mode picker option for OptionBox.
+- `class AffixOption(BaseOption)`
+  - methods: is_compatible, create_widget, setup_widget, mode, set_mode, resolve
+
 ### `widgets/optionBox/options/browse.py` — Browse option for OptionBox - provides file/folder browsing buttons.
 - `class BrowseOption(ButtonOption)`
-  - methods: file_types, file_types, start_dir, start_dir, create_widget, browse
+  - methods: file_types, start_dir, create_widget, browse
 
 ### `widgets/optionBox/options/clear.py` — Clear option for OptionBox - provides a clear button for text widgets.
 - `class ClearOption(ButtonOption)`
@@ -474,11 +478,11 @@ _Generated: 2026-07-01_
 - `patch_widget_class(widget_class)`
 - `patch_common_widgets()`
 - `class OptionBoxManager(ptk.LoggingMixin)`
-  - methods: clear_option, clear_option, option_order, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, menu, enable_menu, disable_menu, add_option, container, remove
+  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, disable_menu, add_option, container, remove
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
-  - methods: is_cancelled, auto_hide, auto_hide, cancel, reset, set_total, start_task, update_progress, finish_task, step, task, showEvent
+  - methods: is_cancelled, auto_hide, cancel, reset, set_total, start_task, update_progress, finish_task, step, task, showEvent
 - `class ProgressTaskContext`
 
 ### `widgets/pushButton.py`
@@ -486,11 +490,19 @@ _Generated: 2026-07-01_
 
 ### `widgets/region.py`
 - `class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin)`
-  - methods: visible_on_mouse_over, visible_on_mouse_over, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
+  - methods: visible_on_mouse_over, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
+
+### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
+- `default_rules() -> List[ScriptHighlightRule]`
+- `class ScriptHighlightRule`
+- `class ScriptHighlighter(QtGui.QSyntaxHighlighter)`
+  - methods: highlightBlock
+- `class ScriptOutput(QtWidgets.QTextEdit)`
+  - methods: set_clear_callback, set_context_menu_hook, set_rules, append_text, keyPressEvent, event, eventFilter
 
 ### `widgets/separator.py`
 - `class Separator(QtWidgets.QFrame, AttributesMixin)`
-  - methods: title, title, setTitle, sizeHint, minimumSizeHint, resizeEvent
+  - methods: title, setTitle, sizeHint, minimumSizeHint, resizeEvent
 
 ### `widgets/sequencer/_clip.py` — ClipItem — draggable, resizable clip rectangle on the timeline.
 - `class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
@@ -526,11 +538,11 @@ _Generated: 2026-07-01_
 
 ### `widgets/sequencer/_overlays.py` — Range-related overlay items: static ranges, gap hatching, and highlights.
 - `class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`
-  - methods: locked, locked, start, start, end, end, set_range, color, color, opacity_value, opacity_value, sync, boundingRect, paint, hoverMoveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
+  - methods: locked, start, end, set_range, color, opacity_value, sync, boundingRect, paint, hoverMoveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
 
 ### `widgets/sequencer/_playhead.py` — PlayheadItem — vertical playhead line with frame-number badge.
 - `class PlayheadItem(QtWidgets.QGraphicsItem)`
-  - methods: time, time, boundingRect, sync, paint
+  - methods: time, boundingRect, sync, paint
 
 ### `widgets/sequencer/_ruler.py` — Ruler and shot-lane items for the timeline header area.
 - `class ShotLaneItem(QtWidgets.QGraphicsItem)`
@@ -546,7 +558,7 @@ _Generated: 2026-07-01_
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_interval, show_range_overlays, show_range_overlays, show_gap_overlays, show_gap_overlays, show_range_highlight, show_range_highlight, shift_held_at_press, shift_held_at_press, attribute_colors, attribute_colors, sub_row_height, sub_row_height, sub_row_provider, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
+  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, show_range_overlays, show_gap_overlays, show_range_highlight, shift_held_at_press, attribute_colors, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`
@@ -554,7 +566,7 @@ _Generated: 2026-07-01_
 - `class TimelineScene(QtWidgets.QGraphicsScene)`
   - methods: ruler, playhead
 - `class TimelineView(QtWidgets.QGraphicsView)`
-  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, drawBackground
+  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, drawBackground
 
 ### `widgets/sequencer/_transport_controls.py` — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - `class PlayController(Protocol)`
@@ -609,11 +621,11 @@ _Generated: 2026-07-01_
 - `class TreeFormatMixin(ConvertMixin)`
   - methods: set_item_formatter, set_column_formatter, clear_formatters, apply_formatting, ensure_valid_color, set_action_color, action_color_formatter, make_color_map_formatter
 - `class TreeWidget(QtWidgets.QTreeWidget, MenuMixin, AttributesMixin, TreeFormatMixin, HierarchyIconMixin)`
-  - methods: selection_style, selection_style, header_actions, set_column_tint, clear_column_tints, set_selection_mode, ctrl_toggle, ctrl_toggle, mousePressEvent, mouseReleaseEvent, create_item, item_data, set_item_data, find_item_by_text, find_item_by_data, add, selected_item, selected_items, selected_data, selected_data_list, selected_text, selected_text_list, select_items_by_data, select_items_by_text, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, showEvent, stretch_column_to_fill, expand_all_items, collapse_all_items, get_all_items, remove_item, set_item_icon, set_item_type_icon, refresh_item_icons
+  - methods: selection_style, header_actions, set_column_tint, clear_column_tints, set_selection_mode, ctrl_toggle, mousePressEvent, mouseReleaseEvent, create_item, item_data, set_item_data, find_item_by_text, find_item_by_data, add, selected_item, selected_items, selected_data, selected_data_list, selected_text, selected_text_list, select_items_by_data, select_items_by_text, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, showEvent, stretch_column_to_fill, expand_all_items, collapse_all_items, get_all_items, remove_item, set_item_icon, set_item_type_icon, refresh_item_icons
 
 ### `widgets/widgetComboBox.py`
 - `class WidgetComboBox(ComboBox)`
-  - methods: setItemText, addWidgetItem, addWidgetAction, widgetAt, takeWidgetAt, currentWidget, item_spacing, item_spacing, actions, action_columns, action_columns, action_icon_only, action_icon_only, show_action_separator, show_action_separator, showPopup, hidePopup, arrow_direction, arrow_direction, paintEvent, eventFilter, add, add_defaults_button, add_defaults_button, clear
+  - methods: setItemText, addWidgetItem, addWidgetAction, widgetAt, takeWidgetAt, currentWidget, item_spacing, actions, action_columns, action_icon_only, show_action_separator, showPopup, hidePopup, arrow_direction, paintEvent, eventFilter, add, add_defaults_button, clear
 
 ### `widgets/windowPanel.py` — Themed top-level uitk window: Header → body → Footer.
 - `class WindowPanel(QtWidgets.QWidget)`
