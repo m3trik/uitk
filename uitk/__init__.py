@@ -117,6 +117,7 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox.options.toggle": "ToggleOption",
     "widgets.optionBox.options.disable": "DisableOption",
     "widgets.optionBox.options.value": "ValueOption",
+    "widgets.optionBox.options.affix": "AffixOption",
     "widgets.optionBox.options.option_menu": ["OptionMenuOption", "ContextMenuOption"],
     "widgets.progressBar": "ProgressBar",
     "widgets.pushButton": "PushButton",

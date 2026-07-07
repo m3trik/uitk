@@ -25,6 +25,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         # OptionBox._option_order (the fallback when no order is passed here).
         self._option_order = [
             "value",
+            "affix",
             "clear",
             "recent",
             "pin",
@@ -37,6 +38,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
+        self._wrap_retry_timer: Optional[QtCore.QTimer] = None
         self._is_wrapped = False  # Track if wrap() has been called
 
     @property
@@ -66,6 +68,8 @@ class OptionBoxManager(ptk.LoggingMixin):
             raise ValueError("Option order must be a list or tuple")
 
         valid_options = {
+            "value",
+            "affix",
             "clear",
             "recent",
             "pin",
@@ -531,6 +535,81 @@ class OptionBoxManager(ptk.LoggingMixin):
         )
         return self
 
+    def set_affix(
+        self,
+        *,
+        default: str = "auto",
+        on_change=None,
+        tooltip: Optional[str] = None,
+        order=None,
+        replace: bool = True,
+    ):
+        """Add an inline affix-mode picker (Auto / Suffix / Prefix) — fluent.
+
+        Turns the wrapped text field into an affix entry with a compact combobox
+        beside it declaring how the field's text applies to a base name. The
+        parsing lives in ``pythontk.StrUtils.split_affix``; read the selection
+        back with :attr:`affix_mode` / :meth:`resolve_affix`. Requires a
+        text-bearing host (skipped + warned otherwise — see
+        :meth:`AffixOption.is_compatible`).
+
+        Args:
+            default: Initial mode — ``"auto"``, ``"suffix"`` or ``"prefix"``.
+            on_change: Optional callable invoked with the new mode string
+                whenever the user changes the picker.
+            tooltip: Override the picker tooltip (defaults to the mode guide).
+            order: Explicit sort position. See :class:`BaseOption`.
+            replace: When ``True`` (default), removes any existing AffixOption
+                first.
+
+        Returns:
+            self: For fluent chaining. Retrieve the option via
+            ``find_option(AffixOption)`` (or use :attr:`affix_mode` /
+            :meth:`resolve_affix`).
+        """
+        from uitk.widgets.optionBox.options.affix import AffixOption
+
+        if replace:
+            self._remove_options(lambda o: isinstance(o, AffixOption))
+
+        # Only forward an explicit tooltip; None lets AffixOption apply its own
+        # default (the full mode guide) rather than blanking the tooltip.
+        extra = {} if tooltip is None else {"tooltip": tooltip}
+        self.add_option(
+            AffixOption(
+                wrapped_widget=self._widget,
+                default=default,
+                on_change=on_change,
+                order=order,
+                **extra,
+            )
+        )
+        return self
+
+    @property
+    def affix_mode(self) -> str:
+        """Current affix mode (``"auto"`` when no AffixOption is present)."""
+        from uitk.widgets.optionBox.options.affix import AffixOption
+
+        option = self.find_option(AffixOption)
+        return option.mode if option is not None else "auto"
+
+    def resolve_affix(self, *, default: str = "prefix"):
+        """Return ``(prefix, suffix)`` for the wrapped field under its mode.
+
+        Reads the wrapped widget's text and the AffixOption's mode (``"auto"``
+        when no picker was added) and splits via
+        ``pythontk.StrUtils.split_affix``. *default* is the fallback mode used
+        when Auto is selected but the text has no boundary delimiter.
+        """
+        from uitk.widgets.optionBox.options.affix import AffixOption
+
+        option = self.find_option(AffixOption)
+        if option is not None:
+            return option.resolve(default=default)
+        text = self._widget.text() if hasattr(self._widget, "text") else ""
+        return ptk.StrUtils.split_affix(text, mode="auto", default=default)
+
     def set_reset(
         self,
         *,
@@ -844,7 +923,7 @@ class OptionBoxManager(ptk.LoggingMixin):
                 _log_step("Menu_creation")
 
                 self.logger.debug(
-                    f"OptionBoxManager.enable_menu: Menu created (separate from widget context menu)"
+                    "OptionBoxManager.enable_menu: Menu created (separate from widget context menu)"
                 )
                 _log_step("menu_created")
 
@@ -993,8 +1072,8 @@ class OptionBoxManager(ptk.LoggingMixin):
           eliminating the visible flicker between ``super().showEvent()``
           and the deferred-timer-driven wrap firing on the next tick.
 
-        - **Slow path (parent missing)**: fall back to the original
-          ``QTimer.singleShot(0, _attempt_wrap_when_ready)`` retry loop
+        - **Slow path (parent missing)**: fall back to the
+          ``_schedule_wrap_retry`` / ``_attempt_wrap_when_ready`` retry loop
           so widgets parented late (e.g. via ``setParent`` after
           construction) still get wrapped once their parent attaches.
 
@@ -1028,7 +1107,23 @@ class OptionBoxManager(ptk.LoggingMixin):
             return
 
         self._wrap_retry_scheduled = True
-        QtCore.QTimer.singleShot(0, self._attempt_wrap_when_ready)
+        self._schedule_wrap_retry(0)
+
+    def _schedule_wrap_retry(self, delay_ms: int) -> None:
+        """Arm the retry-until-parented timer, parented to the wrapped widget
+        (not a bare ``QTimer.singleShot``) so it is destroyed along with the
+        widget instead of firing ``_attempt_wrap_when_ready`` into a deleted
+        ``self._widget`` (observed live: ``RuntimeError: Internal C++ object
+        ... already deleted`` from ``widget.parent()`` when a widget is torn
+        down mid-retry, e.g. test teardown right after construction)."""
+        widget = getattr(self, "_widget", None)
+        if widget is None:
+            return
+        if self._wrap_retry_timer is None:
+            self._wrap_retry_timer = QtCore.QTimer(widget)
+            self._wrap_retry_timer.setSingleShot(True)
+            self._wrap_retry_timer.timeout.connect(self._attempt_wrap_when_ready)
+        self._wrap_retry_timer.start(delay_ms)
 
     def _attempt_wrap_when_ready(self):
         """Attempt to wrap the widget, retrying until a parent exists."""
@@ -1054,7 +1149,7 @@ class OptionBoxManager(ptk.LoggingMixin):
 
             self._wrap_retry_count += 1
             self._wrap_retry_scheduled = True
-            QtCore.QTimer.singleShot(15, self._attempt_wrap_when_ready)
+            self._schedule_wrap_retry(15)
             return
 
         # Parent exists - perform the wrap now
@@ -1155,8 +1250,6 @@ class OptionBoxManager(ptk.LoggingMixin):
 
     def _update_option_box(self):
         """Update option box based on current settings."""
-        from ._optionBox import OptionBox
-
         # If we already have an option box, just update it
         if self._option_box:
             self._option_box.set_clear_button_visible(self._clear_enabled)

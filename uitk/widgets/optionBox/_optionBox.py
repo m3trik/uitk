@@ -14,6 +14,7 @@ from .options.toggle import ToggleOption
 from .options.disable import DisableOption
 from .options.filter import FilterOption
 from .options.value import ValueOption
+from .options.affix import AffixOption
 
 # Concrete option type -> grouping key, consulted by OptionBox._sort_options.
 # Built once at import; was previously rebuilt (with 7 local imports) on every
@@ -21,6 +22,8 @@ from .options.value import ValueOption
 # so these top-level imports introduce no cycle.
 _TYPE_TO_KEY = {
     ValueOption: "value",
+    # Inline mode picker; sits next to the value field, ahead of icon buttons.
+    AffixOption: "affix",
     ClearOption: "clear",
     RecentValuesOption: "recent",
     PinValuesOption: "pin",
@@ -180,6 +183,7 @@ class OptionBox:
             # The inline value field sits flush against the wrapped widget,
             # ahead of the icon buttons.
             "value",
+            "affix",
             "clear",
             "recent",
             "pin",
