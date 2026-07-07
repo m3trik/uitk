@@ -565,6 +565,70 @@ class TestSwitchboardCenterWidget(QtBaseTestCase):
         with self.assertRaises(ValueError):
             Switchboard.center_widget(widget, pos="invalid")
 
+    def test_padding_x_raises_stale_maximum_width(self):
+        """A content-fit resize must not be silently truncated by a stale
+        maximumWidth (e.g. a Designer-authored ceiling sized for shorter
+        text than the widget currently holds).
+
+        Regression test: marking-menu submenu buttons auto-size via
+        ``center_widget(w, padding_x=...)`` (see ``add_child_event_filter``
+        in _marking_menu.py). Several tentacle .ui buttons carry a leftover
+        ``maximumSize`` from Designer that predates their current (longer)
+        label text, which used to clamp the resize back below the button's
+        own minimumSizeHint -- text rendered flush against the edges instead
+        of padded. See uitk/docs/MARKING_MENU.md "Widget centering".
+        """
+        button = self.track_widget(QtWidgets.QPushButton())
+        button.setText("A Fairly Long Button Label")
+        button.setMaximumWidth(40)  # stale ceiling, narrower than the text needs
+        needed = button.minimumSizeHint().width() + 25
+
+        Switchboard.center_widget(button, padding_x=25)
+
+        self.assertGreaterEqual(
+            button.maximumWidth(),
+            needed,
+            "center_widget must raise a too-small maximumWidth to fit the request",
+        )
+        self.assertEqual(button.width(), needed)
+
+    def test_padding_x_leaves_generous_maximum_width_untouched(self):
+        """A maximumWidth that already accommodates the padded size must be
+        left alone (no unnecessary widening of the constraint)."""
+        button = self.track_widget(QtWidgets.QPushButton())
+        button.setText("Short")
+        button.setMaximumWidth(500)
+
+        Switchboard.center_widget(button, padding_x=25)
+
+        self.assertEqual(button.maximumWidth(), 500)
+
+    def test_padding_x_does_not_widen_a_fixed_size_lock(self):
+        """minimumWidth == maximumWidth is a deliberate fixed-size lock (e.g.
+        a square icon tile), not a stale Designer ceiling, and must survive
+        a padding_x resize untouched -- even when the button's own text
+        would otherwise need more room than the lock allows.
+
+        Regression: tentacle's cameras#startmenu.ui ``i000`` ("Camera
+        Options") is pinned to a 100x21 fixed size (min == max); text-only
+        sizing would need more than 100px, and an earlier version of the
+        maximumWidth-raising fix widened it anyway, stretching a tile meant
+        to stay square/uniform with its siblings.
+        """
+        button = self.track_widget(QtWidgets.QPushButton())
+        button.setText("Camera Options")
+        button.setFixedWidth(100)  # sets minimumWidth == maximumWidth == 100
+        self.assertGreater(
+            button.minimumSizeHint().width() + 25,
+            100,
+            "fixture invalid: this text must actually need more than the lock",
+        )
+
+        Switchboard.center_widget(button, padding_x=25)
+
+        self.assertEqual(button.maximumWidth(), 100)
+        self.assertEqual(button.width(), 100)
+
 
 class TestSwitchboardInvertOnModifier(unittest.TestCase):
     """Tests for SwitchboardUtilsMixin invert_on_modifier method."""
@@ -1552,7 +1616,7 @@ class TestLoggerHandlerSyncPerformance(unittest.TestCase):
 
     def test_handler_setLevel_not_called_on_access(self):
         """Accessing .logger repeatedly should not call handler.setLevel each time."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
 
         sb = Switchboard(ui_source=None)
         logger = sb.logger
