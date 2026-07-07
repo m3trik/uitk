@@ -678,5 +678,120 @@ class TestSyncStoredDefaultHook(QtBaseTestCase):
         self.assertEqual(sb.value(), 0.0)
 
 
+# ===========================================================================
+# Scenario 11: host-namespaced branch (Maya / Blender share one QSettings
+# backend, per mainWindow.py's Switchboard.add_ui / _relative_state fix)
+# ===========================================================================
+
+class TestHostNamespacedWidgetState(_PersistBase):
+    """A co-located mayatk/blendertk panel pair uses the SAME ``ui_name``
+    (e.g. ``"mirror"``). Without host-namespacing, both hosts' ``add_ui``
+    calls resolve to the identical ``switchboard/mirror/...`` branch and a
+    value saved in one host's session is silently restored in the other's —
+    wrong for a widget whose meaning or item count differs per host (see
+    ``mayatk``/``blendertk`` ``MirrorSlots``). Mirrors
+    ``TestHostNamespacedPersistence`` in ``test_shortcut_commands.py``, one
+    layer down (widget state, not shortcut overrides).
+    """
+
+    def _make_sb_for_host(self, ui_name, button_names, slot_class, tags):
+        """Like ``_PersistBase._make_sb``, but swaps ``sb.settings`` to the
+        isolated test store BEFORE the lazy ``loaded_ui`` access triggers
+        ``add_ui`` — so ``add_ui``'s own branch-naming (which now includes
+        ``self._host_suffix()``) runs for real against an inspectable store,
+        instead of being overwritten after the fact.
+        """
+        ui_path = os.path.join(self.tmp.name, f"{ui_name}.ui")
+        if not os.path.exists(ui_path):
+            _make_ui(ui_path, ui_name, button_names)
+        sb = Switchboard(
+            ui_source=self.tmp.name,
+            slot_source=slot_class,
+            log_level="WARNING",
+            context_tags=tags,
+        )
+        sb.settings = SettingsManager(
+            org=self.TEST_ORG, app=self.TEST_APP, namespace="switchboard"
+        )
+        ui = getattr(sb.loaded_ui, ui_name)
+        self.track_widget(ui)
+        return sb, ui
+
+    def test_same_named_ui_gets_separate_branch_per_host(self):
+        class Repro:
+            def __init__(s, switchboard, **_):
+                s.sb = switchboard
+                s.ui = switchboard.loaded_ui.repro_branch
+
+        sb_m, ui_m = self._make_sb_for_host(
+            "repro_branch", ["tb000"], Repro, {"maya"}
+        )
+        sb_b, ui_b = self._make_sb_for_host(
+            "repro_branch", ["tb000"], Repro, {"blender"}
+        )
+        sb_s, ui_s = self._make_sb_for_host(
+            "repro_branch", ["tb000"], Repro, None
+        )
+
+        self.assertEqual(ui_m.settings.namespace, "switchboard/repro_branch_maya")
+        self.assertEqual(ui_b.settings.namespace, "switchboard/repro_branch_blender")
+        self.assertEqual(ui_s.settings.namespace, "switchboard/repro_branch")
+        self.assertNotEqual(ui_m.settings.namespace, ui_b.settings.namespace)
+
+    def test_widget_state_isolated_across_hosts(self):
+        class Repro:
+            def __init__(s, switchboard, **_):
+                s.sb = switchboard
+                s.ui = switchboard.loaded_ui.repro_isolated
+
+            def tb000_init(s, w):
+                if not w.is_initialized:
+                    w.option_box.menu.add(
+                        "QCheckBox", setObjectName="chk_host"
+                    )
+
+        sb_m, ui_m = self._make_sb_for_host(
+            "repro_isolated", ["tb000"], Repro, {"maya"}
+        )
+        ui_m.tb000.option_box.menu.chk_host.setChecked(True)
+        self._drain()
+        self.assertIn(
+            "switchboard/repro_isolated_maya/chk_host/toggled", self._raw_keys()
+        )
+
+        sb_b, ui_b = self._make_sb_for_host(
+            "repro_isolated", ["tb000"], Repro, {"blender"}
+        )
+        self._drain()
+        self.assertFalse(
+            ui_b.tb000.option_box.menu.chk_host.isChecked(),
+            "blender host must not inherit maya's saved widget state",
+        )
+        self.assertNotIn(
+            "switchboard/repro_isolated_blender/chk_host/toggled",
+            self._raw_keys(),
+        )
+
+    def test_relative_state_matches_loaded_sibling_branch(self):
+        """``MainWindow._relative_state`` (the not-loaded fallback used to
+        mirror a value into a sibling surface, e.g. a marking-menu submenu)
+        must resolve to the SAME branch a loaded sibling would use, or a
+        value written via the fallback lands in the wrong host's store.
+        """
+        class Repro:
+            def __init__(s, switchboard, **_):
+                s.sb = switchboard
+                s.ui = switchboard.loaded_ui.repro_rel
+
+        sb_m, ui_m = self._make_sb_for_host(
+            "repro_rel", ["tb000"], Repro, {"maya"}
+        )
+        sibling_state = ui_m._relative_state("repro_rel_sibling")
+        self.assertEqual(
+            sibling_state.qsettings.namespace,
+            "switchboard/repro_rel_sibling_maya",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

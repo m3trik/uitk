@@ -7,7 +7,6 @@ from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 
 # From this package
-from uitk import __package__
 from uitk.widgets.footer import Footer
 from uitk.widgets.mixins.state_manager import StateManager
 from uitk.widgets.mixins.settings_manager import SettingsManager
@@ -582,7 +581,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         """
         state = self._relative_states.get(ui_name)
         if state is None:
-            state = StateManager(self.sb.settings.branch(ui_name))
+            # Host-namespaced to match add_ui's branch naming (see
+            # SwitchboardShortcutMixin._host_namespaced_branch) -- a sibling
+            # branch built here must resolve to the SAME key a loaded sibling
+            # would use, or a value written via this fallback would silently
+            # land in the wrong host's store.
+            branch = self.sb._host_namespaced_branch(ui_name)
+            state = StateManager(self.sb.settings.branch(branch))
             self._relative_states[ui_name] = state
         return state
 
@@ -982,10 +987,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             if self.restore_window_size:
                 restored = self.restore_window_geometry()
 
-            self.logger.debug(f"[showEvent]: Registering children on first show.")
+            self.logger.debug("[showEvent]: Registering children on first show.")
             try:
                 self.register_children()
-                self.logger.debug(f"[showEvent]: Registering children done.")
+                self.logger.debug("[showEvent]: Registering children done.")
             except Exception as e:
                 self.logger.debug(f"[showEvent]: Error during register_children: {e}")
 
