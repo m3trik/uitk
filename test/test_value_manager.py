@@ -89,12 +89,22 @@ class TestSetValueCheckableButtons(QtBaseTestCase):
         ValueManager.set_value(g, False)
         self.assertFalse(g.isChecked())
 
-    def test_noncheckable_pushbutton_still_takes_text(self):
-        # Plain (non-checkable) push buttons must keep their text behavior.
-        b = QtWidgets.QPushButton()
+    def test_noncheckable_pushbutton_label_is_not_state(self):
+        # A plain (non-checkable) push button is an action/launcher: its label is
+        # static .ui content (or derived from other state on init), never a
+        # persistable value of its own. set_value must NOT overwrite the label —
+        # else a stale stored value (e.g. a launcher renamed in the .ui, whose old
+        # label was persisted) would clobber it on restore — and get_value reports
+        # no value (only a *checkable* button carries one).
+        b = QtWidgets.QPushButton("More..")
         self.track_widget(b)
-        ValueManager.set_value(b, "Hello")
-        self.assertEqual(b.text(), "Hello")
+        ValueManager.set_value(b, "Transform")
+        self.assertEqual(
+            b.text(), "More..", "plain button label must not be overwritten by state"
+        )
+        self.assertIsNone(
+            ValueManager.get_value(b), "plain button has no persistable value"
+        )
 
 
 class TestSetValueNumeric(QtBaseTestCase):
