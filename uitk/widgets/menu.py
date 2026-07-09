@@ -215,7 +215,12 @@ class ActionButtonManager:
         self, button_id: str, config: _ActionButtonConfig
     ) -> QtWidgets.QPushButton:
         """Create an action button with the given configuration."""
-        button = QtWidgets.QPushButton(config.text)
+        # Parent to the container at construction: a parentless button that
+        # gets setVisible(True) below (visible=contains_items) MAPS as its own
+        # on-screen top-level window until add_button's addWidget reparents it
+        # — a visible stray flash on every FIRST popup open (option-box menus,
+        # whose apply/defaults buttons default on).
+        button = QtWidgets.QPushButton(config.text, self.container)
 
         if config.tooltip:
             button.setToolTip(config.tooltip)

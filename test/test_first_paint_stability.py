@@ -340,6 +340,68 @@ class TestNoStrayPopupsAndVisibleWrapSuppression(QtBaseTestCase):
             window.updatesEnabled(), "suppression must be restored after wrap"
         )
 
+    def test_first_popup_open_maps_no_stray_toplevel(self):
+        """First ``show_as_popup`` must not map ANY top-level widget besides
+        the menu itself. Pre-fix, ``ActionButtonManager.create_button`` built
+        the apply/defaults buttons PARENTLESS and ``setVisible(True)``'d them
+        (``visible=contains_items``) before ``add_button`` parented them into
+        the container — each mapped as its own on-screen top-level window for
+        the ~15 ms until the reparent hid it. Live symptom: "widgets show
+        briefly and immediately hide, before the actual option box menu is
+        shown" — option-box menus only, because those default
+        ``add_apply_button``/``add_defaults_button`` to True."""
+        from uitk.widgets.menu import Menu
+
+        host = QtWidgets.QPushButton("host")
+        self.track_widget(host)
+        host.clicked.connect(lambda: None)  # apply-button gate: needs receivers
+        host.show()
+        self._drain_qt_events()
+
+        # The option-box configuration (OptionBoxManager.enable_menu defaults).
+        menu = Menu(
+            parent=host,
+            add_apply_button=True,
+            add_defaults_button=True,
+            trigger_button="none",
+            match_parent_width=False,
+            hide_on_leave=True,
+        )
+        self.track_widget(menu)
+        menu.add("QCheckBox", setText="opt")  # contains_items → visible=True
+
+        stray_shows = []
+
+        class _TopLevelSpy(QtCore.QObject):
+            def eventFilter(self, obj, event):
+                if (
+                    event.type() == QtCore.QEvent.Show
+                    and isinstance(obj, QtWidgets.QWidget)
+                    and obj.isWindow()
+                    and obj is not menu
+                ):
+                    stray_shows.append(
+                        f"{type(obj).__name__}:{obj.objectName() or '?'}"
+                    )
+                return False
+
+        spy = _TopLevelSpy()
+        app = QtWidgets.QApplication.instance()
+        app.installEventFilter(spy)
+        try:
+            menu.show_as_popup(anchor_widget=host)  # first open: lazy buttons
+            self._drain_qt_events()
+        finally:
+            app.removeEventFilter(spy)
+
+        self.assertTrue(menu.isVisible())
+        self.assertEqual(
+            stray_shows,
+            [],
+            "top-level widgets mapped during first popup open (the transient "
+            f"widget flash): {stray_shows}",
+        )
+
 
 class TestLayoutManagedWrapUnaffected(QtBaseTestCase):
     """Layout-managed (docked-panel) wraps never had the refit path; the
