@@ -5605,7 +5605,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 2132,
+              "line": 2207,
               "deprecated": false
             },
             {
@@ -5614,7 +5614,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - relinquishes input control even if hide() was bypassed.",
-              "line": 2186,
+              "line": 2267,
               "deprecated": false
             },
             {
@@ -5623,7 +5623,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 2288,
+              "line": 2374,
               "deprecated": false
             },
             {
@@ -5632,7 +5632,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 2308,
+              "line": 2394,
               "deprecated": false
             },
             {
@@ -5641,7 +5641,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fade every background window and menu, once per hold.",
-              "line": 2374,
+              "line": 2460,
               "deprecated": false
             },
             {
@@ -5650,7 +5650,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore everything dimmed by the last :meth:`dim_other_windows`.",
-              "line": 2393,
+              "line": 2479,
               "deprecated": false
             },
             {
@@ -5659,7 +5659,7 @@
               "kind": "method",
               "signature": "(self, widgets) -> None",
               "summary": "Initialize child widgets with an event filter.",
-              "line": 2403,
+              "line": 2489,
               "deprecated": false
             },
             {
@@ -5668,7 +5668,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 2467,
+              "line": 2553,
               "deprecated": false
             },
             {
@@ -5677,7 +5677,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 2489,
+              "line": 2575,
               "deprecated": false
             },
             {
@@ -5686,7 +5686,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Dispatch (or forward) a release delivered to a *grabbed* child.",
-              "line": 2498,
+              "line": 2584,
               "deprecated": false
             }
           ]

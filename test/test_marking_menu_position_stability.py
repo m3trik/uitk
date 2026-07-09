@@ -61,6 +61,10 @@ class _Overlay:
     def clone_widgets_along_path(self, *_a, **_kw):
         pass
 
+    def clear_paint_events(self):
+        # Part of the real Overlay interface hide() consumes (buffer flush).
+        pass
+
 
 class _MouseTracking:
     def update_child_widgets(self):

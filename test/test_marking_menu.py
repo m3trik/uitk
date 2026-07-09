@@ -30,8 +30,10 @@ class MarkingMenuStub(QtWidgets.QStackedWidget):
         self._last_shown_ui = None
 
     def _sync_menu_to_state(self, *, buttons=0, modifiers=0, extra_key=None):
-        if self.isHidden():
-            return
+        # NOTE: deliberately NO isHidden() gate — production has none and must
+        # not: _on_activation_press syncs while hidden to open the menu at all.
+        # The reshow-after-_show_window protection is _activation_key_held
+        # being cleared (the resolver returns None when the key isn't held).
         target = resolve_target_menu(
             activation_held=self._activation_key_held,
             activation_key_str=self._activation_key_str,
@@ -124,17 +126,24 @@ class TestStandaloneWindowSuppression(QtBaseTestCase):
 
     # ----- _sync_menu_to_state guards -----
 
-    def test_sync_menu_to_state_blocked_when_hidden(self):
-        """_sync_menu_to_state must be a no-op when the MarkingMenu is hidden.
+    def test_sync_menu_to_state_noop_after_show_window(self):
+        """A sync after _show_window must not resolve a menu (no reshow).
 
-        Bug: releasing all mouse buttons while F12 is held after _show_window
-        reshowed the overlay via a stale state lookup.
+        Bug: releasing all mouse buttons while F12 was held after _show_window
+        reshowed the overlay via a stale state lookup. The production guard is
+        _show_window clearing ``_activation_key_held`` — the resolver returns
+        None when the activation key isn't held. (A prior version of this test
+        asserted an ``isHidden()`` gate that existed only in this stub;
+        production has no such gate and must not — ``_on_activation_press``
+        syncs while hidden to open the menu at all.)
         """
         self.mm._activation_key_held = True
         self.mm.show()
-        self.mm._show_window(QtWidgets.QWidget())
-        # Now hidden, activation_key_held is False. Simulate a stale fallthrough:
-        self.mm._activation_key_held = True
+        w = QtWidgets.QWidget()
+        self.track_widget(w)
+        self.mm._show_window(w)
+        # _show_window cleared _activation_key_held: any subsequent sync — the
+        # trailing all-buttons release — must resolve to nothing.
         self.mm._last_shown_ui = None
         self.mm._sync_menu_to_state(buttons=0, modifiers=0)
         self.assertIsNone(self.mm._last_shown_ui)

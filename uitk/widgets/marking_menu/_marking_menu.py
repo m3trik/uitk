@@ -1984,7 +1984,10 @@ class MarkingMenu(
     def _ensure_fullscreen_on_active_screen(
         self, anchor: Optional[QtCore.QPoint] = None
     ) -> None:
-        """Pin the full-screen overlay to the screen the menu will land on.
+        """Pin the full-screen overlay's GEOMETRY to the screen the menu will
+        land on. Geometry only — presenting a hidden overlay is the caller's
+        job (``_show_marking_menu`` presents LAST, after the target page is
+        current; see the comment there for why the order matters).
 
         The overlay is a single frameless full-screen window and every menu is
         positioned inside it via ``self.mapFromGlobal(...)``. Qt's
@@ -2015,20 +2018,19 @@ class MarkingMenu(
 
         # Relocate only when the overlay is *confirmed* to be on a different
         # screen than the active one. Single-monitor and indeterminate cases
-        # (no window handle / no screens) fall through to the original
-        # show-if-hidden behaviour, so this is a strict no-op there.
+        # (no window handle / no screens) are a strict no-op.
         # (current is not None already implies handle is not None.)
         if target is not None and current is not None and current is not target:
             # Drop the full-screen state so the geometry can move across
-            # screens, relocate, then re-assert full-screen on the target.
+            # screens, relocate, then re-assert full-screen on the target —
+            # but re-present here only when already visible (the mid-gesture
+            # monitor hop). A hidden overlay is presented by the caller after
+            # the page swap.
             self.setWindowState(self.windowState() & ~QtCore.Qt.WindowFullScreen)
             handle.setScreen(target)
             self.setGeometry(target.geometry())
-            self.showFullScreen()
-            return
-
-        if self.isHidden():
-            self.showFullScreen()
+            if not self.isHidden():
+                self.showFullScreen()
 
     def _show_marking_menu(self, widget, **kwargs):
         """Internal handler for showing marking menus."""
@@ -2043,10 +2045,11 @@ class MarkingMenu(
         new_gesture = is_startmenu and self.overlay.path.is_empty
         anchor = self.overlay.path.start_pos if is_startmenu and not new_gesture else None
 
-        # Multi-monitor: relocate the full-screen overlay to the anchor's screen
-        # before positioning the menu (see method docstring). Must run before
-        # setCurrentWidget, which maps the global anchor into the overlay's
-        # local space — same anchor, so both resolve to the same screen.
+        # Multi-monitor: assign the overlay's screen/geometry for the anchor's
+        # screen before positioning the menu (see method docstring). Must run
+        # before setCurrentWidget, which maps the global anchor into the
+        # overlay's local space — same anchor, so both resolve to the same
+        # screen. Geometry only; a hidden overlay is presented last, below.
         self._ensure_fullscreen_on_active_screen(anchor)
 
         self.setCurrentWidget(widget, anchor=anchor)
@@ -2062,8 +2065,25 @@ class MarkingMenu(
         ):
             self._non_default_shown = True
 
-        # The overlay is already shown full-screen on the active monitor by
-        # _ensure_fullscreen_on_active_screen() above.
+        # Present LAST — a hidden overlay becomes visible only after the
+        # target page is current. The overlay is a translucent (layered)
+        # window: when re-shown, the OS re-presents its last composed frame
+        # and Qt only replaces it on the first repaint after the show.
+        # Presenting before the page swap therefore flashed the PREVIOUS
+        # gesture's surface on every reopen — e.g. the submenu a standalone
+        # tool was launched from — until the new page painted. (The
+        # mid-gesture monitor hop re-presents inside
+        # _ensure_fullscreen_on_active_screen: already visible, no reopen
+        # seam. Guarded by test_marking_menu_present_order.py.)
+        if self.isHidden():
+            self.showFullScreen()
+            # Push the freshly-composed frame NOW. The show presents the
+            # retained buffer (cleared by hide()'s flush — invisible, not
+            # stale), and without this forced repaint the real menu waits on
+            # the HOST's next paint cycle — a user-visible gap under a busy
+            # DCC event loop.
+            self.repaint()
+
         self.raise_()
         self.activateWindow()
 
@@ -2129,36 +2149,97 @@ class MarkingMenu(
 
         return widget
 
+    def _reset_stacked_pin(self, ui) -> None:
+        """Clear a stacked page's pin / prevent-hide so ``hide()`` isn't vetoed.
+
+        ``MainWindow.setVisible`` is pin-gated (a pinned window silently
+        refuses ``hide()``), so this must run BEFORE any attempt to hide the
+        page — the old hide-then-unpin order left a pinned page in shown-state
+        with its pin cleared, and a shown-state child re-shows with the
+        overlay on the next present (the "submenu that launched the window
+        shows again on the next activation" ghost). No-op for non-stacked
+        UIs and for test doubles without the pin surface.
+        """
+        if not (getattr(ui, "has_tags", None) and ui.has_tags(_MARKING_MENU_TAGS)):
+            return
+        header = getattr(ui, "header", None)
+        if header is not None:
+            try:
+                header.reset_pin_state()
+            except AttributeError:
+                # Fallback for headers without reset_pin_state
+                if getattr(header, "pinned", False):
+                    header.pinned = False
+        # Window-level flags, with or without a header. setVisible consults
+        # the WINDOW's pin, and Header.reset_pin_state no-ops unless the
+        # HEADER believes it's pinned — a desynced (or absent) header would
+        # otherwise leave the window pin set and the hide vetoed anyway.
+        # Menu-style surfaces use prevent_hide; MainWindow uses set_pinned.
+        if getattr(ui, "pinned", False) and hasattr(ui, "set_pinned"):
+            ui.set_pinned(False)
+        if getattr(ui, "prevent_hide", False):
+            ui.prevent_hide = False
+
+    def _hide_stacked_leftovers(self) -> None:
+        """Unpin + explicitly hide every stacked page still in SHOWN-state.
+
+        A page that dodged its hide (a pin veto — see :meth:`_reset_stacked_pin`)
+        keeps its shown-state and re-shows with the overlay on the next
+        present: the stale-menu ghost. The predicate is ``not isHidden()``
+        (the child's own state), NOT ``isVisible()`` — under a hidden parent
+        every child reports invisible, which would blind the sweep exactly
+        when the overlay is already down. Direct children only (pages are
+        parented to the overlay by ``addWidget``) — no switchboard
+        dependency. Idempotent; called from both :meth:`hide` and
+        :meth:`hideEvent` so bypassed hides (a parent ``setVisible(False)``)
+        are covered too.
+        """
+        for child in self.children():
+            if (
+                isinstance(child, QtWidgets.QWidget)
+                and not child.isHidden()
+                and getattr(child, "has_tags", None)
+                and child.has_tags(_MARKING_MENU_TAGS)
+            ):
+                self._reset_stacked_pin(child)
+                child.hide()
+
     def hide(self):
         """Override hide to properly reset stacked widget state."""
         self.logger.debug("MarkingMenu.hide() called")
 
-        if self.currentWidget():
-            self.setCurrentIndex(-1)
-
+        # Unpin BEFORE hiding — see _reset_stacked_pin for why the order
+        # matters (a pinned page vetoes its own hide()).
         current_ui = self.sb.active_ui
-        if current_ui:
+        if current_ui is not None:
             self.logger.debug(
                 f"MarkingMenu.hide(): current_ui={current_ui.objectName()}, "
                 f"tags={getattr(current_ui, 'tags', None)}"
             )
-            try:
-                if current_ui.has_tags(_MARKING_MENU_TAGS):
-                    header = current_ui.header
-                    if header:
-                        try:
-                            header.reset_pin_state()
-                        except AttributeError:
-                            # Fallback for widgets without reset_pin_state
-                            if getattr(header, "pinned", False):
-                                header.pinned = False
-                            # Menu uses prevent_hide; MainWindow uses set_pinned
-                            if hasattr(current_ui, "set_pinned"):
-                                current_ui.set_pinned(False)
-                            elif hasattr(current_ui, "prevent_hide"):
-                                current_ui.prevent_hide = False
-            except AttributeError:
-                pass
+            self._reset_stacked_pin(current_ui)
+
+        if self.currentWidget():
+            self.setCurrentIndex(-1)
+
+        # Sweep any stacked page that dodged its hide (e.g. pinned during a
+        # transition). Also run from hideEvent, but a hide() on an ALREADY
+        # hidden overlay (retire()) sends no QHideEvent — so this call is
+        # what clears a ghost manufactured while hidden.
+        self._hide_stacked_leftovers()
+
+        # Flush a CLEARED frame into the window's retained buffer before
+        # hiding. The overlay is a layered (translucent) window: the OS
+        # re-presents its last composed frame when the window is next shown,
+        # and Qt repaints only AFTER that present — so pixels left in the
+        # buffer here (the menu just hidden + the gesture trail) flash
+        # momentarily on every reopen even though the correct page is
+        # already current (the page swap happens while hidden, and hidden
+        # windows never repaint). With the pages down and the trail cleared,
+        # this synchronous repaint composes an empty translucent frame: the
+        # retained buffer becomes invisible instead of stale.
+        if self.isVisible():
+            self.overlay.clear_paint_events()
+            self.repaint()
 
         # CRITICAL: end the gesture and fully relinquish mouse control before
         # hiding (see _relinquish_input_control). The leaf-click launch path calls
@@ -2190,6 +2271,11 @@ class MarkingMenu(
         # stay "live" with a dangling grab — releasing the grab alone left
         # _activation_key_held set, so a re-grab guard could still re-acquire.
         self._relinquish_input_control()
+        # Same safety net for shown-state page ghosts: a bypassed hide skips
+        # hide()'s sweep, and a pinned page left in shown-state re-shows with
+        # the overlay on the next present. isHidden-based, so it works here
+        # even though every child already reports isVisible()==False.
+        self._hide_stacked_leftovers()
         self._clear_optimization_caches()
         super().hideEvent(event)
 
