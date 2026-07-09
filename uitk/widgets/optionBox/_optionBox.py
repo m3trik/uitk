@@ -44,6 +44,11 @@ _TYPE_TO_KEY = {
 }
 
 
+# Shared repolish primitive — see its docstring for the stale property-
+# selector mechanism this package measures around.
+from uitk.widgets.mixins.style_sheet import repolish_tree as _repolish_tree
+
+
 class OptionBoxContainer(QtWidgets.QWidget):
     """Container widget that wraps a widget with option buttons.
 
@@ -97,8 +102,39 @@ class OptionBoxContainer(QtWidgets.QWidget):
         parent = self.parentWidget()
         if parent is not None and parent.layout() is not None:
             return  # layout-managed — sizing is the parent's responsibility
-        # Defer one tick so the QSS settles, then collapse to the content hint.
-        QtCore.QTimer.singleShot(0, self._adjust_to_content)
+        # Safety net, CONDITIONAL: schedule the one-tick refit only when the
+        # current geometry differs from the content fit. Since wrap() now
+        # repolishes before measuring, the routine case is already final at
+        # show — scheduling an unconditional post-show adjustSize+move here
+        # was a visible correction (the init flash) whenever the wrap-time
+        # measurement had been stale, and a wasted timer when it hadn't.
+        # A genuinely wrong size (host style resolved QSS later than wrap,
+        # or an externally perturbed container) still schedules and corrects.
+        if self._content_fit_pending():
+            QtCore.QTimer.singleShot(0, self._adjust_to_content)
+
+    def _content_fit_pending(self) -> bool:
+        """True when a content re-fit would actually change geometry.
+
+        Mirrors what :meth:`_adjust_to_content` would do — ``adjustSize`` to
+        the (activated) layout hint, re-centered on the anchor — without
+        performing it. Kept cheap: one layout activation + hint read.
+        """
+        layout = self.layout()
+        if layout is None:
+            return False
+        layout.activate()
+        hint = self.sizeHint()
+        if hint.isValid() and hint != self.size():
+            return True
+        anchor = self._anchor_center
+        if anchor is not None:
+            target = QtCore.QPoint(
+                anchor.x() - hint.width() // 2, anchor.y() - hint.height() // 2
+            )
+            if target != self.pos():
+                return True
+        return False
 
     def _adjust_to_content(self):
         """Fit a *self-positioned* container to its content, centered on the
@@ -136,7 +172,13 @@ class OptionBoxContainer(QtWidgets.QWidget):
             center = anchor if anchor is not None else self.geometry().center()
             self.adjustSize()
             new = self.size()
-            self.move(center.x() - new.width() // 2, center.y() - new.height() // 2)
+            target = QtCore.QPoint(
+                center.x() - new.width() // 2, center.y() - new.height() // 2
+            )
+            # No-op guard: a refit that lands exactly where the container
+            # already sits must not issue a move (Qt would still process it).
+            if target != self.pos():
+                self.move(target)
         except RuntimeError:
             pass  # underlying C++ object already deleted
 
@@ -622,6 +664,18 @@ class OptionBox:
 
             # Apply border styling
             self._apply_border_styling(wrapped_widget, option_widgets)
+
+            # Re-evaluate property-selector QSS BEFORE measuring. Dynamic-
+            # property rules ([class="..."]) stamped after a widget's first
+            # polish stay un-applied until an unpolish/polish cycle, so the
+            # height/size reads below (and _update_sizing's square fit) would
+            # otherwise measure the pre-stamp metrics — geometry then freezes
+            # wrong (or a post-show refit visibly corrects it: the init
+            # flash). On hosts whose Qt resolves the border-trim setStyleSheet
+            # above eagerly this is nearly free (already resolved); on hosts
+            # that resolve lazily it is load-bearing (the Blender ~80px
+            # CT_PushButton inflation).
+            _repolish_tree(container)
 
             # Finalize
             h = wrapped_widget.height() or wrapped_widget.sizeHint().height()

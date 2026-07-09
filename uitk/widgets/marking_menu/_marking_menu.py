@@ -16,6 +16,7 @@ from ._resolver import parse_binding_keys, resolve_target_menu, count_buttons
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.menuButton import MenuButton
 from uitk.widgets.mixins.shortcuts import GlobalShortcut, host_namespace_suffix
+from uitk.widgets.mixins.style_sheet import repolish_tree
 from uitk.compile import precompile_async
 from uitk.loaders import CompiledLoader
 
@@ -2519,8 +2520,17 @@ class MarkingMenu(
             # OptionBoxContainer (``_adjust_to_content``), which sizes the
             # whole container (widget + option buttons) around the same center.
             if isinstance(w, MenuButton):
-                self.sb.center_widget(w, padding_x=35)
+                # Style BEFORE the content-fit measurement — the old order
+                # (measure, then style) sized the button from pre-style
+                # metrics, freezing an inflated width on hosts whose base
+                # style reports a large un-styled button floor (the Blender
+                # ~80px CT_PushButton inflation). repolish_tree re-evaluates
+                # property-selector QSS stamped after the widget's first
+                # polish (stale until an unpolish/polish cycle), so the fit
+                # below measures final metrics.
                 w.ui.style.set(widget=w)
+                repolish_tree(w)
+                self.sb.center_widget(w, padding_x=35)
 
             if w.type == self.sb.registered_widgets.Region:
                 w.visible_on_mouse_over = True

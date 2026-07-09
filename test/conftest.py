@@ -357,6 +357,115 @@ class QtBaseTestCase(BaseTestCase):
         return QTest
 
 
+# ---------------------------------------------------------------------------
+# First-paint stability harness
+#
+# uitk's anti-flash doctrine: all visual state must be FINAL by the time a
+# window's show() returns — anything corrected on a later event-loop tick
+# painted the un-final state first (the init "flash"). These helpers snapshot
+# a widget tree at show-return and assert nothing visible mutates while the
+# deferred-timer backlog drains.
+#
+# The deterministic flash reproducer (style-independent, offscreen-safe) is a
+# PROPERTY-SELECTOR stylesheet: dynamic-property rules ([class="tight"]) do
+# NOT re-evaluate when the property is set after the QSS is installed — the
+# widget keeps the un-matched metrics until an unpolish/polish cycle (which
+# show performs implicitly, hence the visible correction). Type-selector
+# rules re-resolve immediately on modern Qt and CANNOT reproduce the bug.
+# ---------------------------------------------------------------------------
+
+# Two-rule reproducer: the type rule is the "floor" every button gets; the
+# property rule is the collapsed final state that only applies post-repolish.
+FIRST_PAINT_QSS = (
+    "QPushButton { min-width: 80px; }\n"
+    'QPushButton[class="tight"] { min-width: 8px; padding: 0px; font-size: 6pt; }'
+)
+
+
+def _widget_path(w, root):
+    """Stable-ish identity for a widget within *root*'s tree."""
+    parts = []
+    cur = w
+    while cur is not None and cur is not root:
+        parent = cur.parentWidget()
+        name = cur.objectName()
+        if not name:
+            # Disambiguate unnamed siblings by class + index within parent.
+            sibs = (
+                [c for c in parent.children() if type(c) is type(cur)]
+                if parent is not None
+                else [cur]
+            )
+            try:
+                name = f"{type(cur).__name__}#{sibs.index(cur)}"
+            except ValueError:
+                name = type(cur).__name__
+        parts.append(name)
+        cur = parent
+    parts.append(root.objectName() or type(root).__name__)
+    return "/".join(reversed(parts))
+
+
+def visual_state_snapshot(root, ignore=()):
+    """Snapshot (visibility, geometry, icon) for every widget under *root*.
+
+    ``ignore`` is an iterable of substrings — any widget whose path contains
+    one is skipped (throwaway internals).
+    """
+    from qtpy import QtWidgets
+
+    state = {}
+    for w in [root] + root.findChildren(QtWidgets.QWidget):
+        try:
+            path = _widget_path(w, root)
+            if any(s in path for s in ignore):
+                continue
+            geo = w.geometry()
+            icon_key = None
+            if isinstance(w, QtWidgets.QAbstractButton) and not w.icon().isNull():
+                icon_key = w.icon().cacheKey()
+            state[path] = (
+                w.isVisible(),
+                (geo.x(), geo.y(), geo.width(), geo.height()),
+                icon_key,
+            )
+        except RuntimeError:
+            pass  # C++ side died mid-walk
+    return state
+
+
+def diff_visual_state(before, after):
+    """Human-readable per-widget deltas between two snapshots."""
+    lines = []
+    for key in sorted(set(before) | set(after)):
+        if before.get(key) != after.get(key):
+            lines.append(f"  {key}: {before.get(key)} -> {after.get(key)}")
+    return lines
+
+
+def assert_stable_after_show(testcase, window, pumps=20, settle_ms=12, ignore=()):
+    """Show *window*; assert no visible state mutates once show() returns.
+
+    The snapshot taken synchronously at show-return is the state the first
+    paint renders (uitk's contract); draining ``pumps`` event-loop passes
+    then flushes every ``singleShot(0, ...)`` correction — any diff is a
+    user-visible init flash.
+    """
+    from qtpy import QtCore, QtWidgets
+
+    window.show()
+    before = visual_state_snapshot(window, ignore=ignore)
+    for _ in range(pumps):
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, settle_ms)
+    after = visual_state_snapshot(window, ignore=ignore)
+    delta = diff_visual_state(before, after)
+    if delta:
+        testcase.fail(
+            "visible state mutated after show() returned (init flash):\n"
+            + "\n".join(delta)
+        )
+
+
 # Test data paths (TEST_DIR already defined at top)
 UITK_DIR = PACKAGE_ROOT / "uitk"
 EXAMPLES_DIR = UITK_DIR / "examples"
