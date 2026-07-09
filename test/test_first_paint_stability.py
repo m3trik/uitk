@@ -248,6 +248,99 @@ class TestChromeInitialStateFinal(QtBaseTestCase):
         self.assertEqual(delta, [], f"post-show header mutation: {delta}")
 
 
+class TestNoStrayPopupsAndVisibleWrapSuppression(QtBaseTestCase):
+    """Phase 5: no real popup may appear during add(); a wrap on a VISIBLE
+    window suppresses updates window-wide (one repaint, no flicker)."""
+
+    def setUp(self):
+        super().setUp()
+        self._drain_qt_events()
+
+    def test_action_widget_realization_shows_no_menu_at_all(self):
+        """add(QAction/QWidgetAction) must not show ANY QMenu — pre-fix a
+        temporary QMenu was really shown (+ processEvents) to realize the
+        action's widget, flashing an empty popup during add(). (The
+        realization API, QMenu.widgetForAction, is also gone from newer
+        PySide6 — the old path hard-crashed there.)"""
+        from uitk.widgets.menu import Menu
+
+        shown_menus = []
+
+        class _Spy(QtCore.QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == QtCore.QEvent.Show and isinstance(
+                    obj, QtWidgets.QMenu
+                ):
+                    shown_menus.append(obj)
+                return False
+
+        spy = _Spy()
+        app = QtWidgets.QApplication.instance()
+        app.installEventFilter(spy)
+        try:
+            menu = Menu()
+            self.track_widget(menu)
+            payload = QtWidgets.QLabel("payload")
+            waction = QtWidgets.QWidgetAction(menu)
+            waction.setDefaultWidget(payload)
+            got = menu.add(waction)
+
+            plain = QtWidgets.QAction("plain", menu)
+            got_plain = menu.add(plain)
+        finally:
+            app.removeEventFilter(spy)
+
+        self.assertEqual(
+            shown_menus, [], "a QMenu was shown during add() — the stray popup"
+        )
+        self.assertIs(got, payload, "QWidgetAction's defaultWidget not used")
+        self.assertIsInstance(
+            got_plain, QtWidgets.QToolButton, "plain QAction needs a carrier"
+        )
+        self.assertIs(got_plain.defaultAction(), plain)
+
+    def test_visible_window_wrap_suppresses_window_updates(self):
+        """Slow-path shape: wrapping inside an already-visible window must
+        hold updatesEnabled(False) on the WINDOW for the reparent swap."""
+        from uitk.widgets.optionBox._optionBox import OptionBox
+
+        window = QtWidgets.QWidget()
+        self.track_widget(window)
+        outer = QtWidgets.QVBoxLayout(window)
+        panel = QtWidgets.QWidget(window)  # nested: parent is not window
+        inner = QtWidgets.QVBoxLayout(panel)
+        outer.addWidget(panel)
+        field = QtWidgets.QLineEdit(panel)
+        inner.addWidget(field)
+        window.show()
+        self._drain_qt_events()
+        self.assertTrue(window.isVisible())
+
+        states = []
+        box = OptionBox(show_clear=False)
+        orig_apply = OptionBox._apply_border_styling
+
+        def probe(self_b, *a, **k):
+            states.append(window.updatesEnabled())  # mid-wrap sample
+            return orig_apply(self_b, *a, **k)
+
+        OptionBox._apply_border_styling = probe
+        try:
+            box.wrap(field)
+        finally:
+            OptionBox._apply_border_styling = orig_apply
+
+        self.assertEqual(
+            states,
+            [False],
+            "window-level updates were NOT suppressed during a visible-window "
+            "wrap — the reparent swap repaints mid-flight (the flicker).",
+        )
+        self.assertTrue(
+            window.updatesEnabled(), "suppression must be restored after wrap"
+        )
+
+
 class TestLayoutManagedWrapUnaffected(QtBaseTestCase):
     """Layout-managed (docked-panel) wraps never had the refit path; the
     repolish must not perturb them either."""

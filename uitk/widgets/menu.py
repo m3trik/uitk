@@ -3248,22 +3248,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         rowSpan: int = 1,
         colSpan: Optional[int] = None,
     ) -> Optional[QtWidgets.QWidget]:
-        temp_menu = QtWidgets.QMenu(self)
-        temp_menu.addAction(action)
-
-        temp_menu.ensurePolished()
-        temp_menu.show()
-        QtWidgets.QApplication.processEvents()
-
-        widget = temp_menu.widgetForAction(action)
-        if not widget:
-            temp_menu.hide()
-            temp_menu.deleteLater()
-            return None
-
-        widget.setParent(self)
-        temp_menu.hide()
-        temp_menu.deleteLater()
+        # No temporary QMenu: the old realization path built a real QMenu,
+        # SHOWED it (a momentary empty popup on screen during add() — an
+        # init flash) and pumped the event loop to materialize
+        # widgetForAction — an API newer PySide6 bindings no longer expose
+        # (gone in 6.10, so the path also hard-crashed there).
+        widget = None
+        if isinstance(action, QtWidgets.QWidgetAction):
+            # The action carries its own widget — take it directly.
+            widget = action.defaultWidget()
+            if widget is not None:
+                widget.setParent(self)
+        if widget is None:
+            # Plain QAction (or a QWidgetAction without a default widget):
+            # host it in a QToolButton, the standard QAction carrier —
+            # trigger/text/icon/enabled state all track the action.
+            button = QtWidgets.QToolButton(self)
+            button.setDefaultAction(action)
+            button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+            widget = button
 
         if row is None:
             row = 0

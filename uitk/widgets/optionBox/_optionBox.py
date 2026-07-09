@@ -578,10 +578,21 @@ class OptionBox:
         """
         self.wrapped_widget = wrapped_widget
         parent = wrapped_widget.parent()
-        prev_updates = parent.updatesEnabled() if parent else True
+        # Suppress repaints for the whole wrap. Normally the immediate parent
+        # suffices (the fast path wraps pre-paint, inside register_children).
+        # But the slow-path retry (OptionBoxManager._attempt_wrap_when_ready)
+        # can wrap a widget whose window is ALREADY VISIBLE — the reparent
+        # swap (replaceWidget/addWidget) then flickers unless the suppression
+        # covers the top-level window: one repaint replaces several.
+        suppress_root = parent
+        if parent is not None:
+            window = wrapped_widget.window()
+            if window is not None and window.isVisible():
+                suppress_root = window
+        prev_updates = suppress_root.updatesEnabled() if suppress_root else True
 
-        if parent:
-            parent.setUpdatesEnabled(False)
+        if suppress_root:
+            suppress_root.setUpdatesEnabled(False)
 
         try:
             # Create container
@@ -692,8 +703,8 @@ class OptionBox:
             container._sync_option_buttons_enabled()
             container.show()
         finally:
-            if parent:
-                parent.setUpdatesEnabled(prev_updates)
+            if suppress_root:
+                suppress_root.setUpdatesEnabled(prev_updates)
 
         return container
 
