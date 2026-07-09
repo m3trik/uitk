@@ -15,6 +15,8 @@ from uitk.widgets.sequencer._data import (
     _TRACK_PADDING,
     _RULER_HEIGHT,
     _styled_menu,
+    build_curve_path,
+    make_value_mapper,
     paint_pattern,
 )
 from uitk.widgets.sequencer._clip import ClipItem
@@ -23,7 +25,7 @@ from uitk.widgets.sequencer._overlays import (
     _GapOverlayItem,
     RangeHighlightItem,
 )
-from uitk.widgets.sequencer._ruler import ShotLaneItem, RulerItem
+from uitk.widgets.sequencer._ruler import RulerItem
 from uitk.widgets.sequencer._playhead import PlayheadItem
 from uitk.widgets.sequencer._markers import MarkerItem
 
@@ -126,21 +128,22 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             base_style = self._STYLE_NORMAL
         if italic:
             base_style += " font-style:italic;"
-        lbl = QtWidgets.QLabel(name)
-        lbl.setFixedHeight(_TRACK_HEIGHT)
-        lbl.setStyleSheet(base_style)
+
+        # Build the display widget (plain label, or icon+text container),
+        # then run ONE shared wiring/bookkeeping tail — the two paths
+        # previously duplicated the context-menu/event-filter/layout/
+        # parallel-list block, and the icon branch built-and-abandoned a
+        # plain QLabel on every call.
         if icon is not None and not icon.isNull():
             px = icon.pixmap(16, 16)
             if px.width() > 16 or px.height() > 16:
                 px = px.scaled(
                     16, 16, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
                 )
-            lbl.setPixmap(QtGui.QPixmap())  # ensure no stale pixmap
-            # Use a small horizontal layout: icon + text
-            container = QtWidgets.QWidget()
-            container.setFixedHeight(_TRACK_HEIGHT)
-            container.setStyleSheet(base_style)
-            h = QtWidgets.QHBoxLayout(container)
+            widget = QtWidgets.QWidget()
+            widget.setFixedHeight(_TRACK_HEIGHT)
+            widget.setStyleSheet(base_style)
+            h = QtWidgets.QHBoxLayout(widget)
             h.setContentsMargins(4, 0, 2, 0)
             h.setSpacing(4)
             ico_lbl = QtWidgets.QLabel()
@@ -162,27 +165,19 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             )
             h.addWidget(ico_lbl)
             h.addWidget(txt_lbl, 1)  # stretch so text fills available space
-            container.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-            container.customContextMenuRequested.connect(
-                lambda pos, w=container: self._show_label_menu(w, pos)
-            )
-            container.installEventFilter(self)
-            idx = self._layout.count() - 1
-            self._layout.insertWidget(idx, container)
-            self._labels.append(container)
-            self._names.append(name)
-            self._dimmed.append(dimmed)
-            self._colors.append(color)
-            self._text_colors.append(text_color)
-            return
-        lbl.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        lbl.customContextMenuRequested.connect(
-            lambda pos, w=lbl: self._show_label_menu(w, pos)
+        else:
+            widget = QtWidgets.QLabel(name)
+            widget.setFixedHeight(_TRACK_HEIGHT)
+            widget.setStyleSheet(base_style)
+
+        widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        widget.customContextMenuRequested.connect(
+            lambda pos, w=widget: self._show_label_menu(w, pos)
         )
-        lbl.installEventFilter(self)
+        widget.installEventFilter(self)
         idx = self._layout.count() - 1  # before the stretch
-        self._layout.insertWidget(idx, lbl)
-        self._labels.append(lbl)
+        self._layout.insertWidget(idx, widget)
+        self._labels.append(widget)
         self._names.append(name)
         self._dimmed.append(dimmed)
         self._colors.append(color)
@@ -391,13 +386,9 @@ class TimelineView(QtWidgets.QGraphicsView):
     # -- event override: consume shortcut keys so they don't leak to host --
     def event(self, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.ShortcutOverride:
-            mods = event.modifiers()
-            mod_int = mods.value if hasattr(mods, "value") else int(mods)
-            key = QtGui.QKeySequence(event.key() | mod_int)
-            for seq in self._shortcut_sequences:
-                if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                    event.accept()
-                    return True
+            if self.parent_sequencer._match_shortcut(event) is not None:
+                event.accept()
+                return True
         return super().event(event)
 
     def keyPressEvent(self, event):
@@ -408,18 +399,13 @@ class TimelineView(QtWidgets.QGraphicsView):
             event.accept()
             return
 
-        mods = event.modifiers()
-        mod_int = mods.value if hasattr(mods, "value") else int(mods)
-        key_seq = QtGui.QKeySequence(event.key() | mod_int)
-        for seq in self._shortcut_sequences:
-            if key_seq.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                seq_str = seq.toString()
-                mgr = self.parent_sequencer._shortcut_mgr
-                entry = mgr.shortcuts.get(seq_str)
-                if entry:
-                    entry["action"]()
-                event.accept()
-                return
+        match = self.parent_sequencer._match_shortcut(event)
+        if match is not None:
+            _seq, entry = match
+            if entry and entry.get("action"):
+                entry["action"]()
+            event.accept()
+            return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
@@ -454,6 +440,11 @@ class TimelineView(QtWidgets.QGraphicsView):
         h = self.horizontalScrollBar().value()
         super().resizeEvent(event)
         self.horizontalScrollBar().setValue(h)
+        # Overlay boundingRects depend on viewport height — refresh so
+        # the scene index tracks the new geometry, or clicks/repaints in
+        # a newly exposed strip miss the gap/range overlays until the
+        # next zoom or clip edit.
+        self._refresh_all()
 
     # -- zoom ---------------------------------------------------------------
     def wheelEvent(self, event):
@@ -508,6 +499,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         _shift_v = _shift.value if hasattr(_shift, "value") else int(_shift)
 
         # Block selectionChanged until we're done batching
+        changed = False
         self._scene.blockSignals(True)
         try:
             if mods & _ctrl_v:
@@ -520,6 +512,7 @@ class TimelineView(QtWidgets.QGraphicsView):
                     )
                     if item.isSelected() != should:
                         item.setSelected(should)
+                        changed = True
             elif mods & _shift_v:
                 # Shift: add to pre-selection
                 for item in self._scene.items():
@@ -528,6 +521,7 @@ class TimelineView(QtWidgets.QGraphicsView):
                     should = id(item) in self._marquee_pre_selection or item in in_band
                     if item.isSelected() != should:
                         item.setSelected(should)
+                        changed = True
             else:
                 # No modifier: exact replacement
                 for item in self._scene.items():
@@ -536,10 +530,14 @@ class TimelineView(QtWidgets.QGraphicsView):
                     should = item in in_band
                     if item.isSelected() != should:
                         item.setSelected(should)
+                        changed = True
         finally:
             self._scene.blockSignals(False)
-        # Emit once
-        self._scene.selectionChanged.emit()
+        # Emit once, and only when something actually flipped — this
+        # runs on EVERY marquee mouse-move, and consumers do real work
+        # (e.g. per-curve host-app selection) on each emission.
+        if changed:
+            self._scene.selectionChanged.emit()
 
     def _finish_marquee(self):
         """Clean up marquee state and trigger a final viewport repaint."""
@@ -720,6 +718,15 @@ class TimelineView(QtWidgets.QGraphicsView):
             t = round(t / interval) * interval
 
         zone = self._hit_zone(event.pos().y())
+        # Refine: a ruler click on a shot block is the shot lane —
+        # consumers present a shot-specific menu there.  Hit-test with
+        # the UNSNAPPED click time: `t` was snapped above, which near a
+        # block edge can land the test on the wrong side of the
+        # boundary.  (Press/double-click keep plain "ruler" semantics:
+        # scrub and add-marker.)
+        raw_t = self.x_to_time(scene_pos.x())
+        if zone == "ruler" and self._scene.ruler.shot_block_at(raw_t) is not None:
+            zone = "shot_lane"
 
         if getattr(sq, "_zone_menu_connected", False):
             sq.zone_context_menu_requested.emit(zone, t, event.globalPos())
@@ -772,6 +779,14 @@ class TimelineView(QtWidgets.QGraphicsView):
             top = self.mapToScene(0, 0).y()
             self._scene.ruler.setPos(0, top)
             self._scene.ruler.update()
+            # The playhead badge and marker head glyphs draw at
+            # ruler-relative y — pin them to the viewport top too, or
+            # vertical scrolling leaves them stranded at scene-top
+            # behind the pinned ruler (and marker hit-shapes become
+            # unreachable until scrolled back).
+            self._scene.playhead.setPos(0, top)
+            for item in self.parent_sequencer._marker_items.values():
+                item.setPos(0, top)
         except RuntimeError:
             pass  # C++ object already deleted during teardown
 
@@ -785,9 +800,6 @@ class TimelineView(QtWidgets.QGraphicsView):
             elif isinstance(item, RangeHighlightItem):
                 item.sync()
             elif isinstance(item, (_StaticRangeOverlay, _GapOverlayItem)):
-                item.prepareGeometryChange()
-                item.update()
-            elif isinstance(item, ShotLaneItem):
                 item.prepareGeometryChange()
                 item.update()
         self._sync_ruler_pos()
@@ -867,51 +879,13 @@ class TimelineView(QtWidgets.QGraphicsView):
                 if not segs:
                     continue
                 row_y, row_h = sq._row_position(track_id, sub_row)
-                pad = row_h * 0.15
-                y_top = row_y + pad
-                y_bot = row_y + row_h - pad
-                y_span = y_bot - y_top
-                val_min = preview.get("val_min", 0.0)
-                val_max = preview.get("val_max", 1.0)
-                val_range = val_max - val_min
-                if val_range < 1e-9:
-                    val_range = 1.0
-
-                def _mx(t, _self=self):
-                    return _self.time_to_x(t)
-
-                def _my(
-                    v, _vmin=val_min, _vr=val_range, _yt=y_top, _ys=y_span, _yb=y_bot
-                ):
-                    if _vr < 1e-9:
-                        return _yt + _ys * 0.5
-                    return _yb - ((v - _vmin) / _vr) * _ys
-
-                path = QtGui.QPainterPath()
-                path.moveTo(_mx(segs[0]["t0"]), _my(segs[0]["v0"]))
-                for seg in segs:
-                    x1 = _mx(seg["t1"])
-                    y1 = _my(seg["v1"])
-                    ot = seg.get("out_type", "spline")
-                    cp1 = seg.get("cp1")
-                    cp2 = seg.get("cp2")
-                    if ot == "step":
-                        path.lineTo(x1, _my(seg["v0"]))
-                        path.lineTo(x1, y1)
-                    elif ot == "stepnext":
-                        path.lineTo(_mx(seg["t0"]), y1)
-                        path.lineTo(x1, y1)
-                    elif ot == "linear" or cp1 is None or cp2 is None:
-                        path.lineTo(x1, y1)
-                    else:
-                        path.cubicTo(
-                            _mx(cp1[0]),
-                            _my(cp1[1]),
-                            _mx(cp2[0]),
-                            _my(cp2[1]),
-                            x1,
-                            y1,
-                        )
+                map_y, _is_flat = make_value_mapper(
+                    row_y,
+                    row_h,
+                    preview.get("val_min", 0.0),
+                    preview.get("val_max", 1.0),
+                )
+                path = build_curve_path(segs, self.time_to_x, map_y)
                 c = QtGui.QColor(entry.get("color", "#CCCCCC"))
                 c.setAlpha(180)
                 painter.setPen(QtGui.QPen(c, 1.2))

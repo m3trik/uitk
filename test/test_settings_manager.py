@@ -257,5 +257,132 @@ class TestRegistryMigration(BaseTestCase):
         self.assertIn(sm._REGISTRY_MIGRATED_KEY, mgr.settings.allKeys())
 
 
+class TestSettingsManagerRemove(BaseTestCase):
+    """``SettingsManager.remove()`` — namespace-aware single-key removal.
+
+    ``StateManager`` calls ``store.remove(key)`` on its backing store.
+    ``QSettings`` has it; ``SettingsManager`` historically didn't — and
+    because ``__getattr__`` manufactures a ``SettingItem`` proxy for any
+    unknown name, ``StateManager.clear()`` / ``clear_custom()`` failed with
+    a cryptic ``TypeError`` in MainWindow mode (where the store IS a
+    ``SettingsManager``) instead of removing the key.
+    """
+
+    ORG = "test_uitk_remove"
+    APP = "test_app"
+
+    def setUp(self):
+        super().setUp()
+        _wipe(self.ORG, self.APP)
+
+    def tearDown(self):
+        _wipe(self.ORG, self.APP)
+        super().tearDown()
+
+    def test_remove_deletes_key(self):
+        mgr = SettingsManager(org=self.ORG, app=self.APP)
+        mgr.setValue("k", 1)
+        mgr.remove("k")
+        self.assertIsNone(mgr.value("k"))
+        self.assertNotIn("k", mgr.keys())
+
+    def test_remove_is_namespace_aware(self):
+        root = SettingsManager(org=self.ORG, app=self.APP)
+        ns = root.branch("ns")
+        ns.setValue("k", 1)
+        root.setValue("k", 2)  # same leaf name outside the namespace
+        ns.remove("k")
+        self.assertIsNone(ns.value("k"))
+        self.assertEqual(root.value("k"), 2)
+
+    def test_remove_missing_key_is_noop(self):
+        mgr = SettingsManager(org=self.ORG, app=self.APP)
+        mgr.remove("never_set")  # must not raise
+
+
+class TestStringValueRoundTrip(BaseTestCase):
+    """Strings that *parse* as JSON must still round-trip as strings.
+
+    ``value()`` JSON-decodes every string — that is what restores bools /
+    ints / floats from QSettings backends that stringify them (registry,
+    ini) — so a stored *string* ``"1.10"`` came back as the float ``1.1``,
+    ``"123"`` as an int, and ``"true"`` as a bool: a line edit holding a
+    version string was silently rewritten between sessions. ``setValue``
+    must quote exactly the ambiguous strings so the decode restores them
+    verbatim, while plain strings stay unquoted (human-readable) on disk.
+    """
+
+    ORG = "test_uitk_roundtrip"
+    APP = "test_app"
+
+    def setUp(self):
+        super().setUp()
+        _wipe(self.ORG, self.APP)
+
+    def tearDown(self):
+        _wipe(self.ORG, self.APP)
+        super().tearDown()
+
+    def _mgr(self):
+        return SettingsManager(org=self.ORG, app=self.APP)
+
+    def test_ambiguous_strings_round_trip_as_strings(self):
+        mgr = self._mgr()
+        for s in ("1.10", "123", "true", "false", "null", "None", "1e5"):
+            mgr.setValue("k", s)
+            self.assertEqual(
+                mgr.value("k"), s,
+                f"string {s!r} did not round-trip verbatim",
+            )
+
+    def test_plain_strings_stored_unquoted(self):
+        # The on-disk form of a non-ambiguous string stays the raw string —
+        # human-readable in the registry / ini, and unchanged for any legacy
+        # reader of the same key.
+        mgr = self._mgr()
+        mgr.setValue("p", "C:/proj/sourceimages")
+        self.assertEqual(mgr.settings.value("p"), "C:/proj/sourceimages")
+        self.assertEqual(mgr.value("p"), "C:/proj/sourceimages")
+
+    def test_native_types_round_trip(self):
+        mgr = self._mgr()
+        cases = {
+            "b": True,
+            "i": 42,
+            "f": 2.5,
+            "l": [1, "two", 3.0],
+            "d": {"a": 1, "b": [2, 3]},
+        }
+        for key, val in cases.items():
+            mgr.setValue(key, val)
+            self.assertEqual(mgr.value(key), val)
+
+    def test_tuple_round_trips_as_list(self):
+        # Tuples were previously passed raw to QSettings (platform-dependent
+        # QVariant round-trip); they now share the JSON path (list parity).
+        mgr = self._mgr()
+        mgr.setValue("t", (1, 2, 3))
+        self.assertEqual(mgr.value("t"), [1, 2, 3])
+
+    def test_default_returned_verbatim_when_key_missing(self):
+        # The decode belongs to STORED values only. value() used to run the
+        # caller's default through json.loads too, so value("k", "1.10")
+        # returned 1.1 with nothing stored at all.
+        mgr = self._mgr()
+        self.assertEqual(mgr.value("missing", "1.10"), "1.10")
+        self.assertEqual(mgr.value("missing", "None"), "None")
+        self.assertEqual(mgr.value("missing", [1, 2]), [1, 2])
+
+    def test_legacy_raw_scalar_strings_still_decode(self):
+        # Data written by older code (or by QSettings' own bool/number
+        # stringification) is stored unquoted; it must keep decoding to the
+        # native type.
+        mgr = self._mgr()
+        mgr.settings.setValue("flag", "true")  # planted raw, bypassing setValue
+        self.assertIs(mgr.value("flag"), True)
+        mgr.settings.setValue("count", "5")
+        self.assertEqual(mgr.value("count"), 5)
+
+
 if __name__ == "__main__":
     unittest.main()

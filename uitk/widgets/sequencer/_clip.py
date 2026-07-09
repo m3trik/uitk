@@ -17,6 +17,8 @@ from uitk.widgets.sequencer._data import (
     _HANDLE_WIDTH,
     _styled_menu,
     _menu_exec_pos,
+    build_curve_path,
+    make_value_mapper,
     pattern_brush,
     paint_pattern,
     HATCH_DENSE,
@@ -158,13 +160,6 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 left = min(left, kx - pad)
                 right = max(right, kx + pad)
         return QtCore.QRectF(left, base.top(), right - left, base.height())
-
-    def _track_index(self) -> int:
-        widget = self._timeline.parent_sequencer
-        for i, td in enumerate(widget._tracks):
-            if td.track_id == self._data.track_id:
-                return i
-        return 0
 
     def _drag_adjusted_segments(self, segments, keys):
         """Return segments with times scaled to current KeyframeItem positions.
@@ -509,11 +504,6 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         segments = self._drag_adjusted_segments(segments, keys)
 
         # --- coordinate mapping helpers ---
-        pad = rect.height() * 0.15
-        y_top = rect.top() + pad
-        y_bot = rect.bottom() - pad
-        y_span = y_bot - y_top
-
         # During any drag, lock the time→pixel mapping to the pre-drag
         # values.  Move: keeps the curve's local pixel coords fixed so
         # it travels with the widget.  Resize: the original fractions
@@ -527,11 +517,6 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             map_start = self._data.start
             map_dur = self._data.duration
 
-        val_range = val_max - val_min
-        is_flat = val_range < 1e-9
-        if is_flat:
-            val_range = 1.0
-
         def map_x(t):
             if map_dur > 1e-6:
                 frac = (t - map_start) / map_dur
@@ -539,12 +524,9 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 frac = 0.5
             return rect.x() + frac * rect.width()
 
-        def map_y(v):
-            if is_flat:
-                return y_top + y_span * 0.5
-            # Invert: high values → top of rect
-            frac = (v - val_min) / val_range
-            return y_bot - frac * y_span
+        map_y, _is_flat = make_value_mapper(
+            rect.top(), rect.height(), val_min, val_max
+        )
 
         # --- draw curve path (clipped to paint_rect so dragged curves remain visible) ---
         painter.save()
@@ -556,40 +538,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         painter.setPen(QtGui.QPen(curve_color, 1.2))
         painter.setBrush(QtCore.Qt.NoBrush)
 
-        path = QtGui.QPainterPath()
-        first_seg = segments[0]
-        path.moveTo(map_x(first_seg["t0"]), map_y(first_seg["v0"]))
-
-        for seg in segments:
-            x1 = map_x(seg["t1"])
-            y1 = map_y(seg["v1"])
-            ot = seg.get("out_type", "spline")
-            cp1 = seg.get("cp1")
-            cp2 = seg.get("cp2")
-
-            if ot == "step":
-                # Hold value, then jump at next key
-                path.lineTo(x1, map_y(seg["v0"]))
-                path.lineTo(x1, y1)
-            elif ot == "stepnext":
-                # Jump to next value immediately, then hold
-                x0 = map_x(seg["t0"])
-                path.lineTo(x0, y1)
-                path.lineTo(x1, y1)
-            elif ot == "linear" or cp1 is None or cp2 is None:
-                path.lineTo(x1, y1)
-            else:
-                # Cubic Bézier via control points
-                path.cubicTo(
-                    map_x(cp1[0]),
-                    map_y(cp1[1]),
-                    map_x(cp2[0]),
-                    map_y(cp2[1]),
-                    x1,
-                    y1,
-                )
-
-        painter.drawPath(path)
+        painter.drawPath(build_curve_path(segments, map_x, map_y))
 
         painter.restore()
         # Key dots are rendered by KeyframeItem children (un-cropped).
@@ -639,8 +588,10 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                         item._drag_mode = "move"
                         item._drag_origin_start = item._data.start
                         item._drag_origin_duration = item._data.duration
-            # Capture pre-drag snapshot for undo
-            self._timeline.parent_sequencer._capture_undo()
+            # Undo snapshot is captured lazily on the first real move —
+            # capturing on press meant every selection click pushed a
+            # no-op undo entry and wiped the redo stack.
+            self._undo_captured = False
             self.setCursor(QtCore.Qt.ClosedHandCursor)
             self.update()  # repaint to show drag frame labels
             self._show_clip_drag_tooltip(event.scenePos())
@@ -651,6 +602,10 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     def mouseMoveEvent(self, event):
         if self._drag_mode is None:
             return super().mouseMoveEvent(event)
+
+        if not getattr(self, "_undo_captured", False):
+            self._undo_captured = True
+            self._timeline.parent_sequencer._capture_undo()
 
         tl = self._timeline
         dx_time = tl.x_to_time(event.scenePos().x()) - tl.x_to_time(self._drag_origin_x)
@@ -666,13 +621,16 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 peer.update()
 
         elif self._drag_mode == "resize_left":
+            # Snap FIRST, then clamp (mirrors resize_right) — snapping
+            # after the min-duration clamp can push the start past it
+            # and emit a zero- or negative-duration clip_resized.
+            new_start = self._snap(max(0.0, self._drag_origin_start + dx_time))
             new_start = min(
-                self._drag_origin_start + dx_time,
+                new_start,
                 self._drag_origin_start
                 + self._drag_origin_duration
                 - _MIN_CLIP_DURATION,
             )
-            new_start = self._snap(max(0.0, new_start))
             delta = new_start - self._drag_origin_start
             self._data.start = new_start
             self._data.duration = self._drag_origin_duration - delta
@@ -719,18 +677,27 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 peer._drag_mode = None
                 peer.update()
             widget = self._timeline.parent_sequencer
-            if mode == "move":
-                if peers:
-                    moves = [(self._data.clip_id, self._data.start)]
-                    for peer, _ in peers:
-                        moves.append((peer._data.clip_id, peer._data.start))
-                    widget.clips_batch_moved.emit(moves)
+            # Only emit when something actually changed — an edge/body
+            # click without movement otherwise fires clip_resized /
+            # clip_moved with unchanged values and consumers pay a full
+            # save + key-scale + widget rebuild for a misclick.
+            changed = (
+                abs(self._data.start - self._drag_origin_start) > 0.01
+                or abs(self._data.duration - self._drag_origin_duration) > 0.01
+            )
+            if changed:
+                if mode == "move":
+                    if peers:
+                        moves = [(self._data.clip_id, self._data.start)]
+                        for peer, _ in peers:
+                            moves.append((peer._data.clip_id, peer._data.start))
+                        widget.clips_batch_moved.emit(moves)
+                    else:
+                        widget.clip_moved.emit(self._data.clip_id, self._data.start)
                 else:
-                    widget.clip_moved.emit(self._data.clip_id, self._data.start)
-            else:
-                widget.clip_resized.emit(
-                    self._data.clip_id, self._data.start, self._data.duration
-                )
+                    widget.clip_resized.emit(
+                        self._data.clip_id, self._data.start, self._data.duration
+                    )
             event.accept()
         else:
             super().mouseReleaseEvent(event)
@@ -794,7 +761,15 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     # -- double-click to rename --------------------------------------------
     def mouseDoubleClickEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
-            if self._data.locked:
+            # Gate like the context menu: read-only clips must not be
+            # renameable, and a sub-row (attribute curve row) has no
+            # user-facing label — double-clicking between key dots would
+            # spawn the rename editor over the curve.
+            if (
+                self._data.locked
+                or self._data.sub_row
+                or self._data.data.get("read_only")
+            ):
                 return
             self._start_inline_rename()
             event.accept()
@@ -858,6 +833,12 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     # -- utilities ----------------------------------------------------------
     def _hit_zone(self, pos) -> str:
         rect = self.rect()
+        # Zero-duration (point/stepped) clips render narrower than the
+        # resize handles, so every press would land in "resize_left" and
+        # the clip could never be moved.  Same for clips whose width
+        # leaves no body zone between the two handles.
+        if self._data.duration <= 0 or rect.width() <= 2 * _HANDLE_WIDTH:
+            return "move"
         local_x = pos.x() - rect.x()
         if local_x <= _HANDLE_WIDTH and self._data.data.get("resizable_left", True):
             return "resize_left"

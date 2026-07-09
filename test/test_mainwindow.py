@@ -340,6 +340,59 @@ class TestMainWindowWidgetRegistration(QtBaseTestCase):
         count = sum(1 for w in window.widgets if w == widget)
         self.assertEqual(count, 1)
 
+    def test_register_widget_shadowing_method_keeps_method_callable(self):
+        """A widget whose objectName matches a MainWindow method (e.g. a group named
+        'move') must NOT clobber that method — the attribute setattr is skipped so
+        window.move stays callable (regression: center_widget / header-drag call
+        window.move(pos) and crashed with "'<widget>' object is not callable")."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("move")  # collides with QWidget.move
+        widget.setParent(central)
+
+        window.register_widget(widget)
+        self.assertTrue(callable(window.move))
+        self.assertIsNot(window.move, widget)
+        window.move(10, 20)  # would raise "'QWidget' object is not callable" pre-fix
+
+    def test_register_widget_shadowing_method_still_registers(self):
+        """The shadowing widget is still fully registered (in the widgets set and
+        reachable via findChild) — only the convenience attribute is withheld."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("move")
+        widget.setParent(central)
+
+        window.register_widget(widget)
+        self.assertIn(widget, window.widgets)
+        self.assertIs(window.findChild(QtWidgets.QWidget, "move"), widget)
+
+    def test_register_widget_non_shadowing_name_binds_attribute(self):
+        """The guard must not over-fire: an ordinary objectName (not a method) is
+        still bound as a convenience attribute."""
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+
+        widget = QtWidgets.QPushButton("Test")
+        widget.setObjectName("b023")
+        widget.setParent(central)
+
+        window.register_widget(widget)
+        self.assertIs(window.b023, widget)
+
 
 class TestMainWindowPinned(QtBaseTestCase):
     """Tests for MainWindow pinned state."""

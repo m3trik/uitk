@@ -1,153 +1,16 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Ruler and shot-lane items for the timeline header area."""
+"""Ruler item for the timeline header area."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
 
 if TYPE_CHECKING:
     from uitk.widgets.sequencer._timeline import TimelineView
 
-from uitk.widgets.sequencer._data import (
-    _RULER_HEIGHT,
-    _SHOT_LANE_HEIGHT,
-    pattern_brush,
-    HATCH_MEDIUM,
-)
-
-# -- local constants -------------------------------------------------------
-_SHOT_BLOCK_RADIUS = 3
-_SHOT_BLOCK_ACTIVE_COLOR = "#5B8BD4"
-_SHOT_BLOCK_INACTIVE_COLOR = "#888888"
-_SHOT_GAP_COLOR = "#3A3A3A"
-_SHOT_GAP_LINE_COLOR = "#4A4A4A"
-
-
-# ---------------------------------------------------------------------------
-#  ShotLaneItem
-# ---------------------------------------------------------------------------
-
-
-class ShotLaneItem(QtWidgets.QGraphicsItem):
-    """Renders coloured shot blocks in a thin lane below the ruler.
-
-    Always visible regardless of whether any tracks exist, giving the
-    user a persistent overview of the shot layout.
-    """
-
-    def __init__(self, timeline: "TimelineView"):
-        super().__init__()
-        self._timeline = timeline
-        self._blocks: list = []  # [{name, start, end, active}, ...]
-        self.setZValue(9)  # above overlays, just below ruler (10)
-        self.setAcceptedMouseButtons(QtCore.Qt.LeftButton)
-
-    # -- data --------------------------------------------------------------
-
-    def set_blocks(self, blocks: list) -> None:
-        self._blocks = list(blocks)
-        self.prepareGeometryChange()
-        self.update()
-
-    def clear_blocks(self) -> None:
-        self._blocks.clear()
-        self.prepareGeometryChange()
-        self.update()
-
-    # -- interaction --------------------------------------------------------
-
-    def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
-        x = event.pos().x()
-        time = self._timeline.x_to_time(x)
-        for blk in self._blocks:
-            if blk["start"] <= time <= blk["end"]:
-                sq = self._timeline.parent_sequencer
-                if sq is not None:
-                    sq.shot_block_clicked.emit(blk["name"])
-                event.accept()
-                return
-        event.ignore()
-
-    # -- geometry ----------------------------------------------------------
-
-    def boundingRect(self) -> QtCore.QRectF:
-        return QtCore.QRectF(0, 0, 100000, _SHOT_LANE_HEIGHT)
-
-    # -- paint -------------------------------------------------------------
-
-    def paint(self, painter: QtGui.QPainter, option, widget=None):
-        if not self._blocks:
-            return
-
-        tl = self._timeline
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-
-        vp_rect = tl.mapToScene(tl.viewport().rect()).boundingRect()
-        vis_left, vis_right = vp_rect.left(), vp_rect.right()
-
-        # Dark background
-        painter.fillRect(
-            QtCore.QRectF(vis_left, 0, vis_right - vis_left, _SHOT_LANE_HEIGHT),
-            QtGui.QColor("#252525"),
-        )
-
-        # Sort blocks by start time for gap drawing
-        sorted_blocks = sorted(self._blocks, key=lambda b: b["start"])
-
-        # Draw gaps between shots
-        gap_color = QtGui.QColor(_SHOT_GAP_COLOR)
-        for i in range(len(sorted_blocks) - 1):
-            gap_x0 = tl.time_to_x(sorted_blocks[i]["end"])
-            gap_x1 = tl.time_to_x(sorted_blocks[i + 1]["start"])
-            if gap_x1 - gap_x0 > 1:
-                r = QtCore.QRectF(gap_x0, 2, gap_x1 - gap_x0, _SHOT_LANE_HEIGHT - 4)
-                # Diagonal hatching
-                painter.save()
-                painter.setClipRect(r)
-                painter.fillRect(r, gap_color)
-                painter.fillRect(
-                    r,
-                    pattern_brush(
-                        "diagonal",
-                        QtGui.QColor(_SHOT_GAP_LINE_COLOR),
-                        HATCH_MEDIUM,
-                    ),
-                )
-                painter.restore()
-
-        # Draw shot blocks
-        font = painter.font()
-        font.setPixelSize(9)
-        painter.setFont(font)
-
-        for blk in sorted_blocks:
-            x0 = tl.time_to_x(blk["start"])
-            x1 = tl.time_to_x(blk["end"])
-            if x1 < vis_left or x0 > vis_right:
-                continue  # off-screen
-            is_active = blk.get("active", False)
-            color = QtGui.QColor(
-                _SHOT_BLOCK_ACTIVE_COLOR if is_active else _SHOT_BLOCK_INACTIVE_COLOR
-            )
-            alpha = 180 if is_active else 100
-            color.setAlpha(alpha)
-            r = QtCore.QRectF(x0, 1, x1 - x0, _SHOT_LANE_HEIGHT - 2)
-            painter.setBrush(color)
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.drawRoundedRect(r, _SHOT_BLOCK_RADIUS, _SHOT_BLOCK_RADIUS)
-
-            # Shot name label
-            if r.width() > 20:
-                text_color = QtGui.QColor("#FFFFFF" if is_active else "#BBBBBB")
-                painter.setPen(text_color)
-                label_rect = r.adjusted(4, 0, -4, 0)
-                painter.drawText(
-                    label_rect,
-                    QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft,
-                    blk.get("name", ""),
-                )
+from uitk.widgets.sequencer._data import _RULER_HEIGHT
 
 
 # ---------------------------------------------------------------------------
@@ -158,11 +21,9 @@ class ShotLaneItem(QtWidgets.QGraphicsItem):
 class RulerItem(QtWidgets.QGraphicsItem):
     """Draws the frame-number ruler at the top of the timeline.
 
-    Also renders coloured shot-block indicators in the bottom strip
-    of the ruler so the user always sees the shot layout.
+    Also renders shot-block name labels along the ruler bottom so the
+    user always sees the shot layout.
     """
-
-    _BLOCK_STRIP_H = 6  # height of the shot indicator strip at ruler bottom
 
     def __init__(self, timeline: "TimelineView"):
         super().__init__()
@@ -179,6 +40,18 @@ class RulerItem(QtWidgets.QGraphicsItem):
     def clear_shot_blocks(self) -> None:
         self._shot_blocks.clear()
         self.update()
+
+    def shot_block_at(self, time: float) -> Optional[dict]:
+        """Return the shot block containing *time*, or ``None``.
+
+        Used by the timeline's context-menu dispatch to refine the
+        "ruler" zone into "shot_lane" when the click lands on a shot
+        block, so consumers can present a shot-specific menu.
+        """
+        for blk in self._shot_blocks:
+            if blk["start"] <= time <= blk["end"]:
+                return blk
+        return None
 
     def boundingRect(self):
         return QtCore.QRectF(0, 0, 100000, _RULER_HEIGHT)

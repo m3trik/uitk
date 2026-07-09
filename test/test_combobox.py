@@ -123,7 +123,6 @@ class ComboBoxStyleConfiguration(QtBaseTestCase):
     future refactor reverts this thinking it's cosmetic, these tests fail."""
 
     def test_proxy_wraps_fusion_not_app_style(self):
-        from qtpy import QtWidgets
         from uitk.widgets.comboBox import ComboBox
 
         combo = self.track_widget(ComboBox())
@@ -556,6 +555,62 @@ class OpenBoxDistinctFromView(QtBaseTestCase):
                 f"[{theme}] open combobox must not share the view background "
                 f"(both resolved to {on_bg})",
             )
+
+
+class SetAsCurrentByText(QtBaseTestCase):
+    """``setAsCurrent(text)`` must select by the item's DISPLAY TEXT even when the item
+    carries non-string DATA.
+
+    Regression: ``self.items`` yields each item's *data* when present, so for a
+    ``add({name: obj})`` combo (e.g. tentacle's Blender materials list, where the data
+    is the material object) a name string was never found and ``setAsCurrent`` silently
+    fell back to index 0 — the "press Get and the combobox shows the wrong material" bug.
+    The string branch now falls back to matching ``itemText``/``richText``.
+    """
+
+    class _Obj:
+        def __init__(self, name):
+            self.name = name
+
+    def _data_combo(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        self._objs = {n: self._Obj(n) for n in ("Alpha", "Beta", "Gamma")}
+        combo.add(self._objs, clear=True)  # text=name, data=object
+        return combo
+
+    def test_setAsCurrent_by_name_on_object_data_combo(self):
+        combo = self._data_combo()
+        combo.setCurrentIndex(0)
+        combo.setAsCurrent("Beta")
+        self.assertEqual(combo.currentText(), "Beta")
+        self.assertIs(combo.currentData(), self._objs["Beta"])
+
+    def test_setAsCurrent_by_data_value_still_matches(self):
+        # A string that IS the item data (string-data / no-data combos) keeps working.
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.add(["weighted", "instance", "linked"], clear=True)  # data falsy -> items == texts
+        combo.setAsCurrent("instance")
+        self.assertEqual(combo.currentText(), "instance")
+
+    def test_setAsCurrent_by_index(self):
+        combo = self._data_combo()
+        combo.setAsCurrent(2)
+        self.assertEqual(combo.currentText(), "Gamma")
+
+    def test_setAsCurrent_not_found_falls_back(self):
+        combo = self._data_combo()
+        combo.setCurrentIndex(1)
+        combo.setAsCurrent("Missing", fallback_index=0)
+        self.assertEqual(combo.currentIndex(), 0)
+
+    def test_setAsCurrent_strict_raises_when_absent(self):
+        combo = self._data_combo()
+        with self.assertRaises(ValueError):
+            combo.setAsCurrent("Missing", strict=True)
 
 
 if __name__ == "__main__":

@@ -121,6 +121,44 @@ class TestSetValueNumeric(QtBaseTestCase):
         self.assertEqual(sb.value(), 7)
 
 
+class TestTextChangedOnTextEdit(QtBaseTestCase):
+    """``textChanged`` value ops must work for ``QTextEdit``.
+
+    ``QTextEdit`` maps to ``textChanged`` in the default-signal table, but it
+    has no ``text()`` — the signal-based getter returned ``None``, so a
+    registered QTextEdit's state was never saved. The getter/setter must fall
+    back to ``toPlainText()`` / ``setPlainText()``.
+    """
+
+    def test_get_value_by_signal_reads_plain_text(self):
+        te = self.track_widget(QtWidgets.QTextEdit())
+        te.setPlainText("session notes")
+        self.assertEqual(
+            ValueManager.get_value_by_signal(te, "textChanged"),
+            "session notes",
+        )
+
+    def test_set_value_by_signal_writes_plain_text(self):
+        te = self.track_widget(QtWidgets.QTextEdit())
+        ValueManager.set_value_by_signal(te, "restored", "textChanged")
+        self.assertEqual(te.toPlainText(), "restored")
+
+    def test_round_trip_preserves_markup_ish_text(self):
+        # setText() would interpret this as rich text and toPlainText() would
+        # strip the tags — the plain-text setter must round-trip it verbatim.
+        te = self.track_widget(QtWidgets.QTextEdit())
+        literal = "<b>not markup</b>"
+        ValueManager.set_value_by_signal(te, literal, "textChanged")
+        self.assertEqual(te.toPlainText(), literal)
+
+    def test_lineedit_path_unchanged(self):
+        le = self.track_widget(QtWidgets.QLineEdit())
+        ValueManager.set_value_by_signal(le, "abc", "textChanged")
+        self.assertEqual(
+            ValueManager.get_value_by_signal(le, "textChanged"), "abc"
+        )
+
+
 class TestStateManagerPersistence(QtBaseTestCase):
     """StateManager.save type gate + widget-default lifetime."""
 

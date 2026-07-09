@@ -403,10 +403,10 @@ class Switchboard(
         """Resolve the ``loader`` kwarg to a delegate instance.
 
         Accepts:
-          - ``"compiled"`` (default) — :class:`CompiledLoader`. pyside6-uic
-            produces a hashed _ui.py per .ui; loads through Python imports.
-          - ``"runtime"`` — :class:`RuntimeLoader`. ``QtUiTools.QUiLoader``
+          - ``"runtime"`` (default) — :class:`RuntimeLoader`. ``QtUiTools.QUiLoader``
             reads .ui XML directly each time. No on-disk artifact.
+          - ``"compiled"`` — :class:`CompiledLoader`. The active binding's uic
+            produces a hash-stamped _ui.py per .ui; loads through Python imports.
           - A class implementing the loader contract (instantiated with
             ``self``) — for custom delegates.
           - An already-constructed delegate instance — used as-is.
@@ -717,7 +717,7 @@ class Switchboard(
         return [self.load_ui(f) for f in filepaths]
 
     def load_ui(self, file: str) -> QtWidgets.QMainWindow:
-        """Load a UI from the given .ui path via its compiled _ui.py module."""
+        """Load a UI from the given .ui path via the configured loader delegate."""
         return self._loader.load(file)
 
     def _add_existing_wrapped_ui(

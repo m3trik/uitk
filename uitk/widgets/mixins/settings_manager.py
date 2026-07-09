@@ -163,6 +163,67 @@ def _maybe_migrate_legacy_registry(org: str, app: str) -> None:
                      org, app, e)
 
 
+# Sentinel distinguishing "key absent" from any stored value (including None),
+# so a caller-supplied default is returned verbatim rather than decoded.
+_MISSING = object()
+
+
+def decode_stored_value(value: Any) -> Any:
+    """Read-side mirror of :func:`encode_stored_value`.
+
+    Maps the legacy ``"None"`` corruption sentinel to ``None`` and JSON-decodes
+    strings — which restores both this module's own encoding (containers,
+    quoted ambiguous strings) and the stringified bools / numbers that
+    QSettings backends produce natively. Non-JSON strings pass through
+    verbatim; non-strings are returned untouched.
+
+    Shared by :meth:`SettingsManager.value` and ``StateManager``'s raw-store
+    read paths so every decode in the persistence stack stays symmetric with
+    the single encoder.
+    """
+    if value == "None":
+        return None
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return value
+    return value
+
+
+def encode_stored_value(value: Any) -> Any:
+    """Encode *value* for QSettings so a JSON-decoding read restores it losslessly.
+
+    The single serialization chokepoint shared by :class:`SettingsManager`
+    and ``StateManager`` (for raw-``QSettings`` stores), paired with the
+    ``json.loads`` on the read side (:meth:`SettingsManager.value`).
+
+    - Containers (list / dict / tuple) are JSON-encoded; tuples come back as
+      lists (JSON parity), and the encoding avoids QSettings' platform-
+      dependent QVariant round-trip.
+    - Strings are stored **plain** — human-readable in the registry / ini —
+      *except* the ambiguous ones: strings that themselves parse as JSON
+      (``"1.10"``, ``"123"``, ``"true"``, ``"[1, 2]"``) plus the legacy
+      ``"None"`` corruption sentinel. Those are stored JSON-quoted so the
+      read-side decode returns the original string instead of a
+      number / bool / container. (The eager decode itself is load-bearing:
+      QSettings backends stringify bools and numbers, and ``json.loads`` is
+      what turns ``"true"`` back into ``True``.)
+    - Everything else passes through untouched.
+    """
+    if isinstance(value, (list, dict, tuple)):
+        return json.dumps(value)
+    if isinstance(value, str):
+        if value == "None":
+            return json.dumps(value)
+        try:
+            json.loads(value)
+        except (ValueError, TypeError):
+            return value  # not JSON-parseable -> unambiguous, store plain
+        return json.dumps(value)  # ambiguous -> quote so it decodes verbatim
+    return value
+
+
 class SettingsManager:
     """Manages persistent storage and retrieval of settings via QSettings.
 
@@ -182,6 +243,9 @@ class SettingsManager:
     Provides data integrity protections:
     - Filters out corrupted "None" strings from old/broken code
     - Automatic JSON serialization/deserialization for complex types
+    - Lossless string round-trips: strings that would JSON-decode to
+      something else ("1.10", "true", "123") are stored quoted so they
+      come back verbatim (see :func:`encode_stored_value`)
     - Namespace support for key grouping
     - Change callbacks for reactive updates
     """
@@ -224,6 +288,7 @@ class SettingsManager:
             "value",
             "setValue",
             "clear",
+            "remove",
             "sync",
             "setByteArray",
             "getByteArray",
@@ -295,25 +360,19 @@ class SettingsManager:
                 self.setValue(key, value)
 
     def value(self, key: str, default: Any = None) -> Any:
-        value = self.settings.value(self._ns_key(key), default)
-
-        # Filter out corrupted "None" strings from old code
-        if value == "None":
-            return None
-
-        # Try to decode JSON for lists/dicts
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except Exception:
-                return value
-        return value
+        value = self.settings.value(self._ns_key(key), _MISSING)
+        # Decode belongs to STORED values only: a missing key returns the
+        # caller's default verbatim (running it through the decode turned a
+        # default of "1.10" into the float 1.1 with nothing stored at all).
+        if value is _MISSING:
+            return default
+        return decode_stored_value(value)
 
     def setValue(self, key: str, value: Any) -> None:
-        # Serialize lists/dicts as JSON
-        if isinstance(value, (list, dict)):
-            value = json.dumps(value)
-        self.settings.setValue(self._ns_key(key), value)
+        # Containers are JSON-encoded; ambiguous strings ("1.10", "true", …)
+        # are JSON-quoted so value()'s decode restores them verbatim instead
+        # of a number/bool. See encode_stored_value.
+        self.settings.setValue(self._ns_key(key), encode_stored_value(value))
 
         # Trigger callbacks
         callbacks = object.__getattribute__(self, "_callbacks")
@@ -323,8 +382,8 @@ class SettingsManager:
             for cb in callbacks[key]:
                 try:
                     cb(actual_value)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug("on_change callback for %r failed: %s", key, e)
 
     def on_change(self, key: str, callback: Callable[[Any], None]) -> None:
         """Register a callback to be invoked when a key's value changes.
@@ -364,10 +423,21 @@ class SettingsManager:
         """Get a QByteArray value directly."""
         return self.settings.value(self._ns_key(key), default)
 
+    def remove(self, key: str) -> None:
+        """Remove a single key from the current namespace.
+
+        Mirrors ``QSettings.remove`` so a ``SettingsManager`` and a raw
+        ``QSettings`` are interchangeable as a ``StateManager`` backing
+        store. (Before this existed, ``__getattr__`` manufactured a
+        ``SettingItem`` proxy for the name, so ``store.remove(key)`` failed
+        with a ``TypeError`` at call time.)
+        """
+        self.settings.remove(self._ns_key(key))
+
     def clear(self, key: Optional[str] = None) -> None:
         """Clears a specific key, or all keys in the current namespace."""
         if key:
-            self.settings.remove(self._ns_key(key))
+            self.remove(key)
         elif self.namespace:
             self.settings.remove(self.namespace)
         else:

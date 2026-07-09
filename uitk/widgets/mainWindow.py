@@ -395,7 +395,20 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             widget.restore_state = True
 
         ptk.set_attributes(widget, **kwargs)
-        setattr(self, widget.objectName(), widget)
+        # Don't let a widget's objectName clobber a MainWindow method: a group named
+        # "move" would shadow QWidget.move, so center_widget / header-drag then call a
+        # widget and crash with "'<widget>' object is not callable". The widget is still
+        # fully registered (self.widgets + slot wiring below) and reachable via
+        # sb.get_widget / find_child — only the convenience attribute is skipped.
+        obj_name = widget.objectName()
+        if callable(getattr(type(self), obj_name, None)):
+            self.logger.warning(
+                f"[register_widget]: objectName {obj_name!r} shadows "
+                f"{type(self).__name__}.{obj_name}(); not binding it as an attribute "
+                f"(reach it via sb.get_widget({obj_name!r}, ui)). Rename the widget to silence this."
+            )
+        else:
+            setattr(self, obj_name, widget)
 
         widget.tooltip = TooltipProxy(widget)
 
@@ -615,8 +628,14 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if self.state._save_suppressed:
             return
 
-        # Skip syncing None values to prevent clearing valid widget states
+        # Some default signals carry no payload (QTextEdit.textChanged emits
+        # zero args, so the change relay delivers None). Read the live value
+        # off the widget before deciding to skip — dropping these outright
+        # meant such widgets never persisted at all.
         if value is None:
+            value = self.state._get_current_value(widget)
+        if value is None:
+            # Still nothing: skip rather than clobber a valid stored state.
             self.logger.debug(
                 f"[{self.objectName()}] [sync_widget_values] Skipping sync of None value for {widget.objectName()}"
             )

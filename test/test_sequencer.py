@@ -30,6 +30,8 @@ from uitk.widgets.sequencer import (
     _MIN_CLIP_DURATION,
     _DEFAULT_ATTRIBUTE_COLORS,
     _COMMON_ATTRIBUTES,
+    register_pattern,
+    pattern_brush,
 )
 
 
@@ -3526,6 +3528,393 @@ class TestMarqueeSelection(BaseTestCase):
         # (it falls through to super which may or may not accept it).
         # The key fact: _space_held stays False and the event wasn't consumed.
         self.assertFalse(tl._space_held)
+
+
+# =========================================================================
+# Regression tests — 2026-07 shots-system review pass
+# =========================================================================
+
+
+def _scene_mouse_event(event_type, pos, button=None, modifiers=None):
+    """Build a QGraphicsSceneMouseEvent at *pos* (scene == item coords)."""
+    from qtpy import QtCore, QtWidgets
+
+    ev = QtWidgets.QGraphicsSceneMouseEvent(event_type)
+    ev.setButton(button if button is not None else QtCore.Qt.LeftButton)
+    ev.setModifiers(
+        modifiers if modifiers is not None else QtCore.Qt.KeyboardModifiers()
+    )
+    ev.setPos(pos)
+    ev.setScenePos(pos)
+    ev.setScreenPos(QtCore.QPoint(int(pos.x()), int(pos.y())))
+    return ev
+
+
+class TestResizeLeftSnapClamp(BaseTestCase):
+    """resize_left must snap BEFORE clamping — snapping after the
+    min-duration clamp could push the start past it and emit a zero- or
+    negative-duration clip_resized (inverted range in consumers)."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.snap_interval = 5.0
+        self.tid = self.w.add_track("T")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_snap_overshoot_cannot_invert_duration(self):
+        from qtpy import QtCore
+
+        cid = self.w.add_clip(self.tid, start=0, duration=14)
+        item = self.w._clip_items[cid]
+        rect = item.rect()
+        ppu = self.w._timeline._pixels_per_unit
+
+        press = _scene_mouse_event(
+            QtCore.QEvent.GraphicsSceneMousePress,
+            QtCore.QPointF(rect.x() + 1, rect.center().y()),
+        )
+        item.mousePressEvent(press)
+        self.assertEqual(item._drag_mode, "resize_left")
+
+        # dx_time = +12.6 → unclamped snap lands at 15 > (14 - MIN_DUR).
+        move = _scene_mouse_event(
+            QtCore.QEvent.GraphicsSceneMouseMove,
+            QtCore.QPointF(rect.x() + 1 + 12.6 * ppu, rect.center().y()),
+        )
+        item.mouseMoveEvent(move)
+
+        received = []
+        self.w.clip_resized.connect(lambda *a: received.append(a))
+        release = _scene_mouse_event(
+            QtCore.QEvent.GraphicsSceneMouseRelease, move.scenePos()
+        )
+        item.mouseReleaseEvent(release)
+
+        cd = self.w.get_clip(cid)
+        self.assertGreaterEqual(cd.duration, _MIN_CLIP_DURATION)
+        for _cid, _start, duration in received:
+            self.assertGreaterEqual(duration, _MIN_CLIP_DURATION)
+
+
+class TestClickWithoutDragProtocol(BaseTestCase):
+    """A press+release without movement must not burn an undo step, wipe
+    the redo stack, or emit clip_moved/clip_resized."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("T")
+        self.cid = self.w.add_clip(self.tid, start=10, duration=20)
+        self.item = self.w._clip_items[self.cid]
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _click(self, pos):
+        from qtpy import QtCore
+
+        self.item.mousePressEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, pos)
+        )
+        self.item.mouseReleaseEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseRelease, pos)
+        )
+
+    def test_body_click_preserves_undo_redo_and_emits_nothing(self):
+        self.w._redo_stack.append({})  # seed a redo entry
+        moved, resized = [], []
+        self.w.clip_moved.connect(lambda *a: moved.append(a))
+        self.w.clip_resized.connect(lambda *a: resized.append(a))
+
+        self._click(self.item.rect().center())
+
+        self.assertEqual(len(self.w._undo_stack), 0)
+        self.assertEqual(len(self.w._redo_stack), 1, "redo stack must survive")
+        self.assertEqual(moved, [])
+        self.assertEqual(resized, [])
+
+    def test_edge_click_emits_no_resize(self):
+        from qtpy import QtCore
+
+        rect = self.item.rect()
+        resized = []
+        self.w.clip_resized.connect(lambda *a: resized.append(a))
+        self._click(QtCore.QPointF(rect.x() + 1, rect.center().y()))
+        self.assertEqual(resized, [])
+        self.assertEqual(len(self.w._undo_stack), 0)
+
+
+class TestZeroDurationClipHitZone(BaseTestCase):
+    """Zero-duration (stepped/point) clips render narrower than the
+    resize handles — every press used to land in resize_left, making
+    them impossible to move."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("T")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_zero_duration_hit_zone_is_move(self):
+        from qtpy import QtCore
+
+        cid = self.w.add_clip(self.tid, start=25, duration=0)
+        item = self.w._clip_items[cid]
+        rect = item.rect()
+        for frac in (0.05, 0.5, 0.95):
+            pos = QtCore.QPointF(
+                rect.x() + rect.width() * frac, rect.center().y()
+            )
+            self.assertEqual(item._hit_zone(pos), "move")
+
+
+class TestMarkerZeroMotionRelease(BaseTestCase):
+    """A selection click on a marker must not emit marker_moved."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_click_without_move_does_not_emit(self):
+        from qtpy import QtCore
+
+        mid = self.w.add_marker(50.0)
+        item = self.w._marker_items[mid]
+        item._cursor_outside_window = lambda: False  # offscreen guard
+        received = []
+        self.w.marker_moved.connect(lambda *a: received.append(a))
+
+        x = self.w._timeline.time_to_x(50.0)
+        pos = QtCore.QPointF(x, 5)
+        item.mousePressEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, pos)
+        )
+        item.mouseReleaseEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseRelease, pos)
+        )
+        self.assertEqual(received, [])
+
+
+class TestRangeHighlightReleaseGuard(BaseTestCase):
+    """A zero-motion click on a range-highlight edge must not emit
+    range_highlight_changed (or burn an undo snapshot)."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.add_track("T")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_edge_click_without_move_emits_nothing(self):
+        from qtpy import QtCore
+
+        self.w.set_range_highlight(10.0, 50.0)
+        item = self.w._range_highlight
+        received = []
+        self.w.range_highlight_changed.connect(lambda *a: received.append(a))
+
+        r = item._rect()
+        pos = QtCore.QPointF(r.left() + 1, r.center().y())
+        item.mousePressEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, pos)
+        )
+        self.assertEqual(item._drag_mode, "left")
+        item.mouseReleaseEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseRelease, pos)
+        )
+        self.assertEqual(received, [])
+        self.assertEqual(len(self.w._undo_stack), 0)
+
+
+class TestKeyTimesIncludeCurvePreview(BaseTestCase):
+    """Prev/next-key navigation must see keys supplied via curve_preview
+    (the form real consumers use), not only legacy keyframe_times."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_curve_preview_keys_in_key_times(self):
+        tid = self.w.add_track("T")
+        self.w._expanded_tracks[tid] = ["translateX"]
+        self.w.add_clip(
+            tid,
+            start=0,
+            duration=20,
+            sub_row="translateX",
+            curve_preview={
+                "keys": [(3.0, 1.0), (7.5, 2.0)],
+                "segments": [],
+                "val_min": 0.0,
+                "val_max": 2.0,
+            },
+        )
+        times = self.w._key_times()
+        self.assertIn(3.0, times)
+        self.assertIn(7.5, times)
+
+
+class TestClearFlushesBgCurvePreviews(BaseTestCase):
+    """clear() must drop background curve previews — they are keyed by
+    (track_id, sub_row) and track ids are recycled after a clear."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_clear_drops_previews(self):
+        tid = self.w.add_track("T")
+        self.w._bg_curve_previews[(tid, "translateX")] = {
+            "preview": {"segments": []},
+            "color": "#FFFFFF",
+        }
+        self.w.clear()
+        self.assertEqual(self.w._bg_curve_previews, {})
+
+    def test_remove_track_drops_its_previews(self):
+        tid_a = self.w.add_track("A")
+        tid_b = self.w.add_track("B")
+        self.w._bg_curve_previews[(tid_a, "tx")] = {"preview": {}, "color": "#FFF"}
+        self.w._bg_curve_previews[(tid_b, "tx")] = {"preview": {}, "color": "#FFF"}
+        self.w.remove_track(tid_a)
+        self.assertNotIn((tid_a, "tx"), self.w._bg_curve_previews)
+        self.assertIn((tid_b, "tx"), self.w._bg_curve_previews)
+
+
+class TestRemoveTrackPreservesLabelStyle(BaseTestCase):
+    """remove_track rebuilds the header — remaining tracks must keep
+    their color/dimmed styling instead of degrading to plain labels."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_surviving_track_keeps_color(self):
+        tid_a = self.w.add_track("A")
+        self.w.add_track("B", color="#AA0000", text_color="#FFFFFF", dimmed=False)
+        self.w.remove_track(tid_a)
+        header = self.w._header
+        self.assertEqual(header._names, ["B"])
+        self.assertEqual(header._colors, ["#AA0000"])
+        self.assertEqual(header._text_colors, ["#FFFFFF"])
+
+
+class TestRegisterPatternOverridePurge(BaseTestCase):
+    """Re-registering a pattern style must evict cached brushes rendered
+    by the previous painter."""
+
+    def tearDown(self):
+        # Restore the built-in painter for other tests.
+        from uitk.widgets.sequencer._data import _paint_diagonal
+
+        register_pattern("diagonal", _paint_diagonal)
+
+    def test_override_purges_cached_brushes(self):
+        from qtpy import QtGui
+
+        color = QtGui.QColor("#123456")
+        pattern_brush("diagonal", color, 8, 1.0)  # populate the cache
+
+        calls = []
+
+        def custom(p, size, c, lw):
+            calls.append(size)
+
+        register_pattern("diagonal", custom)
+        pattern_brush("diagonal", color, 8, 1.0)
+        self.assertTrue(
+            calls, "override painter must run — stale brush was served"
+        )
+
+
+class TestBulkUpdates(BaseTestCase):
+    """bulk_updates() defers scene-rect recomputation but must converge
+    to the same final geometry as unbatched adds."""
+
+    def test_same_scene_rect_as_unbatched(self):
+        w1 = SequencerWidget()
+        w2 = SequencerWidget()
+        try:
+            with w1.bulk_updates():
+                t1 = w1.add_track("T")
+                for i in range(5):
+                    w1.add_clip(t1, start=i * 50, duration=25)
+            t2 = w2.add_track("T")
+            for i in range(5):
+                w2.add_clip(t2, start=i * 50, duration=25)
+            self.assertEqual(
+                w1._timeline._scene.sceneRect(), w2._timeline._scene.sceneRect()
+            )
+        finally:
+            w1.close()
+            w1.deleteLater()
+            w2.close()
+            w2.deleteLater()
+
+
+class TestStalePendingKeyCleared(BaseTestCase):
+    """A pending consume-key that never arrived must be cleared by the
+    next KeyPress instead of lingering and eating a later press."""
+
+    def setUp(self):
+        from qtpy import QtCore
+
+        self.w = SequencerWidget()
+        self.w.window_shortcuts = True
+        self.calls = []
+        self.w._shortcut_mgr.add_shortcut(
+            "Delete",
+            lambda: self.calls.append(1),
+            "Test action",
+            QtCore.Qt.WindowShortcut,
+        )
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_stale_pending_key_expires_after_one_press(self):
+        from qtpy import QtCore, QtGui
+
+        override = QtGui.QKeyEvent(
+            QtCore.QEvent.ShortcutOverride,
+            QtCore.Qt.Key_Delete,
+            QtCore.Qt.NoModifier,
+        )
+        self.assertTrue(self.w.eventFilter(self.w, override))
+
+        # The matching KeyPress never arrives; an unrelated press must
+        # both pass through AND clear the stale pending state.
+        press_a = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_A, QtCore.Qt.NoModifier
+        )
+        self.assertFalse(self.w.eventFilter(self.w, press_a))
+
+        # A later Delete press (no fresh override dispatch) must NOT be
+        # eaten by the stale state.
+        press_del = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_Delete, QtCore.Qt.NoModifier
+        )
+        self.assertFalse(self.w.eventFilter(self.w, press_del))
 
 
 if __name__ == "__main__":

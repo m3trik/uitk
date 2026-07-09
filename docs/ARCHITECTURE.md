@@ -91,7 +91,7 @@ Built by `FileManager` in [uitk/file_manager.py](../uitk/file_manager.py). Four 
 | `ui_registry` | `*.ui` | filename, filepath |
 | `slot_registry` | `*.py` (excluding `*_ui.py`) | classname, classobj, filename, filepath |
 | `widget_registry` | `*.py` (excluding `*_ui.py`) | classname, classobj, filename, filepath |
-| `icon_registry` | `*.svg, *.png, *.jpg, *.bmp, *.ico` | filename, filepath |
+| `icon_registry` | `*.svg, *.png, *.jpg, *.jpeg, *.bmp, *.ico` | filename, filepath |
 
 Each accepts paths, module objects, directories (recursive or not), or class objects. The `FileContainer` abstraction extends `ptk.NamedTupleContainer` for query / filter operations.
 
@@ -406,15 +406,17 @@ _resolve_ui("editor")
        │         └── (enables "headless" slot classes without a .ui)
        │
        └── if filename match:
-           ├── load_ui(filepath)    # QUiLoader
-           ├── get_property_from_ui_file → discover custom widgets
-           │    → register each unknown custom widget class
-           ├── load via QUiLoader
+           ├── load_ui(filepath) → _loader.load(filepath)
+           │    # the configured loader delegate builds the widget tree and
+           │    # registers custom widgets from the .ui's <customwidgets>
+           │    # block against widget_registry (§12)
            ├── add_ui(name, widget, path)
            │    ├── wrap in MainWindow
-           │    ├── merge tags from filename + source tags
-           │    ├── attach settings branch
+           │    ├── merge tags: filename + source tags + .ui uitk_tags
+           │    │   (read via _loader.read_ui_tags, cached per name)
+           │    ├── attach settings branch (host-namespaced)
            │    └── store in loaded_ui
+           ├── emit on_ui_loaded(name)
            └── return MainWindow
 ```
 
@@ -422,12 +424,69 @@ Source tags come from `sb.register(ui_location=..., tags={"menu"})` — tag all 
 
 ---
 
-## 12. Extension points — where to hook, where not to
+## 12. UI loading & compilation
+
+How a `.ui` file becomes a live widget tree. Two interchangeable delegates implement one contract; everything else in this doc is loader-agnostic.
+
+### The loader contract
+
+`Switchboard(loader=...)` resolves the kwarg via `_build_loader` in [_core.py](../uitk/switchboard/_core.py):
+
+| `loader` | Delegate | Mechanism |
+|:---|:---|:---|
+| `"runtime"` (default) | `RuntimeLoader` — [loaders/runtime.py](../uitk/loaders/runtime.py) | `QtUiTools.QUiLoader` parses the .ui XML per load. No subprocess, no on-disk artifact. |
+| `"compiled"` | `CompiledLoader` — [loaders/compiled.py](../uitk/loaders/compiled.py) | Imports a generated, hash-stamped `_ui.py`; auto-recompiles when missing or stale. |
+| class or instance | custom delegate | Instantiated with the Switchboard (classes); validated against the contract. |
+
+The contract is three methods — `load(file)`, `read_ui_tags(path)`, `on_tags_written(path)` — checked up front in `_build_loader`, so a typo'd custom delegate fails at `Switchboard()` construction, not at first UI load. `sb.load_ui(file)` is a one-line dispatch to `self._loader.load(file)`; `_get_ui_tags` and `save_ui_tags` dispatch the other two.
+
+### RuntimeLoader — parse per load
+
+`QUiLoader` constructs the widget tree in C++ from the .ui XML on every load. Custom widgets named in the `<customwidgets>` block are resolved against `widget_registry`, passed to `registerCustomWidget` on a per-loader `QUiLoader` instance (registration doesn't leak into other loaders in the same application), and registered with the Switchboard so slot wiring sees them. An unresolvable class degrades to QUiLoader's plain-`QWidget` fallback with a debug log rather than aborting the load. A per-file metadata cache (keyed on mtime) collapses repeated tag/customwidget reads of an unchanged file to a single XML parse — mtime granularity is the documented trade-off vs. the CompiledLoader's content hash (see `runtime.py`'s module docstring for the full list).
+
+### CompiledLoader — import a hash-stamped `_ui.py`
+
+`CompiledLoader.load` calls `ensure_compiled` ([compile.py](../uitk/compile.py)) — regenerate `<stem>_ui.py` next to the .ui if missing or stale — then imports the artifact under a unique path-keyed module name, instantiates its `__base_class__`, and runs `Ui_*().setupUi(form)`. The .ui stays the canonical source of truth; the artifact is disposable. What the compiled path buys:
+
+- **Embedded metadata.** The generated header carries `__source_hash__`, `__uitk_tags__`, `__base_class__`, `__form_class__`, `__customwidgets__`, `__binding__` — readable via `read_embedded_hash/tags/base_class/form_class` without an XML parse or uic run.
+- **Amortized load cost.** uic runs once per .ui edit, not once per load; repeat loads of an unchanged .ui in a session reuse the already-imported module (`_load_cache`, keyed on .ui mtime) and only re-run `setupUi` to build a fresh tree.
+- **Header repair.** `CompiledLoader._resolve_header` feeds `compile_ui` a `header_resolver` that rewrites malformed C++-style `<header>` paths in legacy .ui files to the registered class's real `__module__` — fixing the import without touching the .ui. If an existing `_ui.py` (e.g. raw pyside6-uic output) fails to import, the loader force-regenerates through the resolver and retries once.
+
+### Freshness — content hash, not mtimes
+
+`is_compiled_fresh` accepts a `_ui.py` only if its embedded `__source_hash__` matches the SHA-256 of the current .ui bytes (`hash_ui_source`). An artifact without the uitk header (raw uic output, hand-written) is treated as stale and regenerated — uitk owns the `_ui.py` format end-to-end. There is an mtime fast path — header present *and* artifact newer than source is accepted without rehashing (the dominant cost when scanning dozens of UIs) — but whenever mtime is inconclusive the hash compare is canonical, so coarse-mtime filesystems and `touch`-style edits stay correct.
+
+`compile_ui` writes atomically (unique temp name + `os.replace`), so a background precompile racing the lazy `ensure_compiled` path converges: both produce identical content for the same source, and whichever replace lands second wins.
+
+### Compile toolchain — the runtime's own uic
+
+`_detect_uic_command` prefers the raw `uic` binary bundled inside the *active* binding's package (`_find_bundled_uic`, binding from qtpy's `API_NAME`), falling back to the `pyside6-uic`/`pyuic5`/`pyuic6` wrappers on PATH (PyQt doesn't bundle uic in that layout). This matters when multiple PySide installs coexist — e.g. Maya 2025 ships PySide6 6.5.3 while a venv may run 6.10+: uic from a newer version emits enum-class syntax (`QSizePolicy.Policy.Ignored`) that older runtimes reject, so the compiled output must come from the runtime's own uic to be loadable. The generated body's binding imports are then rewritten to `qtpy`, keeping the artifact binding-agnostic.
+
+### Fleet warm-up — `precompile_async`
+
+`precompile_async(*paths, jobs=None, force=False)` compiles every stale .ui under *paths* in a daemon-thread pool and returns a `PrecompileJob` handle — truthy iff work started, `.stale` = queued count, `.reason` distinguishes `"none-stale"` from `"running"` (one job in flight at a time). Threads, not processes: uic is a subprocess that releases the GIL, and Windows `spawn` would re-import the caller's main module. Consumers: `MarkingMenu(precompile=True)` (off by default, and skipped unless the active loader is a `CompiledLoader` — otherwise nothing reads the artifacts) and the Switchboard browser's compile-all action (`force` toggle via its option box). Lazy `ensure_compiled` remains the fallback if a UI is needed before the job finishes.
+
+### CLI
+
+```
+python -m uitk.compile <paths...> [--check] [--force] [-j N]
+```
+
+Scans directories recursively for .ui files; fresh ones are skipped by default. `--check` regenerates nothing — it prints `STALE:` per out-of-date file and exits non-zero, making it a CI gate. `--force` recompiles regardless of freshness.
+
+### Tag round-trip
+
+Both delegates read `uitk_tags` from the .ui XML directly (`extract_metadata`), never from a `_ui.py` header — registering a UI must not spawn a uic subprocess just to enumerate tags. `save_ui_tags` writes the tag property into the .ui atomically, then calls `_loader.on_tags_written(path)`: the CompiledLoader recompiles the artifact and drops its module cache; the RuntimeLoader just invalidates its metadata cache (QUiLoader re-reads the file on every load anyway).
+
+---
+
+## 13. Extension points — where to hook, where not to
 
 | Task | How | Don't |
 |:---|:---|:---|
 | Add a custom widget | Subclass Qt widget + UITK mixins, let Qt Designer promote, ensure it's in `widget_source` or `DEFAULT_INCLUDE` | Don't edit `DEFAULT_INCLUDE` in your app — use `widget_source` |
 | Add a DCC-specific window handler | Subclass `UiHandler`, pass via `handlers={"ui": MyUiHandler}` | Don't subclass `Switchboard` |
+| Swap the UI loading strategy | `Switchboard(loader="compiled")`, or pass a class/instance implementing `load` / `read_ui_tags` / `on_tags_written` | Don't monkeypatch `load_ui` |
 | Add cross-cutting behavior | New handler with `DEFAULTS` dict, register via `handlers={...}` | Don't monkeypatch `Switchboard` |
 | Add a widget capability | New mixin in your own package, declare on your widgets | Don't edit UITK's mixins in-place |
 | Run slots in background | Wrap slot body in `QThread` / `QtConcurrent.run`; surface progress via `sb.progress(...)` → `Footer.progress` | Don't offload inside the SlotWrapper |
@@ -437,12 +496,12 @@ Source tags come from `sb.register(ui_location=..., tags={"menu"})` — tag all 
 
 ---
 
-## 13. File map
+## 14. File map
 
 ```
 uitk/
 ├── __init__.py                # DEFAULT_INCLUDE + bootstrap_package
-├── compile.py                 # pyside6-uic-backed .ui → _ui.py compiler
+├── compile.py                 # .ui → hash-stamped _ui.py compiler + precompile_async + CLI
 ├── file_manager.py            # typed registries
 ├── events.py                  # EventFactoryFilter, MouseTracking
 │
@@ -456,7 +515,7 @@ uitk/
 │   ├── editors.py             # sb.editors registry
 │   └── style.py               # sb.style — lazy StyleSheet accessor
 │
-├── loaders/                   # RuntimeLoader (default, QUiLoader), CompiledLoader (pyside6-uic)
+├── loaders/                   # RuntimeLoader (default, QUiLoader), CompiledLoader (compiled _ui.py)
 │
 ├── handlers/
 │   ├── ui_handler.py          # UiHandler (sb.handlers.ui)

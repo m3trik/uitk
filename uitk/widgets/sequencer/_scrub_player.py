@@ -26,7 +26,12 @@ from qtpy import QtCore
 try:
     from qtpy.QtMultimedia import QMediaPlayer, QAudioOutput
 
-    _QT_MEDIA_OK = True
+    # Import success is not enough: Qt5's QMediaPlayer/QAudioOutput
+    # import fine but lack the Qt6 API used below (setSource /
+    # setAudioOutput; Qt5's QAudioOutput ctor takes a QAudioFormat).
+    # Gate on the API so PySide2 hosts degrade to a no-op instead of
+    # crashing on first use.
+    _QT_MEDIA_OK = hasattr(QMediaPlayer, "setSource")
 except Exception:
     QMediaPlayer = None
     QAudioOutput = None
@@ -148,6 +153,23 @@ class ScrubPlayer(QtCore.QObject):
                 pass
         if self._grain_timer is not None:
             self._grain_timer.stop()
+
+    def is_playing(self) -> bool:
+        """True while the underlying media player is actually playing.
+
+        Lets transport adapters reconcile their latched play flag with
+        reality — e.g. end-of-media stops the player without any
+        adapter-visible callback.
+        """
+        if self._player is None:
+            return False
+        try:
+            return (
+                self._player.playbackState()
+                == QMediaPlayer.PlaybackState.PlayingState
+            )
+        except Exception:
+            return False
 
     def set_volume(self, vol: float) -> None:
         """Volume in [0.0, 1.0]."""

@@ -19,7 +19,6 @@ from uitk.widgets.sequencer._data import (  # noqa: F401
     _HANDLE_WIDTH,
     _MIN_CLIP_DURATION,
     _MIN_POINT_CLIP_WIDTH,
-    _DEFAULT_CLIP_COLORS,
     _COMMON_ATTRIBUTES,
     _DISPLAY_COLORS,
     _MENU_STYLESHEET,
@@ -43,7 +42,7 @@ from uitk.widgets.sequencer._overlays import (  # noqa: F401
     _GapOverlayItem,
     RangeHighlightItem,
 )
-from uitk.widgets.sequencer._ruler import ShotLaneItem, RulerItem  # noqa: F401
+from uitk.widgets.sequencer._ruler import RulerItem  # noqa: F401
 from uitk.widgets.sequencer._playhead import PlayheadItem  # noqa: F401
 from uitk.widgets.sequencer._markers import MarkerItem  # noqa: F401
 from uitk.widgets.sequencer._timeline import (  # noqa: F401

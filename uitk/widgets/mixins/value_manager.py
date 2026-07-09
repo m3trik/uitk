@@ -75,6 +75,12 @@ class ValueManager:
                 # Must precede setText. (Mirrors set_value_by_signal's "toggled".)
                 ValueManager._set_boolean_value(widget, value)
 
+            elif hasattr(widget, "setPlainText") and callable(widget.setPlainText):
+                # QTextEdit, QPlainTextEdit — must precede setText: QTextEdit
+                # has both, and setText interprets rich text (a literal
+                # "<b>x</b>" would lose its tags on the next toPlainText read).
+                widget.setPlainText(str(value))
+
             elif hasattr(widget, "setText") and callable(widget.setText):
                 # Text-capable widgets (QLineEdit, QLabel, etc.)
                 # Skip icon-only option buttons that should never display text
@@ -132,10 +138,6 @@ class ValueManager:
                         if bool(value)
                         else QtCore.Qt.CheckState.Unchecked
                     )
-
-            elif hasattr(widget, "setPlainText") and callable(widget.setPlainText):
-                # QTextEdit, QPlainTextEdit
-                widget.setPlainText(str(value))
 
         finally:
             if block_signals:
@@ -208,7 +210,13 @@ class ValueManager:
             The current value based on signal type, or None if unsupported
         """
         signal_getters = {
-            "textChanged": lambda w: w.text() if hasattr(w, "text") else None,
+            # QTextEdit/QPlainTextEdit map to textChanged but have no text();
+            # fall back to toPlainText() so their state is readable at all.
+            "textChanged": lambda w: (
+                w.text()
+                if hasattr(w, "text")
+                else w.toPlainText() if hasattr(w, "toPlainText") else None
+            ),
             "valueChanged": lambda w: w.value() if hasattr(w, "value") else None,
             "currentIndexChanged": lambda w: (
                 w.currentIndex() if hasattr(w, "currentIndex") else None
@@ -239,8 +247,13 @@ class ValueManager:
 
         try:
             signal_setters = {
+                # setPlainText is preferred where it exists (QTextEdit has
+                # BOTH, but its setText interprets rich text — "<b>x</b>"
+                # would restore with the tags stripped).
                 "textChanged": lambda w, v: (
-                    w.setText(str(v)) if hasattr(w, "setText") else None
+                    w.setPlainText(str(v))
+                    if hasattr(w, "setPlainText")
+                    else w.setText(str(v)) if hasattr(w, "setText") else None
                 ),
                 "valueChanged": lambda w, v: (
                     ValueManager._set_numeric_value(w, v)

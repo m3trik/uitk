@@ -161,6 +161,116 @@ class TestTextMode(_ComboPersistBase):
         self.assertEqual(c2.currentText(), "123")
 
 
+class TestTextWidgetStringRoundTrip(_ComboPersistBase):
+    """A text widget's JSON-parseable string must survive save -> load.
+
+    ``load`` JSON-decodes stored strings (that is how bools / numbers come
+    back from backends that stringify them), so a line edit holding
+    ``"1.10"`` restored as ``"1.1"`` and ``"123"`` as ``"123"``-the-int the
+    next session. The store side must quote such ambiguous strings so the
+    decode restores them verbatim.
+    """
+
+    def make_lineedit(self, name="le000"):
+        le = self.track_widget(QtWidgets.QLineEdit())
+        le.setObjectName(name)
+        le.restore_state = True
+        le.derived_type = QtWidgets.QLineEdit
+        le.default_signals = lambda: "textChanged"
+        return le
+
+    def test_numeric_looking_text_round_trips(self):
+        for text in ("1.10", "123", "true", "None"):
+            le1 = self.make_lineedit()
+            le1.setText(text)
+            self.sm.save(le1)
+
+            le2 = self.make_lineedit()
+            self.sm.load(le2)
+            self.assertEqual(
+                le2.text(), text,
+                f"line-edit text {text!r} was mangled across save/load",
+            )
+
+    def test_plain_text_stored_unquoted(self):
+        # Non-ambiguous strings keep their raw on-disk form (readability +
+        # legacy-reader compatibility).
+        le = self.make_lineedit()
+        le.setText("C:/proj/sourceimages")
+        self.sm.save(le)
+        self.assertEqual(
+            self.store.value("le000/textChanged"), "C:/proj/sourceimages"
+        )
+
+
+class TestSettingsManagerBackedStore(QtBaseTestCase):
+    """StateManager against a ``SettingsManager`` store — the MainWindow mode.
+
+    ``clear()`` / ``clear_custom()`` call ``store.remove(key)``; because
+    ``SettingsManager.__getattr__`` manufactures a ``SettingItem`` proxy for
+    any unknown attribute, the missing ``remove`` surfaced as a ``TypeError``
+    at clear time instead of an ``AttributeError`` at review time.
+    """
+
+    ORG = "test_uitk_state_clear"
+    APP = "test_app"
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.mixins.settings_manager import SettingsManager
+
+        self.settings = SettingsManager(org=self.ORG, app=self.APP)
+        self.settings.settings.clear()
+        self.settings.settings.sync()
+        self.sm = StateManager(self.settings)
+
+    def tearDown(self):
+        self.settings.settings.clear()
+        self.settings.settings.sync()
+        super().tearDown()
+
+    def make_lineedit(self, name="le000"):
+        le = self.track_widget(QtWidgets.QLineEdit())
+        le.setObjectName(name)
+        le.restore_state = True
+        le.derived_type = QtWidgets.QLineEdit
+        le.default_signals = lambda: "textChanged"
+        return le
+
+    def test_clear_removes_stored_state(self):
+        le = self.make_lineedit()
+        le.setText("hello")
+        self.sm.save(le)
+        self.assertEqual(self.settings.value("le000/textChanged"), "hello")
+
+        self.sm.clear(le)  # raised TypeError before SettingsManager.remove()
+        self.assertIsNone(self.settings.value("le000/textChanged"))
+
+    def test_custom_keys_round_trip_and_clear(self):
+        self.sm.save_custom("splitter", [100, 250])
+        self.assertEqual(self.sm.load_custom("splitter"), [100, 250])
+
+        # Ambiguous string: must come back as the same string, not a float
+        # (the double-decode through SettingsManager mangled it before).
+        self.sm.save_custom("version", "1.10")
+        self.assertEqual(self.sm.load_custom("version"), "1.10")
+
+        self.sm.clear_custom("splitter")
+        self.assertIsNone(self.sm.load_custom("splitter"))
+
+        # The caller's default must come back verbatim, not JSON-decoded.
+        self.assertEqual(self.sm.load_custom("missing", "1.10"), "1.10")
+
+    def test_text_state_round_trips_via_settings_manager(self):
+        le1 = self.make_lineedit()
+        le1.setText("1.10")
+        self.sm.save(le1)
+
+        le2 = self.make_lineedit()
+        self.sm.load(le2)
+        self.assertEqual(le2.text(), "1.10")
+
+
 class TestDataMode(_ComboPersistBase):
     """``restore_by='data'`` persists the selection by item data."""
 

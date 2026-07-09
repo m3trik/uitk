@@ -24,8 +24,6 @@ _MARKER_TRI_SIZE = 8  # size of the triangle pennant in pixels
 class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     """A named marker on the timeline: triangle at the ruler + dashed line."""
 
-    DRAG_CAPTURES_UNDO = False
-
     def __init__(self, marker_data: MarkerData, timeline: "TimelineView"):
         super().__init__()
         self._data = marker_data
@@ -50,10 +48,14 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def boundingRect(self) -> QtCore.QRectF:
         x = self._timeline.time_to_x(self._data.time)
+        # The note label paints to the right of the head glyph — the
+        # rect must cover it or drags leave stale label pixels behind
+        # (paint() draws up to 8 chars at 7pt; 48px covers that).
+        note_pad = 48 if self._data.note else 0
         return QtCore.QRectF(
             x - _MARKER_TRI_SIZE,
             0,
-            _MARKER_TRI_SIZE * 2,
+            _MARKER_TRI_SIZE * 2 + note_pad,
             10000,
         )
 
@@ -219,7 +221,11 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
                 return
             self.sync()
             self.update()
-            widget.marker_moved.emit(self._data.marker_id, self._data.time)
+            # Only emit on an actual move — a selection click otherwise
+            # fires marker_moved with the unchanged time and consumers
+            # rebuild their marker store and dirty their persistence.
+            if abs(self._data.time - self._drag_origin_time) > 1e-6:
+                widget.marker_moved.emit(self._data.marker_id, self._data.time)
             event.accept()
         else:
             super().mouseReleaseEvent(event)

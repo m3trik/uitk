@@ -56,14 +56,32 @@ class ScrubPlayerPlayController:
         if fps and fps > 0:
             self._fps = float(fps)
 
+    def _fps_now(self) -> float:
+        """The widget's live audio fps wins over the constructor default —
+        ``set_audio_source(path, fps=30)`` must drive seek math too, or
+        the playhead frame maps to the wrong audio position."""
+        fps = getattr(self._sequencer, "_audio_fps", None)
+        return float(fps) if fps and fps > 0 else self._fps
+
     def is_playing(self) -> bool:
+        if not self._playing:
+            return False
+        # Reconcile with the actual media state — end-of-media stops the
+        # player without notifying this adapter; a latched True keeps
+        # the play button tinted and turns the next press into a no-op
+        # stop().
+        player = getattr(self._sequencer, "_scrub_player", None)
+        if player is not None and self._forward:
+            probe = getattr(player, "is_playing", None)
+            if callable(probe):
+                self._playing = bool(probe())
         return self._playing
 
     def play(self, forward: bool) -> None:
         player = getattr(self._sequencer, "_scrub_player", None)
         t = self._current_frame()
         if player is not None and forward:
-            player.play(from_frame=t, fps=self._fps)
+            player.play(from_frame=t, fps=self._fps_now())
         self._playing = True
         self._forward = forward
 
@@ -138,13 +156,22 @@ class TransportControls(QtWidgets.QWidget):
         self._build(button_height)
 
         # Poll the play controller so external play/stop (e.g. Maya's
-        # own time slider) keeps the active-button tint in sync.
+        # own time slider) keeps the active-button tint in sync.  The
+        # timer runs only while visible (see show/hideEvent) — a hidden
+        # panel must not keep polling the host app every 400ms.
         self._sync_timer = QtCore.QTimer(self)
         self._sync_timer.setInterval(400)
         self._sync_timer.timeout.connect(self._sync_active_from_controller)
-        self._sync_timer.start()
 
         self._register_play_shortcuts()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._sync_timer.start()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._sync_timer.stop()
 
     # ------------------------------------------------------------------ API
 
@@ -215,12 +242,6 @@ class TransportControls(QtWidgets.QWidget):
             self._buttons[key] = btn
 
     # ----------------------------------------------------- nav primitives
-
-    def _current_frame(self) -> float:
-        try:
-            return float(self._sequencer._timeline._scene.playhead.time)
-        except Exception:
-            return 0.0
 
     def _with_interrupt(self, action: Callable[[], None]) -> None:
         """Run *action*, optionally stopping/resuming playback around it."""
