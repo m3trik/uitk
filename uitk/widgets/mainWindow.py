@@ -1055,6 +1055,24 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if root:
             _walk_and_register(root)
 
+        # Complete every menu's deferred item registration NOW — while still
+        # inside the pre-paint window on first show (this method runs before
+        # super().showEvent paints). Menu.add defers registration to a tick-0
+        # timer to escape mid-add recursion, but that timer fires AFTER first
+        # paint, so item state-restore / nested option-box wraps mutated on
+        # screen (the init flash; the bench's 05_drain_deferred_timers).
+        # All add() frames are unwound by this point, so draining is safe by
+        # the deferral's own contract; the timers later no-op on empty queues.
+        # Guarded: a flushed init_slot may itself call register_children.
+        if not getattr(self, "_flushing_menu_registrations", False):
+            from uitk.widgets.menu import _flush_pending_registrations
+
+            self._flushing_menu_registrations = True
+            try:
+                _flush_pending_registrations(self)
+            finally:
+                self._flushing_menu_registrations = False
+
     def focusInEvent(self, event) -> None:
         """Override the focus event to set the current UI when this window gains focus."""
         self.sb.current_ui = self

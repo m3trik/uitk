@@ -1233,5 +1233,132 @@ class TestFlickerDetection(_DynamicInitBase):
                 c()
 
 
+class TestPrePaintRegistrationFlush(_DynamicInitBase):
+    """Menu-item registration must complete INSIDE the pre-paint window.
+
+    ``Menu.add`` defers each item's ``register_widget`` to a coalesced
+    tick-0 timer (escaping mid-add recursion). Pre-fix, that timer fired
+    AFTER ``MainWindow.showEvent`` painted — item state-restore and nested
+    option-box wraps then mutated on screen (the init flash; the bench's
+    ``05_drain_deferred_timers`` phase). ``register_children`` now flushes
+    every pending menu registration synchronously at its end, still
+    pre-paint; the timers later find empty queues and no-op.
+    """
+
+    UI_NAME = "regflush"
+    CHILDREN = [
+        ("QPushButton", "tb000"),
+        ("QPushButton", "tb001"),
+    ]
+
+    def _make_slot(self):
+        class Regflush:
+            def __init__(self_slot, switchboard):
+                self_slot.sb = switchboard
+                self_slot.ui = switchboard.loaded_ui.regflush
+
+            def tb000_init(self_slot, widget):
+                widget.option_box.menu.add(
+                    "QCheckBox", setObjectName="tb000_chk0", setText="A"
+                )
+                widget.option_box.menu.add(
+                    "QSpinBox", setObjectName="tb000_s0"
+                )
+
+            def tb001_init(self_slot, widget):
+                widget.option_box.menu.add(
+                    "QCheckBox", setObjectName="tb001_chk0", setText="B"
+                )
+
+        return Regflush
+
+    def test_menu_items_registered_at_show_return(self):
+        """At show()-return (pre-drain), every menu item created by the slot
+        inits must already be registered with the MainWindow — pre-fix they
+        were still sitting in _pending_registrations awaiting the post-paint
+        timer."""
+        self._make_sb(self._make_slot())
+        self.ui.show()
+
+        # NO drain — this is the state the first paint renders.
+        for name in ("tb000_chk0", "tb000_s0", "tb001_chk0"):
+            self.assertTrue(
+                hasattr(self.ui, name),
+                f"menu item {name!r} not registered at show-return — its "
+                "registration (and state restore) lands post-paint: the "
+                "init flash.",
+            )
+
+        from uitk.widgets.menu import _menus_awaiting_registration
+
+        stale = [
+            m
+            for m in list(_menus_awaiting_registration)
+            if m._pending_registrations
+            and m._resolve_registration_window() is self.ui
+        ]
+        self.assertEqual(
+            stale,
+            [],
+            "menus still awaiting registration after show-return "
+            f"(pending in {[m.objectName() for m in stale]}).",
+        )
+
+    def test_no_register_widget_after_show_returns(self):
+        """Boundary proof: zero register_widget calls after showEvent
+        returns, and none inside an add() frame (the recursion contract that
+        motivated the deferral must survive the flush)."""
+        from uitk.widgets.menu import Menu
+
+        events = []
+        sb = self._make_sb(self._make_slot())
+        ui = self.ui
+
+        original_register = type(ui).register_widget
+
+        def tracking_register(self_ui, widget):
+            menu_add_depths = [
+                m._add_depth
+                for m in ui.findChildren(Menu)
+                if getattr(m, "_add_depth", 0)
+            ]
+            events.append(("register", widget.objectName(), max(menu_add_depths or [0])))
+            return original_register(self_ui, widget)
+
+        original_show_event = type(ui).showEvent
+
+        def marking_show_event(self_ui, event):
+            original_show_event(self_ui, event)
+            events.append(("ui_showEvent_returned", None, 0))
+
+        type(ui).register_widget = tracking_register
+        type(ui).showEvent = marking_show_event
+        try:
+            ui.show()
+            self._drain(pumps=20)
+        finally:
+            type(ui).register_widget = original_register
+            type(ui).showEvent = original_show_event
+
+        returned_idx = next(
+            (i for i, e in enumerate(events) if e[0] == "ui_showEvent_returned"),
+            None,
+        )
+        self.assertIsNotNone(returned_idx, f"showEvent never returned: {events}")
+
+        after = [e for e in events[returned_idx + 1:] if e[0] == "register"]
+        self.assertEqual(
+            after,
+            [],
+            f"register_widget ran AFTER showEvent returned (post-paint): {after}",
+        )
+        mid_add = [e for e in events if e[0] == "register" and e[2] > 0]
+        self.assertEqual(
+            mid_add,
+            [],
+            f"register_widget ran INSIDE an add() frame (recursion hazard): {mid_add}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
