@@ -12,20 +12,16 @@ Design the UI in Qt Designer, name your widgets, write matching Python methods. 
 
 ## Why uitk exists
 
-UITK comes from years of building artist tooling for DCC pipelines (Maya, Blender, 3ds Max). That environment produces a particular problem: you don't need one big application — you need *dozens of small ones*, and each traditionally pays the same Qt tax before it does anything useful: load the `.ui` file, `findChild()` every widget, `.connect()` every signal, restore last-used values, save them on close, style it to match the pipeline, and behave correctly whether it floats standalone or lives inside a host app.
+UITK comes from years of building artist tooling for DCC pipelines (Maya, Blender, 3ds Max), where you don't need one big application — you need *dozens of small ones*. Each traditionally pays the same Qt tax before doing anything useful: load the `.ui`, `findChild()` every widget, `.connect()` every signal, restore and save state, style it, and behave correctly standalone or inside a host app. None of that code is the tool — and hand-rolling it slightly differently each time is how a toolkit of thirty tools becomes thirty apps by thirty authors.
 
-None of that code is the tool. It's the same two hundred lines, slightly different every time — and *slightly different* is the killer: tools drift, state persistence gets skipped because it's tedious, and a toolkit of thirty tools feels like thirty apps by thirty authors.
+UITK drives the marginal cost of a **well-behaved** tool toward zero:
 
-UITK's intent is to drive the marginal cost of a **well-behaved** tool toward zero:
+- **The convention is the wiring.** `btn_save` in Designer connects to `def btn_save(self)` because the names match; UI files map to slot classes, filename tags map to UI hierarchy. What remains in a slot class is only the code that does something.
+- **Good behavior is the default.** Every widget persists state, every window remembers geometry, theming and positioning just work — no opt-in. Fifty tools wired one way feel like a single application.
+- **DCC-agnostic core, host-aware edges.** Built on `qtpy` (PySide2 / PySide6); runs standalone or hosted in Maya / Blender / 3ds Max via pluggable handlers. Extending UITK — handlers, widgets, mixins — never requires editing it.
+- **Escape hatches everywhere.** `@Signals(...)` overrides wiring, handlers override host behavior, every enhancement is opt-out per widget or per UI.
 
-- **The convention is the wiring.** `btn_save` in Designer connects to `def btn_save(self)` because the names match; UI files map to slot classes, tags (`#submenu`) map to UI hierarchy. What remains in your slot class is only the code that does something.
-- **Good behavior is the default, not a feature.** Every widget persists its state, every window remembers geometry, theming and positioning just work — no opt-in. A tool built in ten minutes behaves like one built in a week.
-- **One convention, many tools.** Because every tool is wired the same way, fifty tools feel like one application — and any maintainer can open any slot class and already know where everything is.
-- **Composable primitives.** Public APIs take plain values (`str`, `dict`, callable); widgets gain capabilities through mixins (`.menu`, `.option_box`, `.state`, `.style`) rather than deep inheritance.
-- **DCC-agnostic core.** Built on `qtpy` (PySide2 / PySide6); runs standalone or hosted inside Maya / Blender / 3ds Max via a pluggable handler ecosystem. Extending UITK — handlers, widgets, mixins via `DEFAULT_INCLUDE` and `Switchboard.register()` — never requires editing it.
-- **Escape hatches everywhere.** Conventions are defaults, not walls: `@Signals(...)` overrides wiring, handlers override host behavior, every enhancement is opt-out per widget or per UI.
-
-**When it fits:** fleets of small-to-medium Designer-based tools — especially hosted in DCCs — where consistency and iteration speed matter more than bespoke UI architecture. **When it doesn't:** a single large app with its own hand-rolled UI layer, non-Qt targets, or a workflow without Qt Designer; the conventions pay for themselves across a fleet, not a one-off.
+**Fits:** fleets of small-to-medium Designer-based tools — especially DCC-hosted — where consistency and iteration speed beat bespoke UI architecture. **Doesn't:** a single large app with its own hand-rolled UI layer, non-Qt targets, or a workflow without Qt Designer.
 
 ### What each subsystem is for
 
@@ -35,14 +31,20 @@ UITK's intent is to drive the marginal cost of a **well-behaved** tool toward ze
 | `MainWindow` wrapper | Makes *every* loaded UI well-behaved: lifecycle signals, geometry/state persistence, styling, positioning. |
 | Widget enhancements (`.menu`, `.option_box`, …) | Progressive disclosure — advanced options live on the widget that owns them, not in dialog sprawl. |
 | Marking menu | Muscle-memory access inside a DCC viewport: an entire toolkit reachable from one held key. |
+| Sequencer & editors | An NLE-style timeline widget (clips, keyframes, markers, audio scrub), plus bundled Style / Shortcut / Browser panels on `sb.editors`. |
 | Handlers | Host-specific behavior (Maya vs. Blender vs. standalone) without forking the library or the tools. |
 | Bridge | Parameterised script panels that drive external DCC processes from one shared form/preset/logging engine. |
 
 ## Install
 
 ```bash
-pip install uitk
+pip install uitk qtpy PySide6     # standalone — PySide2 works too
+python -m uitk.examples.example   # optional: interactive demo of the full feature set
 ```
+
+<!-- sync:qt-install-note -->
+Inside a DCC, install only `uitk qtpy` — the host provides its own Qt binding (uitk deliberately doesn't pull one in).
+<!-- /sync:qt-install-note -->
 
 ## Quickstart
 

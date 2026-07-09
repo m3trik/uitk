@@ -133,6 +133,11 @@ class PresetManager(ptk.LoggingMixin):
 
         self._on_change_callbacks = []
 
+        # Pending inline-edit action for wire_combo's Save/Rename flow
+        # ("save" / "rename" / None). Declared here rather than created
+        # dynamically inside the closure so the attribute always exists.
+        self._pending_preset_action: Optional[str] = None
+
         # Active-preset / modified tracking. ``_active_snapshot`` is the stored
         # value dict (minus ``_meta``) of the active preset, captured on load
         # (or when ``active_preset`` is assigned for a session restore), and is

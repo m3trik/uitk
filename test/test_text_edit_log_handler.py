@@ -115,5 +115,44 @@ class TestTextEditLogHandlerLinkNavigation(QtBaseTestCase):
         self.assertIn("pCube1", browser.toPlainText())
 
 
+class TestSafeAppendHiddenWidgetNoForcePaint(QtBaseTestCase):
+    """Regression: _safe_append must not force repaint/processEvents on a HIDDEN widget.
+
+    Pumping the event queue from inside a log emit while a panel is still
+    being constructed dispatches deferred events against half-built widgets —
+    a native access violation (segfault), not an exception the handler's
+    try/except can catch.  Reproduced by blendertk's .venv ui-handler suite:
+    loading 20+ panels whose slots log during __init__ crashed in
+    _safe_append's processEvents.  A hidden target needs no live repaint at
+    all; only a visible widget may force-paint.
+    Fixed: 2026-07-08
+    """
+
+    def _handler_with_repaint_spy(self):
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        edit = self.track_widget(QtWidgets.QTextEdit())
+        handler = TextEditLogHandler(edit)
+        handler._last_repaint = 0  # open the throttle window
+        calls = []
+        edit.repaint = lambda *a, **k: calls.append("repaint")
+        return handler, edit, calls
+
+    def test_hidden_widget_appends_without_force_paint(self):
+        handler, edit, calls = self._handler_with_repaint_spy()
+        handler._safe_append("hello hidden")
+        self.assertFalse(edit.isVisible())
+        self.assertIn("hello hidden", edit.toPlainText())
+        self.assertEqual(calls, [], "hidden widget must not be force-painted")
+
+    def test_visible_widget_keeps_live_repaint(self):
+        handler, edit, calls = self._handler_with_repaint_spy()
+        edit.show()
+        handler._safe_append("hello visible")
+        self.assertTrue(edit.isVisible())
+        self.assertIn("hello visible", edit.toPlainText())
+        self.assertEqual(calls, ["repaint"], "visible widget keeps the live repaint")
+
+
 if __name__ == "__main__":
     unittest.main()

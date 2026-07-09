@@ -14,6 +14,7 @@ Example
 >>> w.add_clip(t, start=100, duration=50, label="Fade In/Out")
 >>> w.show()
 """
+from contextlib import contextmanager
 from typing import Dict, List, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
@@ -81,7 +82,10 @@ class AttributeColorDialog(ColorMappingDialog):
         settings: Optional["SettingsManager"] = None,
         parent=None,
     ):
-        defs = defaults or dict(_DEFAULT_ATTRIBUTE_COLORS)
+        # Copy — fallback colors for scene-attr extras are written into
+        # this dict below, and mutating a caller-supplied mapping would
+        # pollute shared/persistent defaults.
+        defs = dict(defaults) if defaults else dict(_DEFAULT_ATTRIBUTE_COLORS)
         common = common_attrs or list(_COMMON_ATTRIBUTES)
         active = active_attrs or []
 
@@ -194,8 +198,6 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     gap_menu_requested = QtCore.Signal(
         object, float, float
     )  # (QMenu, gap_start, gap_end) â€” add actions before exec
-    shot_block_clicked = QtCore.Signal(str)  # (shot_name) from shot lane
-    shot_lane_double_clicked = QtCore.Signal(float)  # (time) edit shot at time
     shot_switch_requested = QtCore.Signal(float)  # (time) Ctrl+Shift+Click
     zone_context_menu_requested = QtCore.Signal(
         str, float, QtCore.QPoint
@@ -227,6 +229,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._next_marker_id = 0
         self._attribute_colors: Dict[str, str] = dict(_DEFAULT_ATTRIBUTE_COLORS)
         self._expanded_tracks: Dict[int, List[str]] = {}  # track_id â†’ sub-row names
+        self._bulk_depth: int = 0  # >0 inside bulk_updates() — defer scene-rect
         self._sub_row_height: int = _SUB_ROW_HEIGHT
         self._sub_row_provider = None  # callable(track_id, track_name) â†’ [(sub_name, [(start,dur,label,color), ...]), ...]
         self._range_highlight: Optional[RangeHighlightItem] = None
@@ -238,10 +241,14 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_range_highlight: bool = True  # toggle for active shot highlight
         self._bg_curve_previews: Dict[tuple, dict] = {}  # (track_id, sub_row) → preview
         self._window_shortcuts: bool = False  # shortcuts active at window level
-        self._window_filter_installed: bool = False
-        self._filter_pending_key: int = (
-            0  # raw key dispatched by eventFilter, awaiting KeyPress
-        )
+        # Top-level window the ShortcutOverride filter is installed on.
+        # Tracked by identity (not a bool) so a reparent — e.g. Maya
+        # dock/undock — moves the filter instead of leaving it dangling
+        # on the old window.
+        self._filtered_window = None
+        # (key, modifiers) dispatched by eventFilter, awaiting its
+        # follow-up KeyPress; 0 when nothing is pending.
+        self._filter_pending_key = 0
         self._active_range: Optional[tuple] = None  # (start, end) in frames
         self._active_range_color = QtGui.QColor(
             90, 140, 220, 25
@@ -368,27 +375,60 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         for entry in self._shortcut_mgr.shortcuts.values():
             if entry["shortcut"] is not None:
                 entry["shortcut"].setContext(ctx)
-        # Defer event filter install until the widget is shown (parented),
-        # since self.window() may not return the actual top-level yet.
         if not enabled:
             self._uninstall_window_filter()
+        elif self.isVisible():
+            # Enabled at runtime on an already-visible widget — there
+            # may be no further showEvent, so install immediately or
+            # keys leak to the host until the panel is hidden/reshown.
+            self._install_window_filter()
+        # Otherwise defer to showEvent: self.window() may not return
+        # the actual top-level until the widget is shown (parented).
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
-        if self._window_shortcuts and not self._window_filter_installed:
+        if self._window_shortcuts:
+            # Self-guards on same-window; after a reparent (Maya
+            # dock/undock) this moves the filter to the new top-level.
             self._install_window_filter()
 
     def _install_window_filter(self) -> None:
         win = self.window()
-        if win is not None and not self._window_filter_installed:
-            win.installEventFilter(self)
-            self._window_filter_installed = True
+        if win is None or win is self._filtered_window:
+            return
+        if self._filtered_window is not None:
+            try:
+                self._filtered_window.removeEventFilter(self)
+            except RuntimeError:
+                pass  # old top-level already destroyed
+        win.installEventFilter(self)
+        self._filtered_window = win
 
     def _uninstall_window_filter(self) -> None:
-        win = self.window()
-        if win is not None and self._window_filter_installed:
-            win.removeEventFilter(self)
-            self._window_filter_installed = False
+        if self._filtered_window is not None:
+            try:
+                self._filtered_window.removeEventFilter(self)
+            except RuntimeError:
+                pass  # top-level already destroyed
+            self._filtered_window = None
+
+    def _match_shortcut(self, event):
+        """Return ``(sequence, entry_or_None)`` when a key event matches a
+        registered shortcut, else ``None``.
+
+        The single implementation of the modifiers → QKeySequence →
+        ExactMatch → manager-lookup rule shared by every intercept path
+        (widget ``event``/``keyPressEvent``, the window ``eventFilter``,
+        and the timeline view's handlers) so matching semantics can't
+        drift between copies.
+        """
+        mods = event.modifiers()
+        mod_int = mods.value if hasattr(mods, "value") else int(mods)
+        key = QtGui.QKeySequence(event.key() | mod_int)
+        for seq in self._timeline._shortcut_sequences:
+            if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
+                return seq, self._shortcut_mgr.shortcuts.get(seq.toString())
+        return None
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         """Intercept ShortcutOverride on the window when window_shortcuts is on.
@@ -411,53 +451,50 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                     ),
                 ):
                     return super().eventFilter(obj, event)
-                mods = event.modifiers()
-                mod_int = mods.value if hasattr(mods, "value") else int(mods)
-                key = QtGui.QKeySequence(event.key() | mod_int)
-                for seq in self._timeline._shortcut_sequences:
-                    if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                        event.accept()
-                        # Dispatch the action directly — the QShortcut won't
-                        # fire because we accepted the override.
-                        entry = self._shortcut_mgr.shortcuts.get(seq.toString())
-                        if entry and entry.get("action"):
-                            entry["action"]()
-                        self._filter_pending_key = event.key()
-                        return True
-            elif (
-                event.type() == QtCore.QEvent.KeyPress
-                and self._filter_pending_key
-                and event.key() == self._filter_pending_key
-            ):
+                match = self._match_shortcut(event)
+                if match is not None:
+                    event.accept()
+                    # Dispatch the action directly — the QShortcut won't
+                    # fire because we accepted the override.
+                    _seq, entry = match
+                    if entry and entry.get("action"):
+                        entry["action"]()
+                    mods = event.modifiers()
+                    self._filter_pending_key = (
+                        event.key(),
+                        mods.value if hasattr(mods, "value") else int(mods),
+                    )
+                    return True
+            elif event.type() == QtCore.QEvent.KeyPress and self._filter_pending_key:
                 # Consume the KeyPress that Qt delivers after the accepted
                 # ShortcutOverride so the host app doesn't also act on it.
+                # A pending key that never arrived (the press was accepted
+                # elsewhere) must not linger and eat a later press — clear
+                # on ANY KeyPress, consume only an exact key+mods match.
+                pending_key, pending_mods = self._filter_pending_key
                 self._filter_pending_key = 0
-                return True
+                mods = event.modifiers()
+                mod_int = mods.value if hasattr(mods, "value") else int(mods)
+                if event.key() == pending_key and mod_int == pending_mods:
+                    return True
         return super().eventFilter(obj, event)
 
     def event(self, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.ShortcutOverride:
-            mods = event.modifiers()
-            mod_int = mods.value if hasattr(mods, "value") else int(mods)
-            key = QtGui.QKeySequence(event.key() | mod_int)
-            for seq in self._timeline._shortcut_sequences:
-                if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                    event.accept()
-                    return True
+            if self._match_shortcut(event) is not None:
+                event.accept()
+                return True
         return super().event(event)
 
     def keyPressEvent(self, event):
         """Dispatch registered shortcuts when focus is on a non-timeline child."""
-        mods = event.modifiers()
-        mod_int = mods.value if hasattr(mods, "value") else int(mods)
-        key_seq = QtGui.QKeySequence(event.key() | mod_int)
-        for seq in self._timeline._shortcut_sequences:
-            if key_seq.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                entry = self._shortcut_mgr.shortcuts.get(seq.toString())
-                if entry:
-                    entry["action"]()
-                event.accept()
-                return
+        match = self._match_shortcut(event)
+        if match is not None:
+            _seq, entry = match
+            if entry and entry.get("action"):
+                entry["action"]()
+            event.accept()
+            return
         super().keyPressEvent(event)
 
     # -- public API ---------------------------------------------------------
@@ -487,7 +524,15 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """
         tid = self._next_track_id
         self._next_track_id += 1
-        td = TrackData(track_id=tid, name=name, color=color, text_color=text_color)
+        td = TrackData(
+            track_id=tid,
+            name=name,
+            color=color,
+            text_color=text_color,
+            icon=icon,
+            dimmed=dimmed,
+            italic=italic,
+        )
         self._tracks.append(td)
         self._header.add_track_label(
             name,
@@ -497,8 +542,30 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             color=color,
             text_color=text_color,
         )
-        self._timeline._update_scene_rect()
+        if not self._bulk_depth:
+            self._timeline._update_scene_rect()
         return tid
+
+    @contextmanager
+    def bulk_updates(self):
+        """Suppress per-add scene-rect recomputation during a rebuild.
+
+        ``_update_scene_rect`` walks every clip, marker, and gap overlay;
+        calling it once per ``add_clip``/``add_track`` makes a full
+        rebuild O(n²).  Wrap the rebuild in this context manager and one
+        recompute runs on exit::
+
+            with widget.bulk_updates():
+                widget.clear()
+                for ...: widget.add_clip(...)
+        """
+        self._bulk_depth += 1
+        try:
+            yield
+        finally:
+            self._bulk_depth -= 1
+            if self._bulk_depth == 0:
+                self._timeline._update_scene_rect()
 
     def add_clip(
         self,
@@ -548,7 +615,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         item = ClipItem(cd, self._timeline)
         self._clip_items[cid] = item
         self._timeline._scene.addItem(item)
-        self._timeline._update_scene_rect()
+        if not self._bulk_depth:
+            self._timeline._update_scene_rect()
         return cid
 
     def remove_clip(self, clip_id: int):
@@ -610,9 +678,29 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         ]
         for cid in sub_cids:
             self.remove_clip(cid)
+        # Drop this track's background curve previews (mirrors
+        # collapse_track) — stale entries keyed to a recycled track_id
+        # would paint another object's curve across the wrong row.
+        stale_bg = [k for k in self._bg_curve_previews if k[0] == track_id]
+        for k in stale_bg:
+            del self._bg_curve_previews[k]
+        # Rebuild header labels with their FULL stored presentation and
+        # re-apply expansion for still-expanded tracks — a plain-name
+        # rebuild dropped icons/colors and desynced every row below an
+        # expanded track from its header.
         self._header.clear_tracks()
-        for t in self._tracks:
-            self._header.add_track_label(t.name)
+        for i, t in enumerate(self._tracks):
+            self._header.add_track_label(
+                t.name,
+                icon=t.icon,
+                dimmed=t.dimmed,
+                italic=t.italic,
+                color=t.color,
+                text_color=t.text_color,
+            )
+            sub_names = self._expanded_tracks.get(t.track_id)
+            if sub_names:
+                self._header.set_track_expanded(i, sub_names, self._sub_row_height)
         self._timeline._refresh_all()
 
     def get_clip(self, clip_id: int) -> Optional[ClipData]:
@@ -721,6 +809,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._clips.clear()
         self._tracks.clear()
         self._expanded_tracks.clear()
+        # Background curve previews are keyed by (track_id, sub_row);
+        # with _next_track_id reset below, a stale entry would attach to
+        # whatever track recycles that id and paint the wrong curve.
+        self._bg_curve_previews.clear()
         self._header.clear_tracks()
         self._next_track_id = 0
         self._next_clip_id = 0
@@ -778,6 +870,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         item = MarkerItem(md, self._timeline)
         self._marker_items[mid] = item
         self._timeline._scene.addItem(item)
+        # Pin the new marker to the current viewport top (matches the
+        # ruler/playhead pinning applied on every vertical scroll).
+        self._timeline._sync_ruler_pos()
         return mid
 
     def remove_marker(self, marker_id: int):
@@ -937,17 +1032,25 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def _show_hidden_menu(self, pos):
         """Right-click on header background → menu with consumer actions
         and hidden-track entries."""
+        # Parented to the header for positioning, so it must be
+        # explicitly released — otherwise every right-click leaks one
+        # QMenu child for the life of the panel.
         menu = QtWidgets.QMenu(self._header)
-        # Let consumers add their own actions first
-        self.header_menu_requested.emit(menu)
-        if self._hidden_tracks:
-            if not menu.isEmpty():
-                menu.addSeparator()
-            for name in sorted(self._hidden_tracks):
-                menu.addAction(f"Show: {name}", lambda n=name: self.track_shown.emit(n))
-        if menu.isEmpty():
-            return
-        menu.exec_(self._header.mapToGlobal(pos))
+        try:
+            # Let consumers add their own actions first
+            self.header_menu_requested.emit(menu)
+            if self._hidden_tracks:
+                if not menu.isEmpty():
+                    menu.addSeparator()
+                for name in sorted(self._hidden_tracks):
+                    menu.addAction(
+                        f"Show: {name}", lambda n=name: self.track_shown.emit(n)
+                    )
+            if menu.isEmpty():
+                return
+            menu.exec_(self._header.mapToGlobal(pos))
+        finally:
+            menu.deleteLater()
 
     # -- playhead navigation -----------------------------------------------
     def _move_playhead(self, time: float):
@@ -976,14 +1079,20 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             times.add(cd.start)
             if cd.duration > 0:
                 times.add(cd.end)
-            # Include keyframe times from expanded sub-row clips
+            # Include keyframe times from expanded sub-row clips.  Keys
+            # arrive either as legacy "keyframe_times" or inside a
+            # "curve_preview" dict (the form real consumers supply) —
+            # without the latter, next/prev-key navigation skips every
+            # visible key dot and only lands on clip boundaries.
             if cd.sub_row and cd.track_id in self._expanded_tracks:
                 kf = cd.data.get("keyframe_times")
-                if kf:
-                    for entry in kf:
-                        times.add(
-                            entry[0] if isinstance(entry, (list, tuple)) else entry
-                        )
+                if not kf:
+                    preview = cd.data.get("curve_preview") or {}
+                    kf = preview.get("keys") or []
+                for entry in kf:
+                    times.add(
+                        entry[0] if isinstance(entry, (list, tuple)) else entry
+                    )
         return sorted(times)
 
     def go_to_next_key(self):
@@ -1064,8 +1173,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             fn = getattr(item, "cancel_drag", None)
             if callable(fn) and fn():
                 cancelled = True
-                if getattr(item, "DRAG_CAPTURES_UNDO", False):
+                if getattr(item, "_undo_captured", False):
                     captured_undo = True
+                    item._undo_captured = False
         if captured_undo and self._undo_stack:
             self._undo_stack.pop()
         return cancelled
@@ -1310,44 +1420,58 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         else:
             self.expand_track(track_id)
 
-    def _row_position(self, track_id: int, sub_row: str = "") -> tuple:
-        """Return ``(y, height)`` for a given track and optional sub-row."""
+    def _iter_rows(self):
+        """Yield ``(track, sub_name_or_None, y, height)`` for every visual row.
+
+        Single source of the row-layout accumulation (track height +
+        padding + per-sub-row height + padding) — ``_row_position``,
+        ``_total_row_height``, and ``_visual_rows`` are all expressed
+        through it so the metrics can't silently diverge.
+        """
         y = self._content_top
         for td in self._tracks:
-            if td.track_id == track_id:
-                if not sub_row:
-                    return y, _TRACK_HEIGHT
-                y += _TRACK_HEIGHT + _TRACK_PADDING
-                for sr in self._expanded_tracks.get(td.track_id, []):
-                    if sr == sub_row:
-                        return y, self._sub_row_height
-                    y += self._sub_row_height + _TRACK_PADDING
-                return y, self._sub_row_height
+            yield td, None, y, _TRACK_HEIGHT
             y += _TRACK_HEIGHT + _TRACK_PADDING
-            sub_rows = self._expanded_tracks.get(td.track_id, [])
-            y += len(sub_rows) * (self._sub_row_height + _TRACK_PADDING)
-        return y, _TRACK_HEIGHT
+            for sr in self._expanded_tracks.get(td.track_id, []):
+                yield td, sr, y, self._sub_row_height
+                y += self._sub_row_height + _TRACK_PADDING
+
+    def _row_position(self, track_id: int, sub_row: str = "") -> tuple:
+        """Return ``(y, height)`` for a given track and optional sub-row."""
+        fallback = None
+        for td, sr, y, h in self._iter_rows():
+            if td.track_id != track_id:
+                continue
+            if not sub_row:
+                if sr is None:
+                    return y, h
+            elif sr == sub_row:
+                return y, h
+            # Remember the last row of the matching track: a requested
+            # sub-row that isn't expanded falls through to just after
+            # the track's final row (legacy behavior).
+            fallback = (y + h + _TRACK_PADDING, self._sub_row_height)
+        if sub_row and fallback is not None:
+            return fallback
+        # Past the end — first free y after all rows.
+        end_y = self._content_top
+        for _td, _sr, y, h in self._iter_rows():
+            end_y = y + h + _TRACK_PADDING
+        return end_y, _TRACK_HEIGHT
 
     def _total_row_height(self) -> float:
         """Total pixel height of all tracks including expanded sub-rows."""
         h = 0.0
-        for td in self._tracks:
-            h += _TRACK_HEIGHT + _TRACK_PADDING
-            sub_rows = self._expanded_tracks.get(td.track_id, [])
-            h += len(sub_rows) * (self._sub_row_height + _TRACK_PADDING)
+        for _td, _sr, _y, row_h in self._iter_rows():
+            h += row_h + _TRACK_PADDING
         return h
 
     def _visual_rows(self) -> List[tuple]:
         """Return ``[(y, height, is_sub_row, track_id), ...]`` for background painting."""
-        rows = []
-        y = self._content_top
-        for td in self._tracks:
-            rows.append((y, _TRACK_HEIGHT, False, td.track_id))
-            y += _TRACK_HEIGHT + _TRACK_PADDING
-            for sr in self._expanded_tracks.get(td.track_id, []):
-                rows.append((y, self._sub_row_height, True, td.track_id))
-                y += self._sub_row_height + _TRACK_PADDING
-        return rows
+        return [
+            (y, h, sr is not None, td.track_id)
+            for td, sr, y, h in self._iter_rows()
+        ]
 
     def _track_index(self, track_id: int) -> Optional[int]:
         """Return the list index for *track_id*, or None."""
@@ -1435,7 +1559,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 [self._header_snap_width, self.width() - self._header_snap_width]
             )
         else:
-            # Remember the user-chosen width
+            # Remember the user-chosen width.  No sync() here — splitter
+            # drags emit per-mouse-move and each sync() is a disk flush;
+            # QSettings flushes automatically on destruction.
             self._header_snap_width = pos
             self._layout_settings.setValue("header_width", pos)
-            self._layout_settings.sync()

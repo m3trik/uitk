@@ -443,6 +443,25 @@ class TestLineEditPersistence(QtBaseTestCase):
             "lineedit did not restore the user's value across sessions",
         )
 
+    def test_numeric_looking_text_round_trips(self):
+        """A version-like string ("1.10") must not be mangled to a float."""
+        sm = self._settings()
+        win1, le1 = self._registered_lineedit(sm, "ui_a")
+        win1.state.capture_default(le1)
+        le1.perform_restore_state()
+        le1.setText("1.10")
+        self._pump()
+        self.assertEqual(sm.value(self.KEY), "1.10")
+        win1.close()
+
+        win2, le2 = self._registered_lineedit(sm, "ui_b")
+        win2.state.capture_default(le2)
+        le2.perform_restore_state()
+        self.assertEqual(
+            le2.text(), "1.10",
+            "numeric-looking text was JSON-mangled across sessions",
+        )
+
     def test_empty_user_text_round_trips(self):
         """An intentionally-cleared field restores as empty (not the .ui default)."""
         sm = self._settings()
@@ -460,6 +479,70 @@ class TestLineEditPersistence(QtBaseTestCase):
         win2.state.capture_default(le2)
         le2.perform_restore_state()
         self.assertEqual(le2.text(), "", "cleared field did not restore as empty")
+
+
+class TestTextEditPersistence(QtBaseTestCase):
+    """A registered ``QTextEdit`` persists and restores across sessions.
+
+    ``QTextEdit.textChanged`` emits NO payload, so the change relay emitted
+    ``None`` and ``sync_widget_values`` dropped it before deriving the real
+    value — combined with the ``textChanged`` getter not knowing
+    ``toPlainText()``, QTextEdit state never persisted at all. The relay must
+    derive the live value from the widget when the signal carries none.
+    """
+
+    ORG = "uitk_textedit_persist_test"
+    KEY = "te_notes/textChanged"
+
+    def _settings(self):
+        sm = SettingsManager(org=self.ORG, app="main")
+        sm.settings.clear()
+        sm.settings.sync()
+        return sm
+
+    def tearDown(self):
+        sm = SettingsManager(org=self.ORG, app="main")
+        sm.settings.clear()
+        sm.settings.sync()
+        super().tearDown()
+
+    def _registered_textedit(self, sm, win_name):
+        sb = Switchboard()
+        win = self.track_widget(
+            MainWindow(
+                win_name, sb, settings=sm, central_widget=QtWidgets.QWidget()
+            )
+        )
+        te = QtWidgets.QTextEdit()
+        te.setObjectName("te_notes")
+        te.setParent(win.centralWidget())
+        win.register_widget(te)
+        return win, te
+
+    def _pump(self):
+        for _ in range(10):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 12)
+
+    def test_text_round_trips_across_sessions(self):
+        sm = self._settings()
+        win1, te1 = self._registered_textedit(sm, "ui_a")
+        win1.state.capture_default(te1)
+        te1.perform_restore_state()
+        te1.setPlainText("session notes")  # user edit (post-restore)
+        self._pump()
+        self.assertEqual(
+            sm.value(self.KEY), "session notes",
+            "QTextEdit change never reached the store (no-arg signal dropped)",
+        )
+        win1.close()
+
+        win2, te2 = self._registered_textedit(sm, "ui_b")
+        win2.state.capture_default(te2)
+        te2.perform_restore_state()
+        self.assertEqual(
+            te2.toPlainText(), "session notes",
+            "QTextEdit did not restore its value across sessions",
+        )
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-08_
+_Generated: 2026-07-09_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `configure_high_dpi() -> bool`
@@ -336,8 +336,10 @@ _Generated: 2026-07-08_
   - methods: subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
 
 ### `widgets/mixins/settings_manager.py`
+- `decode_stored_value(value: Any) -> Any`
+- `encode_stored_value(value: Any) -> Any`
 - `class SettingsManager`
-  - methods: branch, set_defaults, value, setValue, on_change, keys, setByteArray, getByteArray, clear, sync
+  - methods: branch, set_defaults, value, setValue, on_change, keys, setByteArray, getByteArray, remove, clear, sync
 
 ### `widgets/mixins/shortcuts.py` — Generic keyboard-shortcut primitives, usable by any Qt widget.
 - `context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`
@@ -509,6 +511,8 @@ _Generated: 2026-07-08_
   - methods: clip_data, boundingRect, paint, hoverMoveEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent, mouseDoubleClickEvent
 
 ### `widgets/sequencer/_data.py` — Data models and shared constants for the sequencer widget.
+- `make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)`
+- `build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath`
 - `register_pattern(name: str, painter: PatternPainter) -> None`
 - `pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush`
 - `paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None`
@@ -538,27 +542,25 @@ _Generated: 2026-07-08_
 
 ### `widgets/sequencer/_overlays.py` — Range-related overlay items: static ranges, gap hatching, and highlights.
 - `class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`
-  - methods: locked, start, end, set_range, color, opacity_value, sync, boundingRect, paint, hoverMoveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
+  - methods: start, end, set_range, color, opacity_value, sync, boundingRect, paint, hoverMoveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
 
 ### `widgets/sequencer/_playhead.py` — PlayheadItem — vertical playhead line with frame-number badge.
 - `class PlayheadItem(QtWidgets.QGraphicsItem)`
   - methods: time, boundingRect, sync, paint
 
-### `widgets/sequencer/_ruler.py` — Ruler and shot-lane items for the timeline header area.
-- `class ShotLaneItem(QtWidgets.QGraphicsItem)`
-  - methods: set_blocks, clear_blocks, mousePressEvent, boundingRect, paint
+### `widgets/sequencer/_ruler.py` — Ruler item for the timeline header area.
 - `class RulerItem(QtWidgets.QGraphicsItem)`
-  - methods: set_shot_blocks, clear_shot_blocks, boundingRect, paint
+  - methods: set_shot_blocks, clear_shot_blocks, shot_block_at, boundingRect, paint
 
 ### `widgets/sequencer/_scrub_player.py` — Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 - `class ScrubPlayer(QtCore.QObject)`
-  - methods: available, source_path, set_source, clear_source, play_at_frame, play, stop, set_volume, set_grain_ms
+  - methods: available, source_path, set_source, clear_source, play_at_frame, play, stop, is_playing, set_volume, set_grain_ms
 
 ### `widgets/sequencer/_sequencer.py` — An NLE-style timeline sequencer widget.
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, show_range_overlays, show_gap_overlays, show_range_highlight, shift_held_at_press, attribute_colors, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
+  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, show_range_overlays, show_gap_overlays, show_range_highlight, shift_held_at_press, attribute_colors, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`
@@ -574,7 +576,7 @@ _Generated: 2026-07-08_
 - `class ScrubPlayerPlayController`
   - methods: set_fps, is_playing, play, stop
 - `class TransportControls(QtWidgets.QWidget)`
-  - methods: play_controller, set_play_controller, set_interrupt_mode, interrupt_mode, button, attach_to_footer
+  - methods: showEvent, hideEvent, play_controller, set_play_controller, set_interrupt_mode, interrupt_mode, button, attach_to_footer
 
 ### `widgets/slider.py`
 - `class Slider(QtWidgets.QSlider, MenuMixin, OptionBoxMixin, AttributesMixin)`

@@ -56,13 +56,12 @@ INIT_SUFFIX = "_init"
 
 | Method | Purpose |
 |:---|:---|
-| `load_ui(file: str) -> QMainWindow` | Load a `.ui` file via QUiLoader, pre-registering custom widgets |
+| `load_ui(file: str) -> QMainWindow` | Load a `.ui` file via the configured loader delegate (runtime QUiLoader or compiled `_ui.py`) |
 | `load_all_ui() -> list` | Load every UI in the registry |
 | `add_ui(name, widget=None, parent=None, tags=None, path=None, overwrite=False, **kwargs) -> MainWindow` | Wrap a loaded widget in `MainWindow` and register it |
 | `get_ui(ui=None) -> QWidget \| list \| None` | Resolve by name, return current if `None`, pass-through if already a widget |
 | `get_ui_relatives(ui, upstream=False, exact=False, downstream=False, reverse=False) -> list` | Tag-depth-based relatives via shared base name |
 | `find_ui_filename(legal_name, unique_match=False) -> str \| list \| None` | Legal-name-to-original-filename resolver |
-| `get_property_from_ui_file(file, prop) -> list[list[tuple]]` | Static — parse a `.ui` file for a property |
 | `ui_history(index=None, allow_duplicates=False, inc=[], exc=[])` | Ordered history of current-UI transitions |
 
 ### Methods — widgets & slots

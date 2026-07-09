@@ -204,7 +204,9 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._drag_origin_end = self._end
         sq = self._timeline.parent_sequencer
         sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
-        sq._capture_undo()
+        # Undo snapshot is captured lazily on the first real move — a
+        # plain click must not burn an undo step or wipe redo.
+        self._undo_captured = False
         self._show_gap_drag_tooltip(event.scenePos())
         event.accept()
 
@@ -212,6 +214,9 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         if self._drag_mode is None:
             event.ignore()
             return
+        if not self._undo_captured:
+            self._undo_captured = True
+            self._timeline.parent_sequencer._capture_undo()
         dx = event.scenePos().x() - self._drag_origin_x
         ppu = self._timeline._pixels_per_unit
         dt = dx / ppu if ppu else 0
@@ -390,20 +395,9 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._drag_origin_x: float = 0.0
         self._drag_origin_start: float = 0.0
         self._drag_origin_end: float = 0.0
-        self._locked: bool = False
         self.setZValue(-1)
         self.setAcceptHoverEvents(True)
         self._drag_tooltip = FrameTooltip()
-
-    @property
-    def locked(self) -> bool:
-        return self._locked
-
-    @locked.setter
-    def locked(self, value: bool):
-        self._locked = value
-        if value:
-            self.unsetCursor()
 
     # -- properties ---------------------------------------------------------
     @property
@@ -504,9 +498,6 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     # -- hover cursor -------------------------------------------------------
     def hoverMoveEvent(self, event):
-        if self._locked:
-            event.ignore()
-            return
         zone = self._hit_zone(event.pos())
         if zone in ("left", "right"):
             self.setCursor(QtCore.Qt.SizeHorCursor)
@@ -517,9 +508,6 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     # -- mouse interaction --------------------------------------------------
     def mousePressEvent(self, event):
-        if self._locked:
-            event.ignore()
-            return
         if event.button() != QtCore.Qt.LeftButton:
             event.ignore()
             return
@@ -546,17 +534,21 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._drag_origin_end = self._end
         sq = self._timeline.parent_sequencer
         sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
-        # Capture widget-level undo snapshot before drag begins
-        sq._capture_undo()
+        # Undo snapshot is captured lazily on the first real move — a
+        # plain click must not burn an undo step or wipe redo.
+        self._undo_captured = False
         if self._drag_mode == "move":
             self.setCursor(QtCore.Qt.ClosedHandCursor)
         self._show_range_drag_tooltip(event.scenePos())
         event.accept()
 
     def mouseMoveEvent(self, event):
-        if self._locked or self._drag_mode is None:
+        if self._drag_mode is None:
             event.ignore()
             return
+        if not self._undo_captured:
+            self._undo_captured = True
+            self._timeline.parent_sequencer._capture_undo()
         dx = event.scenePos().x() - self._drag_origin_x
         dt = (
             dx / self._timeline._pixels_per_unit
@@ -611,12 +603,16 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self.sync()
 
     def mouseReleaseEvent(self, event):
-        if self._locked:
-            event.ignore()
-            return
         if self._drag_mode is not None:
-            sq = self._timeline.parent_sequencer
-            sq.range_highlight_changed.emit(self._start, self._end)
+            # Emit only on an actual change (mirrors the gap overlay's
+            # 0.01 gate) — a zero-motion click otherwise triggers a full
+            # save + resize + widget rebuild in the consumer.
+            if (
+                abs(self._start - self._drag_origin_start) > 0.01
+                or abs(self._end - self._drag_origin_end) > 0.01
+            ):
+                sq = self._timeline.parent_sequencer
+                sq.range_highlight_changed.emit(self._start, self._end)
         if self._drag_mode == "move":
             self.setCursor(QtCore.Qt.OpenHandCursor)
         self._drag_mode = None

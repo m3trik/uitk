@@ -17,14 +17,14 @@ In Designer, right-click a widget → **Promote to…**:
 | `QComboBox` | `ComboBox` | `uitk.widgets.comboBox.h` |
 | `QWidget` | `Header`, `Footer`, `Region` | `uitk.widgets.header.h`, … |
 
-UITK's custom widgets are registered automatically during `Switchboard.__init__` via `registry.widget_registry.extend("widgets", base_dir=self, recursive=True)` — no manual registration needed.
+UITK's custom widgets are registered automatically during `Switchboard.__init__` via `registry.widget_registry.extend("widgets", base_dir=<uitk package dir>, recursive=True)` — anchored on the `uitk/` package root so subpackages like `sequencer/` are picked up too. No manual registration needed.
 
 ---
 
 ## Universal enhancements
 
 ### `.menu` — lazy popup menu
-Available on every registered widget via `MenuMixin`. Creates the `Menu` instance on first access, not at widget-creation time.
+Available on widgets that inherit `MenuMixin` (`PushButton`, `CheckBox`, `ComboBox`, `LineEdit`, `TextEdit`, `Label`, the spin boxes, `TreeWidget`, `TableWidget`, …). Creates the `Menu` instance on first access, not at widget-creation time.
 
 ```python
 widget.menu.add("QCheckBox", setText="Auto-save", setObjectName="chk_auto")
@@ -35,7 +35,7 @@ widget.menu.hide_on_leave = True                 # auto-close on mouse leave
 ```
 
 ### `.option_box` — action panel beside the widget
-Auto-patched onto `QLineEdit`, `QSpinBox`, `QDoubleSpinBox`, `QComboBox` via `OptionBoxMixin`. A container is injected that holds the widget plus a column of action buttons.
+Provided by `OptionBoxMixin` on `PushButton`, `ComboBox`, `LineEdit`, `Label`, and `SpinBox`. A container is injected that holds the widget plus a column of action buttons.
 
 See [Option Box System](#option-box-system) below.
 
@@ -53,11 +53,11 @@ widget.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
 ```
 
 ### Rich text & icons
-`RichText` mixin lets any text-carrying widget accept HTML. `IconManager` mixin provides theme-aware monochrome icons.
+`RichText` mixin lets any text-carrying widget accept HTML. `IconManager` (`uitk/widgets/mixins/icon_manager.py`) is a theme-aware SVG icon loader — the active theme sets a default icon color via `IconManager.set_default_color`.
 
 ```python
 button.setText('<b>Bold</b> and <i style="color:red;">Red</i>')
-icon = sb.get_icon("save")    # auto-colored to theme's ICON_COLOR
+icon = sb.get_icon("save")    # registered icon, colored by the theme default
 ```
 
 ---
@@ -71,31 +71,37 @@ icon = sb.get_icon("save")    # auto-colored to theme's ICON_COLOR
 | [`ComboBox`](#combobox) | `.add()` fluent API, header, custom popup, deletion signal |
 | [`LineEdit`](#lineedit) | `.set_action_color()` (valid/invalid/warning/info), `.option_box` clear button |
 | [`TextEdit`](#textedit) | Log-ready, HTML-aware |
-| [`Label`](#label) | `clicked` / `released` signals, rich text, text overlay |
-| [`SpinBox`, `DoubleSpinBox`](#spinboxes) | `.option_box`, debounce-friendly |
+| [`Label`](#label) | `clicked` / `released` signals, `.menu`, `.option_box` |
+| [`SpinBox`, `DoubleSpinBox`](#spinboxes) | Unified int/float, custom display values, wheel-step; `.option_box` on `SpinBox` |
+| [`Slider`](#slider) | `.menu`, `.option_box` |
 | [`TreeWidget`](#treewidget) | `.add()` hierarchical, type icons, `set_action_color`, batch actions, column config |
 | [`TableWidget`](#tablewidget) | `.add(data, headers=...)`, section rows, action colors |
 | [`Menu`](#menu) | `.add()` accepts widget classes, lists, dicts; built-in presets/defaults buttons |
 | [`Header`](#header) | Draggable, `config_buttons(...)`, `toggled` signal |
 | [`Footer`](#footer) | Status text, default message, size grip, action buttons |
-| [`CollapsableGroup`](#collapsablegroup) | Expandable section with animation |
+| [`CollapsableGroup`](#collapsablegroup) | Collapsible section, persisted expand state |
 | [`ColorSwatch`](#colorswatch) | Color picker, `colorChanged` signal |
 | [`ProgressBar`](#progressbar) | `started`, `progressChanged`, `finished`, `cancelled` |
 | [`MessageBox`](#messagebox) | Styled, HTML content |
 | [`Region`](#region) | Layout region (shown on mouse-over) |
 | [`Separator`](#separator) | Visual divider |
-| [`AttributeWindow`](#attributewindow) | Generic attribute form |
+| [`AttributeWindow`](#attributewindow) | Popup attribute editor (Menu-based) |
 | [`ExpandableList`](#expandablelist) | Tree-in-a-combo with cascading sublists |
 | [`WidgetComboBox`](#widgetcombobox) | ComboBox holding arbitrary widgets |
 | [`ToolBox`](#toolbox) | Enhanced tabbed container |
+| [`WindowPanel`](#windowpanel) | Header / body / Footer window shell |
+| [`TextViewBox`](#textviewbox) | Read-only rich-text viewer window |
 | [`TextEditLogHandler`](#texteditloghandler) | Python `logging.Handler` routing logs into a TextEdit |
+| [`ScriptOutput`](#scriptoutput) | Host-agnostic syntax-highlighted console |
+| [`MenuButton`](MARKING_MENU.md) | Marking-menu navigation button — covered in [MARKING_MENU.md](MARKING_MENU.md) |
 
 Complex packages:
 
 | Package | What it provides |
 |:---|:---|
 | [`sequencer/`](#sequencer-package) | Full video/animation timeline — `SequencerWidget`, `ClipData`, `TrackData`, `ScrubPlayer`, keyframes, markers, transport controls |
-| [`editors/`](#editors-package) | `ColorMappingEditor`, `ShortcutEditor`, `StyleEditor`, `EditorPanel` |
+| [`editors/`](#editors-package) | `EditorPanel`, `StyleEditor`, `ColorMappingEditor`, `ShortcutEditor`, `SwitchboardBrowser` — exposed via `sb.editors` |
+| [`delegates/`](#delegates) | Item delegates — icon centering, in-cell choice/shortcut capture, row-selection border |
 | [`marking_menu/`](MARKING_MENU.md) | Radial gesture menu — see dedicated doc |
 | [`optionBox/`](#option-box-system) | Pluggable option system — `ClearOption`, `BrowseOption`, `PinValuesOption`, `RecentValuesOption`, `OptionMenuOption`, `ContextMenuOption`, `ActionOption`, `MenuOption` |
 
@@ -103,7 +109,7 @@ Complex packages:
 
 ## PushButton
 
-`uitk/widgets/pushButton.py` — `QPushButton` + `AttributesMixin`, `RichText`, `MenuMixin`, `OptionBoxMixin`.
+`uitk/widgets/pushButton.py` — `QPushButton` + `MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`, `TextOverlay`.
 
 ```python
 def btn_export_init(self, widget):
@@ -138,7 +144,7 @@ def cmb_preset_init(self, widget):
 
 **Signals**: `before_popup_shown`, `on_editing_finished(str)`, `on_item_deleted(str)`.
 
-**Methods**: `add(items, data=None, ascending=False, header=None, clear=True)`, `add_header(text)`, `add_single(item, data, ascending)`.
+**Methods**: `add(x, data=None, header=None, header_alignment="left", clear=True, restore_index=False, ascending=False, …)`, `add_header(text)`, `add_single(item, data, ascending)`.
 
 ## LineEdit
 
@@ -158,6 +164,8 @@ def txt_path(self, text, widget):
 
 Available keys: `valid`, `invalid`, `warning`, `info`, `inactive`. Colors come from the active theme palette (`ACTION_VALID_FG/BG`, etc.).
 
+`set_validator("file" | "dir" | "path" | callable)` wires a debounced `textChanged` → predicate → action-color pipeline and emits `validated(bool, str)`.
+
 Combine with `option_box.enable_clear()` for a clear-on-right button.
 
 ## TextEdit
@@ -175,19 +183,23 @@ logger.setLevel(logging.DEBUG)
 
 ## Label
 
-Emits `clicked` and `released` signals (Qt's `QLabel` has neither). Default signal: `released`. Supports rich HTML text and overlay text (badge-style layered strings).
+Emits `clicked` and `released` signals (Qt's `QLabel` has neither). Default signal: `released`. Also carries `.menu` and `.option_box`.
 
 ## SpinBoxes
 
-`SpinBox` (int) and `DoubleSpinBox` (float). `.option_box` enabled by default.
+`SpinBox` (`uitk/widgets/spinBox.py`) is a unified int/float spin box with custom display values (`setCustomDisplayValues`) and `.option_box`. `DoubleSpinBox` adds modifier-driven wheel stepping without the option box.
 
-Common pattern — debounce rapid clicks, disable mid-edit emissions:
+Common pattern — coalesce rapid edits, disable mid-edit emissions:
 
 ```python
 def spn_start_init(self, widget):
-    widget.debounce = 400
+    widget.debounce = 400              # slot-level debounce — see SLOTS.md
     widget.setKeyboardTracking(False)
 ```
+
+## Slider
+
+`uitk/widgets/slider.py` — `QSlider` + `MenuMixin`, `OptionBoxMixin`, `AttributesMixin`. No added API of its own — it exists so sliders get `.menu` and `.option_box` support like the other input widgets.
 
 ## TreeWidget
 
@@ -196,15 +208,17 @@ A `QTreeWidget` extended with a high-level `.add()`, hierarchical icons, and per
 ```python
 def tree_nodes_init(self, widget):
     widget.setHeaderLabels(["Name", "Type", "Path"])
-    root = widget.add(["Scene", "scene", "/"])
+    root = widget.create_item(["Scene", "scene", "/"])
     widget.set_item_type_icon(root, "folder")
     for name in ("cube1", "sphere1"):
-        widget.add([name, "mesh", f"/{name}"], parent=root)
+        widget.create_item([name, "mesh", f"/{name}"], parent=root)
     widget.expand_all_items()
 
 def tree_nodes(self, item, column):
     self.ui.lbl_status.setText(item.text(0))
 ```
+
+`create_item(text, data=None, parent=None)` returns the `QTreeWidgetItem` (a list of strings fills columns). `add(data, headers=None, clear=True, parent=None)` bulk-loads dicts/lists as hierarchy (dict keys become parents, values children).
 
 Methods: `add`, `create_item`, `set_item_type_icon`, `set_item_data`, `set_action_color`, `expand_all_items`, `collapse_all_items`, `set_selection_mode`.
 
@@ -216,10 +230,10 @@ def tbl_rows_init(self, widget):
         [[1, "Alice", 30], [2, "Bob", 25]],
         headers=["ID", "Name", "Age"],
     )
-    widget.add_section_row("Totals", columns=3)
+    widget.add_section_row(widget, "Totals")   # static — spans all columns by default
 ```
 
-`set_action_color(row, col, key)` tints cells using the same palette as `LineEdit`.
+`set_action_color(item, key, row=-1, col=-1)` tints cells using the same action-color keys as `LineEdit`.
 
 See `uitk/widgets/table_actions.py` for bulk action helpers.
 
@@ -243,18 +257,18 @@ Added widgets are accessible by `objectName` on the menu: `menu.btn_apply.clicke
 
 ```python
 widget.menu.add_apply_button = True    # "Apply" bar at bottom
-widget.menu.add_defaults_button = True # "Reset to defaults"
+widget.menu.add_defaults_button = True # "Restore Defaults"
 widget.menu.add_presets = True         # Preset combo + option-box toolbar (Refresh/Save/⋯-menu)
-widget.menu.add_presets = "~/.myapp/presets"  # or a custom dir
+widget.menu.presets.preset_dir = "~/.myapp/presets"  # custom preset dir
 ```
 
 ### Layout & behavior flags
 
 ```python
-menu.trigger_button = "right"       # "left", "right", "middle", "hover", None
+menu.trigger_button = "right"       # "left"/"right"/"middle"/"any"/"none", Qt button, or tuple
 menu.hide_on_leave = True
-menu.position = "bottom"            # "bottom", "right", "cursor"
-menu.columns = 3                    # grid layout
+menu.position = "bottom"            # "bottom", "right", "cursorPos", a coord pair, or a widget
+menu.add("QPushButton", row=0, col=1)  # grid placement via add(row=…, col=…, rowSpan=…, colSpan=…)
 ```
 
 ### Signals
@@ -295,17 +309,17 @@ keyboard chips, `hl(text, color)` for inline color highlights.
 
 ## Footer
 
-Status bar with integrated size grip. Auto-created on every `MainWindow` unless `add_footer=False`.
+Status bar with integrated size grip. Opt-in on `MainWindow`: pass `add_footer=True` (default `False`) to lazily construct one when no `Footer` is embedded in the `.ui` file.
 
 ```python
-self.ui.footer.setDefaultStatusText("Select an item to view details")
-self.ui.footer.setText("Loaded 42 items")    # temporary, reverts to default after clear
+self.ui.footer.setDefaultStatusText("Select an item to view details")  # fallback text
+self.ui.footer.setText("Loaded 42 items", level="success")  # level: info/success/warning/error
 self.ui.footer.add_action_button("Refresh", callback=self.refresh)
 ```
 
 ## CollapsableGroup
 
-`QGroupBox` that expands/collapses its contents with animation. State persists via the widget state system. Collapse state is settled before window geometry restore — see [CHANGELOG.md entry](../CHANGELOG.md) for the settling rationale.
+Checkable `QGroupBox` that shows/hides its contents. Collapse state persists via `SettingsManager` (keyed `CollapsableGroup/<objectName>/checked`; disable with `restore_state = False`). State is settled before window geometry restore — see [CHANGELOG.md entry](../CHANGELOG.md) for the settling rationale.
 
 ```python
 def output_group_init(self, widget):
@@ -337,11 +351,11 @@ A `QWidget` that becomes visible on mouse-over. Used by `MarkingMenu` to define 
 
 ## Separator
 
-`QFrame`-based visual divider with theme-aware border color.
+`QFrame` HLine divider with an optional inline `title` label. Mouse-transparent — purely visual.
 
 ## AttributeWindow
 
-Generic attribute editor — given a dict, renders a two-column form with label + value editor per attribute, type-aware (int → SpinBox, bool → CheckBox, color → ColorSwatch, string → LineEdit, etc.).
+`uitk/widgets/attributeWindow/` — a `Menu`-based popup editor for inspecting and modifying an object's attributes. Pass the target `obj` plus optional `get_attribute_func` / `set_attribute_func` callables to adapt any backend; populate with `add_attributes(attributes)`. Editor widgets are chosen per value kind by the registry in [`attributeWindow/_factory.py`](../uitk/widgets/attributeWindow/_factory.py) (bool / int / float / str / choice / path / file_list). Labels can be checkable (`checkable=True`, `single_check=True`).
 
 Signals: `labelToggled(str, bool)`, `valueChanged(str, object)`, `refreshRequested()`.
 
@@ -368,7 +382,7 @@ def list000(self, item):
 
 **Signals**: `on_item_added(item)`, `on_item_interacted(item)`.
 
-**Presets**: `"expand_up"`, `"expand_down"` control cascade direction.
+**Presets**: `"expand_right"`, `"expand_left"`, `"expand_up"`, `"expand_down"`, `"expand_overlay"`, `"expand_overlay_left"` control cascade direction/placement.
 
 ## WidgetComboBox
 
@@ -385,6 +399,18 @@ widget.add([
 
 Enhanced `QToolBox`. `.add(widget, text, icon=None)`.
 
+## WindowPanel
+
+Themed top-level window shell with a `Header` / body / `Footer` layout — the base for standalone uitk windows (the [`EditorPanel` family](#editors-package) extends it). Subclasses populate `body_layout`; the header buttons, status text, and size-gripped footer come standard. `persist_geometry(settings)` opts in to saving/restoring window geometry; `WindowPanel.icon_button(...)` is a static icon-button helper.
+
+See [uitk/widgets/windowPanel.py](../uitk/widgets/windowPanel.py) (`WindowPanel`).
+
+## TextViewBox
+
+Read-only rich-text viewer window (`WindowPanel` subclass) whose parameters mirror `MessageBox` where they overlap. `setText` / `append_text` fill the body, `setStandardButtons("Ok", "Cancel", …)` adds a `QDialogButtonBox` from MessageBox-style names, and `clicked_button` reports which one closed it. Supports monospace and no-wrap modes for log/tabular content.
+
+See [uitk/widgets/textViewBox.py](../uitk/widgets/textViewBox.py) (`TextViewBox`).
+
 ## TextEditLogHandler
 
 A `logging.Handler` subclass that writes to a UITK `TextEdit`. Colors log records by level using theme palette colors.
@@ -396,6 +422,10 @@ from uitk.widgets.textEditLogHandler import TextEditLogHandler
 logger = logging.getLogger(__name__)
 logger.addHandler(TextEditLogHandler(self.ui.txt_output))
 ```
+
+## ScriptOutput
+
+`uitk/widgets/scriptOutput.py` — a read-only, monospace, syntax-highlighted console for mirroring a DCC's script/output log. Host concerns are injected rather than baked in: `set_clear_callback()`, `set_context_menu_hook()`, `set_rules()` (regex `ScriptHighlightRule`s — coloring matches words like `Error` / `Warning` in the text itself, so a Maya reporter mirror and a Blender stdout redirect color identically), and `append_text()` to feed it. Pairs with [`TextEditLogHandler`](#texteditloghandler) for `logging` routing.
 
 ---
 
@@ -415,6 +445,8 @@ Each option is a class extending `BaseOption` or `ButtonOption`. Multiple option
 | `ContextMenuOption` | Dynamic menu — provider callable returns items based on widget state |
 | `ActionOption` | Generic icon button triggering any callback |
 | `MenuOption` | Button that opens a pre-built `Menu` instance |
+
+Further options ship in [`optionBox/options/`](../uitk/widgets/optionBox/options/): `ValueOption` (inline editable value field), `AffixOption` (Auto/Suffix/Prefix picker), `ResetOption` (reset-to-default with bypass toggle), `DisableOption`, `FilterOption`, `ToggleOption`.
 
 Basic usage via the manager (auto-patched):
 
@@ -440,19 +472,37 @@ See [uitk/widgets/optionBox/README.md](../uitk/widgets/optionBox/README.md) for 
 
 ---
 
+## Delegates
+
+`uitk/widgets/delegates/` — reusable `QStyledItemDelegate`s for item views (the [Shortcut editor](#shortcut--command-registry) and `ColorMappingEditor` are built on them):
+
+| Delegate | What it does |
+|:---|:---|
+| `RowSelectionBorderDelegate` | Paints a 1 px row-spanning selection border instead of the per-cell fill ([row_selection.py](../uitk/widgets/delegates/row_selection.py)) |
+| `CenteredIconActionDelegate` | Centers an icon-only "action cell" while preserving the row-selection border — Qt's default decoration placement is left-aligned and offset by `::item` padding ([centered_icon.py](../uitk/widgets/delegates/centered_icon.py)) |
+| `ChoiceCaptureDelegate` | Edits a cell via an in-cell dropdown; `install_choice_capture(table, column, choices, on_capture)` wires it in one call ([choice_capture.py](../uitk/widgets/delegates/choice_capture.py)) |
+| `ShortcutCaptureDelegate` | Edits a cell via in-cell key-chord capture; `install_shortcut_capture(table, column, on_capture)` wires it ([shortcut_capture.py](../uitk/widgets/delegates/shortcut_capture.py)) |
+
+Both capture delegates emit `captured(int, int, str)` (row, column, value) and have `Bordered*` variants that mix in the row-selection border.
+
+---
+
 ## Sequencer package
 
-`uitk/widgets/sequencer/` — a full editable timeline widget family. Used by mayatk's Shot Sequencer for non-linear animation editing.
+`uitk/widgets/sequencer/` (~13 modules) — an NLE-style timeline widget family. Used by mayatk's Shot Sequencer for non-linear animation editing. `SequencerWidget` is a split-view `QSplitter`: track headers on the left, a `TimelineView` scene on the right.
 
-Classes:
+Capabilities, with the key `SequencerWidget` API:
 
-| Class | Purpose |
-|:---|:---|
-| `SequencerWidget` | Top-level timeline container |
-| `ClipData` | Data model for a clip on a track |
-| `TrackData` | Data model for a track |
-| `ScrubPlayer` | Playhead-driven preview / scrubber |
-| Internal modules: `_clip`, `_keyframe`, `_markers`, `_overlays`, `_ruler`, `_playhead`, `_transport_controls`, `_drag_tooltip`, `_draggable`, `_timeline` |
+- **Tracks & clips** — `add_track`, `remove_track`, `add_clip`, `remove_clip`, `swap_clips`, `get_clip` / `get_track`, `tracks()` / `clips()`, `selected_clips()`; clip lock/rename via `set_clip_locked` / `set_clip_label`. Data records are the `ClipData` / `TrackData` / `MarkerData` dataclass-style types in [`_data.py`](../uitk/widgets/sequencer/_data.py).
+- **Keyframes & expanded tracks** — `expand_track` / `collapse_track` / `toggle_track_expanded` show per-attribute sub-rows (`sub_row_provider` supplies them); key edits emit `keys_moved`, `keys_deleted`, `key_selection_changed`.
+- **Playhead & navigation** — `set_playhead`, `step_forward` / `step_backward`, `go_to_next_key` / `go_to_prev_key`, `go_to_start` / `go_to_end`, `frame_shot`; `snap_interval` property.
+- **Markers & shot lane** — `add_marker`, `add_marker_at_playhead`, `remove_marker`, `markers()`; `set_shot_blocks(blocks)` draws the shot lane (`shot_switch_requested`; right-click surfaces via `zone_context_menu_requested` with the `"shot_lane"` zone).
+- **Range / gap overlays** — `set_range_highlight`, `add_range_overlay`, `add_gap_overlay`, `set_active_range`, plus `show_*` toggle properties; gap edits emit `gap_resized` / `gap_moved` / `gap_lock_changed`.
+- **Undo/redo** — `undo()` / `redo()` restore internal snapshots; `undo_requested` / `redo_requested` let a host DCC own history instead.
+- **Audio scrub** — `set_audio_source(path, fps)` routes playhead drags through `ScrubPlayer` ([`_scrub_player.py`](../uitk/widgets/sequencer/_scrub_player.py)), a seek-and-grain audio player.
+- **Transport** — `TransportControls` ([`_transport_controls.py`](../uitk/widgets/sequencer/_transport_controls.py)) is a Maya-style 8-button row driving the playhead; pluggable `PlayController` protocol, `ScrubPlayerPlayController` default. Window-level shortcut keys toggle via the `window_shortcuts` property.
+
+Interaction signals follow the pattern above: `clip_moved(int, float)`, `clips_batch_moved(list)`, `clip_resized`, `clip_selected`, `selection_changed`, `playhead_moved(float)`, `marker_*`, `track_*`, and a generic `app_event(str, object)` bridge — see the signal block at the top of [`_sequencer.py`](../uitk/widgets/sequencer/_sequencer.py) (`SequencerWidget`).
 
 Entry point:
 ```python
@@ -467,23 +517,40 @@ Real-world integration: [mayatk's shot_sequencer_slots.py](https://github.com/m3
 
 ## Editors package
 
-`uitk/widgets/editors/` — composable mini-editors.
+`uitk/widgets/editors/` — the bundled editor windows.
 
 | Class | Purpose |
 |:---|:---|
-| `ColorMappingEditor` / `ColorMappingDialog` | Bidirectional `dict[str, QColor]` editor |
-| `ShortcutEditor` | Shortcut/keybinding capture and persistence |
-| `StyleEditor` | Live theme palette tweaker |
-| `EditorPanel` | Collapsible multi-editor container |
+| `EditorPanel` | Shared base ([editor_panel.py](../uitk/widgets/editors/editor_panel.py)): a `WindowPanel` with opt-in preset management — subclasses call `init_preset_row(dir_name)` and override `export_preset_data` / `import_preset_data`; save/load/rename/delete delegate to `PresetManager` |
+| `StyleEditor` | Edits global stylesheet variables (color and length tokens) live, with presets ([style_editor.py](../uitk/widgets/editors/style_editor.py)) |
+| `ColorMappingEditor` / `ColorMappingDialog` | Named color-mapping editor — `color_map()` / `apply_color_map()`, `colors_changed(dict)` signal; the dialog wrapper adds header/footer and presets ([color_mapping_editor.py](../uitk/widgets/editors/color_mapping_editor.py)) |
+| `ShortcutEditor` | Edits shortcut and command bindings — see [Shortcut & command registry](#shortcut--command-registry) below ([shortcut_editor/registry_editor.py](../uitk/widgets/editors/shortcut_editor/registry_editor.py)) |
+| `SwitchboardBrowser` | Searchable launcher over every UI registered with a Switchboard — filter by name/tags, launch, hide, open in Designer ([switchboard_browser.py](../uitk/widgets/editors/switchboard_browser.py)) |
+
+They're exposed on the Switchboard via `sb.editors` ([uitk/switchboard/editors.py](../uitk/switchboard/editors.py)) — a lazy, auto-recovering singleton registry with names `style`, `shortcut`, `global_shortcuts` (the ShortcutEditor pinned to its Commands view), and `browser`:
 
 ```python
-from uitk.widgets.editors.style_editor import StyleEditor
-from uitk.widgets.editors.shortcut_editor import ShortcutEditor
-
-panel = EditorPanel()
-panel.add(StyleEditor())
-panel.add(ShortcutEditor())
+sb.editors.show("style")          # open / focus by name
+sb.editors.browser                # property access (style / shortcut / browser)
+sb.editors.add_post_build_hook("shortcut", wire_dcc_collision_checker)
 ```
+
+### Shortcut & command registry
+
+Shortcuts live in two layers; `ShortcutEditor` is the single UI over both.
+
+**Widget-side primitives** — [`uitk/widgets/mixins/shortcuts.py`](../uitk/widgets/mixins/shortcuts.py), usable without a Switchboard:
+
+- `GlobalShortcut` — wraps a `QShortcut` for press activation and adds an application-level event filter to reliably detect key **release** (which plain `QShortcut` can't) — for hold-and-release interactions like the marking menu, in hosts (Maya) that swallow key events. Signals: `pressed`, `released`.
+- `ShortcutManager` — per-widget registry: `add_shortcut(key, action, description, context)`, `add_global_shortcut`, `add_shortcuts_batch`, `rebind_shortcut(old, new)`, `get_registry()`; `show_editor()` opens `ShortcutEditor` over a bare manager via `ManagerSwitchboardFacade` ([manager_facade.py](../uitk/widgets/editors/shortcut_editor/manager_facade.py)), which presents the manager as a one-UI Switchboard.
+- `host_namespace_suffix(context_tags)` — the settings-key suffix (`"_maya"` / `"_blender"`, `""` standalone) that namespaces persisted bindings per host, shared by the marking-menu binding store and the Switchboard shortcut store so per-DCC overrides can't collide.
+
+**Switchboard-side registry** — [`uitk/switchboard/shortcuts.py`](../uitk/switchboard/shortcuts.py) (`SwitchboardShortcutMixin`):
+
+- Slot shortcuts: decorate a slot with `@Shortcut("Ctrl+S")`; `register_slots_shortcuts(ui, slots_instance)` scans the Slots class, applies user overrides from `ui.settings`, and live-binds. `set_user_shortcut(ui, slot_name, sequence, scope)` persists an override and rebinds the active shortcut.
+- Commands: `register_command(name, callback, sequence=..., scope=...)` registers a UI-less, shortcut-bindable command (listed under the editor's "⌘ Commands" pseudo-UI; may ship unbound, hidden, or non-editable). `set_command_shortcut(name, sequence, scope)` is the command twin of `set_user_shortcut`; an empty sequence unbinds.
+
+**The editor** — `ShortcutEditor` lists both slot bindings (per registered UI) and commands in one table with in-cell key capture, a per-row window/application scope toggle, reset-to-default, and pluggable collision checking (`add_collision_checker`; conflicts are `CollisionConflict` records that can offer a clear action). The `global_shortcuts` editor name opens the same class focused on commands only.
 
 ---
 

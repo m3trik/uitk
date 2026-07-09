@@ -26,11 +26,14 @@ class DraggableItemMixin:
     """Standard Escape-to-cancel support for QGraphicsItems.
 
     Subclasses override :meth:`_is_drag_active` and :meth:`_restore_drag_state`.
-    Override the class attribute ``DRAG_CAPTURES_UNDO`` to ``False`` for items
-    that do not push an undo snapshot on press (e.g. markers).
+    Items that push an undo snapshot do so lazily on the first real
+    mouse move and record it in the instance flag ``_undo_captured`` —
+    ``_cancel_active_drag`` pops the snapshot only when that flag is
+    set (a press-without-move never captures, so a plain click can't
+    burn an undo step or wipe the redo stack).
     """
 
-    DRAG_CAPTURES_UNDO: bool = True
+    _undo_captured: bool = False
 
     def _is_drag_active(self) -> bool:
         raise NotImplementedError

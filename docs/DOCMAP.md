@@ -10,17 +10,17 @@ Legend — **Status**: `current` (verified against code on the Verified date, ze
 
 | Doc | Role | Status | Verified | Sources of truth |
 |:--|:--|:--|:--|:--|
-| [../README.md](../README.md) | landing | needs-verify | — | `uitk/__init__.py` · `uitk/examples/example.py` · quickstart must run verbatim (DOC-01) |
-| [README.md](README.md) | landing | needs-verify | — | the PyPI long-description (`pyproject.toml` readme) · shares sync blocks with ../README.md (DOC-01) |
+| [../README.md](../README.md) | landing | current | 2026-07-08 | `uitk/__init__.py` · `uitk/examples/example.py` · quickstart must run verbatim |
+| [README.md](README.md) | landing | current | 2026-07-08 | the PyPI long-description (`pyproject.toml` readme) · shares sync blocks with ../README.md |
 | [USER_GUIDE.md](USER_GUIDE.md) | guide | needs-verify | — | `uitk/switchboard/` · `uitk/widgets/mainWindow.py` · `uitk/widgets/mixins/settings_manager.py` · `state_manager.py` (DOC-03) |
 | [SLOTS.md](SLOTS.md) | reference | needs-verify | — | `uitk/switchboard/slots.py` · `uitk/switchboard/_core.py` (DOC-02) |
-| [WIDGETS.md](WIDGETS.md) | reference | needs-verify | — | `uitk/widgets/` · `optionBox/` · `sequencer/` · `editors/` · `delegates/` (DOC-04) |
-| [MARKING_MENU.md](MARKING_MENU.md) | reference | needs-verify | — | `uitk/widgets/marking_menu/` (DOC-05) |
+| [WIDGETS.md](WIDGETS.md) | reference | current | 2026-07-08 | `uitk/widgets/` · `optionBox/` · `sequencer/` · `editors/` · `delegates/` |
+| [MARKING_MENU.md](MARKING_MENU.md) | reference | current | 2026-07-08 | `uitk/widgets/marking_menu/` |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | reference | needs-verify | — | `uitk/switchboard/_core.py` · `handlers/` · `loaders/` · `compile.py` · `widgets/mainWindow.py` (DOC-06) |
 | [COOKBOOK.md](COOKBOOK.md) | guide | needs-verify | — | consumer repos (mayatk, tentacle) · each recipe must run offscreen where possible (DOC-07) |
 | [EXAMPLES.md](EXAMPLES.md) | guide | needs-verify | — | the tutorial project it walks through · `uitk/examples/example.py` (DOC-08) |
 | [API_REFERENCE.md](API_REFERENCE.md) | reference | needs-verify | — | `API_INDEX.md` (grep `API_REGISTRY.md` for full signatures) (DOC-09) |
-| [BRIDGE.md](BRIDGE.md) | reference | stub | — | `uitk/bridge/slots.py` · `spec.py` · `formatters.py` · `parameters.py` · `tooltip.py` (DOC-10) |
+| [BRIDGE.md](BRIDGE.md) | reference | needs-verify | — | `uitk/bridge/slots.py` · `spec.py` · `formatters.py` · `parameters.py` · `tooltip.py` |
 | [DOCMAP.md](DOCMAP.md) | meta | current | 2026-07-04 | this file — ledger, coverage map, backlog |
 | [MAINTAINING.md](MAINTAINING.md) | meta | current | 2026-07-04 | the maintenance contract and conventions |
 
@@ -31,13 +31,13 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 | Prefix | Primary doc | Note |
 |:--|:--|:--|
 | `_bootstrap.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | package-bootstrap section |
-| `bridge/` | [BRIDGE.md](BRIDGE.md) | stub — DOC-10 |
-| `compile.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | UI loading & compilation — DOC-06 |
+| `bridge/` | [BRIDGE.md](BRIDGE.md) | dedicated subsystem doc |
+| `compile.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
 | `events.py` | [API_REFERENCE.md](API_REFERENCE.md) | `uitk.events` section |
 | `examples/` | — | demo code; run `python -m uitk.examples.example`, don't document it |
 | `file_manager.py` | [API_REFERENCE.md](API_REFERENCE.md) | FileContainer / FileManager section |
 | `handlers/` | [ARCHITECTURE.md](ARCHITECTURE.md) | handler-ecosystem section |
-| `loaders/` | [ARCHITECTURE.md](ARCHITECTURE.md) | UI loading & compilation — DOC-06 |
+| `loaders/` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
 | `switchboard/` | [ARCHITECTURE.md](ARCHITECTURE.md) | slot-contract detail lives in SLOTS.md |
 | `widgets/mainWindow.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | MainWindow section; per-property detail in API_REFERENCE.md |
 | `widgets/marking_menu/` | [MARKING_MENU.md](MARKING_MENU.md) | dedicated subsystem doc |
@@ -47,14 +47,14 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 
 One task = one unit of maintenance work. Do them in any order; each states its done-condition. Check the box **and** update the doc's ledger row (status + Verified date) in the same edit. Conventions and the verification protocol: [MAINTAINING.md](MAINTAINING.md).
 
-- [ ] **DOC-01** (README.md ×2) — On a clean venv, run the Quickstart verbatim and `python -m uitk.examples.example`; fix any drift. Done when: both run as written; both ledger rows flip to `current`.
+- [x] **DOC-01** (README.md ×2) — Done 2026-07-08: both run verbatim against the published wheel in a clean venv (offscreen). Drift found & fixed: `pip install uitk` alone can't run the quickstart — `qtpy` + a Qt binding are deliberately not dependencies; both Install sections now say so (sync block `qt-install-note`).
 - [ ] **DOC-02** (SLOTS.md) — Verify every numbered section against `uitk/switchboard/slots.py` + `_core.py`: class/method resolution order, the default-signals table, parameter injection, `@Signals`, debounce/`@Cancelable`/refresh flags, slot history. Done when: each claim traced to code; row flips to `current`.
 - [ ] **DOC-03** (USER_GUIDE.md) — Same claim-by-claim pass for sections 1–13. Done when: row flips to `current`.
-- [ ] **DOC-04** (WIDGETS.md) — Verify the catalog against `uitk/widgets/`, then close the known gaps: no sections exist for the **sequencer** subpackage (~13 modules), the **editors** subpackage (style, color-mapping, shortcut, switchboard-browser), **delegates**, `WindowPanel`, `TextViewBox`, or `AttributeWindow`. Done when: every `widgets/` module has a section or an explicit pointer; row flips to `current`.
-- [ ] **DOC-05** (MARKING_MENU.md) — Verify against `uitk/widgets/marking_menu/`; recent shortcut-register work (activation key, `get_route_target`/`set_route_target`, `sb.editors.show("global_shortcuts")` — see CHANGELOG 2026-06-30) may not be reflected. Done when: row flips to `current`.
-- [ ] **DOC-06** (ARCHITECTURE.md) — Verify; then add a **UI loading & compilation** section covering `compile.py` (`ensure_compiled`, `precompile_async`, embedded hash/tags) and `loaders/` (compiled vs runtime QUiLoader delegates). Done when: section exists; the two coverage notes stop pointing at this task; row flips to `current`.
+- [x] **DOC-04** (WIDGETS.md) — Done 2026-07-08: full claim-by-claim catalog pass (18 drift fixes) + sections added for sequencer, editors, delegates, `WindowPanel`, `TextViewBox`, `Slider`, `ScriptOutput`; `MenuButton` pointered to MARKING_MENU.md.
+- [x] **DOC-05** (MARKING_MENU.md) — Done 2026-07-08: full claim-by-claim pass; chord-release, binding persistence, MenuButton nav, and the shortcut-register work (activation key, route targets, `global_shortcuts` editor) now reflected.
+- [ ] **DOC-06** (ARCHITECTURE.md) — §12 **UI loading & compilation** added and §§11–14 + §3 verified (2026-07-08). Remaining: claim-by-claim pass of §§1–10 (MainWindow lifecycle, SlotWrapper, state layers, theming, tag depth). Done when: row flips to `current`.
 - [ ] **DOC-07** (COOKBOOK.md) — Run each recipe offscreen (`QT_QPA_PLATFORM=offscreen`); mark DCC-only recipes as such. Done when: every recipe is run-verified or explicitly DCC-gated; row flips to `current`.
 - [ ] **DOC-08** (EXAMPLES.md) — Follow the tutorial end-to-end from an empty folder. Done when: a fresh run matches every step's stated outcome; row flips to `current`.
-- [ ] **DOC-09** (API_REFERENCE.md) — Diff the documented surface against `API_INDEX.md`; add missing public symbols (e.g. `RichTextFormatter`, the delegates, `WindowPanel`, `ShortcutEditor`, `ExternalAppHandler`) or note where they're covered. Done when: no public top-level symbol lacks a home; row flips to `current`.
-- [ ] **DOC-10** (BRIDGE.md) — Finish the stub: resolve each DOC-TODO from the cited sources. Done when: zero DOC-TODOs; row flips to `needs-verify` (then `current` after a claim pass).
-- [ ] **DOC-11** (home: decide) — The shortcut/command registry (`Switchboard.register_command`, `ShortcutEditor`, host-namespaced persistence, `GlobalShortcut`) has no narrative home. Decide where it lives (likely a WIDGETS.md editors section + a COOKBOOK recipe), write it, and record the decision here. Done when: written and linked from the Nav-adjacent "See also" of the chosen doc.
+- [ ] **DOC-09** (API_REFERENCE.md) — Diff the documented surface against `API_INDEX.md`; add missing public symbols (e.g. `RichTextFormatter`, the delegates, `WindowPanel`, `ShortcutEditor`, `ExternalAppHandler`) or note where they're covered. (2026-07-08: ghost `get_property_from_ui_file` removed; `load_ui` row corrected to the loader-delegate reality.) Done when: no public top-level symbol lacks a home; row flips to `current`.
+- [x] **DOC-10** (BRIDGE.md) — Done 2026-07-08: stub fully written from the cited sources; zero DOC-TODOs; row flipped to `needs-verify` (a later claim pass flips it to `current`).
+- [x] **DOC-11** — Done 2026-07-08. Decision: the shortcut/command registry lives in **WIDGETS.md § Shortcut & command registry** (inside the editors section), covering `GlobalShortcut`, `ShortcutManager`, `register_command`, host-namespaced persistence, and the `ShortcutEditor`/`global_shortcuts` views. A COOKBOOK recipe remains optional under DOC-07.

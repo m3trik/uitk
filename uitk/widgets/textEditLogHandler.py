@@ -107,11 +107,17 @@ class TextEditLogHandler(logging.Handler):
                 scrollbar = self.widget.verticalScrollBar()
                 if scrollbar:
                     scrollbar.setValue(scrollbar.maximum())
+                # Force-paint only a VISIBLE widget.  A hidden target needs no
+                # live repaint, and pumping the event queue from inside a log
+                # emit while its panel is still being constructed dispatches
+                # deferred events against half-built widgets — a native crash
+                # (access violation), not an exception this except can catch.
                 now = time.monotonic()
                 if now - getattr(self, "_last_repaint", 0) > 0.05:
                     self._last_repaint = now
-                    self.widget.repaint()
-                    QtWidgets.QApplication.processEvents()
+                    if self.widget.isVisible():
+                        self.widget.repaint()
+                        QtWidgets.QApplication.processEvents()
             else:
                 print("Logging error: widget does not support append.")
         except Exception as e:

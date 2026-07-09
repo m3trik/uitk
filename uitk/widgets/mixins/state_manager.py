@@ -1,12 +1,16 @@
 # !/usr/bin/python
 # coding=utf-8
 import enum
-import json
 import weakref
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
+from uitk.widgets.mixins.settings_manager import (
+    SettingsManager,
+    decode_stored_value,
+    encode_stored_value,
+)
 from uitk.widgets.mixins.value_manager import ValueManager
 
 
@@ -50,10 +54,18 @@ class StateManager(ptk.LoggingMixin):
     # range and resets the combo to item 0 -- on the next session's restore.
     _RESTORE_MODES = ("index", "text", "data")
 
-    def __init__(self, qsettings: QtCore.QSettings, log_level="WARNING"):
+    def __init__(
+        self,
+        qsettings: Union[QtCore.QSettings, SettingsManager],
+        log_level="WARNING",
+    ):
         super().__init__()
         self.set_log_level(log_level)
         self.qsettings = qsettings
+        # A SettingsManager store owns serialization (its setValue encodes,
+        # its value() decodes); encoding here too would double-encode. For a
+        # raw QSettings (or any other duck-typed store) this manager encodes.
+        self._store_encodes = isinstance(qsettings, SettingsManager)
         # Weak keys: a plain dict pins every registered widget for the
         # manager's lifetime, and reset_all would then iterate wrappers
         # whose C++ object is long gone.
@@ -153,8 +165,12 @@ class StateManager(ptk.LoggingMixin):
 
         # Don't apply None values for text-based widgets to prevent clearing valid text
         if value is None:
-            if hasattr(widget, "text") and callable(widget.text):
-                # Skip applying None to widgets with text (like QPushButton, QLineEdit, etc.)
+            if (hasattr(widget, "text") and callable(widget.text)) or (
+                hasattr(widget, "toPlainText") and callable(widget.toPlainText)
+            ):
+                # Skip applying None to text-bearing widgets (QPushButton,
+                # QLineEdit, QTextEdit, ...) — it would clear valid text or
+                # write the literal string "None".
                 self.logger.debug(
                     f"Skipping apply of None value to text widget {widget.objectName()}"
                 )
@@ -234,7 +250,7 @@ class StateManager(ptk.LoggingMixin):
             self._save_suppressed -= 1
 
     def _coerce_for_store(self, value: Any) -> Any:
-        """Coerce a value into something QSettings round-trips losslessly.
+        """Coerce a value into something the backing store round-trips losslessly.
 
         Returns :data:`_UNSUPPORTED` for types that can't be persisted, so
         callers can distinguish "drop this write" from a stored ``None``.
@@ -244,10 +260,13 @@ class StateManager(ptk.LoggingMixin):
         # below silently dropped tri-state checkbox state.
         if isinstance(value, enum.Enum):
             value = value.value
-        if isinstance(value, (dict, list, tuple)):
-            return json.dumps(value)
-        if isinstance(value, (int, float, str, bool)):
-            return value
+        if isinstance(value, (dict, list, tuple, int, float, str, bool)):
+            # A SettingsManager store encodes on write itself; encoding here
+            # too would double-encode (and its read side would decode only
+            # once). Raw QSettings gets the shared encoding — containers
+            # JSON-encoded, ambiguous strings ("1.10", "true") quoted so
+            # load()'s decode restores them verbatim.
+            return value if self._store_encodes else encode_stored_value(value)
         return self._UNSUPPORTED
 
     def save(self, widget: QtWidgets.QWidget, value: Any = None) -> None:
@@ -343,24 +362,17 @@ class StateManager(ptk.LoggingMixin):
         try:
             value = self._get_settings(widget).value(key)
             if value is not None:
-                # Only JSON-decode raw strings. A SettingsManager (what
-                # MainWindow actually passes here, despite the QSettings type
-                # hint) has *already* decoded the value, so a second
-                # json.loads on the decoded result is both redundant and
-                # lossy — e.g. decoding the bool ``True`` would raise and
-                # silently fall back. Guarding on ``str`` keeps the raw
-                # QSettings path working without double-decoding.
-                #
-                # Stable-identity combo modes store the item *text*/*data*
-                # verbatim; skip decoding so a preset literally named "123" or
-                # "true" stays that string instead of becoming int/bool.
-                if isinstance(value, str) and self._restore_mode(widget) == "index":
-                    try:
-                        parsed_value = json.loads(value)
-                    except json.JSONDecodeError:
-                        parsed_value = value
-                else:
+                # Decode is the mirror of the encode side, so it keys off the
+                # STORE, not the widget: a SettingsManager store has already
+                # decoded (its value() pairs with its encoding setValue) — a
+                # second decode would be lossy ("1.10" -> 1.1). A raw
+                # QSettings store holds what _coerce_for_store encoded
+                # (containers JSON-encoded, ambiguous strings quoted), so it
+                # decodes here; non-JSON legacy strings fall through verbatim.
+                if self._store_encodes:
                     parsed_value = value
+                else:
+                    parsed_value = decode_stored_value(value)
                 with self.suppress_save():
                     self.apply(widget, parsed_value)
                 self.logger.debug(f"Loaded state: {key} -> {parsed_value}")
@@ -501,15 +513,13 @@ class StateManager(ptk.LoggingMixin):
 
         Returns *default* if the key has never been set.
         """
-        value = self.qsettings.value(f"custom/{key}", default)
-        if value == "None":
-            return default
-        if isinstance(value, str):
-            try:
-                return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
-                return value
-        return value
+        if self._store_encodes:
+            # SettingsManager.value() already decodes stored values and
+            # returns the default verbatim on a missing key; decoding again
+            # would mangle strings like "1.10" a second time.
+            return self.qsettings.value(f"custom/{key}", default)
+        decoded = decode_stored_value(self.qsettings.value(f"custom/{key}"))
+        return default if decoded is None else decoded
 
     def clear_custom(self, key: str) -> None:
         """Remove a single custom key from storage."""

@@ -548,6 +548,18 @@ class ComboBox(
     def currentText(self):
         return self.richText(self.currentIndex())
 
+    def _index_of_text(self, text):
+        """Row of the first item whose rich OR plain display text equals ``text``, else ``None``.
+
+        Qt's ``findText`` matches only the model's DisplayRole, so it misses items whose
+        display is rich (HTML) text — the reason ``setCurrentText``/``setAsCurrent`` both need
+        this. Shared by them so the rich/plain match logic lives in one place.
+        """
+        for i in range(self.count()):
+            if self.richText(i) == text or self.itemText(i) == text:
+                return i
+        return None
+
     @Signals.blockSignals
     def setCurrentText(self, text):
         """Select the item whose rich or plain text matches *text*.
@@ -558,11 +570,11 @@ class ComboBox(
         renamed item-0 in place and left the index untouched — silently
         dropping the selected item's data on every restore-by-text.
         """
-        for i in range(self.count()):
-            if self.richText(i) == text or self.itemText(i) == text:
-                self.setCurrentIndex(i)
-                return
-        super().setCurrentText(text)
+        index = self._index_of_text(text)
+        if index is not None:
+            self.setCurrentIndex(index)
+        else:
+            super().setCurrentText(text)
 
     @Signals.blockSignals
     def setItemText(self, index, text):
@@ -588,17 +600,24 @@ class ComboBox(
             self.blockSignals(True)
 
         index = None
-        try:
-            index = (
-                self.items.index(i)
-                if isinstance(i, str)
-                else i if isinstance(i, int) and 0 <= i < self.count() else None
-            )
-        except ValueError:
-            if strict:
+        if isinstance(i, int):
+            index = i if 0 <= i < self.count() else None
+        elif isinstance(i, str):
+            items = self.items
+            try:
+                index = items.index(i)  # match the item's value (data-or-text)
+            except ValueError:
+                # ``self.items`` yields each item's DATA when present (e.g. the material
+                # object for a ``{name: material}`` combo), so a plain string won't be found
+                # there even though it IS the item's display text — which the docstring
+                # promises callers may pass. Fall back to the display text so
+                # ``setAsCurrent(name)`` works for data-backed combos too, instead of
+                # silently defaulting to index 0.
+                index = self._index_of_text(i)
+            if index is None and strict:
                 raise ValueError(
                     f"The item '{i}' was not found in ComboBox. "
-                    f"Available items are {[str(item) for item in self.items]}."
+                    f"Available items are {[str(item) for item in items]}."
                 )
 
         if index is None:

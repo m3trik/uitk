@@ -162,17 +162,20 @@ class TestOptionBoxOverlayRefit(QtBaseTestCase):
     """
 
     def test_absolute_container_refits_to_content_on_show(self):
-        """No managing parent layout → collapse a stale/inflated size, keep center."""
+        """No managing parent layout → collapse a stale/inflated size and
+        re-center on the wrapped widget's AUTHORED center (the anchor captured
+        at wrap time) — not on wherever the inflated geometry drifted to."""
         parent = self.track_widget(QtWidgets.QWidget())
         parent.resize(800, 600)
         btn = QtWidgets.QPushButton("Clean", parent)
+        btn.setGeometry(250, 100, 90, 21)
+        authored_center = btn.geometry().center()
         opt = OptionBox(options=[])
         container = self.track_widget(opt.wrap(btn))
 
         # Simulate the frozen, inflated geometry from a pre-polish size hint.
         container.resize(300, max(container.height(), 24))
-        container.move(250, 100)
-        inflated_center = container.geometry().center()
+        container.move(400, 200)
 
         parent.show()
         container.show()
@@ -188,9 +191,141 @@ class TestOptionBoxOverlayRefit(QtBaseTestCase):
         )
         self.assertAlmostEqual(
             container.geometry().center().x(),
-            inflated_center.x(),
+            authored_center.x(),
             delta=3,
-            msg="Re-fit must preserve the container's center point",
+            msg="Re-fit must re-center on the wrapped widget's authored center",
+        )
+        self.assertAlmostEqual(
+            container.geometry().center().y(),
+            authored_center.y(),
+            delta=3,
+            msg="Re-fit must re-center vertically on the authored center too",
+        )
+
+    def test_absolute_container_anchors_to_authored_center(self):
+        """The tb003 'drifts when shown' regression: the container starts life
+        at Qt's default widget size (not the wrapped widget's), so preserving
+        its CURRENT center on re-fit parked the row off the .ui position by
+        half the size delta (both axes). The wrap-time anchor pins it."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.resize(600, 600)
+        btn = QtWidgets.QPushButton("Extrude", parent)
+        btn.setGeometry(270, 290, 66, 21)  # the .ui-authored geometry
+        authored_center = btn.geometry().center()
+
+        opt = OptionBox(options=[])
+        container = self.track_widget(opt.wrap(btn))
+
+        parent.show()
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+
+        self.assertAlmostEqual(
+            container.geometry().center().x(), authored_center.x(), delta=1
+        )
+        self.assertAlmostEqual(
+            container.geometry().center().y(), authored_center.y(), delta=1
+        )
+
+    def test_seam_overlap_tightens_text_to_option_gap(self):
+        """The text-to-option seam must be a FRACTION of the button's normal
+        side padding: the first option square tucks over the wrapped button's
+        edge by ``pad * _SEAM_OVERLAP_FRACTION`` via a negative layout spacer
+        (the theme padding QSS is untouched; the layout owns the overlap so
+        refits preserve it)."""
+
+        class _StubSquareOption:
+            def __init__(self):
+                self.widget = QtWidgets.QPushButton()
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.resize(600, 600)
+        btn = QtWidgets.QPushButton("Extrude", parent)
+        text_w = btn.fontMetrics().horizontalAdvance("Extrude")
+        pad = 20
+        btn.setGeometry(100, 100, text_w + 2 * pad, 21)
+        authored_center = btn.geometry().center()
+
+        option = _StubSquareOption()
+        opt = OptionBox(options=[option])
+        container = self.track_widget(opt.wrap(btn))
+
+        parent.show()
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+
+        overlap = round(pad * OptionBox._SEAM_OVERLAP_FRACTION)
+        self.assertGreater(overlap, 0, "precondition: the tuning yields an overlap")
+        self.assertEqual(
+            option.widget.x(),
+            btn.width() - overlap,
+            "first option square must tuck pad*fraction over the button's edge",
+        )
+        self.assertEqual(
+            container.width(),
+            btn.width() + option.widget.width() - overlap,
+            "container must shrink by the seam overlap",
+        )
+        self.assertAlmostEqual(
+            container.geometry().center().x(), authored_center.x(), delta=1
+        )
+
+    def test_no_seam_overlap_for_non_square_first_option(self):
+        """A non-square first option (e.g. a ValueOption field) keeps its
+        flush seam — no overlap."""
+
+        class _StubFieldOption:
+            square = False
+
+            def __init__(self):
+                self.widget = QtWidgets.QLineEdit()
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.resize(600, 600)
+        btn = QtWidgets.QPushButton("Extrude", parent)
+        btn.setGeometry(100, 100, btn.fontMetrics().horizontalAdvance("Extrude") + 40, 21)
+
+        option = _StubFieldOption()
+        opt = OptionBox(options=[option])
+        self.track_widget(opt.wrap(btn))
+
+        parent.show()
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+
+        self.assertEqual(
+            option.widget.x(),
+            btn.width(),
+            "a non-square first option must sit flush, not overlap",
+        )
+
+    def test_absolute_wrap_floors_wrapped_width_at_authored_width(self):
+        """A Designer-padded button must not collapse to its bare text hint on
+        wrap (the 'text jammed against the left edge' symptom): the authored
+        .ui width becomes the wrapped widget's minimum. A content hint WIDER
+        than the authored width still wins (the floor is not a ceiling)."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.resize(600, 600)
+        btn = QtWidgets.QPushButton("Extrude", parent)
+        wide = btn.sizeHint().width() + 40  # authored wider than the text hint
+        btn.setGeometry(270, 290, wide, 21)
+
+        opt = OptionBox(options=[])
+        container = self.track_widget(opt.wrap(btn))
+
+        parent.show()
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
+
+        self.assertEqual(
+            btn.minimumWidth(),
+            wide,
+            "authored width must become the wrapped widget's minimum",
+        )
+        self.assertGreaterEqual(
+            btn.width(),
+            wide,
+            "the layout must not shrink the wrapped widget below its authored width",
         )
 
     def test_layout_managed_container_not_refit_on_show(self):

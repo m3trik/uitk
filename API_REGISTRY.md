@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-07-08_
+_Generated: 2026-07-09_
 
 ## Index
 
@@ -107,7 +107,7 @@ _Generated: 2026-07-08_
 - [`widgets/sequencer/_markers.py`](#widgets--sequencer--_markers) — MarkerItem — named marker on the timeline with drag and context menu.
 - [`widgets/sequencer/_overlays.py`](#widgets--sequencer--_overlays) — Range-related overlay items: static ranges, gap hatching, and highlights.
 - [`widgets/sequencer/_playhead.py`](#widgets--sequencer--_playhead) — PlayheadItem — vertical playhead line with frame-number badge.
-- [`widgets/sequencer/_ruler.py`](#widgets--sequencer--_ruler) — Ruler and shot-lane items for the timeline header area.
+- [`widgets/sequencer/_ruler.py`](#widgets--sequencer--_ruler) — Ruler item for the timeline header area.
 - [`widgets/sequencer/_scrub_player.py`](#widgets--sequencer--_scrub_player) — Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 - [`widgets/sequencer/_sequencer.py`](#widgets--sequencer--_sequencer) — An NLE-style timeline sequencer widget.
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
@@ -364,7 +364,7 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
   - `Switchboard.visible_windows(self) -> set` *(property)* — Return all currently visible MainWindow instances.
   - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=0, tags=None)` — Add new locations to the Switchboard registries.
   - `Switchboard.load_all_ui(self) -> list` — Extends the 'load_ui' method to load all UI from a given path.
-  - `Switchboard.load_ui(self, file: str) -> QtWidgets.QMainWindow` — Load a UI from the given .ui path via its compiled _ui.py module.
+  - `Switchboard.load_ui(self, file: str) -> QtWidgets.QMainWindow` — Load a UI from the given .ui path via the configured loader delegate.
   - `Switchboard.add_ui(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`
   - `Switchboard.get_ui(self, ui=None) -> QtWidgets.QWidget` — Get a dynamic UI using its string name, or if no argument is given, return the current UI.
   - `Switchboard.get_ui_relatives(self, ui, upstream=False, exact=False, downstream=False, reverse=False)` — Get UIs related to the given UI via shared base name.
@@ -1078,7 +1078,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `MenuButton.setFilterTags(self, value: str) -> None`
   - `MenuButton.filter_tag_list(self) -> list` — Return ``filterTags`` parsed to a list of tags (empty when unset).
   - `MenuButton.submenu_name(self) -> str` — The submenu UI name this button navigates to on hover.
-  - `MenuButton.hideEvent(self, event) -> None` — Drop any lingering ``:hover`` state before the button is reshown.
+  - `MenuButton.hideEvent(self, event) -> None` — Drop lingering ``:hover`` / ``:pressed`` state before a reshow.
 
 <a id="widgets--messageBox"></a>
 ### `widgets/messageBox.py`
@@ -1176,9 +1176,9 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 <a id="widgets--mixins--preset_manager"></a>
 ### `widgets/mixins/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1405) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1422) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L1550) — Root directory under which every relative ``preset_dir`` is resolved.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1410) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1427) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L1555) — Root directory under which every relative ``preset_dir`` is resolved.
 - **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L19)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -1225,7 +1225,9 @@ Widget-free *recent values* model — the shared source of truth for value histo
 <a id="widgets--mixins--settings_manager"></a>
 ### `widgets/mixins/settings_manager.py`
 
-- **[`class SettingsManager`](uitk/uitk/widgets/mixins/settings_manager.py#L166)** — Manages persistent storage and retrieval of settings via QSettings.
+- [`decode_stored_value(value: Any) -> Any`](uitk/uitk/widgets/mixins/settings_manager.py#L171) — Read-side mirror of :func:`encode_stored_value`.
+- [`encode_stored_value(value: Any) -> Any`](uitk/uitk/widgets/mixins/settings_manager.py#L194) — Encode *value* for QSettings so a JSON-decoding read restores it losslessly.
+- **[`class SettingsManager`](uitk/uitk/widgets/mixins/settings_manager.py#L227)** — Manages persistent storage and retrieval of settings via QSettings.
   - `SettingsManager.branch(self, name: str) -> 'SettingsManager'` — Create a new SettingsManager instance targeted at a sub-namespace.
   - `SettingsManager.set_defaults(self, defaults: dict) -> None` — Apply default values for a set of keys if they are not already set.
   - `SettingsManager.value(self, key: str, default: Any = None) -> Any`
@@ -1234,6 +1236,7 @@ Widget-free *recent values* model — the shared source of truth for value histo
   - `SettingsManager.keys(self) -> list` — Return all keys in the current namespace.
   - `SettingsManager.setByteArray(self, key: str, value: QtCore.QByteArray) -> None` — Set a QByteArray value directly without JSON serialization.
   - `SettingsManager.getByteArray(self, key: str, default: QtCore.QByteArray = None) -> QtCore.QByteArray` — Get a QByteArray value directly.
+  - `SettingsManager.remove(self, key: str) -> None` — Remove a single key from the current namespace.
   - `SettingsManager.clear(self, key: Optional[str] = None) -> None` — Clears a specific key, or all keys in the current namespace.
   - `SettingsManager.sync(self) -> None`
 
@@ -1296,7 +1299,7 @@ Shared value-text coloring for spin-box widgets.
 <a id="widgets--mixins--state_manager"></a>
 ### `widgets/mixins/state_manager.py`
 
-- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/state_manager.py#L13)** — Manages widget state persistence using QSettings.
+- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/state_manager.py#L17)** — Manages widget state persistence using QSettings.
   - `StateManager.apply(self, widget: QtWidgets.QWidget, value: Any) -> None` — Apply the given value to the widget using ValueManager.
   - `StateManager.suppress_save(self)` — Context manager that temporarily suppresses QSettings writes.
   - `StateManager.save(self, widget: QtWidgets.QWidget, value: Any = None) -> None` — Save the current value of the widget to QSettings.
@@ -1403,7 +1406,7 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.showEvent(self, event)` — Re-fit to content when shown without a managing parent layout.
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled-state and height changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L164)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L186)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
@@ -1721,7 +1724,7 @@ Host-agnostic script-output console widget.
 
 ClipItem — draggable, resizable clip rectangle on the timeline.
 
-- **[`class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_clip.py#L29)** — A draggable, resizable rectangle representing one clip on the timeline.
+- **[`class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_clip.py#L31)** — A draggable, resizable rectangle representing one clip on the timeline.
   - `ClipItem.clip_data(self) -> ClipData` *(property)*
   - `ClipItem.boundingRect(self)`
   - `ClipItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
@@ -1738,15 +1741,17 @@ ClipItem — draggable, resizable clip rectangle on the timeline.
 
 Data models and shared constants for the sequencer widget.
 
-- [`register_pattern(name: str, painter: PatternPainter) -> None`](uitk/uitk/widgets/sequencer/_data.py#L171) — Register (or override) a tile-painter for :func:`pattern_brush`.
-- [`pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush`](uitk/uitk/widgets/sequencer/_data.py#L228) — Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…
-- [`paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None`](uitk/uitk/widgets/sequencer/_data.py#L259) — Fill ``rect`` with ``spec``;
+- [`make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)`](uitk/uitk/widgets/sequencer/_data.py#L145) — Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
+- [`build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath`](uitk/uitk/widgets/sequencer/_data.py#L171) — Build a QPainterPath from curve *segments*.
+- [`register_pattern(name: str, painter: PatternPainter) -> None`](uitk/uitk/widgets/sequencer/_data.py#L244) — Register (or override) a tile-painter for :func:`pattern_brush`.
+- [`pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush`](uitk/uitk/widgets/sequencer/_data.py#L302) — Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…
+- [`paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None`](uitk/uitk/widgets/sequencer/_data.py#L333) — Fill ``rect`` with ``spec``;
 - **[`class PatternSpec`](uitk/uitk/widgets/sequencer/_data.py#L21)** — Declarative, hashable description of a tiled background pattern.
   - `PatternSpec.brush(self) -> QtGui.QBrush`
 - **[`class ClipData`](uitk/uitk/widgets/sequencer/_data.py#L40)** — Lightweight data record for a single clip on a track.
   - `ClipData.end(self) -> float` *(property)*
 - **[`class TrackData`](uitk/uitk/widgets/sequencer/_data.py#L60)** — Lightweight data record for a track row.
-- **[`class MarkerData`](uitk/uitk/widgets/sequencer/_data.py#L72)** — Lightweight data record for a timeline marker.
+- **[`class MarkerData`](uitk/uitk/widgets/sequencer/_data.py#L78)** — Lightweight data record for a timeline marker.
 
 <a id="widgets--sequencer--_drag_tooltip"></a>
 ### `widgets/sequencer/_drag_tooltip.py`
@@ -1774,7 +1779,7 @@ Shared drag infrastructure for sequencer graphics items.
 
 KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
 
-- **[`class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L17)** — An interactive keyframe indicator inside a sub-row :class:`ClipItem`.
+- **[`class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L18)** — An interactive keyframe indicator inside a sub-row :class:`ClipItem`.
   - `KeyframeItem.time(self) -> float` *(property)*
   - `KeyframeItem.value(self) -> float` *(property)*
   - `KeyframeItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
@@ -1810,8 +1815,7 @@ MarkerItem — named marker on the timeline with drag and context menu.
 
 Range-related overlay items: static ranges, gap hatching, and highlights.
 
-- **[`class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L375)** — A semi-transparent rectangle highlighting a time range on the timeline.
-  - `RangeHighlightItem.locked(self) -> bool` *(property)*
+- **[`class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L380)** — A semi-transparent rectangle highlighting a time range on the timeline.
   - `RangeHighlightItem.start(self) -> float` *(property)*
   - `RangeHighlightItem.end(self) -> float` *(property)*
   - `RangeHighlightItem.set_range(self, start: float, end: float)`
@@ -1839,17 +1843,12 @@ PlayheadItem — vertical playhead line with frame-number badge.
 <a id="widgets--sequencer--_ruler"></a>
 ### `widgets/sequencer/_ruler.py`
 
-Ruler and shot-lane items for the timeline header area.
+Ruler item for the timeline header area.
 
-- **[`class ShotLaneItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L33)** — Renders coloured shot blocks in a thin lane below the ruler.
-  - `ShotLaneItem.set_blocks(self, blocks: list) -> None`
-  - `ShotLaneItem.clear_blocks(self) -> None`
-  - `ShotLaneItem.mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent)`
-  - `ShotLaneItem.boundingRect(self) -> QtCore.QRectF`
-  - `ShotLaneItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
-- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L158)** — Draws the frame-number ruler at the top of the timeline.
+- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L21)** — Draws the frame-number ruler at the top of the timeline.
   - `RulerItem.set_shot_blocks(self, blocks: list) -> None`
   - `RulerItem.clear_shot_blocks(self) -> None`
+  - `RulerItem.shot_block_at(self, time: float) -> Optional[dict]` — Return the shot block containing *time*, or ``None``.
   - `RulerItem.boundingRect(self)`
   - `RulerItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
 
@@ -1858,7 +1857,7 @@ Ruler and shot-lane items for the timeline header area.
 
 Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
-- **[`class ScrubPlayer(QtCore.QObject)`](uitk/uitk/widgets/sequencer/_scrub_player.py#L36)** — Seek-and-grain player for NLE-style audio scrub.
+- **[`class ScrubPlayer(QtCore.QObject)`](uitk/uitk/widgets/sequencer/_scrub_player.py#L41)** — Seek-and-grain player for NLE-style audio scrub.
   - `ScrubPlayer.available(self) -> bool` *(property)* — True if ``QtMultimedia`` is importable in this environment.
   - `ScrubPlayer.source_path(self) -> str` *(property)* — Current source path, or empty string.
   - `ScrubPlayer.set_source(self, path: str) -> bool` — Point the player at an audio file.
@@ -1866,6 +1865,7 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
   - `ScrubPlayer.play_at_frame(self, frame: float, fps: float) -> None` — Seek to ``frame`` and play a short grain for scrub feedback.
   - `ScrubPlayer.play(self, from_frame: Optional[float] = None, fps: float = 24.0) -> None` — Transport play from ``from_frame`` (or current position).
   - `ScrubPlayer.stop(self) -> None` — Stop playback and cancel any pending grain timeout.
+  - `ScrubPlayer.is_playing(self) -> bool` — True while the underlying media player is actually playing.
   - `ScrubPlayer.set_volume(self, vol: float) -> None` — Volume in [0.0, 1.0].
   - `ScrubPlayer.set_grain_ms(self, grain_ms: int) -> None` — Override the grain window length at runtime.
 
@@ -1874,15 +1874,16 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
 An NLE-style timeline sequencer widget.
 
-- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L54)** — Dialog for configuring attribute-type color mappings.
+- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L55)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map() -> Dict[str, str]` *(static)* — Return the persisted attribute color map without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L135)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L139)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool` — Intercept ShortcutOverride on the window when window_shortcuts is on.
   - `SequencerWidget.event(self, event: QtCore.QEvent) -> bool`
   - `SequencerWidget.keyPressEvent(self, event)` — Dispatch registered shortcuts when focus is on a non-timeline child.
   - `SequencerWidget.add_track(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: Optional[str] = None, text_color: Optional[str] = None) -> int` — Add a new track row.
+  - `SequencerWidget.bulk_updates(self)` — Suppress per-add scene-rect recomputation during a rebuild.
   - `SequencerWidget.add_clip(self, track_id: int, start: float, duration: float, label: str = '', color: Optional[str] = None, sub_row: str = '', locked: bool = False, **data) -> int` — Add a clip to an existing track.
   - `SequencerWidget.remove_clip(self, clip_id: int)` — Remove a clip by id.
   - `SequencerWidget.set_clip_label(self, clip_id: int, label: str)` — Set the display label for a clip.
@@ -1946,7 +1947,7 @@ An NLE-style timeline sequencer widget.
 
 Timeline view, scene, and track-header widgets.
 
-- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L65)** — Left-pane widget showing track labels, vertically synced to the timeline.
+- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L67)** — Left-pane widget showing track labels, vertically synced to the timeline.
   - `TrackHeaderWidget.set_top_margin(self, margin: int) -> None`
   - `TrackHeaderWidget.add_track_label(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)`
   - `TrackHeaderWidget.set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int)`
@@ -1954,10 +1955,10 @@ Timeline view, scene, and track-header widgets.
   - `TrackHeaderWidget.eventFilter(self, obj, event)`
   - `TrackHeaderWidget.selected_names(self) -> List[str]`
   - `TrackHeaderWidget.clear_tracks(self)`
-- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L333)** — Scene that owns the ruler, playhead, and all clip items.
+- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L328)** — Scene that owns the ruler, playhead, and all clip items.
   - `TimelineScene.ruler(self) -> RulerItem` *(property)*
   - `TimelineScene.playhead(self) -> PlayheadItem` *(property)*
-- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L358)** — QGraphicsView providing zoom, pan, and coordinate mapping.
+- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L353)** — QGraphicsView providing zoom, pan, and coordinate mapping.
   - `TimelineView.event(self, event: QtCore.QEvent) -> bool`
   - `TimelineView.keyPressEvent(self, event)`
   - `TimelineView.keyReleaseEvent(self, event)`
@@ -1989,7 +1990,9 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `ScrubPlayerPlayController.is_playing(self) -> bool`
   - `ScrubPlayerPlayController.play(self, forward: bool) -> None`
   - `ScrubPlayerPlayController.stop(self) -> None`
-- **[`class TransportControls(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_transport_controls.py#L83)** — Maya-style 8-button transport row bound to a :class:`SequencerWidget`.
+- **[`class TransportControls(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_transport_controls.py#L101)** — Maya-style 8-button transport row bound to a :class:`SequencerWidget`.
+  - `TransportControls.showEvent(self, event) -> None`
+  - `TransportControls.hideEvent(self, event) -> None`
   - `TransportControls.play_controller(self) -> PlayController` *(property)*
   - `TransportControls.set_play_controller(self, pc: PlayController) -> None`
   - `TransportControls.set_interrupt_mode(self, mode: str) -> None`

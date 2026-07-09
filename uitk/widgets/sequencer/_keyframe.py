@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, List, Tuple
 
 from qtpy import QtWidgets, QtGui, QtCore
 
+from uitk.widgets.sequencer._data import make_value_mapper
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
 from uitk.widgets.sequencer._draggable import DraggableItemMixin
 
@@ -126,11 +127,6 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         # Let Qt handle selection toggling (Shift/Ctrl modifiers).
         super().mousePressEvent(event)
 
-        # Re-select the parent clip so the controller's clip context
-        # isn't lost when Qt's default handler deselects other items.
-        if not self._parent_clip.isSelected():
-            self._parent_clip.setSelected(True)
-
         self._dragging = True
         self._drag_origin_scene_x = event.scenePos().x()
 
@@ -147,9 +143,11 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         for peer, _ in self._drag_peers:
             peer._parent_clip._keys_dragging = True
 
-        # Capture undo snapshot on the sequencer.
-        sq = self._parent_clip._timeline.parent_sequencer
-        sq._capture_undo()
+        # No widget-level undo snapshot for key drags: the snapshot only
+        # records clip bounds (not key times), so it could never restore
+        # a key edit — capturing here just burned an undo step and wiped
+        # the redo stack on every key click.  Key edits are undone
+        # through the host app (keys_moved consumers → Maya undo).
 
         self._show_drag_tooltip(event.scenePos())
         event.accept()
@@ -197,19 +195,33 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         return self._dragging
 
     def _restore_drag_state(self) -> None:
+        # Mirror the move-path order: capture the EXPANDED bounds and
+        # call prepareGeometryChange BEFORE repositioning keys, so the
+        # region where dragged-out keys/curves were painted is
+        # invalidated too (repositioning first shrinks the rect and
+        # leaves ghost pixels outside it).
         affected = {}
-        for peer, origin_time in self._drag_peers:
-            peer._time = origin_time
-            peer._reposition()
+        for peer, _ in self._drag_peers:
             pid = id(peer._parent_clip)
             if pid not in affected:
                 affected[pid] = peer._parent_clip
-        for clip in affected.values():
+        expanded = {}
+        for pid, clip in affected.items():
+            scene = clip.scene()
+            if scene:
+                expanded[pid] = clip.mapToScene(clip.boundingRect()).boundingRect()
             clip.prepareGeometryChange()
+        for peer, origin_time in self._drag_peers:
+            peer._time = origin_time
+            peer._reposition()
+        for pid, clip in affected.items():
             clip._keys_dragging = False
             scene = clip.scene()
             if scene:
-                scene.invalidate(clip.mapToScene(clip.boundingRect()).boundingRect())
+                rect = clip.mapToScene(clip.boundingRect()).boundingRect()
+                if pid in expanded:
+                    rect = rect.united(expanded[pid])
+                scene.invalidate(rect)
             else:
                 clip.update()
         self._dragging = False
@@ -276,11 +288,6 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         clip = self._parent_clip
         rect = clip.rect()
         preview = clip._data.data.get("curve_preview", {})
-        val_min = preview.get("val_min", 0.0)
-        val_max = preview.get("val_max", 1.0)
-        val_range = val_max - val_min
-        if val_range < 1e-9:
-            val_range = 1.0
 
         dur = clip._data.duration
         start = clip._data.start
@@ -292,15 +299,12 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
             frac = 0.5
         sx = rect.x() + frac * rect.width()
 
-        # Y mapping (value -> pixel)
-        pad = rect.height() * 0.15
-        y_top = rect.top() + pad
-        y_bot = rect.bottom() - pad
-        is_flat = (val_max - val_min) < 1e-9
-        if is_flat:
-            sy = y_top + (y_bot - y_top) * 0.5
-        else:
-            vfrac = (self._value - val_min) / val_range
-            sy = y_bot - vfrac * (y_bot - y_top)
-
-        self.setPos(sx, sy)
+        # Y mapping — the shared mapper keeps dots pixel-aligned with
+        # the clip curve preview and the background curve rendering.
+        map_y, _is_flat = make_value_mapper(
+            rect.top(),
+            rect.height(),
+            preview.get("val_min", 0.0),
+            preview.get("val_max", 1.0),
+        )
+        self.setPos(sx, map_y(self._value))
