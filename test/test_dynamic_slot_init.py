@@ -1359,6 +1359,36 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
             f"register_widget ran INSIDE an add() frame (recursion hazard): {mid_add}",
         )
 
+    def test_flush_survives_dead_menu_wrapper(self):
+        """A deleteLater'd menu's Python wrapper lingers in the awaiting-set
+        until GC; its C++-touching window walk raises RuntimeError. The flush
+        must drop it (not crash MainWindow.showEvent) and still drain live
+        menus."""
+        from uitk.widgets.menu import (
+            _flush_pending_registrations,
+            _menus_awaiting_registration,
+        )
+
+        class _DeadMenuWrapper:
+            """Mimics a dead PySide wrapper: Python attrs fine, C++ raises."""
+
+            _pending_registrations = [object()]  # non-empty -> enters batch
+            _add_depth = 0
+
+            def _resolve_registration_window(self):
+                raise RuntimeError("Internal C++ object (Menu) already deleted.")
+
+        dead = _DeadMenuWrapper()
+        _menus_awaiting_registration.add(dead)
+        try:
+            window_sentinel = QtWidgets.QWidget()
+            self.track_widget(window_sentinel)
+            # Must not raise, and must evict the dead wrapper.
+            _flush_pending_registrations(window_sentinel)
+            self.assertNotIn(dead, list(_menus_awaiting_registration))
+        finally:
+            _menus_awaiting_registration.discard(dead)
+
 
 if __name__ == "__main__":
     unittest.main()

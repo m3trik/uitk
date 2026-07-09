@@ -603,12 +603,22 @@ def _flush_pending_registrations(window=None) -> int:
         batch = [
             m
             for m in list(_menus_awaiting_registration)
+            # Plain Python attrs — safe even on a dead C++ wrapper.
             if m._pending_registrations and m._add_depth == 0
         ]
         if window is not None:
-            batch = [
-                m for m in batch if m._resolve_registration_window() is window
-            ]
+            alive = []
+            for m in batch:
+                try:
+                    # C++ access (walks parent()): a deleteLater'd menu's
+                    # wrapper lingers in the WeakSet until GC and raises
+                    # RuntimeError here — it must be dropped, not allowed to
+                    # crash the flush inside MainWindow.showEvent.
+                    if m._resolve_registration_window() is window:
+                        alive.append(m)
+                except RuntimeError:
+                    _menus_awaiting_registration.discard(m)
+            batch = alive
         if not batch:
             return drained
         for menu in batch:
