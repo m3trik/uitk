@@ -18,9 +18,12 @@ Fix: geometry assignment stays first (``setCurrentWidget`` maps the anchor
 through the overlay's geometry), but presentation is LAST — a hidden overlay
 becomes visible only after the target page is current, so its first presented
 frame is the correct menu. The invariant is scoped to the hidden→visible
-reopen transition: construction (``__init__``) and the mid-gesture monitor hop
+reopen transition: the mid-gesture monitor hop
 (``_ensure_fullscreen_on_active_screen``'s relocate-while-visible branch)
-legitimately present without a page swap.
+legitimately presents without a page swap. Construction does NOT present at
+all — it realizes the window under ``WA_DontShowOnScreen`` and ends hidden
+(see ``TestConstructionDoesNotPresent``), so the first activation is just
+another reopen.
 
 The harness exercises the REAL ``_show_marking_menu`` / ``setCurrentWidget`` /
 ``_ensure_fullscreen_on_active_screen`` / ``hide`` methods (unlike
@@ -486,6 +489,45 @@ class TestHideDefeatsPinnedPages(QtBaseTestCase):
             "ghost under an already-hidden overlay survived hide() — the "
             "sweep must test child.isHidden(), not child.isVisible().",
         )
+
+
+class TestConstructionDoesNotPresent(QtBaseTestCase):
+    """``__init__`` must realize the overlay window WITHOUT presenting it.
+
+    The construction-time ``showFullScreen()`` left the (translucent) overlay
+    VISIBLE from DCC startup until the first gesture ended. The first
+    activation then ran ``_ensure_fullscreen_on_active_screen``'s cross-screen
+    relocate on a visible window — dropping the fullscreen state restores Qt's
+    ~100x30 pre-fullscreen "normal" geometry ON SCREEN, painting each
+    intermediate step (stale fullscreen rect → 100x30 at the screen origin →
+    100x30 centered → final rect): the init-time "components flash before the
+    menu shows". Construction must end hidden — native handle realized (the
+    screen binding the relocate check reads), nothing presented — so the FIRST
+    activation takes the same present-last path as every reopen.
+    """
+
+    def test_construction_ends_hidden_with_realized_window(self):
+        mm = MarkingMenu(parent=None)
+        self.track_widget(mm)
+        try:
+            self.assertFalse(
+                mm.isVisible(),
+                "overlay must not be left visible by construction",
+            )
+            self.assertIsNotNone(
+                mm.windowHandle(),
+                "native window must still be realized at construction "
+                "(screen binding read by _ensure_fullscreen_on_active_screen)",
+            )
+            self.assertFalse(
+                mm.testAttribute(QtCore.Qt.WA_DontShowOnScreen),
+                "present-suppression must not leak past construction",
+            )
+            # An activation-time present must still actually present.
+            mm.showFullScreen()
+            self.assertTrue(mm.isVisible())
+        finally:
+            mm.retire()
 
 
 if __name__ == "__main__":

@@ -279,7 +279,25 @@ class MarkingMenu(
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_NoMousePropagation, False)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        # Realize the native window and bind the fullscreen state/screen
+        # WITHOUT presenting. A bare showFullScreen() here left the
+        # (translucent) overlay on screen from DCC startup until the first
+        # gesture ended, so the FIRST activation ran
+        # _ensure_fullscreen_on_active_screen's cross-screen relocate on a
+        # VISIBLE window — dropping the fullscreen state restores Qt's
+        # ~100x30 pre-fullscreen "normal" geometry on screen and paints every
+        # intermediate step (the init-time "components flash before the menu
+        # shows"). Suppressed-show + hide keeps the handle and screen bind,
+        # ends construction hidden, and makes the first activation take the
+        # same present-last path as every reopen (_show_marking_menu).
+        # Base-class hide: the hide() override ends by raising/activating the
+        # parent (the DCC main window) — a focus steal at startup-idle. Its
+        # gesture cleanup is all no-op pre-gesture, and hideEvent's safety
+        # net still runs either way.
+        self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
         self.showFullScreen()
+        QtWidgets.QWidget.hide(self)
+        self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, False)
 
         # Initialize smooth transition timer
         self._pending_show_timer = QtCore.QTimer()
