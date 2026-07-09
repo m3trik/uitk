@@ -129,6 +129,125 @@ class TestOptionBoxWrapFirstMeasurementFinal(QtBaseTestCase):
         )
 
 
+class TestChromeInitialStateFinal(QtBaseTestCase):
+    """Phase 4: option/chrome widgets must paint their FINAL initial state —
+    no show-then-hide (ClearOption), no post-paint icon swap (PinValues),
+    no post-paint header mutation (menu-button sync / auto-hide)."""
+
+    def setUp(self):
+        super().setUp()
+        self._drain_qt_events()
+        self.window = QtWidgets.QWidget()
+        self.window.resize(500, 300)
+        self.track_widget(self.window)
+        self.layout = QtWidgets.QVBoxLayout(self.window)
+
+    def _find_clear_button(self):
+        """The clear button by ButtonOption's naming convention
+        (<WrappedType>_ClearOption)."""
+        for b in self.window.findChildren(QtWidgets.QPushButton):
+            if b.objectName().endswith("_ClearOption"):
+                return b
+        self.fail("no ClearOption button found in the wrapped tree")
+
+    def test_clear_button_hidden_at_show_return_on_empty_field(self):
+        """An EMPTY field's clear button must never paint visible-then-hide."""
+        from uitk.widgets.optionBox._optionBox import OptionBox
+
+        field = QtWidgets.QLineEdit(self.window)  # empty
+        self.layout.addWidget(field)
+        box = OptionBox(show_clear=True)
+        box.wrap(field)
+
+        self.window.show()
+        clear_btn = self._find_clear_button()
+        self.assertFalse(
+            clear_btn.isVisible(),
+            "clear button visible at show-return on an EMPTY field — it "
+            "paints, then the deferred update hides it (the flash).",
+        )
+        # And with text, it must be visible at show-return + stay stable.
+        field.setText("abc")
+        self._drain_qt_events()
+        self.assertTrue(clear_btn.isVisible(), "late setText must still show it")
+
+    def test_clear_button_visible_at_show_return_with_text(self):
+        from uitk.widgets.optionBox._optionBox import OptionBox
+
+        field = QtWidgets.QLineEdit(self.window)
+        field.setText("preset")
+        self.layout.addWidget(field)
+        box = OptionBox(show_clear=True)
+        box.wrap(field)
+
+        self.window.show()
+        clear_btn = self._find_clear_button()
+        self.assertTrue(clear_btn.isVisible())
+        before = visual_state_snapshot(self.window)
+        self._drain_qt_events()
+        delta = diff_visual_state(before, visual_state_snapshot(self.window))
+        self.assertEqual(delta, [], f"post-show mutation: {delta}")
+
+    def test_pin_icon_has_no_post_show_deferred_update(self):
+        """The pin button's icon must be correct at creation — a deferred
+        initial update lands post-paint (icon flicker). Value changes still
+        update via the signal connections."""
+        from uitk.widgets.optionBox._optionBox import OptionBox
+        from uitk.widgets.optionBox.options.pin_values import PinValuesOption
+
+        calls = []
+        orig = PinValuesOption._update_button_icon
+
+        def probe(self_o, *a):
+            calls.append(a)
+            return orig(self_o, *a)
+
+        # Patch BEFORE the wrap: the deferred create-time update captures the
+        # bound method at schedule time, so a later patch would miss it.
+        PinValuesOption._update_button_icon = probe
+        try:
+            field = QtWidgets.QSpinBox(self.window)
+            self.layout.addWidget(field)
+            box = OptionBox(show_clear=False)
+            option = PinValuesOption(field)
+            box.add_option(option)
+            box.wrap(field)
+
+            self.window.show()
+            at_show = len(calls)
+            self._drain_qt_events()
+            post_show = len(calls) - at_show
+        finally:
+            PinValuesOption._update_button_icon = orig
+        self.assertEqual(
+            post_show,
+            0,
+            "pin icon updated on a post-paint tick (the icon flicker) — the "
+            "initial state must be set synchronously at creation.",
+        )
+
+    def test_header_menu_button_final_at_show_return(self):
+        """A menu-configured header over an EMPTY menu must have its menu
+        button already hidden at show-return (not hidden one tick later)."""
+        from uitk.widgets.header import Header
+
+        header = Header(self.window, config_buttons=["menu"])
+        self.layout.addWidget(header)
+
+        self.window.show()
+        menu_btn = header.buttons.get("menu")
+        self.assertIsNotNone(menu_btn)
+        self.assertFalse(
+            menu_btn.isVisible(),
+            "menu button visible at show-return over an empty menu — the "
+            "deferred sync hides it post-paint (the flash).",
+        )
+        before = visual_state_snapshot(self.window)
+        self._drain_qt_events()
+        delta = diff_visual_state(before, visual_state_snapshot(self.window))
+        self.assertEqual(delta, [], f"post-show header mutation: {delta}")
+
+
 class TestLayoutManagedWrapUnaffected(QtBaseTestCase):
     """Layout-managed (docked-panel) wraps never had the refit path; the
     repolish must not perturb them either."""

@@ -890,10 +890,18 @@ class Header(
         elif self._collapsed:
             self.expand_window()
         super().showEvent(event)
-        QtCore.QTimer.singleShot(0, self._sync_menu_button_visibility)
+        # SYNCHRONOUS — both hooks read only flags/menu state (no post-layout
+        # geometry), and a child's showEvent is delivered during the parent's
+        # show cascade, i.e. BEFORE first paint. The old singleShot(0)
+        # deferral pushed them past the paint: the menu button (or the whole
+        # auto-hidden header) painted, then vanished a tick later — an init
+        # flash. A menu populated later in the same pre-paint cascade
+        # (register_children) still re-shows the button via the on_item_added
+        # wiring, also pre-paint.
+        self._sync_menu_button_visibility()
         if self._auto_hide_with_os_frame and not self._auto_hide_checked:
             self._auto_hide_checked = True
-            QtCore.QTimer.singleShot(0, self._apply_auto_hide_with_os_frame)
+            self._apply_auto_hide_with_os_frame()
 
     def _apply_auto_hide_with_os_frame(self):
         """Hide the header if the top-level window draws a native OS title bar.
