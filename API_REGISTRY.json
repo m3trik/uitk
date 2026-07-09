@@ -5587,7 +5587,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 1774,
+              "line": 1802,
               "deprecated": false
             },
             {
@@ -5596,7 +5596,7 @@
               "kind": "method",
               "signature": "(self, ui: Optional[str] = None, pos=None, force: bool = False, **kwargs) -> QtWidgets.QWidget",
               "summary": "Central hub for showing any UI component.",
-              "line": 1885,
+              "line": 1913,
               "deprecated": false
             },
             {
@@ -5605,7 +5605,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 2104,
+              "line": 2132,
               "deprecated": false
             },
             {
@@ -5614,7 +5614,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - relinquishes input control even if hide() was bypassed.",
-              "line": 2158,
+              "line": 2186,
               "deprecated": false
             },
             {
@@ -5623,7 +5623,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 2260,
+              "line": 2288,
               "deprecated": false
             },
             {
@@ -5632,7 +5632,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 2280,
+              "line": 2308,
               "deprecated": false
             },
             {
@@ -5641,7 +5641,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fade every background window and menu, once per hold.",
-              "line": 2346,
+              "line": 2374,
               "deprecated": false
             },
             {
@@ -5650,7 +5650,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore everything dimmed by the last :meth:`dim_other_windows`.",
-              "line": 2365,
+              "line": 2393,
               "deprecated": false
             },
             {
@@ -5659,7 +5659,7 @@
               "kind": "method",
               "signature": "(self, widgets) -> None",
               "summary": "Initialize child widgets with an event filter.",
-              "line": 2375,
+              "line": 2403,
               "deprecated": false
             },
             {
@@ -5668,7 +5668,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 2438,
+              "line": 2467,
               "deprecated": false
             },
             {
@@ -5677,7 +5677,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 2460,
+              "line": 2489,
               "deprecated": false
             },
             {
@@ -5686,7 +5686,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Dispatch (or forward) a release delivered to a *grabbed* child.",
-              "line": 2469,
+              "line": 2498,
               "deprecated": false
             }
           ]
@@ -6634,7 +6634,7 @@
               "qualname": "MenuButton.hideEvent",
               "kind": "method",
               "signature": "(self, event) -> None",
-              "summary": "Drop any lingering ``:hover`` state before the button is reshown.",
+              "summary": "Drop lingering ``:hover`` / ``:pressed`` state before a reshow.",
               "line": 99,
               "deprecated": false
             }
@@ -8767,7 +8767,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 65,
+              "line": 77,
               "deprecated": false
             },
             {
@@ -8776,7 +8776,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Re-fit to content when shown without a managing parent layout.",
-              "line": 70,
+              "line": 82,
               "deprecated": false
             },
             {
@@ -8785,7 +8785,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Watch the wrapped widget for enabled-state and height changes.",
-              "line": 121,
+              "line": 143,
               "deprecated": false
             }
           ]
@@ -8793,7 +8793,7 @@
         {
           "name": "OptionBox",
           "summary": "Plugin-based option manager that wraps widgets with action buttons.",
-          "line": 164,
+          "line": 186,
           "bases": [],
           "members": [
             {
@@ -8802,7 +8802,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin instance.",
-              "line": 208,
+              "line": 230,
               "deprecated": false
             },
             {
@@ -8811,7 +8811,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Remove an option plugin instance.",
-              "line": 219,
+              "line": 241,
               "deprecated": false
             },
             {
@@ -8820,7 +8820,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all registered option plugins.",
-              "line": 226,
+              "line": 248,
               "deprecated": false
             },
             {
@@ -8829,7 +8829,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get clear button state.",
-              "line": 402,
+              "line": 485,
               "deprecated": false
             },
             {
@@ -8838,7 +8838,7 @@
               "kind": "method",
               "signature": "(self, visible=True)",
               "summary": "Enable or disable the clear button.",
-              "line": 424,
+              "line": 507,
               "deprecated": false
             },
             {
@@ -8847,7 +8847,7 @@
               "kind": "method",
               "signature": "(self, wrapped_widget: QtWidgets.QWidget, frameless=False)",
               "summary": "Wrap target widget with option buttons.",
-              "line": 444,
+              "line": 527,
               "deprecated": false
             }
           ]

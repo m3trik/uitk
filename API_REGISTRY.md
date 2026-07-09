@@ -1078,7 +1078,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `MenuButton.setFilterTags(self, value: str) -> None`
   - `MenuButton.filter_tag_list(self) -> list` — Return ``filterTags`` parsed to a list of tags (empty when unset).
   - `MenuButton.submenu_name(self) -> str` — The submenu UI name this button navigates to on hover.
-  - `MenuButton.hideEvent(self, event) -> None` — Drop any lingering ``:hover`` state before the button is reshown.
+  - `MenuButton.hideEvent(self, event) -> None` — Drop lingering ``:hover`` / ``:pressed`` state before a reshow.
 
 <a id="widgets--messageBox"></a>
 ### `widgets/messageBox.py`
@@ -1406,7 +1406,7 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.showEvent(self, event)` — Re-fit to content when shown without a managing parent layout.
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled-state and height changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L164)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L186)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.

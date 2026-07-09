@@ -97,7 +97,7 @@ class MenuButton(QtWidgets.QPushButton, AttributesMixin):
 
     # -- events ---------------------------------------------------------------
     def hideEvent(self, event) -> None:
-        """Drop any lingering ``:hover`` state before the button is reshown.
+        """Drop lingering ``:hover`` / ``:pressed`` state before a reshow.
 
         A marking-menu button is usually hidden *under the cursor* — the menu
         closes in place, so no ``leaveEvent`` precedes the hide. Qt leaves
@@ -109,8 +109,18 @@ class MenuButton(QtWidgets.QPushButton, AttributesMixin):
         rebuilds from the style option (which reads ``WA_UnderMouse``) on every
         paint, so the next show repaints non-hovered — no repolish needed (that
         idiom is for dynamic-property selector re-cascade, not pseudo-states).
+
+        ``down`` gets the same treatment: the marking menu lets a press over a
+        nav button pass through to the button (Qt sets it ``down``) but
+        dispatches-and-consumes the matching release, and the click typically
+        hides this button's UI — leaving ``down`` latched so the next show
+        would paint ``:pressed`` (the checked-orange tint). The menu clears it
+        on the release path too (``_clear_button_down``); this is the
+        widget-level backstop.
         """
         self.setAttribute(QtCore.Qt.WA_UnderMouse, False)
+        if self.isDown():
+            self.setDown(False)
         super().hideEvent(event)
 
 

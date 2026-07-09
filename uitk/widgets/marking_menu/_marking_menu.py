@@ -1719,6 +1719,30 @@ class MarkingMenu(
                 return widget, pos
         return None, None
 
+    @staticmethod
+    def _clear_button_down(*widgets) -> None:
+        """Clear a stuck ``down`` state on any :class:`QAbstractButton` given.
+
+        A press over an owned menu item is deliberately left to the button
+        itself (see :meth:`mousePressEvent`'s ``_is_menu_item_press`` early
+        return), so Qt sets the button ``down``. The matching release, however,
+        is dispatched through :meth:`_handle_menu_item_release` and CONSUMED —
+        it never reaches the button's own ``mouseReleaseEvent``, which is the
+        only thing that would clear ``down`` again. The button then paints
+        ``:pressed`` forever once the cursor leaves it (``:hover`` outranks the
+        pressed rule while hovered, which is why the stick only shows on
+        hover-leave). Called on every release-consume path with both the
+        resolved dispatch target and the grab-holding child, since cursor
+        drift can make those two different buttons.
+        """
+        for w in widgets:
+            if isinstance(w, QtWidgets.QAbstractButton):
+                try:
+                    if w.isDown():
+                        w.setDown(False)
+                except RuntimeError:
+                    continue  # underlying C++ object already deleted
+
     def _handle_menu_item_release(self, pos, widget) -> bool:
         """Dispatch a release that landed on an owned interactive item of the
         current start/submenu — the shared core of :meth:`mouseReleaseEvent`
@@ -1760,11 +1784,15 @@ class MarkingMenu(
             # Trailing release of the chord — swallow it (consume; no second
             # action, and crucially do NOT fall through to sync, which would
             # navigate/hide the menu the first release just settled on).
+            self._clear_button_down(widget)
             return True
         # Set BEFORE dispatching so a re-entrant release during _handle_widget_action
         # (e.g. nav-show pumping events) can't slip a second action through.
         self._action_dispatched = True
         if self._handle_widget_action(widget, pos):
+            # Consumed: the button's own mouseReleaseEvent will never run, so
+            # clear any down state the pass-through press left behind.
+            self._clear_button_down(widget)
             return True
         # Non-interactive widget — nothing fired, so un-latch and let the caller
         # fall through to its default handling (and a later real action still fires).
@@ -2397,15 +2425,16 @@ class MarkingMenu(
             except AttributeError:
                 continue
 
-            if w.derived_type in (
-                QtWidgets.QPushButton,
-                QtWidgets.QLabel,
-                QtWidgets.QCheckBox,
-                QtWidgets.QRadioButton,
-            ):
+            # Fit-to-content resize is NAV-ONLY by default: a MenuButton's label
+            # is code/Designer-authored and must never clip, so it is re-fit
+            # (center-preserving) to its content hint. Regular slot buttons,
+            # labels and checkboxes keep their Designer geometry — an
+            # option-box-wrapped widget is instead fitted by its
+            # OptionBoxContainer (``_adjust_to_content``), which sizes the
+            # whole container (widget + option buttons) around the same center.
+            if isinstance(w, MenuButton):
                 self.sb.center_widget(w, padding_x=35)
-                if isinstance(w, MenuButton):
-                    w.ui.style.set(widget=w)
+                w.ui.style.set(widget=w)
 
             if w.type == self.sb.registered_widgets.Region:
                 w.visible_on_mouse_over = True
@@ -2521,7 +2550,11 @@ class MarkingMenu(
             widget, pos = self._resolve_release_target(event, current_ui)
             if widget is not None:
                 if self._handle_menu_item_release(pos, widget):
-                    # Fired — drop the child's grab and consume.
+                    # Fired — drop the child's grab and consume. The grabbed
+                    # child may be a different button than the resolved target
+                    # (cursor drift), so clear ITS pass-through-press down
+                    # state here as well.
+                    self._clear_button_down(w)
                     try:
                         w.releaseMouse()
                     except RuntimeError:
@@ -2533,6 +2566,7 @@ class MarkingMenu(
         # button still held) is deferred by the tolerance window; returning True
         # keeps the child's grab so the final release still reaches here.
         if self._defer_partial_or_settle(event, current_ui):
+            self._clear_button_down(w)
             return True
 
         # Not over an owned menu item — forward to the child's own handler when

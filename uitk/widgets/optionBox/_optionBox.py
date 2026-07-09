@@ -61,6 +61,18 @@ class OptionBoxContainer(QtWidgets.QWidget):
         # by _sync_option_buttons_enabled; initialized true for the pre-wrap
         # window before the first sync runs.
         self.setProperty("wrappedEnabled", "true")
+        # The wrapped widget's authored center (parent coords) and width,
+        # captured by OptionBox.wrap for an absolute-positioned container.
+        # Every content re-fit re-centers on the anchor, not on the
+        # container's current geometry — the container starts life at Qt's
+        # default widget size, so its current center is offset from the
+        # widget it replaced, and preserving it drifted the wrapped button
+        # off its .ui position. The authored width feeds the seam-overlap
+        # calculation (OptionBox._seam_overlap). None/0 for layout-managed
+        # containers (the parent layout owns geometry) and for containers
+        # built outside wrap().
+        self._anchor_center = None
+        self._authored_width = 0
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -89,13 +101,20 @@ class OptionBoxContainer(QtWidgets.QWidget):
         QtCore.QTimer.singleShot(0, self._adjust_to_content)
 
     def _adjust_to_content(self):
-        """Fit a *self-positioned* container to its content, preserving center.
+        """Fit a *self-positioned* container to its content, centered on the
+        wrapped widget's authored position.
 
         Only an absolute-positioned container (the marking-menu overlay) is
-        resized here: ``adjustSize`` collapses it to the content hint and, since
-        that keeps the top-left and drifts the center left as it narrows, we
-        restore the center so a re-fit — on first show or a later height change
-        routed through ``_update_sizing`` — stays put.
+        resized here: ``adjustSize`` collapses it to the content hint, then the
+        container is re-centered on ``_anchor_center`` — the wrapped widget's
+        .ui-authored center captured at wrap time — so a re-fit (first show, or
+        a later height change routed through ``_update_sizing``) always lands
+        the row where the Designer placed the widget. Falling back to the
+        container's *current* center (pre-anchor behavior) is kept only for
+        containers built outside ``wrap()``: the container starts life at Qt's
+        default widget size, so its current center sits offset from the widget
+        it replaced and preserving it drifted the wrapped button off its .ui
+        position by half that size delta.
 
         A **layout-managed** container is left untouched: its parent layout owns
         its width and position, so calling ``adjustSize`` here would fight the
@@ -111,7 +130,10 @@ class OptionBoxContainer(QtWidgets.QWidget):
             if layout is None:
                 return
             layout.activate()
-            center = self.geometry().center()
+            # Explicit None check: a QPoint at the origin must not be treated
+            # as "no anchor".
+            anchor = self._anchor_center
+            center = anchor if anchor is not None else self.geometry().center()
             self.adjustSize()
             new = self.size()
             self.move(center.x() - new.width() // 2, center.y() - new.height() // 2)
@@ -227,6 +249,67 @@ class OptionBox:
         """Get all registered option plugins."""
         return list(self._options)
 
+    # Fraction of the wrapped button's perceived side padding that the adjacent
+    # option square overlaps at the seam (see _seam_overlap). The button centers
+    # its text, so the padding is (authored_width - text_width) / 2 per side;
+    # overlapping this fraction of it leaves (1 - fraction) of the normal padding
+    # at the text-to-option seam, without touching the theme QSS. 0.75 keeps a
+    # quarter of the padding — half the gap of the initial 0.5 tuning.
+    _SEAM_OVERLAP_FRACTION = 0.75
+
+    def _seam_overlap(self, container, first_option) -> int:
+        """Pixels the first option button tucks in over the wrapped button's edge.
+
+        The wrapped button centers its text, so its authored width leaves the
+        same padding on both sides. Butting an option square straight onto that
+        edge reads too airy — the text-to-option seam gets the FULL side
+        padding. The intended look is a FRACTION of the normal padding at the
+        seam (``_SEAM_OVERLAP_FRACTION``; outer side unchanged), without touching
+        the theme's padding QSS. The adjacent option therefore overlaps the
+        button edge by that fraction of the perceived padding, expressed as a
+        *negative layout spacer* so the layout itself owns the overlap — a
+        manual ``move()`` nudge would be undone on every re-layout, and the
+        container's size hint shrinks with it automatically. Option widgets are
+        added after the wrapped widget, so they stack on top across the overlap
+        strip. Were an option ever placed on the LEFT of the wrapped widget, the
+        same spacer would apply at that seam (today all options sit to the right).
+
+        Applies only where the seam is button-like and the geometry stable:
+        an anchored absolute wrap (authored .ui width — a layout-managed
+        width stretches, making "padding" meaningless), a text QPushButton
+        host (centered label), and a square icon button as the adjacent
+        option (a ValueOption field keeps its flush seam). Returns 0
+        otherwise, including when the text already fills the authored width.
+        """
+        if container is None or container._anchor_center is None:
+            return 0
+        if not getattr(first_option, "square", True):
+            return 0
+        w = self.wrapped_widget
+        if not isinstance(w, QtWidgets.QPushButton) or not w.text():
+            return 0
+        text_w = w.fontMetrics().horizontalAdvance(w.text())
+        pad = (container._authored_width - text_w) // 2
+        return max(0, round(pad * self._SEAM_OVERLAP_FRACTION))
+
+    def _add_option_widget(self, layout, container, option, is_first):
+        """Parent, wire, and add *option*'s widget to *layout*, returning it.
+
+        The first option also gets the negative seam spacer inserted before it
+        (see :meth:`_seam_overlap`, which tucks it over the button edge by a
+        fraction of the perceived padding) — kept as a layout item so a re-fit
+        preserves it. Shared by :meth:`_rebuild_layout` and :meth:`wrap`.
+        """
+        widget = option.widget
+        widget.setParent(container)
+        self._wire_option_widget(widget, option, container)
+        if is_first:
+            overlap = self._seam_overlap(container, option)
+            if overlap:
+                layout.addSpacing(-overlap)
+        layout.addWidget(widget)
+        return widget
+
     def _rebuild_layout(self):
         """Rebuild the layout with all current options."""
         if not self.container or not self.wrapped_widget:
@@ -234,7 +317,8 @@ class OptionBox:
 
         layout = self.container.layout()
 
-        # Clear all widgets except the wrapped widget
+        # Clear all widgets except the wrapped widget (drops any seam spacer
+        # too — it is re-inserted with the first option below)
         while layout.count() > 1:
             item = layout.takeAt(1)
             if item.widget():
@@ -242,12 +326,11 @@ class OptionBox:
 
         # Sort and add option widgets
         sorted_options = self._sort_options()
+        first = True
         for option in sorted_options:
             if hasattr(option, "widget"):
-                widget = option.widget
-                widget.setParent(self.container)
-                self._wire_option_widget(widget, option, self.container)
-                layout.addWidget(widget)
+                self._add_option_widget(layout, self.container, option, first)
+                first = False
 
         self._update_sizing()
         self.container._sync_option_buttons_enabled()
@@ -485,7 +568,32 @@ class OptionBox:
             if parent and parent.layout():
                 parent.layout().replaceWidget(wrapped_widget, container)
             else:
-                container.move(wrapped_widget.pos())
+                authored = wrapped_widget.geometry()
+                container.move(authored.topLeft())
+                container.resize(authored.size())
+                # Absolute-positioned (the marking-menu overlay): the container
+                # stands in at the wrapped widget's authored spot. Capture the
+                # authored geometry BEFORE the layout below reparents/resizes
+                # the widget:
+                # - the CENTER anchors every content re-fit
+                #   (see OptionBoxContainer._adjust_to_content) so the row
+                #   stays centered on the .ui position;
+                # - the WIDTH becomes the wrapped widget's minimum so the
+                #   layout's collapse-to-hint never crushes a Designer-padded
+                #   label to its bare text hint (text jammed against the
+                #   edges). The content fit is a floor, not a ceiling: a hint
+                #   wider than the authored width still wins.
+                # Only for a PARENTED widget — there the geometry is authored
+                # placement. A parentless wrap's geometry is just Qt's default
+                # (100x30): anchoring or flooring on it would pin a meaningless
+                # position/minimum onto a widget that hasn't been placed yet.
+                # Layout-managed wraps get neither — the parent layout owns
+                # geometry there.
+                if parent is not None:
+                    container._anchor_center = authored.center()
+                    container._authored_width = authored.width()
+                    if authored.width() > wrapped_widget.minimumWidth():
+                        wrapped_widget.setMinimumWidth(authored.width())
 
             # Create layout
             layout = QtWidgets.QHBoxLayout(container)
@@ -507,10 +615,9 @@ class OptionBox:
                     option.set_wrapped_widget(wrapped_widget)
 
                 if hasattr(option, "widget"):
-                    widget = option.widget
-                    widget.setParent(container)
-                    self._wire_option_widget(widget, option, container)
-                    layout.addWidget(widget)
+                    widget = self._add_option_widget(
+                        layout, container, option, not option_widgets
+                    )
                     option_widgets.append(widget)
 
             # Apply border styling
