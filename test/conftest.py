@@ -454,6 +454,11 @@ def assert_stable_after_show(testcase, window, pumps=20, settle_ms=12, ignore=()
     from qtpy import QtCore, QtWidgets
 
     window.show()
+    # Qt processes posted LayoutRequests BEFORE the first paint — flush them
+    # so snapshot A is what the first paint actually renders. Without this,
+    # a hand-built window's layout-assigned geometry (which lands pre-paint)
+    # would read as a post-show "mutation" on styles with large native hints.
+    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.LayoutRequest)
     before = visual_state_snapshot(window, ignore=ignore)
     for _ in range(pumps):
         QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, settle_ms)

@@ -367,6 +367,7 @@ _Generated: 2026-07-09_
   - methods: apply, suppress_save, save, save_value, load, reset_all, reset, clear, has_default, capture_default, set_default, save_custom, load_custom, clear_custom
 
 ### `widgets/mixins/style_sheet.py`
+- `repolish_tree(root: QtWidgets.QWidget) -> None`
 - `class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`
   - methods: get_icon_color, set_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides
 

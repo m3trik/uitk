@@ -2,4 +2,6 @@
 
 _Diff vs prior baseline. Generated 2026-07-09._
 
-No public API changes since last refresh.
+## Added (1)
+
+- `widgets/mixins/style_sheet.py::repolish_tree(root: QtWidgets.QWidget) -> None`

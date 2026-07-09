@@ -360,6 +360,10 @@ class TestLayoutManagedWrapUnaffected(QtBaseTestCase):
         self.layout.addWidget(btn)
         box = OptionBox(show_clear=False)
         box.wrap(btn)
+        # Realistic window size: a content-sized (~33px) top-level would be
+        # force-resized by the OS to its minimum captioned-window width right
+        # after show — an OS constraint, not an init flash.
+        self.window.resize(400, 120)
         assert_stable_after_show(self, self.window)
 
 
