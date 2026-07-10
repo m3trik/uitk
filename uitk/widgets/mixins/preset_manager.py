@@ -100,6 +100,17 @@ class PresetManager(ptk.LoggingMixin):
         # run-template the headless CLI reads (one :class:`pythontk.PresetStore`,
         # two front-ends), instead of GUI-only widget snapshots. The store
         # (built-in + user tiers) and :meth:`wire_combo` are unchanged.
+        #
+        # RESTORE CONTRACT: on wire, the combo restores the active preset's
+        # *selection only* -- values are never re-applied automatically. In
+        # widget-state mode that's complete (widgets reload from per-widget
+        # QSettings session state); in semantic mode there is NO session-state
+        # fallback, so if the applied values live outside the panel (a
+        # registry, DCC state such as hotkeys/keymaps), the OWNING app must
+        # re-apply the active preset itself at startup -- e.g. tentacle calls
+        # ``Macros.apply_saved_macros()`` from its DCC entry points at launch.
+        # Skipping that step yields "the combo shows the preset name but its
+        # values aren't in effect until Refresh".
         self.value_provider = value_provider
         self.value_applier = value_applier
         # Optional *cheaper* capture used only by the dirty-check (``is_modified``);
@@ -1109,10 +1120,13 @@ class PresetManager(ptk.LoggingMixin):
         The combo shows the *active preset name* as its selected item, restored
         from the persisted :attr:`active_preset` on wire (selection only -- no
         values are re-applied, since widgets restore themselves from session
-        state). When the live values diverge from the active preset a ``" *"``
-        suffix is shown (see :meth:`is_modified`); Save / Refresh clear it. When
-        no preset is active the combo shows the ``"Presets..."`` placeholder, or
-        ``"No saved presets"`` when none exist.
+        state; **semantic mode has no such fallback** -- an owner whose values
+        live outside the panel must re-apply the active preset at startup, see
+        the restore-contract note in ``__init__``). When the live values
+        diverge from the active preset a ``" *"`` suffix is shown (see
+        :meth:`is_modified`); Save / Refresh clear it. When no preset is active
+        the combo shows the ``"Presets..."`` placeholder, or ``"No saved
+        presets"`` when none exist.
 
         Parameters:
             combo: A uitk :class:`~uitk.widgets.comboBox.ComboBox` to populate

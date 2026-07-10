@@ -1029,7 +1029,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 self._ensure_on_screen()
 
         self.trigger_deferred()
-        self.activateWindow()
+        # Never pull focus for a window that is explicitly not on screen: a
+        # marking-menu warm-up (_suppressed_present) shows stacked pages under
+        # WA_DontShowOnScreen, and activating the overlay's realized-but-
+        # unmapped native window would steal keyboard focus from the host DCC
+        # at startup-idle.
+        if not self.window().testAttribute(QtCore.Qt.WA_DontShowOnScreen):
+            self.activateWindow()
 
         super().showEvent(event)
         if not self.is_initialized:

@@ -4,6 +4,7 @@ import sys
 import os
 import tempfile
 import weakref
+from contextlib import contextmanager
 from typing import Optional
 from qtpy import QtCore, QtWidgets, QtGui
 import pythontk as ptk
@@ -105,6 +106,10 @@ class MarkingMenu(
     _chord_pending_buttons: int = 0
     _chord_pending_modifiers: int = 0
 
+    # Remaining UI names of an in-flight scoped preload (see preload_menus);
+    # None when no warm-up is running.
+    _preload_queue: Optional[list] = None
+
     # Smooth submenu-transition state: set by _set_submenu, consumed by the
     # _pending_show_timer's _perform_transition, cleared by _debounce_transition.
     _pending_transition_ui: Optional[QtWidgets.QWidget] = None
@@ -146,6 +151,7 @@ class MarkingMenu(
         log_level: str = "DEBUG",
         suppress_default_on_reentry: bool = False,
         precompile: bool = False,
+        preload: bool = False,
         context_tags=None,
         **kwargs,
     ):
@@ -287,17 +293,11 @@ class MarkingMenu(
         # VISIBLE window — dropping the fullscreen state restores Qt's
         # ~100x30 pre-fullscreen "normal" geometry on screen and paints every
         # intermediate step (the init-time "components flash before the menu
-        # shows"). Suppressed-show + hide keeps the handle and screen bind,
+        # shows"). The suppressed present keeps the handle and screen bind,
         # ends construction hidden, and makes the first activation take the
         # same present-last path as every reopen (_show_marking_menu).
-        # Base-class hide: the hide() override ends by raising/activating the
-        # parent (the DCC main window) — a focus steal at startup-idle. Its
-        # gesture cleanup is all no-op pre-gesture, and hideEvent's safety
-        # net still runs either way.
-        self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
-        self.showFullScreen()
-        QtWidgets.QWidget.hide(self)
-        self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, False)
+        with self._suppressed_present():
+            pass
 
         # Initialize smooth transition timer
         self._pending_show_timer = QtCore.QTimer()
@@ -321,6 +321,14 @@ class MarkingMenu(
             if _other is not self:
                 _other.retire()
         MarkingMenu._live_instances.add(self)
+
+        # Optional scoped preloading: warm the binding-target menus once the
+        # host's event loop spins, so the FIRST activation behaves exactly
+        # like every later one (see preload_menus). Deferred + staggered —
+        # construction stays fast and the host keeps painting between
+        # warm-ups. Off by default for the same reason as ``precompile``.
+        if preload:
+            self.preload_menus()
 
     def retire(self) -> None:
         """Deactivate this instance because a newer MarkingMenu now owns
@@ -969,6 +977,22 @@ class MarkingMenu(
             else:
                 widget.resize(600, 600)
 
+        self._position_current_widget(anchor)
+
+        # Update mouse tracking cache for the new widget
+        self.mouse_tracking.update_child_widgets()
+
+    def _position_current_widget(
+        self, anchor: Optional[QtCore.QPoint] = None
+    ) -> None:
+        """Center the current page on ``anchor`` (global; defaults to the
+        cursor). Split from ``setCurrentWidget`` so a cold page can be
+        re-centered against its settled geometry after the present delivers
+        its first showEvent (see ``_show_marking_menu``) without re-running
+        the page swap."""
+        widget = self._current_widget
+        if widget is None:
+            return
         if anchor is None:
             anchor = QtGui.QCursor.pos()
         # Center the widget on the anchor. Marking-menu navigation windows
@@ -999,9 +1023,6 @@ class MarkingMenu(
                 y = max(ag.top(), y)
                 global_top_left = QtCore.QPoint(x, y)
         widget.move(self.mapFromGlobal(global_top_left))
-
-        # Update mouse tracking cache for the new widget
-        self.mouse_tracking.update_child_widgets()
 
     def setCurrentIndex(self, index: int) -> None:
         """Set the current widget index (compatibility method).
@@ -1066,6 +1087,161 @@ class MarkingMenu(
             # now opt in explicitly with the ``@Cancelable(timeout=N)``
             # decorator on the slot method, or set ``widget.slot_timeout``
             # at runtime.
+
+    def preload_menus(self, names=None, *, defer: bool = True) -> None:
+        """Warm the menus the bindings can reach so the FIRST activation
+        behaves exactly like every later one.
+
+        A cold page pays its entire initialization inside the first gesture:
+        the .ui load, slot-class instantiation and signal wiring
+        (``register_children``), QSS polish, and the content fit — and since
+        ``_show_marking_menu`` presents LAST, that first-show work lands
+        *after* the page was already centered on the gesture anchor, so the
+        menu visibly settles ("the first press feels uninitialized"). This
+        runs the same initialization up front through the real show path
+        (:meth:`_flush_first_show`), scoped to the distinct binding targets —
+        never the whole UI registry, whose standalone tool windows stay lazy.
+
+        Parameters:
+            names: Iterable of UI names to warm. Defaults to the distinct
+                targets of the current bindings.
+            defer: Warm one UI per event-loop tick (default) so a busy host
+                stays responsive during startup; ``False`` warms
+                synchronously (tests, or hosts preloading behind a splash).
+
+        Idempotent — initialized pages are skipped — so it's safe to re-run
+        after a bindings change to warm only the new targets. A live gesture
+        owns the overlay: the deferred run waits and retries rather than
+        hiding/re-showing it out from under the user.
+        """
+        if self._retired:
+            return
+        if names is None:
+            names = dict.fromkeys(self._bindings.values())
+        queue = [n for n in names if n]
+        if not queue:
+            return
+        merging = self._preload_queue is not None
+        if merging:
+            self._preload_queue.extend(queue)  # merge into the in-flight run
+        else:
+            self._preload_queue = queue
+        if defer:
+            if not merging:  # an in-flight run already has a timer servicing it
+                QtCore.QTimer.singleShot(0, self._preload_next)
+            return
+        # Synchronous drain — including anything an in-flight deferred run
+        # still had queued (idempotent, so no double work; its stale timer
+        # later finds an empty queue and no-ops).
+        try:
+            while self._preload_queue:
+                self._warm_menu(self._preload_queue.pop(0))
+        finally:
+            self._preload_queue = None
+
+    def _preload_next(self) -> None:
+        """Timer tick of a deferred :meth:`preload_menus` run — warm one UI,
+        then yield the event loop before the next."""
+        if self._retired or not self._preload_queue:
+            self._preload_queue = None
+            return
+        try:
+            busy = self._activation_key_held or self.isVisible()
+        except RuntimeError:
+            # C++ overlay destroyed without retire() (host teardown / dev
+            # reload) while a retry was pending — end the chain quietly
+            # instead of raising into the DCC event loop.
+            self._preload_queue = None
+            return
+        if busy:
+            # Mid-gesture: the overlay is the user's. Retry once it's idle.
+            QtCore.QTimer.singleShot(1000, self._preload_next)
+            return
+        try:
+            self._warm_menu(self._preload_queue.pop(0))
+        finally:
+            # Continue the chain even if a warm-up raised something
+            # _warm_menu didn't swallow — a single bad page must not strand
+            # the queue non-None (which would dead-end every later
+            # preload_menus call into a chain no timer services).
+            if self._preload_queue:
+                QtCore.QTimer.singleShot(0, self._preload_next)
+            else:
+                self._preload_queue = None
+
+    def _warm_menu(self, name: str) -> None:
+        """Warm a single stacked menu: resolve, ``_init_ui``, and flush its
+        first-show initialization while nothing paints. Failures are logged
+        and swallowed — preloading is an optimization and must never break
+        the host's startup (an unresolvable target simply stays lazy)."""
+        try:
+            ui = self.sb.get_ui(name)
+        except Exception as e:
+            self.logger.debug(f"[preload] {name!r} did not resolve: {e}")
+            return
+        if ui is None or getattr(ui, "is_initialized", False):
+            return
+        if not (
+            getattr(ui, "has_tags", None) and ui.has_tags(_MARKING_MENU_TAGS)
+        ):
+            # Standalone windows (and anything without a tag surface) stay
+            # lazy: their show is user-driven and positioned by the
+            # ui_handler at launch time.
+            return
+        if not self.isHidden():
+            # A live gesture owns the overlay (synchronous callers only — the
+            # deferred path already waits and retries). Warming now would
+            # half-run: _flush_first_show no-ops, is_initialized stays False,
+            # and the later real show() re-runs _init_ui, stacking a
+            # duplicate on_child_registered connection.
+            self.logger.debug(f"[preload] overlay visible; {name!r} stays lazy.")
+            return
+        try:
+            self._init_ui(ui)
+            self._flush_first_show(ui)
+        except Exception as e:
+            self.logger.warning(f"[preload] warming {name!r} failed: {e}")
+
+    @contextmanager
+    def _suppressed_present(self):
+        """Present the overlay under ``WA_DontShowOnScreen`` for the duration
+        of the block, then end hidden with the attribute cleared.
+
+        The shared mechanic behind construction's realize-without-presenting
+        and :meth:`_flush_first_show`'s warm-up: the native window (and its
+        screen bind) is realized, children shown inside the block receive
+        genuine show events, and nothing ever maps on screen. The teardown is
+        unconditional (``finally``) — a body that raises must not leave the
+        overlay shown-but-unmapped (``isHidden()`` False would skip the next
+        activation's present) or leak the suppression into a real show. Hide
+        is the BASE-class hide: the ``hide()`` override ends by raising/
+        activating the host parent — a focus steal when nothing was ever on
+        screen; its gesture cleanup is all no-op here, and ``hideEvent``'s
+        safety net still runs either way.
+        """
+        self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
+        try:
+            self.showFullScreen()
+            yield
+        finally:
+            QtWidgets.QWidget.hide(self)
+            self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, False)
+
+    def _flush_first_show(self, page) -> None:
+        """Run a stacked page's REAL first-show initialization (child
+        registration / slot wiring, QSS polish, content fit) while nothing
+        paints, so a later activation positions against settled geometry.
+
+        Children shown inside a :meth:`_suppressed_present` block receive
+        genuine show events without anything mapping on screen. No-op unless
+        the overlay is hidden and the page still uninitialized, so it can
+        never fight a live gesture.
+        """
+        if getattr(page, "is_initialized", False) or not self.isHidden():
+            return
+        with self._suppressed_present():
+            page.setVisible(True)
+            page.setVisible(False)
 
     def _prepare_ui(self, ui, *, anchor=None) -> QtWidgets.QWidget:
         """Initialize and set the UI without showing it.
@@ -2062,7 +2238,15 @@ class MarkingMenu(
         # cycle anchors at the cursor and becomes that gesture's origin.
         is_startmenu = widget.has_tags("startmenu")
         new_gesture = is_startmenu and self.overlay.path.is_empty
-        anchor = self.overlay.path.start_pos if is_startmenu and not new_gesture else None
+        # Resolve the anchor ONCE so every consumer — screen selection, the
+        # centering, a new gesture's origin, and the cold-show re-center
+        # below — reads the same point (a fresh cursor re-read at each step
+        # can drift a few px between them).
+        anchor = (
+            self.overlay.path.start_pos
+            if is_startmenu and not new_gesture
+            else QtGui.QCursor.pos()
+        )
 
         # Multi-monitor: assign the overlay's screen/geometry for the anchor's
         # screen before positioning the menu (see method docstring). Must run
@@ -2071,10 +2255,16 @@ class MarkingMenu(
         # screen. Geometry only; a hidden overlay is presented last, below.
         self._ensure_fullscreen_on_active_screen(anchor)
 
+        # A cold page's first-show init (register_children slot wiring, QSS
+        # polish, content fit) is delivered by the PRESENT below — after the
+        # centering — so its geometry still settles afterwards; remember and
+        # re-center then. Preloaded pages (preload_menus) never hit this.
+        first_show = not getattr(widget, "is_initialized", True)
+
         self.setCurrentWidget(widget, anchor=anchor)
 
         if new_gesture:
-            self.overlay.start_gesture(QtGui.QCursor.pos())
+            self.overlay.start_gesture(anchor)
 
         if (
             self._suppress_default_on_reentry
@@ -2096,6 +2286,16 @@ class MarkingMenu(
         # seam. Guarded by test_marking_menu_present_order.py.)
         if self.isHidden():
             self.showFullScreen()
+            if first_show and getattr(widget, "is_initialized", False):
+                # The present just delivered the page's first showEvent, so
+                # its settled geometry differs from what the centering above
+                # measured ("first press feels uninitialized": mis-centered,
+                # then visibly snaps). Re-center on the SAME anchor and
+                # refresh the tracking cache for the just-registered
+                # children. Once per page ever — and never for preloaded
+                # pages, whose first show was flushed at warm-up.
+                self._position_current_widget(anchor)
+                self.mouse_tracking.update_child_widgets()
             # Push the freshly-composed frame NOW. The show presents the
             # retained buffer (cleared by hide()'s flush — invisible, not
             # stale), and without this forced repaint the real menu waits on

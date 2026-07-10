@@ -1291,12 +1291,18 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
 
         from uitk.widgets.menu import _menus_awaiting_registration
 
-        stale = [
-            m
-            for m in list(_menus_awaiting_registration)
-            if m._pending_registrations
-            and m._resolve_registration_window() is self.ui
-        ]
+        def _resolves_to_ui(m):
+            # A dead C++ wrapper left in the module-global set by an earlier
+            # test must not error THIS probe (the same hazard the production
+            # flush guards against) — treat it as not-ours.
+            try:
+                return bool(m._pending_registrations) and (
+                    m._resolve_registration_window() is self.ui
+                )
+            except RuntimeError:
+                return False
+
+        stale = [m for m in list(_menus_awaiting_registration) if _resolves_to_ui(m)]
         self.assertEqual(
             stale,
             [],

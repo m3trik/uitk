@@ -114,7 +114,15 @@ mm = MarkingMenu(
 )
 ```
 
-If a `switchboard=` Switchboard is passed, the marking menu joins that one (registering any given sources onto it); otherwise it creates a private Switchboard with the given sources. Further opt-in kwargs: `suppress_default_on_reentry` (don't bounce back to the default menu after a non-default one was shown in the same hold), `precompile` (background pre-compile of stale `_ui.py` files, only under the `CompiledLoader`), and `context_tags` (host identity — drives `requires`-tag widget filtering and the binding store's namespace).
+If a `switchboard=` Switchboard is passed, the marking menu joins that one (registering any given sources onto it); otherwise it creates a private Switchboard with the given sources. Further opt-in kwargs: `suppress_default_on_reentry` (don't bounce back to the default menu after a non-default one was shown in the same hold), `precompile` (background pre-compile of stale `_ui.py` files, only under the `CompiledLoader`), `preload` (scoped preloading, below), and `context_tags` (host identity — drives `requires`-tag widget filtering and the binding store's namespace).
+
+### Scoped preloading (`preload=True` / `preload_menus`)
+
+A cold page pays its entire initialization inside the first gesture — the `.ui` load, slot-class instantiation and signal wiring, QSS polish, content fit — and because the overlay presents **last**, that first-show work lands *after* the page was already centered on the gesture anchor. Symptom: the first activation lags and settles visibly ("the first press feels uninitialized"); every later one is consistent.
+
+`preload=True` warms the **distinct binding-target menus** (never the whole UI registry — standalone tool windows stay lazy) through the real show path while nothing paints, using the same `WA_DontShowOnScreen` suppressed-present trick construction uses to realize the overlay. Deferred and staggered — one page per event-loop tick once the host is idle, waiting out any live gesture — so DCC startup isn't blocked. `preload_menus(names=None, defer=True)` can also be called directly (it's idempotent; re-run it after a bindings change to warm only new targets), and `defer=False` warms synchronously for hosts that preload behind a splash screen.
+
+As a backstop for pages that still reach the activation path cold (preloading off, or a freshly retargeted binding), `_show_marking_menu` re-centers such a page on its gesture anchor right after the present delivers its first `showEvent` — so even a cold first activation ends positioned exactly like every later one.
 
 ### Subclassing for a DCC shell
 
@@ -148,6 +156,7 @@ class TclMaya(MarkingMenu):
             log_level=log_level,
             suppress_default_on_reentry=True,
             precompile=True,
+            preload=True,
             context_tags={"maya"},
             **kwargs,
         )
