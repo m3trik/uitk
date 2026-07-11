@@ -472,8 +472,12 @@ class PinValuesOption(ButtonOption):
         # Connect to wrapped widget's value change signals to update icon
         self._connect_value_change_signals()
 
-        # Defer initial icon update to ensure wrapped widget has its value set
-        QtCore.QTimer.singleShot(0, self._update_button_icon)
+        # Initial icon SYNCHRONOUSLY — the old deferred (singleShot) update
+        # landed on the tick AFTER first paint, flickering the glyph on
+        # screen. A wrapped-widget state restore that lands later fires the
+        # value-change signals connected above, which re-run the (idempotent)
+        # update pre-paint.
+        self._update_button_icon()
 
         return button
 
@@ -689,19 +693,36 @@ class PinValuesOption(ButtonOption):
         current_value = self._get_widget_value()
         current_is_pinned = self._get_entry_for_value(current_value) is not None
 
-        # Preserve the size set by the parent OptionBox so swapping pinned
-        # state doesn't oscillate the icon size.
         if current_is_pinned:
-            IconManager.swap_icon(self._widget, "radio", fallback_size=(17, 17))
-            self._widget.setToolTip(
+            icon_name = "radio"
+            tooltip = (
                 f"Pinned values ({len(self._pinned_entries)}) - current value is pinned"
             )
         elif self._pinned_entries:
-            IconManager.swap_icon(self._widget, "radio_empty", fallback_size=(17, 17))
-            self._widget.setToolTip(f"Pinned values ({len(self._pinned_entries)})")
+            icon_name = "radio_empty"
+            tooltip = f"Pinned values ({len(self._pinned_entries)})"
         else:
-            IconManager.swap_icon(self._widget, "radio_empty", fallback_size=(17, 17))
-            self._widget.setToolTip("Pin values")
+            icon_name = "radio_empty"
+            tooltip = "Pin values"
+
+        self._widget.setToolTip(tooltip)
+        # Idempotent: signal-driven re-runs (every valueChanged) skip the
+        # rasterize+setIcon when the glyph is already correct — keeps the
+        # synchronous create-time init plus repeated updates visually and
+        # computationally free. Preserve the size set by the parent OptionBox
+        # so swapping pinned state doesn't oscillate the icon size.
+        info = IconManager._widget_icon_info.get(id(self._widget))
+        if (
+            info
+            and info.get("name") == icon_name
+            # The info dict is keyed by id() and outlives dead widgets until
+            # the next theme sweep — CPython id reuse could match a stale
+            # entry and skip the NEW button's first icon. The weak registry
+            # proves the entry is really this widget's.
+            and IconManager._widget_icons.get(id(self._widget)) is self._widget
+        ):
+            return
+        IconManager.swap_icon(self._widget, icon_name, fallback_size=(17, 17))
 
     @property
     def pinned_values(self):

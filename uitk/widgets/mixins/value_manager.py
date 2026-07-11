@@ -32,6 +32,13 @@ class ValueManager:
         """
         if hasattr(widget, "value") and callable(widget.value):
             return widget.value()
+        elif isinstance(widget, QtWidgets.QAbstractButton):
+            # A button is an action/toggle, not a text field: persist only a
+            # checkable button's checked state. A plain action button's label is
+            # static .ui content — saving it would replay a stale label over a
+            # renamed button (e.g. a launcher whose .ui text changed). Must
+            # precede the text branch (buttons inherit text()).
+            return widget.isChecked() if widget.isCheckable() else None
         elif hasattr(widget, "text") and callable(widget.text):
             return widget.text()
         elif hasattr(widget, "currentText") and callable(widget.currentText):
@@ -67,13 +74,16 @@ class ValueManager:
                 # unparseable value — never reset to minimum().
                 ValueManager._set_numeric_value(widget, value)
 
-            elif isinstance(widget, QtWidgets.QAbstractButton) and widget.isCheckable():
-                # Checkable buttons (QCheckBox, QRadioButton, checkable
-                # QPushButton) inherit setText from QAbstractButton, so without
-                # this branch they would match the setText branch below and have
-                # their LABEL set to the value instead of their checked state.
-                # Must precede setText. (Mirrors set_value_by_signal's "toggled".)
-                ValueManager._set_boolean_value(widget, value)
+            elif isinstance(widget, QtWidgets.QAbstractButton):
+                # A button is an action/toggle, not a text field (symmetric with
+                # get_value): apply a checkable button's checked state, but never
+                # write a stored label over a plain action button — its text is
+                # static .ui content, so restoring a stale value would undo a .ui
+                # rename (and it keeps icon-only option buttons icon-only). Must
+                # precede the setText branch (buttons inherit setText).
+                if widget.isCheckable():
+                    ValueManager._set_boolean_value(widget, value)
+                # else: no-op — preserve the .ui-defined label
 
             elif hasattr(widget, "setPlainText") and callable(widget.setPlainText):
                 # QTextEdit, QPlainTextEdit — must precede setText: QTextEdit
@@ -82,29 +92,7 @@ class ValueManager:
                 widget.setPlainText(str(value))
 
             elif hasattr(widget, "setText") and callable(widget.setText):
-                # Text-capable widgets (QLineEdit, QLabel, etc.)
-                # Skip icon-only option buttons that should never display text
-                if isinstance(widget, QtWidgets.QPushButton):
-                    obj_name = widget.objectName() or ""
-                    class_prop = widget.property("class") or ""
-                    class_prop = (
-                        " ".join(class_prop)
-                        if isinstance(class_prop, (list, tuple))
-                        else str(class_prop)
-                    )
-
-                    is_option_button = obj_name in {
-                        "actionButton",
-                        "optionMenuButton",
-                    } or any(
-                        token in class_prop
-                        for token in ("ActionButton", "OptionMenuButton")
-                    )
-
-                    if is_option_button:
-                        # Preserve icon-only appearance; state data uses ellipsis placeholder
-                        return
-
+                # Text-capable non-button widgets (QLineEdit, QLabel, ...).
                 widget.setText(str(value))
 
             elif hasattr(widget, "setCurrentText") and callable(widget.setCurrentText):

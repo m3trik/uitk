@@ -256,6 +256,10 @@ class _OverlayStub:
     def clone_widgets_along_path(self, *_args, **_kwargs):
         pass
 
+    def clear_paint_events(self):
+        # Part of the real Overlay interface hide() consumes (buffer flush).
+        pass
+
 
 class _MouseTrackingStub:
     # Mirror the slice of the real MouseTracking interface the menu touches: the

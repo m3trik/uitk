@@ -162,6 +162,154 @@ class TestExpandableList(QtBaseTestCase):
         self.assertGreater(size.width(), 0, "Sublist width should be > 0")
         self.assertGreater(size.height(), 0, "Sublist height should be > 0")
 
+    def test_sublist_sizes_to_own_content_not_root_width(self):
+        """A sublist must size to its own contents, not the starting list's width.
+
+        Bug: width-pinning kwargs passed to the root list (e.g.
+        ``setMinimumWidth``) were copied verbatim into every sublist's config
+        (``_create_sublist_config`` spreads ``**self.kwargs``), so each flyout was
+        forced to the root list's minimum width instead of hugging its own — much
+        narrower — contents. Fix: a sublist carries no size constraint of its own
+        (``_add_sublist`` resets its min/max size), so it always tracks sizeHint.
+        Fixed: 2026-07-10
+        """
+        lw = ExpandableList(
+            self.window, fixed_item_height=21, setMinimumWidth=200
+        )
+        self.track_widget(lw)
+        w1 = lw.add("A wide-ish parent item")
+        w1.sublist.add("x")  # a single, narrow child
+
+        sublist = w1.sublist
+        # The root's pinned width must NOT cascade to the sublist.
+        self.assertEqual(
+            sublist.minimumWidth(),
+            0,
+            "sublist must not inherit the root list's forced minimum width",
+        )
+        # And it should hug its own (narrow) content, not the 200px root width.
+        self.assertLess(
+            sublist.sizeHint().width(),
+            200,
+            "sublist should size to its own contents, not the starting list",
+        )
+
+    def test_nested_sublist_also_sizes_to_own_content(self):
+        """The unconstrained-size invariant must hold at every depth, not just the
+        first sublist — a grandchild sublist must not inherit the root's width
+        either (the root's kwargs propagate down the chain, so each level's
+        ``_add_sublist`` must clear them)."""
+        lw = ExpandableList(
+            self.window, fixed_item_height=21, setFixedWidth=180
+        )
+        self.track_widget(lw)
+        w1 = lw.add("Parent")
+        w2 = w1.sublist.add("Child")
+        w2.sublist.add("y")  # grandchild leaf
+
+        self.assertEqual(w1.sublist.minimumWidth(), 0)
+        self.assertEqual(w2.sublist.minimumWidth(), 0)
+        self.assertLess(w2.sublist.sizeHint().width(), 180)
+
+    def test_sublist_not_capped_by_root_max_width(self):
+        """A root max-width cap must not clip a wider sublist either — a max
+        constraint inherited from the root would shrink a flyout whose contents
+        are wider than the starting list, still failing 'size to own content'."""
+        lw = ExpandableList(
+            self.window, fixed_item_height=21, setMaximumWidth=30
+        )
+        self.track_widget(lw)
+        w1 = lw.add("Parent")
+        w1.sublist.add("A fairly long child item that exceeds 30px")
+
+        sublist = w1.sublist
+        # The root's cap must not cascade — the sublist stays unconstrained.
+        self.assertGreater(
+            sublist.maximumWidth(),
+            30,
+            "sublist must not inherit the root list's maximum-width cap",
+        )
+        # And its content-driven hint is free to exceed the root's 30px cap.
+        self.assertGreater(sublist.sizeHint().width(), 30)
+
+    def test_overlay_first_sublist_covers_starting_list_width(self):
+        """Overlay presets are the exception to content-sizing: the first sublist
+        sits on top of the starting list, so it must be at least as wide as that
+        list to cover it fully — even when its own content is narrower.
+
+        Covers both overlay presets: ``expand_overlay`` (position ``overlay``)
+        and ``expand_overlay_left`` (position ``overlay_right``).
+        """
+        # A wide PARENT item drives the list width through content (the list fits
+        # its widest item) — the way the starting list is actually wide in
+        # production. ``resize()`` alone can't force it: the list re-fits to its
+        # content on add/show, so a resize to 220 collapses back to the item width.
+        wide = "A deliberately wide starting-list parent item"
+        for preset in ("expand_overlay", "expand_overlay_left"):
+            with self.subTest(preset=preset):
+                win = QtWidgets.QMainWindow()
+                self.track_widget(win)
+                win.resize(400, 300)
+                win.show()
+                lw = ExpandableList(win, fixed_item_height=21)
+                self.track_widget(lw)
+                lw.apply_preset(preset)
+                lw.show()
+                root = lw.add(wide)  # wide parent -> wide list
+                root.sublist.add("y")  # a narrow child, hint << list width
+                # Sanity: the flyout's own content is much narrower than the list.
+                self.assertLess(root.sublist.sizeHint().width(), lw.width())
+
+                lw._handle_widget_enter_event(root)
+                self.assertGreaterEqual(
+                    root.sublist.width(),
+                    lw.width(),
+                    f"{preset}: overlay first sublist must cover the starting list",
+                )
+
+    def test_nonoverlay_sublist_stays_content_width_under_wide_root(self):
+        """A fan-out (non-overlay) preset keeps content-sized sublists even when
+        the starting list is much wider — only overlays widen to cover."""
+        self.window.resize(400, 300)
+        self.window.show()
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        lw.apply_preset("expand_right")
+        lw.show()
+        # Wide PARENT item -> wide list via content (resize() re-fits away on show).
+        root = lw.add("A deliberately wide starting-list parent item")
+        root.sublist.add("y")
+
+        lw._handle_widget_enter_event(root)
+        self.assertLess(
+            root.sublist.width(),
+            lw.width(),
+            "fan-out sublist must size to content, not the wide starting list",
+        )
+
+    def test_deep_overlay_sublist_is_content_sized_not_covering(self):
+        """The cover-the-parent rule applies only to the FIRST overlay sublist.
+        Deeper sublists fan out (child position 'right'/'left') and must size to
+        their own content, not the (wide) starting list."""
+        self.window.resize(500, 400)
+        self.window.show()
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        lw.apply_preset("expand_overlay")
+        lw.show()
+        # Wide PARENT item -> wide list via content (resize() re-fits away on show).
+        root = lw.add("A deliberately wide starting-list root item")
+        cat = root.sublist.add("Category")
+        cat.sublist.add("z")  # narrow grandchild
+
+        lw._handle_widget_enter_event(root)  # first (overlay) sublist
+        root.sublist._handle_widget_enter_event(cat)  # deeper (fan-out) sublist
+        self.assertLess(
+            cat.sublist.width(),
+            lw.width(),
+            "a deep overlay-chain sublist must size to content, not cover the root",
+        )
+
     def test_force_hide_collapses_sublist_shown_under_hidden_ancestor(self):
         """A sublist open at hide-time must reopen collapsed.
 

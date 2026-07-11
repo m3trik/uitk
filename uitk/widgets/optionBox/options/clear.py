@@ -55,11 +55,20 @@ class ClearOption(ButtonOption):
         # Install event filter to catch show events for deferred visibility update
         if self._auto_hide and self._widget:
             self._widget.installEventFilter(self)
+            # Initial state SYNCHRONOUSLY: an empty field's clear button must
+            # never paint visible-then-hide (the deferred-only update let the
+            # wrong state be the first painted state — an init flash). Later
+            # text changes update via the connected signals.
+            self._update_visibility()
 
     def eventFilter(self, obj, event):
         """Filter show events to update visibility after state restoration."""
         if event.type() == QtCore.QEvent.Show and obj is self._widget:
-            # Defer visibility update to after state restoration completes
+            # Synchronous first so the shown state is correct on this very
+            # paint; the deferred pass stays as the safety net for a state
+            # restore that lands later in the same show cascade (its stated
+            # purpose) — a no-op when the state didn't change.
+            self._update_visibility()
             QtCore.QTimer.singleShot(0, self._update_visibility)
         return super().eventFilter(obj, event)
 

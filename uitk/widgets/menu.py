@@ -2,6 +2,7 @@
 # coding=utf-8
 import os
 import inspect
+import logging
 import warnings
 import weakref
 from dataclasses import dataclass, field
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
 # real-platform "won't hide" symptom that does not reproduce offscreen. See
 # Menu._check_cursor_position.
 _LEAVE_DEBUG = bool(os.environ.get("UITK_MENU_LEAVE_DEBUG"))
+
+_logger = logging.getLogger(__name__)
 
 # From this package:
 from uitk.widgets.header import Header
@@ -212,7 +215,12 @@ class ActionButtonManager:
         self, button_id: str, config: _ActionButtonConfig
     ) -> QtWidgets.QPushButton:
         """Create an action button with the given configuration."""
-        button = QtWidgets.QPushButton(config.text)
+        # Parent to the container at construction: a parentless button that
+        # gets setVisible(True) below (visible=contains_items) MAPS as its own
+        # on-screen top-level window until add_button's addWidget reparents it
+        # — a visible stray flash on every FIRST popup open (option-box menus,
+        # whose apply/defaults buttons default on).
+        button = QtWidgets.QPushButton(config.text, self.container)
 
         if config.tooltip:
             button.setToolTip(config.tooltip)
@@ -562,6 +570,73 @@ class _DismissOnAncestorMove(QtCore.QObject):
                 pass
         self._watched.clear()
         self._target = None
+
+
+# Every Menu with a non-empty deferred-registration queue (see
+# Menu._schedule_registration). Weak so a menu destroyed before its drain
+# simply drops out. Consumed by _flush_pending_registrations, which
+# MainWindow.register_children calls to complete all menu-item registration
+# inside the pre-paint window instead of on the post-paint tick-0 timer (the
+# init-flash "drain" phase).
+_menus_awaiting_registration: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def _flush_pending_registrations(window=None) -> int:
+    """Synchronously drain every menu's deferred item registrations.
+
+    ``Menu.add`` defers each item's ``register_widget`` to a coalesced
+    ``QTimer.singleShot(0, ...)`` — deliberately, to escape *mid-add*
+    recursion (a synchronous ``init_slot`` during ``add()`` can re-enter menu
+    population; see ``Menu.add``). That deferral was never meant to escape
+    the pre-paint window, yet on first show the timer fires only AFTER the
+    window painted — item state-restore and nested option-box wraps then
+    mutate on screen (the init flash).
+
+    Called at the end of ``MainWindow.register_children`` (all ``add()``
+    frames unwound, window not yet painted). Only menus outside an ``add()``
+    frame (``_add_depth == 0``) and belonging to *window* (when given) are
+    drained — the recursion contract is preserved exactly. Loops to fixpoint
+    (a drained ``init_slot`` may populate nested menus, scheduling more) with
+    a safety cap. The already-armed tick-0 timers later find empty queues
+    and no-op.
+
+    Returns the number of menus drained.
+    """
+    drained = 0
+    for _ in range(10):  # fixpoint cap — see warning below
+        # Snapshot: draining mutates the set (menus discard themselves).
+        batch = [
+            m
+            for m in list(_menus_awaiting_registration)
+            # Plain Python attrs — safe even on a dead C++ wrapper.
+            if m._pending_registrations and m._add_depth == 0
+        ]
+        if window is not None:
+            alive = []
+            for m in batch:
+                try:
+                    # C++ access (walks parent()): a deleteLater'd menu's
+                    # wrapper lingers in the WeakSet until GC and raises
+                    # RuntimeError here — it must be dropped, not allowed to
+                    # crash the flush inside MainWindow.showEvent.
+                    if m._resolve_registration_window() is window:
+                        alive.append(m)
+                except RuntimeError:
+                    _menus_awaiting_registration.discard(m)
+            batch = alive
+        if not batch:
+            return drained
+        for menu in batch:
+            try:
+                menu._drain_pending_registrations()
+                drained += 1
+            except RuntimeError:
+                continue  # menu died mid-flush
+    _logger.warning(
+        "_flush_pending_registrations: fixpoint cap reached — menu "
+        "registrations still pending after 10 rounds (recursive add loop?)."
+    )
+    return drained
 
 
 class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
@@ -2459,6 +2534,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         if self._registration_window_ref is None:
             self._resolve_registration_window()
         self._pending_registrations.append(widget)
+        # Track for the pre-paint flush (_flush_pending_registrations) so
+        # register_children can complete registration before first paint;
+        # the timer below stays as the fallback for post-show dynamic adds.
+        _menus_awaiting_registration.add(self)
         if not self._registration_drain_scheduled:
             self._registration_drain_scheduled = True
             QtCore.QTimer.singleShot(0, self._drain_pending_registrations)
@@ -2481,6 +2560,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """
         pending, self._pending_registrations = self._pending_registrations, []
         self._registration_drain_scheduled = False
+        # Registrations appended DURING the drain land in the fresh queue and
+        # re-add this menu; discarding here keeps the awaiting-set accurate.
+        _menus_awaiting_registration.discard(self)
         for widget in pending:
             try:
                 self._register_with_main_window(widget)
@@ -3181,22 +3263,25 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         rowSpan: int = 1,
         colSpan: Optional[int] = None,
     ) -> Optional[QtWidgets.QWidget]:
-        temp_menu = QtWidgets.QMenu(self)
-        temp_menu.addAction(action)
-
-        temp_menu.ensurePolished()
-        temp_menu.show()
-        QtWidgets.QApplication.processEvents()
-
-        widget = temp_menu.widgetForAction(action)
-        if not widget:
-            temp_menu.hide()
-            temp_menu.deleteLater()
-            return None
-
-        widget.setParent(self)
-        temp_menu.hide()
-        temp_menu.deleteLater()
+        # No temporary QMenu: the old realization path built a real QMenu,
+        # SHOWED it (a momentary empty popup on screen during add() — an
+        # init flash) and pumped the event loop to materialize
+        # widgetForAction — an API newer PySide6 bindings no longer expose
+        # (gone in 6.10, so the path also hard-crashed there).
+        widget = None
+        if isinstance(action, QtWidgets.QWidgetAction):
+            # The action carries its own widget — take it directly.
+            widget = action.defaultWidget()
+            if widget is not None:
+                widget.setParent(self)
+        if widget is None:
+            # Plain QAction (or a QWidgetAction without a default widget):
+            # host it in a QToolButton, the standard QAction carrier —
+            # trigger/text/icon/enabled state all track the action.
+            button = QtWidgets.QToolButton(self)
+            button.setDefaultAction(action)
+            button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+            widget = button
 
         if row is None:
             row = 0

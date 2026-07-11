@@ -11,6 +11,30 @@ from uitk.widgets.mixins.settings_manager import SettingsManager
 _logger = logging.getLogger(__name__)
 
 
+def repolish_tree(root: QtWidgets.QWidget) -> None:
+    """Force re-evaluation of property-selector QSS for *root* and children.
+
+    Dynamic-property rules (``[class="..."]``) are only re-matched on an
+    ``unpolish``/``polish`` cycle — a property stamped after a widget's first
+    polish leaves stale metrics until then (show performs the cycle
+    implicitly, which is why post-show measurements differ from pre-show
+    ones: the init-flash mechanism). Call this after stamping style-bearing
+    properties and BEFORE measuring size hints, so first measurements are
+    final. ``QStyle.polish`` is per-widget, so the tree is walked explicitly;
+    cheap for row/menu-scale trees.
+    """
+    for w in [root] + root.findChildren(QtWidgets.QWidget):
+        try:
+            # NOT w.style(): uitk widgets attach a StyleSheet manager as the
+            # instance attribute ``style`` (e.g. Menu.__init__), shadowing
+            # QWidget.style() — the unbound base-class call bypasses that.
+            style = QtWidgets.QWidget.style(w)
+            style.unpolish(w)
+            style.polish(w)
+        except RuntimeError:
+            pass  # C++ side died mid-walk
+
+
 class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     """Theme and stylesheet manager with light/dark theme support."""
 

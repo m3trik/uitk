@@ -4,6 +4,7 @@ import sys
 import os
 import tempfile
 import weakref
+from contextlib import contextmanager
 from typing import Optional
 from qtpy import QtCore, QtWidgets, QtGui
 import pythontk as ptk
@@ -16,6 +17,7 @@ from ._resolver import parse_binding_keys, resolve_target_menu, count_buttons
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.menuButton import MenuButton
 from uitk.widgets.mixins.shortcuts import GlobalShortcut, host_namespace_suffix
+from uitk.widgets.mixins.style_sheet import repolish_tree
 from uitk.compile import precompile_async
 from uitk.loaders import CompiledLoader
 
@@ -104,6 +106,10 @@ class MarkingMenu(
     _chord_pending_buttons: int = 0
     _chord_pending_modifiers: int = 0
 
+    # Remaining UI names of an in-flight scoped preload (see preload_menus);
+    # None when no warm-up is running.
+    _preload_queue: Optional[list] = None
+
     # Smooth submenu-transition state: set by _set_submenu, consumed by the
     # _pending_show_timer's _perform_transition, cleared by _debounce_transition.
     _pending_transition_ui: Optional[QtWidgets.QWidget] = None
@@ -145,6 +151,7 @@ class MarkingMenu(
         log_level: str = "DEBUG",
         suppress_default_on_reentry: bool = False,
         precompile: bool = False,
+        preload: bool = False,
         context_tags=None,
         **kwargs,
     ):
@@ -278,7 +285,19 @@ class MarkingMenu(
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_NoMousePropagation, False)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
-        self.showFullScreen()
+        # Realize the native window and bind the fullscreen state/screen
+        # WITHOUT presenting. A bare showFullScreen() here left the
+        # (translucent) overlay on screen from DCC startup until the first
+        # gesture ended, so the FIRST activation ran
+        # _ensure_fullscreen_on_active_screen's cross-screen relocate on a
+        # VISIBLE window — dropping the fullscreen state restores Qt's
+        # ~100x30 pre-fullscreen "normal" geometry on screen and paints every
+        # intermediate step (the init-time "components flash before the menu
+        # shows"). The suppressed present keeps the handle and screen bind,
+        # ends construction hidden, and makes the first activation take the
+        # same present-last path as every reopen (_show_marking_menu).
+        with self._suppressed_present():
+            pass
 
         # Initialize smooth transition timer
         self._pending_show_timer = QtCore.QTimer()
@@ -302,6 +321,14 @@ class MarkingMenu(
             if _other is not self:
                 _other.retire()
         MarkingMenu._live_instances.add(self)
+
+        # Optional scoped preloading: warm the binding-target menus once the
+        # host's event loop spins, so the FIRST activation behaves exactly
+        # like every later one (see preload_menus). Deferred + staggered —
+        # construction stays fast and the host keeps painting between
+        # warm-ups. Off by default for the same reason as ``precompile``.
+        if preload:
+            self.preload_menus()
 
     def retire(self) -> None:
         """Deactivate this instance because a newer MarkingMenu now owns
@@ -950,6 +977,22 @@ class MarkingMenu(
             else:
                 widget.resize(600, 600)
 
+        self._position_current_widget(anchor)
+
+        # Update mouse tracking cache for the new widget
+        self.mouse_tracking.update_child_widgets()
+
+    def _position_current_widget(
+        self, anchor: Optional[QtCore.QPoint] = None
+    ) -> None:
+        """Center the current page on ``anchor`` (global; defaults to the
+        cursor). Split from ``setCurrentWidget`` so a cold page can be
+        re-centered against its settled geometry after the present delivers
+        its first showEvent (see ``_show_marking_menu``) without re-running
+        the page swap."""
+        widget = self._current_widget
+        if widget is None:
+            return
         if anchor is None:
             anchor = QtGui.QCursor.pos()
         # Center the widget on the anchor. Marking-menu navigation windows
@@ -980,9 +1023,6 @@ class MarkingMenu(
                 y = max(ag.top(), y)
                 global_top_left = QtCore.QPoint(x, y)
         widget.move(self.mapFromGlobal(global_top_left))
-
-        # Update mouse tracking cache for the new widget
-        self.mouse_tracking.update_child_widgets()
 
     def setCurrentIndex(self, index: int) -> None:
         """Set the current widget index (compatibility method).
@@ -1047,6 +1087,161 @@ class MarkingMenu(
             # now opt in explicitly with the ``@Cancelable(timeout=N)``
             # decorator on the slot method, or set ``widget.slot_timeout``
             # at runtime.
+
+    def preload_menus(self, names=None, *, defer: bool = True) -> None:
+        """Warm the menus the bindings can reach so the FIRST activation
+        behaves exactly like every later one.
+
+        A cold page pays its entire initialization inside the first gesture:
+        the .ui load, slot-class instantiation and signal wiring
+        (``register_children``), QSS polish, and the content fit — and since
+        ``_show_marking_menu`` presents LAST, that first-show work lands
+        *after* the page was already centered on the gesture anchor, so the
+        menu visibly settles ("the first press feels uninitialized"). This
+        runs the same initialization up front through the real show path
+        (:meth:`_flush_first_show`), scoped to the distinct binding targets —
+        never the whole UI registry, whose standalone tool windows stay lazy.
+
+        Parameters:
+            names: Iterable of UI names to warm. Defaults to the distinct
+                targets of the current bindings.
+            defer: Warm one UI per event-loop tick (default) so a busy host
+                stays responsive during startup; ``False`` warms
+                synchronously (tests, or hosts preloading behind a splash).
+
+        Idempotent — initialized pages are skipped — so it's safe to re-run
+        after a bindings change to warm only the new targets. A live gesture
+        owns the overlay: the deferred run waits and retries rather than
+        hiding/re-showing it out from under the user.
+        """
+        if self._retired:
+            return
+        if names is None:
+            names = dict.fromkeys(self._bindings.values())
+        queue = [n for n in names if n]
+        if not queue:
+            return
+        merging = self._preload_queue is not None
+        if merging:
+            self._preload_queue.extend(queue)  # merge into the in-flight run
+        else:
+            self._preload_queue = queue
+        if defer:
+            if not merging:  # an in-flight run already has a timer servicing it
+                QtCore.QTimer.singleShot(0, self._preload_next)
+            return
+        # Synchronous drain — including anything an in-flight deferred run
+        # still had queued (idempotent, so no double work; its stale timer
+        # later finds an empty queue and no-ops).
+        try:
+            while self._preload_queue:
+                self._warm_menu(self._preload_queue.pop(0))
+        finally:
+            self._preload_queue = None
+
+    def _preload_next(self) -> None:
+        """Timer tick of a deferred :meth:`preload_menus` run — warm one UI,
+        then yield the event loop before the next."""
+        if self._retired or not self._preload_queue:
+            self._preload_queue = None
+            return
+        try:
+            busy = self._activation_key_held or self.isVisible()
+        except RuntimeError:
+            # C++ overlay destroyed without retire() (host teardown / dev
+            # reload) while a retry was pending — end the chain quietly
+            # instead of raising into the DCC event loop.
+            self._preload_queue = None
+            return
+        if busy:
+            # Mid-gesture: the overlay is the user's. Retry once it's idle.
+            QtCore.QTimer.singleShot(1000, self._preload_next)
+            return
+        try:
+            self._warm_menu(self._preload_queue.pop(0))
+        finally:
+            # Continue the chain even if a warm-up raised something
+            # _warm_menu didn't swallow — a single bad page must not strand
+            # the queue non-None (which would dead-end every later
+            # preload_menus call into a chain no timer services).
+            if self._preload_queue:
+                QtCore.QTimer.singleShot(0, self._preload_next)
+            else:
+                self._preload_queue = None
+
+    def _warm_menu(self, name: str) -> None:
+        """Warm a single stacked menu: resolve, ``_init_ui``, and flush its
+        first-show initialization while nothing paints. Failures are logged
+        and swallowed — preloading is an optimization and must never break
+        the host's startup (an unresolvable target simply stays lazy)."""
+        try:
+            ui = self.sb.get_ui(name)
+        except Exception as e:
+            self.logger.debug(f"[preload] {name!r} did not resolve: {e}")
+            return
+        if ui is None or getattr(ui, "is_initialized", False):
+            return
+        if not (
+            getattr(ui, "has_tags", None) and ui.has_tags(_MARKING_MENU_TAGS)
+        ):
+            # Standalone windows (and anything without a tag surface) stay
+            # lazy: their show is user-driven and positioned by the
+            # ui_handler at launch time.
+            return
+        if not self.isHidden():
+            # A live gesture owns the overlay (synchronous callers only — the
+            # deferred path already waits and retries). Warming now would
+            # half-run: _flush_first_show no-ops, is_initialized stays False,
+            # and the later real show() re-runs _init_ui, stacking a
+            # duplicate on_child_registered connection.
+            self.logger.debug(f"[preload] overlay visible; {name!r} stays lazy.")
+            return
+        try:
+            self._init_ui(ui)
+            self._flush_first_show(ui)
+        except Exception as e:
+            self.logger.warning(f"[preload] warming {name!r} failed: {e}")
+
+    @contextmanager
+    def _suppressed_present(self):
+        """Present the overlay under ``WA_DontShowOnScreen`` for the duration
+        of the block, then end hidden with the attribute cleared.
+
+        The shared mechanic behind construction's realize-without-presenting
+        and :meth:`_flush_first_show`'s warm-up: the native window (and its
+        screen bind) is realized, children shown inside the block receive
+        genuine show events, and nothing ever maps on screen. The teardown is
+        unconditional (``finally``) — a body that raises must not leave the
+        overlay shown-but-unmapped (``isHidden()`` False would skip the next
+        activation's present) or leak the suppression into a real show. Hide
+        is the BASE-class hide: the ``hide()`` override ends by raising/
+        activating the host parent — a focus steal when nothing was ever on
+        screen; its gesture cleanup is all no-op here, and ``hideEvent``'s
+        safety net still runs either way.
+        """
+        self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
+        try:
+            self.showFullScreen()
+            yield
+        finally:
+            QtWidgets.QWidget.hide(self)
+            self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, False)
+
+    def _flush_first_show(self, page) -> None:
+        """Run a stacked page's REAL first-show initialization (child
+        registration / slot wiring, QSS polish, content fit) while nothing
+        paints, so a later activation positions against settled geometry.
+
+        Children shown inside a :meth:`_suppressed_present` block receive
+        genuine show events without anything mapping on screen. No-op unless
+        the overlay is hidden and the page still uninitialized, so it can
+        never fight a live gesture.
+        """
+        if getattr(page, "is_initialized", False) or not self.isHidden():
+            return
+        with self._suppressed_present():
+            page.setVisible(True)
+            page.setVisible(False)
 
     def _prepare_ui(self, ui, *, anchor=None) -> QtWidgets.QWidget:
         """Initialize and set the UI without showing it.
@@ -1984,7 +2179,10 @@ class MarkingMenu(
     def _ensure_fullscreen_on_active_screen(
         self, anchor: Optional[QtCore.QPoint] = None
     ) -> None:
-        """Pin the full-screen overlay to the screen the menu will land on.
+        """Pin the full-screen overlay's GEOMETRY to the screen the menu will
+        land on. Geometry only — presenting a hidden overlay is the caller's
+        job (``_show_marking_menu`` presents LAST, after the target page is
+        current; see the comment there for why the order matters).
 
         The overlay is a single frameless full-screen window and every menu is
         positioned inside it via ``self.mapFromGlobal(...)``. Qt's
@@ -2015,20 +2213,19 @@ class MarkingMenu(
 
         # Relocate only when the overlay is *confirmed* to be on a different
         # screen than the active one. Single-monitor and indeterminate cases
-        # (no window handle / no screens) fall through to the original
-        # show-if-hidden behaviour, so this is a strict no-op there.
+        # (no window handle / no screens) are a strict no-op.
         # (current is not None already implies handle is not None.)
         if target is not None and current is not None and current is not target:
             # Drop the full-screen state so the geometry can move across
-            # screens, relocate, then re-assert full-screen on the target.
+            # screens, relocate, then re-assert full-screen on the target —
+            # but re-present here only when already visible (the mid-gesture
+            # monitor hop). A hidden overlay is presented by the caller after
+            # the page swap.
             self.setWindowState(self.windowState() & ~QtCore.Qt.WindowFullScreen)
             handle.setScreen(target)
             self.setGeometry(target.geometry())
-            self.showFullScreen()
-            return
-
-        if self.isHidden():
-            self.showFullScreen()
+            if not self.isHidden():
+                self.showFullScreen()
 
     def _show_marking_menu(self, widget, **kwargs):
         """Internal handler for showing marking menus."""
@@ -2041,18 +2238,33 @@ class MarkingMenu(
         # cycle anchors at the cursor and becomes that gesture's origin.
         is_startmenu = widget.has_tags("startmenu")
         new_gesture = is_startmenu and self.overlay.path.is_empty
-        anchor = self.overlay.path.start_pos if is_startmenu and not new_gesture else None
+        # Resolve the anchor ONCE so every consumer — screen selection, the
+        # centering, a new gesture's origin, and the cold-show re-center
+        # below — reads the same point (a fresh cursor re-read at each step
+        # can drift a few px between them).
+        anchor = (
+            self.overlay.path.start_pos
+            if is_startmenu and not new_gesture
+            else QtGui.QCursor.pos()
+        )
 
-        # Multi-monitor: relocate the full-screen overlay to the anchor's screen
-        # before positioning the menu (see method docstring). Must run before
-        # setCurrentWidget, which maps the global anchor into the overlay's
-        # local space — same anchor, so both resolve to the same screen.
+        # Multi-monitor: assign the overlay's screen/geometry for the anchor's
+        # screen before positioning the menu (see method docstring). Must run
+        # before setCurrentWidget, which maps the global anchor into the
+        # overlay's local space — same anchor, so both resolve to the same
+        # screen. Geometry only; a hidden overlay is presented last, below.
         self._ensure_fullscreen_on_active_screen(anchor)
+
+        # A cold page's first-show init (register_children slot wiring, QSS
+        # polish, content fit) is delivered by the PRESENT below — after the
+        # centering — so its geometry still settles afterwards; remember and
+        # re-center then. Preloaded pages (preload_menus) never hit this.
+        first_show = not getattr(widget, "is_initialized", True)
 
         self.setCurrentWidget(widget, anchor=anchor)
 
         if new_gesture:
-            self.overlay.start_gesture(QtGui.QCursor.pos())
+            self.overlay.start_gesture(anchor)
 
         if (
             self._suppress_default_on_reentry
@@ -2062,8 +2274,35 @@ class MarkingMenu(
         ):
             self._non_default_shown = True
 
-        # The overlay is already shown full-screen on the active monitor by
-        # _ensure_fullscreen_on_active_screen() above.
+        # Present LAST — a hidden overlay becomes visible only after the
+        # target page is current. The overlay is a translucent (layered)
+        # window: when re-shown, the OS re-presents its last composed frame
+        # and Qt only replaces it on the first repaint after the show.
+        # Presenting before the page swap therefore flashed the PREVIOUS
+        # gesture's surface on every reopen — e.g. the submenu a standalone
+        # tool was launched from — until the new page painted. (The
+        # mid-gesture monitor hop re-presents inside
+        # _ensure_fullscreen_on_active_screen: already visible, no reopen
+        # seam. Guarded by test_marking_menu_present_order.py.)
+        if self.isHidden():
+            self.showFullScreen()
+            if first_show and getattr(widget, "is_initialized", False):
+                # The present just delivered the page's first showEvent, so
+                # its settled geometry differs from what the centering above
+                # measured ("first press feels uninitialized": mis-centered,
+                # then visibly snaps). Re-center on the SAME anchor and
+                # refresh the tracking cache for the just-registered
+                # children. Once per page ever — and never for preloaded
+                # pages, whose first show was flushed at warm-up.
+                self._position_current_widget(anchor)
+                self.mouse_tracking.update_child_widgets()
+            # Push the freshly-composed frame NOW. The show presents the
+            # retained buffer (cleared by hide()'s flush — invisible, not
+            # stale), and without this forced repaint the real menu waits on
+            # the HOST's next paint cycle — a user-visible gap under a busy
+            # DCC event loop.
+            self.repaint()
+
         self.raise_()
         self.activateWindow()
 
@@ -2129,36 +2368,97 @@ class MarkingMenu(
 
         return widget
 
+    def _reset_stacked_pin(self, ui) -> None:
+        """Clear a stacked page's pin / prevent-hide so ``hide()`` isn't vetoed.
+
+        ``MainWindow.setVisible`` is pin-gated (a pinned window silently
+        refuses ``hide()``), so this must run BEFORE any attempt to hide the
+        page — the old hide-then-unpin order left a pinned page in shown-state
+        with its pin cleared, and a shown-state child re-shows with the
+        overlay on the next present (the "submenu that launched the window
+        shows again on the next activation" ghost). No-op for non-stacked
+        UIs and for test doubles without the pin surface.
+        """
+        if not (getattr(ui, "has_tags", None) and ui.has_tags(_MARKING_MENU_TAGS)):
+            return
+        header = getattr(ui, "header", None)
+        if header is not None:
+            try:
+                header.reset_pin_state()
+            except AttributeError:
+                # Fallback for headers without reset_pin_state
+                if getattr(header, "pinned", False):
+                    header.pinned = False
+        # Window-level flags, with or without a header. setVisible consults
+        # the WINDOW's pin, and Header.reset_pin_state no-ops unless the
+        # HEADER believes it's pinned — a desynced (or absent) header would
+        # otherwise leave the window pin set and the hide vetoed anyway.
+        # Menu-style surfaces use prevent_hide; MainWindow uses set_pinned.
+        if getattr(ui, "pinned", False) and hasattr(ui, "set_pinned"):
+            ui.set_pinned(False)
+        if getattr(ui, "prevent_hide", False):
+            ui.prevent_hide = False
+
+    def _hide_stacked_leftovers(self) -> None:
+        """Unpin + explicitly hide every stacked page still in SHOWN-state.
+
+        A page that dodged its hide (a pin veto — see :meth:`_reset_stacked_pin`)
+        keeps its shown-state and re-shows with the overlay on the next
+        present: the stale-menu ghost. The predicate is ``not isHidden()``
+        (the child's own state), NOT ``isVisible()`` — under a hidden parent
+        every child reports invisible, which would blind the sweep exactly
+        when the overlay is already down. Direct children only (pages are
+        parented to the overlay by ``addWidget``) — no switchboard
+        dependency. Idempotent; called from both :meth:`hide` and
+        :meth:`hideEvent` so bypassed hides (a parent ``setVisible(False)``)
+        are covered too.
+        """
+        for child in self.children():
+            if (
+                isinstance(child, QtWidgets.QWidget)
+                and not child.isHidden()
+                and getattr(child, "has_tags", None)
+                and child.has_tags(_MARKING_MENU_TAGS)
+            ):
+                self._reset_stacked_pin(child)
+                child.hide()
+
     def hide(self):
         """Override hide to properly reset stacked widget state."""
         self.logger.debug("MarkingMenu.hide() called")
 
-        if self.currentWidget():
-            self.setCurrentIndex(-1)
-
+        # Unpin BEFORE hiding — see _reset_stacked_pin for why the order
+        # matters (a pinned page vetoes its own hide()).
         current_ui = self.sb.active_ui
-        if current_ui:
+        if current_ui is not None:
             self.logger.debug(
                 f"MarkingMenu.hide(): current_ui={current_ui.objectName()}, "
                 f"tags={getattr(current_ui, 'tags', None)}"
             )
-            try:
-                if current_ui.has_tags(_MARKING_MENU_TAGS):
-                    header = current_ui.header
-                    if header:
-                        try:
-                            header.reset_pin_state()
-                        except AttributeError:
-                            # Fallback for widgets without reset_pin_state
-                            if getattr(header, "pinned", False):
-                                header.pinned = False
-                            # Menu uses prevent_hide; MainWindow uses set_pinned
-                            if hasattr(current_ui, "set_pinned"):
-                                current_ui.set_pinned(False)
-                            elif hasattr(current_ui, "prevent_hide"):
-                                current_ui.prevent_hide = False
-            except AttributeError:
-                pass
+            self._reset_stacked_pin(current_ui)
+
+        if self.currentWidget():
+            self.setCurrentIndex(-1)
+
+        # Sweep any stacked page that dodged its hide (e.g. pinned during a
+        # transition). Also run from hideEvent, but a hide() on an ALREADY
+        # hidden overlay (retire()) sends no QHideEvent — so this call is
+        # what clears a ghost manufactured while hidden.
+        self._hide_stacked_leftovers()
+
+        # Flush a CLEARED frame into the window's retained buffer before
+        # hiding. The overlay is a layered (translucent) window: the OS
+        # re-presents its last composed frame when the window is next shown,
+        # and Qt repaints only AFTER that present — so pixels left in the
+        # buffer here (the menu just hidden + the gesture trail) flash
+        # momentarily on every reopen even though the correct page is
+        # already current (the page swap happens while hidden, and hidden
+        # windows never repaint). With the pages down and the trail cleared,
+        # this synchronous repaint composes an empty translucent frame: the
+        # retained buffer becomes invisible instead of stale.
+        if self.isVisible():
+            self.overlay.clear_paint_events()
+            self.repaint()
 
         # CRITICAL: end the gesture and fully relinquish mouse control before
         # hiding (see _relinquish_input_control). The leaf-click launch path calls
@@ -2190,6 +2490,11 @@ class MarkingMenu(
         # stay "live" with a dangling grab — releasing the grab alone left
         # _activation_key_held set, so a re-grab guard could still re-acquire.
         self._relinquish_input_control()
+        # Same safety net for shown-state page ghosts: a bypassed hide skips
+        # hide()'s sweep, and a pinned page left in shown-state re-shows with
+        # the overlay on the next present. isHidden-based, so it works here
+        # even though every child already reports isVisible()==False.
+        self._hide_stacked_leftovers()
         self._clear_optimization_caches()
         super().hideEvent(event)
 
@@ -2433,8 +2738,17 @@ class MarkingMenu(
             # OptionBoxContainer (``_adjust_to_content``), which sizes the
             # whole container (widget + option buttons) around the same center.
             if isinstance(w, MenuButton):
-                self.sb.center_widget(w, padding_x=35)
+                # Style BEFORE the content-fit measurement — the old order
+                # (measure, then style) sized the button from pre-style
+                # metrics, freezing an inflated width on hosts whose base
+                # style reports a large un-styled button floor (the Blender
+                # ~80px CT_PushButton inflation). repolish_tree re-evaluates
+                # property-selector QSS stamped after the widget's first
+                # polish (stale until an unpolish/polish cycle), so the fit
+                # below measures final metrics.
                 w.ui.style.set(widget=w)
+                repolish_tree(w)
+                self.sb.center_widget(w, padding_x=35)
 
             if w.type == self.sb.registered_widgets.Region:
                 w.visible_on_mouse_over = True

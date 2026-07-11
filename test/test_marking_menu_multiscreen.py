@@ -16,6 +16,12 @@ Fix: ``MarkingMenu._ensure_fullscreen_on_active_screen`` relocates the overlay
 to the screen under the cursor before the menu is positioned. Crucially it is
 a strict no-op on single-monitor / indeterminate setups (no screen mismatch
 detectable), so it cannot perturb the existing single-screen behaviour.
+
+Contract note: the method owns GEOMETRY only. It re-presents on relocation
+only when the overlay is already visible (the mid-gesture monitor hop); a
+hidden overlay is presented by ``_show_marking_menu`` AFTER the target page
+is current — the stale-frame reopen fix guarded by
+``test_marking_menu_present_order.py``.
 """
 import unittest
 from unittest import mock
@@ -57,10 +63,11 @@ class TestMarkingMenuMultiScreen(QtBaseTestCase):
         self.track_widget(self.mm)
 
     def test_relocates_overlay_to_anchor_screen(self):
-        """Anchor on a different monitor → overlay is moved + re-full-screened
-        on that monitor (otherwise the menu lands off the pinned overlay). The
-        target screen is resolved from the anchor — the same point the menu is
-        positioned against — not the cursor, so the two always agree."""
+        """Anchor on a different monitor while VISIBLE (the mid-gesture hop) →
+        overlay is moved + re-full-screened on that monitor (otherwise the
+        menu lands off the pinned overlay). The target screen is resolved from
+        the anchor — the same point the menu is positioned against — not the
+        cursor, so the two always agree."""
         screen1 = _FakeScreen(QtCore.QRect(0, 0, 1920, 1080))
         screen2 = _FakeScreen(QtCore.QRect(1920, 0, 1920, 1080))
         anchor = QtCore.QPoint(2880, 540)  # center of monitor 2
@@ -73,6 +80,8 @@ class TestMarkingMenuMultiScreen(QtBaseTestCase):
         ) as screen_at, mock.patch.object(
             self.mm, "windowHandle", return_value=handle
         ), mock.patch.object(
+            self.mm, "isHidden", return_value=False
+        ), mock.patch.object(
             self.mm, "setGeometry"
         ) as set_geom, mock.patch.object(
             self.mm, "showFullScreen"
@@ -83,6 +92,35 @@ class TestMarkingMenuMultiScreen(QtBaseTestCase):
         handle.setScreen.assert_called_once_with(screen2)
         set_geom.assert_called_once_with(screen2.geometry())
         show_fs.assert_called_once()
+
+    def test_relocate_while_hidden_defers_presentation(self):
+        """Anchor on a different monitor while HIDDEN (a reopen) → geometry is
+        assigned but the overlay is NOT presented here — _show_marking_menu
+        presents after the target page is current, so the first visible frame
+        is the correct menu (the stale-frame reopen fix)."""
+        screen1 = _FakeScreen(QtCore.QRect(0, 0, 1920, 1080))
+        screen2 = _FakeScreen(QtCore.QRect(1920, 0, 1920, 1080))
+        anchor = QtCore.QPoint(2880, 540)
+
+        handle = mock.Mock()
+        handle.screen.return_value = screen1
+
+        with mock.patch.object(
+            QtWidgets.QApplication, "screenAt", return_value=screen2
+        ), mock.patch.object(
+            self.mm, "windowHandle", return_value=handle
+        ), mock.patch.object(
+            self.mm, "isHidden", return_value=True
+        ), mock.patch.object(
+            self.mm, "setGeometry"
+        ) as set_geom, mock.patch.object(
+            self.mm, "showFullScreen"
+        ) as show_fs:
+            self.mm._ensure_fullscreen_on_active_screen(anchor)
+
+        handle.setScreen.assert_called_once_with(screen2)
+        set_geom.assert_called_once_with(screen2.geometry())
+        show_fs.assert_not_called()
 
     def test_no_relocation_when_already_on_active_screen(self):
         """Cursor on the overlay's current monitor → no move, no re-show."""
@@ -95,8 +133,6 @@ class TestMarkingMenuMultiScreen(QtBaseTestCase):
         ), mock.patch.object(
             self.mm, "windowHandle", return_value=handle
         ), mock.patch.object(
-            self.mm, "isHidden", return_value=False
-        ), mock.patch.object(
             self.mm, "setGeometry"
         ) as set_geom, mock.patch.object(
             self.mm, "showFullScreen"
@@ -107,18 +143,17 @@ class TestMarkingMenuMultiScreen(QtBaseTestCase):
         set_geom.assert_not_called()
         show_fs.assert_not_called()
 
-    def test_indeterminate_screen_falls_back_to_show_if_hidden(self):
-        """No window handle (can't confirm a mismatch) → behave exactly like
-        the original ``if self.isHidden(): self.showFullScreen()``: no
-        geometry move, only a show when hidden."""
+    def test_indeterminate_screen_is_a_noop(self):
+        """No window handle (can't confirm a mismatch) → strict no-op: no
+        geometry move and no presentation. Presenting a hidden overlay is
+        _show_marking_menu's job (after the page swap) — this method owns
+        geometry only."""
         screen2 = _FakeScreen(QtCore.QRect(1920, 0, 1920, 1080))
 
         with mock.patch.object(
             QtWidgets.QApplication, "screenAt", return_value=screen2
         ), mock.patch.object(
             self.mm, "windowHandle", return_value=None
-        ), mock.patch.object(
-            self.mm, "isHidden", return_value=True
         ), mock.patch.object(
             self.mm, "setGeometry"
         ) as set_geom, mock.patch.object(
@@ -127,7 +162,7 @@ class TestMarkingMenuMultiScreen(QtBaseTestCase):
             self.mm._ensure_fullscreen_on_active_screen()
 
         set_geom.assert_not_called()
-        show_fs.assert_called_once()
+        show_fs.assert_not_called()
 
 
 if __name__ == "__main__":
