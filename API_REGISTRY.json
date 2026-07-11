@@ -4192,7 +4192,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hide this list and collapse every still-open sublist.",
-              "line": 609,
+              "line": 620,
               "deprecated": false
             },
             {
@@ -4201,7 +4201,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "On the root list's show, size to content and retroactively",
-              "line": 627,
+              "line": 638,
               "deprecated": false
             },
             {
@@ -4210,7 +4210,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Ensure all sublists are closed when this list is hidden.",
-              "line": 697,
+              "line": 708,
               "deprecated": false
             },
             {
@@ -4219,7 +4219,7 @@
               "kind": "staticmethod",
               "signature": "(widget)",
               "summary": "Get the padding values around a widget.",
-              "line": 854,
+              "line": 865,
               "deprecated": false
             },
             {
@@ -4228,7 +4228,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 873,
+              "line": 884,
               "deprecated": false
             },
             {
@@ -4237,7 +4237,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Filter events for the ExpandableList.",
-              "line": 1064,
+              "line": 1085,
               "deprecated": false
             },
             {
@@ -4246,7 +4246,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the cursor leaving this list widget.",
-              "line": 1115,
+              "line": 1136,
               "deprecated": false
             }
           ]

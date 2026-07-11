@@ -547,6 +547,17 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         sublist = ExpandableList(parent, **self._create_sublist_config())
         sublist.setVisible(False)
 
+        # A sublist always sizes to its own contents (its sizeHint is the widest
+        # item plus margins), so it must carry no size constraint of its own.
+        # Clear any width/size floor, cap, or pin the root's construction kwargs
+        # applied — otherwise resize(sizeHint()) is clamped and the flyout comes
+        # out "as wide as the starting list" instead of hugging its items. Item
+        # heights are constrained on the items, not the list, so the list stays
+        # fully unconstrained. A constraint a caller sets *after* creation (e.g.
+        # a slot's explicit setMinimumWidth) runs later and still wins.
+        sublist.setMinimumSize(0, 0)
+        sublist.setMaximumSize(16777215, 16777215)  # Qt's QWIDGETSIZE_MAX
+
         # Propagate stylesheet so sublist items are styled consistently
         # (reparenting to the window breaks normal CSS inheritance).
         ss = self._get_inherited_stylesheet()
@@ -1023,8 +1034,18 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # (left over from a previous Leave on the same item).
         self._cancel_sublist_hide(widget)
 
-        # Ensure correct size before positioning
-        widget.sublist.resize(widget.sublist.sizeHint())
+        # Ensure correct size before positioning. Every layout sizes the sublist
+        # to its own contents (its sizeHint), except the overlay presets: their
+        # first sublist sits directly on top of the starting list, so it must be
+        # at least as wide as this list to cover it fully (it may still grow
+        # wider for longer content). ``self`` is the list that owns the trigger,
+        # so this only widens the *first* overlay sublist; deeper fan-out
+        # sublists (child position "right"/"left") keep sizing to content.
+        hint = widget.sublist.sizeHint()
+        target_width = hint.width()
+        if self.position.startswith("overlay"):
+            target_width = max(target_width, self.width())
+        widget.sublist.resize(target_width, hint.height())
         widget.updateGeometry()
 
         # Get dimensions
