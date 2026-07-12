@@ -1218,6 +1218,23 @@ class MarkingMenu(
         activating the host parent — a focus steal when nothing was ever on
         screen; its gesture cleanup is all no-op here, and ``hideEvent``'s
         safety net still runs either way.
+
+        The teardown must also drop ``WindowFullScreen`` from the window
+        state — but keep the fullscreen *geometry*. ``hide()`` keeps the
+        state, and on Qt 6.10 the next real ``showFullScreen()`` then sees
+        "already fullscreen" — no state transition, no fullscreen geometry —
+        and maps the overlay at its ~100x30 "normal" geometry at the screen
+        origin (live: Blender/PySide6 6.10.1, "the key steals focus but no
+        menu appears"; Maya's 6.5.3 happened to re-apply the geometry).
+        Clearing the state alone restores that stale normal geometry on the
+        hidden overlay, which desyncs the pre-present anchor mapping — the
+        present-last path centers pages against the hidden overlay's
+        geometry (``setCurrentWidget`` → ``mapFromGlobal``) *before* the
+        present applies the fullscreen rect — so the screen rect is re-pinned
+        immediately after (:meth:`_move_hidden_overlay` — the pin must reach
+        the NATIVE window). Both run while hidden; nothing paints. Pinned by
+        ``test_construction_leaves_no_stale_fullscreen_state`` and
+        ``test_preloaded_page_first_activation_centers``.
         """
         self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
         try:
@@ -1226,6 +1243,33 @@ class MarkingMenu(
         finally:
             QtWidgets.QWidget.hide(self)
             self.setAttribute(QtCore.Qt.WA_DontShowOnScreen, False)
+            self.setWindowState(self.windowState() & ~QtCore.Qt.WindowFullScreen)
+            handle = self.windowHandle()
+            screen = handle.screen() if handle is not None else self.screen()
+            if screen is not None:
+                self._move_hidden_overlay(screen.geometry())
+
+    def _move_hidden_overlay(self, rect: QtCore.QRect) -> None:
+        """Move the hidden overlay to ``rect`` at BOTH layers — widget and
+        native window.
+
+        On Qt 6.10, ``QWidget.setGeometry`` on a hidden top-level does not
+        reach the platform window at all (never-mapped windows sit at the
+        platform's creation-default position; a fullscreen-state clear on a
+        previously-mapped one silently restores its stale "normal" position)
+        — while ``mapFromGlobal`` reads the NATIVE position. The present-last
+        activation path centers pages against the hidden overlay
+        (``setCurrentWidget`` → ``mapFromGlobal``) *before* the present, so
+        the two layers must agree or every pre-present anchor mapping is off
+        by the (native-pos − rect-origin) delta. ``QWindow.setGeometry``
+        verifiably moves the hidden native window in both cases (probed on
+        PySide6 6.10.1; on 6.5 the widget call alone propagates and the
+        handle write is simply redundant).
+        """
+        self.setGeometry(rect)
+        handle = self.windowHandle()
+        if handle is not None:
+            handle.setGeometry(rect)
 
     def _flush_first_show(self, page) -> None:
         """Run a stacked page's REAL first-show initialization (child
@@ -2220,11 +2264,16 @@ class MarkingMenu(
             # screens, relocate, then re-assert full-screen on the target —
             # but re-present here only when already visible (the mid-gesture
             # monitor hop). A hidden overlay is presented by the caller after
-            # the page swap.
+            # the page swap — and its move must reach the NATIVE window
+            # (_move_hidden_overlay): the caller's pre-present centering maps
+            # the anchor via mapFromGlobal, which on Qt 6.10 reads a native
+            # position a hidden QWidget.setGeometry never updates.
             self.setWindowState(self.windowState() & ~QtCore.Qt.WindowFullScreen)
             handle.setScreen(target)
-            self.setGeometry(target.geometry())
-            if not self.isHidden():
+            if self.isHidden():
+                self._move_hidden_overlay(target.geometry())
+            else:
+                self.setGeometry(target.geometry())
                 self.showFullScreen()
 
     def _show_marking_menu(self, widget, **kwargs):
