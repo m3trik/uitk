@@ -529,6 +529,29 @@ class TestConstructionDoesNotPresent(QtBaseTestCase):
         finally:
             mm.retire()
 
+    def test_construction_leaves_no_stale_fullscreen_state(self):
+        """The suppressed present must not leak ``WindowFullScreen`` into the
+        hidden overlay's window state. Qt keeps the window state across
+        ``hide()``, and on Qt 6.10 the first activation's ``showFullScreen()``
+        then sees "already fullscreen" — no state transition, no fullscreen
+        geometry — and maps the overlay at its ~100x30 "normal" geometry at
+        the screen origin (live: Blender/PySide6 6.10.1, "F12 steals focus
+        but no menu appears"; Maya's 6.5.3 happened to re-apply geometry).
+        The offscreen QPA maps every window at screen size, masking the
+        geometry symptom — so pin the state leak itself.
+        """
+        mm = MarkingMenu(parent=None)
+        self.track_widget(mm)
+        try:
+            self.assertFalse(
+                mm.windowState() & QtCore.Qt.WindowFullScreen,
+                "construction leaked WindowFullScreen into the hidden overlay "
+                "— the first activation's showFullScreen() would skip the "
+                "fullscreen geometry transition (Qt 6.10) and map ~100x30",
+            )
+        finally:
+            mm.retire()
+
 
 if __name__ == "__main__":
     unittest.main()

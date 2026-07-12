@@ -75,16 +75,25 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
                         mouse cursor enters the region. The children widgets will be hidden again when the cursor leaves the
                         region. Else, top-level children widgets will remain visible regardless of the mouse cursor's position.
         """
+        # Track the connection state ourselves: connecting/disconnecting by
+        # current value alone double-connects on a repeated True and tries to
+        # disconnect never-connected signals on the initial False (PySide2
+        # raises RuntimeError; PySide6 6.10 instead emits a libpyside
+        # RuntimeWarning per call — hundreds per session, two per Region).
+        connected = getattr(self, "_mouse_over_connected", False)
         if value:
             self.hide_top_level_children()
-            self.on_enter.connect(self.show_top_level_children)
-            self.on_leave.connect(self.hide_top_level_children)
-        else:
+            if not connected:
+                self.on_enter.connect(self.show_top_level_children)
+                self.on_leave.connect(self.hide_top_level_children)
+                self._mouse_over_connected = True
+        elif connected:
             try:
                 self.on_enter.disconnect(self.show_top_level_children)
                 self.on_leave.disconnect(self.hide_top_level_children)
             except RuntimeError:
                 pass
+            self._mouse_over_connected = False
         self._visible_on_mouse_over = value
 
     def hide_top_level_children(self):
