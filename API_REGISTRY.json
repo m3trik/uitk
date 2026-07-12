@@ -5569,7 +5569,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse press: route through the central state-sync.",
-              "line": 1722,
+              "line": 1766,
               "deprecated": false
             },
             {
@@ -5578,7 +5578,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle key press for non-activation key bindings.",
-              "line": 1782,
+              "line": 1826,
               "deprecated": false
             },
             {
@@ -5587,7 +5587,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1807,
+              "line": 1851,
               "deprecated": false
             },
             {
@@ -5596,7 +5596,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 1997,
+              "line": 2041,
               "deprecated": false
             },
             {
@@ -5605,7 +5605,7 @@
               "kind": "method",
               "signature": "(self, ui: Optional[str] = None, pos=None, force: bool = False, **kwargs) -> QtWidgets.QWidget",
               "summary": "Central hub for showing any UI component.",
-              "line": 2108,
+              "line": 2152,
               "deprecated": false
             },
             {
@@ -5614,7 +5614,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 2426,
+              "line": 2475,
               "deprecated": false
             },
             {
@@ -5623,7 +5623,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - relinquishes input control even if hide() was bypassed.",
-              "line": 2486,
+              "line": 2535,
               "deprecated": false
             },
             {
@@ -5632,7 +5632,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 2593,
+              "line": 2642,
               "deprecated": false
             },
             {
@@ -5641,7 +5641,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 2613,
+              "line": 2662,
               "deprecated": false
             },
             {
@@ -5650,7 +5650,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fade every background window and menu, once per hold.",
-              "line": 2679,
+              "line": 2728,
               "deprecated": false
             },
             {
@@ -5659,7 +5659,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore everything dimmed by the last :meth:`dim_other_windows`.",
-              "line": 2698,
+              "line": 2747,
               "deprecated": false
             },
             {
@@ -5668,7 +5668,7 @@
               "kind": "method",
               "signature": "(self, widgets) -> None",
               "summary": "Initialize child widgets with an event filter.",
-              "line": 2708,
+              "line": 2757,
               "deprecated": false
             },
             {
@@ -5677,7 +5677,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 2781,
+              "line": 2830,
               "deprecated": false
             },
             {
@@ -5686,7 +5686,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 2803,
+              "line": 2852,
               "deprecated": false
             },
             {
@@ -5695,7 +5695,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Dispatch (or forward) a release delivered to a *grabbed* child.",
-              "line": 2812,
+              "line": 2861,
               "deprecated": false
             }
           ]
@@ -10568,7 +10568,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hide all top-level child widgets of the Region instance.",
-              "line": 90,
+              "line": 99,
               "deprecated": false
             },
             {
@@ -10577,7 +10577,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Show all top-level child widgets of the Region instance.",
-              "line": 96,
+              "line": 105,
               "deprecated": false
             },
             {
@@ -10586,7 +10586,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.enterEvent method.",
-              "line": 102,
+              "line": 111,
               "deprecated": false
             },
             {
@@ -10595,7 +10595,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.leaveEvent method.",
-              "line": 116,
+              "line": 125,
               "deprecated": false
             },
             {
@@ -10604,7 +10604,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.hideEvent method.",
-              "line": 130,
+              "line": 139,
               "deprecated": false
             },
             {
@@ -10613,7 +10613,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.childEvent method.",
-              "line": 142,
+              "line": 151,
               "deprecated": false
             }
           ]
