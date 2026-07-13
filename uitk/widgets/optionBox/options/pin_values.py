@@ -709,18 +709,12 @@ class PinValuesOption(ButtonOption):
         # Idempotent: signal-driven re-runs (every valueChanged) skip the
         # rasterize+setIcon when the glyph is already correct — keeps the
         # synchronous create-time init plus repeated updates visually and
-        # computationally free. Preserve the size set by the parent OptionBox
-        # so swapping pinned state doesn't oscillate the icon size.
-        info = IconManager._widget_icon_info.get(id(self._widget))
-        if (
-            info
-            and info.get("name") == icon_name
-            # The info dict is keyed by id() and outlives dead widgets until
-            # the next theme sweep — CPython id reuse could match a stale
-            # entry and skip the NEW button's first icon. The weak registry
-            # proves the entry is really this widget's.
-            and IconManager._widget_icons.get(id(self._widget)) is self._widget
-        ):
+        # computationally free. registered_info validates ownership (id
+        # reuse on a dead widget's entry). Preserve the size set by the
+        # parent OptionBox so swapping pinned state doesn't oscillate the
+        # icon size.
+        info = IconManager.registered_info(self._widget)
+        if info and info.get("name") == icon_name:
             return
         IconManager.swap_icon(self._widget, icon_name, fallback_size=(17, 17))
 

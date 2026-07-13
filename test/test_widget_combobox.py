@@ -344,5 +344,80 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         self.assertEqual(combo._action_row_count, 2)
 
 
+class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
+    """The optional dropdown affordance: off by default, opt-in triangle,
+    custom icon override, and alpha."""
+
+    def test_arrow_off_by_default(self):
+        """Default draws no affordance — matches the base ComboBox."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        self.assertIsNone(combo.arrow_direction)
+        self.assertIsNone(combo.arrow_icon)
+        self.assertEqual(combo.arrow_alpha, 1.0)
+
+    def test_arrow_direction_validation(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.arrow_direction = "down"
+        self.assertEqual(combo.arrow_direction, "down")
+        with self.assertRaises(ValueError):
+            combo.arrow_direction = "sideways"
+
+    def test_arrow_icon_type_guard(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from qtpy import QtGui
+
+        combo = self.track_widget(WidgetComboBox())
+        icon = QtGui.QIcon()
+        combo.arrow_icon = icon
+        self.assertIs(combo.arrow_icon, icon)
+        combo.arrow_icon = None
+        self.assertIsNone(combo.arrow_icon)
+        with self.assertRaises(TypeError):
+            combo.arrow_icon = "not an icon"
+
+    def test_arrow_alpha_clamped(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.arrow_alpha = 2.5
+        self.assertEqual(combo.arrow_alpha, 1.0)
+        combo.arrow_alpha = -1.0
+        self.assertEqual(combo.arrow_alpha, 0.0)
+        combo.arrow_alpha = 0.5
+        self.assertEqual(combo.arrow_alpha, 0.5)
+
+    def test_paint_paths_do_not_crash(self):
+        """Every affordance path (none / triangle / icon / alpha) paints
+        without error offscreen."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from qtpy import QtGui, QtCore
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.add(["Alpha", "Beta"])
+        combo.resize(120, 24)
+
+        def _render():
+            pm = QtGui.QPixmap(combo.size())
+            pm.fill(QtCore.Qt.transparent)
+            combo.render(pm)
+
+        _render()  # default: nothing
+        combo.arrow_direction = "down"
+        _render()  # triangle
+        combo.arrow_icon = QtGui.QIcon()  # null icon → falls back to triangle cleanly
+        _render()
+        # A real (non-null) icon exercises the drawPixmap path.
+        pm = QtGui.QPixmap(16, 16)
+        pm.fill(QtCore.Qt.red)
+        combo.arrow_icon = QtGui.QIcon(pm)
+        _render()
+        combo.arrow_alpha = 0.3
+        _render()
+
+
 if __name__ == "__main__":
     unittest.main()

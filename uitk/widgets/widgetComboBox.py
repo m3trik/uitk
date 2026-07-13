@@ -202,11 +202,15 @@ class WidgetComboBox(ComboBox):
 
         self.currentIndexChanged.connect(self._on_index_changed)
 
-        # Default theme hides QComboBox::down-arrow; paintEvent draws an
-        # arrow immediately after the displayed text instead, so the widget
-        # reads visually as a dropdown.  Direction is configurable via the
-        # ``arrow_direction`` property; size auto-scales with the font.
-        self._arrow_direction: Optional[str] = "down"
+        # Dropdown affordance drawn after the displayed text (the theme hides
+        # the native QComboBox::down-arrow).  Off by default — matching the
+        # base ``ComboBox``, which draws none — so a combo only shows one when
+        # a caller opts in via ``arrow_direction`` (triangle) or ``arrow_icon``
+        # (custom icon).  ``arrow_alpha`` sets the affordance's opacity.  Size
+        # auto-scales with the font.
+        self._arrow_direction: Optional[str] = None
+        self._arrow_icon: Optional[QtGui.QIcon] = None
+        self._arrow_alpha: float = 1.0
 
         # Snapshots of embedded-widget initial values, keyed by widget id, for
         # the optional "Restore Defaults" action.  Captured lazily on first
@@ -834,10 +838,11 @@ class WidgetComboBox(ComboBox):
 
     @property
     def arrow_direction(self) -> Optional[str]:
-        """Direction of the dropdown-affordance arrow drawn after the text.
+        """Direction of the dropdown-affordance triangle drawn after the text.
 
-        One of ``"down"`` (default), ``"up"``, ``"left"``, ``"right"`` — or
-        ``None`` to suppress drawing.  Triangle size and gap auto-scale with
+        One of ``"down"``, ``"up"``, ``"left"``, ``"right"`` — or ``None``
+        (default) to draw no triangle.  Ignored when :attr:`arrow_icon` is set
+        (the icon takes precedence).  Triangle size and gap auto-scale with
         the current font.
         """
         return self._arrow_direction
@@ -851,6 +856,42 @@ class WidgetComboBox(ComboBox):
         if value == self._arrow_direction:
             return
         self._arrow_direction = value
+        self.update()
+
+    @property
+    def arrow_icon(self) -> Optional[QtGui.QIcon]:
+        """Custom icon drawn as the dropdown affordance, in place of the
+        triangle.
+
+        ``None`` (default) falls back to :attr:`arrow_direction` (a triangle,
+        or nothing when that is also ``None``).  A non-null ``QIcon`` is drawn
+        after the text regardless of ``arrow_direction``, at a font-scaled
+        size and at :attr:`arrow_alpha` opacity.
+        """
+        return self._arrow_icon
+
+    @arrow_icon.setter
+    def arrow_icon(self, icon: Optional[QtGui.QIcon]) -> None:
+        if icon is not None and not isinstance(icon, QtGui.QIcon):
+            raise TypeError(
+                f"arrow_icon must be a QIcon or None, got {type(icon).__name__}"
+            )
+        self._arrow_icon = icon
+        self.update()
+
+    @property
+    def arrow_alpha(self) -> float:
+        """Opacity (``0.0``–``1.0``) of the dropdown affordance — the triangle
+        or the custom :attr:`arrow_icon`.  Default ``1.0`` (fully opaque);
+        values are clamped to the valid range."""
+        return self._arrow_alpha
+
+    @arrow_alpha.setter
+    def arrow_alpha(self, value: float) -> None:
+        value = max(0.0, min(1.0, float(value)))
+        if value == self._arrow_alpha:
+            return
+        self._arrow_alpha = value
         self.update()
 
     def _build_arrow_polygon(
@@ -899,17 +940,21 @@ class WidgetComboBox(ComboBox):
         )
 
     def paintEvent(self, event) -> None:
-        """Paint the base combo, then overlay an arrow immediately after the
-        displayed text so the widget reads visually as a dropdown.
+        """Paint the base combo, then overlay the optional dropdown affordance
+        immediately after the displayed text.
 
-        Theme hides Qt's native ``QComboBox::down-arrow``; this draws a
-        triangle (direction = ``arrow_direction``) using the text palette
-        colour and scaling with the font.
+        Theme hides Qt's native ``QComboBox::down-arrow``.  When
+        :attr:`arrow_icon` is set it is drawn here; otherwise a triangle in
+        :attr:`arrow_direction` (text palette colour) is drawn.  Both scale
+        with the font and honour :attr:`arrow_alpha`.  Draws nothing when
+        neither is set (the default).
         """
         super().paintEvent(event)
 
         direction = self._arrow_direction
-        if direction is None:
+        icon = self._arrow_icon
+        has_icon = icon is not None and not icon.isNull()
+        if direction is None and not has_icon:
             return
 
         # Displayed text mirrors AlignedComboBox.CustomStyle.drawControl:
@@ -953,14 +998,29 @@ class WidgetComboBox(ComboBox):
         painter = QtGui.QPainter(self)
         try:
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.setOpacity(self._arrow_alpha)
 
-            color = self.palette().color(
-                QtGui.QPalette.Disabled if not self.isEnabled() else QtGui.QPalette.Active,
-                QtGui.QPalette.Text,
-            )
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(color)
-            painter.drawPolygon(self._build_arrow_polygon(cx, cy, direction, em))
+            if has_icon:
+                # Square icon centred on the same (cx, cy) anchor the triangle
+                # uses, sized a touch larger than the triangle base so a glyph
+                # reads at a comparable weight.  Honour the disabled state the
+                # same way the triangle dims via QPalette.Disabled.
+                side = max(8, int(round(base * 1.2)))
+                mode = (
+                    QtGui.QIcon.Normal if self.isEnabled() else QtGui.QIcon.Disabled
+                )
+                pixmap = icon.pixmap(QtCore.QSize(side, side), mode)
+                painter.drawPixmap(
+                    QtCore.QPointF(cx - side / 2.0, cy - side / 2.0), pixmap
+                )
+            else:
+                color = self.palette().color(
+                    QtGui.QPalette.Disabled if not self.isEnabled() else QtGui.QPalette.Active,
+                    QtGui.QPalette.Text,
+                )
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(color)
+                painter.drawPolygon(self._build_arrow_polygon(cx, cy, direction, em))
         finally:
             painter.end()
 

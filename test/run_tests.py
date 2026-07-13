@@ -465,7 +465,15 @@ def _hard_exit(code: int) -> None:
         import ctypes
 
         kernel32 = ctypes.windll.kernel32
-        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code)
+        if kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code):
+            # TerminateProcess is asynchronous — it can return to this
+            # thread while the kill is still in flight. Falling through to
+            # os._exit here re-enters DLL_PROCESS_DETACH (the exact segfault
+            # this function exists to skip) and clobbers the exit code with
+            # 0xC0000005 (observed live: a green run reported as failed).
+            # Park until the kill lands.
+            while True:
+                kernel32.Sleep(1000)
     os._exit(code)
 
 

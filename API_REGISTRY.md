@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-07-12_
+_Generated: 2026-07-13_
 
 ## Index
 
@@ -64,6 +64,7 @@ _Generated: 2026-07-12_
 - [`widgets/mixins/docking.py`](#widgets--mixins--docking)
 - [`widgets/mixins/feedback.py`](#widgets--mixins--feedback) — Mixin: transient HUD-style feedback for any QWidget.
 - [`widgets/mixins/icon_manager.py`](#widgets--mixins--icon_manager)
+- [`widgets/mixins/icon_states.py`](#widgets--mixins--icon_states) — Shared multi-state icon behavior for state-cycling buttons.
 - [`widgets/mixins/menu_mixin.py`](#widgets--mixins--menu_mixin) — MenuMixin - provides automatic Menu integration for widgets.
 - [`widgets/mixins/option_box_mixin.py`](#widgets--mixins--option_box_mixin) — OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 - [`widgets/mixins/preset_manager.py`](#widgets--mixins--preset_manager)
@@ -792,7 +793,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `Footer.update_font_size(self)` — Public method for updating font size (backward compatibility).
   - `Footer.font(self) -> QtGui.QFont` — Get font from status label (backward compatibility).
   - `Footer.add_widget(self, widget: QtWidgets.QWidget, side: str = 'right', background: bool = False, rounded: bool = True) -> QtWidgets.QWidget` — Insert an arbitrary widget into the footer on the given side.
-  - `Footer.add_action_button(self, text: str = '', icon_name: str = None, tooltip: str = '', callback=None, rounded: bool = True) -> QtWidgets.QPushButton` — Add an action button to the right side of the footer.
+  - `Footer.add_action_button(self, text: str = '', icon_name: str = None, tooltip: str = '', callback=None, rounded: bool = True, states=None) -> QtWidgets.QPushButton` — Add an action button to the right side of the footer.
   - `Footer.progress_bar(self) -> ProgressBar` *(property)* — Get the embedded progress bar.
   - `Footer.status_label(self) -> QtWidgets.QLabel` *(property)* — Get the status label.
   - `Footer.size_grip(self) -> Optional[QtWidgets.QSizeGrip]` *(property)* — Get the size grip widget if it exists.
@@ -810,8 +811,8 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `Footer.resizeEvent(self, event)` — Debounce resize: restart timer on each event so we only
   - `Footer.showEvent(self, event)` — Ensure text is properly sized and elided on first show.
   - `Footer.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.
-- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L644)** — Context manager for footer progress tracking.
-- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L665)** — Helper that keeps a footer in sync with a resolver function.
+- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L666)** — Context manager for footer progress tracking.
+- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L687)** — Helper that keeps a footer in sync with a resolver function.
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
@@ -1151,9 +1152,24 @@ Mixin: transient HUD-style feedback for any QWidget.
   - `IconManager.fit_icon(cls, widget, name: str, container_size, margin: int = 4, min_size: int = 8, color: str = None, auto_theme: bool = True) -> int` *(class)* — Render *name* onto *widget* sized to fit a square container.
   - `IconManager.swap_icon(cls, widget, name: str, color: str = None, auto_theme: bool = True, fallback_size=(16, 16)) -> None` *(class)* — Replace the icon on *widget* without changing its display size.
   - `IconManager.set_icon(cls, widget, name: str, size=(16, 16), color: str = None, auto_theme: bool = True)` *(class)* — Set an icon on a widget.
+  - `IconManager.registered_info(cls, widget) -> 'dict | None'` *(class)* — The icon registry entry for *widget* — name/size/color — or None.
   - `IconManager.update_widget_icons(cls, root_widget: QtWidgets.QWidget, color: str)` *(class)* — Update all registered icons under a widget tree with a new color.
   - `IconManager.clear_cache(cls)` *(class)* — Clear all cached icons and SVG content.
   - `IconManager.get_cache_stats(cls) -> dict` *(class)* — Get statistics about the icon cache.
+
+<a id="widgets--mixins--icon_states"></a>
+### `widgets/mixins/icon_states.py`
+
+Shared multi-state icon behavior for state-cycling buttons.
+
+- **[`class IconStates`](uitk/uitk/widgets/mixins/icon_states.py#L6)** — Single home for a button's multi-state visuals and click-cycling.
+  - `IconStates.states(self)` *(property)* — The state dicts (copy — mutate via a new IconStates).
+  - `IconStates.widget(self)` *(property)* — The attached widget (None until attached).
+  - `IconStates.current_state(self)` *(property)* — The current 0-based state index.
+  - `IconStates.set_current_state(self, index, notify=True)` — Set the state index and apply its visuals.
+  - `IconStates.apply(self)` — Apply the current state's icon/color/tooltip to the widget.
+  - `IconStates.resolve_callback(self, fallback=None)` — The current state's callback, else *fallback*.
+  - `IconStates.activate(self, fallback=None, runner=None)` — Run the current state's callback, then advance to the next state.
 
 <a id="widgets--mixins--menu_mixin"></a>
 ### `widgets/mixins/menu_mixin.py`
@@ -1452,7 +1468,7 @@ Action option for OptionBox - provides customizable action buttons.
   - `ActionOption.set_action_handler(self, handler)` — Set or update the action handler.
   - `ActionOption.current_state(self)` *(property)* — The current state index (0-based).
   - `ActionOption.set_states(self, states)` — Set multiple cycling states.
-- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L242)** — A menu action option specifically for showing menus.
+- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L224)** — A menu action option specifically for showing menus.
   - `MenuOption.set_menu(self, menu)` — Set or update the menu.
   - `MenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
 
@@ -1620,11 +1636,11 @@ Inline editable value readout for OptionBox.
 
 Utilities and helper functions for OptionBox.
 
-- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1348) — Add an option box to any widget with one function call.
-- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1371) — Add just a clear button to a text widget.
-- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1384) — Add a menu option to any widget.
-- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1403) — Add option_box attribute to a widget class.
-- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1418) — Patch common Qt widgets with option box support.
+- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1356) — Add an option box to any widget with one function call.
+- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1379) — Add just a clear button to a text widget.
+- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1392) — Add a menu option to any widget.
+- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1411) — Add option_box attribute to a widget class.
+- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1426) — Patch common Qt widgets with option box support.
 - **[`class OptionBoxManager(ptk.LoggingMixin)`](uitk/uitk/widgets/optionBox/utils.py#L10)** — Elegant manager for option box functionality accessible as widget.option_box
   - `OptionBoxManager.clear_option(self)` *(property)* — Get/set clear option state
   - `OptionBoxManager.option_order(self)` *(property)* — Get/set option ordering: ['clear', 'action'] or ['action', 'clear']
@@ -2052,6 +2068,9 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.set_single_click_edit_columns(self, columns: Iterable[int]) -> None` — Enable click-to-edit for *columns* (no double-click required).
   - `TableWidget.add_single_click_edit_column(self, column: int) -> None` — Add a single column to the single-click-edit set.
   - `TableWidget.remove_single_click_edit_column(self, column: int) -> None` — Remove a column from the single-click-edit set.
+  - `TableWidget.set_cell_widget_click_columns(self, columns: Iterable[int]) -> None` — Forward dead-space clicks to embedded cell widgets in *columns*.
+  - `TableWidget.add_cell_widget_click_column(self, column: int) -> None` — Add a single column to the cell-widget click-forward set.
+  - `TableWidget.remove_cell_widget_click_column(self, column: int) -> None` — Remove a column from the cell-widget click-forward set.
   - `TableWidget.mousePressEvent(self, event)`
   - `TableWidget.mouseMoveEvent(self, event)`
   - `TableWidget.mouseReleaseEvent(self, event)`
@@ -2202,8 +2221,10 @@ Scrollable rich-text viewer window.
   - `WidgetComboBox.show_action_separator(self) -> bool` *(property)* — Whether a separator is drawn above the actions section (default True).
   - `WidgetComboBox.showPopup(self) -> None` — Override to expand popup to widest widget and update overflow.
   - `WidgetComboBox.hidePopup(self) -> None` — Override to hide overflow indicator when popup is hidden.
-  - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance arrow drawn after the text.
-  - `WidgetComboBox.paintEvent(self, event) -> None` — Paint the base combo, then overlay an arrow immediately after the
+  - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance triangle drawn after the text.
+  - `WidgetComboBox.arrow_icon(self) -> Optional[QtGui.QIcon]` *(property)* — Custom icon drawn as the dropdown affordance, in place of the
+  - `WidgetComboBox.arrow_alpha(self) -> float` *(property)* — Opacity (``0.0``–``1.0``) of the dropdown affordance — the triangle
+  - `WidgetComboBox.paintEvent(self, event) -> None` — Paint the base combo, then overlay the optional dropdown affordance
   - `WidgetComboBox.eventFilter(self, obj, event)` — Event filter to reposition indicator on scroll and resize events.
   - `WidgetComboBox.add(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, **kwargs)` — Populate the combo box with text, widgets or actions.
   - `WidgetComboBox.add_defaults_button(self) -> bool` *(property)* — When True, adds a "Restore Defaults" action at the bottom of the

@@ -552,6 +552,15 @@ class TableWidget(
         # columns only.
         self._single_click_edit_columns: set = set()
 
+        # Cell-widget click-forwarding (opt-in via
+        # ``set_cell_widget_click_columns``): a bare LMB click on the empty
+        # part of a cell hosting an embedded widget is forwarded to that
+        # widget. A cell widget can be narrower than its cell — e.g. a combo
+        # with ``AdjustToContents`` self-resizes to its content width after
+        # the view's layout and isn't re-stretched until the next relayout —
+        # leaving the rest of the cell interactive-looking but inert.
+        self._cell_widget_click_columns: set = set()
+
         self.cellClicked.connect(self._on_cell_clicked)
 
         # Zero-spacing editor delegate keeps cell text from visibly
@@ -649,6 +658,71 @@ class TableWidget(
     def remove_single_click_edit_column(self, column: int) -> None:
         """Remove a column from the single-click-edit set."""
         self._single_click_edit_columns.discard(int(column))
+
+    # ------------------------------------------------------------------
+    # Cell-widget click-forwarding (opt-in)
+    # ------------------------------------------------------------------
+
+    def set_cell_widget_click_columns(self, columns: Iterable[int]) -> None:
+        """Forward dead-space clicks to embedded cell widgets in *columns*.
+
+        A cell widget (``setCellWidget``) that doesn't span the full cell
+        leaves the surrounding area interactive-looking but inert: a click
+        there reaches the table, not the widget, so nothing happens.  For
+        the registered columns, a bare LMB click on that empty area is
+        forwarded to the cell's embedded widget — a combobox opens its
+        popup, a button is clicked, other controls take focus.
+
+        Only fires when the click actually reaches the view (i.e. the
+        widget didn't cover that point), so it never double-activates a
+        widget that received the click directly.  Pass an empty iterable
+        to disable.
+        """
+        self._cell_widget_click_columns = set(int(c) for c in columns)
+
+    def add_cell_widget_click_column(self, column: int) -> None:
+        """Add a single column to the cell-widget click-forward set."""
+        self._cell_widget_click_columns.add(int(column))
+
+    def remove_cell_widget_click_column(self, column: int) -> None:
+        """Remove a column from the cell-widget click-forward set."""
+        self._cell_widget_click_columns.discard(int(column))
+
+    # Widget types whose click has an unambiguous "activate" meaning.
+    _INTERACTIVE_CELL_WIDGETS = (
+        QtWidgets.QComboBox,
+        QtWidgets.QAbstractButton,
+        QtWidgets.QAbstractSpinBox,
+        QtWidgets.QLineEdit,
+        QtWidgets.QAbstractSlider,
+    )
+
+    def _forward_click_to_cell_widget(self, widget: QtWidgets.QWidget) -> None:
+        """Activate *widget* (or its primary control) as if clicked.
+
+        Cells often wrap the real control in a centering container, so the
+        cell widget itself may be a plain ``QWidget`` — resolve to the first
+        interactive descendant before acting.  A combobox opens its popup, a
+        button is clicked, everything else focusable takes focus.
+        """
+        target = widget
+        if not isinstance(widget, self._INTERACTIVE_CELL_WIDGETS):
+            target = next(
+                (
+                    c
+                    for c in widget.findChildren(QtWidgets.QWidget)
+                    if isinstance(c, self._INTERACTIVE_CELL_WIDGETS)
+                ),
+                None,
+            )
+        if target is None:
+            return
+        if isinstance(target, QtWidgets.QComboBox):
+            target.showPopup()
+        elif isinstance(target, QtWidgets.QAbstractButton):
+            target.click()
+        elif target.focusPolicy() != QtCore.Qt.NoFocus:
+            target.setFocus(QtCore.Qt.MouseFocusReason)
 
     # ------------------------------------------------------------------
     # Drag-select: edit or action (Maya channel-box style)
@@ -787,6 +861,24 @@ class TableWidget(
                 item = self.item(index.row(), index.column())
                 if item and (item.flags() & QtCore.Qt.ItemIsEditable):
                     self.editItem(item)
+                    return
+
+        # Cell-widget click-forward: a bare click on the empty part of a
+        # cell that hosts an embedded widget (so the click reached the
+        # table, not the widget) is routed to that widget.  Placed after
+        # single-click-edit so numeric/text cells still open their editor;
+        # only cells with a cell widget are forwarded.
+        if (
+            not was_drag
+            and not had_modifier
+            and event.button() == QtCore.Qt.LeftButton
+            and self._cell_widget_click_columns
+        ):
+            index = self.indexAt(event.pos())
+            if index.isValid() and index.column() in self._cell_widget_click_columns:
+                cell_widget = self.cellWidget(index.row(), index.column())
+                if cell_widget is not None:
+                    self._forward_click_to_cell_widget(cell_widget)
                     return
 
         if not (

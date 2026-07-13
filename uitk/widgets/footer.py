@@ -256,6 +256,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         tooltip: str = "",
         callback=None,
         rounded: bool = True,
+        states=None,
     ) -> QtWidgets.QPushButton:
         """Add an action button to the right side of the footer.
 
@@ -268,8 +269,18 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             icon_name: Icon name (without extension) for ``IconManager``.
             tooltip: Tooltip text.
             callback: Callable connected to the button's ``clicked`` signal.
+                With ``states``, used as the fallback for states that carry
+                no ``callback`` of their own.
             rounded: When True (default), the button gets slightly rounded
                 corners. Set False for hard square edges.
+            states: Optional list of state dicts for multi-state cycling —
+                same shape as ``ActionOption(states=...)``: optional
+                ``icon`` / ``color`` / ``tooltip`` / ``callback`` keys.
+                State 0's visuals apply immediately; clicking runs the
+                current state's callback then cycles. The controller is
+                exposed as ``btn.icon_states`` — assign
+                ``btn.icon_states.current_state`` to sync the visuals to
+                externally-owned app state.
 
         Returns:
             The created QPushButton.
@@ -281,23 +292,34 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._apply_rounded_style(btn, rounded)
         h = self.height()
         btn_h = max(h - 2, 1)  # 1px clearance top and bottom
-        if icon_name and not text:
+        initial_icon = icon_name or (states[0].get("icon") if states else None)
+        if initial_icon and not text:
             btn.setFixedSize(btn_h, btn_h)  # square for icon-only
         else:
             btn.setFixedHeight(btn_h)  # flexible width for text
         btn.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
 
-        if icon_name:
+        if initial_icon:
             from uitk.widgets.mixins.icon_manager import IconManager
 
             # Margin 6 keeps the historical h*0.7 sizing (13 px on a 19 px
             # footer) while delegating the math to IconManager.
-            IconManager.fit_icon(btn, icon_name, h, margin=6)
+            IconManager.fit_icon(btn, initial_icon, h, margin=6)
 
         if tooltip:
             btn.setToolTip(tooltip)
 
-        if callback:
+        if states:
+            from uitk.widgets.mixins.icon_states import IconStates
+
+            # Attaching applies the current state's visuals over the
+            # fit_icon render above (the fitted size is preserved; a state
+            # color is pinned so theme sweeps don't repaint it).
+            btn.icon_states = IconStates(states, widget=btn)
+            btn.clicked.connect(
+                lambda *_: btn.icon_states.activate(fallback=callback)
+            )
+        elif callback:
             btn.clicked.connect(callback)
 
         # Insert before grip spacer if present, otherwise append

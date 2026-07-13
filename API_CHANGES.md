@@ -1,5 +1,9 @@
 # uitk — API Changes
 
-_Diff vs prior baseline. Generated 2026-07-12._
+_Diff vs prior baseline. Generated 2026-07-13._
 
-No public API changes since last refresh.
+## Signature changed (1)
+
+- `widgets/mixins/icon_manager.py::IconManager.registered_info`
+  - was: `(cls, widget) -> dict`
+  - now: `(cls, widget) -> 'dict | None'`

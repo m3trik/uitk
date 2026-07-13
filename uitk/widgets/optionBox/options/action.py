@@ -58,8 +58,7 @@ class ActionOption(ButtonOption):
         )
         self._action_handler = callback
         self._text = text
-        self._states = None
-        self._current_state = 0
+        self._state_cycle = None
         self._settings_key = settings_key
         self._settings = None
         # Persistence is only meaningful for state-cycling options. set_states()
@@ -80,11 +79,11 @@ class ActionOption(ButtonOption):
 
         button.setProperty("class", "ActionButton")
 
-        # Apply state 0 visuals immediately so the correct icon/tooltip
-        # appear on first render instead of the constructor defaults.
-        if self._states:
-            self._widget = button  # Temporarily set so _apply_state can use it
-            self._apply_state()
+        # Attach the state cycle so the current state's visuals appear on
+        # first render instead of the constructor defaults.
+        if self._state_cycle:
+            self._widget = button  # Host bookkeeping expects _widget set
+            self._state_cycle.widget = button
 
         return button
 
@@ -98,54 +97,41 @@ class ActionOption(ButtonOption):
 
     @property
     def current_state(self):
-        """The current state index (0-based). Only meaningful when states are set."""
-        return self._current_state
+        """The current state index (0-based). Only meaningful when states are set.
+
+        Assign it to sync the button's visuals to externally-owned app
+        state — the change is applied (and persisted) but no state
+        callback fires.
+        """
+        return self._state_cycle.current_state if self._state_cycle else 0
 
     @current_state.setter
     def current_state(self, index):
-        if not self._states:
-            return
-        self._current_state = index % len(self._states)
-        self._apply_state()
-        self._save_state()
+        if self._state_cycle:
+            self._state_cycle.current_state = index
 
     def set_states(self, states):
         """Set multiple cycling states.
 
         Args:
-            states: list of dicts, each with optional keys: icon, tooltip, callback.
+            states: list of dicts, each with optional keys: icon, color,
+                tooltip, callback (see :class:`IconStates`).
                 e.g. [{"icon": "play", "tooltip": "Run", "callback": run_fn},
                       {"icon": "pause", "tooltip": "Pause", "callback": pause_fn},
                       {"icon": "stop",  "tooltip": "Stop",  "callback": stop_fn}]
         """
-        self._states = list(states)
-        self._current_state = 0
+        from uitk.widgets.mixins.icon_states import IconStates
+
+        self._state_cycle = IconStates(
+            states,
+            widget=self._widget,
+            on_change=lambda _index: self._save_state(),
+        )
         # States now exist, so persistence is meaningful — initialize the
         # settings handle lazily here (it is skipped at construction for the
         # no-states case) before restoring the persisted index.
         self._init_settings()
         self._load_state()
-        if self._widget:
-            self._apply_state()
-
-    def _apply_state(self):
-        """Apply the visual properties (icon, tooltip) for the current state."""
-        from uitk.widgets.mixins.icon_manager import IconManager
-
-        state = self._states[self._current_state]
-        if "icon" in state:
-            color = state.get("color")
-            # Preserve the size set by the parent OptionBox (via fit_icon)
-            # so cycling states doesn't oscillate the icon size.
-            IconManager.swap_icon(
-                self._widget,
-                state["icon"],
-                color=color,
-                auto_theme=color is None,
-                fallback_size=(15, 15),
-            )
-        if "tooltip" in state:
-            self._widget.setToolTip(state["tooltip"])
 
     # ------------------------------------------------------------------
     # Persistence
@@ -177,7 +163,7 @@ class ActionOption(ButtonOption):
         # while cycling, which requires states). Skip the SettingsManager /
         # QSettings construction entirely; this is the common MenuOption /
         # plain-action case and runs synchronously per widget at register time.
-        if not self._states:
+        if not self._state_cycle:
             return
         key = self._resolve_settings_key()
         if not key:
@@ -189,54 +175,50 @@ class ActionOption(ButtonOption):
     def _save_state(self):
         if not self._settings:
             return
-        self._settings.setValue("current_state", self._current_state)
+        self._settings.setValue("current_state", self._state_cycle.current_state)
         self._settings.sync()
 
     def _load_state(self):
         if not self._settings:
             return
         saved = self._settings.value("current_state")
-        if saved is not None and self._states:
+        if saved is not None and self._state_cycle:
             try:
-                index = int(saved) % len(self._states)
+                index = int(saved)
             except (ValueError, TypeError):
                 return
-            self._current_state = index
-            if self._widget:
-                self._apply_state()
-
-    def _resolve_handler(self):
-        """Resolve the current handler, checking per-state callback first."""
-        if self._states:
-            state = self._states[self._current_state]
-            if "callback" in state and state["callback"] is not None:
-                return state["callback"]
-        return self._action_handler
+            # notify=False: restoring a persisted index must not re-save it.
+            self._state_cycle.set_current_state(index, notify=False)
 
     def _handle_action(self):
         """Handle the action click, cycling state if multi-state is active."""
-        h = self._resolve_handler()
-        if h is not None:
-            if callable(h):
+        if self._state_cycle:
+            self._state_cycle.activate(
+                fallback=self._action_handler, runner=self._invoke_handler
+            )
+        else:
+            self._invoke_handler(self._action_handler)
+
+    def _invoke_handler(self, h):
+        """Invoke *h*: call it directly, else try show/execute/run/trigger."""
+        if h is None:
+            return
+        if callable(h):
+            try:
+                h()
+            except Exception as e:  # pragma: no cover - defensive
+                print(f"ActionOption handler error: {e}")
+        else:
+            # Heuristic method lookup order
+            for attr in ("show", "execute", "run", "trigger"):
+                if hasattr(h, attr) and callable(getattr(h, attr)):
+                    getattr(h, attr)()
+                    break
+            else:
                 try:
                     h()
-                except Exception as e:  # pragma: no cover - defensive
-                    print(f"ActionOption handler error: {e}")
-            else:
-                # Heuristic method lookup order
-                for attr in ("show", "execute", "run", "trigger"):
-                    if hasattr(h, attr) and callable(getattr(h, attr)):
-                        getattr(h, attr)()
-                        break
-                else:
-                    try:
-                        h()
-                    except Exception:  # pragma: no cover
-                        print(f"Warning: ActionOption handler {h} not invokable")
-
-        # Cycle to next state after executing
-        if self._states and len(self._states) > 1:
-            self.current_state = self._current_state + 1
+                except Exception:  # pragma: no cover
+                    print(f"Warning: ActionOption handler {h} not invokable")
 
 
 class MenuOption(ActionOption):
