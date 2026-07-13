@@ -7162,7 +7162,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The attached widget (None until attached).",
-              "line": 61,
+              "line": 66,
               "deprecated": false
             },
             {
@@ -7171,7 +7171,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The current 0-based state index.",
-              "line": 72,
+              "line": 77,
               "deprecated": false
             },
             {
@@ -7180,7 +7180,7 @@
               "kind": "method",
               "signature": "(self, index, notify=True)",
               "summary": "Set the state index and apply its visuals.",
-              "line": 80,
+              "line": 85,
               "deprecated": false
             },
             {
@@ -7189,7 +7189,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Apply the current state's icon/color/tooltip to the widget.",
-              "line": 97,
+              "line": 102,
               "deprecated": false
             },
             {
@@ -7198,7 +7198,7 @@
               "kind": "method",
               "signature": "(self, fallback=None)",
               "summary": "The current state's callback, else *fallback*.",
-              "line": 116,
+              "line": 121,
               "deprecated": false
             },
             {
@@ -7207,7 +7207,7 @@
               "kind": "method",
               "signature": "(self, fallback=None, runner=None)",
               "summary": "Run the current state's callback, then advance to the next state.",
-              "line": 121,
+              "line": 126,
               "deprecated": false
             }
           ]
