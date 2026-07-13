@@ -317,6 +317,14 @@ self.ui.footer.setText("Loaded 42 items", level="success")  # level: info/succes
 self.ui.footer.add_action_button("Refresh", callback=self.refresh)
 ```
 
+`add_action_button(states=[...])` makes a state-cycling toggle (same state
+dicts as `option_box.set_action(states=...)`: optional `icon`/`color`/
+`tooltip`/`callback` per state). Visuals are applied from state 0 at
+creation and cycle on click; sync to app-owned state via
+`btn.icon_states.current_state = i`. State colors are *pinned* — theme
+sweeps never repaint them (see
+[`IconStates`](../uitk/widgets/mixins/icon_states.py)).
+
 ## CollapsableGroup
 
 Checkable `QGroupBox` that shows/hides its contents. Collapse state persists via `SettingsManager` (keyed `CollapsableGroup/<objectName>/checked`; disable with `restore_state = False`). State is settled before window geometry restore — see [CHANGELOG.md entry](../CHANGELOG.md) for the settling rationale.

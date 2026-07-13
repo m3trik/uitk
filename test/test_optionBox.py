@@ -2234,12 +2234,11 @@ class TestOptionBoxInitPerfRegressions(QtBaseTestCase):
         )
         try:
             # Save an index, then reconstruct and confirm it restores.
-            opt._current_state = 2
-            opt._save_state()
+            opt.current_state = 2  # setter applies + persists
 
             restored = ActionOption(wrapped_widget=widget, states=states)
             self.assertEqual(
-                restored._current_state, 2, "persisted state must restore on reconstruct"
+                restored.current_state, 2, "persisted state must restore on reconstruct"
             )
 
             # Runtime path: a state-less option opens no settings, but
@@ -2251,7 +2250,7 @@ class TestOptionBoxInitPerfRegressions(QtBaseTestCase):
                 late._settings, "set_states() must lazily initialize persistence"
             )
             self.assertEqual(
-                late._current_state, 2, "set_states() must restore the persisted index"
+                late.current_state, 2, "set_states() must restore the persisted index"
             )
         finally:
             if opt._settings is not None:

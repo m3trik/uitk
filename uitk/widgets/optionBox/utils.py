@@ -184,6 +184,11 @@ class OptionBoxManager(ptk.LoggingMixin):
             settings_key: Optional explicit persistence key. When omitted
                 the key is auto-derived from the widget's objectName.
                 Pass ``False`` to disable persistence entirely.
+
+        Returns:
+            The created :class:`ActionOption`. Keep a reference to a
+            state-cycling action so app code can sync its visuals to
+            externally-owned state via ``action.current_state``.
         """
         # from ..optionBox.options import ActionOption
         # Use absolute import to ensure type consistency
@@ -207,7 +212,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             settings_key=settings_key,
         )
         self.add_option(action_option)
-        return self
+        return action_option
 
     def add_action(
         self,
@@ -230,6 +235,9 @@ class OptionBoxManager(ptk.LoggingMixin):
             text: Optional text to display instead of icon
             states: Optional list of state dicts for multi-state cycling.
             settings_key: Optional explicit persistence key.
+
+        Returns:
+            The created :class:`ActionOption` (see :meth:`set_action`).
         """
         return self.set_action(
             callback=callback,

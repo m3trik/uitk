@@ -436,7 +436,7 @@ class IconManager:
             if qs.isValid() and qs.width() > 0:
                 size = (qs.width(), qs.height())
         if size is None:
-            info = cls._widget_icon_info.get(id(widget))
+            info = cls.registered_info(widget)
             size = info["size"] if info else fallback_size
         cls.set_icon(widget, name, size=size, color=color, auto_theme=auto_theme)
 
@@ -464,7 +464,13 @@ class IconManager:
         elif hasattr(size, "width"):  # QSize
             size = (size.width(), size.height())
 
-        if color is None and auto_theme:
+        # An explicitly-passed color is a *pin*: the caller owns this icon's
+        # color (e.g. a state-cycling toggle's active/off tint), so theme
+        # sweeps and size re-fits must preserve it. A later theme-managed
+        # call (color=None, auto_theme=True) clears the pin.
+        pinned = cls._normalize_color(color) if color else None
+
+        if pinned is None and auto_theme:
             # Get color from widget's theme (walks up hierarchy)
             from uitk.widgets.mixins.style_sheet import StyleSheet
 
@@ -476,25 +482,46 @@ class IconManager:
             if color == "#888888" and cls._default_color:
                 color = cls._default_color
         else:
-            color = cls._normalize_color(color)
+            color = pinned
 
         icon = cls.get(name, size, color)
         widget.setIcon(icon)
         widget.setIconSize(QtCore.QSize(*size))
 
-        # Register widget for theme updates using weak reference
+        # Register widget (weak reference) for theme updates and re-fits.
+        # Pinned widgets register too — update_widget_icons skips their
+        # color, but OptionBox._update_sizing needs their current
+        # name/size/color on record to re-rasterize faithfully.
         widget_id = id(widget)
-        if auto_theme:
+        if auto_theme or pinned:
             try:
                 cls._widget_icons[widget_id] = widget
                 cls._widget_icon_info[widget_id] = {
                     "name": name,
                     "size": size,
+                    "color": pinned,
                 }
                 cls._last_update_color[widget_id] = color
             except TypeError:
-                # Widget doesn't support weak references - track without weak ref
+                # Widget doesn't support weak references — leave it
+                # untracked (it won't receive theme sweeps or re-fits).
                 pass
+
+    @classmethod
+    def registered_info(cls, widget) -> "dict | None":
+        """The icon registry entry for *widget* — name/size/color — or None.
+
+        Validates ownership through the weak registry before trusting the
+        entry: the info dict is keyed by ``id()``, which CPython reuses
+        after a widget dies, so an unvalidated lookup could return a dead
+        widget's icon (and pinned color) for a brand-new widget.
+        """
+        info = cls._widget_icon_info.get(id(widget))
+        if info is None:
+            return None
+        if cls._widget_icons.get(id(widget)) is not widget:
+            return None
+        return info
 
     @classmethod
     def update_widget_icons(cls, root_widget: QtWidgets.QWidget, color: str):
@@ -525,6 +552,13 @@ class IconManager:
 
                 # Check if this widget is root or a descendant of root
                 if widget is root_widget or root_widget.isAncestorOf(widget):
+                    # Pinned (explicitly colored) icons are state-owned —
+                    # repainting them with the theme color here was the
+                    # "stateful icons start out of sync until first click"
+                    # bug: the first style pass of a session wiped the
+                    # state tint applied at construction.
+                    if info.get("color"):
+                        continue
                     # Skip if already at this color (prevents redundant updates)
                     if cls._last_update_color.get(widget_id) == color:
                         continue
@@ -543,6 +577,15 @@ class IconManager:
             cls._widget_icons.pop(widget_id, None)
             cls._widget_icon_info.pop(widget_id, None)
             cls._last_update_color.pop(widget_id, None)
+
+        # Purge entries orphaned by the weak registry dropping their dead
+        # widgets — the id-keyed side dicts never self-clean (the loop above
+        # only visits ids still present in _widget_icons), which both leaked
+        # per dead widget and left stale entries a recycled id could match.
+        live_ids = set(cls._widget_icons.keys())
+        for side in (cls._widget_icon_info, cls._last_update_color):
+            for orphan_id in [k for k in side if k not in live_ids]:
+                side.pop(orphan_id, None)
 
         # Also refresh tree widget item icons
         try:

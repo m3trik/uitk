@@ -301,7 +301,7 @@ class FilterOption(BinaryToggleOption):
         # Sync the visible state to the persisted scope before it is added so the
         # initial render shows the correct icon.
         if saved in self._scope_keys:
-            action._current_state = self._scope_keys.index(saved)
+            action.current_state = self._scope_keys.index(saved)
         return action
 
     def _make_scope_cb(self, new_scope: str):
@@ -327,7 +327,7 @@ class FilterOption(BinaryToggleOption):
         """The active scope key, or ``None`` when the field has no scope cycle."""
         if not self._scope_action or not self._scope_keys:
             return None
-        return self._scope_keys[self._scope_action._current_state]
+        return self._scope_keys[self._scope_action.current_state]
 
     def set_scope(self, key: str, *, notify: bool = False) -> None:
         """Programmatically set the active scope, syncing the button visual.
@@ -339,9 +339,8 @@ class FilterOption(BinaryToggleOption):
         """
         if not self._scope_action or key not in self._scope_keys:
             return
-        self._scope_action._current_state = self._scope_keys.index(key)
-        if self._scope_action._widget is not None:
-            self._scope_action._apply_state()
+        # The setter applies the visuals itself when a widget is attached.
+        self._scope_action.current_state = self._scope_keys.index(key)
         if self._ext_settings is not None and self._scope_key is not None:
             self._ext_settings.setValue(self._scope_key, key)
         if notify and self._on_scope_changed is not None:

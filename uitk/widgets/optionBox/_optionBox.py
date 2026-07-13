@@ -452,13 +452,22 @@ class OptionBox:
                 w.setFixedHeight(h)
             if not hasattr(w, "setIcon"):
                 continue
-            # Use whatever icon name IconManager has on record (handles
+            # Use whatever icon name/color IconManager has on record (handles
             # state-cycling ActionOptions that swapped the icon after
-            # creation); fall back to the option's initial icon.
-            info = IconManager._widget_icon_info.get(id(w))
+            # creation — a pinned state color must survive the re-fit);
+            # fall back to the option's initial icon.
+            info = IconManager.registered_info(w)
             icon_name = info["name"] if info else getattr(option, "icon", None)
+            pinned = info.get("color") if info else None
             if icon_name:
-                IconManager.fit_icon(w, icon_name, h, margin=self._ICON_MARGIN)
+                IconManager.fit_icon(
+                    w,
+                    icon_name,
+                    h,
+                    margin=self._ICON_MARGIN,
+                    color=pinned,
+                    auto_theme=pinned is None,
+                )
             elif not w.icon().isNull():
                 extent = IconManager.fit_size(h, margin=self._ICON_MARGIN)
                 w.setIconSize(QtCore.QSize(extent, extent))

@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-11_
+_Generated: 2026-07-13_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `configure_high_dpi() -> bool`
@@ -312,7 +312,11 @@ _Generated: 2026-07-11_
 
 ### `widgets/mixins/icon_manager.py`
 - `class IconManager`
-  - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, update_widget_icons, clear_cache, get_cache_stats
+  - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
+
+### `widgets/mixins/icon_states.py` — Shared multi-state icon behavior for state-cycling buttons.
+- `class IconStates`
+  - methods: states, widget, current_state, set_current_state, apply, resolve_callback, activate
 
 ### `widgets/mixins/menu_mixin.py` — MenuMixin - provides automatic Menu integration for widgets.
 - `class MenuMixin`
@@ -594,7 +598,7 @@ _Generated: 2026-07-11_
 - `class TableSelection`
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`
-  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, get_selected_data, get_selection, register_menu_action, unregister_menu_action
+  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, get_selected_data, get_selection, register_menu_action, unregister_menu_action
 
 ### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
 - `class TableActions`
@@ -628,7 +632,7 @@ _Generated: 2026-07-11_
 
 ### `widgets/widgetComboBox.py`
 - `class WidgetComboBox(ComboBox)`
-  - methods: setItemText, addWidgetItem, addWidgetAction, widgetAt, takeWidgetAt, currentWidget, item_spacing, actions, action_columns, action_icon_only, show_action_separator, showPopup, hidePopup, arrow_direction, paintEvent, eventFilter, add, add_defaults_button, clear
+  - methods: setItemText, addWidgetItem, addWidgetAction, widgetAt, takeWidgetAt, currentWidget, item_spacing, actions, action_columns, action_icon_only, show_action_separator, showPopup, hidePopup, arrow_direction, arrow_icon, arrow_alpha, paintEvent, eventFilter, add, add_defaults_button, clear
 
 ### `widgets/windowPanel.py` — Themed top-level uitk window: Header → body → Footer.
 - `class WindowPanel(QtWidgets.QWidget)`
