@@ -17,7 +17,6 @@ fired twice per enter/leave).
 Fix: the setter tracks ``_mouse_over_connected`` and connects/disconnects
 only on a real state change.
 """
-import os
 import unittest
 import warnings
 
@@ -25,15 +24,6 @@ from qtpy import QtWidgets, QtCore, QtGui
 
 from conftest import QtBaseTestCase
 from uitk.widgets.region import Region
-
-# The offscreen QPA plugin used by the headless test/CI runners mishandles
-# setMask on PySide6 6.10.x (a masked widget SIGSEGVs during teardown), so
-# Region skips the platform mask there — mask() is empty and these assertions
-# can't hold. Skip on offscreen; they exercise real hit-testing shape on a
-# real display. `startswith` matches Qt's own handling of a `offscreen:<opts>`
-# spec (platformName() strips the options), keeping this aligned with the
-# `platformName() == "offscreen"` guard in Region._apply_region_mask.
-_OFFSCREEN_QPA = os.environ.get("QT_QPA_PLATFORM", "").lower().startswith("offscreen")
 
 
 class TestRegionMouseOverConnections(QtBaseTestCase):
@@ -86,67 +76,6 @@ class TestRegionMouseOverConnections(QtBaseTestCase):
         child.hide()
         region.on_enter.emit()
         self.assertFalse(child.isVisible(), "enter is inert after opt-out")
-
-
-@unittest.skipIf(
-    _OFFSCREEN_QPA,
-    "offscreen QPA mishandles setMask on PySide6 6.10.x (masked-widget SIGSEGV "
-    "mid-run); Region skips the platform mask there, so mask() is empty",
-)
-class TestRegionShapeMask(QtBaseTestCase):
-    """Regression: the ``shape`` region must be applied as a widget mask.
-
-    Bug: ``__init__`` computed ``self.region = QRegion(rect, shape)`` but never
-    called ``setMask``, so despite the documented elliptical shape the widget
-    stayed rectangular for hit-testing — ``enterEvent`` / ``on_enter`` fired in
-    the corners that the ellipse excludes. Fix: apply the region as the mask in
-    ``__init__`` and re-apply it on show / resize.
-    """
-
-    def _make_region(self, size=(50, 50), **kwargs):
-        region = Region(None, size=size, **kwargs)
-        self.track_widget(region)
-        return region
-
-    def test_ellipse_mask_is_applied(self):
-        """A mask must be set (was never applied at all)."""
-        region = self._make_region()
-        mask = region.mask()
-        self.assertFalse(
-            mask.isEmpty(), "no mask applied — hit-testing uses the full rect"
-        )
-
-    def test_ellipse_mask_excludes_corners(self):
-        """The inscribed ellipse must exclude the bounding-box corners."""
-        region = self._make_region(size=(50, 50))
-        mask = region.mask()
-        self.assertFalse(mask.contains(QtCore.QPoint(0, 0)), "top-left corner masked in")
-        self.assertFalse(
-            mask.contains(QtCore.QPoint(49, 49)), "bottom-right corner masked in"
-        )
-        self.assertTrue(
-            mask.contains(QtCore.QPoint(25, 25)), "center must be inside the ellipse"
-        )
-
-    def test_rectangle_shape_keeps_corners(self):
-        """A Rectangle shape masks nothing away (corners stay hittable)."""
-        region = self._make_region(size=(40, 40), shape=QtGui.QRegion.Rectangle)
-        mask = region.mask()
-        self.assertTrue(mask.contains(QtCore.QPoint(0, 0)))
-        self.assertTrue(mask.contains(QtCore.QPoint(39, 39)))
-
-    def test_mask_reapplied_on_resize(self):
-        """Resizing the region rebuilds the mask for the new size."""
-        region = self._make_region(size=(50, 50))
-        region.show()
-        QtWidgets.QApplication.processEvents()
-        region.resize(80, 80)
-        QtWidgets.QApplication.processEvents()
-        mask = region.mask()
-        self.assertFalse(mask.isEmpty())
-        # New-size corner excluded, new-size center included.
-        self.assertFalse(mask.contains(QtCore.QPoint(0, 0)))
-        self.assertTrue(mask.contains(QtCore.QPoint(40, 40)))
 
 
 if __name__ == "__main__":

@@ -1712,8 +1712,6 @@ Utilities and helper functions for OptionBox.
   - `Region.visible_on_mouse_over(self)` *(property)* — Get or set the visibility of the top-level children of the Region widget when the mouse cursor is o…
   - `Region.hide_top_level_children(self)` — Hide all top-level child widgets of the Region instance.
   - `Region.show_top_level_children(self)` — Show all top-level child widgets of the Region instance.
-  - `Region.showEvent(self, event)` — Re-apply the shaped mask on show (size may have changed while hidden).
-  - `Region.resizeEvent(self, event)` — Keep the shaped mask in sync with the widget's size.
   - `Region.enterEvent(self, event)` — Overrides the QWidget.enterEvent method.
   - `Region.leaveEvent(self, event)` — Overrides the QWidget.leaveEvent method.
   - `Region.hideEvent(self, event)` — Overrides the QWidget.hideEvent method.
