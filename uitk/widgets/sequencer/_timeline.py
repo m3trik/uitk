@@ -728,7 +728,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         if zone == "ruler" and self._scene.ruler.shot_block_at(raw_t) is not None:
             zone = "shot_lane"
 
-        if getattr(sq, "_zone_menu_connected", False):
+        if sq.zone_menu_enabled:
             sq.zone_context_menu_requested.emit(zone, t, event.globalPos())
             event.accept()
             return
@@ -826,6 +826,10 @@ class TimelineView(QtWidgets.QGraphicsView):
         row_h = max(sq._total_row_height(), self.viewport().height() - sq._content_top)
         h = sq._content_top + row_h
         self._scene.setSceneRect(0, 0, w, h)
+        # Keep the ruler's boundingRect as wide as the scene so its ticks/
+        # labels/background keep painting in a newly-widened region at high
+        # zoom / far scroll (a fixed cap stopped them past width/ppu).
+        self._scene.ruler.set_content_width(w)
         hbar = self.horizontalScrollBar()
         hbar_h = hbar.height() if hbar.isVisible() else 0
         sq._header.setMinimumHeight(int(h + hbar_h))

@@ -234,8 +234,10 @@ class SettingsManager:
 
         # Update value
         settings.key.set(value)
-        # OR legacy attribute style (still works via __setattr__ intercept)
-        settings.key = value
+        # NOTE: direct attribute assignment (``settings.key = value``) is
+        # intentionally rejected (``__setattr__`` raises AttributeError) to
+        # avoid ambiguity between assigning a proxy and a value -- always use
+        # ``settings.key.set(value)``.
 
         # Signals
         settings.key.changed.connect(callback)

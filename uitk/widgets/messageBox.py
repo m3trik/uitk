@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichTextFormatter
 
@@ -114,34 +114,62 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         standardButtons = QtWidgets.QMessageBox.StandardButtons()
         for button in buttons:
             if isinstance(button, str):
-                button = button.capitalize()  # Normalize the string
-                standardButtons |= self.buttonMapping.get(
-                    button, QtWidgets.QMessageBox.NoButton
+                # Match the real Qt StandardButton names case-insensitively.
+                # ``str.capitalize()`` lowercased interior capitals, so
+                # multi-word names ("RestoreDefaults", "YesToAll") never
+                # resolved and were silently dropped.
+                resolved = next(
+                    (
+                        v
+                        for k, v in self.buttonMapping.items()
+                        if isinstance(k, str) and k.lower() == button.lower()
+                    ),
+                    QtWidgets.QMessageBox.NoButton,
                 )
+                standardButtons |= resolved
             elif isinstance(button, QtWidgets.QMessageBox.StandardButton):
                 standardButtons |= button
 
         super().setStandardButtons(standardButtons)
 
     def move_(self, location) -> None:
-        # Get the screen's geometry
-        screen = QtWidgets.QApplication.screens()[0]
+        # Honor an explicit QPoint — the class docstring promises point support.
+        if isinstance(location, QtCore.QPoint):
+            self.move(location)
+            return
+
+        # Position relative to the screen under the cursor rather than a
+        # hardcoded primary monitor, so the popup lands on the active display.
+        # ``rect`` carries the screen's global offset (non-zero left/top on a
+        # secondary monitor), so every point below is anchored to it.
+        screen = (
+            QtWidgets.QApplication.screenAt(QtGui.QCursor.pos())
+            or QtWidgets.QApplication.primaryScreen()
+        )
         rect = screen.geometry()
 
         offset_x = self.sizeHint().width() / 2
         offset_y = self.sizeHint().height() / 2
 
         if location == "topMiddle":
-            point = QtCore.QPoint(rect.width() / 2 - offset_x, rect.top() + 150)
+            point = QtCore.QPoint(
+                rect.left() + rect.width() / 2 - offset_x, rect.top() + 150
+            )
         elif location == "bottomRight":
-            point = QtCore.QPoint(rect.width() - offset_x, rect.height() - offset_y)
+            point = QtCore.QPoint(
+                rect.left() + rect.width() - offset_x,
+                rect.top() + rect.height() - offset_y,
+            )
         elif location == "topLeft":
             point = QtCore.QPoint(rect.left() + offset_x, rect.top() + offset_y)
         elif location == "bottomLeft":
-            point = QtCore.QPoint(rect.left() + offset_x, rect.height() - offset_y)
+            point = QtCore.QPoint(
+                rect.left() + offset_x, rect.top() + rect.height() - offset_y
+            )
         else:  # default to the middle of the screen if location is not recognized
             point = QtCore.QPoint(
-                rect.width() / 2 - offset_x, rect.height() / 2 - offset_y
+                rect.left() + rect.width() / 2 - offset_x,
+                rect.top() + rect.height() / 2 - offset_y,
             )
 
         self.move(point)

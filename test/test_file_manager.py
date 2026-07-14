@@ -324,6 +324,40 @@ class TestFileManagerLocationCheck(BaseTestCase):
         self.assertIsInstance(result, bool)
 
 
+class TestFileManagerValidateWarn(BaseTestCase):
+    """validate=1 ('warn') must warn and skip, not hard-crash.
+
+    Regression: when ``resolve_path`` returns ``None`` (an invalid path under
+    the documented validate=1 'warn' level), ``_handle_single_obj`` fell
+    through to ``os.path.isdir(None)`` and raised ``TypeError`` — turning
+    'warn' into a hard crash.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.file_manager = FileManager()
+
+    def test_handle_single_obj_skips_none_path(self):
+        """resolve_path→None must yield [] (warn + skip), not TypeError."""
+        from unittest.mock import patch
+
+        with patch.object(self.file_manager, "resolve_path", return_value=None):
+            result = self.file_manager._handle_single_obj(
+                "whatever", fields=["filename", "filepath"]
+            )
+        self.assertEqual(result, [])
+
+    def test_create_with_invalid_path_validate_warn_does_not_crash(self):
+        """create() over an invalid path under validate=1 must not raise."""
+        container = self.file_manager.create(
+            "warn_registry",
+            "definitely_not_a_real_dir_123",
+            validate=1,
+            inc_files="*.ui",
+        )
+        self.assertIsNotNone(container)
+
+
 class TestNamedTupleContainerIteration(BaseTestCase):
     """Tests for NamedTupleContainer iteration."""
 

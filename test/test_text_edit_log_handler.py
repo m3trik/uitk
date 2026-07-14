@@ -5,6 +5,9 @@
 Run standalone: python -m test.test_text_edit_log_handler
 """
 
+import time
+import logging
+import threading
 import unittest
 from unittest.mock import MagicMock
 
@@ -152,6 +155,46 @@ class TestSafeAppendHiddenWidgetNoForcePaint(QtBaseTestCase):
         self.assertTrue(edit.isVisible())
         self.assertIn("hello visible", edit.toPlainText())
         self.assertEqual(calls, ["repaint"], "visible widget keeps the live repaint")
+
+
+class TestCrossThreadEmit(QtBaseTestCase):
+    """Regression: a record logged from a plain worker thread must reach the widget.
+
+    The old worker-thread path scheduled QTimer.singleShot on a thread with no
+    Qt event loop, so the timer never fired and the record was silently lost.
+    The fix marshals the append onto the GUI thread via a queued signal.
+    """
+
+    def test_worker_thread_record_reaches_widget(self):
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        edit = self.track_widget(QtWidgets.QTextEdit())
+        handler = TextEditLogHandler(edit)
+        logger = logging.getLogger("uitk_test_cross_thread_emit")
+        logger.handlers = [handler]
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        try:
+
+            def work():
+                logger.info("from worker thread")
+
+            t = threading.Thread(target=work)
+            t.start()
+            t.join(timeout=5)
+
+            # Pump the GUI event loop so the queued append is delivered.
+            deadline = time.monotonic() + 2.0
+            while (
+                "from worker thread" not in edit.toPlainText()
+                and time.monotonic() < deadline
+            ):
+                app.processEvents()
+                time.sleep(0.005)
+
+            self.assertIn("from worker thread", edit.toPlainText())
+        finally:
+            logger.handlers = []
 
 
 if __name__ == "__main__":

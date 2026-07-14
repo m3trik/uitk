@@ -15,7 +15,7 @@ Example:
     Using EventFactoryFilter to handle child widget events::
 
         class MyHandler:
-            def child_mousePressEvent(self, event, widget):
+            def child_mouseButtonPressEvent(self, widget, event):
                 print(f"Clicked on {widget.objectName()}")
 
         handler = MyHandler()
@@ -32,6 +32,12 @@ Example:
         tracker.enter.connect(lambda w: w.setStyleSheet("background: blue"))
         tracker.leave.connect(lambda w: w.setStyleSheet(""))
 """
+# PEP 604 unions (``str | int``) appear in this module's signature
+# annotations. Without this import they are evaluated at def-time and raise
+# TypeError on Python 3.9 (a supported PySide2/Maya-2023 target), crashing the
+# whole import. Deferring annotation evaluation keeps them as strings.
+from __future__ import annotations
+
 import weakref
 from typing import Iterable
 from qtpy import QtWidgets, QtCore, QtGui
@@ -44,7 +50,7 @@ class EventFactoryFilter(QtCore.QObject):
     Parameters:
         parent (QObject): Optional parent object.
         forward_events_to (object): Target object that defines the event handler methods.
-        event_name_prefix (str): Prefix prepended to handler method names. Example: 'child_' → 'child_mousePressEvent'.
+        event_name_prefix (str): Prefix prepended to handler method names. Example: 'child_' → 'child_mouseButtonPressEvent'.
         event_types (set[str | int]): Event types to watch, given as QEvent.Type enums or their string names.
         propagate_to_children (bool): If False (default), only calls handlers for widgets explicitly passed to `install()`.
     """

@@ -217,12 +217,9 @@ class SwitchboardNameMixin:
         Returns:
             list[str]: List of unknown tag names (without delimiter prefix)
         """
-        known_tags_list = ptk.make_iterable(known_tags)
-        pattern = "|".join(re.escape(tag) for tag in known_tags_list)
-        tag_re = re.escape(self.TAG_DELIMITER) + f"(?!{pattern})[a-zA-Z0-9]*"
-        unknown_tags = re.findall(tag_re, tag_string)
-        return [
-            tag[len(self.TAG_DELIMITER) :]
-            for tag in unknown_tags
-            if tag != self.TAG_DELIMITER
-        ]
+        # Exact-token matching: split the delimited string and compare whole
+        # tags. Substring regex mis-fired on prefixes ('sub' vs 'submenu'),
+        # truncated underscore tags, and never matched with an empty known list.
+        known = set(ptk.make_iterable(known_tags))
+        tags = tag_string.split(self.TAG_DELIMITER)[1:]
+        return [tag for tag in tags if tag and tag not in known]

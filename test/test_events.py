@@ -24,6 +24,22 @@ from qtpy import QtWidgets, QtCore, QtGui
 from uitk.events import EventFactoryFilter, MouseTracking
 
 
+class TestEventsModuleAnnotations(unittest.TestCase):
+    """The module must keep PEP 604 union annotations deferred.
+
+    Regression: `set[str | int]` etc. in evaluated signatures raised TypeError
+    at import on Python 3.9 (a supported PySide2/Maya-2023 target). The
+    `from __future__ import annotations` fix keeps them as strings, so the
+    module imports everywhere; assert the annotations stayed string form.
+    """
+
+    def test_union_annotations_are_deferred_strings(self):
+        anns = EventFactoryFilter.__init__.__annotations__
+        self.assertIsInstance(anns.get("event_types"), str)
+        install_anns = EventFactoryFilter.install.__annotations__
+        self.assertIsInstance(install_anns.get("widgets"), str)
+
+
 class TestEventFactoryFilterCreation(QtBaseTestCase):
     """Tests for EventFactoryFilter creation and configuration."""
 

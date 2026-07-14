@@ -39,11 +39,20 @@ class TestSignalsDecoratorCreation(BaseTestCase):
         decorator = Signals("clicked", "pressed", "released")
         self.assertEqual(decorator.signals, ("clicked", "pressed", "released"))
 
-    def test_raises_value_error_when_no_signals(self):
-        """Should raise ValueError when no signals are provided."""
-        with self.assertRaises(ValueError) as context:
-            Signals()
-        self.assertIn("At least one signal must be specified", str(context.exception))
+    def test_empty_signals_is_opt_out_not_error(self):
+        """Zero args is the documented opt-out sentinel (empty signals tuple).
+
+        `@Signals()` means "no automatic connection" — connect_slot iterates
+        the empty tuple and wires nothing. It must NOT raise.
+        """
+        deco = Signals()
+        self.assertEqual(deco.signals, ())
+
+        @Signals()
+        def custom(self):  # noqa: N805 - test slot
+            pass
+
+        self.assertEqual(custom.signals, ())
 
     def test_raises_type_error_for_non_string_signal(self):
         """Should raise TypeError when signal is not a string."""
@@ -217,6 +226,37 @@ class TestBlockSignalsDecorator(QtBaseTestCase):
 
         self.assertEqual(len(signal_received), 1)
         self.assertEqual(signal_received[0], "loud")
+
+    def test_block_signals_restores_prior_blocked_state(self):
+        """A decorated method called inside an already-blocked scope must leave
+        signals blocked afterward, not unconditionally unblock them.
+
+        Regression: the decorator ended with blockSignals(False), so calling a
+        decorated method from within a caller's own blocked scope silently
+        re-enabled signals.
+        """
+
+        class TestWidget(QtWidgets.QLineEdit):
+            @block_signals
+            def set_text_silently(self, text):
+                self.setText(text)
+
+        widget = self.track_widget(TestWidget())
+        signal_received = []
+        widget.textChanged.connect(lambda t: signal_received.append(t))
+
+        widget.blockSignals(True)  # caller blocks signals
+        widget.set_text_silently("inner")
+        self.assertTrue(
+            widget.signalsBlocked(),
+            "decorated call must preserve the caller's prior blocked state",
+        )
+        widget.setText("still-silent")  # caller is still blocked
+        self.assertEqual(signal_received, [], "no signal should have escaped")
+
+        widget.blockSignals(False)
+        widget.setText("loud")
+        self.assertEqual(signal_received, ["loud"])
 
     def test_block_signals_class_method_access(self):
         """blockSignals should be accessible as class method on Signals."""

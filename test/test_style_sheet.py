@@ -333,17 +333,77 @@ class TestStyleSheetSignals(QtBaseTestCase):
         mock_slot = MagicMock()
         styler.theme_changed.connect(mock_slot)
 
-        # Apply style
-        styler.set(widget, theme="light")
+        try:
+            # Apply style
+            styler.set(widget, theme="light")
 
-        # Verify signal emission
-        self.assertTrue(mock_slot.called)
-        args = mock_slot.call_args[0]
-        emitted_widget, emitted_theme, emitted_vars = args
+            # Verify signal emission
+            self.assertTrue(mock_slot.called)
+            args = mock_slot.call_args[0]
+            emitted_widget, emitted_theme, emitted_vars = args
 
-        self.assertEqual(emitted_widget, widget)
-        self.assertEqual(emitted_theme, "light")
-        self.assertEqual(emitted_vars.get("BUTTON_HOVER"), "#123456")
+            self.assertEqual(emitted_widget, widget)
+            self.assertEqual(emitted_theme, "light")
+            self.assertEqual(emitted_vars.get("BUTTON_HOVER"), "#123456")
+        finally:
+            # theme_changed is backed by a process-wide bus; disconnect so the
+            # mock doesn't linger across the rest of the suite.
+            styler.theme_changed.disconnect(mock_slot)
+            StyleSheet.reset_overrides()
+
+    def test_theme_changed_reaches_subscriber_across_instances(self):
+        """Emits from the classmethod paths (set_variable/reload/set_theme),
+        which run on a throwaway instance, must reach a subscriber connected
+        via a *different* instance (as ``ui.style.theme_changed`` would be)."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(widget, theme="light")  # register so reload emits
+
+        received = []
+
+        def slot(w, t, v):
+            received.append((w, t))
+
+        subscriber = StyleSheet()  # a separate instance from the emitter
+        subscriber.theme_changed.connect(slot)
+        try:
+            StyleSheet.set_variable("BUTTON_HOVER", "#0a0b0c", theme="light")
+            self.assertTrue(
+                received,
+                "theme_changed subscriber on a different instance never fired",
+            )
+        finally:
+            subscriber.theme_changed.disconnect(slot)
+            StyleSheet.reset_overrides()
+
+
+class TestStyleSheetPublicApi(QtBaseTestCase):
+    """The flagship apply method and icon-color resolution."""
+
+    def test_set_is_a_real_public_class_method(self):
+        # ``set`` must be a real method on the class (visible to the registry /
+        # IDEs), not a per-instance attribute alias assigned in __init__.
+        self.assertTrue(callable(getattr(StyleSheet, "set", None)))
+        widget = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(widget, theme="light")
+        self.assertTrue(widget.styleSheet())
+
+    def test_get_icon_color_respects_global_override(self):
+        widget = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(widget, theme="light")  # register widget's theme
+        try:
+            StyleSheet.set_variable("ICON_COLOR", "#abcdef", theme="light")
+            self.assertEqual(StyleSheet.get_icon_color(widget), "#abcdef")
+        finally:
+            StyleSheet.reset_overrides()
+
+    def test_get_icon_color_respects_widget_override(self):
+        widget = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(widget, theme="light")
+        try:
+            StyleSheet.set_variable("ICON_COLOR", "#123456", widget=widget)
+            self.assertEqual(StyleSheet.get_icon_color(widget), "#123456")
+        finally:
+            StyleSheet.reset_overrides()
 
 
 if __name__ == "__main__":

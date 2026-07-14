@@ -263,6 +263,8 @@ class TestColorSwatchSettings(QtBaseTestCase):
         self.settings.remove("colorSwatch/test_persist")
         self.settings.remove("colorSwatch/test_initial")
         self.settings.remove("colorSwatch/test_initial_hex")
+        self.settings.remove("colorSwatch/test_alpha")
+        self.settings.remove("colorSwatch/test_ext_initial")
         self.settings.sync()
 
     def test_save_and_load_color(self):
@@ -301,7 +303,7 @@ class TestColorSwatchSettings(QtBaseTestCase):
         self.assertEqual(swatch2.color.blue(), 168)
 
     def test_initial_color_used_when_no_saved_settings(self):
-        """Should use _initialColor when no saved color exists in settings."""
+        """Should use the constructor color when no saved color exists in settings."""
         from uitk.widgets.colorSwatch import ColorSwatch
 
         self.settings.remove("colorSwatch/test_initial")
@@ -336,6 +338,83 @@ class TestColorSwatchSettings(QtBaseTestCase):
         self.assertEqual(swatch.color.red(), 0x88)
         self.assertEqual(swatch.color.green(), 0xB8)
         self.assertEqual(swatch.color.blue(), 0xD0)
+
+    def test_external_initial_color_applied_when_no_saved_settings(self):
+        """_initialColor set AFTER construction seeds the no-settings default.
+
+        Regression: mayatk/blendertk Color ID build swatches from a .ui (no
+        `color=` kwarg), then assign `button._initialColor = <pastel>` and
+        `button.settings = <store>`. With nothing persisted the swatch must
+        show that pastel — not the __init__ white fallback.
+        """
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        swatch = self.track_widget(ColorSwatch(setObjectName="test_ext_initial"))
+        # Mirror the downstream order: seed _initialColor, then attach settings
+        # (assigning .settings schedules the deferred initializeColor()).
+        swatch._initialColor = QtGui.QColor(180, 120, 60)
+        swatch.settings = self.settings
+        app.processEvents()
+        app.processEvents()
+        self.assertEqual(swatch.color.red(), 180)
+        self.assertEqual(swatch.color.green(), 120)
+        self.assertEqual(swatch.color.blue(), 60)
+
+    def test_saved_color_wins_over_external_initial_color(self):
+        """A persisted value overrides an externally-set _initialColor."""
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        self.settings.setValue("colorSwatch/test_ext_initial/color", "#0A141E")
+        self.settings.sync()
+
+        swatch = self.track_widget(ColorSwatch(setObjectName="test_ext_initial"))
+        swatch._initialColor = QtGui.QColor(180, 120, 60)
+        swatch.settings = self.settings
+        app.processEvents()
+        app.processEvents()
+        self.assertEqual(swatch.color.red(), 0x0A)
+        self.assertEqual(swatch.color.green(), 0x14)
+        self.assertEqual(swatch.color.blue(), 0x1E)
+
+    def test_color_readable_before_event_loop(self):
+        """`.color` must be valid immediately, before the deferred init runs.
+
+        Regression: _color was only created inside the deferred singleShot, so
+        reading `.color` (or any repaint) before the event loop spun raised
+        AttributeError.
+        """
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        # No processEvents() — read synchronously right after construction.
+        swatch = self.track_widget(ColorSwatch(color=QtGui.QColor(10, 20, 30)))
+        color = swatch.color  # must not raise
+        self.assertIsInstance(color, QtGui.QColor)
+        self.assertTrue(color.isValid())
+        swatch.updateBackgroundColor()  # also touches _color; must not raise
+
+    def test_alpha_persists_across_save_load(self):
+        """A color with alpha must round-trip through settings (HexArgb)."""
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        self.settings.remove("colorSwatch/test_alpha")
+        swatch = self.track_widget(
+            ColorSwatch(settings=self.settings, setObjectName="test_alpha")
+        )
+        app.processEvents()
+        app.processEvents()
+        swatch.color = QtGui.QColor(200, 100, 50, 128)  # 50% alpha
+        self.settings.sync()
+
+        swatch2 = self.track_widget(
+            ColorSwatch(settings=self.settings, setObjectName="test_alpha")
+        )
+        app.processEvents()
+        app.processEvents()
+        self.assertEqual(swatch2.color.alpha(), 128)
+        self.assertEqual(
+            (swatch2.color.red(), swatch2.color.green(), swatch2.color.blue()),
+            (200, 100, 50),
+        )
 
 
 # =============================================================================

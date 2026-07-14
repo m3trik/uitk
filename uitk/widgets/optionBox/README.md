@@ -28,7 +28,7 @@ optionBox/
 The main widget that wraps other widgets and manages option plugins.
 
 ```python
-from uitk.widgets.optionBox import OptionBox
+from uitk import OptionBox
 
 option_box = OptionBox(show_clear=True)
 container = option_box.wrap(my_widget)
@@ -58,7 +58,7 @@ event filtering, and keyboard navigation.
 Adds a clear button for text input widgets.
 
 ```python
-from uitk.widgets.optionBox.options import ClearOption
+from uitk import ClearOption
 
 clear_opt = ClearOption(line_edit)
 option_box = OptionBox(options=[clear_opt])
@@ -69,7 +69,7 @@ option_box.wrap(line_edit)
 Adds a customizable action button.
 
 ```python
-from uitk.widgets.optionBox.options import ActionOption
+from uitk import ActionOption
 
 action_opt = ActionOption(
     callback=lambda: print("Clicked!"),
@@ -84,7 +84,7 @@ option_box.wrap(my_widget)
 Specialized action option for displaying menus.
 
 ```python
-from uitk.widgets.optionBox.options import MenuOption
+from uitk import MenuOption
 
 menu_opt = MenuOption(menu=my_menu)
 option_box = OptionBox(options=[menu_opt])
@@ -165,7 +165,7 @@ project "error" red while bypassed. Bypass is non-persistent (each session
 starts un-bypassed).
 
 ```python
-from uitk.widgets.optionBox.options.reset import ResetOption
+from uitk import ResetOption
 
 reset = ResetOption(spin_box)  # default resolved from window.state at click time
 option_box = OptionBox(options=[reset])
@@ -193,7 +193,7 @@ changes (`True` = now bypassed). Use `find_option(ResetOption)` to retrieve it.
 Allows pinning/saving and restoring widget values.
 
 ```python
-from uitk.widgets.optionBox.options import PinValuesOption
+from uitk import PinValuesOption
 
 pin_opt = PinValuesOption(line_edit, auto_restore=True)
 option_box = OptionBox(options=[pin_opt])
@@ -206,7 +206,7 @@ to leverage all Menu features including `hide_on_leave` (enabled by default),
 smart positioning, and event handling.
 
 ```python
-from uitk.widgets.optionBox.options import OptionMenuOption
+from uitk import OptionMenuOption
 
 menu_items = [
     ("Option 1", callback1),
@@ -227,7 +227,7 @@ option_box.wrap(my_widget)
 Dynamic context menu that changes based on widget state.
 
 ```python
-from uitk.widgets.optionBox.options import ContextMenuOption
+from uitk import ContextMenuOption
 
 def get_menu_items(widget):
     if widget.text():
@@ -245,7 +245,7 @@ option_box.wrap(line_edit)
 ### Basic Usage - Convenience Functions
 
 ```python
-from uitk.widgets.optionBox import add_option_box, add_clear_option
+from uitk import add_option_box, add_clear_option, ActionOption
 
 # Add clear button only
 line_edit = QtWidgets.QLineEdit()
@@ -254,15 +254,15 @@ layout.addWidget(container)
 
 # Add action button
 button = QtWidgets.QPushButton()
-container = add_option_box(button, action=my_callback)
+container = add_option_box(button, options=[ActionOption(callback=my_callback)])
 layout.addWidget(container)
 ```
 
 ### Using Option Plugins
 
 ```python
-from uitk.widgets.optionBox import OptionBox
-from uitk.widgets.optionBox.options import ClearOption, ActionOption
+from uitk import OptionBox
+from uitk import ClearOption, ActionOption
 
 # Single option
 line_edit = QtWidgets.QLineEdit()
@@ -299,7 +299,7 @@ option_box = OptionBox(show_clear=True, action_handler=my_callback)
 container = option_box.wrap(my_widget)
 
 # Legacy ClearButton class still available
-from uitk.widgets.optionBox import ClearButton
+from uitk import ClearButton
 clear_btn = ClearButton()
 ```
 
@@ -308,7 +308,7 @@ clear_btn = ClearButton()
 Extend `BaseOption` or `ButtonOption` to create custom option plugins:
 
 ```python
-from uitk.widgets.optionBox.options import ButtonOption
+from uitk import ButtonOption
 
 class MyCustomOption(ButtonOption):
     def __init__(self, wrapped_widget=None):
@@ -337,7 +337,7 @@ option_box.wrap(line_edit)
 For more complex options, override additional methods:
 
 ```python
-from uitk.widgets.optionBox.options import BaseOption
+from uitk import BaseOption
 
 class AdvancedOption(BaseOption):
     def create_widget(self):
@@ -365,7 +365,7 @@ If you have existing code using the old `optionBox.py` module:
 1. **No changes needed!** The new structure is fully backward compatible.
 2. Imports remain the same:
    ```python
-   from uitk.widgets.optionBox import OptionBox, add_option_box
+   from uitk import OptionBox, add_option_box
    ```
 3. All existing APIs continue to work as before.
 
@@ -377,7 +377,7 @@ option_box = OptionBox(show_clear=True)
 option_box.wrap(line_edit)
 
 # New modular way
-from uitk.widgets.optionBox.options import ClearOption
+from uitk import ClearOption
 clear_opt = ClearOption(line_edit)
 option_box = OptionBox(options=[clear_opt])
 option_box.wrap(line_edit)

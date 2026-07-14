@@ -291,6 +291,18 @@ class ExternalAppHandler(BaseHandler):
     # ── Provider packages (install-on-demand) ────────────────────────────
 
     @staticmethod
+    def _is_dcc_host_interpreter(python: Optional[str]) -> bool:
+        """True when *python* is a live DCC host binary (maya.exe / blender.exe / …).
+
+        pip-installing into a running DCC interpreter routes the install
+        through the host's ``-c`` handler (MEL / MaxScript / a blocked Qt loop)
+        and HANGS the host. Both install paths — the provider bootstrap and the
+        per-app install in :meth:`launch` — gate on this single predicate so
+        they can't diverge.
+        """
+        return os.path.basename(python or "").lower() in _DCC_HOST_SIBLINGS
+
+    @staticmethod
     def _base_pkg_name(install_spec: str) -> str:
         """Best-effort import name for a pip *install_spec*.
 
@@ -385,7 +397,7 @@ class ExternalAppHandler(BaseHandler):
             )
             if self._is_importable(prov["probe_module"], py):
                 continue  # already present — re-discovery below surfaces it
-            if os.path.basename(py).lower() in _DCC_HOST_SIBLINGS:
+            if self._is_dcc_host_interpreter(py):
                 # Can't pip into a live DCC interpreter (maya.exe / blender.exe)
                 # — the install would hang. Rely on the package being present in
                 # the host's env; the launch raises a clean error if it isn't.
@@ -751,6 +763,18 @@ class ExternalAppHandler(BaseHandler):
                         f"{py} and no install_spec was provided."
                     )
             else:
+                # Same guard as _bootstrap_providers: never pip into a live
+                # DCC host interpreter (in-process launch uses sys.executable,
+                # which IS the host binary inside Maya/Blender/Max) — the
+                # install would hang the host. Fail clean and tell the user to
+                # provision the package into the host env instead.
+                if self._is_dcc_host_interpreter(py):
+                    raise RuntimeError(
+                        f"Refusing to install {spec!r} into DCC host interpreter "
+                        f"{py!r} — a pip install would hang the host. Provision "
+                        f"the package into the host environment (e.g. via its "
+                        f"bundled standalone python) before launching {name or cfg['module']!r}."
+                    )
                 self.logger.info(f"Installing {spec!r} into {py}")
                 try:
                     ptk.PackageManager(python_path=py).install(spec)

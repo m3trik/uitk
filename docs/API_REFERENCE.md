@@ -24,6 +24,9 @@ Switchboard(
     ui_name_delimiters: str = None,    # default "."
     log_level: str = "warning",
     base_dir=None,
+    loader="runtime",                  # "runtime" | "compiled"
+    context_tags=None,                 # feature tags this host satisfies, e.g. {"maya"}
+    on_missing_slot=None,              # callable(widget) for signal-bearing widgets with no slot
 ) -> Switchboard
 ```
 
@@ -99,7 +102,7 @@ INIT_SUFFIX = "_init"
 |:---|:---|
 | `register(ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive=False, validate=0, tags=None)` | Add new sources after construction |
 | `register_handler(name, instance, defaults=None)` | Attach `instance` at `sb.handlers.<name>`, merge `defaults` into `sb.configurable.<name>` |
-| `register_shortcut(ui, sequence, callback)` | Register a keyboard shortcut on a UI |
+| `register_command(name, callback, ...)` / `set_command_shortcut(name, sequence)` | Register a UI-less command and bind a shortcut to it (for slot shortcuts, decorate the slot with `@Shortcut("Ctrl+S")`) |
 
 ### Properties
 
@@ -379,10 +382,10 @@ Source: [widgets/mixins/settings_manager.py](../uitk/widgets/mixins/settings_man
 
 ```python
 SettingsManager(
-    namespace: str = None,
     org: str = None,
     app: str = None,
-    parent: QObject = None,
+    namespace: str = None,
+    qsettings: QSettings = None,
 )
 ```
 
@@ -433,7 +436,7 @@ StateManager(qsettings: QSettings, log_level="WARNING")
 | `load(widget) -> Any` | Read persisted value and apply it via `apply()` |
 | `apply(widget, value)` | Set widget value (routes by signal type via `ValueManager`) |
 | `capture_default(widget)` | Snapshot current value as the reset-to default |
-| `get_default(widget) -> Any` | Retrieve captured default |
+| `has_default(widget) -> bool` / `capture_default(widget)` | Query / capture a widget's default state |
 | `reset(widget)` | Apply captured default |
 
 ### Widget-level flags
@@ -465,9 +468,10 @@ themes: dict[str, dict[str, str]]     # "dark" / "light" palettes
 
 | Method | Purpose |
 |:---|:---|
-| `set(theme: str = None, style_class: str = None, widget: QWidget = None)` | Apply theme and/or style class, optionally to a specific widget |
-| `get_theme_vars(theme=None) -> dict` | Palette dict for a theme |
-| `get_active_theme() -> str` | Currently applied theme name |
+| `set(widget=None, theme="light", style_class="", recursive=False)` | Apply theme and/or style class, optionally to a specific widget |
+| `set_theme(theme, widget=None)` | Apply just the theme (no style class) |
+| `get_variables(theme="light") -> list[str]` | Variable names defined for a theme |
+| `get_variable(name, theme="light")` / `get_variable_px(name, theme="light")` | One variable's value (raw / pixel int) |
 
 ---
 
@@ -495,7 +499,7 @@ PresetManager.from_widgets(preset_dir, widgets)
 | `save(name: str)` | Write current widget values to `<preset_dir>/<name>.json` |
 | `load(name: str)` | Apply a preset |
 | `delete(name: str)` | Remove preset file |
-| `list_presets() -> list[str]` | Names of available presets |
+| `list() -> list[str]` | Names of available presets |
 | `wire_combo(combo, on_loaded=None)` | Wire a `ComboBox` as a preset selector (option-box toolbar: Refresh/Save/⋯-menu, inline naming). Returns the option-box container. |
 | `make_preset_combo(parent=None, name=None, tooltip=None, on_loaded=None)` | Build + wire a preset `ComboBox`; returns its option-box container (`container.preset_combo` reaches the combo). |
 

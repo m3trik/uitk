@@ -110,8 +110,9 @@ class History:
     def get(self, index=None, *, allow_duplicates=False, inc=None, exc=None):
         """Return the item(s) at ``index`` (int or slice), or the whole view.
 
-        Mirrors the legacy out-of-range contract: an int index returns ``[]``
-        and a slice returns ``None`` when the resolved view can't be indexed.
+        An out-of-range single-int index returns ``None`` (so ``prev_slot`` /
+        ``prev_ui`` get their documented ``None``); a slice never raises, so it
+        yields its own (possibly empty) list.
         """
         items = self.view(allow_duplicates=allow_duplicates, inc=inc, exc=exc)
         if index is None:
@@ -119,7 +120,7 @@ class History:
         try:
             return items[index]
         except IndexError:
-            return [] if isinstance(index, int) else None
+            return None
 
     def __len__(self):
         return len(self._alive())

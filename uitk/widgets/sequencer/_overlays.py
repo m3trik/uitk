@@ -169,7 +169,10 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self.update()
 
     def hoverMoveEvent(self, event):
-        if self._clip_at(event.scenePos()):
+        # A locked gap advertises no drag/resize affordance — keep the
+        # plain arrow so the SizeHor/OpenHand cursors don't imply an
+        # interaction the press handler now refuses.
+        if self._locked or self._clip_at(event.scenePos()):
             self.setCursor(QtCore.Qt.ArrowCursor)
             return
         zone = self._hit_zone(event.pos())
@@ -191,6 +194,13 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def mousePressEvent(self, event):
         if event.button() != QtCore.Qt.LeftButton:
+            event.ignore()
+            return
+        # A locked gap must not move or resize.  Ignore the press so it
+        # falls through (e.g. to marquee) instead of starting a drag —
+        # the drag/resize handlers and their gap_* signal emissions all
+        # hang off the drag mode set below.
+        if self._locked:
             event.ignore()
             return
         zone = self._hit_zone(event.pos())

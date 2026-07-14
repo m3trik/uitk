@@ -827,6 +827,46 @@ class TestExpandableList(QtBaseTestCase):
         )
 
 
+class TestClearCancelsPendingHide(QtBaseTestCase):
+    """clear() must cancel pending deferred-hide timers, and the hide callback
+    must survive a deleted item — otherwise the timer fires on a deleted C++
+    widget and raises an uncaught RuntimeError into the event loop (hit by
+    refresh_on_show lists that clear() on every show mid-hover).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.window = QtWidgets.QMainWindow()
+        self.track_widget(self.window)
+
+    def test_clear_stops_pending_hide_timer(self):
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        item = lw.add("Button 1")
+
+        # Arm a pending-hide timer the way _start_sublist_hide would.
+        timer = QtCore.QTimer(lw)
+        timer.setSingleShot(True)
+        timer.start(10000)
+        item._pending_hide_timer = timer
+        self.assertTrue(timer.isActive())
+
+        lw.clear()
+        self.assertFalse(timer.isActive(), "clear() must stop the pending hide timer")
+
+    def test_maybe_hide_sublist_survives_deleted_item(self):
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+
+        class _DeadItem:
+            @property
+            def sublist(self):
+                raise RuntimeError("Internal C++ object already deleted")
+
+        # A queued timer firing on a torn-down item must be a safe no-op.
+        lw._maybe_hide_sublist(_DeadItem())
+
+
 if __name__ == "__main__":
     import unittest
 

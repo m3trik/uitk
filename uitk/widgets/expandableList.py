@@ -334,6 +334,13 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                     sublist.setParent(None)
                     sublist.deleteLater()
 
+                # Cancel any pending deferred hide before deleting the item —
+                # the timer is parented to self (not the item), so it would
+                # otherwise fire on a deleted C++ widget and raise an uncaught
+                # RuntimeError into the event loop (hit by refresh_on_show,
+                # which clear()s on every show mid-hover).
+                self._cancel_sublist_hide(widget)
+
                 # Remove and clean up the item itself
                 self._layout.removeWidget(widget)
                 widget.setParent(None)
@@ -846,13 +853,16 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         is not currently on the trigger item, the sublist, or anywhere
         in its visible descendant tree.  Cascades to nested sublists.
         """
-        if not item or not hasattr(item, "sublist"):
-            return
-        sublist = item.sublist
-        if not sublist.isVisible():
-            return
-        cursor_pos = QtGui.QCursor.pos()
+        # Defense in depth: even with clear() cancelling timers, a queued fire
+        # can still land on an item/sublist whose C++ object was deleted —
+        # touching it raises RuntimeError. Treat that as "nothing to hide".
         try:
+            if not item or not hasattr(item, "sublist"):
+                return
+            sublist = item.sublist
+            if not sublist.isVisible():
+                return
+            cursor_pos = QtGui.QCursor.pos()
             on_item = item.rect().contains(item.mapFromGlobal(cursor_pos))
         except RuntimeError:
             return

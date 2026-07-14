@@ -40,6 +40,87 @@ class SetEditableNoneSafety(QtBaseTestCase):
         combo.setEditable(False)
 
 
+class SetAsCurrentBlockSignalsSafety(QtBaseTestCase):
+    """setAsCurrent(blockSignals=True) must restore the prior block state via
+    try/finally — an exception (e.g. strict miss) previously left the combo
+    permanently signal-dead, and it force-unblocked instead of restoring.
+    """
+
+    def test_restores_block_state_on_strict_miss(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("a", 1)
+        self.assertFalse(combo.signalsBlocked())
+
+        with self.assertRaises(ValueError):
+            combo.setAsCurrent("missing", blockSignals=True, strict=True)
+
+        self.assertFalse(
+            combo.signalsBlocked(), "signals must be restored after the raise"
+        )
+
+    def test_preserves_caller_prior_block(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("a", 1)
+        combo.addItem("b", 2)
+
+        combo.blockSignals(True)  # caller's own blocked scope
+        combo.setAsCurrent("b", blockSignals=True)
+        self.assertTrue(
+            combo.signalsBlocked(), "prior blocked state must be preserved"
+        )
+        combo.blockSignals(False)
+
+
+class ReadMethodsDoNotToggleSignalBlock(QtBaseTestCase):
+    """currentData/currentText are pure reads and must not touch signal block
+    state — previously decorated with @Signals.blockSignals, they would unblock
+    signals when called inside a caller's already-blocked scope.
+    """
+
+    def test_read_methods_preserve_block_state(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("a", 1)
+
+        combo.blockSignals(True)
+        _ = combo.currentData()
+        _ = combo.currentText()
+        self.assertTrue(
+            combo.signalsBlocked(), "reads must not unblock a caller's block"
+        )
+
+        combo.blockSignals(False)
+        _ = combo.currentData()
+        _ = combo.currentText()
+        self.assertFalse(combo.signalsBlocked())
+
+
+class ItemsPreservesFalsyData(QtBaseTestCase):
+    """``ComboBox.items`` must not drop falsy-but-valid item data.
+
+    Regression: ``itemData(i) if itemData(i) else itemText(i)`` replaced data
+    of 0 / '' / False / [] with the display text. Only a genuine absence of
+    data (Qt returns None) should fall back to the text.
+    """
+
+    def test_zero_and_empty_data_returned_verbatim(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("zero", 0)
+        combo.addItem("false", False)
+        combo.addItem("empty", "")
+        combo.addItem("no-data")  # no UserRole data -> falls back to text
+        combo.addItem("real", "payload")
+
+        self.assertEqual(combo.items, [0, False, "", "no-data", "payload"])
+
+
 class CustomStyleFocusStateStripping(QtBaseTestCase):
     """``CustomStyle._strip_focus_state_for_combobox`` must clear
     ``State_HasFocus`` for ``CC_ComboBox`` so the native Windows style

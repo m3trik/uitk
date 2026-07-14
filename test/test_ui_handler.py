@@ -346,5 +346,42 @@ class TestSetupLifecycleIdempotent(unittest.TestCase):
         self.assertEqual(win.hides, 1)
 
 
+class TestUiHandlerGetSignature(unittest.TestCase):
+    """``get`` must not silently swallow unsupported args.
+
+    Regression: ``get(name, reload=False, **kwargs)`` accepted a ``reload``
+    flag and arbitrary kwargs and dropped them all — ``Switchboard.get_ui``
+    takes only ``name`` and there is no UI-reload path. Passing them now
+    raises ``TypeError`` (a caller mistake surfaced) instead of no-op'ing.
+    """
+
+    def _handler(self, ui_obj):
+        h = object.__new__(UiHandler)
+        h.sb = types.SimpleNamespace(get_ui=lambda name: ui_obj)
+        # apply_styles would choke on a bare sentinel; stub it.
+        h.apply_styles = lambda ui: None
+        return h
+
+    def test_get_resolves_by_name(self):
+        sentinel = object()
+        handler = self._handler(sentinel)
+        self.assertIs(handler.get("polygons"), sentinel)
+
+    def test_get_strips_subname(self):
+        sentinel = object()
+        handler = self._handler(sentinel)
+        # "#component" suffix is stripped before resolution.
+        self.assertIs(handler.get("polygons#component"), sentinel)
+
+    def test_get_tolerates_extra_kwargs(self):
+        # Existing consumers pass extra keywords — tentacle's slots call
+        # get(name, header=True) and the marking menu calls get(name, **kwargs).
+        # These must be accepted (and ignored), not raise TypeError.
+        sentinel = object()
+        handler = self._handler(sentinel)
+        self.assertIs(handler.get("polygons", header=True), sentinel)
+        self.assertIs(handler.get("polygons", reload=True, frameless=True), sentinel)
+
+
 if __name__ == "__main__":
     unittest.main()

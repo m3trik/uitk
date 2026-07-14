@@ -383,6 +383,17 @@ class TestStringValueRoundTrip(BaseTestCase):
         mgr.settings.setValue("count", "5")
         self.assertEqual(mgr.value("count"), 5)
 
+    def test_direct_attribute_assignment_is_rejected(self):
+        # The class docstring previously advertised ``settings.key = value`` as
+        # a working "legacy attribute style", but __setattr__ deliberately
+        # rejects it. The supported write API is ``settings.key.set(value)``.
+        mgr = self._mgr()
+        with self.assertRaises(AttributeError):
+            mgr.my_key = "boom"
+        mgr.my_key.set("ok")
+        self.assertEqual(mgr.my_key.get(), "ok")
+        self.assertEqual(mgr.value("my_key"), "ok")
+
 
 if __name__ == "__main__":
     unittest.main()

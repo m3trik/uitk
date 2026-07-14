@@ -296,27 +296,6 @@ class SwitchboardWidgetMixin:
             None,
         )
 
-    def set_widget_attrs(self, ui, widget_names, **kwargs):
-        """Set multiple properties, for multiple widgets, on multiple UI's at once.
-
-        Parameters:
-            ui (QWidget): A previously loaded dynamic UI object.
-            widget_names (str): String of object_names. - object_names separated by ',' ie. 'b000-12,b022'
-            *kwargs = keyword: - the property to modify. ex. setText, setValue, setEnabled, setDisabled, setVisible, setHidden
-                        value: - intended value.
-        Example:
-            set_widget_attrs(<ui>, 'chk003-6', setText='Un-Crease')
-        """
-        # Get_widgets_from_str returns a widget list from a string of object_names.
-        widgets = self.get_widgets_by_string_pattern(ui, widget_names)
-        # Set the property state for each widget in the list.
-        for attr, value in kwargs.items():
-            for w in widgets:
-                try:
-                    setattr(w, attr, value)
-                except AttributeError:
-                    pass
-
     def is_widget(self, obj):
         """Returns True if the given obj is a valid widget.
 

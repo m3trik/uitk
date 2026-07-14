@@ -67,7 +67,8 @@ class TestHistory(unittest.TestCase):
     def test_get_out_of_range_contract(self):
         h = History(maxlen=10)
         h.add(1)
-        self.assertEqual(h.get(99), [])  # int oob -> [] (legacy contract)
+        self.assertIsNone(h.get(99))  # int oob -> None (prev_slot/prev_ui contract)
+        self.assertIsNone(h.get(-5))  # negative int oob -> None
         self.assertEqual(h.get(slice(5, 9)), [])  # slice never raises -> []
 
     def test_remove(self):
@@ -132,6 +133,23 @@ class TestSwitchboardNavigation(QtBaseTestCase):
         self.sb.current_ui = b
         hist = self.sb.ui_history()
         self.assertEqual([u.objectName() for u in hist[-2:]], ["navA", "navB"])
+
+    def test_prev_ui_returns_the_ui_before_current(self):
+        # Regression: prev_ui returned ui_history(-1), which is the CURRENT ui
+        # (the current_ui setter appends before prev_ui reads). It must return
+        # the second-most-recent distinct entry.
+        a = self.sb.add_ui("prevA")
+        b = self.sb.add_ui("prevB")
+        self.sb.current_ui = a
+        self.sb.current_ui = b
+        self.assertIs(self.sb.current_ui, b)
+        self.assertIs(self.sb.prev_ui, a)
+
+    def test_prev_ui_none_with_fewer_than_two(self):
+        self.assertIsNone(self.sb.prev_ui)  # empty history
+        a = self.sb.add_ui("onlyA")
+        self.sb.current_ui = a
+        self.assertIsNone(self.sb.prev_ui)  # single entry
 
     def test_show_prev_ui_skips_visible_and_transient(self):
         a = self.sb.add_ui("realA")
@@ -271,6 +289,10 @@ class TestSwitchboardNavigation(QtBaseTestCase):
         SlotWrapper(doc_slot, w, self.sb)()
         self.assertIs(self.sb.prev_slot, doc_slot)
         self.assertEqual(self.sb.prev_slot.__doc__, "docstring.")
+
+    def test_prev_slot_none_on_empty_history(self):
+        # Documented contract: prev_slot is None (not []) when no slot has run.
+        self.assertIsNone(self.sb.prev_slot)
 
 
 # ---------------------------------------------------------------------------

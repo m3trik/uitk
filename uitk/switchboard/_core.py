@@ -58,7 +58,7 @@ class Switchboard(
             class MyProjectUi:
                 def __new__(cls, *args, **kwargs):
                     sb = Switchboard(*args, ui_source="my_project.ui", **kwargs)
-                    ui = sb.my_project
+                    ui = sb.loaded_ui.my_project
                     ui.set_attributes(WA_TranslucentBackground=True)
                     ui.set_flags(Tool=True, FramelessWindowHint=True, WindowStaysOnTopHint=True)
                     ui.style.set(theme="dark", style_class="translucentBgWithBorder")
@@ -120,8 +120,37 @@ class Switchboard(
         context_tags=None,
         on_missing_slot=None,
     ) -> None:
+        """Initialize a Switchboard and populate its source registries.
+
+        Parameters:
+            parent (QObject): Optional Qt parent for this QObject.
+            ui_source: Source of ``.ui`` files — a module, directory, or file
+                path (or list thereof). Loaded lazily via ``loaded_ui``.
+            slot_source: Source of slot classes (module/dir/file/class) whose
+                methods are wired to matching widgets.
+            widget_source: Source of custom widget classes to register in
+                addition to this package's built-ins.
+            icon_source: Source of icon files to register.
+            handlers (dict): Optional ``{attr_name: handler}`` mapping to
+                register on ``self.handlers`` after initialization.
+            tag_delimiter (str): Override for the name tag delimiter
+                (defaults to ``TAG_DELIMITER``, ``'#'``).
+            ui_name_delimiters (str): Override for the UI-name delimiter
+                (defaults to ``UI_NAME_DELIMITER``, ``'.'``).
+            log_level (str): Logging level for this instance. Default ``"warning"``.
+            base_dir: Base directory for resolving relative source paths. When
+                ``None``, resolves relative to the caller's module.
+            loader (str): UI loader strategy — ``"runtime"`` (default) or
+                ``"compiled"``.
+            context_tags: Feature tags this host satisfies (e.g. ``{"maya"}``).
+                Widgets whose ``requires`` property matches none of these are
+                hidden at registration. Empty disables filtering.
+            on_missing_slot: ``callable(widget)`` invoked when ``connect_slot``
+                finds no slot for a signal-bearing widget. ``None`` is silent
+                (production default); set ``UITK_MARK_MISSING_SLOTS`` to install
+                the built-in grey-out marker.
+        """
         super().__init__(parent)
-        """ """
         self.logger.setLevel(log_level)
 
         # Visibility-policy context: the feature tags this host satisfies (e.g. {"maya"}).
@@ -497,13 +526,19 @@ class Switchboard(
         self._bind_deferred_slot_shortcuts()
 
     @property
-    def prev_ui(self) -> QtWidgets.QWidget:
-        """Get the previous UI from history.
+    def prev_ui(self) -> Optional[QtWidgets.QWidget]:
+        """Get the previous UI from history — the one before the current UI.
+
+        The ``current_ui`` setter appends the now-current UI to history, so the
+        last deduped entry is always the *current* UI; the previous one is the
+        second-most-recent distinct entry.
 
         Returns:
-            (obj)
+            (obj) The previous UI, or ``None`` when history holds fewer than
+            two distinct UIs.
         """
-        return self.ui_history(-1)
+        hist = self.ui_history(allow_duplicates=False)
+        return hist[-2] if len(hist) > 1 else None
 
     @property
     def prev_slot(self) -> object:

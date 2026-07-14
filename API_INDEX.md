@@ -137,7 +137,7 @@ _Generated: 2026-07-14_
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
-  - methods: is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, set_widget_attrs, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
+  - methods: is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
 
 ### `widgets/attributeWindow/_attributeWindow.py`
 - `class AttributeWindow(Menu)`
@@ -161,7 +161,7 @@ _Generated: 2026-07-14_
 - `class AlignedComboBox(QtWidgets.QComboBox)`
   - methods: setHeaderText, setHeaderAlignment, get_stylesheet_property, format_current_display_text, paintEvent
 - `class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`
-  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
+  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
 
 ### `widgets/delegates/centered_icon.py` — Centered icon painting for item-view cells.
 - `fill_cell_background(painter, rect, index)`
@@ -373,7 +373,7 @@ _Generated: 2026-07-14_
 ### `widgets/mixins/style_sheet.py`
 - `repolish_tree(root: QtWidgets.QWidget) -> None`
 - `class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`
-  - methods: get_icon_color, set_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides
+  - methods: theme_changed, get_icon_color, set_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
 
 ### `widgets/mixins/text.py` — Text rendering for uitk widgets.
 - `class RichTextFormatter`
@@ -405,7 +405,7 @@ _Generated: 2026-07-14_
 - `class OptionBoxContainer(QtWidgets.QWidget)`
   - methods: changeEvent, showEvent, eventFilter
 - `class OptionBox`
-  - methods: add_option, remove_option, get_options, show_clear, set_clear_button_visible, wrap
+  - methods: add_option, remove_option, get_options, set_option_order, show_clear, set_clear_button_visible, wrap
 
 ### `widgets/optionBox/options/_options.py`
 - `class OptionButton(QtWidgets.QPushButton, AttributesMixin)`
@@ -485,7 +485,7 @@ _Generated: 2026-07-14_
 - `patch_widget_class(widget_class)`
 - `patch_common_widgets()`
 - `class OptionBoxManager(ptk.LoggingMixin)`
-  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, disable_menu, add_option, container, remove
+  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
@@ -497,7 +497,7 @@ _Generated: 2026-07-14_
 
 ### `widgets/region.py`
 - `class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin)`
-  - methods: visible_on_mouse_over, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
+  - methods: visible_on_mouse_over, hide_top_level_children, show_top_level_children, showEvent, resizeEvent, enterEvent, leaveEvent, hideEvent, childEvent
 
 ### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
 - `default_rules() -> List[ScriptHighlightRule]`
@@ -555,7 +555,7 @@ _Generated: 2026-07-14_
 
 ### `widgets/sequencer/_ruler.py` — Ruler item for the timeline header area.
 - `class RulerItem(QtWidgets.QGraphicsItem)`
-  - methods: set_shot_blocks, clear_shot_blocks, shot_block_at, boundingRect, paint
+  - methods: set_shot_blocks, clear_shot_blocks, shot_block_at, set_content_width, boundingRect, paint
 
 ### `widgets/sequencer/_scrub_player.py` — Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 - `class ScrubPlayer(QtCore.QObject)`
@@ -565,7 +565,7 @@ _Generated: 2026-07-14_
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, show_range_overlays, show_gap_overlays, show_range_highlight, shift_held_at_press, attribute_colors, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
+  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, attribute_colors, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`

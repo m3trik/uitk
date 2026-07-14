@@ -290,7 +290,11 @@ class RecentValuesStore:
             return
         self._values.append(value)
         if len(self._values) > self._max_recent:
-            self._values = self._values[-self._max_recent :]
+            # The list is most-recent-first, so the OLDEST entries are at the
+            # tail. Keep the head (the most recent) and drop from the tail --
+            # slicing ``[-max:]`` would instead discard the user's most recent
+            # entries when seeding into an already-full store.
+            self._values = self._values[: self._max_recent]
         self._save()
         self._notify()
 

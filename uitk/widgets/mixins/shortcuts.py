@@ -482,6 +482,11 @@ class ShortcutManager:
             sc = self.shortcuts[key]["shortcut"]
             self._dispose(sc)
             del self.shortcuts[key]
+            # Symmetric with add_shortcut/rebind_shortcut: subscribers (e.g. the
+            # sequencer's _sync_shortcut_sequences) must re-read the binding set,
+            # else a removed key stays in a downstream cache — a destroyed
+            # transport would leave Space/Alt+Space swallowed-but-dead.
+            self._notify_change()
             return True
         return False
 

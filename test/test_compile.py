@@ -407,6 +407,59 @@ class RawUicPyFile(BaseTestCase):
         self.assertTrue(compile_mod.is_compiled_fresh(self.ui, self.py))
 
 
+class MtimeStalenessGuard(BaseTestCase):
+    """A newer artifact mtime must NOT mask edited .ui content.
+
+    Regression: is_compiled_fresh short-circuited to True when
+    getmtime(_ui.py) > getmtime(.ui). Transports that preserve mtime (cloud
+    sync, cp -p, zip extraction) can deliver new .ui bytes with an OLDER
+    timestamp than an already-compiled artifact, which the fast path wrongly
+    accepted as fresh forever. The embedded-hash compare is the sole truth.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.mkdtemp()
+        self.ui = _write_sample(Path(self.tmp))
+        self.py = compile_mod.compiled_path_for(self.ui)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        super().tearDown()
+
+    def _write_artifact(self, source_hash: str):
+        self.py.write_text(
+            f'__source_hash__ = "{source_hash}"\n'
+            "from qtpy import QtWidgets\n"
+            "class Ui_Sample:\n    def setupUi(self, w): pass\n",
+            encoding="utf-8",
+        )
+
+    def test_stale_content_with_newer_artifact_mtime_is_not_fresh(self):
+        # Artifact was compiled from the ORIGINAL content.
+        original_hash = compile_mod.hash_ui_source(self.ui)
+        self._write_artifact(original_hash)
+        self.assertTrue(compile_mod.is_compiled_fresh(self.ui, self.py))
+
+        # New .ui content arrives, but with an OLDER mtime than the artifact
+        # (the mtime-preserving-transport scenario).
+        self.ui.write_text(SAMPLE_UI.replace("alpha", "ALPHA"), encoding="utf-8")
+        py_mtime = os.path.getmtime(self.py)
+        os.utime(self.ui, (py_mtime - 100, py_mtime - 100))
+        self.assertGreater(py_mtime, os.path.getmtime(self.ui))
+
+        # Must be detected as stale despite the newer artifact mtime.
+        self.assertFalse(compile_mod.is_compiled_fresh(self.ui, self.py))
+
+    def test_matching_hash_is_fresh_regardless_of_mtime(self):
+        current_hash = compile_mod.hash_ui_source(self.ui)
+        self._write_artifact(current_hash)
+        # Back-date the artifact below the .ui: hash still matches -> fresh.
+        ui_mtime = os.path.getmtime(self.ui)
+        os.utime(self.py, (ui_mtime - 100, ui_mtime - 100))
+        self.assertTrue(compile_mod.is_compiled_fresh(self.ui, self.py))
+
+
 class PrecompileAsync(BaseTestCase):
     """Background pre-compile via a daemon thread + uic thread pool.
 

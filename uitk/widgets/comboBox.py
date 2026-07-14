@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.switchboard import Signals
@@ -430,7 +430,11 @@ class ComboBox(
         self.header_text = None
         self._current_text_suffix = ""
         self._current_text_prefix = ""
-        self.editable = editable
+        # `self.editable = editable` (a plain attribute) never made the combo
+        # editable — Qt properties aren't set by attribute assignment. Route
+        # through the real setter; skip the signal on construction.
+        if editable:
+            self.setEditable(True, emit_signal=False)
 
         self.currentIndexChanged.connect(self.check_index)
 
@@ -531,21 +535,27 @@ class ComboBox(
 
     @property
     def items(self):
+        # `is not None`, not truthiness: falsy-but-valid data (0, '', False,
+        # empty containers) must be returned as-is, not replaced by the text.
+        # Qt returns None only when an item genuinely carries no UserRole data.
         return [
-            self.itemData(i) if self.itemData(i) else self.itemText(i)
+            self.itemData(i) if self.itemData(i) is not None else self.itemText(i)
             for i in range(self.count())
         ]
 
-    @Signals.blockSignals
     def currentData(self):
+        # Pure read — nothing to block. (Previously @Signals.blockSignals,
+        # which was both pointless here and, because the decorator toggled the
+        # block off on exit, could unblock signals if a caller invoked this
+        # inside its own blocked scope.)
         return self.itemData(self.currentIndex())
 
     @Signals.blockSignals
     def setCurrentData(self, value):
         self.setItemData(self.currentIndex(), value)
 
-    @Signals.blockSignals
     def currentText(self):
+        # Pure read (see currentData) — no decorator.
         return self.richText(self.currentIndex())
 
     def _index_of_text(self, text):
@@ -596,54 +606,50 @@ class ComboBox(
             fallback_index (int): Index to use if item is not found and strict is False.
                                 Defaults to -1 if header is present, else 0.
         """
-        if blockSignals:
-            self.blockSignals(True)
+        # ``_silenced`` saves and restores the prior blocked state inside a
+        # try/finally — so an exception mid-resolution can't leave the combo
+        # signal-dead, and calling this from within an already-blocked scope
+        # doesn't unblock early. When blockSignals is False, do not touch the
+        # block state at all.
+        with self._silenced() if blockSignals else nullcontext():
+            index = None
+            if isinstance(i, int):
+                index = i if 0 <= i < self.count() else None
+            elif isinstance(i, str):
+                items = self.items
+                try:
+                    index = items.index(i)  # match the item's value (data-or-text)
+                except ValueError:
+                    # ``self.items`` yields each item's DATA when present (e.g. the material
+                    # object for a ``{name: material}`` combo), so a plain string won't be found
+                    # there even though it IS the item's display text — which the docstring
+                    # promises callers may pass. Fall back to the display text so
+                    # ``setAsCurrent(name)`` works for data-backed combos too, instead of
+                    # silently defaulting to index 0.
+                    index = self._index_of_text(i)
+                if index is None and strict:
+                    raise ValueError(
+                        f"The item '{i}' was not found in ComboBox. "
+                        f"Available items are {[str(item) for item in items]}."
+                    )
 
-        index = None
-        if isinstance(i, int):
-            index = i if 0 <= i < self.count() else None
-        elif isinstance(i, str):
-            items = self.items
-            try:
-                index = items.index(i)  # match the item's value (data-or-text)
-            except ValueError:
-                # ``self.items`` yields each item's DATA when present (e.g. the material
-                # object for a ``{name: material}`` combo), so a plain string won't be found
-                # there even though it IS the item's display text — which the docstring
-                # promises callers may pass. Fall back to the display text so
-                # ``setAsCurrent(name)`` works for data-backed combos too, instead of
-                # silently defaulting to index 0.
-                index = self._index_of_text(i)
-            if index is None and strict:
-                raise ValueError(
-                    f"The item '{i}' was not found in ComboBox. "
-                    f"Available items are {[str(item) for item in items]}."
-                )
-
-        if index is None:
-            index = fallback_index
             if index is None:
-                index = -1 if self.has_header else 0
-            print(f"ComboBox: '{i}' not found. Defaulting to index {index}.")
+                index = fallback_index
+                if index is None:
+                    index = -1 if self.has_header else 0
+                print(f"ComboBox: '{i}' not found. Defaulting to index {index}.")
 
-        self.setCurrentIndex(index)
-
-        if blockSignals:
-            self.blockSignals(False)
+            self.setCurrentIndex(index)
 
     def setCurrentIndex(self, index):
         # A negative index (header / no-selection reset) shouldn't fire slots or
-        # persist state, so block signals across it — but SAVE and RESTORE the
-        # caller's prior blocked state rather than force-unblocking, so a reset
-        # nested inside an outer ``blockSignals(True)`` (e.g. a populate/restore
-        # batch) doesn't leak signals for the remainder of that batch. Mirrors the
-        # ``_silenced`` contextmanager's save/restore.
+        # persist state, so silence signals across it. ``_silenced`` saves and
+        # restores the caller's prior blocked state, so a reset nested inside an
+        # outer ``blockSignals(True)`` (e.g. a populate/restore batch) doesn't
+        # leak signals for the remainder of that batch.
         if index < 0:
-            was_blocked = self.blockSignals(True)
-            try:
+            with self._silenced():
                 super().setCurrentIndex(index)
-            finally:
-                self.blockSignals(was_blocked)
         else:
             super().setCurrentIndex(index)
 
@@ -660,6 +666,21 @@ class ComboBox(
             # Exit edit mode without emitting a signal
             self.setEditable(False, emit_signal=False)  # Pass emit_signal as False
         super().focusOutEvent(event)
+
+    @property
+    def editable(self):
+        """Whether the combo is editable (mirrors Qt's editable property).
+
+        Provided so ``combo.editable = True`` behaves like ``setEditable(True)``
+        instead of silently binding a dead instance attribute (Qt properties are
+        not set by plain attribute assignment). ``ComboBox(editable=...)`` and
+        this accessor are the two supported ways to toggle it.
+        """
+        return self.isEditable()
+
+    @editable.setter
+    def editable(self, value):
+        self.setEditable(bool(value))
 
     def setEditable(self, editable, emit_signal=True):
         if editable:
@@ -777,13 +798,21 @@ class ComboBox(
                 final_index = -1
             self.currentIndexChanged.emit(final_index)
 
-    @Signals.blockSignals
     def removeItem(self, index=None):
         if index is None:
             index = self.currentIndex()
         item_text = self.itemText(index)
-        super().removeItem(index)
-        self.item_deleted.emit(item_text)
+        # Block only the removal itself (it churns currentIndexChanged), then
+        # emit AFTER unblocking. Emitting under @Signals.blockSignals (as before)
+        # swallowed the notification, and the signal name was wrong
+        # (item_deleted vs the declared on_item_deleted) — so it never fired.
+        was_blocked = self.signalsBlocked()
+        self.blockSignals(True)
+        try:
+            super().removeItem(index)
+        finally:
+            self.blockSignals(was_blocked)
+        self.on_item_deleted.emit(item_text)
 
     def _activate_host_window(self):
         """Activate the combo's top-level window before its popup opens.
@@ -852,8 +881,7 @@ if __name__ == "__main__":
     # return the existing QApplication object, or create a new one if none exists.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
-    cmb = ComboBox()
-    cmb.editable = True
+    cmb = ComboBox(editable=True)
     cmb.add(["Item A", "Item B"], header="Items:", header_alignment="center")
 
     cmb.show()
