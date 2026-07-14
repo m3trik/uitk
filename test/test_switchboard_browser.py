@@ -1144,5 +1144,106 @@ class InlineTagEditingIsTheOnlyPath(BrowserBase):
         )
 
 
+class EntryFilterStructural(QtBaseTestCase):
+    """Structural inc/exc entry filter (``SwitchboardBrowser(inc=..., exc=...)``).
+
+    Unlike the user-curated hide lists (which filter *rows* and can be
+    toggled from the Show combo), the entry filter is an embed-time policy:
+    excluded entries are never materialised into the model at all — absent
+    from counts, chips, presets, and (critically) from the entry-changed
+    signal path. Host apps use it to keep non-standalone UIs out of the
+    launcher (e.g. tentacle hides the marking menu's ``*#startmenu*`` /
+    ``*#submenu*`` gesture pages). Patterns are ``pythontk.filter_list``
+    shell-style wildcards.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.tmp.name
+        _write_ui(os.path.join(d, "alpha.ui"), "alpha", "anim")
+        _write_ui(os.path.join(d, "delta.ui"), "delta", "")
+        _write_ui(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
+        _write_ui(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
+        self.sb = Switchboard(ui_source=d, log_level="WARNING")
+        self.sb.settings.branch("ui_browser").clear()
+        self.browser = None
+
+    def tearDown(self):
+        try:
+            self.sb.on_ui_tags_changed.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        if self.browser is not None:
+            self.browser.setParent(None)
+            self.browser.deleteLater()
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        self.tmp.cleanup()
+        super().tearDown()
+
+    def _make_browser(self, **kwargs):
+        self.browser = SwitchboardBrowser(self.sb, **kwargs)
+        self.browser.resize(500, 300)
+        self.browser.show()
+        QtWidgets.QApplication.processEvents()
+        return self.browser
+
+    MARKING_MENU_EXC = ["*#startmenu*", "*#submenu*"]
+
+    def test_exc_removes_entries_structurally(self):
+        browser = self._make_browser(exc=self.MARKING_MENU_EXC)
+        self.assertEqual(sorted(browser._model._names), ["alpha", "delta"])
+
+    def test_exc_removes_inherited_tags_from_chip_pool(self):
+        """An excluded entry contributes nothing — not even its tags."""
+        browser = self._make_browser(exc=self.MARKING_MENU_EXC)
+        tags = set(browser._model.all_unique_tags())
+        self.assertNotIn("startmenu", tags)
+        self.assertNotIn("submenu", tags)
+
+    def test_inc_limits_to_matching(self):
+        browser = self._make_browser(inc="alpha*")
+        self.assertEqual(browser._model._names, ["alpha"])
+
+    def test_entry_changed_for_excluded_name_is_ignored(self):
+        """Gesture traffic must not churn the model.
+
+        Marking-menu pages emit ``on_handler_entry_changed`` on every
+        show/hide during a gesture (visibility wiring). For a name the
+        entry filter excludes, the model must short-circuit — no reset,
+        no dataChanged — or an open browser makes the marking menu
+        sluggish (an unknown name used to trigger a full coarse
+        ``_refresh`` per signal).
+        """
+        browser = self._make_browser(exc=self.MARKING_MENU_EXC)
+        resets, changes = [], []
+        browser._model.modelReset.connect(lambda: resets.append(1))
+        browser._model.dataChanged.connect(lambda *_a: changes.append(1))
+
+        self.sb.on_handler_entry_changed.emit("ui", "cameras#startmenu")
+        QtWidgets.QApplication.processEvents()
+
+        self.assertEqual(resets, [])
+        self.assertEqual(changes, [])
+
+    def test_set_entry_filter_runtime(self):
+        browser = self._make_browser()
+        self.assertEqual(browser._model.rowCount(), 4)
+
+        browser.set_entry_filter(exc=self.MARKING_MENU_EXC)
+        self.assertEqual(sorted(browser._model._names), ["alpha", "delta"])
+
+        browser.set_entry_filter()  # clear
+        self.assertEqual(browser._model.rowCount(), 4)
+
+    def test_filter_kwargs_compose_with_existing_switchboard(self):
+        """inc/exc are browser-level options — they must not trip the
+        'switchboard OR switchboard_kwargs' constructor guard."""
+        browser = self._make_browser(exc=self.MARKING_MENU_EXC)
+        self.assertIs(browser.sb, self.sb)
+
+
 if __name__ == "__main__":
     unittest.main()

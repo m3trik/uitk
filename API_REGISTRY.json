@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-07-13",
+  "generated_at": "2026-07-14",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -1164,7 +1164,7 @@
               "kind": "method",
               "signature": "(self, ui, style: Dict = None)",
               "summary": "Apply default styles to the UI instance.",
-              "line": 276,
+              "line": 284,
               "deprecated": false
             },
             {
@@ -1173,7 +1173,16 @@
               "kind": "method",
               "signature": "(self) -> Iterable[HandlerEntry]",
               "summary": "Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.",
-              "line": 342,
+              "line": 350,
+              "deprecated": false
+            },
+            {
+              "name": "hosting_handler",
+              "qualname": "UiHandler.hosting_handler",
+              "kind": "method",
+              "signature": "(self, name: str)",
+              "summary": "Return the registered handler that claims windowing ownership of *name*.",
+              "line": 387,
               "deprecated": false
             },
             {
@@ -1182,7 +1191,7 @@
               "kind": "method",
               "signature": "(self, name: str, **options)",
               "summary": "Launch the named UI applying the browser's per-launch style options.",
-              "line": 379,
+              "line": 426,
               "deprecated": false
             },
             {
@@ -1191,7 +1200,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Hide the named UI via its header (matches the in-window hide button).",
-              "line": 454,
+              "line": 535,
               "deprecated": false
             },
             {
@@ -1200,7 +1209,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 482,
+              "line": 563,
               "deprecated": false
             },
             {
@@ -1209,7 +1218,7 @@
               "kind": "method",
               "signature": "(self, name: str, tags: Iterable[str]) -> None",
               "summary": "Persist ``<uitk_tags>`` XML for the named UI.",
-              "line": 489,
+              "line": 570,
               "deprecated": false
             }
           ]
@@ -3948,7 +3957,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Public hook: caller invokes this after launching to refresh the row.",
-              "line": 155,
+              "line": 185,
               "deprecated": false
             },
             {
@@ -3957,7 +3966,7 @@
               "kind": "method",
               "signature": "(self, parent=QtCore.QModelIndex()) -> int",
               "summary": "",
-              "line": 162,
+              "line": 192,
               "deprecated": false
             },
             {
@@ -3966,7 +3975,7 @@
               "kind": "method",
               "signature": "(self, parent=QtCore.QModelIndex()) -> int",
               "summary": "",
-              "line": 165,
+              "line": 195,
               "deprecated": false
             },
             {
@@ -3975,7 +3984,7 @@
               "kind": "method",
               "signature": "(self, section, orientation, role=QtCore.Qt.DisplayRole)",
               "summary": "",
-              "line": 168,
+              "line": 198,
               "deprecated": false
             },
             {
@@ -3984,7 +3993,7 @@
               "kind": "method",
               "signature": "(self, index, role=QtCore.Qt.DisplayRole)",
               "summary": "",
-              "line": 184,
+              "line": 214,
               "deprecated": false
             },
             {
@@ -3993,7 +4002,7 @@
               "kind": "method",
               "signature": "(self, index)",
               "summary": "",
-              "line": 221,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -4002,7 +4011,16 @@
               "kind": "method",
               "signature": "(self, index, value, role=QtCore.Qt.EditRole)",
               "summary": "",
-              "line": 232,
+              "line": 262,
+              "deprecated": false
+            },
+            {
+              "name": "set_entry_filter",
+              "qualname": "SwitchboardBrowserModel.set_entry_filter",
+              "kind": "method",
+              "signature": "(self, inc: Union[str, List[str], None] = None, exc: Union[str, List[str], None] = None) -> None",
+              "summary": "Replace the structural inc/exc entry filter and re-pull the registry.",
+              "line": 298,
               "deprecated": false
             },
             {
@@ -4011,7 +4029,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Optional[HandlerEntry]",
               "summary": "",
-              "line": 260,
+              "line": 308,
               "deprecated": false
             },
             {
@@ -4020,7 +4038,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "",
-              "line": 289,
+              "line": 337,
               "deprecated": false
             }
           ]
@@ -4028,7 +4046,7 @@
         {
           "name": "SwitchboardBrowser",
           "summary": "Searchable launcher for every UI registered with a Switchboard.",
-          "line": 600,
+          "line": 648,
           "bases": [
             "EditorPanel"
           ],
@@ -4039,7 +4057,7 @@
               "kind": "property",
               "signature": "(self) -> Set[str]",
               "summary": "",
-              "line": 826,
+              "line": 888,
               "deprecated": false
             },
             {
@@ -4048,7 +4066,7 @@
               "kind": "property",
               "signature": "(self) -> Set[str]",
               "summary": "",
-              "line": 835,
+              "line": 897,
               "deprecated": false
             },
             {
@@ -4057,7 +4075,16 @@
               "kind": "method",
               "signature": "(self, value: str) -> None",
               "summary": "Public helper: set the search-line-edit scope to ``value``.",
-              "line": 843,
+              "line": 905,
+              "deprecated": false
+            },
+            {
+              "name": "set_entry_filter",
+              "qualname": "SwitchboardBrowser.set_entry_filter",
+              "kind": "method",
+              "signature": "(self, inc: Union[str, List[str], None] = None, exc: Union[str, List[str], None] = None) -> None",
+              "summary": "Replace the structural inc/exc entry filter (see class docstring).",
+              "line": 909,
               "deprecated": false
             },
             {
@@ -4066,7 +4093,7 @@
               "kind": "method",
               "signature": "(self) -> LaunchOptions",
               "summary": "",
-              "line": 1285,
+              "line": 1374,
               "deprecated": false
             },
             {
@@ -4075,7 +4102,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1323,
+              "line": 1412,
               "deprecated": false
             },
             {
@@ -4084,7 +4111,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1620,
+              "line": 1709,
               "deprecated": false
             }
           ]
@@ -5425,7 +5452,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Deactivate this instance because a newer MarkingMenu now owns",
-              "line": 333,
+              "line": 341,
               "deprecated": false
             },
             {
@@ -5434,7 +5461,7 @@
               "kind": "classmethod",
               "signature": "(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'",
               "summary": "",
-              "line": 526,
+              "line": 570,
               "deprecated": false
             },
             {
@@ -5443,7 +5470,7 @@
               "kind": "property",
               "signature": "(self) -> dict",
               "summary": "The original bindings passed at construction time.",
-              "line": 595,
+              "line": 639,
               "deprecated": false
             },
             {
@@ -5452,7 +5479,7 @@
               "kind": "property",
               "signature": "(self) -> dict",
               "summary": "Get bindings from persistent storage.",
-              "line": 600,
+              "line": 644,
               "deprecated": false
             },
             {
@@ -5461,7 +5488,7 @@
               "kind": "method",
               "signature": "(self, callback) -> None",
               "summary": "Subscribe to binding changes on this menu's persistent store.",
-              "line": 609,
+              "line": 653,
               "deprecated": false
             },
             {
@@ -5470,7 +5497,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Accessor for the UI handler.",
-              "line": 621,
+              "line": 665,
               "deprecated": false
             },
             {
@@ -5479,7 +5506,7 @@
               "kind": "method",
               "signature": "(self, name: str, **kwargs) -> QtWidgets.QWidget",
               "summary": "Get a UI widget by name.",
-              "line": 625,
+              "line": 669,
               "deprecated": false
             },
             {
@@ -5488,7 +5515,7 @@
               "kind": "method",
               "signature": "(self, new_key: str) -> None",
               "summary": "Rebind the marking menu's activation key across every chord.",
-              "line": 764,
+              "line": 808,
               "deprecated": false
             },
             {
@@ -5497,7 +5524,16 @@
               "kind": "method",
               "signature": "(self, short: bool = True) -> list",
               "summary": "Available ``#startmenu`` UI names, sorted.",
-              "line": 801,
+              "line": 845,
+              "deprecated": false
+            },
+            {
+              "name": "hosts_ui",
+              "qualname": "MarkingMenu.hosts_ui",
+              "kind": "method",
+              "signature": "(self, name: str) -> bool",
+              "summary": "True when *name* is a stacked page (startmenu/submenu) this menu hosts.",
+              "line": 857,
               "deprecated": false
             },
             {
@@ -5506,7 +5542,7 @@
               "kind": "method",
               "signature": "(self, buttons=()) -> str",
               "summary": "Full target menu (…#startmenu) bound to the activation key + *buttons*",
-              "line": 841,
+              "line": 919,
               "deprecated": false
             },
             {
@@ -5515,7 +5551,7 @@
               "kind": "method",
               "signature": "(self, buttons, menu: str) -> None",
               "summary": "Bind the activation key + *buttons* gesture to *menu* (a …#startmenu UI",
-              "line": 853,
+              "line": 931,
               "deprecated": false
             },
             {
@@ -5524,7 +5560,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Add a widget to the MarkingMenu window.",
-              "line": 935,
+              "line": 1013,
               "deprecated": false
             },
             {
@@ -5533,7 +5569,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Get the currently active widget.",
-              "line": 943,
+              "line": 1021,
               "deprecated": false
             },
             {
@@ -5542,7 +5578,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, *, anchor: Optional[QtCore.QPoint] = None) -> None",
               "summary": "Set the current widget and position its center at the given anchor.",
-              "line": 951,
+              "line": 1029,
               "deprecated": false
             },
             {
@@ -5551,7 +5587,7 @@
               "kind": "method",
               "signature": "(self, index: int) -> None",
               "summary": "Set the current widget index (compatibility method).",
-              "line": 1027,
+              "line": 1105,
               "deprecated": false
             },
             {
@@ -5560,7 +5596,7 @@
               "kind": "method",
               "signature": "(self, names=None, *, defer: bool = True) -> None",
               "summary": "Warm the menus the bindings can reach so the FIRST activation",
-              "line": 1091,
+              "line": 1187,
               "deprecated": false
             },
             {
@@ -5569,7 +5605,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse press: route through the central state-sync.",
-              "line": 1766,
+              "line": 1862,
               "deprecated": false
             },
             {
@@ -5578,7 +5614,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle key press for non-activation key bindings.",
-              "line": 1826,
+              "line": 1922,
               "deprecated": false
             },
             {
@@ -5587,7 +5623,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1851,
+              "line": 1947,
               "deprecated": false
             },
             {
@@ -5596,7 +5632,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 2041,
+              "line": 2137,
               "deprecated": false
             },
             {
@@ -5605,7 +5641,7 @@
               "kind": "method",
               "signature": "(self, ui: Optional[str] = None, pos=None, force: bool = False, **kwargs) -> QtWidgets.QWidget",
               "summary": "Central hub for showing any UI component.",
-              "line": 2152,
+              "line": 2248,
               "deprecated": false
             },
             {
@@ -5614,7 +5650,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 2475,
+              "line": 2580,
               "deprecated": false
             },
             {
@@ -5623,7 +5659,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - relinquishes input control even if hide() was bypassed.",
-              "line": 2535,
+              "line": 2640,
               "deprecated": false
             },
             {
@@ -5632,7 +5668,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 2642,
+              "line": 2747,
               "deprecated": false
             },
             {
@@ -5641,7 +5677,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 2662,
+              "line": 2767,
               "deprecated": false
             },
             {
@@ -5650,7 +5686,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fade every background window and menu, once per hold.",
-              "line": 2728,
+              "line": 2833,
               "deprecated": false
             },
             {
@@ -5659,7 +5695,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore everything dimmed by the last :meth:`dim_other_windows`.",
-              "line": 2747,
+              "line": 2852,
               "deprecated": false
             },
             {
@@ -5668,7 +5704,7 @@
               "kind": "method",
               "signature": "(self, widgets) -> None",
               "summary": "Initialize child widgets with an event filter.",
-              "line": 2757,
+              "line": 2862,
               "deprecated": false
             },
             {
@@ -5677,7 +5713,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 2830,
+              "line": 2935,
               "deprecated": false
             },
             {
@@ -5686,7 +5722,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 2852,
+              "line": 2957,
               "deprecated": false
             },
             {
@@ -5695,7 +5731,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Dispatch (or forward) a release delivered to a *grabbed* child.",
-              "line": 2861,
+              "line": 2966,
               "deprecated": false
             }
           ]

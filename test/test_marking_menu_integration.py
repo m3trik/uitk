@@ -597,5 +597,70 @@ class MarkingMenuHoverNavigation(QtBaseTestCase):
         return btn
 
 
+class MarkingMenuStackedRehost(QtBaseTestCase):
+    """``show()`` must re-host a stacked page that comes back detached.
+
+    An already-initialized startmenu/submenu page can be found reparented
+    outside the overlay — e.g. a pre-fix standalone launch (browser Launch
+    button) reparented it to a top-level ``Qt.Window`` with ``Tool``/on-top
+    flags. Because ``is_initialized`` gates ``_init_ui`` to a single run,
+    the page would otherwise stay outside the overlay forever: positioned
+    via ``mapFromGlobal`` against a window it no longer lives in, wrong
+    chrome, geometry persistence re-engaged — the "startmenu never inits
+    correctly again" symptom. ``show()``'s heal guard re-establishes the
+    hosting invariants via ``_host_stacked``.
+
+    Exercises the REAL ``MarkingMenu.show`` / ``_host_stacked`` /
+    ``addWidget`` (DriveableMarkingMenu overrides neither) with the display
+    step (``_show_marking_menu``) stubbed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.parent = QtWidgets.QWidget()
+        self.parent.resize(400, 400)
+        self.track_widget(self.parent)
+        self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
+        self.track_widget(self.mm)
+
+    def _detach(self, ui):
+        """Simulate the pre-fix corruption: standalone launch reparented the
+        page out of the menu and made it a top-level tool window."""
+        ui.setParent(None)
+        ui.setWindowFlags(
+            QtCore.Qt.Window
+            | QtCore.Qt.Tool
+            | QtCore.Qt.FramelessWindowHint
+            | QtCore.Qt.WindowStaysOnTopHint
+        )
+
+    def test_show_rehosts_detached_stacked_page(self):
+        ui = self.mm.sb.get_ui("cameras")
+        self._detach(ui)
+        self.assertIsNot(ui.parent(), self.mm)
+
+        self.mm.show("cameras")
+
+        self.assertIs(ui.parent(), self.mm, "detached page was not re-hosted")
+        self.assertFalse(
+            ui.windowFlags() & QtCore.Qt.Window,
+            "re-hosted page must be a plain child again, not a window",
+        )
+        self.assertFalse(ui.restore_window_size)
+        self.assertFalse(ui.ensure_on_screen)
+
+    def test_show_leaves_attached_page_alone(self):
+        """The heal guard is a no-op for a page already hosted in the menu —
+        re-running the hosting would clobber runtime state every gesture."""
+        ui = self.mm.sb.get_ui("cameras")
+        self.assertIs(ui.parent(), self.mm)
+        ui.restore_window_size = "sentinel"  # heal would overwrite with False
+
+        self.mm.show("cameras")
+
+        self.assertEqual(ui.restore_window_size, "sentinel")
+        self.assertIs(ui.parent(), self.mm)
+
+
 if __name__ == "__main__":
     unittest.main()

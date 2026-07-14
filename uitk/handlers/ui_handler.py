@@ -263,12 +263,20 @@ class UiHandler(BaseHandler):
     def setup_lifecycle(self, ui, hide_signal=None):
         """Connect a window to a hide signal, respecting its pin state.
 
+        Idempotent — both canonical init paths (``MarkingMenu._init_ui``
+        and :meth:`launch`) run this on the same shared window; the per-UI
+        flag keeps relaunches from stacking connections (N ``request_hide``
+        calls per key release).
+
         Parameters:
             ui: The MainWindow to configure
             hide_signal: Signal to connect for auto-hide (e.g., marking_menu.key_show_release)
         """
         if hide_signal is not None and hasattr(ui, "request_hide"):
+            if getattr(ui, "_uitk_lifecycle_wired", False):
+                return
             hide_signal.connect(ui.request_hide)
+            ui._uitk_lifecycle_wired = True
             self.logger.debug(
                 f"[{ui.objectName()}] Connected hide_signal -> request_hide"
             )
@@ -376,29 +384,99 @@ class UiHandler(BaseHandler):
                     break
         return tags
 
+    def hosting_handler(self, name: str):
+        """Return the registered handler that claims windowing ownership of *name*.
+
+        Duck-typed hosting contract — a handler that manages how a UI is
+        parented and shown (rather than leaving it a standalone window)
+        exposes::
+
+            hosts_ui(name: str) -> bool   # cheap claim; must not load the UI
+            show(name: str) -> QWidget    # the owner's presentation path
+
+        :meth:`launch` consults the claim before applying its standalone
+        setup, so a launcher surface (e.g. the SwitchboardBrowser) stays
+        owner-agnostic — the marking menu claims its stacked startmenu /
+        submenu pages this way. Returns None when no handler claims the
+        name (the common case); standalone hosting is then legitimate,
+        including for marking-menu-tagged UIs on a switchboard with no
+        marking menu registered.
+        """
+        handlers = getattr(self.sb, "handlers", None)
+        if handlers is None:
+            return None
+        for handler in vars(handlers).values():
+            if handler is self:
+                continue
+            hosts_ui = getattr(handler, "hosts_ui", None)
+            if not callable(hosts_ui) or not callable(getattr(handler, "show", None)):
+                continue
+            try:
+                if hosts_ui(name):
+                    return handler
+            except Exception:
+                # A dead or misbehaving claimant must not block launching —
+                # fall through to the remaining handlers / standalone path.
+                self.logger.debug(
+                    f"hosts_ui probe failed on {type(handler).__name__}",
+                    exc_info=True,
+                )
+        return None
+
     def launch(self, name: str, **options):
         """Launch the named UI applying the browser's per-launch style options.
 
         Recognized keys in ``options`` (all optional):
             frameless, translucent, restore_geometry, on_top, theme,
             parent_to_sb (default True — parent to the sb's own parent
-            for DCC embedding, matching the existing browser behavior).
+            for DCC embedding; only honored on switchboards WITHOUT a
+            marking menu — the canonical init below owns parenting
+            otherwise).
 
         Any unrecognized keys are ignored — keeps the contract stable
         when callers pass options targeted at other handler kinds.
+
+        A UI claimed by a hosting handler (see :meth:`hosting_handler`) is
+        delegated to that handler's ``show`` instead: the standalone setup
+        below (reparent to a top-level Qt.Window, Tool/on-top flags,
+        launched-header buttons) would strip the owner's hosting invariants
+        — e.g. a marking-menu startmenu page is a stacked child of the
+        overlay, and since ``is_initialized`` gates the menu's ``_init_ui``
+        to one run, a page re-hosted here never inits correctly again. The
+        style options are discarded in that case; the owner controls
+        presentation.
         """
-        ui = self.sb.loaded_ui[name]
-        parent_to_sb = options.get("parent_to_sb", True)
+        host = self.hosting_handler(name)
+        if host is not None:
+            ui = host.show(name)
+            self._notify_entries_changed(name)
+            return ui
+
         frameless = options.get("frameless", True)
         translucent = options.get("translucent", True)
         on_top = options.get("on_top", True)
         restore_geometry = options.get("restore_geometry", True)
         theme = options.get("theme")
 
-        if parent_to_sb:
-            sb_parent = self.sb.parent() if hasattr(self.sb, "parent") else None
-            if sb_parent is not None:
-                ui.setParent(sb_parent, QtCore.Qt.Window)
+        # Standalone windows on a marking-menu switchboard are the SAME
+        # singleton the menu manages — route window init through the menu's
+        # canonical path (``mm.get`` → parenting to the host app window,
+        # apply_styles' pin chrome, hide-with-menu lifecycle) so launch
+        # order can't fork the window's behavior. Without this, whichever
+        # path touched the window first won forever: a browser-launched
+        # tool got the launcher's hide button (and was parented to the
+        # menu overlay, dying with it) instead of the intended pin button
+        # that hides when the marking menu hides.
+        mm = getattr(getattr(self.sb, "handlers", None), "marking_menu", None)
+        canonical = mm is not None and callable(getattr(mm, "get", None))
+        if canonical:
+            ui = mm.get(name) or self.sb.loaded_ui[name]
+        else:
+            ui = self.sb.loaded_ui[name]
+            if options.get("parent_to_sb", True):
+                sb_parent = self.sb.parent() if hasattr(self.sb, "parent") else None
+                if sb_parent is not None:
+                    ui.setParent(sb_parent, QtCore.Qt.Window)
 
         ui.set_flags(
             FramelessWindowHint=frameless,
@@ -413,7 +491,10 @@ class UiHandler(BaseHandler):
             except Exception:
                 pass
 
-        self._configure_launched_header(ui)
+        if not canonical:
+            # Launcher-only chrome (menu/collapse/hide) — the canonical
+            # marking-menu init owns the header set otherwise.
+            self._configure_launched_header(ui)
 
         if not restore_geometry and hasattr(ui, "clear_saved_geometry"):
             ui.clear_saved_geometry()
