@@ -254,8 +254,10 @@ class _InitOnlyMarkingMenu(QtWidgets.QWidget):
         super().__init__(parent=parent)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.ui_handler = _NoopUiHandler()
-        # Borrow the real implementations under test
+        # Borrow the real implementations under test (the persistence
+        # opt-out lives in _host_stacked, reached via _init_ui).
         self._init_ui = MarkingMenu._init_ui.__get__(self, type(self))
+        self._host_stacked = MarkingMenu._host_stacked.__get__(self, type(self))
         self.addWidget = MarkingMenu.addWidget.__get__(self, type(self))
 
     def add_child_event_filter(self, widgets):
@@ -511,6 +513,186 @@ class TestNavButtonMenuResolution(QtBaseTestCase):
         menu = self._NavMenu(_NavStubSb({"x#submenu": ui}))
         self.assertIs(menu._cached_ui("x#submenu"), ui)
         self.assertIn("x#submenu", menu._submenu_cache)  # cached on first hit
+
+
+# ── Hosting claim (hosts_ui) — consumed by UiHandler.launch ──────────────────
+
+
+def _write_ui_file(path, name, tags_csv=None):
+    """Minimal QMainWindow .ui file (mirrors test_switchboard_browser)."""
+    tag_block = ""
+    if tags_csv is not None:
+        tag_block = (
+            f'<property name="uitk_tags" stdset="0">'
+            f"<string>{tags_csv}</string></property>"
+        )
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>QtUi</class>
+ <widget class="QMainWindow" name="{name}">
+  {tag_block}
+ </widget>
+</ui>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+class TestMarkingMenuHostsUi(QtBaseTestCase):
+    """``MarkingMenu.hosts_ui`` — the hosting claim ``UiHandler.launch`` consults.
+
+    The claim must answer at the registry level (never force a UI load) and
+    must agree with ``show()``'s stacked-vs-standalone dispatch, which reads
+    the loaded widget's live tags: name-derived tags plus on-disk XML tags
+    for unloaded UIs, live ``has_tags`` for loaded ones. A standalone launch
+    of a claimed page would strip the stacked hosting invariants (the
+    "browser-launched startmenu breaks the marking menu" bug).
+
+    ``hosts_ui`` only reaches into ``self.sb``, so it's exercised unbound
+    against a plain namespace — same pattern as ``_NavMenu`` above.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import os
+        import tempfile
+        import types
+
+        from uitk.switchboard import Switchboard
+
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.tmp.name
+        _write_ui_file(os.path.join(d, "tool.ui"), "tool")
+        _write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
+        _write_ui_file(os.path.join(d, "edit#submenu.ui"), "edit_submenu")
+        # XML-tag-only page: no name tag, but show() would still dispatch it
+        # as stacked once loaded (live tags include the XML tags).
+        _write_ui_file(os.path.join(d, "oddmenu.ui"), "oddmenu", tags_csv="submenu")
+        self.sb = Switchboard(ui_source=d, log_level="WARNING")
+        self.host = types.SimpleNamespace(sb=self.sb)
+
+    def tearDown(self):
+        self.sb.deleteLater()
+        self.tmp.cleanup()
+        super().tearDown()
+
+    def hosts(self, name):
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+
+        return MarkingMenu.hosts_ui(self.host, name)
+
+    def test_claims_startmenu_and_submenu_names_unloaded(self):
+        self.assertTrue(self.hosts("cameras#startmenu"))
+        self.assertTrue(self.hosts("edit#submenu"))
+        # Claiming must not have forced a load.
+        self.assertIsNone(self.sb.loaded_ui.peek("cameras#startmenu"))
+
+    def test_ignores_plain_names(self):
+        self.assertFalse(self.hosts("tool"))
+
+    def test_ignores_empty(self):
+        self.assertFalse(self.hosts(""))
+        self.assertFalse(self.hosts(None))
+
+    def test_claims_xml_tagged_page_without_name_tag(self):
+        """Claim parity with show()'s dispatch: XML uitk_tags count too."""
+        self.assertTrue(self.hosts("oddmenu"))
+
+    def test_claims_loaded_page_via_live_tags(self):
+        ui = self.sb.get_ui("cameras#startmenu")
+        self.track_widget(ui)
+        self.assertTrue(self.hosts("cameras#startmenu"))
+
+    def test_loaded_plain_tool_not_claimed(self):
+        ui = self.sb.get_ui("tool")
+        self.track_widget(ui)
+        self.assertFalse(self.hosts("tool"))
+
+
+class TestMarkingMenuBrowserEntryFilter(QtBaseTestCase):
+    """The menu's gesture pages are hidden from the launcher surface.
+
+    ``_setup_registry`` registers an editors post-build hook that applies
+    ``HOSTED_PAGE_PATTERNS`` as the browser's structural exclude filter —
+    startmenu/submenu pages are gesture surfaces this menu hosts, not
+    standalone tools, and their show/hide traffic during gestures would
+    otherwise churn an open browser (per-signal model resets = the
+    "marking menu runs sluggish after the browser was used" report).
+    Policy is class-level and overridable: a subclass can opt out with
+    ``HOSTED_PAGE_PATTERNS = ()``; a user can clear it at runtime via the
+    browser's public ``set_entry_filter()``.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import os
+        import tempfile
+        import types
+
+        from uitk.switchboard import Switchboard
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.tmp.name
+        _write_ui_file(os.path.join(d, "tool.ui"), "tool")
+        _write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
+        _write_ui_file(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
+        self.sb = Switchboard(ui_source=d, log_level="WARNING")
+        self.sb.settings.branch("ui_browser").clear()
+        # _register_browser_entry_filter only reaches self.sb and the
+        # class-level patterns — exercised unbound, same as hosts_ui above.
+        self.MarkingMenu = MarkingMenu
+        self.menu_stub = types.SimpleNamespace(
+            sb=self.sb, HOSTED_PAGE_PATTERNS=MarkingMenu.HOSTED_PAGE_PATTERNS
+        )
+
+    def tearDown(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        self.tmp.cleanup()
+        super().tearDown()
+
+    def test_patterns_cover_both_marking_menu_tags(self):
+        pats = self.MarkingMenu.HOSTED_PAGE_PATTERNS
+        self.assertIn("*#startmenu*", pats)
+        self.assertIn("*#submenu*", pats)
+
+    def test_hook_excludes_gesture_pages_from_built_browser(self):
+        """Register the policy, build the browser via the editors registry,
+        and verify the gesture pages never materialise in its model."""
+        self.MarkingMenu._register_browser_entry_filter(self.menu_stub)
+
+        browser = self.sb.editors.get("browser")
+        self.track_widget(browser)
+
+        self.assertEqual(browser._model._names, ["tool"])
+
+    def test_empty_patterns_register_nothing(self):
+        """Opt-out: a subclass with no patterns leaves the browser unfiltered."""
+        self.menu_stub.HOSTED_PAGE_PATTERNS = ()
+        self.MarkingMenu._register_browser_entry_filter(self.menu_stub)
+
+        browser = self.sb.editors.get("browser")
+        self.track_widget(browser)
+
+        self.assertEqual(
+            sorted(browser._model._names),
+            ["cameras#startmenu", "tool", "uv#submenu"],
+        )
+
+    def test_registration_tolerates_stub_switchboard(self):
+        """A switchboard without an editors registry (test stubs, minimal
+        hosts) must not crash policy registration."""
+        import types
+
+        bare = types.SimpleNamespace(
+            sb=types.SimpleNamespace(),  # no .editors
+            HOSTED_PAGE_PATTERNS=self.MarkingMenu.HOSTED_PAGE_PATTERNS,
+        )
+        self.MarkingMenu._register_browser_entry_filter(bare)  # must not raise
 
 
 if __name__ == "__main__":

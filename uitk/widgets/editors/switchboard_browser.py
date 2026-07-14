@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set, Union
 
 from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
@@ -85,9 +85,21 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
     KindRole = QtCore.Qt.UserRole + 8
     EntryRole = QtCore.Qt.UserRole + 9
 
-    def __init__(self, switchboard: Switchboard, parent=None):
+    def __init__(
+        self,
+        switchboard: Switchboard,
+        parent=None,
+        inc: Union[str, List[str], None] = None,
+        exc: Union[str, List[str], None] = None,
+    ):
         super().__init__(parent)
         self.sb: Switchboard = switchboard
+        # Structural entry filter (``pythontk.filter_list`` shell-style
+        # patterns). Unlike the user-curated hide lists, filtered entries
+        # are never materialised into the model at all — absent from
+        # counts, chips, presets, and the entry-changed signal path.
+        self._inc = inc
+        self._exc = exc
         self._entries: List[HandlerEntry] = []
         # Index for O(1) lookup by name. When two handlers register the
         # same name the later one wins (logged); see _refresh.
@@ -103,6 +115,16 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
     def _refresh(self) -> None:
         self.beginResetModel()
         entries = list(self.sb.iter_handler_entries())
+        if self._inc or self._exc:
+            allowed = set(
+                ptk.filter_list(
+                    [e.name for e in entries],
+                    inc=self._inc,
+                    exc=self._exc,
+                    ignore_case=True,
+                )
+            )
+            entries = [e for e in entries if e.name in allowed]
         entries.sort(key=lambda e: e.name.lower())
         self._entries = entries
         seen: Dict[str, HandlerEntry] = {}
@@ -124,6 +146,14 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
         self._refresh()
 
     def _on_entry_changed(self, _handler_name: str, entry_name: str) -> None:
+        # Structurally-excluded entries never reach the model — bail before
+        # the unknown-name fallback below coarse-refreshes on every signal.
+        # This is load-bearing for hosts that exclude marking-menu pages:
+        # those pages emit show/hide traffic on every gesture, and a full
+        # model reset per signal makes the menu sluggish while a browser
+        # instance exists.
+        if not self._passes_entry_filter(entry_name):
+            return
         # Fine-grained: one entry's live state (visibility) changed.
         # File-backed entries also re-emit on save_ui_tags, so refresh
         # the entry payload (tags may have changed) before firing
@@ -256,6 +286,24 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
         return True
 
     # ---- helpers ----
+
+    def _passes_entry_filter(self, name: str) -> bool:
+        """True when *name* survives the structural inc/exc entry filter."""
+        if not (self._inc or self._exc):
+            return True
+        return bool(
+            ptk.filter_list([name], inc=self._inc, exc=self._exc, ignore_case=True)
+        )
+
+    def set_entry_filter(
+        self,
+        inc: Union[str, List[str], None] = None,
+        exc: Union[str, List[str], None] = None,
+    ) -> None:
+        """Replace the structural inc/exc entry filter and re-pull the registry."""
+        self._inc = inc
+        self._exc = exc
+        self._refresh()
 
     def entry_for_name(self, name: str) -> Optional[HandlerEntry]:
         return self._by_name.get(name)
@@ -617,12 +665,26 @@ class SwitchboardBrowser(EditorPanel):
     Mirrors the ``mayatk.MayaUiHandler`` pattern of "use what's given,
     otherwise stand one up" so the browser can be opened from anywhere
     without forcing the caller to wire a switchboard first.
+
+    ``inc`` / ``exc`` (``pythontk.filter_list`` shell-style name patterns)
+    apply a *structural* entry filter: excluded entries are never
+    materialised into the model — absent from counts, chips, presets, and
+    the entry-changed signal path. Distinct from the user-curated hide
+    lists (row filtering the user can toggle from the Show combo). Host
+    apps use it to keep non-standalone UIs out of the launcher, e.g.
+    tentacle hides the marking menu's gesture pages::
+
+        browser = SwitchboardBrowser(
+            switchboard=app.sb, exc=["*#startmenu*", "*#submenu*"]
+        )
     """
 
     def __init__(
         self,
         switchboard: Optional[Switchboard] = None,
         parent=None,
+        inc: Union[str, List[str], None] = None,
+        exc: Union[str, List[str], None] = None,
         **switchboard_kwargs,
     ):
         # Accept an existing Switchboard, or auto-create one. Passing
@@ -674,7 +736,7 @@ class SwitchboardBrowser(EditorPanel):
         # Menu (option-box menus, header menu) reaches it via parent walk.
         self.state = _BrowserState()
 
-        self._model = SwitchboardBrowserModel(self.sb, parent=self)
+        self._model = SwitchboardBrowserModel(self.sb, parent=self, inc=inc, exc=exc)
 
         # ── Search row ─────────────────────────────────────────────────
         # A single filter field covers include + exclude: include terms keep
@@ -843,6 +905,33 @@ class SwitchboardBrowser(EditorPanel):
     def set_search_scope(self, value: str) -> None:
         """Public helper: set the search-line-edit scope to ``value``."""
         self._search_filter.set_scope(value, notify=True)
+
+    def set_entry_filter(
+        self,
+        inc: Union[str, List[str], None] = None,
+        exc: Union[str, List[str], None] = None,
+    ) -> None:
+        """Replace the structural inc/exc entry filter (see class docstring).
+
+        Filtered entries are never materialised — absent from counts, chips,
+        and the signal path — unlike the user-curated hide lists. Hosts
+        typically apply this from an editors post-build hook so every build
+        of the browser carries the policy::
+
+            sb.editors.add_post_build_hook(
+                "browser",
+                lambda b: b.set_entry_filter(exc=["*#startmenu*", "*#submenu*"]),
+            )
+
+        Calling with no arguments clears the filter.
+        """
+        self._model.set_entry_filter(inc=inc, exc=exc)
+        # Same post-registry-change sequence as _on_refresh_clicked: the
+        # proxy invalidate (via _apply_filter) is what triggers the deferred
+        # row-widget rebuild.
+        self._refresh_chips()
+        self._apply_filter()
+        self._update_footer_status()
 
     # ── Header menu (Refresh + Show + Launch + Theme + Presets) ─────────────
 

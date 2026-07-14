@@ -121,6 +121,14 @@ class MarkingMenu(
     # logger sits at NOTSET, which makes isEnabledFor(DEBUG) unreliable as a gate.
     _input_logging_on: bool = False
 
+    # Shell-style name patterns matching the gesture pages this menu hosts
+    # (the same tag set hosts_ui claims). Applied as the SwitchboardBrowser's
+    # structural exclude filter via an editors post-build hook (see
+    # _register_browser_entry_filter): gesture pages aren't standalone tools,
+    # and their show/hide traffic during gestures would churn an open
+    # browser. Subclasses opt out (or extend) by overriding.
+    HOSTED_PAGE_PATTERNS = tuple(f"*#{t}*" for t in _MARKING_MENU_TAGS)
+
     # The mouse-button gestures whose target menu the host's "Menu Bindings"
     # combos edit. Surfaced in the unified shortcut editor as hidden, read-only
     # entries (the routing table is not a key trigger — the combos stay its
@@ -522,6 +530,42 @@ class MarkingMenu(
             self.sb.register_handler(name, instance, defaults)
             self.logger.debug(f"Registered Handler: {name} -> {instance}")
 
+        # 3. Launcher-surface policy for the pages this menu hosts.
+        self._register_browser_entry_filter()
+
+    def _register_browser_entry_filter(self) -> None:
+        """Hide this menu's gesture pages from the launcher surface.
+
+        Registers an editors post-build hook that applies
+        :attr:`HOSTED_PAGE_PATTERNS` as the SwitchboardBrowser's structural
+        exclude filter — every build of the browser on this switchboard
+        carries the policy. Two reasons the pages don't belong in the list:
+
+        * They're gesture surfaces this menu hosts, not standalone tools —
+          launching one from a list is out of context (and pre-hosts_ui,
+          re-hosted it destructively).
+        * They emit entry-changed traffic on every show/hide during a
+          gesture; structural exclusion short-circuits that in the model,
+          so an open browser can't make the menu sluggish.
+
+        Overridable policy: subclasses opt out with
+        ``HOSTED_PAGE_PATTERNS = ()``; a user can clear it at runtime via
+        the browser's public ``set_entry_filter()``. Degrades to a no-op on
+        switchboards without an editors registry (test stubs, minimal
+        hosts).
+        """
+        if not self.HOSTED_PAGE_PATTERNS:
+            return
+        editors = getattr(self.sb, "editors", None)
+        add_hook = getattr(editors, "add_post_build_hook", None)
+        if not callable(add_hook):
+            return
+        patterns = list(self.HOSTED_PAGE_PATTERNS)
+        add_hook(
+            "browser",
+            lambda browser: browser.set_entry_filter(exc=patterns),
+        )
+
     @classmethod
     def instance(
         cls, switchboard: Optional[Switchboard] = None, **kwargs
@@ -810,6 +854,40 @@ class MarkingMenu(
         names = sorted(f for f in filenames if "#startmenu" in f)
         return [n.replace("#startmenu", "") for n in names] if short else names
 
+    def hosts_ui(self, name: str) -> bool:
+        """True when *name* is a stacked page (startmenu/submenu) this menu hosts.
+
+        The hosting claim consumed by ``UiHandler.hosting_handler`` /
+        ``launch`` (duck-typed ``hosts_ui``/``show`` contract): a standalone
+        launcher (e.g. the SwitchboardBrowser's Launch button) must route
+        these pages through :meth:`show` — re-hosting one as a top-level
+        window strips the stacked invariants (child-of-overlay parenting,
+        borderless style, geometry-persistence opt-out) and, since
+        ``is_initialized`` gates ``_init_ui`` to a single run, the page
+        never recovers (the "browser-launched startmenu breaks the marking
+        menu" bug).
+
+        Registry-level and load-free: a loaded page answers from its live
+        tags; an unloaded one from its name-derived plus on-disk XML tags —
+        the same tag set :meth:`show`'s stacked-vs-standalone dispatch reads
+        once the page is loaded, so the claim and the dispatch can't
+        disagree.
+        """
+        if not name:
+            return False
+        loaded = getattr(self.sb, "loaded_ui", None)
+        ui = loaded.peek(name) if loaded is not None else None
+        if ui is not None and getattr(ui, "has_tags", None):
+            return bool(ui.has_tags(_MARKING_MENU_TAGS))
+        tags = set(self.sb.get_tags_from_name(name) or ())
+        get_file_tags = getattr(self.sb, "_get_ui_tags", None)
+        if callable(get_file_tags):
+            try:
+                tags |= set(get_file_tags(name) or ())
+            except Exception:  # unresolvable path / bad XML — name tags decide
+                pass
+        return not tags.isdisjoint(_MARKING_MENU_TAGS)
+
     # -- unified shortcut-editor register ("hotkey register" integration) ---
 
     def _activation_key_display(self) -> str:
@@ -1034,6 +1112,42 @@ class MarkingMenu(
             self._current_widget.hide()
             self._current_widget = None
 
+    def _host_stacked(self, ui) -> None:
+        """(Re)establish the hosting invariants for a stacked page.
+
+        Everything a startmenu/submenu needs to live as a child of this
+        overlay: borderless translucent styling, screen-clamp opt-out (the
+        centering must stay pinned to the gesture origin — see
+        ``_position_current_widget``), geometry persistence off, and
+        parenting into the overlay (a plain ``setParent`` also resets any
+        window flags a previous host set).
+
+        Called from :meth:`_init_ui` on first load, and from :meth:`show`'s
+        heal path when an initialized page comes back detached — e.g. a
+        standalone launcher re-hosted it as a top-level window. First-load
+        concerns (child event filters, ``on_child_registered`` wiring) stay
+        in ``_init_ui``: re-running them here would stack connections.
+        """
+        ui.style.set(theme="dark", style_class="translucentBgNoBorder")
+        ui.ensure_on_screen = False
+        # Stacked menus are transient — they hide on every transition
+        # and reshow on the next gesture. Persisting their geometry via
+        # MainWindow's save-on-hide / restore-on-show creates a feedback
+        # loop: a transient size saved during a hide gets restored on
+        # the next show, which is then re-saved, locking the menu to a
+        # tiny restored size (visible as the upper-section-cropped bug).
+        # Disable the persistence and discard any previously-saved value.
+        ui.restore_window_size = False
+        try:
+            ui.settings.clear("window_geometry")
+        except Exception:
+            pass
+        self.addWidget(ui)  # add the UI to the stackedLayout.
+        # Resize after addWidget (setParent can reset geometry)
+        w = max(ui.width(), 600)
+        h = max(ui.height(), 600)
+        ui.resize(w, h)
+
     def _init_ui(self, ui) -> None:
         """Initialize the given UI.
 
@@ -1050,25 +1164,7 @@ class MarkingMenu(
         )
 
         if ui.has_tags(_MARKING_MENU_TAGS):  # StackedWidget
-            ui.style.set(theme="dark", style_class="translucentBgNoBorder")
-            ui.ensure_on_screen = False
-            # Stacked menus are transient — they hide on every transition
-            # and reshow on the next gesture. Persisting their geometry via
-            # MainWindow's save-on-hide / restore-on-show creates a feedback
-            # loop: a transient size saved during a hide gets restored on
-            # the next show, which is then re-saved, locking the menu to a
-            # tiny restored size (visible as the upper-section-cropped bug).
-            # Disable the persistence and discard any previously-saved value.
-            ui.restore_window_size = False
-            try:
-                ui.settings.clear("window_geometry")
-            except Exception:
-                pass
-            self.addWidget(ui)  # add the UI to the stackedLayout.
-            # Resize after addWidget (setParent can reset geometry)
-            w = max(ui.width(), 600)
-            h = max(ui.height(), 600)
-            ui.resize(w, h)
+            self._host_stacked(ui)
             self.add_child_event_filter(ui.widgets)
             ui.on_child_registered.connect(lambda w: self.add_child_event_filter(w))
             # Stacked menus: No explicit lifecycle setup needed (they hide with parent)
@@ -2192,6 +2288,15 @@ class MarkingMenu(
         is_marking_menu = found_ui.has_tags(_MARKING_MENU_TAGS)
 
         if is_marking_menu:
+            # Heal: an initialized stacked page can come back detached —
+            # re-hosted elsewhere as a top-level window (e.g. a standalone
+            # launcher that bypassed the hosts_ui claim). is_initialized
+            # gates _init_ui to a single run, so without this the page
+            # would stay outside the overlay forever: positioned via
+            # mapFromGlobal against a window it no longer lives in, wrong
+            # chrome, geometry persistence re-engaged.
+            if found_ui.parent() is not self:
+                self._host_stacked(found_ui)
             return self._show_marking_menu(found_ui, **kwargs)
         else:
             return self._show_window(found_ui, pos=pos, force=force, **kwargs)

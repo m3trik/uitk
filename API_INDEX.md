@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-13_
+_Generated: 2026-07-14_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `configure_high_dpi() -> bool`
@@ -86,7 +86,7 @@ _Generated: 2026-07-13_
 
 ### `handlers/ui_handler.py`
 - `class UiHandler(BaseHandler)`
-  - methods: editors, can_resolve, get, show, setup_lifecycle, apply_styles, entries, launch, close, is_visible, save_tags
+  - methods: editors, can_resolve, get, show, setup_lifecycle, apply_styles, entries, hosting_handler, launch, close, is_visible, save_tags
 
 ### `loaders/compiled.py` — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - `class CompiledLoader`
@@ -217,9 +217,9 @@ _Generated: 2026-07-13_
 ### `widgets/editors/switchboard_browser.py` — Searchable, tag-filtered launcher for any handler-exposed entry.
 - `class LaunchOptions`
 - `class SwitchboardBrowserModel(QtCore.QAbstractTableModel)`
-  - methods: refresh_after_launch, rowCount, columnCount, headerData, data, flags, setData, entry_for_name, all_unique_tags
+  - methods: refresh_after_launch, rowCount, columnCount, headerData, data, flags, setData, set_entry_filter, entry_for_name, all_unique_tags
 - `class SwitchboardBrowser(EditorPanel)`
-  - methods: hidden_uis, hidden_tags, set_search_scope, launch_options, hide_inherited_tags, showEvent
+  - methods: hidden_uis, hidden_tags, set_search_scope, set_entry_filter, launch_options, hide_inherited_tags, showEvent
 
 ### `widgets/expandableList.py`
 - `class ExpandableList(QtWidgets.QWidget, AttributesMixin)`
@@ -252,7 +252,7 @@ _Generated: 2026-07-13_
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`
-  - methods: retire, instance, default_bindings, bindings, on_bindings_changed, ui_handler, get, set_activation_key, start_menu_names, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
+  - methods: retire, instance, default_bindings, bindings, on_bindings_changed, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
 - `normalize_key(parts) -> str`

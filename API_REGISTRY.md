@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-07-13_
+_Generated: 2026-07-14_
 
 ## Index
 
@@ -327,6 +327,7 @@ Unified launchable-entry data class shared by all Switchboard handlers.
   - `UiHandler.setup_lifecycle(self, ui, hide_signal=None)` — Connect a window to a hide signal, respecting its pin state.
   - `UiHandler.apply_styles(self, ui, style: Dict = None)` — Apply default styles to the UI instance.
   - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
+  - `UiHandler.hosting_handler(self, name: str)` — Return the registered handler that claims windowing ownership of *name*.
   - `UiHandler.launch(self, name: str, **options)` — Launch the named UI applying the browser's per-launch style options.
   - `UiHandler.close(self, name: str) -> None` — Hide the named UI via its header (matches the in-window hide button).
   - `UiHandler.is_visible(self, name: str) -> bool`
@@ -753,12 +754,14 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `SwitchboardBrowserModel.data(self, index, role=QtCore.Qt.DisplayRole)`
   - `SwitchboardBrowserModel.flags(self, index)`
   - `SwitchboardBrowserModel.setData(self, index, value, role=QtCore.Qt.EditRole)`
+  - `SwitchboardBrowserModel.set_entry_filter(self, inc: Union[str, List[str], None] = None, exc: Union[str, List[str], None] = None) -> None` — Replace the structural inc/exc entry filter and re-pull the registry.
   - `SwitchboardBrowserModel.entry_for_name(self, name: str) -> Optional[HandlerEntry]`
   - `SwitchboardBrowserModel.all_unique_tags(self) -> List[str]`
-- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L600)** — Searchable launcher for every UI registered with a Switchboard.
+- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L648)** — Searchable launcher for every UI registered with a Switchboard.
   - `SwitchboardBrowser.hidden_uis(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.hidden_tags(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.set_search_scope(self, value: str) -> None` — Public helper: set the search-line-edit scope to ``value``.
+  - `SwitchboardBrowser.set_entry_filter(self, inc: Union[str, List[str], None] = None, exc: Union[str, List[str], None] = None) -> None` — Replace the structural inc/exc entry filter (see class docstring).
   - `SwitchboardBrowser.launch_options(self) -> LaunchOptions`
   - `SwitchboardBrowser.hide_inherited_tags(self) -> bool` *(property)*
   - `SwitchboardBrowser.showEvent(self, event) -> None`
@@ -939,6 +942,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `MarkingMenu.get(self, name: str, **kwargs) -> QtWidgets.QWidget` — Get a UI widget by name.
   - `MarkingMenu.set_activation_key(self, new_key: str) -> None` — Rebind the marking menu's activation key across every chord.
   - `MarkingMenu.start_menu_names(self, short: bool = True) -> list` — Available ``#startmenu`` UI names, sorted.
+  - `MarkingMenu.hosts_ui(self, name: str) -> bool` — True when *name* is a stacked page (startmenu/submenu) this menu hosts.
   - `MarkingMenu.get_route_target(self, buttons=()) -> str` — Full target menu (…#startmenu) bound to the activation key + *buttons*
   - `MarkingMenu.set_route_target(self, buttons, menu: str) -> None` — Bind the activation key + *buttons* gesture to *menu* (a …#startmenu UI
   - `MarkingMenu.addWidget(self, widget: QtWidgets.QWidget) -> None` — Add a widget to the MarkingMenu window.
