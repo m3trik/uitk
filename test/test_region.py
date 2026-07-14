@@ -30,8 +30,10 @@ from uitk.widgets.region import Region
 # setMask on PySide6 6.10.x (a masked widget SIGSEGVs during teardown), so
 # Region skips the platform mask there — mask() is empty and these assertions
 # can't hold. Skip on offscreen; they exercise real hit-testing shape on a
-# real display.
-_OFFSCREEN_QPA = os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen"
+# real display. `startswith` matches Qt's own handling of a `offscreen:<opts>`
+# spec (platformName() strips the options), keeping this aligned with the
+# `platformName() == "offscreen"` guard in Region._apply_region_mask.
+_OFFSCREEN_QPA = os.environ.get("QT_QPA_PLATFORM", "").lower().startswith("offscreen")
 
 
 class TestRegionMouseOverConnections(QtBaseTestCase):
