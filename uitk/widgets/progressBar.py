@@ -389,8 +389,15 @@ class ProgressTaskContext:
         """Finish the task."""
         if exc_type is None and not self._progress_bar.is_cancelled:
             self._progress_bar.finish_task()
-        elif self._progress_bar.auto_hide:
-            self._progress_bar.hide()
+        else:
+            # Exception or cancellation: finish_task() (which tears down the
+            # app-wide Esc GlobalShortcut enabled by start_task) does not run
+            # here, so disable it explicitly — otherwise a later Esc-hold
+            # anywhere in the host app fires cancel() on this dead task. The
+            # call is idempotent, so a prior cancel() disabling it is harmless.
+            self._progress_bar._disable_cancel_shortcut()
+            if self._progress_bar.auto_hide:
+                self._progress_bar.hide()
         return False
 
     def _update(self, value: int, text: Optional[str] = None) -> bool:

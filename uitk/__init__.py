@@ -15,7 +15,7 @@ Example:
         from uitk import Switchboard
 
         sb = Switchboard(ui_source="my_app.ui", slot_source=MySlots)
-        ui = sb.my_app
+        ui = sb.loaded_ui.my_app
         ui.show(app_exec=True)
 
     Using individual widgets::
@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.3.15"
+__version__ = "1.3.17"
 
 
 DEFAULT_INCLUDE = {
@@ -58,7 +58,6 @@ DEFAULT_INCLUDE = {
     "compile": ["compile_ui", "ensure_compiled", "is_compiled_fresh", "precompile_async"],
     "loaders": ["CompiledLoader", "RuntimeLoader"],
     "widgets.marking_menu._marking_menu": "MarkingMenu",
-    "managers.window_manager": "WindowManager",
     # Widgets
     "widgets.attributeWindow._attributeWindow": "AttributeWindow",
     # AttributeSpec + the kind-handler registry live in ``uitk.bridge.spec``
@@ -98,7 +97,6 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox._optionBox": [
         "OptionBox",
         "OptionBoxContainer",
-        "OptionBoxWithOrdering",
     ],
     "widgets.optionBox.utils": [
         "OptionBoxManager",
@@ -159,7 +157,6 @@ DEFAULT_INCLUDE = {
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",
     "widgets.mixins.convert": "ConvertMixin",
-    "widgets.mixins.docking": "DockingMixin",
     "widgets.mixins.icon_manager": "IconManager",
     "widgets.mixins.menu_mixin": "MenuMixin",
     "widgets.mixins.option_box_mixin": "OptionBoxMixin",

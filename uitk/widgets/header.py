@@ -531,17 +531,35 @@ class Header(
 
     @classmethod
     def _reflow_minimized(cls):
-        """Reposition remaining minimized windows to close gaps after a restore."""
-        # Prune stale references (deleted widgets)
-        cls._minimized_headers = [h for h in cls._minimized_headers if h._minimized]
-        for i, header in enumerate(cls._minimized_headers):
-            window = header.window()
-            screen = QtWidgets.QApplication.screenAt(window.geometry().center())
-            if screen is None:
-                screen = QtWidgets.QApplication.primaryScreen()
-            avail = screen.availableGeometry()
-            target = header._compute_minimize_position(window, avail, i)
-            window.move(target)
+        """Reposition remaining minimized windows to close gaps after a restore.
+
+        Prunes dead entries defensively: a window destroyed while minimized
+        never runs ``restore_window``, so its Header lingers in the registry
+        with a dangling C++ object. Touching such a header (``window()`` below,
+        or even its ``_minimized`` flag) raises ``RuntimeError: Internal C++
+        object already deleted`` and would otherwise break the restore of an
+        unrelated live window. Any header that raises — or is no longer
+        minimized — is dropped, and slot indices are recomputed from the
+        surviving (live) headers so the stack stays gap-free.
+        """
+        live = []
+        for header in cls._minimized_headers:
+            try:
+                if not header._minimized:
+                    continue
+                window = header.window()
+                screen = QtWidgets.QApplication.screenAt(window.geometry().center())
+                if screen is None:
+                    screen = QtWidgets.QApplication.primaryScreen()
+                avail = screen.availableGeometry()
+                # len(live) is the compacted slot index for this live header.
+                target = header._compute_minimize_position(window, avail, len(live))
+                window.move(target)
+                live.append(header)
+            except RuntimeError:
+                # C++ object for this header/window was deleted; drop it.
+                continue
+        cls._minimized_headers = live
 
     def toggle_maximize(self):
         """Toggle between maximized and normal window state."""

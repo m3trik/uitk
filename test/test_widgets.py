@@ -20,7 +20,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 
 
 # =============================================================================
@@ -213,6 +213,53 @@ class TestCheckBoxTristate(QtBaseTestCase):
         # Test checked
         checkbox.setCheckState(2)
         self.assertEqual(checkbox.checkState(), 2)
+
+    def test_tristate_left_click_cycles_without_error(self):
+        """A left click on a tri-state box cycles 0->1->2->0 and never raises.
+
+        Regression: mousePressEvent indexed a Qt.CheckState-keyed table with
+        the integer checkState(), raising KeyError under PySide6.
+        """
+        from uitk.widgets.checkBox import CheckBox
+
+        checkbox = self.track_widget(CheckBox())
+        checkbox.setTristate(True)
+        checkbox.setCheckState(0)
+
+        def left_press():
+            event = QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(2, 2),
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+            )
+            checkbox.mousePressEvent(event)
+
+        left_press()
+        self.assertEqual(checkbox.checkState(), 1)
+        left_press()
+        self.assertEqual(checkbox.checkState(), 2)
+        left_press()
+        self.assertEqual(checkbox.checkState(), 0)
+
+    def test_tristate_right_click_does_not_cycle(self):
+        """A non-left button must not mutate the state (reaches base handler)."""
+        from uitk.widgets.checkBox import CheckBox
+
+        checkbox = self.track_widget(CheckBox())
+        checkbox.setTristate(True)
+        checkbox.setCheckState(1)
+
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonPress,
+            QtCore.QPointF(2, 2),
+            QtCore.Qt.RightButton,
+            QtCore.Qt.RightButton,
+            QtCore.Qt.NoModifier,
+        )
+        checkbox.mousePressEvent(event)
+        self.assertEqual(checkbox.checkState(), 1)
 
 
 class TestCheckBoxHitButton(QtBaseTestCase):
@@ -652,17 +699,56 @@ class TestComboBoxEdgeCases(QtBaseTestCase):
         combo.addItems(["Same", "Same", "Same"])
         self.assertEqual(combo.count(), 3)
 
-    def test_combobox_remove_item_via_base(self):
-        """Should handle removing item via parent class method."""
+    def test_combobox_remove_item_emits_on_item_deleted(self):
+        """removeItem should drop the item AND emit on_item_deleted(text).
+
+        Regression: the method emitted a nonexistent `item_deleted` signal
+        (AttributeError) from inside @Signals.blockSignals (swallowed anyway),
+        so the declared on_item_deleted never fired.
+        """
         from uitk.widgets.comboBox import ComboBox
 
         combo = self.track_widget(ComboBox())
         combo.addItems(["First", "Second", "Third"])
         combo.setCurrentIndex(1)
-        # Use parent class removeItem to avoid custom signal
-        QtWidgets.QComboBox.removeItem(combo, 1)
-        # Current index should change
+
+        received = []
+        combo.on_item_deleted.connect(received.append)
+
+        combo.removeItem(1)
+
         self.assertEqual(combo.count(), 2)
+        self.assertEqual(received, ["Second"])
+
+    def test_combobox_editable_constructor(self):
+        """ComboBox(editable=True) should actually be editable.
+
+        Regression: `self.editable = editable` set a plain attribute and never
+        called setEditable(), so isEditable() stayed False.
+        """
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox(editable=True))
+        self.assertTrue(combo.isEditable())
+
+        default_combo = self.track_widget(ComboBox())
+        self.assertFalse(default_combo.isEditable())
+
+    def test_combobox_editable_property_assignment(self):
+        """`combo.editable = True` must route through setEditable().
+
+        Downstream code (tentacle materials slots) assigns the attribute
+        directly; before the property it bound a dead attribute and the combo
+        stayed non-editable.
+        """
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.editable = True
+        self.assertTrue(combo.isEditable())
+        self.assertTrue(combo.editable)
+        combo.editable = False
+        self.assertFalse(combo.isEditable())
 
     def test_combobox_clear(self):
         """Should clear all items."""

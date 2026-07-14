@@ -107,7 +107,7 @@ class AttributeWindow(Menu):
         self.clear_ui_elements()
         added_attribute_count = 0  # Initialize a counter for added attributes
         for name, value in attributes_dict.items():
-            if self.is_type_supported(type(value)) or self.allow_unsupported_types:
+            if self._is_value_supported(value) or self.allow_unsupported_types:
                 self.add_attributes(name, value)
                 # Increment the counter when an attribute is added
                 added_attribute_count += 1
@@ -181,6 +181,35 @@ class AttributeWindow(Menu):
         """
         return attribute_type in (bool, int, float, str)
 
+    def _is_value_supported(self, value):
+        """Return True when a widget can be built for *value*.
+
+        A scalar whose type :meth:`is_type_supported`, OR a composite
+        (list/set/tuple) whose elements are each individually supported.
+        This makes the documented composite support reachable independent of
+        ``allow_unsupported_types`` — the plain ``is_type_supported(type(value))``
+        gate returns ``False`` for a list/tuple/set and so short-circuited the
+        composite branch before it could run.
+        """
+        if self.is_type_supported(type(value)):
+            return True
+        if isinstance(value, (list, set, tuple)):
+            return all(self.is_type_supported(type(v)) for v in value)
+        return False
+
+    def _apply_float_precision(self, spec):
+        """Bake the window's ``float_precision`` onto a float spec.
+
+        ``AttributeSpec`` is a frozen dataclass, so this returns a copy with
+        ``decimals`` set for the ``float`` kind (the DoubleSpinBox builder reads
+        ``spec.decimals``); non-float specs pass through unchanged.
+        """
+        if self.float_precision is None or getattr(spec, "kind", None) != "float":
+            return spec
+        import dataclasses
+
+        return dataclasses.replace(spec, decimals=int(self.float_precision))
+
     def add_attributes(self, attributes, value=None):
         """Adds a single attribute or multiple attributes to the attribute window.
 
@@ -210,7 +239,7 @@ class AttributeWindow(Menu):
             self.add_attribute_spec(attributes)
             return
 
-        if not self.allow_unsupported_types and not self.is_type_supported(type(value)):
+        if not self.allow_unsupported_types and not self._is_value_supported(value):
             return
 
         if isinstance(value, (list, set, tuple)):
@@ -245,6 +274,7 @@ class AttributeWindow(Menu):
         cannot KeyError here.
         """
         spec = factory.AttributeSpec.from_value(name, value)
+        spec = self._apply_float_precision(spec)
         widget = factory.make_widget(spec, self)
         widget.setProperty("attribute_name", spec.key)
         factory.connect_changed(
@@ -264,6 +294,7 @@ class AttributeWindow(Menu):
             if not self.allow_unsupported_types and not self.is_type_supported(type(element)):
                 continue
             spec = factory.AttributeSpec.from_value(name, element)
+            spec = self._apply_float_precision(spec)
             w = factory.make_widget(spec, self)
             w.setProperty("attribute_name", spec.key)
             factory.connect_changed(
@@ -305,6 +336,13 @@ class AttributeWindow(Menu):
 
         if self.label_group is not None:
             self.label_group.addButton(label)
+        elif self.checkable:
+            # single_check=False: there is no QButtonGroup to route toggles
+            # through on_button_clicked, so wire each checkable label directly.
+            # Without this, `labelToggled` never fired for multi-check labels.
+            label.toggled.connect(
+                lambda _checked, lbl=label: self.on_label_toggled(lbl)
+            )
 
         return label
 
@@ -380,7 +418,10 @@ class AttributeWindow(Menu):
                 label.setFixedSize(max_label_width, label.size().height())
             for widget in self.widgets:
                 widget.setFixedSize(max_widget_width, widget.size().height())
-        except AttributeError:
+        except (ValueError, AttributeError):
+            # ValueError: max() over an empty labels/widgets sequence (a window
+            # shown with zero attributes). AttributeError: a widget without
+            # sizeHint(). Either way there's nothing to size — skip.
             pass
 
 

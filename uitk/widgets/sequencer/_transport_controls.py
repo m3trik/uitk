@@ -98,6 +98,24 @@ class ScrubPlayerPlayController:
             return 0.0
 
 
+def _remove_play_shortcuts(mgr, owned) -> None:
+    """Remove the Space / Alt+Space bindings in *owned* (``{seq: QShortcut}``)
+    from *mgr*, but only where the manager still holds that exact shortcut —
+    a newer transport may have replaced it.  Free function (not a bound
+    method) so a ``destroyed`` connection forms no reference cycle through
+    the transport widget.
+    """
+    if mgr is None:
+        return
+    for key, sc in owned.items():
+        try:
+            entry = mgr.shortcuts.get(key)
+            if entry is not None and entry.get("shortcut") is sc:
+                mgr.remove_shortcut(key)
+        except (RuntimeError, TypeError):
+            pass
+
+
 class TransportControls(QtWidgets.QWidget):
     """Maya-style 8-button transport row bound to a :class:`SequencerWidget`.
 
@@ -163,7 +181,20 @@ class TransportControls(QtWidgets.QWidget):
         self._sync_timer.setInterval(400)
         self._sync_timer.timeout.connect(self._sync_active_from_controller)
 
+        # QShortcut objects this row registered on the host sequencer's
+        # manager, keyed by sequence.  Tracked so recreating the row (or
+        # destroying it) can tear its own bindings down instead of leaving
+        # a stale, ambiguous QShortcut alive on the sequencer.
+        self._play_shortcuts: dict = {}
         self._register_play_shortcuts()
+        # Drop our bindings if this row is destroyed without a replacement,
+        # so the sequencer isn't left with a Space shortcut whose callback
+        # points into a deleted transport.  Capture the manager + owned
+        # shortcuts (not ``self``) so the connection forms no reference
+        # cycle through the widget.
+        _mgr = getattr(self._sequencer, "_shortcut_mgr", None)
+        _owned = dict(self._play_shortcuts)
+        self.destroyed.connect(lambda *_: _remove_play_shortcuts(_mgr, _owned))
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -372,27 +403,44 @@ class TransportControls(QtWidgets.QWidget):
 
     # ----------------------------------------------------------- shortcuts
 
+    _PLAY_KEYS = ("Space", "Alt+Space")
+
     def _register_play_shortcuts(self) -> None:
         """Register Space / Alt+Space on the sequencer's shortcut manager.
 
         Space toggles play-forward; Alt+Space toggles play-backward.  If the
         sequencer has no ``_shortcut_mgr`` attribute, this is a no-op.
+
+        Idempotent: any existing Space / Alt+Space binding is disposed first
+        — whether this row's own from a prior call, or one a previously
+        created transport left behind.  Without that teardown, recreating the
+        transport stacks a second ``QShortcut`` on the same sequence and Qt
+        marks it ambiguous ("Ambiguous shortcut overload") and fires neither.
         """
         mgr = getattr(self._sequencer, "_shortcut_mgr", None)
         if mgr is None:
+            self._play_shortcuts = {}
             return
+        for key in self._PLAY_KEYS:
+            try:
+                mgr.remove_shortcut(key)
+            except (RuntimeError, TypeError):
+                pass
         ctx = QtCore.Qt.WidgetWithChildrenShortcut
-        try:
-            mgr.add_shortcut(
-                "Space", lambda: self._toggle_play(forward=True),
-                "Play / stop playback", ctx,
-            )
-            mgr.add_shortcut(
-                "Alt+Space", lambda: self._toggle_play(forward=False),
-                "Play / stop backward", ctx,
-            )
-        except Exception:
-            pass
+        specs = {
+            "Space": (lambda: self._toggle_play(forward=True), "Play / stop playback"),
+            "Alt+Space": (
+                lambda: self._toggle_play(forward=False),
+                "Play / stop backward",
+            ),
+        }
+        self._play_shortcuts = {}
+        for key in self._PLAY_KEYS:
+            action, desc = specs[key]
+            try:
+                self._play_shortcuts[key] = mgr.add_shortcut(key, action, desc, ctx)
+            except Exception:
+                pass
 
     # ----------------------------------------------------------- integration
 

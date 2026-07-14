@@ -467,8 +467,7 @@ def txt_path_init(self, widget):
 Plugin-style for custom combinations:
 
 ```python
-from uitk.widgets.optionBox import OptionBox
-from uitk.widgets.optionBox.options import ClearOption, ActionOption
+from uitk import OptionBox, ClearOption, ActionOption
 
 clear = ClearOption(line_edit)
 action = ActionOption(callback=self.browse, icon="folder", tooltip="Browse...")

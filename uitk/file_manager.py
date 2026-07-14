@@ -330,6 +330,17 @@ class FileManager(ptk.HelpMixin, ptk.LoggingMixin):
         fields = metadata.get("fields", ["filename", "filepath"])
         dir_path = self.resolve_path(obj, **metadata)
 
+        if dir_path is None:
+            # resolve_path returns None for an invalid path under validate=1
+            # ('warn'), or for an object with no resolvable path. Skip rather
+            # than fall through to os.path.isdir(None), which raises TypeError
+            # — turning the documented 'warn' level into a hard crash.
+            self.logger.warning(
+                f"[FileManager] Skipping unresolved "
+                f"{metadata.get('path_type', 'Path')}: {obj!r}"
+            )
+            return []
+
         if dir_path in self.processing_stack:
             raise RecursionError(
                 f"Recursion detected while processing '{dir_path}'. Current stack: {self.processing_stack}"

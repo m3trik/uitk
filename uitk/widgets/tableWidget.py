@@ -1176,6 +1176,7 @@ class TableWidget(
         self.setItem(row, column, item)
 
     def add(self, data, clear: bool = True, headers: list = None, **kwargs):
+        was_blocked = self.signalsBlocked()
         self.setUpdatesEnabled(False)
         try:
             if clear:
@@ -1248,8 +1249,10 @@ class TableWidget(
                     if data_val is not None:
                         item.setData(QtCore.Qt.UserRole, data_val)
                     self.setItem(row_idx, col_idx, item)
-            self.blockSignals(False)
         finally:
+            # Restore in finally: an exception mid-populate previously skipped
+            # the unblock, leaving the table permanently signal-dead.
+            self.blockSignals(was_blocked)
             self.setUpdatesEnabled(True)
         self.set_attributes(**kwargs)
         self.apply_formatting()

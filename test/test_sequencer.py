@@ -3917,5 +3917,411 @@ class TestStalePendingKeyCleared(BaseTestCase):
         self.assertFalse(self.w.eventFilter(self.w, press_del))
 
 
+# =========================================================================
+# Locked Gap Overlay — drag/resize must be inert (finding 1)
+# =========================================================================
+
+
+class TestLockedGapNoDrag(BaseTestCase):
+    """A locked gap advertises a lock state but its drag handlers ignored
+    ``_locked`` — a locked gap could still be resized/moved and emit
+    gap_resized / gap_left_resized / gap_moved.  It must now be inert."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _press(self, gap, scene_pt):
+        from qtpy import QtCore, QtWidgets
+
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMousePress)
+        ev.setButton(QtCore.Qt.LeftButton)
+        ev.setButtons(QtCore.Qt.LeftButton)
+        ev.setScenePos(scene_pt)
+        ev.setPos(scene_pt)
+        ev.setModifiers(QtCore.Qt.NoModifier)
+        gap.mousePressEvent(ev)
+        return ev
+
+    def _move(self, gap, scene_pt):
+        from qtpy import QtCore, QtWidgets
+
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
+        ev.setScenePos(scene_pt)
+        ev.setPos(scene_pt)
+        gap.mouseMoveEvent(ev)
+        return ev
+
+    def _release(self, gap):
+        from qtpy import QtCore, QtWidgets
+
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseRelease)
+        ev.setButton(QtCore.Qt.LeftButton)
+        gap.mouseReleaseEvent(ev)
+        return ev
+
+    def test_locked_gap_press_starts_no_drag_and_emits_nothing(self):
+        from qtpy import QtCore
+
+        self.w.add_gap_overlay(50, 70, locked=True)
+        gap = self.w._gap_overlays[0]
+        r = gap._rect()
+        edge = QtCore.QPointF(r.right() - 1, r.center().y())  # resize zone
+        emitted = []
+        self.w.gap_resized.connect(lambda *a: emitted.append(("resized", a)))
+        self.w.gap_moved.connect(lambda *a: emitted.append(("moved", a)))
+        self.w.gap_left_resized.connect(lambda *a: emitted.append(("left", a)))
+
+        self._press(gap, edge)
+        self.assertIsNone(gap._drag_mode, "locked gap must not enter a drag mode")
+        self._move(gap, QtCore.QPointF(r.right() + 40, r.center().y()))
+        self._release(gap)
+
+        self.assertEqual(emitted, [], "a locked gap must emit no gap_* signals")
+        self.assertEqual((gap._start, gap._end), (50.0, 70.0), "geometry unchanged")
+
+    def test_unlocked_gap_right_edge_still_resizes_and_emits(self):
+        """Control: the locked guard must not disable UNLOCKED gaps."""
+        from qtpy import QtCore
+
+        self.w.add_gap_overlay(50, 70, locked=False)
+        gap = self.w._gap_overlays[0]
+        r = gap._rect()
+        edge = QtCore.QPointF(r.right() - 1, r.center().y())
+        emitted = []
+        self.w.gap_resized.connect(lambda a, b: emitted.append((a, b)))
+
+        self._press(gap, edge)
+        self.assertEqual(gap._drag_mode, "right")
+        self._move(gap, QtCore.QPointF(r.right() + 40, r.center().y()))
+        self._release(gap)
+        self.assertEqual(len(emitted), 1, "unlocked gap resize must still emit")
+
+
+# =========================================================================
+# Ruler boundingRect covers the scene extent at high zoom (finding 2)
+# =========================================================================
+
+
+class TestRulerBoundingRectExtent(BaseTestCase):
+    """The ruler's boundingRect was a fixed 100000-px cap, so ticks/labels/
+    background stopped painting past that many scene pixels at high zoom.
+    It must now track the scene's horizontal extent."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_bounding_rect_floor_preserved(self):
+        ruler = self.w._timeline._scene.ruler
+        self.assertGreaterEqual(ruler.boundingRect().width(), 100000)
+
+    def test_bounding_rect_scales_with_scene_extent(self):
+        tl = self.w._timeline
+        ruler = tl._scene.ruler
+        tl._pixels_per_unit = 100.0  # high zoom
+        tid = self.w.add_track("T")
+        self.w.add_clip(tid, start=0, duration=3000)  # end 3000 -> x=300000
+        tl._update_scene_rect()
+        scene_w = tl._scene.sceneRect().width()
+        self.assertGreater(scene_w, 100000, "sanity: scene must exceed old cap")
+        self.assertGreaterEqual(
+            ruler.boundingRect().width(),
+            scene_w,
+            "ruler boundingRect must cover the full scene extent",
+        )
+
+
+# =========================================================================
+# Transport shortcut registration is idempotent (finding 3)
+# =========================================================================
+
+
+class TestTransportShortcutIdempotence(BaseTestCase):
+    """Recreating the transport row must not stack a second Space / Alt+Space
+    QShortcut on the sequencer (Qt would flag it ambiguous and fire neither)."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self._transports = []
+
+    def _make_transport(self):
+        from uitk.widgets.sequencer import TransportControls
+
+        t = TransportControls(self.w)
+        self._transports.append(t)
+        return t
+
+    def tearDown(self):
+        for t in self._transports:
+            t.deleteLater()
+        self.w.close()
+        self.w.deleteLater()
+
+    @staticmethod
+    def _shortcut_types():
+        from qtpy import QtGui, QtWidgets
+
+        return tuple(
+            t
+            for t in (
+                getattr(QtWidgets, "QShortcut", None),
+                getattr(QtGui, "QShortcut", None),
+            )
+            if isinstance(t, type)
+        )
+
+    def _count_shortcuts(self, seq_str):
+        from qtpy import QtCore
+
+        types = self._shortcut_types()
+        # Count only ENABLED shortcuts: Qt's "ambiguous overload" (fires
+        # neither) is triggered by enabled duplicates, and a disposed
+        # QShortcut is disabled immediately even though its deleteLater is
+        # deferred (processEvents doesn't flush DeferredDelete here).
+        return len(
+            [
+                c
+                for c in self.w.findChildren(QtCore.QObject)
+                if isinstance(c, types)
+                and c.key().toString() == seq_str
+                and c.isEnabled()
+            ]
+        )
+
+    def test_single_transport_registers_one_space(self):
+        from qtpy import QtWidgets
+
+        self._make_transport()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(self._count_shortcuts("Space"), 1)
+        self.assertIn("Space", self.w._shortcut_mgr.shortcuts)
+
+    def test_recreating_transport_does_not_duplicate_space(self):
+        from qtpy import QtWidgets
+
+        self._make_transport()
+        self._make_transport()
+        # deleteLater disposal of the superseded QShortcut is async.
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(
+            self._count_shortcuts("Space"),
+            1,
+            "recreating the transport left a duplicate/ambiguous Space binding",
+        )
+        self.assertEqual(self._count_shortcuts("Alt+Space"), 1)
+
+
+# =========================================================================
+# ShortcutOverride dispatches directly, not via bubbling (finding 4)
+# =========================================================================
+
+
+class TestOverrideDispatchesDirectly(BaseTestCase):
+    """event() accepted a matching ShortcutOverride but relied on the
+    follow-up KeyPress bubbling to keyPressEvent — an intermediate widget
+    that consumes the key broke the shortcut.  The action must dispatch on
+    the override itself, without double-firing."""
+
+    def setUp(self):
+        from qtpy import QtCore
+
+        self.w = SequencerWidget()
+        self.calls = []
+        self.w._shortcut_mgr.add_shortcut(
+            "Left",
+            lambda: self.calls.append("left"),
+            "test",
+            QtCore.Qt.WidgetWithChildrenShortcut,
+        )
+        self.w._sync_shortcut_sequences()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _override(self):
+        from qtpy import QtCore, QtGui
+
+        return QtGui.QKeyEvent(
+            QtCore.QEvent.ShortcutOverride, QtCore.Qt.Key_Left, QtCore.Qt.NoModifier
+        )
+
+    def _press(self):
+        from qtpy import QtCore, QtGui
+
+        return QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_Left, QtCore.Qt.NoModifier
+        )
+
+    def test_override_dispatches_action_directly(self):
+        ev = self._override()
+        handled = self.w.event(ev)
+        self.assertTrue(handled)
+        self.assertTrue(ev.isAccepted())
+        self.assertEqual(self.calls, ["left"], "action must fire on the override")
+
+    def test_followup_keypress_not_double_dispatched(self):
+        self.w.event(self._override())
+        self.w.keyPressEvent(self._press())
+        self.assertEqual(self.calls, ["left"], "action must fire exactly once")
+
+    def test_keypress_alone_still_dispatches(self):
+        # Focus directly on the widget: no override precedes the press.
+        self.w.keyPressEvent(self._press())
+        self.assertEqual(self.calls, ["left"])
+
+    def test_stale_override_pending_does_not_eat_later_press(self):
+        from qtpy import QtCore, QtGui
+
+        # Override dispatched (fire 1) but its matching KeyPress never
+        # arrives (a child ate it), leaving a stale pending key.
+        self.w.event(self._override())
+        self.assertEqual(self.calls, ["left"])
+        # An unrelated press clears the stale pending...
+        press_a = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_A, QtCore.Qt.NoModifier
+        )
+        self.w.keyPressEvent(press_a)
+        # ...so a later, genuinely new Left press dispatches (fire 2) rather
+        # than being silently swallowed by the stale pending.
+        self.w.keyPressEvent(self._press())
+        self.assertEqual(self.calls, ["left", "left"])
+
+
+# =========================================================================
+# Marker remove_marker emit contract (finding 5)
+# =========================================================================
+
+
+class TestMarkerRemoveEmitContract(BaseTestCase):
+    """remove_marker must emit marker_removed only when the id existed;
+    add_marker / clear_markers stay signal-free populate primitives."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_remove_existing_marker_emits_once(self):
+        mid = self.w.add_marker(10.0)
+        received = []
+        self.w.marker_removed.connect(lambda m: received.append(m))
+        self.w.remove_marker(mid)
+        self.assertEqual(received, [mid])
+
+    def test_remove_nonexistent_marker_does_not_emit(self):
+        received = []
+        self.w.marker_removed.connect(lambda m: received.append(m))
+        self.w.remove_marker(9999)  # never added
+        self.assertEqual(received, [], "no-op remove must not emit marker_removed")
+
+    def test_add_marker_is_signal_free(self):
+        # add_marker is a populate primitive — consumers repopulate markers
+        # via add_marker in a rebuild loop and rely on the silence (an emit
+        # would re-enter their append-during-iteration and hang).
+        received = []
+        self.w.marker_added.connect(lambda *a: received.append(a))
+        self.w.add_marker(5.0)
+        self.assertEqual(received, [])
+
+    def test_clear_markers_is_signal_free(self):
+        self.w.add_marker(1.0)
+        self.w.add_marker(2.0)
+        received = []
+        self.w.marker_removed.connect(lambda m: received.append(m))
+        self.w.clear_markers()
+        self.assertEqual(received, [], "clear_markers must not emit (rebuild safety)")
+
+
+# =========================================================================
+# zone_menu_enabled public API (finding 6)
+# =========================================================================
+
+
+class TestZoneMenuEnabledAPI(BaseTestCase):
+    """The zone context-menu routing was gated on the private, undocumented
+    ``_zone_menu_connected`` attribute.  A public ``zone_menu_enabled``
+    property now controls it, with the legacy attr honoured as a fallback."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_default_false(self):
+        self.assertFalse(self.w.zone_menu_enabled)
+
+    def test_setter_enables(self):
+        self.w.zone_menu_enabled = True
+        self.assertTrue(self.w.zone_menu_enabled)
+
+    def test_legacy_attr_fallback(self):
+        # Back-compat: existing consumers poke the private attr directly.
+        self.w._zone_menu_connected = True
+        self.assertTrue(self.w.zone_menu_enabled)
+
+    def test_explicit_setter_overrides_legacy_attr(self):
+        self.w._zone_menu_connected = True
+        self.w.zone_menu_enabled = False
+        self.assertFalse(self.w.zone_menu_enabled)
+
+    def test_context_menu_routes_when_enabled(self):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        self.w.resize(800, 400)
+        self.w.show()
+        QtWidgets.QApplication.processEvents()
+        self.w.zone_menu_enabled = True
+        received = []
+        self.w.zone_context_menu_requested.connect(
+            lambda zone, t, pos: received.append((zone, t))
+        )
+        tl = self.w._timeline
+        ev = QtGui.QContextMenuEvent(
+            QtGui.QContextMenuEvent.Mouse,
+            QtCore.QPoint(10, 10),
+            QtCore.QPoint(100, 100),
+        )
+        tl.contextMenuEvent(ev)
+        self.assertEqual(len(received), 1, "enabled zone menu must emit the signal")
+
+    def test_context_menu_does_not_route_when_disabled(self):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        self.w.resize(800, 400)
+        self.w.show()
+        QtWidgets.QApplication.processEvents()
+        received = []
+        self.w.zone_context_menu_requested.connect(
+            lambda zone, t, pos: received.append((zone, t))
+        )
+        tl = self.w._timeline
+        ev = QtGui.QContextMenuEvent(
+            QtGui.QContextMenuEvent.Mouse,
+            QtCore.QPoint(10, 10),
+            QtCore.QPoint(100, 100),
+        )
+        # Default menu path shows a QMenu synchronously; suppress exec so the
+        # test doesn't block.
+        from unittest.mock import patch
+
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            tl.contextMenuEvent(ev)
+        self.assertEqual(received, [], "disabled zone menu must not emit")
+
+
 if __name__ == "__main__":
     unittest.main()

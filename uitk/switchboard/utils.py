@@ -190,10 +190,6 @@ class SwitchboardUtilsMixin:
             list: A list of unpacked names, e.g., ['chk021', 'chk022', 'chk023', 'chk025', 'tb001'].
         """
 
-        def expand_name_range(prefix, start, stop):
-            """Generate a list of names with a given prefix and a range of numbers."""
-            return [prefix + str(num).zfill(3) for num in range(start, stop + 1)]
-
         def extract_parts(name):
             """Extract alphabetic and numeric parts from a given name using regular expressions."""
             return re.findall(r"([a-zA-Z]+)|(\d+)", name)
@@ -201,22 +197,43 @@ class SwitchboardUtilsMixin:
         names = re.split(r",\s*", name_string)
         unpacked_names = []
         last_prefix = None
+        last_width = 3  # zero-pad width for bare-number continuations
 
         for name in names:
             parts = extract_parts(name)
-            digits = [int(p[1]) for p in parts if p[1]]
+            # Keep the raw numeric tokens so the zero-pad width can be derived
+            # from the source string rather than hard-coded.
+            digit_tokens = [p[1] for p in parts if p[1]]
 
-            if len(digits) == 1:
-                if not parts[0][0]:
-                    unpacked_names.append(last_prefix + str(digits[0]).zfill(3))
-                else:
-                    last_prefix = parts[0][0]
+            if not digit_tokens:
+                # A name with no numeric token passes through verbatim (e.g.
+                # 'grp_basic'); a purely non-alphanumeric token is skipped.
+                if parts:
                     unpacked_names.append(name)
-            elif len(digits) == 2:
-                prefix = parts[0][0]
-                start, stop = digits
-                unpacked_names.extend(expand_name_range(prefix, start, stop))
-                last_prefix = prefix
+                    if parts[0][0]:
+                        last_prefix = parts[0][0]
+                continue
+
+            prefix = parts[0][0]
+            width = len(digit_tokens[0])
+
+            if len(digit_tokens) >= 2:
+                # Range notation, e.g. 'chk000-2' (reverse ranges yield nothing).
+                start, stop = int(digit_tokens[0]), int(digit_tokens[1])
+                unpacked_names.extend(
+                    prefix + str(num).zfill(width) for num in range(start, stop + 1)
+                )
+                last_prefix, last_width = prefix, width
+            elif not prefix:
+                # Bare number — continuation of the previous prefix, e.g. the
+                # '1' in 'chk000, 1'.
+                unpacked_names.append(
+                    (last_prefix or "") + digit_tokens[0].zfill(last_width)
+                )
+            else:
+                # Single prefixed name, e.g. 'chk000'.
+                unpacked_names.append(name)
+                last_prefix, last_width = prefix, width
 
         return unpacked_names
 
@@ -997,17 +1014,18 @@ class SwitchboardUtilsMixin:
             files = file_dialog(file_types=["*.png", "*.jpg"], title="Select images", filter_description="Images")
         """
         options = QtWidgets.QFileDialog.Options()
-        if allow_multiple:
-            options |= QtWidgets.QFileDialog.ReadOnly
-
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
         with _suspend_override_cursor():
-            files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            if allow_multiple:
+                files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+                    None, title, start_dir, file_types_string, options=options
+                )
+                return files
+            file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 None, title, start_dir, file_types_string, options=options
             )
-
-        return files if allow_multiple else files[0] if files else None
+            return file or None
 
     @staticmethod
     def dir_dialog(title: str = "Select a directory", start_dir: str = "/home") -> str:

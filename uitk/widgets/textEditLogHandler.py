@@ -6,6 +6,27 @@ import logging
 from pythontk.core_utils.logging_mixin import LoggerExt
 
 
+class _CrossThreadAppender(QtCore.QObject):
+    """Marshals a formatted message onto the GUI thread for appending.
+
+    A logging call from a plain worker thread has no Qt event loop, so a
+    ``QTimer.singleShot`` scheduled there never fires and the record is lost.
+    Emitting a signal is thread-safe, and — because this object lives in the
+    widget's (GUI) thread — a queued connection delivers the append there.
+    """
+
+    posted = QtCore.Signal(str)
+
+    def __init__(self, append_fn):
+        super().__init__()
+        self._append_fn = append_fn
+        self.posted.connect(self._deliver)
+
+    @QtCore.Slot(str)
+    def _deliver(self, msg):
+        self._append_fn(msg)
+
+
 class TextEditLogHandler(logging.Handler):
     """Custom logging handler for Qt QTextEdit widgets."""
 
@@ -13,6 +34,15 @@ class TextEditLogHandler(logging.Handler):
         super().__init__()
         self.widget = widget
         self.setLevel(logging.NOTSET)  # Always receive all messages
+
+        # Bridge for records emitted off the GUI thread (see emit()). Pinned to
+        # the widget's thread so its queued slot runs where the widget lives.
+        self._appender = _CrossThreadAppender(self._safe_append)
+        try:
+            if hasattr(widget, "thread"):
+                self._appender.moveToThread(widget.thread())
+        except Exception:  # pragma: no cover - defensive
+            pass
 
         # Ensure custom action:// links fire anchorClicked instead of
         # being opened in an external browser (QTextBrowser only).
@@ -93,8 +123,11 @@ class TextEditLogHandler(logging.Handler):
                 # Direct call on main thread with immediate processEvents
                 self._safe_append(msg)
             else:
-                # Thread-safe deferred call from worker thread
-                QtCore.QTimer.singleShot(0, lambda: self._safe_append(msg))
+                # From a worker thread: a QTimer scheduled here would never fire
+                # (no event loop on this thread). Emitting the bridge's signal is
+                # thread-safe and, via its queued connection, appends on the GUI
+                # thread where the widget lives.
+                self._appender.posted.emit(msg)
 
         except Exception as e:
             print(f"QtTextEditHandler error: {e}")

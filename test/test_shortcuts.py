@@ -799,6 +799,30 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
         mgr.clear_all()
         self.assertNotIn(gs2, GlobalShortcut._instances)
 
+    def test_remove_shortcut_notifies_change_subscribers(self):
+        """remove_shortcut must fire on_change (like add/rebind) so downstream
+        caches (e.g. the sequencer's _shortcut_sequences) drop the removed key.
+
+        Regression: a destroyed transport removed its Space/Alt+Space bindings
+        but the sequencer never re-synced, leaving those keys swallowed-but-dead.
+        """
+        from uitk.widgets.mixins.shortcuts import ShortcutManager
+
+        host = self.track_widget(QtWidgets.QWidget())
+        mgr = ShortcutManager(host)
+        calls = []
+        mgr.on_change(lambda: calls.append(True))
+
+        mgr.add_shortcut("Space", lambda: None)
+        self.assertEqual(len(calls), 1)  # add notified
+
+        self.assertTrue(mgr.remove_shortcut("Space"))
+        self.assertEqual(len(calls), 2)  # remove notified too
+
+        # A no-op removal (key absent) must not notify.
+        self.assertFalse(mgr.remove_shortcut("Space"))
+        self.assertEqual(len(calls), 2)
+
 
 class TestShortcutManagerRegistry(QtBaseTestCase):
     """``ShortcutManager.get_registry`` emits the shared editor entry shape so

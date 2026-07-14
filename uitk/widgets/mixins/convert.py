@@ -41,13 +41,21 @@ class ConvertMixin:
 
     @staticmethod
     def can_convert(value, q_object_type) -> bool:
-        """Check if a value can be converted to the specified QObject type (accepts class or string)."""
+        """Check if a value can be converted to the specified QObject type (accepts class or string).
+
+        Consistent with :meth:`to_qobject` by construction: returns True iff a
+        conversion would actually succeed (so a value that ``to_qobject`` then
+        rejects — e.g. a 3-tuple for ``QSize`` — reports False here too). An
+        unknown *q_object_type* still raises, matching ``to_qobject``.
+        """
         qt_type = ConvertMixin._resolve_qtype(q_object_type)
         if isinstance(value, qt_type):
             return True
-        if qt_type is QtGui.QColor and isinstance(value, (str, tuple, list)):
+        try:
+            ConvertMixin.to_qobject(value, qt_type)
             return True
-        return qt_type in ConvertMixin.TYPES
+        except Exception:
+            return False
 
     @staticmethod
     def to_qobject(value, q_object_type):

@@ -35,11 +35,44 @@ def repolish_tree(root: QtWidgets.QWidget) -> None:
             pass  # C++ side died mid-walk
 
 
-class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
-    """Theme and stylesheet manager with light/dark theme support."""
+class _ThemeSignalBus(QtCore.QObject):
+    """Process-wide emitter backing :attr:`StyleSheet.theme_changed`.
+
+    ``theme_changed`` is connected per-instance (``ui.style.theme_changed``),
+    but the classmethod paths (``reload`` / ``set_theme`` / ``set_variable``)
+    emit from a throwaway ``StyleSheet()`` instance. Routing every instance's
+    signal to one shared bus makes those class-level emits reach subscribers
+    connected via any instance.
+    """
 
     # Signal emitted when theme changes: (widget, theme_name, theme_vars)
     theme_changed = QtCore.Signal(object, str, dict)
+
+
+class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
+    """Theme and stylesheet manager with light/dark theme support."""
+
+    # Shared theme-change emitter (see _ThemeSignalBus). Lazily instantiated
+    # on first access so importing this module never constructs a QObject.
+    _signal_bus: "Union[_ThemeSignalBus, None]" = None
+
+    @classmethod
+    def _theme_signal_bus(cls) -> "_ThemeSignalBus":
+        """Return the process-wide theme-change signal bus (creating it once)."""
+        if StyleSheet._signal_bus is None:
+            StyleSheet._signal_bus = _ThemeSignalBus()
+        return StyleSheet._signal_bus
+
+    @property
+    def theme_changed(self):
+        """Signal ``(widget, theme_name, theme_vars)`` emitted after a style applies.
+
+        Backed by a shared bus so subscribers connected to *any* instance
+        (``ui.style.theme_changed.connect(...)``) also receive the emits made
+        from the classmethod paths (``reload`` / ``set_theme`` / ``set_variable``),
+        which run on a throwaway instance.
+        """
+        return StyleSheet._theme_signal_bus().theme_changed
 
     themes = {
         "light": {
@@ -268,7 +301,6 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         StyleSheet._ensure_settings_loaded()
         super().__init__(parent)
         self.logger.setLevel(log_level)
-        self.set = self._set_style
 
     @classmethod
     def get_icon_color(cls, widget: QtWidgets.QWidget = None) -> str:
@@ -286,7 +318,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             while w is not None:
                 if w in cls._widget_themes:
                     theme_name = cls._widget_themes[w]
-                    return cls.themes.get(theme_name, {}).get("ICON_COLOR", "#888888")
+                    # Resolve through get_variable so global/widget ICON_COLOR
+                    # overrides win over the base theme value (icons created
+                    # after an override must pick it up, not the un-overridden
+                    # default).
+                    return cls.get_variable("ICON_COLOR", theme_name, w) or "#888888"
                 w = w.parent() if hasattr(w, "parent") else None
 
         # Default fallback
@@ -354,7 +390,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                     if k in theme_vars:
                         theme_vars[k] = str(v)
                 # Derive into theme_vars here — it's not emitted from this
-                # path (the slow path in _set_style handles signal emission
+                # path (the slow path in ``set`` handles signal emission
                 # with its own derivation-free dict).
                 cls._derive_internal_vars(theme_vars)
                 parts = cls._get_template(config["resource"], config["package"])
@@ -620,7 +656,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             widget.centralWidget().setProperty("class", style_class)
 
     @ptk.listify
-    def _set_style(
+    def set(
         self,
         widget: Union[QtWidgets.QWidget, None] = None,
         theme: str = "light",
@@ -750,7 +786,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                 self.logger.debug(
                     f"Recursively setting style on: {child.objectName()} ({type(child).__name__})"
                 )
-                self._set_style(
+                self.set(
                     child,
                     theme=theme,
                     recursive=False,

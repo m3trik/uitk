@@ -82,6 +82,29 @@ class TestModelBasics(unittest.TestCase):
         s.clear()
         self.assertEqual(s.values, [])
 
+    def test_add_into_full_store_drops_oldest_not_newest(self):
+        # The list is most-recent-first. Seeding an entry into a full store
+        # must drop the OLDEST (tail), never the user's most recent entries
+        # (head). Prior code sliced [-max:], discarding the most recent.
+        s = RecentValuesStore(max_recent=3)
+        s.record("a")
+        s.record("b")
+        s.record("c")  # -> ["c", "b", "a"] (c most recent)
+        self.assertEqual(s.values, ["c", "b", "a"])
+
+        s.add("seed")  # store already full; seed is a lower-priority append
+        # The most recent user entries survive; the seeded (oldest) value is
+        # dropped rather than "c".
+        self.assertEqual(s.values, ["c", "b", "a"])
+        self.assertIn("c", s.values)
+
+    def test_add_respects_max_recent_from_empty(self):
+        s = RecentValuesStore(max_recent=2)
+        s.add("a")
+        s.add("b")
+        s.add("c")  # over capacity: newest seed is trimmed (tail/oldest)
+        self.assertEqual(s.values, ["a", "b"])
+
 
 class TestNormalize(unittest.TestCase):
     def test_path_dedup_is_case_and_sep_insensitive(self):

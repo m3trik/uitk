@@ -3,6 +3,7 @@
 import contextlib
 import inspect
 import traceback
+import weakref
 from functools import wraps
 from typing import Optional, Union, Type, Callable
 from qtpy import QtWidgets, QtCore, QtGui
@@ -34,8 +35,9 @@ class Signals:
     """
 
     def __init__(self, *signals):
-        if len(signals) == 0:
-            raise ValueError("At least one signal must be specified")
+        # Zero args is a valid "opt out of auto-connection" sentinel: an empty
+        # ``signals`` tuple makes ``connect_slot`` iterate nothing, so the slot
+        # is wired manually. (Documented in SLOTS.md §5 / ARCHITECTURE.md.)
         for signal in signals:
             if not isinstance(signal, str):
                 raise TypeError(f"Signal must be a string, not {type(signal)}")
@@ -51,15 +53,21 @@ class Signals:
 
     @classmethod
     def blockSignals(cls, func):
-        """Decorator that blocks widget signals during method execution."""
+        """Decorator that blocks widget signals during method execution.
+
+        Restores the *prior* block state on exit (not an unconditional
+        unblock), so calling a decorated method from within a caller that has
+        already blocked signals does not silently re-enable them.
+        """
 
         @wraps(func)
         def wrapper(self, *args, **kwargs):
+            was_blocked = self.signalsBlocked()
             self.blockSignals(True)
             try:
                 return func(self, *args, **kwargs)
             finally:
-                self.blockSignals(False)
+                self.blockSignals(was_blocked)
 
         return wrapper
 
@@ -217,8 +225,16 @@ class SlotWrapper:
     spinner increments) coalesce into a single slot invocation.
     """
 
-    # Class-level cache: slot function id -> (param_names frozenset, wants_widget bool)
-    _sig_cache: dict = {}
+    # Class-level cache: slot FUNCTION object -> (param_names frozenset,
+    # wants_widget bool). Keyed on the underlying function (``__func__``), NOT
+    # ``id(slot)``: ``slot`` is a bound method produced fresh by ``getattr`` on
+    # every dispatch, bound methods are freelisted in CPython, and their ids are
+    # reused immediately once the transient SlotWrapper dies — so an id-keyed
+    # cache can serve a stale signature for a *different* slot (wrong/absent
+    # widget injection). A WeakKeyDictionary on the function object (which lives
+    # as long as its class) both avoids id reuse and self-evicts when the
+    # defining class is dropped.
+    _sig_cache: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
     def __init__(self, slot, widget, switchboard):
         self.slot = slot
@@ -228,16 +244,29 @@ class SlotWrapper:
         self._debounce_args = None
         self._debounce_kwargs = None
 
-        # Cache inspect.signature per slot function to avoid repeated introspection
-        slot_id = id(slot)
-        cached = SlotWrapper._sig_cache.get(slot_id)
+        # Cache inspect.signature per slot function to avoid repeated
+        # introspection. Key on the underlying function object so id reuse of
+        # transient bound methods can never surface a stale entry (see
+        # _sig_cache docstring). Callables without a __func__ (or that can't be
+        # weak-referenced) simply skip the cache rather than risk a bad key.
+        func = getattr(slot, "__func__", slot)
+        cached = None
+        try:
+            cached = SlotWrapper._sig_cache.get(func)
+        except TypeError:  # func not weak-referenceable
+            func = None
         if cached is not None:
             self.param_names, self.wants_widget = cached
         else:
             sig = inspect.signature(slot)
             self.param_names = frozenset(sig.parameters.keys())
             self.wants_widget = "widget" in self.param_names
-            SlotWrapper._sig_cache[slot_id] = (self.param_names, self.wants_widget)
+            if func is not None:
+                with contextlib.suppress(TypeError):
+                    SlotWrapper._sig_cache[func] = (
+                        self.param_names,
+                        self.wants_widget,
+                    )
 
     def _get_timeout(self):
         """Resolve the cancel-timeout for this slot, if any.
@@ -503,12 +532,13 @@ class SwitchboardSlotsMixin:
         clss = widget if isinstance(widget, type) else type(widget)
         signal_type = type(QtCore.Signal())
         for subcls in clss.mro():
-            clsname = f"{subcls.__module__}.{subcls.__name__}"
             for k, v in sorted(vars(subcls).items()):
                 if isinstance(v, signal_type):
-                    if (not derived and clsname != clss.__name__) or (
-                        exc and (clss in exc or clss.__name__ in exc)
-                    ):  # if signal is from parent class QAbstractButton and given widget is QPushButton:
+                    # derived=False keeps only signals defined on the given class
+                    # itself; exc drops signals defined on any excluded class.
+                    if (not derived and subcls is not clss) or (
+                        exc and (subcls in exc or subcls.__name__ in exc)
+                    ):
                         continue
                     signals.add(k)
         return signals

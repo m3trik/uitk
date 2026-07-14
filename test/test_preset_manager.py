@@ -1606,6 +1606,36 @@ class TestLoadPersistsSessionState(BaseTestCase):
         # The applied value is now the persisted session state, not the stale 0.
         self.assertEqual(int(self.store.value("spn_b/valueChanged")), 5)
 
+    def test_load_does_not_leak_block_signals_attribute(self):
+        """load() must not permanently stamp ``block_signals_on_restore`` onto
+        a widget that never had it (module default False) -- doing so silently
+        suppresses slot execution on every future restore."""
+        chk, spn = self._make_widgets()
+        mgr = self._mgr([chk, spn])
+        self._seed_manual_state(chk, spn)
+        self.assertFalse(hasattr(chk, "block_signals_on_restore"))
+        self.assertFalse(hasattr(spn, "block_signals_on_restore"))
+
+        mgr.load("unity_basic")
+
+        self.assertFalse(
+            hasattr(chk, "block_signals_on_restore"),
+            "load() leaked block_signals_on_restore onto a widget that never had it",
+        )
+        self.assertFalse(hasattr(spn, "block_signals_on_restore"))
+
+    def test_load_preserves_preexisting_block_signals_attribute(self):
+        """A widget that opted in keeps its own value after a load."""
+        chk, spn = self._make_widgets()
+        chk.block_signals_on_restore = True
+        mgr = self._mgr([chk, spn])
+        self._seed_manual_state(chk, spn)
+
+        mgr.load("unity_basic")
+
+        self.assertTrue(getattr(chk, "block_signals_on_restore"))
+        self.assertFalse(hasattr(spn, "block_signals_on_restore"))
+
     def test_active_template_restores_in_next_session(self):
         chk, spn = self._make_widgets()
         mgr = self._mgr([chk, spn])

@@ -542,6 +542,46 @@ class TestExternalAppHandlerLaunch(unittest.TestCase):
         pm_instance.install.assert_called_once_with("anymod")
         spawn.assert_called_once()
 
+    def test_dcc_host_interpreter_refuses_install(self):
+        """Installing into a live DCC host interpreter must raise, not hang.
+
+        Regression: launch()'s direct install path had no host check (unlike
+        _bootstrap_providers), so a launch needing a pip install would run it
+        against maya.exe / blender.exe (the interpreter of an in-process launch
+        inside a DCC) and HANG the host.
+        """
+        pm_instance = MagicMock()
+        with patch.object(
+            ExternalAppHandler, "_is_importable", return_value=False
+        ), patch("pythontk.PackageManager", return_value=pm_instance):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.handler.launch(
+                    module="somemod",
+                    entry="UI",
+                    install_spec="somemod",
+                    python="C:/Program Files/Autodesk/Maya2025/bin/maya.exe",
+                    mode="subprocess",
+                )
+        pm_instance.install.assert_not_called()
+        self.assertIn("host", str(ctx.exception).lower())
+
+    def test_non_dcc_interpreter_still_installs(self):
+        """The guard must not block a normal standalone interpreter."""
+        pm_instance = MagicMock()
+        with patch.object(
+            ExternalAppHandler, "_is_importable", side_effect=[False, True]
+        ), patch("pythontk.PackageManager", return_value=pm_instance), patch.object(
+            ExternalAppHandler, "_spawn", return_value=MagicMock()
+        ):
+            self.handler.launch(
+                module="somemod",
+                entry="UI",
+                install_spec="somemod",
+                python="C:/py/python.exe",
+                mode="subprocess",
+            )
+        pm_instance.install.assert_called_once_with("somemod")
+
     def test_missing_module_without_install_spec_raises(self):
         with patch.object(
             ExternalAppHandler, "_is_importable", return_value=False

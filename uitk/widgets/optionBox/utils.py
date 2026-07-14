@@ -85,12 +85,13 @@ class OptionBoxManager(ptk.LoggingMixin):
             )
 
         self._option_order = list(order)
-        # Clear pending options so a fresh set_order + add_option sequence
-        # doesn't accumulate duplicates from a previous setup pass.
-        self._pending_options = []
+        # Preserve every option already added. Pending (not-yet-wrapped)
+        # options stay queued and pick up the new order when wrapped; an
+        # already-wrapped box is re-sorted in place. The prior code wiped
+        # _pending_options and recreated the box from scratch — silently
+        # discarding every option that had been added before the reorder.
         if self._option_box:
-            # Recreate with new order
-            self._recreate_option_box()
+            self._option_box.set_option_order(self._option_order)
 
     def pin(
         self,
@@ -828,15 +829,31 @@ class OptionBoxManager(ptk.LoggingMixin):
 
     @menu.setter
     def menu(self, value):
-        """Set an existing menu instance.
+        """Set (or clear) the option-box menu.
+
+        Assigning a :class:`Menu` produces exactly one menu button via
+        :meth:`enable_menu`; reassigning first tears down any prior button
+        (:meth:`disable_menu`) so buttons never duplicate. Assigning ``None``
+        disables the menu entirely.
+
+        Previously this only stored ``self._menu`` and never produced a button
+        — so ``widget.option_box.menu = my_menu`` was a dead-end, and a
+        subsequent ``enable_menu`` short-circuited on the already-set ``_menu``.
 
         Args:
-            value: A Menu instance to use
+            value: A Menu instance to use, or None to disable.
         """
-        self._menu = value
-        # Don't set _action_handler - menu uses plugin system (MenuOption)
-        # which creates its own button.
-        # Don't call _update_option_box() - the menu is managed via plugins
+        from uitk.widgets.menu import Menu
+
+        # Tear down any existing menu + its button first (idempotent).
+        self.disable_menu()
+        if value is None:
+            return
+        if isinstance(value, Menu):
+            self.enable_menu(menu=value)
+        else:
+            # Non-Menu value: legacy passthrough — stored without a button.
+            self._menu = value
 
     def enable_menu(self, menu=None, **menu_kwargs):
         """Enable menu option using the MenuOption plugin.
@@ -955,13 +972,81 @@ class OptionBoxManager(ptk.LoggingMixin):
             )
         return self
 
+    def enable_option_menu(
+        self,
+        *,
+        title: Optional[str] = None,
+        items=None,
+        build_menu=None,
+        position: str = "cursorPos",
+        add_header: bool = True,
+        tooltip: str = "Options",
+        menu=None,
+    ):
+        """Add a dropdown *option menu* button (fluent interface).
+
+        Builds an :class:`OptionMenuOption` — a button that pops a ``Menu`` of
+        command rows — and adds it to the option box. Backs the
+        ``widget.options.option_menu(...)`` fluent wrapper (which previously
+        called this nonexistent method and raised ``AttributeError``).
+
+        Args:
+            title: Optional dropdown-menu title.
+            items: Iterable of ``(label, callback)`` rows; each becomes a real
+                clickable button wired to its callback.
+            build_menu: Optional ``callable(menu)`` for custom population, run
+                after ``items``.
+            position: Menu popup position (default ``"cursorPos"``).
+            add_header: Whether the dropdown ``Menu`` shows a draggable header.
+            tooltip: Button tooltip.
+            menu: Optional pre-built :class:`Menu` used verbatim.
+
+        Returns:
+            self: For fluent interface chaining.
+        """
+        from uitk.widgets.optionBox.options.option_menu import OptionMenuOption
+
+        item_list = list(items) if items else None
+        option = OptionMenuOption(
+            wrapped_widget=self._widget,
+            menu_items=item_list,
+            tooltip=tooltip,
+            position=position,
+            add_header=add_header,
+        )
+        # A caller-supplied Menu is used verbatim (bypasses lazy creation), so
+        # its rows must be added explicitly — _ensure_menu only populates
+        # menu_items when it builds the menu itself.
+        if menu is not None:
+            option._menu = menu
+            for item in item_list or []:
+                option._add_menu_item(item)
+        self.add_option(option)
+
+        # Force the (otherwise lazy) menu build only when there is something to
+        # apply beyond the static items the option already carries.
+        if title is not None or build_menu is not None:
+            built = option.menu
+            if title is not None:
+                built.setTitle(title)
+            if build_menu is not None:
+                build_menu(built)
+        return self
+
     def disable_menu(self):
-        """Disable menu option (fluent interface).
+        """Disable the menu option (fluent interface).
+
+        Removes the MenuOption button — from both the pending list and an
+        already-wrapped option box — and drops the menu reference, so a later
+        :meth:`enable_menu` (or the ``menu`` setter) rebuilds a *single* fresh
+        button instead of stacking a duplicate on top of an orphaned one.
 
         Returns:
             self: For fluent interface chaining
         """
-        # TODO: Implement menu option removal
+        from ..optionBox.options.action import MenuOption
+
+        self._remove_options(lambda o: isinstance(o, MenuOption))
         self._menu = None
         return self
 
@@ -1316,18 +1401,6 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._pending_options = []
         self._wrap_retry_scheduled = False
 
-    def _recreate_option_box(self):
-        """Recreate option box with new settings"""
-        if self._option_box and self._container:
-            clear_enabled = self._clear_enabled
-
-            # Remove existing
-            self.remove()
-
-            # Recreate
-            self._clear_enabled = clear_enabled
-            self._create_option_box()
-
     def remove(self):
         """Remove option box completely"""
         if self._option_box and self._container:
@@ -1400,7 +1473,11 @@ def add_menu_option(widget, menu, **kwargs):
     Returns:
         The container widget that should be added to layouts
     """
-    return add_option_box(widget, menu=menu, **kwargs)
+    # ``menu`` is not an OptionBox constructor argument; it configures a
+    # MenuOption plugin. Passing it straight through raised TypeError.
+    from .options.action import MenuOption
+
+    return add_option_box(widget, options=[MenuOption(menu=menu)], **kwargs)
 
 
 # -------------------------------------------------------------------------

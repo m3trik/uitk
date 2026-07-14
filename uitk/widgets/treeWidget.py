@@ -226,18 +226,28 @@ class TreeFormatMixin(ConvertMixin):
 
     def apply_formatting(self):
         """Apply formatting based on the registered formatters."""
-        iterator = QtWidgets.QTreeWidgetItemIterator(self)
-        while iterator.value():
-            item = iterator.value()
-            for col in range(self.columnCount()):
-                for fmt in self._get_formatters(item, col):
-                    fmt(
-                        item,
-                        item.data(col, QtCore.Qt.UserRole) or item.text(col),
-                        col,
-                        self,
-                    )
-            iterator += 1
+        # Block signals for the duration: formatters modify item roles
+        # (foreground/background), which fires itemChanged -> _on_item_edited
+        # -> formatters -> ... (unbounded recursion -> RecursionError when
+        # multiple/appended formatters set differing roles). Mirrors the same
+        # guard on CellFormatMixin.apply_formatting.
+        was_blocked = self.signalsBlocked()
+        self.blockSignals(True)
+        try:
+            iterator = QtWidgets.QTreeWidgetItemIterator(self)
+            while iterator.value():
+                item = iterator.value()
+                for col in range(self.columnCount()):
+                    for fmt in self._get_formatters(item, col):
+                        fmt(
+                            item,
+                            item.data(col, QtCore.Qt.UserRole) or item.text(col),
+                            col,
+                            self,
+                        )
+                iterator += 1
+        finally:
+            self.blockSignals(was_blocked)
 
     def ensure_valid_color(self, color, color_type, item, col):
         """Ensure a valid QColor, using fallback if needed."""
@@ -923,9 +933,11 @@ class TreeWidget(
                 # Set default header if none exists
                 self.setHeaderLabels(["Name"])
 
-            self.blockSignals(True)
+            # No inner block/unblock: the @Signals.blockSignals decorator
+            # already blocks for the whole method. The old inner unblock ran
+            # before set_attributes()/apply_formatting(), letting itemChanged
+            # escape during the tail of add().
             self._add_recursive(data, parent)
-            self.blockSignals(False)
 
         finally:
             self.setUpdatesEnabled(True)

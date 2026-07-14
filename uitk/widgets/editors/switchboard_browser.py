@@ -873,6 +873,12 @@ class SwitchboardBrowser(EditorPanel):
         self._model.dataChanged.connect(self._on_model_data_changed)
         self._model.rowsInserted.connect(self._defer_full_refresh)
         self._model.rowsRemoved.connect(self._defer_full_refresh)
+        # A coarse registry change re-pulls via beginResetModel/endResetModel
+        # (SwitchboardBrowserModel._refresh). A model reset drops every row's
+        # setIndexWidget Launch/Close button but emits neither rowsInserted/
+        # Removed nor proxy layoutChanged, so without this the buttons vanish
+        # and never rebuild. Rebuild them on the deferred full refresh.
+        self._model.modelReset.connect(self._defer_full_refresh)
         self._proxy.layoutChanged.connect(self._defer_full_refresh)
         self._view.selectionModel().currentChanged.connect(self._update_footer_status)
         self._refresh_chips()

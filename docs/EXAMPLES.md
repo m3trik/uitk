@@ -253,18 +253,26 @@ def _load(self, path):
 
 ## Step 7. Keyboard shortcuts
 
-```python
-def __init__(self, **kwargs):
-    self.sb = kwargs["switchboard"]
-    self.ui = self.sb.loaded_ui.editor
-    self._current_path = None
+Decorate the slot methods with `@Shortcut(...)`. When the slots are wired,
+`register_slots_shortcuts` scans the class, applies any user overrides from
+`ui.settings`, and live-binds them:
 
-    # Register shortcuts
-    self.sb.register_shortcut(self.ui, "Ctrl+O", self.btn_open)
-    self.sb.register_shortcut(self.ui, "Ctrl+S", self.btn_save)
+```python
+from uitk import Shortcut
+
+class EditorSlots:
+    @Shortcut("Ctrl+O")
+    def btn_open(self, widget):
+        ...
+
+    @Shortcut("Ctrl+S")
+    def btn_save(self, widget):
+        ...
 ```
 
-Shortcuts are scoped to the UI — they only fire when the window has focus.
+Shortcuts are scoped to the UI — they only fire when the window has focus. For
+a UI-less command (no owning widget), use `sb.register_command(...)` +
+`sb.set_command_shortcut(...)` instead.
 
 ---
 
@@ -314,7 +322,7 @@ def _on_font_size_changed(self, size):
 | Frameless window with controls | Promote `QWidget` → `Header`, call `config_buttons(...)` |
 | Named preset save/load | `widget.menu.add_presets = True` or `ui.presets.save(name)` |
 | Custom config | `sb.configurable.<ns>.<key>.set/get/.changed.connect` |
-| Keyboard shortcuts | `sb.register_shortcut(ui, key, callable)` |
+| Keyboard shortcuts | `@Shortcut("Ctrl+S")` on the slot method |
 
 ---
 

@@ -25,10 +25,15 @@ class RulerItem(QtWidgets.QGraphicsItem):
     user always sees the shot layout.
     """
 
+    _MIN_WIDTH = 100000.0  # floor; preserves prior behaviour for small scenes
+
     def __init__(self, timeline: "TimelineView"):
         super().__init__()
         self._timeline = timeline
         self._shot_blocks: list = []  # [{name, start, end, active}, ...]
+        # Horizontal extent the ruler paints across; kept in sync with the
+        # scene width by the view's ``_update_scene_rect``.
+        self._content_width = self._MIN_WIDTH
         self.setZValue(10)
 
     # -- shot block data ---------------------------------------------------
@@ -53,8 +58,27 @@ class RulerItem(QtWidgets.QGraphicsItem):
                 return blk
         return None
 
+    def set_content_width(self, width: float) -> None:
+        """Set the horizontal extent the ruler covers (scene pixels).
+
+        Called by the view's ``_update_scene_rect`` with the current scene
+        width so ticks/labels/background keep painting past the old fixed
+        cap at high zoom.  A stored value (rather than querying
+        ``scene().sceneRect()`` from :meth:`boundingRect`) avoids the
+        recursion where an unset scene rect is derived from item bounds.
+        """
+        width = max(self._MIN_WIDTH, float(width))
+        if width == self._content_width:
+            return
+        self.prepareGeometryChange()
+        self._content_width = width
+
     def boundingRect(self):
-        return QtCore.QRectF(0, 0, 100000, _RULER_HEIGHT)
+        # Width tracks the scene extent (pushed in via set_content_width) so
+        # the ruler keeps painting at high zoom; a fixed cap stopped it past
+        # frame ``width / pixels_per_unit``.  The item sits at scene x=0, so
+        # local width == scene width.
+        return QtCore.QRectF(0, 0, self._content_width, _RULER_HEIGHT)
 
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         tl = self._timeline

@@ -36,6 +36,25 @@ from uitk.widgets.optionBox.options.recent_values import (
 )
 
 
+class TestConvenienceHelpers(QtBaseTestCase):
+    """The exported convenience functions must actually work."""
+
+    def test_add_menu_option_wraps_without_error(self):
+        """add_menu_option(widget, menu) must build a MenuOption, not crash.
+
+        Regression: it forwarded menu= into OptionBox.__init__, which accepts
+        no such kwarg -> TypeError on every call.
+        """
+        from uitk.widgets.optionBox.utils import add_menu_option
+        from uitk.widgets.optionBox.options.action import MenuOption
+        from uitk.widgets.menu import Menu
+
+        button = self.track_widget(QtWidgets.QPushButton("x"))
+        menu = self.track_widget(Menu())
+        container = add_menu_option(button, menu)
+        self.assertIsNotNone(container)
+
+
 class TestOptionBoxStyling(QtBaseTestCase):
     """Regression tests for OptionBox styling and layout behavior."""
 
@@ -2494,6 +2513,172 @@ class TestOptionMenuAdoptedByHost(QtBaseTestCase):
         option._show_menu()  # must not raise
 
         self.assertIsNone(Menu.nearest_enclosing(button))
+
+
+class TestOptionMenuManagerWiring(QtBaseTestCase):
+    """OptionBoxManager menu/option-menu/order lifecycle (findings 5 & 6)."""
+
+    def _make_managed_widget(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        widget = QtWidgets.QPushButton("Test")
+        layout.addWidget(widget)
+        mgr = OptionBoxManager(widget)
+        widget._option_box_manager = mgr
+        try:
+            widget.option_box = mgr
+        except AttributeError:
+            pass
+        return widget, mgr
+
+    # ── Finding 5: option_menu wrapper / enable_option_menu ──
+    def test_option_menu_wrapper_does_not_raise(self):
+        """widget.options.option_menu(items=[...]) must work (was AttributeError:
+        enable_option_menu did not exist on OptionBoxManager)."""
+        from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
+        from uitk.widgets.optionBox.options.option_menu import OptionMenuOption
+
+        widget, mgr = self._make_managed_widget()
+        wrapper = OptionBoxMixin._OptionsWrapper(widget)
+        # Must not raise.
+        result = wrapper.option_menu(
+            items=[("A", lambda: None), ("B", lambda: None)]
+        )
+        self.assertIs(result, wrapper)  # fluent
+        self.assertIsNotNone(mgr.find_option(OptionMenuOption))
+        # Force the wrap — still no error.
+        self.assertIsNotNone(mgr.container)
+
+    def test_enable_option_menu_applies_title(self):
+        """title/build_menu force-build and customize the dropdown menu."""
+        widget, mgr = self._make_managed_widget()
+        built = {}
+        mgr.enable_option_menu(
+            title="Cmds",
+            items=[("Go", lambda: None)],
+            build_menu=lambda m: built.setdefault("menu", m),
+        )
+        from uitk.widgets.optionBox.options.option_menu import OptionMenuOption
+
+        opt = mgr.find_option(OptionMenuOption)
+        self.assertIsNotNone(opt)
+        self.track_widget(opt.menu)
+        self.assertIn("menu", built)  # build_menu ran
+        self.assertEqual(opt.menu.title(), "Cmds")
+
+    # ── Finding 6a: reorder preserves options ──
+    def test_set_order_before_wrap_preserves_options(self):
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        widget, mgr = self._make_managed_widget()
+        mgr.set_action(lambda: None, icon="play")  # pending ActionOption
+        mgr.set_order(["action", "clear"])          # reorder BEFORE wrapping
+        self.assertIsNotNone(mgr.container)          # force wrap
+        actions = [
+            o for o in mgr._option_box.get_options() if isinstance(o, ActionOption)
+        ]
+        self.assertEqual(
+            len(actions), 1, "reorder must not discard the pending action"
+        )
+
+    def test_set_order_after_wrap_preserves_options(self):
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        widget, mgr = self._make_managed_widget()
+        mgr.set_action(lambda: None, icon="play")
+        self.assertIsNotNone(mgr.container)   # wrap now
+        mgr.set_order(["action", "clear"])    # reorder the wrapped box
+        actions = [
+            o for o in mgr._option_box.get_options() if isinstance(o, ActionOption)
+        ]
+        self.assertEqual(
+            len(actions), 1, "reorder must not discard the wrapped action"
+        )
+
+    # ── Finding 6b/6c: menu enable/disable idempotency + setter ──
+    def test_disable_menu_removes_button_and_reenable_is_single(self):
+        from uitk.widgets.optionBox.options.action import MenuOption
+
+        widget, mgr = self._make_managed_widget()
+        mgr.enable_menu()                     # 1 MenuOption
+        self.assertIsNotNone(mgr.container)   # wrap
+        self.track_widget(mgr._menu)
+        self.assertEqual(self._count(mgr, MenuOption), 1)
+
+        mgr.disable_menu()
+        self.assertEqual(
+            self._count(mgr, MenuOption), 0, "disable_menu must remove the button"
+        )
+        self.assertIsNone(mgr._menu)
+
+        mgr.enable_menu()                     # re-enable
+        if mgr._menu is not None:
+            self.track_widget(mgr._menu)
+        self.assertEqual(
+            self._count(mgr, MenuOption), 1, "re-enable must not duplicate the button"
+        )
+
+    def test_menu_setter_produces_single_button(self):
+        from uitk.widgets.menu import Menu
+        from uitk.widgets.optionBox.options.action import MenuOption
+
+        widget, mgr = self._make_managed_widget()
+        m1 = self.track_widget(Menu())
+        mgr.menu = m1                          # was a dead-end (no button)
+        self.assertIsNotNone(mgr.container)    # wrap
+        self.assertEqual(self._count(mgr, MenuOption), 1)
+        self.assertIs(mgr._menu, m1)
+
+        m2 = self.track_widget(Menu())
+        mgr.menu = m2                          # reassign — still exactly one
+        self.assertEqual(self._count(mgr, MenuOption), 1)
+        self.assertIs(mgr._menu, m2)
+
+    @staticmethod
+    def _count(mgr, option_type):
+        opts = mgr._option_box.get_options() if mgr._option_box else mgr._pending_options
+        return len([o for o in opts if isinstance(o, option_type)])
+
+
+class TestClearButtonDisableSticks(QtBaseTestCase):
+    """Disabling the clear button must survive later text changes (finding 7)."""
+
+    def test_disabled_clear_stays_hidden_after_text_change(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.options.clear import ClearOption
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        le = QtWidgets.QLineEdit()
+        layout.addWidget(le)
+        mgr = OptionBoxManager(le)
+        mgr.enable_clear()
+        self.assertIsNotNone(mgr.container)
+
+        clear = next(
+            o for o in mgr._option_box.get_options() if isinstance(o, ClearOption)
+        )
+
+        # Text present → clear button shown (not explicitly hidden).
+        le.setText("hello")
+        self.assertFalse(clear.widget.isHidden())
+
+        # Disable it.
+        mgr.clear_option = False
+        self.assertTrue(clear.widget.isHidden())
+
+        # A later text change must NOT resurrect it.
+        le.setText("world")
+        self.assertTrue(
+            clear.widget.isHidden(),
+            "disabled clear button must stay hidden after a text change",
+        )
+
+        # Re-enabling restores text-driven visibility.
+        mgr.clear_option = True
+        self.assertFalse(clear.widget.isHidden())
 
 
 # -----------------------------------------------------------------------------

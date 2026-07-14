@@ -285,8 +285,7 @@ def txt_search(self, widget):
 **Solution**: `BrowseOption` plugin.
 
 ```python
-from uitk.widgets.optionBox.options.browse import BrowseOption
-from uitk.widgets.optionBox import OptionBox
+from uitk import OptionBox, BrowseOption
 
 def txt_file_path_init(self, widget):
     browse = BrowseOption(

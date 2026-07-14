@@ -186,14 +186,9 @@ def is_compiled_fresh(ui_path, py_path=None) -> bool:
     format end-to-end: the embedded hash is the single source of truth
     for whether the artifact matches its .ui source.
 
-    **mtime fast path.** When ``py_path.mtime > ui_path.mtime`` the artifact
-    is post-source and (combined with the header presence check) safe to
-    accept without rehashing the .ui. This avoids reading the full .ui
-    bytes on every freshness check — the dominant cost when scanning
-    dozens of UIs at startup (precompile_async) or on warm-cache repeats.
-    Falls back to the canonical hash compare when mtime is inconclusive
-    (equal or older), preserving correctness for filesystems with coarse
-    mtime resolution and edge cases like ``touch -t``.
+    The embedded-hash compare is the sole freshness test; there is no
+    mtime fast path (see the inline comment below for why an
+    mtime shortcut is unsound under mtime-preserving transports).
     """
     py_path = Path(py_path) if py_path else compiled_path_for(ui_path)
     if not py_path.exists():
@@ -201,11 +196,11 @@ def is_compiled_fresh(ui_path, py_path=None) -> bool:
     embedded = read_embedded_hash(py_path)
     if embedded is None:
         return False  # raw uic or hand-written: not our format
-    try:
-        if os.path.getmtime(py_path) > os.path.getmtime(ui_path):
-            return True
-    except OSError:
-        pass  # one of them vanished mid-check; fall through to canonical
+    # The embedded-hash comparison is the SOLE source of truth. An mtime fast
+    # path ("py newer than ui -> fresh") is unsound: mtime-preserving transports
+    # (cloud sync / cp -p / zip extraction) can deliver new .ui content with an
+    # OLDER timestamp than an already-compiled artifact, which the fast path
+    # would wrongly accept as fresh forever. Hashing a few-KB .ui is cheap.
     return embedded == hash_ui_source(ui_path)
 
 

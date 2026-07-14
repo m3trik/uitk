@@ -249,10 +249,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # (key, modifiers) dispatched by eventFilter, awaiting its
         # follow-up KeyPress; 0 when nothing is pending.
         self._filter_pending_key = 0
+        # (key, modifiers) dispatched by event() on a ShortcutOverride,
+        # awaiting the KeyPress Qt delivers next so keyPressEvent consumes
+        # it once instead of re-dispatching; 0 when nothing is pending.
+        self._override_pending_key = 0
         self._active_range: Optional[tuple] = None  # (start, end) in frames
         self._active_range_color = QtGui.QColor(
             90, 140, 220, 25
         )  # semi-transparent blue
+        # Route right-clicks through ``zone_context_menu_requested`` instead
+        # of the built-in default menu.  ``None`` = unset → fall back to the
+        # legacy ``_zone_menu_connected`` attribute (see ``zone_menu_enabled``).
+        self._zone_menu_enabled: Optional[bool] = None
 
         # -- sub-widgets ----------------------------------------------------
         self._header = TrackHeaderWidget()
@@ -481,13 +489,41 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
     def event(self, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.ShortcutOverride:
-            if self._match_shortcut(event) is not None:
+            match = self._match_shortcut(event)
+            if match is not None:
                 event.accept()
+                # Dispatch here instead of relying on the follow-up KeyPress
+                # bubbling back to keyPressEvent: accepting the override
+                # suppresses the QShortcut, and any intermediate focused
+                # child (e.g. a clicked track label) can swallow the KeyPress
+                # so it never reaches keyPressEvent — leaving the shortcut
+                # dead.  _override_pending_key gates the follow-up press so
+                # the action can't fire twice.
+                _seq, entry = match
+                if entry and entry.get("action"):
+                    entry["action"]()
+                mods = event.modifiers()
+                self._override_pending_key = (
+                    event.key(),
+                    mods.value if hasattr(mods, "value") else int(mods),
+                )
                 return True
         return super().event(event)
 
     def keyPressEvent(self, event):
         """Dispatch registered shortcuts when focus is on a non-timeline child."""
+        # Consume (once) the KeyPress that follows an override we already
+        # dispatched in event().  Clear on ANY press so a stale pending key
+        # — whose press never arrived because a child ate it — can't eat a
+        # later, unrelated press.
+        pending = self._override_pending_key
+        if pending:
+            self._override_pending_key = 0
+            mods = event.modifiers()
+            mod_int = mods.value if hasattr(mods, "value") else int(mods)
+            if event.key() == pending[0] and mod_int == pending[1]:
+                event.accept()
+                return
         match = self._match_shortcut(event)
         if match is not None:
             _seq, entry = match
@@ -876,12 +912,25 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         return mid
 
     def remove_marker(self, marker_id: int):
-        """Remove a marker by id."""
+        """Remove a marker by id.
+
+        Emits ``marker_removed`` only when a marker with that id actually
+        existed — a no-op remove must not fire the signal (it drove a
+        redundant store rebuild in consumers).
+
+        Note: ``add_marker`` and ``clear_markers`` are deliberately
+        signal-free populate primitives (mirroring ``set_playhead`` vs.
+        ``_move_playhead``).  User-initiated additions emit ``marker_added``
+        at their call sites; consumers that repopulate markers via
+        ``add_marker`` in a rebuild loop rely on the silence.
+        """
+        existed = marker_id in self._markers
         self._markers.pop(marker_id, None)
         item = self._marker_items.pop(marker_id, None)
         if item and item.scene():
             item.scene().removeItem(item)
-        self.marker_removed.emit(marker_id)
+        if existed:
+            self.marker_removed.emit(marker_id)
 
     def get_marker(self, marker_id: int) -> Optional[MarkerData]:
         """Return marker data, or None."""
@@ -1265,6 +1314,25 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_range_highlight = value
         if self._range_highlight is not None:
             self._range_highlight.setVisible(value)
+
+    @property
+    def zone_menu_enabled(self) -> bool:
+        """When ``True``, right-clicks emit :attr:`zone_context_menu_requested`
+        (letting the consumer present a zone-specific menu) instead of the
+        widget's built-in default context menu.
+
+        Set this ``True`` after connecting a slot to
+        ``zone_context_menu_requested``.  For backward compatibility the
+        legacy private ``_zone_menu_connected`` attribute is still honoured
+        as a fallback when this property has not been set explicitly.
+        """
+        if self._zone_menu_enabled is not None:
+            return self._zone_menu_enabled
+        return bool(getattr(self, "_zone_menu_connected", False))
+
+    @zone_menu_enabled.setter
+    def zone_menu_enabled(self, value: bool) -> None:
+        self._zone_menu_enabled = bool(value)
 
     @property
     def shift_held_at_press(self) -> bool:

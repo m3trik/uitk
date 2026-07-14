@@ -291,6 +291,17 @@ class OptionBox:
         """Get all registered option plugins."""
         return list(self._options)
 
+    def set_option_order(self, order):
+        """Update the sort order and re-lay-out existing options in place.
+
+        Only the left-to-right ordering changes — every registered option is
+        preserved. This is the non-destructive counterpart to recreating the
+        box (which would drop all options).
+        """
+        self._option_order = list(order)
+        if self.container:
+            self._rebuild_layout()
+
     # Fraction of the wrapped button's perceived side padding that the adjacent
     # option square overlaps at the seam (see _seam_overlap). The button centers
     # its text, so the padding is (authored_width - text_width) / 2 per side;
@@ -545,7 +556,20 @@ class OptionBox:
 
         for option in self._options:
             if isinstance(option, ClearOption):
-                option.widget.setVisible(value)
+                # Honor an explicit disable so it STICKS. The ClearOption's own
+                # textChanged handler (_update_visibility) re-shows the button
+                # on the next edit, so a bare setVisible(False) is undone by the
+                # very next keystroke. Gate that auto-show by toggling the
+                # option's _auto_hide (its _update_visibility early-returns when
+                # auto_hide is off), then set the final visibility: hidden while
+                # disabled, text-driven once re-enabled.
+                option._auto_hide = bool(value)
+                if value:
+                    option._update_visibility()
+                else:
+                    w = option.widget
+                    if w is not None:
+                        w.setVisible(False)
                 return
 
         # Self-heal when show_clear is enabled after wrap (e.g. `.menu.add(...)`

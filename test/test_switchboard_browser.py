@@ -1244,6 +1244,41 @@ class EntryFilterStructural(QtBaseTestCase):
         browser = self._make_browser(exc=self.MARKING_MENU_EXC)
         self.assertIs(browser.sb, self.sb)
 
+    def test_index_widgets_rebuilt_after_model_reset(self):
+        """A coarse model reset must not leave rows without their buttons.
+
+        Regression: ``SwitchboardBrowserModel._refresh`` emits a model reset
+        (begin/endResetModel) on any coarse registry change while the browser
+        is open. A reset drops every row's ``setIndexWidget`` Launch/Close
+        button, but the browser only wired ``_defer_full_refresh`` to
+        dataChanged / rowsInserted / rowsRemoved / layoutChanged — never
+        ``modelReset`` — so the buttons vanished and never rebuilt. The
+        ``_model.modelReset`` connection restores them.
+        """
+        browser = self._make_browser()
+        proxy = browser._proxy
+        self.assertGreater(proxy.rowCount(), 0, "need at least one visible row")
+
+        # Baseline: the first visible row carries action + close buttons.
+        action_idx = proxy.index(0, SwitchboardBrowserModel.COL_ACTION)
+        self.assertIsNotNone(browser._view.indexWidget(action_idx))
+
+        # Coarse registry change → beginResetModel/endResetModel. This is
+        # what an entries-changed signal drives (handler add/remove).
+        browser._model._refresh()
+        QtWidgets.QApplication.processEvents()  # let the deferred refresh run
+
+        action_idx = proxy.index(0, SwitchboardBrowserModel.COL_ACTION)
+        close_idx = proxy.index(0, SwitchboardBrowserModel.COL_CLOSE)
+        self.assertIsNotNone(
+            browser._view.indexWidget(action_idx),
+            "action/launch button missing after a model reset",
+        )
+        self.assertIsNotNone(
+            browser._view.indexWidget(close_idx),
+            "close button missing after a model reset",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

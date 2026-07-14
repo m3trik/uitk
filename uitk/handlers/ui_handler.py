@@ -147,13 +147,17 @@ class UiHandler(BaseHandler):
         base = name.split("#")[0] if "#" in name else name
         return self.sb.is_registered_ui(base)
 
-    def get(self, name: str, reload: bool = False, **kwargs):
+    def get(self, name: str, **kwargs):
         """Retrieve a standalone UI by name and apply default styling.
 
         Parameters:
             name: The name of the UI to retrieve.
-            reload: If True, forces a reload of the UI.
-            **kwargs: Additional arguments.
+            **kwargs: Accepted and ignored for call-site compatibility. The
+                underlying :meth:`Switchboard.get_ui` takes only ``name`` and no
+                UI-reload path exists, but existing consumers pass extra
+                keywords (e.g. tentacle's ``get(name, header=True)`` and the
+                marking menu's ``get(name, **kwargs)``); tolerating them here
+                keeps those call sites working rather than raising ``TypeError``.
 
         Returns:
             The UI widget with styles applied, or None if not found.
@@ -180,7 +184,7 @@ class UiHandler(BaseHandler):
         param pos: Position override. If None, checks self.config.default_position.
         """
         if isinstance(ui, str):
-            ui = self.get(ui, **kwargs)
+            ui = self.get(ui)
 
         if not ui:
             return None

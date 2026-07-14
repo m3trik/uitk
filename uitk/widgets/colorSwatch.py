@@ -15,9 +15,28 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
     def __init__(self, parent=None, color=None, settings=None, **kwargs):
         super().__init__(parent)
 
+        # Default/override color used when nothing is persisted. May be set
+        # externally AFTER construction: mayatk/blendertk Color ID build
+        # swatches from a .ui (so they get no `color=` kwarg) and then assign
+        # `button._initialColor` to seed the per-column pastel default.
+        # initializeColor() honors it as the no-settings fallback.
         self._initialColor = color
         self._settings = None
         self._keep_square = False
+
+        # Resolve a valid _color synchronously so `.color` / updateBackgroundColor
+        # work before the deferred initializeColor() runs — reading `.color`
+        # (or any repaint) before the event loop spun previously raised
+        # AttributeError, since _color was only created in that deferred call.
+        # initializeColor() still overrides this from persisted settings.
+        converted = (
+            ConvertMixin.to_qobject(color, QtGui.QColor) if color is not None else None
+        )
+        self._color = (
+            converted
+            if isinstance(converted, QtGui.QColor) and converted.isValid()
+            else QtGui.QColor(QtCore.Qt.white)
+        )
 
         # Connect the custom signal to the initialization method
         self.initializeRequested.connect(
@@ -97,55 +116,55 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
             )
             return  # Early return to avoid attempting to save without an objectName
 
+        # HexArgb (#AARRGGBB), not name() (#RRGGBB): the picker enables
+        # ShowAlphaChannel, so alpha must survive the round-trip. Legacy
+        # #RRGGBB values still load (alpha defaults to opaque).
         self.settings.setValue(
-            f"colorSwatch/{self.objectName()}/color", self._color.name()
+            f"colorSwatch/{self.objectName()}/color",
+            self._color.name(QtGui.QColor.HexArgb),
         )
 
-    def loadColor(self):
+    def loadColor(self) -> bool:
+        """Apply this swatch's persisted color, if one exists.
+
+        Returns:
+            bool: True if a saved value was found and applied; False otherwise
+                (so initializeColor can fall back to _initialColor).
+        """
         if self.settings is None:
-            return
+            return False
 
         if not self.objectName():
             warnings.warn(
                 "Attempting to load settings for a ColorSwatch widget without an objectName set.",
                 RuntimeWarning,
             )
-            return  # Early return to avoid attempting to load without an objectName
+            return False  # Early return to avoid attempting to load without an objectName
 
         colorValue = self.settings.value(f"colorSwatch/{self.objectName()}/color", None)
 
-        # Nothing persisted yet — leave _color unset so initializeColor's
-        # fallback path picks up _initialColor instead of clobbering it.
+        # Nothing persisted yet — let initializeColor apply the _initialColor
+        # fallback (or keep the color resolved synchronously in __init__).
         if colorValue is None:
-            return
+            return False
 
         self.color = colorValue
+        return True
 
     def canSaveLoadColor(self):
         """Check if the widget is in a state that allows saving or loading the color."""
         return self.settings is not None and self.objectName()
 
     def initializeColor(self):
-        self.loadColor()
-
-        if (
-            not hasattr(self, "_color")
-            or not isinstance(self._color, QtGui.QColor)
-            or not self._color.isValid()
-        ):
-            # Resolve the initial color (fallback to white if None)
-            target_color = (
-                self._initialColor
-                if self._initialColor is not None
-                else QtGui.QColor(QtCore.Qt.white)
-            )
-
-            # Manually convert to QColor to avoid triggering the property setter's signal emission
-            converted_color = ConvertMixin.to_qobject(target_color, QtGui.QColor)
-            if converted_color and isinstance(converted_color, QtGui.QColor):
-                self._color = converted_color
-            else:
-                self._color = QtGui.QColor(QtCore.Qt.white)
+        # _color is resolved synchronously in __init__; loadColor overrides it
+        # from persisted settings when present. With nothing persisted, honor
+        # _initialColor — which may have been set externally after construction
+        # (the mayatk/blendertk Color ID pastel defaults) — instead of leaving
+        # the __init__ white fallback in place.
+        if not self.loadColor() and self._initialColor is not None:
+            converted = ConvertMixin.to_qobject(self._initialColor, QtGui.QColor)
+            if isinstance(converted, QtGui.QColor) and converted.isValid():
+                self._color = converted
 
         # Update UI without emitting signal
         self.updateBackgroundColor()

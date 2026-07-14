@@ -948,6 +948,90 @@ class TestHeaderIconMethods(QtBaseTestCase):
         self.assertIsInstance(icon, QtGui.QIcon)
 
 
+def _delete_cpp(obj):
+    """Delete a widget's underlying C++ object so its Python wrapper goes stale.
+
+    Simulates a window destroyed out from under the class-level registry:
+    Qt-method access on the wrapper then raises RuntimeError, while plain Python
+    attributes (e.g. ``_minimized``) still read off the surviving wrapper.
+    """
+    for modname in ("shiboken6", "shiboken2"):
+        try:
+            shiboken = __import__(modname)
+        except ImportError:
+            continue
+        shiboken.delete(obj)
+        return
+    try:  # PyQt fallback
+        import sip
+
+        sip.delete(obj)
+        return
+    except ImportError:
+        pass
+    # Last resort: deferred-delete + flush.
+    obj.deleteLater()
+    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+
+class TestHeaderMinimizedRegistryPruning(QtBaseTestCase):
+    """Regression: a destroyed header lingering in ``_minimized_headers`` must
+    not break the restore of a live minimized window.
+
+    Bug: ``_minimized_headers`` held strong references. A window destroyed
+    while minimized never runs ``restore_window``, so its Header stayed in the
+    registry with a dangling C++ object. Restoring any *other* minimized window
+    calls ``_reflow_minimized``, which walked the registry and called
+    ``header.window()`` on the dead entry — ``RuntimeError: Internal C++ object
+    (Header) already deleted``. Fix: ``_reflow_minimized`` drops entries that
+    raise (or are no longer minimized).
+    """
+
+    def setUp(self):
+        super().setUp()
+        Header._minimized_headers.clear()
+
+    def tearDown(self):
+        Header._minimized_headers.clear()
+        super().tearDown()
+
+    def _registered_header(self):
+        """A Header on a real window, manually registered as minimized."""
+        window = self.track_widget(QtWidgets.QMainWindow())
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+        header = Header(parent=central)
+        header._minimized = True
+        Header._minimized_headers.append(header)
+        return window, header
+
+    def test_dead_header_in_registry_does_not_break_restore(self):
+        # A live minimized header, and a dead one that was never restored.
+        _, live_header = self._registered_header()
+        _, dead_header = self._registered_header()
+        _delete_cpp(dead_header)
+        self.assertIn(dead_header, Header._minimized_headers)
+
+        # Restoring the live header triggers _reflow_minimized over the registry
+        # (which still contains the dead entry). Pre-fix this raised RuntimeError.
+        live_header.restore_window()
+
+        # The dead entry is pruned; the live one was removed on its own restore.
+        self.assertNotIn(dead_header, Header._minimized_headers)
+        self.assertNotIn(live_header, Header._minimized_headers)
+
+    def test_reflow_prunes_dead_entries(self):
+        """_reflow_minimized alone drops dead entries without raising."""
+        _, live_header = self._registered_header()
+        _, dead_header = self._registered_header()
+        _delete_cpp(dead_header)
+
+        Header._reflow_minimized()  # must not raise
+
+        self.assertIn(live_header, Header._minimized_headers)
+        self.assertNotIn(dead_header, Header._minimized_headers)
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

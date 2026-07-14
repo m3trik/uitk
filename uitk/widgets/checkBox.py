@@ -130,19 +130,15 @@ class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOv
         Note:
             Other mouse events are passed to the parent class.
         """
-        # if event.button() == QtCore.Qt.RightButton:
-        #     if self.menu:
-        #         self.menu.show()
-
-        if self.isTristate():
-            # The next_state dictionary defines the order in which states should be cycled.
-            next_state = {
-                QtCore.Qt.CheckState.Unchecked: QtCore.Qt.CheckState.PartiallyChecked,
-                QtCore.Qt.CheckState.PartiallyChecked: QtCore.Qt.CheckState.Checked,
-                QtCore.Qt.CheckState.Checked: QtCore.Qt.CheckState.Unchecked,
-            }
-            # Change the checkbox's state.
-            self.setCheckState(next_state[self.checkState()])
+        # Only a left click cycles the state; every other button (e.g. a
+        # right-click for a context menu) must reach the base handler. The
+        # tristate cycle works in the class's own integer domain — checkState()
+        # returns 0/1/2 and setCheckState() accepts 0/1/2 — so it never indexes
+        # a Qt.CheckState-keyed table with an int (which raised KeyError on
+        # PySide6, where Qt.CheckState members no longer compare equal to ints).
+        if self.isTristate() and event.button() == QtCore.Qt.LeftButton:
+            # Cycle: unchecked -> partially checked -> checked -> unchecked.
+            self.setCheckState((self.checkState() + 1) % 3)
         else:
             super().mousePressEvent(event)
 

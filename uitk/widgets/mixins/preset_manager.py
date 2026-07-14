@@ -793,14 +793,28 @@ class PresetManager(ptk.LoggingMixin):
                         )
                         continue
 
-                    original_block = getattr(widget, "block_signals_on_restore", True)
+                    # Mirror StateManager.reset_all: default False (the
+                    # module-wide default) and restore-or-remove the attribute
+                    # so a load never permanently stamps ``block_signals_on_restore``
+                    # onto a widget that never had it (which would silently
+                    # suppress slot execution on every future restore).
+                    had_attr = hasattr(widget, "block_signals_on_restore")
+                    original_block = getattr(
+                        widget, "block_signals_on_restore", False
+                    )
                     widget.block_signals_on_restore = block_signals
                     try:
                         self.state.apply(widget, value)
                         applied += 1
                         applied_widgets.append(widget)
                     finally:
-                        widget.block_signals_on_restore = original_block
+                        if had_attr:
+                            widget.block_signals_on_restore = original_block
+                        else:
+                            try:
+                                del widget.block_signals_on_restore
+                            except AttributeError:
+                                widget.block_signals_on_restore = original_block
             # Persist outside the suppression so the loaded preset survives to
             # the next session (one write per widget of its final applied value).
             for widget in applied_widgets:

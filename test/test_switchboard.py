@@ -91,6 +91,46 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
         self.assertIsNone(result)
 
 
+class TestSlotWrapperSignatureCache(QtBaseTestCase):
+    """The signature cache must key on the function, not id() of a bound method.
+
+    Regression: keying on id(slot) let CPython's freed-bound-method id reuse
+    serve a stale (param_names, wants_widget) entry for a *different* slot,
+    corrupting widget injection intermittently. Keying on __func__ (a
+    WeakKeyDictionary) resolves each slot's signature correctly and stores the
+    function object as the key.
+    """
+
+    def test_wants_widget_resolved_per_function(self):
+        from uitk.switchboard.slots import SlotWrapper
+
+        class Slots:
+            def with_widget(self, widget):
+                pass
+
+            def no_widget(self):
+                pass
+
+        s = Slots()
+        w1 = SlotWrapper(s.with_widget, None, None)
+        w2 = SlotWrapper(s.no_widget, None, None)
+        self.assertTrue(w1.wants_widget)
+        self.assertFalse(w2.wants_widget)
+
+    def test_cache_keyed_by_function_object(self):
+        from uitk.switchboard.slots import SlotWrapper
+
+        class Slots:
+            def do_it(self, widget):
+                pass
+
+        s = Slots()
+        SlotWrapper(s.do_it, None, None)
+        # The underlying function (shared across instances/bindings) is the key,
+        # never an int id — so a reused bound-method id cannot collide.
+        self.assertIn(Slots.do_it, SlotWrapper._sig_cache)
+
+
 class TestSwitchboardWidgetState(QtBaseTestCase):
     """Tests for Switchboard widget state storage and restoration."""
 
@@ -336,6 +376,21 @@ class TestSwitchboardTagManagement(QtBaseTestCase):
         self.assertIn("unknown", result)
         self.assertNotIn("known", result)
 
+    def test_get_unknown_tags_known_prefix_of_unknown(self):
+        """A known tag that is a prefix of an unknown one must not suppress it."""
+        result = self.sb.get_unknown_tags("menu#submenu", ["sub"])
+        self.assertEqual(result, ["submenu"])
+
+    def test_get_unknown_tags_preserves_underscores(self):
+        """Underscore tags must not be truncated at the underscore."""
+        result = self.sb.get_unknown_tags("menu#my_tag", ["other"])
+        self.assertEqual(result, ["my_tag"])
+
+    def test_get_unknown_tags_empty_known_list(self):
+        """An empty known list means every tag is unknown."""
+        result = self.sb.get_unknown_tags("menu#foo#bar", [])
+        self.assertEqual(result, ["foo", "bar"])
+
 
 class TestSwitchboardHasTags(QtBaseTestCase):
     """Tests for SwitchboardNameMixin has_tags method."""
@@ -452,6 +507,29 @@ class TestSwitchboardAvailableSignals(QtBaseTestCase):
         # Should still be a set, just potentially smaller
         self.assertIsInstance(signals, set)
 
+    def test_get_available_signals_derived_false_returns_own_signals(self):
+        """derived=False returns the class's OWN signals, not an empty set."""
+        own = self.sb.get_available_signals(QtWidgets.QComboBox, derived=False)
+        allsig = self.sb.get_available_signals(QtWidgets.QComboBox, derived=True)
+        self.assertTrue(own, "derived=False must not be empty")
+        self.assertTrue(own <= allsig)
+        # A QObject-inherited signal is present with derived=True but excluded
+        # from the class's own signals.
+        self.assertIn("destroyed", allsig)
+        self.assertNotIn("destroyed", own)
+
+    def test_get_available_signals_exc_excludes_parent_class(self):
+        """exc must exclude signals defined on an excluded parent class."""
+        result = self.sb.get_available_signals(
+            QtWidgets.QComboBox, exc=[QtCore.QObject]
+        )
+        self.assertNotIn("destroyed", result)  # QObject signal excluded
+        self.assertIn("currentIndexChanged", result)  # own signal kept
+
+    def test_set_widget_attrs_removed(self):
+        """The dead/broken set_widget_attrs helper must no longer exist."""
+        self.assertFalse(hasattr(self.sb, "set_widget_attrs"))
+
 
 class TestSwitchboardSlotHistory(QtBaseTestCase):
     """Tests for SwitchboardSlotsMixin slot history."""
@@ -539,6 +617,58 @@ class TestSwitchboardUnpackNames(unittest.TestCase):
         """Should handle shorthand number references."""
         result = Switchboard.unpack_names("chk000, 1, 2")
         self.assertEqual(result, ["chk000", "chk001", "chk002"])
+
+    def test_unpack_name_without_digits_passthrough(self):
+        """A name with no numeric token passes through verbatim (was dropped)."""
+        self.assertEqual(Switchboard.unpack_names("grp_basic"), ["grp_basic"])
+        self.assertEqual(
+            Switchboard.unpack_names("chk000-1, grp_basic"),
+            ["chk000", "chk001", "grp_basic"],
+        )
+
+    def test_unpack_range_derives_pad_width_from_source(self):
+        """Zero-pad width comes from the source token, not a hard-coded 3."""
+        self.assertEqual(
+            Switchboard.unpack_names("chk0001-3"),
+            ["chk0001", "chk0002", "chk0003"],
+        )
+
+
+class TestSwitchboardFileDialog(unittest.TestCase):
+    """Tests for SwitchboardUtilsMixin.file_dialog selection mode."""
+
+    def _patched(self):
+        from uitk.switchboard import utils
+
+        patcher = mock.patch.object(utils.QtWidgets, "QFileDialog")
+        MockFD = patcher.start()
+        self.addCleanup(patcher.stop)
+        MockFD.getOpenFileName.return_value = ("/a.png", "")
+        MockFD.getOpenFileNames.return_value = (["/a.png", "/b.png"], "")
+        return MockFD
+
+    def test_single_uses_get_open_file_name(self):
+        """allow_multiple=False must use getOpenFileName and return a bare str."""
+        MockFD = self._patched()
+        result = Switchboard.file_dialog(allow_multiple=False)
+        self.assertEqual(result, "/a.png")
+        MockFD.getOpenFileName.assert_called_once()
+        MockFD.getOpenFileNames.assert_not_called()
+
+    def test_multiple_uses_get_open_file_names(self):
+        """allow_multiple=True returns the full list via getOpenFileNames."""
+        MockFD = self._patched()
+        result = Switchboard.file_dialog(allow_multiple=True)
+        self.assertEqual(result, ["/a.png", "/b.png"])
+        MockFD.getOpenFileNames.assert_called_once()
+        MockFD.getOpenFileName.assert_not_called()
+
+    def test_does_not_set_read_only_option(self):
+        """The ReadOnly option must not be OR'd into the dialog options."""
+        MockFD = self._patched()
+        Switchboard.file_dialog(allow_multiple=True)
+        # Options() is created but never combined with ReadOnly.
+        MockFD.Options.return_value.__ior__.assert_not_called()
 
 
 class TestSwitchboardCenterWidget(QtBaseTestCase):
@@ -1298,8 +1428,8 @@ class TestSwitchboardEdgeCasesSlotHistory(QtBaseTestCase):
         history = self.sb.slot_history()
         if len(history) == 0:
             result = self.sb.slot_history(index=999)
-            # Returns empty list when index out of range
-            self.assertEqual(result, [])
+            # Out-of-range single-int index returns None (prev_slot contract).
+            self.assertIsNone(result)
 
     def test_slot_history_remove_nonexistent(self):
         """Should handle removing non-existent item."""

@@ -172,6 +172,13 @@ widget.restore_state = False              # in *_init
 widget.block_signals_on_restore = True    # restore silently
 ```
 
+Combo boxes persist their selection **by index** by default. For a combo whose
+items are rebuilt each session (dynamic contents), the stored index can select
+the wrong item — restore by the item's identity instead:
+```python
+combo.restore_by = "text"   # match the saved item by display text (or "data")
+```
+
 Per-UI opt-out:
 ```python
 ui.restore_widget_states = False

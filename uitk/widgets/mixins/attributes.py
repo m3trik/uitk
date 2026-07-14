@@ -123,6 +123,14 @@ class AttributesMixin:
 
     def _set_attribute_or_call_method(self, obj, attr, value):
         """Set an attribute or call a method on the object."""
+        # ``setCheckState`` is a Qt enum setter: under PySide6 the native
+        # method rejects a raw int (``Qt.CheckState`` expected), so route it
+        # through the int -> Qt.CheckState mapping in ``_set_custom_attribute``
+        # instead of calling ``obj.setCheckState(<int>)`` directly (which would
+        # raise an uncaught TypeError below).
+        if attr == "setCheckState":
+            self._set_custom_attribute(obj, attr, value)
+            return
         try:
             attr_value = getattr(QtCore.Qt, attr)
             obj.setAttribute(attr_value, value)
@@ -216,12 +224,15 @@ class AttributesMixin:
                     self._set_spinbox_by_value(w, value)
 
             elif attr == "setCheckState":
+                # Map an int 0/1/2 to the Qt.CheckState enum (PySide6 rejects a
+                # raw int here). A value that is already a Qt.CheckState (or any
+                # non-int) is passed through unchanged.
                 state = {
                     0: QtCore.Qt.CheckState.Unchecked,
                     1: QtCore.Qt.CheckState.PartiallyChecked,
                     2: QtCore.Qt.CheckState.Checked,
                 }
-                w.setCheckState(state[value])
+                w.setCheckState(state[value] if isinstance(value, int) else value)
 
             # Fallback: directly set any custom attribute. A name that looks
             # like an intended Qt setter ("set_*" / "setX...") landing here is

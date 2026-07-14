@@ -672,12 +672,18 @@ class RichText:
                 (str) the widget's or the label's sizeHint.
         """
         if self.has_rich_text:
-            return self._richTextSizeHintDict[index]
+            # ``has_rich_text`` is set by ``_createRichTextLabel`` (reachable
+            # via ``setAlignment`` / ``getRichTextLabel`` with no ``setRichText``
+            # call), so the size dict may not hold this index yet. Route through
+            # the lazy property and fall back to the base sizeHint when absent
+            # rather than raising AttributeError/KeyError.
+            size = self.richTextSizeHintDict.get(index)
+            if size is not None:
+                return size
 
-        else:
-            return self.__class__.__base__.sizeHint(
-                self
-            )  # return standard widget sizeHint
+        return self.__class__.__base__.sizeHint(
+            self
+        )  # return standard widget sizeHint
 
     def _createRichTextLabel(self, index):
         """Return a translucent rich-text QLabel inside a QHBoxLayout."""
