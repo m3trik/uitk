@@ -497,7 +497,7 @@ _Generated: 2026-07-14_
 
 ### `widgets/region.py`
 - `class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin)`
-  - methods: visible_on_mouse_over, hide_top_level_children, show_top_level_children, showEvent, resizeEvent, enterEvent, leaveEvent, hideEvent, childEvent
+  - methods: visible_on_mouse_over, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
 
 ### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
 - `default_rules() -> List[ScriptHighlightRule]`

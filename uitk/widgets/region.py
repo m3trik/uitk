@@ -41,13 +41,14 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
         self.resize(size)
         self.setGeometry(self.rect())
 
-        # Shape of the widget's hit-test mask. Applying the region as a mask
-        # (here, and again on show/resize) is what makes enter/leave + on_enter
-        # fire on the documented shape (e.g. an ellipse) instead of the full
-        # bounding rectangle — previously the region was computed but never
-        # applied, so hit-testing always used the rectangle.
-        self._shape = shape
-        self._apply_region_mask()
+        # Create a QRegion with the specified shape. NOTE: this is computed but
+        # deliberately NOT applied as a widget mask. Applying it (via setMask in
+        # __init__/showEvent/resizeEvent) SIGSEGVs a top-level Region during
+        # teardown under the headless offscreen QPA on PySide6 6.10.x, crashing
+        # CI mid-suite. The shaped hit-test mask is deferred until that can be
+        # applied without the offscreen teardown crash (see CHANGELOG 2026-07-14).
+        rect = QtCore.QRect(0, 0, size.width(), size.height())
+        self.region = QtGui.QRegion(rect, shape)
 
         self.visible_on_mouse_over = visible_on_mouse_over
 
@@ -111,24 +112,6 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
         for child in self.children():
             if isinstance(child, QtWidgets.QWidget):
                 child.show()
-
-    def _apply_region_mask(self):
-        """Rebuild the shaped QRegion for the current size and apply it as the
-        widget's mask, so hit-testing (enter/leave, on_enter) matches the
-        documented shape rather than the bounding rectangle."""
-        rect = QtCore.QRect(0, 0, self.width(), self.height())
-        self.region = QtGui.QRegion(rect, self._shape)
-        self.setMask(self.region)
-
-    def showEvent(self, event):
-        """Re-apply the shaped mask on show (size may have changed while hidden)."""
-        self._apply_region_mask()
-        super().showEvent(event)
-
-    def resizeEvent(self, event):
-        """Keep the shaped mask in sync with the widget's size."""
-        self._apply_region_mask()
-        super().resizeEvent(event)
 
     def enterEvent(self, event):
         """Overrides the QWidget.enterEvent method. Emits the on_enter signal when
