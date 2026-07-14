@@ -10745,7 +10745,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Re-apply the shaped mask on show (size may have changed while hidden).",
-              "line": 123,
+              "line": 132,
               "deprecated": false
             },
             {
@@ -10754,7 +10754,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Keep the shaped mask in sync with the widget's size.",
-              "line": 128,
+              "line": 137,
               "deprecated": false
             },
             {
@@ -10763,7 +10763,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.enterEvent method.",
-              "line": 133,
+              "line": 142,
               "deprecated": false
             },
             {
@@ -10772,7 +10772,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.leaveEvent method.",
-              "line": 147,
+              "line": 156,
               "deprecated": false
             },
             {
@@ -10781,7 +10781,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.hideEvent method.",
-              "line": 161,
+              "line": 170,
               "deprecated": false
             },
             {
@@ -10790,7 +10790,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Overrides the QWidget.childEvent method.",
-              "line": 173,
+              "line": 182,
               "deprecated": false
             }
           ]

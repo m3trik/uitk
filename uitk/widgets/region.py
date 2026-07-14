@@ -115,10 +115,19 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
     def _apply_region_mask(self):
         """Rebuild the shaped QRegion for the current size and apply it as the
         widget's mask, so hit-testing (enter/leave, on_enter) matches the
-        documented shape rather than the bounding rectangle."""
+        documented shape rather than the bounding rectangle.
+
+        The headless ``offscreen`` QPA plugin (test/CI runners) mishandles
+        ``setMask`` on PySide6 6.10.x: a masked widget SIGSEGVs during teardown,
+        crashing the run mid-suite. The shaped mask is a real-display
+        hit-testing feature, so under ``offscreen`` we still expose
+        ``self.region`` but skip the platform ``setMask`` call — consistent with
+        the suite's other offscreen carve-outs (e.g. the ignored
+        marking_menu_integration tests)."""
         rect = QtCore.QRect(0, 0, self.width(), self.height())
         self.region = QtGui.QRegion(rect, self._shape)
-        self.setMask(self.region)
+        if QtWidgets.QApplication.platformName() != "offscreen":
+            self.setMask(self.region)
 
     def showEvent(self, event):
         """Re-apply the shaped mask on show (size may have changed while hidden)."""

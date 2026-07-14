@@ -17,6 +17,7 @@ fired twice per enter/leave).
 Fix: the setter tracks ``_mouse_over_connected`` and connects/disconnects
 only on a real state change.
 """
+import os
 import unittest
 import warnings
 
@@ -24,6 +25,13 @@ from qtpy import QtWidgets, QtCore, QtGui
 
 from conftest import QtBaseTestCase
 from uitk.widgets.region import Region
+
+# The offscreen QPA plugin used by the headless test/CI runners mishandles
+# setMask on PySide6 6.10.x (a masked widget SIGSEGVs during teardown), so
+# Region skips the platform mask there — mask() is empty and these assertions
+# can't hold. Skip on offscreen; they exercise real hit-testing shape on a
+# real display.
+_OFFSCREEN_QPA = os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen"
 
 
 class TestRegionMouseOverConnections(QtBaseTestCase):
@@ -78,6 +86,11 @@ class TestRegionMouseOverConnections(QtBaseTestCase):
         self.assertFalse(child.isVisible(), "enter is inert after opt-out")
 
 
+@unittest.skipIf(
+    _OFFSCREEN_QPA,
+    "offscreen QPA mishandles setMask on PySide6 6.10.x (masked-widget SIGSEGV "
+    "mid-run); Region skips the platform mask there, so mask() is empty",
+)
 class TestRegionShapeMask(QtBaseTestCase):
     """Regression: the ``shape`` region must be applied as a widget mask.
 
