@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Backstop: a hung test step used to run to GitHub's 6h job cap with no
+    # output (see the streamed tee + per-test --timeout below). Cap the job so a
+    # hang fails in minutes, not hours.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +34,7 @@ jobs:
           # in test_switchboard_browser.py crashes inside menu.py eventFilter
           # when chip buttons are deleteLater()'d during processEvents()).
           # 6.10.x is the last stable line on the headless runner.
-          pip install pytest qtpy 'PySide6<6.11'
+          pip install pytest pytest-timeout qtpy 'PySide6<6.11'
           # --no-cache-dir + --upgrade forces a fresh resolution from PyPI for
           # in-house deps. Without this, pip's wheel cache can return a stale
           # pythontk that lacks newly-shipped APIs (the canonical-module-path
@@ -61,10 +65,15 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           set +e
-          OUTPUT=$(pytest --tb=short -v test/ \
-            --ignore=test/test_marking_menu_integration.py 2>&1)
-          RC=$?
-          echo "$OUTPUT"
+          # Stream via tee (not $(...) capture): a hang used to show NOTHING in
+          # the log because output was buffered until pytest returned. With -v,
+          # the last streamed line is the test that hung. --timeout dumps that
+          # test's thread stacks and force-exits rather than hanging to the 6h
+          # cap; 300s is far above any real per-test cost (full suite ~17m).
+          pytest --tb=short -v --timeout=300 --timeout-method=thread test/ \
+            --ignore=test/test_marking_menu_integration.py 2>&1 | tee pytest_out.txt
+          RC=${PIPESTATUS[0]}
+          OUTPUT=$(cat pytest_out.txt)
           FAILED=$(echo "$OUTPUT" | grep -oP '\d+(?= failed)' | head -1 || echo "0")
           PASSED=$(echo "$OUTPUT" | grep -oP '\d+(?= passed)' | head -1 || echo "0")
           FAILED=${FAILED:-0}
