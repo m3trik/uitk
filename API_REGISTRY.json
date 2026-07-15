@@ -99,12 +99,22 @@
     {
       "relpath": "bridge/slots.py",
       "summary": "Generic DCC-bridge slot base class.",
-      "functions": [],
+      "functions": [
+        {
+          "name": "ensure_bridge_temp_dir",
+          "qualname": "ensure_bridge_temp_dir",
+          "kind": "function",
+          "signature": "(tag: str) -> str",
+          "summary": "Create (once per host process) and return a temp Output Dir for *tag*.",
+          "line": 86,
+          "deprecated": false
+        }
+      ],
       "classes": [
         {
           "name": "BridgeSlotsBase",
           "summary": "Base class for DCC-bridge slot panels.",
-          "line": 77,
+          "line": 111,
           "bases": [],
           "members": [
             {
@@ -113,7 +123,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 176,
+              "line": 221,
               "deprecated": false
             },
             {
@@ -122,7 +132,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "",
-              "line": 180,
+              "line": 225,
               "deprecated": false
             },
             {
@@ -131,7 +141,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return a fresh bridge instance.",
-              "line": 183,
+              "line": 228,
               "deprecated": false
             },
             {
@@ -140,7 +150,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hook: return a :class:`pythontk.PresetStore` to switch presets into",
-              "line": 187,
+              "line": 232,
               "deprecated": false
             },
             {
@@ -149,7 +159,7 @@
               "kind": "method",
               "signature": "(self) -> List[Tuple[str, str]]",
               "summary": "",
-              "line": 205,
+              "line": 250,
               "deprecated": false
             },
             {
@@ -158,7 +168,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Implement the per-bridge send action.",
-              "line": 208,
+              "line": 253,
               "deprecated": false
             },
             {
@@ -167,7 +177,7 @@
               "kind": "method",
               "signature": "(self, pairs: List[Tuple[str, str]]) -> int",
               "summary": "Return the index of the preferred initial entry in *pairs*.",
-              "line": 212,
+              "line": 257,
               "deprecated": false
             },
             {
@@ -176,7 +186,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: fallback path when the user leaves Output Dir blank.",
-              "line": 220,
+              "line": 265,
               "deprecated": false
             },
             {
@@ -185,7 +195,7 @@
               "kind": "method",
               "signature": "(self, template_path: Path) -> Optional[str]",
               "summary": "Hook: extract a brief description from a template file.",
-              "line": 229,
+              "line": 274,
               "deprecated": false
             },
             {
@@ -194,7 +204,7 @@
               "kind": "method",
               "signature": "(self, spec: AttributeSpec) -> str",
               "summary": "Hook: build the rich-text tooltip for one parameter spec.",
-              "line": 233,
+              "line": 278,
               "deprecated": false
             },
             {
@@ -203,7 +213,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-instantiated bridge (caches a single instance per slot).",
-              "line": 277,
+              "line": 322,
               "deprecated": false
             },
             {
@@ -212,7 +222,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Return the current Output Dir text trimmed of whitespace.",
-              "line": 401,
+              "line": 446,
               "deprecated": false
             },
             {
@@ -221,7 +231,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[str]",
               "summary": "Return the Output Dir or log an error on empty.",
-              "line": 411,
+              "line": 456,
               "deprecated": false
             },
             {
@@ -230,7 +240,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Any]",
               "summary": "Snapshot every widget's current value, regardless of visibility.",
-              "line": 520,
+              "line": 583,
               "deprecated": false
             },
             {
@@ -239,7 +249,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Switchboard hook: populate the template combobox + wire change handler.",
-              "line": 715,
+              "line": 778,
               "deprecated": false
             },
             {
@@ -248,7 +258,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-scan disk and rebuild the template combo + parameter UI.",
-              "line": 736,
+              "line": 799,
               "deprecated": false
             },
             {
@@ -257,7 +267,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, str, str, str], ...]",
               "summary": "Hook: the header-menu items.",
-              "line": 863,
+              "line": 926,
               "deprecated": false
             },
             {
@@ -266,7 +276,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[Dict[str, Any]]",
               "summary": "Hook: the ``fmt()`` keyword dict for the header help, or ``None``.",
-              "line": 867,
+              "line": 930,
               "deprecated": false
             },
             {
@@ -275,7 +285,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Default header menu: a \"Utilities\" separator, the declared",
-              "line": 874,
+              "line": 937,
               "deprecated": false
             },
             {
@@ -284,7 +294,7 @@
               "kind": "method",
               "signature": "(self, path) -> bool",
               "summary": "Open *path* in the OS file manager (logs + returns False if missing).",
-              "line": 900,
+              "line": 963,
               "deprecated": false
             },
             {
@@ -293,7 +303,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Reveal :attr:`template_dir` in the OS file manager.",
-              "line": 916,
+              "line": 979,
               "deprecated": false
             },
             {
@@ -302,7 +312,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear the log panel (wired by subclass header menus).",
-              "line": 920,
+              "line": 983,
               "deprecated": false
             }
           ]

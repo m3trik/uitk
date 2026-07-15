@@ -31,9 +31,12 @@ the registry knows about.
 """
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -67,6 +70,37 @@ def _open_in_file_manager(path: str) -> None:
         subprocess.Popen(["open", path])
     else:
         subprocess.Popen(["xdg-open", path])
+
+
+# One temp Output Dir per bridge tag per host process, removed when the process exits.
+_BRIDGE_TEMP_DIRS: Dict[str, str] = {}
+
+
+def _remove_bridge_temp_dir(key: str) -> None:
+    """atexit handler: remove the temp Output Dir created for *key* (best-effort)."""
+    path = _BRIDGE_TEMP_DIRS.pop(key, None)
+    if path:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def ensure_bridge_temp_dir(tag: str) -> str:
+    """Create (once per host process) and return a temp Output Dir for *tag*.
+
+    Backs :attr:`BridgeSlotsBase.TEMP_OUTPUT_FALLBACK`: the last-resort Output Dir when neither the
+    user's value nor the DCC scene/workspace default resolves (e.g. an unsaved scene with no
+    workspace), so a hand-off bridge can still export without forcing the user to pick a path. The
+    directory is registered for cleanup at process exit — it lives for the whole session (long
+    enough for the launched external app to read the exported files) and is then removed. Reused
+    across sends for the same *tag* (keyed by tag; the PID keeps concurrent DCCs from colliding on
+    a shared temp path)."""
+    key = tag or "bridge"
+    path = _BRIDGE_TEMP_DIRS.get(key)
+    if path is None:
+        path = os.path.join(tempfile.gettempdir(), "uitk_bridge", f"{key}_{os.getpid()}")
+        os.makedirs(path, exist_ok=True)
+        _BRIDGE_TEMP_DIRS[key] = path
+        atexit.register(_remove_bridge_temp_dir, key)
+    return path
 
 
 # ----------------------------------------------------------------------
@@ -120,6 +154,17 @@ class BridgeSlotsBase:
     # and ``require_output_dir()`` returns ``""`` so subclasses can call
     # it unconditionally without a None guard.
     REQUIRE_OUTPUT_DIR: bool = True
+
+    # When True, ``require_output_dir()`` falls back to a self-cleaning temp
+    # directory (``ensure_bridge_temp_dir``) instead of erroring when neither the
+    # user's value nor ``default_output_dir()`` resolves — so an unsaved scene can
+    # still hand off. Opt-in: enabled for the file-staging hand-off bridges
+    # (Substance / Marmoset) whose output is transient export artifacts the launched
+    # app reads once. Left False for bridges whose Output Dir must be a real,
+    # user-chosen location (e.g. Unity's project ``Assets`` dir), where silently
+    # writing to temp would be wrong — those keep the hard "Output Dir is required"
+    # error. No effect when :attr:`REQUIRE_OUTPUT_DIR` is False.
+    TEMP_OUTPUT_FALLBACK: bool = False
 
     # ------------------ Cosmetics -------------------------------------
 
@@ -417,7 +462,10 @@ class BridgeSlotsBase:
         2. :meth:`default_output_dir` (DCC-side fallback) -- on hit, the
            chosen path is written back into the line edit and announced
            in the log panel so the user sees where files landed.
-        3. Log an error + focus the field, return ``None`` to signal
+        3. When :attr:`TEMP_OUTPUT_FALLBACK` is set, a self-cleaning temp
+           directory (:func:`ensure_bridge_temp_dir`) -- also written back
+           and announced -- so an unsaved scene can still hand off.
+        4. Log an error + focus the field, return ``None`` to signal
            the caller to abort.
 
         When :attr:`REQUIRE_OUTPUT_DIR` is False, returns ``""``
@@ -432,16 +480,22 @@ class BridgeSlotsBase:
 
         fallback = self.default_output_dir()
         if fallback:
-            if self._output_dir_edit is not None:
-                self._output_dir_edit.setText(fallback)
-            try:
-                self.bridge.logger.info(
-                    f"Output Dir not set; using scene/workspace default: "
-                    f'<a href="action://open?path={fallback}">{fallback}</a>'
-                )
-            except Exception:  # noqa: BLE001
-                pass
+            self._apply_output_dir_fallback(
+                fallback,
+                f"Output Dir not set; using scene/workspace default: "
+                f'<a href="action://open?path={fallback}">{fallback}</a>',
+            )
             return fallback
+
+        if self.TEMP_OUTPUT_FALLBACK:
+            temp_dir = ensure_bridge_temp_dir(self.LOG_TAG)
+            self._apply_output_dir_fallback(
+                temp_dir,
+                "Output Dir not set and no scene/workspace default; using a "
+                "temporary folder (removed when this session exits): "
+                f'<a href="action://open?path={temp_dir}">{temp_dir}</a>',
+            )
+            return temp_dir
 
         self.bridge.logger.error(
             "Output Dir is required and no scene/workspace default could "
@@ -451,6 +505,15 @@ class BridgeSlotsBase:
         if self._output_dir_edit is not None:
             self._output_dir_edit.setFocus()
         return None
+
+    def _apply_output_dir_fallback(self, path: str, message: str) -> None:
+        """Write a resolved fallback *path* back into the Output Dir field and announce it."""
+        if self._output_dir_edit is not None:
+            self._output_dir_edit.setText(path)
+        try:
+            self.bridge.logger.info(message)
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------ Parameter widgets -----------------------------
 
