@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-07-14_
+_Generated: 2026-07-15_
 
 ## Index
 
@@ -158,7 +158,8 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L77)** — Base class for DCC-bridge slot panels.
+- [`ensure_bridge_temp_dir(tag: str) -> str`](uitk/uitk/bridge/slots.py#L86) — Create (once per host process) and return a temp Output Dir for *tag*.
+- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L111)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.

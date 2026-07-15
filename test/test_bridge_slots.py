@@ -166,5 +166,80 @@ class TestBridgeLogLinkOpen(BaseTestCase):
         )
 
 
+class TestRequireOutputDir(BaseTestCase):
+    """``require_output_dir`` resolution order, incl. the ``TEMP_OUTPUT_FALLBACK``
+    tier that lets an unsaved scene hand off without the user picking a path
+    (Substance / Marmoset) while leaving the hard error for bridges that need a
+    real location (Unity)."""
+
+    def _make(self, require=True, temp_fallback=False, default="", typed="", tag="test_bridge"):
+        from qtpy import QtWidgets
+
+        class _Logger:
+            def __init__(self):
+                self.infos, self.errors = [], []
+
+            def info(self, m):
+                self.infos.append(m)
+
+            def error(self, m):
+                self.errors.append(m)
+
+        class _Bridge:
+            def __init__(self):
+                self.logger = _Logger()
+
+        slots = object.__new__(BridgeSlotsBase)
+        slots.REQUIRE_OUTPUT_DIR = require
+        slots.TEMP_OUTPUT_FALLBACK = temp_fallback
+        slots.LOG_TAG = tag
+        slots._output_dir_edit = QtWidgets.QLineEdit()
+        slots._output_dir_edit.setText(typed)
+        slots._bridge = _Bridge()
+        slots.default_output_dir = lambda: default
+        return slots
+
+    def test_typed_value_wins(self):
+        s = self._make(typed="  C:/pick  ")
+        self.assertEqual(s.require_output_dir(), "C:/pick")
+
+    def test_scene_default_used_and_written_back(self):
+        s = self._make(default="D:/scene")
+        self.assertEqual(s.require_output_dir(), "D:/scene")
+        self.assertEqual(s._output_dir_edit.text(), "D:/scene")
+        self.assertTrue(any("scene/workspace default" in m for m in s._bridge.logger.infos))
+
+    def test_no_temp_fallback_errors(self):
+        # Unity-style: nothing resolves and temp fallback off -> None + error, unchanged.
+        s = self._make(default="", temp_fallback=False)
+        self.assertIsNone(s.require_output_dir())
+        self.assertTrue(s._bridge.logger.errors)
+        self.assertFalse(s._bridge.logger.infos)
+
+    def test_temp_fallback_creates_written_back_and_cleans_up(self):
+        import os
+        from uitk.bridge.slots import _BRIDGE_TEMP_DIRS, _remove_bridge_temp_dir
+
+        tag = "test_bridge_temp"
+        self.addCleanup(_remove_bridge_temp_dir, tag)
+        s = self._make(default="", temp_fallback=True, tag=tag)
+        r = s.require_output_dir()
+        self.assertTrue(r and os.path.isdir(r))
+        self.assertEqual(s._output_dir_edit.text(), r)
+        self.assertFalse(s._bridge.logger.errors)
+        self.assertTrue(any("temporary folder" in m for m in s._bridge.logger.infos))
+        # Reused across sends for the same tag (same process).
+        s2 = self._make(default="", temp_fallback=True, tag=tag)
+        self.assertEqual(s2.require_output_dir(), r)
+        # atexit-style cleanup removes the directory.
+        _remove_bridge_temp_dir(tag)
+        self.assertFalse(os.path.isdir(r))
+        self.assertNotIn(tag, _BRIDGE_TEMP_DIRS)
+
+    def test_require_output_dir_false_short_circuits(self):
+        s = self._make(require=False, temp_fallback=True, default="")
+        self.assertEqual(s.require_output_dir(), "")
+
+
 if __name__ == "__main__":
     unittest.main()
