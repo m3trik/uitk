@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-07-14",
+  "generated_at": "2026-07-15",
   "modules": [
     {
       "relpath": "_bootstrap.py",
