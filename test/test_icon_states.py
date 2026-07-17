@@ -19,7 +19,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore
 
-from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.managers.icon_manager import IconManager
 from uitk.widgets.mixins.icon_states import IconStates
 
 

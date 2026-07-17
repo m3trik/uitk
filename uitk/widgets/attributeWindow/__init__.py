@@ -17,6 +17,4 @@ Implementation lives in:
 * :mod:`uitk.widgets.attributeWindow._attributeWindow` — the popup widget.
 * :mod:`uitk.bridge.spec` — canonical home of the :class:`AttributeSpec`
   dataclass and the kind-handler registry shared with the DCC bridges.
-  The sibling ``_factory.py`` is a back-compat shim that re-exports from
-  :mod:`uitk.bridge.spec` for existing call sites.
 """

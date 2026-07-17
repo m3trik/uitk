@@ -7,9 +7,9 @@ from typing import Optional, Callable, List, Union, Any, Dict
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
-from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.managers.icon_manager import IconManager
 from uitk.switchboard import Signals
-from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.managers.settings_manager import SettingsManager
 
 
 class HierarchyIconMixin:

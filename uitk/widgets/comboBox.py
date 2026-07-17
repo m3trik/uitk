@@ -243,7 +243,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
         """Resolve BUTTON_CHECKED for the combo's active theme, fall back
         to ``_FALLBACK_COLOR`` if the theme can't be inferred or parsed."""
         try:
-            from uitk.widgets.mixins.style_sheet import StyleSheet
+            from uitk.themes.style_sheet import StyleSheet
             theme = self._resolve_active_theme()
             color_str = StyleSheet.get_variable("BUTTON_CHECKED", theme=theme)
             if color_str:
@@ -257,7 +257,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
     def _resolve_active_theme(self):
         """Walk up the combobox's parent chain to find the nearest widget
         registered with ``StyleSheet`` and return its theme."""
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
         widget = self._combo
         while widget is not None:
             if widget in StyleSheet._widget_configs:
@@ -271,7 +271,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
         can't be read — in which case ``sizeHint`` leaves rows at their
         natural height."""
         try:
-            from uitk.widgets.mixins.style_sheet import StyleSheet
+            from uitk.themes.style_sheet import StyleSheet
             return StyleSheet.get_variable_px(
                 "COMBOBOX_ITEM_HEIGHT", theme=self._resolve_active_theme()
             )

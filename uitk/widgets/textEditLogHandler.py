@@ -67,7 +67,7 @@ class TextEditLogHandler(logging.Handler):
     def _apply_link_palette(widget):
         """Set QPalette.Link / LinkVisited so <a> tags are readable."""
         try:
-            from uitk.widgets.mixins.style_sheet import StyleSheet
+            from uitk.themes.style_sheet import StyleSheet
 
             theme_name = StyleSheet._widget_themes.get(widget, "dark")
             theme_vars = StyleSheet.themes.get(theme_name, {})

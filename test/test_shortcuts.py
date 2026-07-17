@@ -438,7 +438,7 @@ class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
         self.assertEqual(self.sb._deferred_slot_shortcuts, {})
 
     def test_register_slots_shortcuts_disposes_standins_for_built_ui(self):
-        from uitk.widgets.mixins.shortcuts import GlobalShortcut
+        from uitk.managers.shortcut_manager import GlobalShortcut
 
         host = self.track_widget(QtWidgets.QWidget())
         host.show()
@@ -636,7 +636,7 @@ class TestResolveApplicationHost(QtBaseTestCase):
     """
 
     def test_prefers_named_dcc_host(self):
-        from uitk.widgets.mixins.shortcuts import resolve_application_host
+        from uitk.managers.shortcut_manager import resolve_application_host
 
         maya = self.track_widget(QtWidgets.QWidget())
         maya.setObjectName("MayaWindow")
@@ -649,7 +649,7 @@ class TestResolveApplicationHost(QtBaseTestCase):
         self.assertTrue(host.isVisible())
 
     def test_falls_back_to_any_visible_top_level(self):
-        from uitk.widgets.mixins.shortcuts import resolve_application_host
+        from uitk.managers.shortcut_manager import resolve_application_host
 
         visible = self.track_widget(QtWidgets.QWidget())
         visible.setObjectName("SomeStandaloneMainWindow")
@@ -662,7 +662,7 @@ class TestResolveApplicationHost(QtBaseTestCase):
         self.assertIsNot(host, hidden)
 
     def test_never_returns_none(self):
-        from uitk.widgets.mixins.shortcuts import resolve_application_host
+        from uitk.managers.shortcut_manager import resolve_application_host
 
         w = self.track_widget(QtWidgets.QWidget())
         self.assertIsNotNone(resolve_application_host(w))
@@ -773,7 +773,7 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
     """
 
     def test_dispose_removes_from_instances(self):
-        from uitk.widgets.mixins.shortcuts import GlobalShortcut
+        from uitk.managers.shortcut_manager import GlobalShortcut
 
         host = self.track_widget(QtWidgets.QWidget())
         host.show()
@@ -783,7 +783,7 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
         self.assertNotIn(sc, GlobalShortcut._instances)
 
     def test_manager_remove_and_clear_dispose_global(self):
-        from uitk.widgets.mixins.shortcuts import ShortcutManager, GlobalShortcut
+        from uitk.managers.shortcut_manager import ShortcutManager, GlobalShortcut
 
         host = self.track_widget(QtWidgets.QWidget())
         host.show()
@@ -806,7 +806,7 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
         Regression: a destroyed transport removed its Space/Alt+Space bindings
         but the sequencer never re-synced, leaving those keys swallowed-but-dead.
         """
-        from uitk.widgets.mixins.shortcuts import ShortcutManager
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         host = self.track_widget(QtWidgets.QWidget())
         mgr = ShortcutManager(host)
@@ -829,7 +829,7 @@ class TestShortcutManagerRegistry(QtBaseTestCase):
     the one unified ShortcutEditor can render a manager's bindings."""
 
     def _mgr(self):
-        from uitk.widgets.mixins.shortcuts import ShortcutManager
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         host = self.track_widget(QtWidgets.QWidget())
         return ShortcutManager(host)
@@ -876,7 +876,7 @@ class TestShortcutManagerEditorIntegration(QtBaseTestCase):
     ManagerSwitchboardFacade), not a bespoke dialog — the DRY merge."""
 
     def _editor_for(self, *binds, infos=()):
-        from uitk.widgets.mixins.shortcuts import ShortcutManager
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         host = self.track_widget(QtWidgets.QWidget())
         mgr = ShortcutManager(host)

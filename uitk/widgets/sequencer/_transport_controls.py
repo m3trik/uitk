@@ -239,7 +239,7 @@ class TransportControls(QtWidgets.QWidget):
     )
 
     def _build(self, h: int) -> None:
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -367,7 +367,7 @@ class TransportControls(QtWidgets.QWidget):
 
     def _set_play_active(self, active_key: Optional[str]) -> None:
         """Tint the active play button green; restore the other."""
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         self._active_play_key = active_key
         for key in ("play_forward", "play_back"):

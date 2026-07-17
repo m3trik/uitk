@@ -4,7 +4,7 @@
 
 Adds ``sb.style`` as a lazy class-proxy so callers can apply themes
 globally, query theme variables, override colors, etc., without an
-explicit ``from uitk.widgets.mixins.style_sheet import StyleSheet`` and
+explicit ``from uitk.themes.style_sheet import StyleSheet`` and
 without forcing the StyleSheet module (and its QSS files) to load until
 the first access.
 
@@ -36,6 +36,6 @@ class SwitchboardStyleMixin:
         ``get_variable``, ``get_icon_color``) are reachable from a single
         ``sb.style.<method>`` call.
         """
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         return StyleSheet

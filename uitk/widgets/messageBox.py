@@ -99,7 +99,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         if self._theme is None:
             return
         try:
-            from uitk.widgets.mixins.style_sheet import StyleSheet
+            from uitk.themes.style_sheet import StyleSheet
         except Exception:  # noqa: BLE001 — style engine optional at this layer.
             return
         StyleSheet(self).set(theme=self._theme)

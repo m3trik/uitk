@@ -325,19 +325,19 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         StyleSheet.reset_overrides()
 
     def tearDown(self):
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         StyleSheet.reset_overrides()
         super().tearDown()
 
     def _row_height(self, theme="light"):
         from uitk.widgets.comboBox import ComboBox, _CurrentItemIndicatorDelegate
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         combo = self.track_widget(ComboBox())
         StyleSheet().set(combo, theme=theme)
@@ -350,7 +350,7 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
         return view.sizeHintForRow(0)
 
     def test_default_row_height_equals_token(self):
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         token = int(
             StyleSheet.get_variable("COMBOBOX_ITEM_HEIGHT", theme="light").rstrip("px")
@@ -360,7 +360,7 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
     def test_row_height_tracks_token_without_padding_inflation(self):
         """A custom height well above the font floor must be matched exactly,
         not exceeded by a constant padding offset (the +2px bug)."""
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         StyleSheet.set_variable("COMBOBOX_ITEM_HEIGHT", "30px", theme="light")
         self.assertEqual(self._row_height("light"), 30)
@@ -371,7 +371,7 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
         reservation) would exceed the token. Regression: dropdown rows
         rendered taller than ``COMBOBOX_ITEM_HEIGHT``."""
         from qtpy import QtGui, QtWidgets
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         app = QtWidgets.QApplication.instance()
         prev_font = app.font()
@@ -396,7 +396,7 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
         the token only governs plain text rows."""
         from qtpy import QtCore, QtWidgets
         from uitk.widgets.comboBox import ComboBox, _CurrentItemIndicatorDelegate
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         combo = self.track_widget(ComboBox())
         StyleSheet().set(combo, theme="light")
@@ -673,12 +673,12 @@ class OpenBoxDistinctFromView(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         StyleSheet.reset_overrides()
 
     def tearDown(self):
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         StyleSheet.reset_overrides()
         super().tearDown()
@@ -693,7 +693,7 @@ class OpenBoxDistinctFromView(QtBaseTestCase):
 
     def test_open_box_background_differs_from_view(self):
         from uitk.widgets.comboBox import ComboBox
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         for theme in ("light", "dark"):
             combo = self.track_widget(ComboBox())

@@ -19,8 +19,8 @@ import unittest
 import conftest  # noqa: F401 — inserts the package root on sys.path
 
 from qtpy import QtCore
-from uitk.widgets.mixins.settings_manager import SettingsManager
-from uitk.widgets.mixins.recent_values_store import (
+from uitk.managers.settings_manager import SettingsManager
+from uitk.managers.recent_values_store import (
     RecentValuesStore,
     RecentValueEntry,
     normalize_value,

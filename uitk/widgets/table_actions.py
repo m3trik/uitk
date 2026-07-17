@@ -41,7 +41,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
 
-from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.managers.icon_manager import IconManager
 from uitk.widgets.delegates.centered_icon import (
     fill_cell_background,
     paint_centered_icon,

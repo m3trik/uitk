@@ -65,7 +65,7 @@ class TestPaintCenteredIcon(unittest.TestCase):
 
     def test_dim_opacity_wraps_draw(self):
         """A sub-1.0 opacity saves/sets/restores the painter around the draw."""
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         icon = IconManager.get("undo", size=(14, 14))
         painter = mock.Mock()
@@ -82,7 +82,7 @@ class TestPaintCenteredIcon(unittest.TestCase):
         painter.drawPixmap.assert_called_once()
 
     def test_full_opacity_no_save(self):
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         icon = IconManager.get("undo", size=(14, 14))
         painter = mock.Mock()

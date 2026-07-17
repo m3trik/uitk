@@ -171,7 +171,7 @@ class RecentValuesStore:
     # ------------------------------------------------------------------
 
     def _init_settings(self):
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         self._settings = SettingsManager(
             org="uitk", app="RecentValues", namespace=self._settings_key

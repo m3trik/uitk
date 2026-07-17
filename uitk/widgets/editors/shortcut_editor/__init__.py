@@ -18,7 +18,7 @@ One unified editor serves every shortcut backend:
 
 * :mod:`~uitk.widgets.editors.shortcut_editor.manager_facade` —
   :class:`ManagerSwitchboardFacade`, the facade's thinnest configuration: a
-  standalone :class:`~uitk.widgets.mixins.shortcuts.ShortcutManager` (e.g. the
+  standalone :class:`~uitk.managers.shortcut_manager.ShortcutManager` (e.g. the
   sequencer's bindings). Reached via ``ShortcutManager.show_editor()``.
 
 The bespoke ``ShortcutEditorDialog`` and the mayatk/blendertk

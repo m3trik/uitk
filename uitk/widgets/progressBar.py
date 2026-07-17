@@ -3,7 +3,7 @@
 from typing import Optional, Callable
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.shortcuts import GlobalShortcut
+from uitk.managers.shortcut_manager import GlobalShortcut
 
 
 class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):

@@ -2,7 +2,7 @@
 
 Suits tools that open as their own ``QMainWindow`` rather than as a
 stacked page inside a :class:`MarkingMenu` — e.g. mayatk's
-``hierarchy_manager``, ``color_id``, ``naming``.  The lifecycle is
+``hierarchy_sync``, ``color_id``, ``naming``.  The lifecycle is
 distinct from the marking-menu bench:
 
 * **Standalone** — first ``ui.show()`` triggers ``MainWindow.showEvent``

@@ -37,7 +37,7 @@ class PersistedOption:
         key = self._resolve_settings_key()
         if not key:
             return
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         self._settings = SettingsManager(
             org="uitk", app=self.SETTINGS_APP, namespace=key

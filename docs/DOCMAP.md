@@ -12,7 +12,7 @@ Legend — **Status**: `current` (verified against code on the Verified date, ze
 |:--|:--|:--|:--|:--|
 | [../README.md](../README.md) | landing | current | 2026-07-08 | `uitk/__init__.py` · `uitk/examples/example.py` · quickstart must run verbatim |
 | [README.md](README.md) | landing | current | 2026-07-08 | the PyPI long-description (`pyproject.toml` readme) · shares sync blocks with ../README.md |
-| [USER_GUIDE.md](USER_GUIDE.md) | guide | needs-verify | — | `uitk/switchboard/` · `uitk/widgets/mainWindow.py` · `uitk/widgets/mixins/settings_manager.py` · `state_manager.py` (DOC-03) |
+| [USER_GUIDE.md](USER_GUIDE.md) | guide | needs-verify | — | `uitk/switchboard/` · `uitk/widgets/mainWindow.py` · `uitk/managers/settings_manager.py` · `state_manager.py` (DOC-03) |
 | [SLOTS.md](SLOTS.md) | reference | needs-verify | — | `uitk/switchboard/slots.py` · `uitk/switchboard/_core.py` (DOC-02) |
 | [WIDGETS.md](WIDGETS.md) | reference | current | 2026-07-08 | `uitk/widgets/` · `optionBox/` · `sequencer/` · `editors/` · `delegates/` |
 | [MARKING_MENU.md](MARKING_MENU.md) | reference | current | 2026-07-08 | `uitk/widgets/marking_menu/` |
@@ -38,6 +38,8 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 | `file_manager.py` | [API_REFERENCE.md](API_REFERENCE.md) | FileContainer / FileManager section |
 | `handlers/` | [ARCHITECTURE.md](ARCHITECTURE.md) | handler-ecosystem section |
 | `loaders/` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
+| `managers/` | [WIDGETS.md](WIDGETS.md) | standalone services (settings/state/values/presets/icons/shortcuts), split out of `widgets/mixins/` 2026-07; settings/state user-level detail in USER_GUIDE.md |
+| `themes/` | [ARCHITECTURE.md](ARCHITECTURE.md) | theming section (`StyleSheet` + `style.qss`) |
 | `switchboard/` | [ARCHITECTURE.md](ARCHITECTURE.md) | slot-contract detail lives in SLOTS.md |
 | `widgets/mainWindow.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | MainWindow section; per-property detail in API_REFERENCE.md |
 | `widgets/marking_menu/` | [MARKING_MENU.md](MARKING_MENU.md) | dedicated subsystem doc |

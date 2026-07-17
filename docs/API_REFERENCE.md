@@ -378,7 +378,7 @@ For the full FileContainer query API see [file_manager.py](../uitk/file_manager.
 
 ## `SettingsManager` & `SettingItem`
 
-Source: [widgets/mixins/settings_manager.py](../uitk/widgets/mixins/settings_manager.py)
+Source: [managers/settings_manager.py](../uitk/managers/settings_manager.py)
 
 ```python
 SettingsManager(
@@ -422,7 +422,7 @@ sb.settings.my_key = 100      # equivalent to sb.settings.my_key.set(100)
 
 ## `StateManager`
 
-Source: [widgets/mixins/state_manager.py](../uitk/widgets/mixins/state_manager.py)
+Source: [managers/state_manager.py](../uitk/managers/state_manager.py)
 
 ```python
 StateManager(qsettings: QSettings, log_level="WARNING")
@@ -448,7 +448,7 @@ StateManager(qsettings: QSettings, log_level="WARNING")
 
 ## `StyleSheet`
 
-Source: [widgets/mixins/style_sheet.py](../uitk/widgets/mixins/style_sheet.py)
+Source: [themes/style_sheet.py](../uitk/themes/style_sheet.py)
 
 Attached to every `MainWindow` as `ui.style`.
 
@@ -477,7 +477,7 @@ themes: dict[str, dict[str, str]]     # "dark" / "light" palettes
 
 ## `PresetManager`
 
-Source: [widgets/mixins/preset_manager.py](../uitk/widgets/mixins/preset_manager.py)
+Source: [managers/preset_manager.py](../uitk/managers/preset_manager.py)
 
 ```python
 PresetManager(

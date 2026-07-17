@@ -273,7 +273,7 @@ class TestCommandBinding(_SwitchboardFixture):
         must own a plain QShortcut (fires on every press, no latch), exactly like
         the ordinary slot shortcuts that already persist reliably.
         """
-        from uitk.widgets.mixins.shortcuts import GlobalShortcut
+        from uitk.managers.shortcut_manager import GlobalShortcut
 
         self._show_host()
         fired = []
@@ -921,7 +921,7 @@ class TestDuplicateShortcutGuard(QtBaseTestCase):
         return sc
 
     def test_flags_two_enabled_app_shortcuts_on_one_key(self):
-        from uitk.widgets.mixins.shortcuts import (
+        from uitk.managers.shortcut_manager import (
             find_duplicate_application_shortcuts,
         )
 
@@ -932,7 +932,7 @@ class TestDuplicateShortcutGuard(QtBaseTestCase):
         self.assertEqual(find_duplicate_application_shortcuts().get(seq), 2)
 
     def test_disabled_duplicate_not_flagged(self):
-        from uitk.widgets.mixins.shortcuts import (
+        from uitk.managers.shortcut_manager import (
             find_duplicate_application_shortcuts,
         )
 
@@ -944,7 +944,7 @@ class TestDuplicateShortcutGuard(QtBaseTestCase):
         self.assertNotIn(seq, find_duplicate_application_shortcuts())
 
     def test_window_scoped_duplicates_not_flagged(self):
-        from uitk.widgets.mixins.shortcuts import (
+        from uitk.managers.shortcut_manager import (
             find_duplicate_application_shortcuts,
         )
 

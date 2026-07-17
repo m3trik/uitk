@@ -24,7 +24,7 @@ app = setup_qt_application()
 from qtpy import QtCore, QtWidgets
 
 from uitk.widgets.comboBox import ComboBox
-from uitk.widgets.mixins.state_manager import StateManager
+from uitk.managers.state_manager import StateManager
 
 # Item dicts standing in for a directory scan of ``*.fbxexportpreset`` files.
 LIST_ORIG = {"None": None, "presetA": "/a.fbxexportpreset", "presetB": "/b.fbxexportpreset"}
@@ -217,7 +217,7 @@ class TestSettingsManagerBackedStore(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         self.settings = SettingsManager(org=self.ORG, app=self.APP)
         self.settings.settings.clear()

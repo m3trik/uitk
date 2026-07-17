@@ -8,7 +8,7 @@ from conftest import QtBaseTestCase
 from qtpy import QtWidgets, QtCore
 
 from uitk.widgets.treeWidget import TreeWidget
-from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.managers.settings_manager import SettingsManager
 
 
 class TestTreeColumnConfig(QtBaseTestCase):

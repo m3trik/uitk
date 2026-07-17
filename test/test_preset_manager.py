@@ -26,8 +26,8 @@ from conftest import BaseTestCase, setup_qt_application
 # QApplication needed because preset_manager imports from qtpy at module load.
 app = setup_qt_application()
 
-import uitk.widgets.mixins.preset_manager as pm  # noqa: E402
-from uitk.widgets.mixins.preset_manager import (  # noqa: E402
+import uitk.managers.preset_manager as pm  # noqa: E402
+from uitk.managers.preset_manager import (  # noqa: E402
     PresetManager,
     PRESETS_ROOT_ENV_VAR,
     get_presets_root,
@@ -628,7 +628,7 @@ class TestLegacyMigration(BaseTestCase):
     def test_renamed_domain_carries_presets_forward(self):
         """A renamed preset domain carries the user's saved snapshots into the
         new dir (hotkey_presets -> shortcut_presets) on first ensure."""
-        from uitk.widgets.mixins.preset_manager import _maybe_migrate_renamed_domain
+        from uitk.managers.preset_manager import _maybe_migrate_renamed_domain
 
         old = self._new_root / "hotkey_presets"
         old.mkdir(parents=True)
@@ -645,7 +645,7 @@ class TestLegacyMigration(BaseTestCase):
     def test_renamed_domain_never_clobbers_existing(self):
         """A preset already under the new name wins — a post-rename edit is
         never overwritten by the old domain's copy."""
-        from uitk.widgets.mixins.preset_manager import _maybe_migrate_renamed_domain
+        from uitk.managers.preset_manager import _maybe_migrate_renamed_domain
 
         old = self._new_root / "hotkey_presets"
         old.mkdir(parents=True)
@@ -1640,7 +1640,7 @@ class TestLoadPersistsSessionState(BaseTestCase):
     def setUp(self):
         super().setUp()
         from qtpy import QtCore
-        from uitk.widgets.mixins.state_manager import StateManager
+        from uitk.managers.state_manager import StateManager
 
         self._tmp = Path(tempfile.mkdtemp(prefix="preset_session_"))
         self.user = self._tmp / "user"

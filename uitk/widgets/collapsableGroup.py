@@ -2,7 +2,7 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.managers.settings_manager import SettingsManager
 
 
 class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):

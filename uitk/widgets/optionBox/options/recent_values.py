@@ -9,7 +9,7 @@ from ._options import ButtonOption
 # Canonical home for the storage/formatting logic is the widget-free
 # RecentValuesStore. Re-exported here for backward compatibility \u2014 earlier
 # code (and tests) import these names from this module.
-from uitk.widgets.mixins.recent_values_store import (  # noqa: F401 -- re-export surface
+from uitk.managers.recent_values_store import (  # noqa: F401 -- re-export surface
     RecentValuesStore,
     RecentValueEntry,
     normalize_value as _normalize_value,
@@ -132,7 +132,7 @@ class RecentValuesPopup(QtCore.QObject):
         self._menu.add(label)
 
     def _create_value_row(self, value, display_text=None):
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         full_text = str(_entry_data(value))
         if display_text is None:

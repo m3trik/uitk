@@ -46,7 +46,7 @@ _TYPE_TO_KEY = {
 
 # Shared repolish primitive — see its docstring for the stale property-
 # selector mechanism this package measures around.
-from uitk.widgets.mixins.style_sheet import repolish_tree as _repolish_tree
+from uitk.themes.style_sheet import repolish_tree as _repolish_tree
 
 
 class OptionBoxContainer(QtWidgets.QWidget):
@@ -447,7 +447,7 @@ class OptionBox:
         """
         if not self.wrapped_widget:
             return
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         h = self.wrapped_widget.height() or self.wrapped_widget.sizeHint().height()
         for option in self._options:

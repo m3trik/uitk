@@ -22,6 +22,13 @@ _Generated: 2026-07-17_
 - [`handlers/ui_handler.py`](#handlers--ui_handler)
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - [`loaders/runtime.py`](#loaders--runtime) — Switchboard delegate that loads UIs at runtime via QUiLoader.
+- [`managers/icon_manager.py`](#managers--icon_manager)
+- [`managers/preset_manager.py`](#managers--preset_manager)
+- [`managers/recent_values_store.py`](#managers--recent_values_store) — Widget-free *recent values* model — the shared source of truth for value history.
+- [`managers/settings_manager.py`](#managers--settings_manager)
+- [`managers/shortcut_manager.py`](#managers--shortcut_manager) — Generic keyboard-shortcut primitives, usable by any Qt widget.
+- [`managers/state_manager.py`](#managers--state_manager)
+- [`managers/value_manager.py`](#managers--value_manager)
 - [`switchboard/_core.py`](#switchboard--_core)
 - [`switchboard/editors.py`](#switchboard--editors) — Mixin that exposes the bundled editor windows on the Switchboard.
 - [`switchboard/history.py`](#switchboard--history) — Ordered, capped history with optional weak storage and key-based filtering.
@@ -31,6 +38,7 @@ _Generated: 2026-07-17_
 - [`switchboard/style.py`](#switchboard--style) — Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 - [`switchboard/utils.py`](#switchboard--utils)
 - [`switchboard/widgets.py`](#switchboard--widgets)
+- [`themes/style_sheet.py`](#themes--style_sheet)
 - [`widgets/attributeWindow/_attributeWindow.py`](#widgets--attributeWindow--_attributeWindow)
 - [`widgets/checkBox.py`](#widgets--checkBox)
 - [`widgets/collapsableGroup.py`](#widgets--collapsableGroup)
@@ -65,21 +73,13 @@ _Generated: 2026-07-17_
 - [`widgets/mixins/convert.py`](#widgets--mixins--convert)
 - [`widgets/mixins/docking.py`](#widgets--mixins--docking)
 - [`widgets/mixins/feedback.py`](#widgets--mixins--feedback) — Mixin: transient HUD-style feedback for any QWidget.
-- [`widgets/mixins/icon_manager.py`](#widgets--mixins--icon_manager)
 - [`widgets/mixins/icon_states.py`](#widgets--mixins--icon_states) — Shared multi-state icon behavior for state-cycling buttons.
 - [`widgets/mixins/menu_mixin.py`](#widgets--mixins--menu_mixin) — MenuMixin - provides automatic Menu integration for widgets.
 - [`widgets/mixins/option_box_mixin.py`](#widgets--mixins--option_box_mixin) — OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
-- [`widgets/mixins/preset_manager.py`](#widgets--mixins--preset_manager)
-- [`widgets/mixins/recent_values_store.py`](#widgets--mixins--recent_values_store) — Widget-free *recent values* model — the shared source of truth for value history.
-- [`widgets/mixins/settings_manager.py`](#widgets--mixins--settings_manager)
-- [`widgets/mixins/shortcuts.py`](#widgets--mixins--shortcuts) — Generic keyboard-shortcut primitives, usable by any Qt widget.
 - [`widgets/mixins/size_grip.py`](#widgets--mixins--size_grip) — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - [`widgets/mixins/spin_box_text_color.py`](#widgets--mixins--spin_box_text_color) — Shared value-text coloring for spin-box widgets.
-- [`widgets/mixins/state_manager.py`](#widgets--mixins--state_manager)
-- [`widgets/mixins/style_sheet.py`](#widgets--mixins--style_sheet)
 - [`widgets/mixins/text.py`](#widgets--mixins--text) — Text rendering for uitk widgets.
 - [`widgets/mixins/tooltip_mixin.py`](#widgets--mixins--tooltip_mixin)
-- [`widgets/mixins/value_manager.py`](#widgets--mixins--value_manager)
 - [`widgets/mixins/wheel_step.py`](#widgets--mixins--wheel_step) — Shared modifier-driven wheel-step handling for spin-box widgets.
 - [`widgets/optionBox/_optionBox.py`](#widgets--optionBox--_optionBox) — OptionBox - Plugin-based container for wrapping widgets with action buttons.
 - [`widgets/optionBox/options/_options.py`](#widgets--optionBox--options--_options)
@@ -356,6 +356,150 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
   - `RuntimeLoader.read_ui_tags(self, ui_path: str) -> set` — Return the uitk_tags set for a .ui file via direct XML parse.
   - `RuntimeLoader.on_tags_written(self, ui_path: str) -> None` — Invalidate cached metadata after .ui content has changed.
 
+<a id="managers--icon_manager"></a>
+### `managers/icon_manager.py`
+
+- **[`class IconManager`](uitk/uitk/managers/icon_manager.py#L10)** — Theme-aware SVG icon loader with caching and color customization.
+  - `IconManager.set_default_color(cls, color: str)` *(class)* — Set the default icon color for icons created without explicit color.
+  - `IconManager.register_icon_dir(cls, path)` *(class)* — Register an additional icon directory (searched first).
+  - `IconManager.get(cls, name: str, size=(16, 16), color: str = None, use_theme: bool = True) -> QtGui.QIcon` *(class)* — Get an icon, optionally colorized.
+  - `IconManager.fit_size(container_size, margin: int = 4, min_size: int = 8) -> int` *(static)* — Compute a square icon extent that fits inside ``container_size`` px.
+  - `IconManager.fit_icon(cls, widget, name: str, container_size, margin: int = 4, min_size: int = 8, color: str = None, auto_theme: bool = True) -> int` *(class)* — Render *name* onto *widget* sized to fit a square container.
+  - `IconManager.swap_icon(cls, widget, name: str, color: str = None, auto_theme: bool = True, fallback_size=(16, 16)) -> None` *(class)* — Replace the icon on *widget* without changing its display size.
+  - `IconManager.set_icon(cls, widget, name: str, size=(16, 16), color: str = None, auto_theme: bool = True)` *(class)* — Set an icon on a widget.
+  - `IconManager.registered_info(cls, widget) -> 'dict | None'` *(class)* — The icon registry entry for *widget* — name/size/color — or None.
+  - `IconManager.update_widget_icons(cls, root_widget: QtWidgets.QWidget, color: str)` *(class)* — Update all registered icons under a widget tree with a new color.
+  - `IconManager.clear_cache(cls)` *(class)* — Clear all cached icons and SVG content.
+  - `IconManager.get_cache_stats(cls) -> dict` *(class)* — Get statistics about the icon cache.
+
+<a id="managers--preset_manager"></a>
+### `managers/preset_manager.py`
+
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/managers/preset_manager.py#L1438) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/managers/preset_manager.py#L1455) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/managers/preset_manager.py#L1583) — Root directory under which every relative ``preset_dir`` is resolved.
+- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/managers/preset_manager.py#L19)** — Manages named presets for widget state, stored as external JSON files.
+  - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
+  - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
+  - `PresetManager.preset_dir(self) -> Path` *(property)* — The directory where preset files are stored.
+  - `PresetManager.on_change(self, callback) -> None` — Register a callback invoked when presets are modified.
+  - `PresetManager.scope(self) -> str` *(property)* — Which widget set a save/load operates on.
+  - `PresetManager.exclude(self, *names_or_widgets) -> 'PresetManager'` — Exclude widgets (by ``objectName`` or instance) from capture/restore.
+  - `PresetManager.include(self, *names_or_widgets) -> 'PresetManager'` — Restrict capture/restore to *only* these widgets (allowlist).
+  - `PresetManager.active_preset(self) -> Optional[str]` *(property)* — Name of the preset currently in use, or ``None``.
+  - `PresetManager.is_modified(self) -> bool` — True when live values diverge from the active preset's stored values.
+  - `PresetManager.on_modified_changed(self, callback: Callable[[bool], None]) -> None` — Register *callback(bool)* invoked when the modified state flips.
+  - `PresetManager.refresh_modified_state(self) -> bool` — Recompute the modified state;
+  - `PresetManager.connect_value_widgets(self) -> None` — Wire managed widgets' change signals so the dirty marker updates live.
+  - `PresetManager.save(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path` — Save the current widget values as a named preset.
+  - `PresetManager.load(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int` — Load a named preset and apply its values to the matching widgets.
+  - `PresetManager.list(self) -> List[str]` — Return a sorted list of available preset names across both tiers.
+  - `PresetManager.source(self, name: str) -> Optional[str]` — Which tier *name* resolves from: ``"user"``, ``"builtin"``, or ``None``.
+  - `PresetManager.delete(self, name: str) -> bool` — Delete a *user* preset (built-ins are read-only).
+  - `PresetManager.rename(self, old_name: str, new_name: str) -> bool` — Rename a *user* preset.
+  - `PresetManager.exists(self, name: str) -> bool` — Check whether a named preset exists in either tier.
+  - `PresetManager.make_preset_combo(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None) -> 'QtWidgets.QWidget'` — Create a fully-wired preset selector and return its layout container.
+  - `PresetManager.wire_combo(self, combo, on_loaded=None)` — Wire a uitk ``ComboBox`` as a fully-functional preset selector.
+
+<a id="managers--recent_values_store"></a>
+### `managers/recent_values_store.py`
+
+Widget-free *recent values* model — the shared source of truth for value history.
+
+- [`normalize_value(value)`](uitk/uitk/managers/recent_values_store.py#L105) — Normalize a value for comparison.
+- **[`class RecentValueEntry`](uitk/uitk/managers/recent_values_store.py#L64)** — A recent value whose restore-data differs from its display string.
+- **[`class RecentValuesStore`](uitk/uitk/managers/recent_values_store.py#L121)** — Ordered, deduped, most-recent-first value history.
+  - `RecentValuesStore.subscribe(self, callback: Callable[[], None]) -> None` — Register *callback* to be invoked (no args) after any mutation.
+  - `RecentValuesStore.unsubscribe(self, callback: Callable[[], None]) -> None` — Remove a previously-registered *callback* (no-op if absent).
+  - `RecentValuesStore.values(self) -> List` *(property)* — A copy of the full history (most-recent first, raw values).
+  - `RecentValuesStore.is_valid(self, value) -> bool` — Whether *value* passes the configured validator (True if none).
+  - `RecentValuesStore.valid_values(self) -> List` — History filtered to entries passing the validator (non-destructive).
+  - `RecentValuesStore.record(self, value) -> None` — Insert *value* at the front (most-recent), dedup, trim, persist.
+  - `RecentValuesStore.add(self, value) -> None` — Seed *value* (append if new);
+  - `RecentValuesStore.remove(self, value) -> None` — Remove *value* from the history (no-op if absent).
+  - `RecentValuesStore.clear(self) -> None` — Drop all history.
+  - `RecentValuesStore.prune_invalid(self) -> List` — Drop every entry failing the validator;
+  - `RecentValuesStore.display_map(self, values=None) -> dict` — Return ``{raw_value: display_string}`` for *values*.
+
+<a id="managers--settings_manager"></a>
+### `managers/settings_manager.py`
+
+- [`decode_stored_value(value: Any) -> Any`](uitk/uitk/managers/settings_manager.py#L171) — Read-side mirror of :func:`encode_stored_value`.
+- [`encode_stored_value(value: Any) -> Any`](uitk/uitk/managers/settings_manager.py#L194) — Encode *value* for QSettings so a JSON-decoding read restores it losslessly.
+- **[`class SettingsManager`](uitk/uitk/managers/settings_manager.py#L227)** — Manages persistent storage and retrieval of settings via QSettings.
+  - `SettingsManager.branch(self, name: str) -> 'SettingsManager'` — Create a new SettingsManager instance targeted at a sub-namespace.
+  - `SettingsManager.set_defaults(self, defaults: dict) -> None` — Apply default values for a set of keys if they are not already set.
+  - `SettingsManager.value(self, key: str, default: Any = None) -> Any`
+  - `SettingsManager.setValue(self, key: str, value: Any) -> None`
+  - `SettingsManager.on_change(self, key: str, callback: Callable[[Any], None]) -> None` — Register a callback to be invoked when a key's value changes.
+  - `SettingsManager.keys(self) -> list` — Return all keys in the current namespace.
+  - `SettingsManager.setByteArray(self, key: str, value: QtCore.QByteArray) -> None` — Set a QByteArray value directly without JSON serialization.
+  - `SettingsManager.getByteArray(self, key: str, default: QtCore.QByteArray = None) -> QtCore.QByteArray` — Get a QByteArray value directly.
+  - `SettingsManager.remove(self, key: str) -> None` — Remove a single key from the current namespace.
+  - `SettingsManager.clear(self, key: Optional[str] = None) -> None` — Clears a specific key, or all keys in the current namespace.
+  - `SettingsManager.sync(self) -> None`
+
+<a id="managers--shortcut_manager"></a>
+### `managers/shortcut_manager.py`
+
+Generic keyboard-shortcut primitives, usable by any Qt widget.
+
+- [`context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`](uitk/uitk/managers/shortcut_manager.py#L36) — Convert a Qt.ShortcutContext to its persistence string.
+- [`scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`](uitk/uitk/managers/shortcut_manager.py#L41) — Convert a persisted scope string to a Qt.ShortcutContext.
+- [`host_namespace_suffix(context_tags) -> str`](uitk/uitk/managers/shortcut_manager.py#L46) — Settings-key suffix namespacing persisted state by host context.
+- [`resolve_application_host(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]`](uitk/uitk/managers/shortcut_manager.py#L68) — Return an always-visible top-level window to own an application shortcut.
+- [`find_duplicate_application_shortcuts(app=None) -> Dict[str, int]`](uitk/uitk/managers/shortcut_manager.py#L115) — Return ``{sequence: count}`` for key sequences bound by more than one
+- **[`class GlobalShortcut(QtCore.QObject)`](uitk/uitk/managers/shortcut_manager.py#L157)** — A robust global shortcut handler that detects both press and release events.
+  - `GlobalShortcut.eventFilter(self, obj, event)` — Monitor global events for the specific key release.
+  - `GlobalShortcut.setEnabled(self, enabled: bool)`
+  - `GlobalShortcut.setKey(self, key_sequence: Union[str, QtGui.QKeySequence])`
+  - `GlobalShortcut.setContext(self, context: QtCore.Qt.ShortcutContext)` — Live-update the underlying QShortcut's context.
+  - `GlobalShortcut.dispose(self) -> None` — Disable, unregister, and schedule deletion of this shortcut.
+- **[`class ShortcutManager`](uitk/uitk/managers/shortcut_manager.py#L333)** — Centralized shortcut management with clear separation of concerns
+  - `ShortcutManager.add_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut, hidden: bool = False) -> QtWidgets.QShortcut` — Add a keyboard shortcut with optional description and context
+  - `ShortcutManager.add_shortcuts_batch(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]` — Add multiple shortcuts from a configuration list
+  - `ShortcutManager.add_global_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut` — Add a global shortcut (robust press/release detection).
+  - `ShortcutManager.add_info_entry(self, key_label: str, description: str) -> None` — Register a display-only entry (e.g.
+  - `ShortcutManager.remove_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool` — Remove a specific shortcut
+  - `ShortcutManager.clear_all(self) -> None` — Remove all shortcuts
+  - `ShortcutManager.on_change(self, callback: Callable) -> None` — Register a callback invoked after any shortcut is rebound.
+  - `ShortcutManager.rebind_shortcut(self, old_key: str, new_key: str) -> bool` — Change the key sequence for an existing shortcut.
+  - `ShortcutManager.show_editor(self, parent=None, title: str = 'Shortcuts') -> None` — Open the unified shortcut editor for this manager's bindings.
+  - `ShortcutManager.get_shortcuts_info(self) -> Dict[str, str]` — Get information about all registered shortcuts
+  - `ShortcutManager.has_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool` — Check if a shortcut is registered
+  - `ShortcutManager.get_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]` — Get a specific shortcut object
+  - `ShortcutManager.get_registry(self) -> List[Dict]` — Registry entries for this manager's shortcuts, in the shared editor
+
+<a id="managers--state_manager"></a>
+### `managers/state_manager.py`
+
+- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/managers/state_manager.py#L17)** — Manages widget state persistence using QSettings.
+  - `StateManager.apply(self, widget: QtWidgets.QWidget, value: Any) -> None` — Apply the given value to the widget using ValueManager.
+  - `StateManager.suppress_save(self)` — Context manager that temporarily suppresses QSettings writes.
+  - `StateManager.save(self, widget: QtWidgets.QWidget, value: Any = None) -> None` — Save the current value of the widget to QSettings.
+  - `StateManager.save_value(self, key: str, value: Any) -> None` — Serialize and persist ``value`` at an explicit state ``key``.
+  - `StateManager.load(self, widget: QtWidgets.QWidget) -> None` — Load the saved value from QSettings and apply it to the widget.
+  - `StateManager.reset_all(self, block_signals: bool = False) -> None` — Reset all widgets with stored defaults to their original values.
+  - `StateManager.reset(self, widget: QtWidgets.QWidget) -> None` — Reset a widget to its default value.
+  - `StateManager.clear(self, widget: QtWidgets.QWidget) -> None` — Removes the stored state for the widget from QSettings.
+  - `StateManager.has_default(self, widget: QtWidgets.QWidget) -> bool` — Check if a widget has a stored default value.
+  - `StateManager.capture_default(self, widget: QtWidgets.QWidget) -> None` — Capture the current widget value as its default.
+  - `StateManager.set_default(self, widget: QtWidgets.QWidget, value: Any) -> None` — Explicitly set a widget's default value.
+  - `StateManager.save_custom(self, key: str, value: Any) -> None` — Persist an arbitrary key/value pair through QSettings.
+  - `StateManager.load_custom(self, key: str, default: Any = None) -> Any` — Retrieve a previously stored custom key/value pair.
+  - `StateManager.clear_custom(self, key: str) -> None` — Remove a single custom key from storage.
+
+<a id="managers--value_manager"></a>
+### `managers/value_manager.py`
+
+- **[`class ValueManager`](uitk/uitk/managers/value_manager.py#L6)** — Flexible value getting/setting for most Qt widgets.
+  - `ValueManager.get_value(widget)` *(static)* — Get the current value from a widget.
+  - `ValueManager.set_value(widget, value, block_signals=False)` *(static)* — Set a value on a widget.
+  - `ValueManager.get_widget_type_info(widget)` *(static)* — Get information about widget type for display purposes.
+  - `ValueManager.is_supported_widget(widget)` *(static)* — Check if a widget type is supported for value operations.
+  - `ValueManager.get_value_by_signal(widget, signal_name)` *(static)* — Get widget value based on its primary signal type.
+  - `ValueManager.set_value_by_signal(widget, value, signal_name, block_signals=False)` *(static)* — Set widget value based on its primary signal type.
+
 <a id="switchboard--_core"></a>
 ### `switchboard/_core.py`
 
@@ -512,6 +656,25 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardWidgetMixin.get_all_windows(name=None)` *(static)* — Get Qt windows.
   - `SwitchboardWidgetMixin.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
   - `SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
+
+<a id="themes--style_sheet"></a>
+### `themes/style_sheet.py`
+
+- [`repolish_tree(root: QtWidgets.QWidget) -> None`](uitk/uitk/themes/style_sheet.py#L14) — Force re-evaluation of property-selector QSS for *root* and children.
+- **[`class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`](uitk/uitk/themes/style_sheet.py#L52)** — Theme and stylesheet manager with light/dark theme support.
+  - `StyleSheet.theme_changed(self)` *(property)* — Signal ``(widget, theme_name, theme_vars)`` emitted after a style applies.
+  - `StyleSheet.get_icon_color(cls, widget: QtWidgets.QWidget = None) -> str` *(class)* — Get the icon color for a widget based on its current theme.
+  - `StyleSheet.set_theme(cls, theme: str, widget: QtWidgets.QWidget = None)` *(class)* — Set a new theme for a specific widget or all registered widgets.
+  - `StyleSheet.reload(cls, widget: QtWidgets.QWidget = None)` *(class)* — Reload the style for a specific widget or all registered widgets.
+  - `StyleSheet.clear_caches(cls) -> None` *(class)* — Drop QSS + parsed-template caches.
+  - `StyleSheet.set_variable(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)` *(class)* — Set a theme variable override.
+  - `StyleSheet.get_variable(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str` *(class)* — Get a theme variable value, resolving overrides.
+  - `StyleSheet.get_variable_px(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None, default: Union[int, None] = None) -> Union[int, None]` *(class)* — Get a length token as an integer pixel value.
+  - `StyleSheet.get_variables(cls, theme: str = 'light') -> list[str]` *(class)* — Get list of available theme variables.
+  - `StyleSheet.export_overrides(cls) -> dict` *(class)* — Export the current global overrides as a plain dict.
+  - `StyleSheet.import_overrides(cls, data: dict) -> None` *(class)* — Bulk-replace global overrides from a dict and reload once.
+  - `StyleSheet.reset_overrides(cls, widget: QtWidgets.QWidget = None)` *(class)* — Clear overrides.
+  - `StyleSheet.set(self, widget: Union[QtWidgets.QWidget, None] = None, theme: str = 'light', style_class: str = '', recursive: bool = False, resource: str = 'style.qss', package: str = 'uitk.themes', _qss_final: Union[str, None] = None, **kwargs)` — Apply a themed stylesheet to ``widget`` and register it for reloads.
 
 <a id="widgets--attributeWindow--_attributeWindow"></a>
 ### `widgets/attributeWindow/_attributeWindow.py`
@@ -1171,22 +1334,6 @@ Mixin: transient HUD-style feedback for any QWidget.
 - **[`class FeedbackMixin`](uitk/uitk/widgets/mixins/feedback.py#L27)** — Adds a lazily-instantiated, theme-styled HUD popup.
   - `FeedbackMixin.show_feedback(self, html_text: str) -> None` — Flash *html_text* near the host.
 
-<a id="widgets--mixins--icon_manager"></a>
-### `widgets/mixins/icon_manager.py`
-
-- **[`class IconManager`](uitk/uitk/widgets/mixins/icon_manager.py#L10)** — Theme-aware SVG icon loader with caching and color customization.
-  - `IconManager.set_default_color(cls, color: str)` *(class)* — Set the default icon color for icons created without explicit color.
-  - `IconManager.register_icon_dir(cls, path)` *(class)* — Register an additional icon directory (searched first).
-  - `IconManager.get(cls, name: str, size=(16, 16), color: str = None, use_theme: bool = True) -> QtGui.QIcon` *(class)* — Get an icon, optionally colorized.
-  - `IconManager.fit_size(container_size, margin: int = 4, min_size: int = 8) -> int` *(static)* — Compute a square icon extent that fits inside ``container_size`` px.
-  - `IconManager.fit_icon(cls, widget, name: str, container_size, margin: int = 4, min_size: int = 8, color: str = None, auto_theme: bool = True) -> int` *(class)* — Render *name* onto *widget* sized to fit a square container.
-  - `IconManager.swap_icon(cls, widget, name: str, color: str = None, auto_theme: bool = True, fallback_size=(16, 16)) -> None` *(class)* — Replace the icon on *widget* without changing its display size.
-  - `IconManager.set_icon(cls, widget, name: str, size=(16, 16), color: str = None, auto_theme: bool = True)` *(class)* — Set an icon on a widget.
-  - `IconManager.registered_info(cls, widget) -> 'dict | None'` *(class)* — The icon registry entry for *widget* — name/size/color — or None.
-  - `IconManager.update_widget_icons(cls, root_widget: QtWidgets.QWidget, color: str)` *(class)* — Update all registered icons under a widget tree with a new color.
-  - `IconManager.clear_cache(cls)` *(class)* — Clear all cached icons and SVG content.
-  - `IconManager.get_cache_stats(cls) -> dict` *(class)* — Get statistics about the icon cache.
-
 <a id="widgets--mixins--icon_states"></a>
 ### `widgets/mixins/icon_states.py`
 
@@ -1220,104 +1367,6 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
   - `OptionBoxMixin.container(self)` *(property)* — Return the OptionBox container for this widget if available.
   - `OptionBoxMixin.options(self) -> 'OptionBoxMixin._OptionsWrapper'` *(property)*
 
-<a id="widgets--mixins--preset_manager"></a>
-### `widgets/mixins/preset_manager.py`
-
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1438) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/widgets/mixins/preset_manager.py#L1455) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/widgets/mixins/preset_manager.py#L1583) — Root directory under which every relative ``preset_dir`` is resolved.
-- **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/preset_manager.py#L19)** — Manages named presets for widget state, stored as external JSON files.
-  - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
-  - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
-  - `PresetManager.preset_dir(self) -> Path` *(property)* — The directory where preset files are stored.
-  - `PresetManager.on_change(self, callback) -> None` — Register a callback invoked when presets are modified.
-  - `PresetManager.scope(self) -> str` *(property)* — Which widget set a save/load operates on.
-  - `PresetManager.exclude(self, *names_or_widgets) -> 'PresetManager'` — Exclude widgets (by ``objectName`` or instance) from capture/restore.
-  - `PresetManager.include(self, *names_or_widgets) -> 'PresetManager'` — Restrict capture/restore to *only* these widgets (allowlist).
-  - `PresetManager.active_preset(self) -> Optional[str]` *(property)* — Name of the preset currently in use, or ``None``.
-  - `PresetManager.is_modified(self) -> bool` — True when live values diverge from the active preset's stored values.
-  - `PresetManager.on_modified_changed(self, callback: Callable[[bool], None]) -> None` — Register *callback(bool)* invoked when the modified state flips.
-  - `PresetManager.refresh_modified_state(self) -> bool` — Recompute the modified state;
-  - `PresetManager.connect_value_widgets(self) -> None` — Wire managed widgets' change signals so the dirty marker updates live.
-  - `PresetManager.save(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path` — Save the current widget values as a named preset.
-  - `PresetManager.load(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int` — Load a named preset and apply its values to the matching widgets.
-  - `PresetManager.list(self) -> List[str]` — Return a sorted list of available preset names across both tiers.
-  - `PresetManager.source(self, name: str) -> Optional[str]` — Which tier *name* resolves from: ``"user"``, ``"builtin"``, or ``None``.
-  - `PresetManager.delete(self, name: str) -> bool` — Delete a *user* preset (built-ins are read-only).
-  - `PresetManager.rename(self, old_name: str, new_name: str) -> bool` — Rename a *user* preset.
-  - `PresetManager.exists(self, name: str) -> bool` — Check whether a named preset exists in either tier.
-  - `PresetManager.make_preset_combo(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None) -> 'QtWidgets.QWidget'` — Create a fully-wired preset selector and return its layout container.
-  - `PresetManager.wire_combo(self, combo, on_loaded=None)` — Wire a uitk ``ComboBox`` as a fully-functional preset selector.
-
-<a id="widgets--mixins--recent_values_store"></a>
-### `widgets/mixins/recent_values_store.py`
-
-Widget-free *recent values* model — the shared source of truth for value history.
-
-- [`normalize_value(value)`](uitk/uitk/widgets/mixins/recent_values_store.py#L105) — Normalize a value for comparison.
-- **[`class RecentValueEntry`](uitk/uitk/widgets/mixins/recent_values_store.py#L64)** — A recent value whose restore-data differs from its display string.
-- **[`class RecentValuesStore`](uitk/uitk/widgets/mixins/recent_values_store.py#L121)** — Ordered, deduped, most-recent-first value history.
-  - `RecentValuesStore.subscribe(self, callback: Callable[[], None]) -> None` — Register *callback* to be invoked (no args) after any mutation.
-  - `RecentValuesStore.unsubscribe(self, callback: Callable[[], None]) -> None` — Remove a previously-registered *callback* (no-op if absent).
-  - `RecentValuesStore.values(self) -> List` *(property)* — A copy of the full history (most-recent first, raw values).
-  - `RecentValuesStore.is_valid(self, value) -> bool` — Whether *value* passes the configured validator (True if none).
-  - `RecentValuesStore.valid_values(self) -> List` — History filtered to entries passing the validator (non-destructive).
-  - `RecentValuesStore.record(self, value) -> None` — Insert *value* at the front (most-recent), dedup, trim, persist.
-  - `RecentValuesStore.add(self, value) -> None` — Seed *value* (append if new);
-  - `RecentValuesStore.remove(self, value) -> None` — Remove *value* from the history (no-op if absent).
-  - `RecentValuesStore.clear(self) -> None` — Drop all history.
-  - `RecentValuesStore.prune_invalid(self) -> List` — Drop every entry failing the validator;
-  - `RecentValuesStore.display_map(self, values=None) -> dict` — Return ``{raw_value: display_string}`` for *values*.
-
-<a id="widgets--mixins--settings_manager"></a>
-### `widgets/mixins/settings_manager.py`
-
-- [`decode_stored_value(value: Any) -> Any`](uitk/uitk/widgets/mixins/settings_manager.py#L171) — Read-side mirror of :func:`encode_stored_value`.
-- [`encode_stored_value(value: Any) -> Any`](uitk/uitk/widgets/mixins/settings_manager.py#L194) — Encode *value* for QSettings so a JSON-decoding read restores it losslessly.
-- **[`class SettingsManager`](uitk/uitk/widgets/mixins/settings_manager.py#L227)** — Manages persistent storage and retrieval of settings via QSettings.
-  - `SettingsManager.branch(self, name: str) -> 'SettingsManager'` — Create a new SettingsManager instance targeted at a sub-namespace.
-  - `SettingsManager.set_defaults(self, defaults: dict) -> None` — Apply default values for a set of keys if they are not already set.
-  - `SettingsManager.value(self, key: str, default: Any = None) -> Any`
-  - `SettingsManager.setValue(self, key: str, value: Any) -> None`
-  - `SettingsManager.on_change(self, key: str, callback: Callable[[Any], None]) -> None` — Register a callback to be invoked when a key's value changes.
-  - `SettingsManager.keys(self) -> list` — Return all keys in the current namespace.
-  - `SettingsManager.setByteArray(self, key: str, value: QtCore.QByteArray) -> None` — Set a QByteArray value directly without JSON serialization.
-  - `SettingsManager.getByteArray(self, key: str, default: QtCore.QByteArray = None) -> QtCore.QByteArray` — Get a QByteArray value directly.
-  - `SettingsManager.remove(self, key: str) -> None` — Remove a single key from the current namespace.
-  - `SettingsManager.clear(self, key: Optional[str] = None) -> None` — Clears a specific key, or all keys in the current namespace.
-  - `SettingsManager.sync(self) -> None`
-
-<a id="widgets--mixins--shortcuts"></a>
-### `widgets/mixins/shortcuts.py`
-
-Generic keyboard-shortcut primitives, usable by any Qt widget.
-
-- [`context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`](uitk/uitk/widgets/mixins/shortcuts.py#L36) — Convert a Qt.ShortcutContext to its persistence string.
-- [`scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`](uitk/uitk/widgets/mixins/shortcuts.py#L41) — Convert a persisted scope string to a Qt.ShortcutContext.
-- [`host_namespace_suffix(context_tags) -> str`](uitk/uitk/widgets/mixins/shortcuts.py#L46) — Settings-key suffix namespacing persisted state by host context.
-- [`resolve_application_host(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]`](uitk/uitk/widgets/mixins/shortcuts.py#L68) — Return an always-visible top-level window to own an application shortcut.
-- [`find_duplicate_application_shortcuts(app=None) -> Dict[str, int]`](uitk/uitk/widgets/mixins/shortcuts.py#L115) — Return ``{sequence: count}`` for key sequences bound by more than one
-- **[`class GlobalShortcut(QtCore.QObject)`](uitk/uitk/widgets/mixins/shortcuts.py#L157)** — A robust global shortcut handler that detects both press and release events.
-  - `GlobalShortcut.eventFilter(self, obj, event)` — Monitor global events for the specific key release.
-  - `GlobalShortcut.setEnabled(self, enabled: bool)`
-  - `GlobalShortcut.setKey(self, key_sequence: Union[str, QtGui.QKeySequence])`
-  - `GlobalShortcut.setContext(self, context: QtCore.Qt.ShortcutContext)` — Live-update the underlying QShortcut's context.
-  - `GlobalShortcut.dispose(self) -> None` — Disable, unregister, and schedule deletion of this shortcut.
-- **[`class ShortcutManager`](uitk/uitk/widgets/mixins/shortcuts.py#L333)** — Centralized shortcut management with clear separation of concerns
-  - `ShortcutManager.add_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut, hidden: bool = False) -> QtWidgets.QShortcut` — Add a keyboard shortcut with optional description and context
-  - `ShortcutManager.add_shortcuts_batch(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]` — Add multiple shortcuts from a configuration list
-  - `ShortcutManager.add_global_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut` — Add a global shortcut (robust press/release detection).
-  - `ShortcutManager.add_info_entry(self, key_label: str, description: str) -> None` — Register a display-only entry (e.g.
-  - `ShortcutManager.remove_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool` — Remove a specific shortcut
-  - `ShortcutManager.clear_all(self) -> None` — Remove all shortcuts
-  - `ShortcutManager.on_change(self, callback: Callable) -> None` — Register a callback invoked after any shortcut is rebound.
-  - `ShortcutManager.rebind_shortcut(self, old_key: str, new_key: str) -> bool` — Change the key sequence for an existing shortcut.
-  - `ShortcutManager.show_editor(self, parent=None, title: str = 'Shortcuts') -> None` — Open the unified shortcut editor for this manager's bindings.
-  - `ShortcutManager.get_shortcuts_info(self) -> Dict[str, str]` — Get information about all registered shortcuts
-  - `ShortcutManager.has_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool` — Check if a shortcut is registered
-  - `ShortcutManager.get_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]` — Get a specific shortcut object
-  - `ShortcutManager.get_registry(self) -> List[Dict]` — Registry entries for this manager's shortcuts, in the shared editor
-
 <a id="widgets--mixins--size_grip"></a>
 ### `widgets/mixins/size_grip.py`
 
@@ -1342,44 +1391,6 @@ Shared value-text coloring for spin-box widgets.
 - **[`class SpinBoxTextColorMixin`](uitk/uitk/widgets/mixins/spin_box_text_color.py#L20)** — Tint a spin box's displayed value text.
   - `SpinBoxTextColorMixin.set_text_color(self, color) -> None` — Tint the displayed value text.
   - `SpinBoxTextColorMixin.text_color(self)` — The current value-text color override, or ``None`` if unset.
-
-<a id="widgets--mixins--state_manager"></a>
-### `widgets/mixins/state_manager.py`
-
-- **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/state_manager.py#L17)** — Manages widget state persistence using QSettings.
-  - `StateManager.apply(self, widget: QtWidgets.QWidget, value: Any) -> None` — Apply the given value to the widget using ValueManager.
-  - `StateManager.suppress_save(self)` — Context manager that temporarily suppresses QSettings writes.
-  - `StateManager.save(self, widget: QtWidgets.QWidget, value: Any = None) -> None` — Save the current value of the widget to QSettings.
-  - `StateManager.save_value(self, key: str, value: Any) -> None` — Serialize and persist ``value`` at an explicit state ``key``.
-  - `StateManager.load(self, widget: QtWidgets.QWidget) -> None` — Load the saved value from QSettings and apply it to the widget.
-  - `StateManager.reset_all(self, block_signals: bool = False) -> None` — Reset all widgets with stored defaults to their original values.
-  - `StateManager.reset(self, widget: QtWidgets.QWidget) -> None` — Reset a widget to its default value.
-  - `StateManager.clear(self, widget: QtWidgets.QWidget) -> None` — Removes the stored state for the widget from QSettings.
-  - `StateManager.has_default(self, widget: QtWidgets.QWidget) -> bool` — Check if a widget has a stored default value.
-  - `StateManager.capture_default(self, widget: QtWidgets.QWidget) -> None` — Capture the current widget value as its default.
-  - `StateManager.set_default(self, widget: QtWidgets.QWidget, value: Any) -> None` — Explicitly set a widget's default value.
-  - `StateManager.save_custom(self, key: str, value: Any) -> None` — Persist an arbitrary key/value pair through QSettings.
-  - `StateManager.load_custom(self, key: str, default: Any = None) -> Any` — Retrieve a previously stored custom key/value pair.
-  - `StateManager.clear_custom(self, key: str) -> None` — Remove a single custom key from storage.
-
-<a id="widgets--mixins--style_sheet"></a>
-### `widgets/mixins/style_sheet.py`
-
-- [`repolish_tree(root: QtWidgets.QWidget) -> None`](uitk/uitk/widgets/mixins/style_sheet.py#L14) — Force re-evaluation of property-selector QSS for *root* and children.
-- **[`class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`](uitk/uitk/widgets/mixins/style_sheet.py#L52)** — Theme and stylesheet manager with light/dark theme support.
-  - `StyleSheet.theme_changed(self)` *(property)* — Signal ``(widget, theme_name, theme_vars)`` emitted after a style applies.
-  - `StyleSheet.get_icon_color(cls, widget: QtWidgets.QWidget = None) -> str` *(class)* — Get the icon color for a widget based on its current theme.
-  - `StyleSheet.set_theme(cls, theme: str, widget: QtWidgets.QWidget = None)` *(class)* — Set a new theme for a specific widget or all registered widgets.
-  - `StyleSheet.reload(cls, widget: QtWidgets.QWidget = None)` *(class)* — Reload the style for a specific widget or all registered widgets.
-  - `StyleSheet.clear_caches(cls) -> None` *(class)* — Drop QSS + parsed-template caches.
-  - `StyleSheet.set_variable(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)` *(class)* — Set a theme variable override.
-  - `StyleSheet.get_variable(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str` *(class)* — Get a theme variable value, resolving overrides.
-  - `StyleSheet.get_variable_px(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None, default: Union[int, None] = None) -> Union[int, None]` *(class)* — Get a length token as an integer pixel value.
-  - `StyleSheet.get_variables(cls, theme: str = 'light') -> list[str]` *(class)* — Get list of available theme variables.
-  - `StyleSheet.export_overrides(cls) -> dict` *(class)* — Export the current global overrides as a plain dict.
-  - `StyleSheet.import_overrides(cls, data: dict) -> None` *(class)* — Bulk-replace global overrides from a dict and reload once.
-  - `StyleSheet.reset_overrides(cls, widget: QtWidgets.QWidget = None)` *(class)* — Clear overrides.
-  - `StyleSheet.set(self, widget: Union[QtWidgets.QWidget, None] = None, theme: str = 'light', style_class: str = '', recursive: bool = False, resource: str = 'style.qss', package: str = 'uitk.widgets.mixins', _qss_final: Union[str, None] = None, **kwargs)` — Apply a themed stylesheet to ``widget`` and register it for reloads.
 
 <a id="widgets--mixins--text"></a>
 ### `widgets/mixins/text.py`
@@ -1427,17 +1438,6 @@ Text rendering for uitk widgets.
 - **[`class TooltipProxy`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L36)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
   - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
 - **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L224)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
-
-<a id="widgets--mixins--value_manager"></a>
-### `widgets/mixins/value_manager.py`
-
-- **[`class ValueManager`](uitk/uitk/widgets/mixins/value_manager.py#L6)** — Flexible value getting/setting for most Qt widgets.
-  - `ValueManager.get_value(widget)` *(static)* — Get the current value from a widget.
-  - `ValueManager.set_value(widget, value, block_signals=False)` *(static)* — Set a value on a widget.
-  - `ValueManager.get_widget_type_info(widget)` *(static)* — Get information about widget type for display purposes.
-  - `ValueManager.is_supported_widget(widget)` *(static)* — Check if a widget type is supported for value operations.
-  - `ValueManager.get_value_by_signal(widget, signal_name)` *(static)* — Get widget value based on its primary signal type.
-  - `ValueManager.set_value_by_signal(widget, value, signal_name, block_signals=False)` *(static)* — Set widget value based on its primary signal type.
 
 <a id="widgets--mixins--wheel_step"></a>
 ### `widgets/mixins/wheel_step.py`

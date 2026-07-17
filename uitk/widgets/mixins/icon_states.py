@@ -101,7 +101,7 @@ class IconStates:
 
     def apply(self):
         """Apply the current state's icon/color/tooltip to the widget."""
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         state = self._states[self._index]
         if "icon" in state:

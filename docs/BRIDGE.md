@@ -78,7 +78,7 @@ with self.sb.progress(text=f"Working: Send to Blender ({template})"):
 
 ## Parameter specs and kind handlers
 
-[`spec.py`](../uitk/bridge/spec.py) is the single registry powering both the DCC bridges and `AttributeWindow` — it originally lived at `uitk.widgets.attributeWindow._factory`, and that import path remains as a back-compat shim.
+[`spec.py`](../uitk/bridge/spec.py) is the single registry powering both the DCC bridges and `AttributeWindow` — it originally lived inside `uitk.widgets.attributeWindow` before being promoted to the bridge package.
 
 ### `AttributeSpec`
 
@@ -178,7 +178,7 @@ What every subclass gets for free from [`slots.py`](../uitk/bridge/slots.py):
 
 **Output Dir row** (`REQUIRE_OUTPUT_DIR`, default `True`) — a line edit inserted above the parameters, carrying uitk option-box buttons: a persisted recent-values history plus a directory-browse button by default (`_configure_output_dir_options` hook to swap them). `require_output_dir()` resolves in order: the typed value → `default_output_dir()` (on hit, written back into the field and announced in the log with a clickable link) → log an error, focus the field, return `None` so the caller aborts. With `REQUIRE_OUTPUT_DIR = False` the row is never built and both `resolved_output_dir()` and `require_output_dir()` return `""`, so callers need no guard.
 
-**Presets** — a preset combo plus a "Reset to Defaults" button, driven by `PresetManager` ([`preset_manager.py`](../uitk/widgets/mixins/preset_manager.py)), in one of two modes chosen by `make_preset_store()`:
+**Presets** — a preset combo plus a "Reset to Defaults" button, driven by `PresetManager` ([`preset_manager.py`](../uitk/managers/preset_manager.py)), in one of two modes chosen by `make_preset_store()`:
 
 - *Widget-state mode* (default, `make_preset_store()` → `None`): raw widget snapshots keyed by `objectName`, stored per-template under `PRESETS_ROOT`. Used by the DCC bridges.
 - *Semantic mode* (return a `pythontk.PresetStore`): presets are `{param_key: value}` run-templates keyed by spec name, shared with a headless CLI through the same store (built-in + user tiers), template-agnostic. Captured via `collect_param_values`; applied with overlay semantics — unknown keys ignored, absent keys keep current widget values.

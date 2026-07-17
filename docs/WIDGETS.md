@@ -53,7 +53,7 @@ widget.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
 ```
 
 ### Rich text & icons
-`RichText` mixin lets any text-carrying widget accept HTML. `IconManager` (`uitk/widgets/mixins/icon_manager.py`) is a theme-aware SVG icon loader — the active theme sets a default icon color via `IconManager.set_default_color`.
+`RichText` mixin lets any text-carrying widget accept HTML. `IconManager` (`uitk/managers/icon_manager.py`) is a theme-aware SVG icon loader — the active theme sets a default icon color via `IconManager.set_default_color`.
 
 ```python
 button.setText('<b>Bold</b> and <i style="color:red;">Red</i>')
@@ -363,7 +363,7 @@ A `QWidget` that becomes visible on mouse-over. Used by `MarkingMenu` to define 
 
 ## AttributeWindow
 
-`uitk/widgets/attributeWindow/` — a `Menu`-based popup editor for inspecting and modifying an object's attributes. Pass the target `obj` plus optional `get_attribute_func` / `set_attribute_func` callables to adapt any backend; populate with `add_attributes(attributes)`. Editor widgets are chosen per value kind by the registry in [`attributeWindow/_factory.py`](../uitk/widgets/attributeWindow/_factory.py) (bool / int / float / str / choice / path / file_list). Labels can be checkable (`checkable=True`, `single_check=True`).
+`uitk/widgets/attributeWindow/` — a `Menu`-based popup editor for inspecting and modifying an object's attributes. Pass the target `obj` plus optional `get_attribute_func` / `set_attribute_func` callables to adapt any backend; populate with `add_attributes(attributes)`. Editor widgets are chosen per value kind by the registry in [`bridge/spec.py`](../uitk/bridge/spec.py) (bool / int / float / str / choice / path / file_list). Labels can be checkable (`checkable=True`, `single_check=True`).
 
 Signals: `labelToggled(str, bool)`, `valueChanged(str, object)`, `refreshRequested()`.
 
@@ -546,7 +546,7 @@ sb.editors.add_post_build_hook("shortcut", wire_dcc_collision_checker)
 
 Shortcuts live in two layers; `ShortcutEditor` is the single UI over both.
 
-**Widget-side primitives** — [`uitk/widgets/mixins/shortcuts.py`](../uitk/widgets/mixins/shortcuts.py), usable without a Switchboard:
+**Widget-side primitives** — [`uitk/managers/shortcut_manager.py`](../uitk/managers/shortcut_manager.py), usable without a Switchboard:
 
 - `GlobalShortcut` — wraps a `QShortcut` for press activation and adds an application-level event filter to reliably detect key **release** (which plain `QShortcut` can't) — for hold-and-release interactions like the marking menu, in hosts (Maya) that swallow key events. Signals: `pressed`, `released`.
 - `ShortcutManager` — per-widget registry: `add_shortcut(key, action, description, context)`, `add_global_shortcut`, `add_shortcuts_batch`, `rebind_shortcut(old, new)`, `get_registry()`; `show_editor()` opens `ShortcutEditor` over a bare manager via `ManagerSwitchboardFacade` ([manager_facade.py](../uitk/widgets/editors/shortcut_editor/manager_facade.py)), which presents the manager as a one-UI Switchboard.

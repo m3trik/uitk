@@ -158,7 +158,7 @@ class ClearButton(QtWidgets.QPushButton):
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent)
         from uitk.widgets.mixins.text import RichText
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
         from uitk.widgets.mixins.attributes import AttributesMixin
 
         # Apply mixins dynamically

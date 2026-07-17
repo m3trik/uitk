@@ -20,7 +20,7 @@ from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 
 if TYPE_CHECKING:  # pragma: no cover
-    from uitk.widgets.mixins.style_sheet import StyleSheet
+    from uitk.themes.style_sheet import StyleSheet
 
 
 class WindowPanel(QtWidgets.QWidget):
@@ -160,7 +160,7 @@ class WindowPanel(QtWidgets.QWidget):
         """
         style = self.__dict__.get("_style")
         if style is None:
-            from uitk.widgets.mixins.style_sheet import StyleSheet
+            from uitk.themes.style_sheet import StyleSheet
 
             style = StyleSheet(self)
             self._style = style
@@ -397,7 +397,7 @@ class WindowPanel(QtWidgets.QWidget):
             A flat, square, no-focus, pointing-hand-cursor button. The
             caller is responsible for connecting ``clicked``.
         """
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         btn = QtWidgets.QPushButton()
         btn.setFlat(True)

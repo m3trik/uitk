@@ -2,9 +2,9 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.colorSwatch import ColorSwatch
-from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.editors.editor_panel import EditorPanel
-from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.managers.icon_manager import IconManager
 
 
 # Tokens shown in the "Basic" tier — the ones a typical user edits to

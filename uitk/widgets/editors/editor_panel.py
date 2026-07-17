@@ -21,7 +21,7 @@ from pathlib import Path
 from qtpy import QtWidgets
 
 from uitk.widgets.windowPanel import WindowPanel
-from uitk.widgets.mixins.preset_manager import PresetManager
+from uitk.managers.preset_manager import PresetManager
 
 
 class EditorPanel(WindowPanel):

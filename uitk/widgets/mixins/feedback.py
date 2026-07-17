@@ -79,7 +79,7 @@ class FeedbackMixin:
         # Import locally so the mixin can be used in environments where
         # the full style engine isn't desired (e.g. minimal headless setups).
         try:
-            from uitk.widgets.mixins.style_sheet import StyleSheet
+            from uitk.themes.style_sheet import StyleSheet
         except Exception:  # noqa: BLE001 — style engine optional at this layer.
             return
         StyleSheet(box).set(theme=theme)

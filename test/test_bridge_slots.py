@@ -27,7 +27,7 @@ app = setup_qt_application()
 import pythontk as ptk  # noqa: E402
 from uitk.bridge.slots import BridgeSlotsBase  # noqa: E402
 from uitk.bridge.spec import AttributeSpec, make_widget, read_value, set_value  # noqa: E402
-from uitk.widgets.mixins.preset_manager import PresetManager  # noqa: E402
+from uitk.managers.preset_manager import PresetManager  # noqa: E402
 
 
 PARAMS = {

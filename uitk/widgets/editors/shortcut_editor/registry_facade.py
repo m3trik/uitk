@@ -36,7 +36,7 @@ byte-for-byte unchanged:
 import logging
 from typing import Callable, Dict, List, Optional
 
-from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.managers.settings_manager import SettingsManager
 
 
 class _GroupUI:

@@ -3,9 +3,9 @@
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.menu import Menu
 
-# Alias the sibling factory module so every `factory.<...>` call site
-# below reads naturally without dragging in the package name.
-from . import _factory as factory
+# Alias the spec module so every `factory.<...>` call site reads
+# naturally; importing it also registers the built-in kind handlers.
+from uitk.bridge import spec as factory
 
 
 class AttributeWindow(Menu):
@@ -85,8 +85,7 @@ class AttributeWindow(Menu):
     def initialize_ui(self):
         """Initializes the user interface components of the AttributeWindow.
 
-        Widget construction is delegated to :mod:`uitk.bridge.spec`
-        (re-exported through the back-compat ``_factory`` shim);
+        Widget construction is delegated to :mod:`uitk.bridge.spec`;
         AttributeWindow only orchestrates layout, labels, and signal routing.
         """
         self.label_group = None

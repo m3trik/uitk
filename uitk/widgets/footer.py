@@ -300,7 +300,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         btn.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
 
         if initial_icon:
-            from uitk.widgets.mixins.icon_manager import IconManager
+            from uitk.managers.icon_manager import IconManager
 
             # Margin 6 keeps the historical h*0.7 sizing (13 px on a 19 px
             # footer) while delegating the math to IconManager.

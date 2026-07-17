@@ -339,7 +339,7 @@ class LaunchDefaults(BrowserBase):
         self.assertFalse(hasattr(self.browser, "_cb_pinned"))
 
     def test_theme_combobox_lists_registered_themes(self):
-        from uitk.widgets.mixins.style_sheet import StyleSheet
+        from uitk.themes.style_sheet import StyleSheet
 
         items = [
             self.browser._cmb_theme.itemText(i)

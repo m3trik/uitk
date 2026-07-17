@@ -18,7 +18,7 @@ app = setup_qt_application()
 from qtpy import QtWidgets
 from uitk.switchboard import Switchboard
 from uitk.widgets.editors.editor_panel import EditorPanel
-from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.themes.style_sheet import StyleSheet
 
 
 class SwitchboardStyleProperty(QtBaseTestCase):
