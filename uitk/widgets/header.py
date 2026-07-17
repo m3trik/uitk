@@ -975,14 +975,23 @@ class Header(
         self.setParent(widget)
         setattr(widget, "header", self)
 
-        # Connect to window signals if available
+        # Only disconnect the connection WE made previously (tracked in
+        # _pin_signal_source) — blindly disconnecting on a fresh window makes
+        # libpyside emit a "Failed to disconnect" RuntimeWarning. The disconnect
+        # runs regardless of whether the NEW window has the signal: re-attaching
+        # to a signal-less window must not leave the header reacting to the old
+        # window's pin toggles.
         window = self.window()
-        if hasattr(window, "on_pinned_changed"):
+        previous = getattr(self, "_pin_signal_source", None)
+        if previous is not None:
             try:
-                window.on_pinned_changed.disconnect(self._on_window_pinned_changed)
+                previous.on_pinned_changed.disconnect(self._on_window_pinned_changed)
             except (TypeError, RuntimeError):
-                pass
+                pass  # previous window already deleted / connection gone
+            self._pin_signal_source = None
+        if hasattr(window, "on_pinned_changed"):
             window.on_pinned_changed.connect(self._on_window_pinned_changed)
+            self._pin_signal_source = window
 
             # Sync initial state from window to header
             if hasattr(window, "pinned") and window.pinned != self.pinned:

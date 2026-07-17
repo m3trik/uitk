@@ -133,11 +133,20 @@ class ShortcutEditor(EditorPanel):
     _COLUMN_LABELS = ("Action", "Shortcut", "", "", "Description", "UI")
 
     def __init__(self, switchboard, parent=None, focus=None):
+        # A facade launch may re-brand the window (e.g. the Macro Manager) via
+        # plain attributes; a real Switchboard carries neither, so the defaults
+        # keep that path byte-for-byte unchanged.
+        facade_title = getattr(switchboard, "editor_title", None)
         super().__init__(
-            title="Shortcut Editor",
-            status_text="Customize keyboard shortcuts.",
+            title=facade_title or "Shortcut Editor",
+            status_text=getattr(switchboard, "editor_status_text", None)
+            or "Customize keyboard shortcuts.",
             parent=parent,
         )
+        if facade_title:
+            # The header label elides; carry the full name on the OS window /
+            # taskbar too (mirrors ShortcutManager.show_editor's setWindowTitle).
+            self.setWindowTitle(facade_title)
         self.sb = switchboard
         self.resize(600, 600)
         # Focused launch (e.g. ``focus="commands"`` → a single-purpose global-
@@ -169,7 +178,13 @@ class ShortcutEditor(EditorPanel):
         self.persist_geometry(
             self._settings, key=f"window_geometry.{self._focus or 'main'}"
         )
-        self._show_all = bool(self._settings.value("show_all", False))
+        # A facade may prefer opening on the flat all-groups view (e.g. macro
+        # categories); a persisted user choice still wins over that default.
+        self._show_all = bool(
+            self._settings.value(
+                "show_all", getattr(switchboard, "default_show_all", False)
+            )
+        )
         if self._focus:
             self._show_all = False  # a focused launch pins one view, never "all UIs"
         # Hidden bindings (registered ``hidden=True`` or hidden post-hoc via
@@ -184,7 +199,12 @@ class ShortcutEditor(EditorPanel):
         self.cmb_ui = ComboBox()
         self.cmb_ui.setObjectName("cmb_target_ui")
         self.cmb_ui.setFixedHeight(self.HEADER_WIDGET_HEIGHT)
-        self.cmb_ui.current_text_prefix = "" if self._focus else "Target UI:  "
+        # A facade whose groups aren't UIs may re-label the selector (e.g.
+        # "Category:"); ``None`` keeps the Switchboard default.
+        combo_prefix = getattr(switchboard, "ui_combo_prefix", None)
+        if combo_prefix is None:
+            combo_prefix = "Target UI:  "
+        self.cmb_ui.current_text_prefix = "" if self._focus else combo_prefix
         self.cmb_ui.currentTextChanged.connect(self.populate)
         # Option-box toggle: switch between filtering by the selected UI and
         # listing every UI's slots at once (see _add_show_all_toggle). Skipped in
@@ -238,7 +258,13 @@ class ShortcutEditor(EditorPanel):
         self.table = QtWidgets.QTableWidget()
         # The UI column is shown only in 'show all' mode (see _set_show_all).
         self.table.setColumnCount(self.COLUMN_COUNT)
-        self.table.setHorizontalHeaderLabels(list(self._COLUMN_LABELS))
+        column_labels = list(self._COLUMN_LABELS)
+        # A facade whose groups aren't UIs re-labels the UI column to match
+        # (e.g. "Category"); ``None`` keeps the Switchboard default.
+        ui_column_label = getattr(switchboard, "ui_column_label", None)
+        if ui_column_label:
+            column_labels[self.COL_UI] = ui_column_label
+        self.table.setHorizontalHeaderLabels(column_labels)
         header = self.table.horizontalHeader()
         header.setDefaultAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         # The themed ``QHeaderView::section { padding: 4px }`` pushes the default
@@ -356,11 +382,23 @@ class ShortcutEditor(EditorPanel):
     # Preset hooks
     # ------------------------------------------------------------------
 
+    def _facade_preset_config(self) -> Optional[dict]:
+        """A facade's opt-in preset config, or ``None`` (real Switchboard /
+        preset-less facade). See :class:`RegistrySwitchboardFacade`."""
+        return getattr(self.sb, "preset_config", None) if self._manager_mode else None
+
     def export_preset_data(self):
+        cfg = self._facade_preset_config()
+        if cfg:
+            return cfg["value_provider"]()
         return self.export_shortcuts()
 
     def import_preset_data(self, data):
-        self.import_shortcuts(data)
+        cfg = self._facade_preset_config()
+        if cfg:
+            cfg["value_applier"](data)
+        else:
+            self.import_shortcuts(data)
         self.populate()
 
     # ------------------------------------------------------------------
@@ -546,6 +584,11 @@ class ShortcutEditor(EditorPanel):
         gather, the preset export, and the internal collision scan.
         """
         filenames = self.sb.registry.ui_registry.get("filename") or []
+        if self._manager_mode:
+            # Facade groups are plain names (e.g. macro categories), not .ui
+            # filenames — a group may legitimately contain a dot (Maya's
+            # hierarchical runTimeCommand categories), so no extension strip.
+            return sorted(set(filenames))
         return sorted(
             set(
                 self.sb.convert_to_legal_name(name.rsplit(".", 1)[0])
@@ -993,9 +1036,13 @@ class ShortcutEditor(EditorPanel):
         menu.add(cb)
         self._show_hidden_checkbox = cb
 
-        # Presets section, pinned to the bottom of the menu (real Switchboard
-        # only — a standalone manager has no presets). The dirty-check reads only
-        # already-loaded UIs (peek, no build); save still captures every UI.
+        # Presets section, pinned to the bottom of the menu. For a real
+        # Switchboard the presets are the editor's own shortcut snapshots (the
+        # dirty-check reads only already-loaded UIs — peek, no build; save still
+        # captures every UI). A facade has no Switchboard presets, but may opt
+        # into a preset row over its provider's OWN store via ``preset_config``
+        # (e.g. the macro presets a DCC applies headlessly at startup) — same
+        # combo row, same JSON both front-ends read.
         if not self._manager_mode:
             menu.add(Separator(title="Presets"))
             self.init_preset_row(
@@ -1006,6 +1053,17 @@ class ShortcutEditor(EditorPanel):
                 in_header_menu=True,
             )
             self._cmb_preset.setFixedHeight(self.HEADER_WIDGET_HEIGHT)
+        else:
+            cfg = self._facade_preset_config()
+            if cfg:
+                menu.add(Separator(title="Presets"))
+                self.init_preset_row(
+                    cfg["dir_name"],
+                    package=cfg.get("package", "uitk"),
+                    builtin_dir=cfg.get("builtin_dir"),
+                    in_header_menu=True,
+                )
+                self._cmb_preset.setFixedHeight(self.HEADER_WIDGET_HEIGHT)
 
     def _set_show_hidden(self, show_hidden: bool) -> None:
         """Reveal/omit ``hidden=True`` bindings across every view."""

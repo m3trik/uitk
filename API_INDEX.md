@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-15_
+_Generated: 2026-07-17_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `configure_high_dpi() -> bool`
@@ -203,13 +203,16 @@ _Generated: 2026-07-15_
   - methods: init_preset_row, preset_dir, export_preset_data, import_preset_data, save_preset, load_preset, delete_preset, rename_preset
 
 ### `widgets/editors/shortcut_editor/manager_facade.py` — Adapter that lets the unified :class:`ShortcutEditor` render a standalone
-- `class ManagerSwitchboardFacade`
-  - methods: get_ui, convert_to_legal_name, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut
+- `class ManagerSwitchboardFacade(RegistrySwitchboardFacade)`
 
 ### `widgets/editors/shortcut_editor/registry_editor.py`
 - `class CollisionConflict`
 - `class ShortcutEditor(EditorPanel)`
   - methods: export_preset_data, import_preset_data, export_shortcuts, import_shortcuts, showEvent, refresh_ui_list, populate, set_columns_hidden, reset_shortcut, scope_at, scope_interactive, add_collision_checker, remove_collision_checker
+
+### `widgets/editors/shortcut_editor/registry_facade.py` — Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
+- `class RegistrySwitchboardFacade`
+  - methods: get_ui, convert_to_legal_name, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut
 
 ### `widgets/editors/style_editor.py`
 - `class StyleEditor(EditorPanel)`
@@ -221,6 +224,12 @@ _Generated: 2026-07-15_
   - methods: refresh_after_launch, rowCount, columnCount, headerData, data, flags, setData, set_entry_filter, entry_for_name, all_unique_tags
 - `class SwitchboardBrowser(EditorPanel)`
   - methods: hidden_uis, hidden_tags, set_search_scope, set_entry_filter, launch_options, hide_inherited_tags, showEvent
+
+### `widgets/embeddedMenu.py` — Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to it.
+- `class PersistentMenu(QtWidgets.QMenu)`
+  - methods: setVisible
+- `class EmbeddedMenuWidget(QtWidgets.QWidget)`
+  - methods: init_ui, content_size, sizeHint, minimumSizeHint, resizeEvent, showEvent, fit_to_window
 
 ### `widgets/expandableList.py`
 - `class ExpandableList(QtWidgets.QWidget, AttributesMixin)`
@@ -502,11 +511,15 @@ _Generated: 2026-07-15_
 
 ### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
 - `default_rules() -> List[ScriptHighlightRule]`
+- `default_block_rules() -> List[ScriptBlockRule]`
+- `default_level_formats() -> Dict[int, QtGui.QTextCharFormat]`
 - `class ScriptHighlightRule`
+- `class ScriptBlockRule`
+  - methods: starts, continues
 - `class ScriptHighlighter(QtGui.QSyntaxHighlighter)`
-  - methods: highlightBlock
+  - methods: highlightBlock, stamp_level
 - `class ScriptOutput(QtWidgets.QTextEdit)`
-  - methods: set_clear_callback, set_context_menu_hook, set_rules, append_text, keyPressEvent, event, eventFilter
+  - methods: set_clear_callback, set_context_menu_hook, set_rules, set_block_rules, append_text, enterEvent, keyPressEvent, event, eventFilter, build_context_menu
 
 ### `widgets/separator.py`
 - `class Separator(QtWidgets.QFrame, AttributesMixin)`

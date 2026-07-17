@@ -40,7 +40,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.3.19"
+__version__ = "1.3.22"
 
 
 DEFAULT_INCLUDE = {
@@ -85,6 +85,7 @@ DEFAULT_INCLUDE = {
     "widgets.editors.editor_panel": "EditorPanel",
     "widgets.comboBox": "ComboBox",
     "widgets.doubleSpinBox": "DoubleSpinBox",
+    "widgets.embeddedMenu": ["EmbeddedMenuWidget", "PersistentMenu"],
     "widgets.expandableList": "ExpandableList",
     "widgets.header": "Header",
     "widgets.footer": "Footer",

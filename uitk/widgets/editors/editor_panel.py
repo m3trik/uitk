@@ -42,7 +42,13 @@ class EditorPanel(WindowPanel):
     _cmb_preset = None
 
     def init_preset_row(
-        self, dir_name, *, modified_value_provider=None, in_header_menu=False
+        self,
+        dir_name,
+        *,
+        package="uitk",
+        builtin_dir=None,
+        modified_value_provider=None,
+        in_header_menu=False,
     ):
         """Add the canonical preset row (combo + option-box toolbar).
 
@@ -63,9 +69,18 @@ class EditorPanel(WindowPanel):
         dir_name : str
             Relative subdirectory under :func:`get_presets_root` (the
             ecosystem-wide preset root). The editor's presets live in
-            ``<presets_root>/uitk/<dir_name>/``. ``PresetManager`` handles
-            root resolution, the ``M3TRIK_PRESETS_ROOT`` override, and
-            legacy migration.
+            ``<presets_root>/<package>/<dir_name>/``. ``PresetManager``
+            handles root resolution, the ``M3TRIK_PRESETS_ROOT`` override,
+            and legacy migration.
+        package : str, optional
+            Namespace segment above *dir_name* (defaults to ``"uitk"``).
+            Pass another package name when the editor fronts a store owned
+            elsewhere — e.g. the macro presets in ``mayatk/macro_manager``
+            that a headless ``pythontk.PresetStore`` reads at DCC startup —
+            so both front-ends resolve to the same files.
+        builtin_dir : str or Path, optional
+            Directory of shipped read-only presets (the store's built-in
+            tier), forwarded to :class:`PresetManager`.
         modified_value_provider : callable, optional
             Cheaper capture used *only* by the dirty-check
             (:meth:`PresetManager.is_modified`); falls back to the save-time
@@ -88,7 +103,8 @@ class EditorPanel(WindowPanel):
         # to it on load — no managed-widget list, so editors persist their own
         # serialized config (theme overrides, shortcut maps, …) directly.
         self._preset_mgr = PresetManager(
-            preset_dir=f"uitk/{dir_name}",
+            preset_dir=f"{package}/{dir_name}",
+            builtin_dir=builtin_dir,
             value_provider=self.export_preset_data,
             value_applier=_apply_import,
             modified_value_provider=modified_value_provider,

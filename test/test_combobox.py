@@ -40,6 +40,61 @@ class SetEditableNoneSafety(QtBaseTestCase):
         combo.setEditable(False)
 
 
+class FocusOutPopupKeepsEditing(QtBaseTestCase):
+    """A popup taking focus must not tear down an editable combo's line edit.
+
+    Right-clicking an editable combo makes QComboBox::contextMenuEvent forward the
+    event to its internal QLineEdit, which opens its standard context menu. That
+    popup steals focus, so focusOutEvent runs *nested inside* Qt's delivery to the
+    line edit. Exiting edit mode there makes Qt delete the line edit mid-delivery;
+    the stack then unwinds into freed memory — an access violation that takes the
+    whole host process down (Blender 5.1 / Qt 6.11).
+
+    Losing focus to a popup also isn't the end of editing: the user right-clicked
+    to Cut/Copy/Paste and is still typing. See
+    [comboBox.py](uitk/uitk/widgets/comboBox.py).
+    """
+
+    def _editable_combo(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("Material")
+        combo.setEditable(True)
+        return combo
+
+    def _send_focus_out(self, combo, reason):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        QtWidgets.QApplication.sendEvent(
+            combo, QtGui.QFocusEvent(QtCore.QEvent.FocusOut, reason)
+        )
+
+    def test_popup_focus_out_keeps_line_edit_alive(self):
+        from qtpy import QtCore
+
+        combo = self._editable_combo()
+        self._send_focus_out(combo, QtCore.Qt.PopupFocusReason)
+
+        self.assertTrue(
+            combo.isEditable(),
+            "a popup grabbing focus must not exit edit mode (deleting the line "
+            "edit mid-event delivery crashes the host)",
+        )
+        self.assertIsNotNone(combo.lineEdit())
+
+    def test_real_focus_out_still_exits_edit_mode(self):
+        from qtpy import QtCore
+
+        combo = self._editable_combo()
+        self._send_focus_out(combo, QtCore.Qt.MouseFocusReason)
+
+        self.assertFalse(
+            combo.isEditable(),
+            "clicking away is a genuine focus loss and must still commit/exit",
+        )
+
+
 class SetAsCurrentBlockSignalsSafety(QtBaseTestCase):
     """setAsCurrent(blockSignals=True) must restore the prior block state via
     try/finally — an exception (e.g. strict miss) previously left the combo
@@ -588,6 +643,22 @@ class CurrentTextPrefixSuffix(QtBaseTestCase):
 
         combo = self.track_widget(AlignedComboBox())
         self.assertEqual(combo.format_current_display_text("x"), "x")
+
+    def test_base_aligned_combobox_paints(self):
+        """The same bare-``AlignedComboBox`` contract, all the way through a paint.
+
+        ``CustomStyle.drawControl`` reads ``has_header`` off whatever
+        ``AlignedComboBox`` it is painting, but only ``ComboBox.__init__`` ever set
+        it — so painting a bare base instance raised AttributeError. Rendering is
+        the only way to catch it: constructing one is fine, it dies on first draw.
+        """
+        from qtpy import QtGui
+        from uitk.widgets.comboBox import AlignedComboBox
+
+        combo = self.track_widget(AlignedComboBox())
+        combo.addItem("x")
+        combo.resize(120, 24)
+        combo.render(QtGui.QPixmap(combo.size()))  # must not raise
 
 
 class OpenBoxDistinctFromView(QtBaseTestCase):
