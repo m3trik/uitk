@@ -64,6 +64,10 @@ class MarkingMenu(
     HANDLERS = {"ui": UiHandler}
 
     _in_transition: bool = False
+    # The (from, to) ui names of the hover-nav transition currently executing —
+    # the synthetic-enter gate (see child_enterEvent). Class-level default for
+    # test fixtures that bypass __init__.
+    _transition_swap: tuple = ()
     # Per-instance cache, rebound in __init__. The class-level default exists
     # ONLY as a fallback for test fixtures that bypass __init__ — production
     # instances must never share it: a second instance (dev reload) resolving
@@ -1469,6 +1473,18 @@ class MarkingMenu(
             return
 
         try:
+            # The pair being swapped, for the synthetic-enter gate in
+            # child_enterEvent: repositioning slides both the departing menu's
+            # breadcrumb and the arriving menu's anchor under the cursor, and Qt
+            # delivers enter events for them as if the user hovered — navigating
+            # on those ping-pongs the two menus forever. Recorded BEFORE the
+            # reposition; cleared with the transition flag.
+            departing = self.sb.current_ui
+            self._transition_swap = (
+                departing.objectName() if departing is not None else None,
+                ui.objectName(),
+            )
+
             # Preserve overlay path order by adding to path first. ``add``'s
             # return value is the single source of truth for "where was the
             # trigger widget when the user crossed it" — every downstream
@@ -1511,7 +1527,8 @@ class MarkingMenu(
             QtCore.QTimer.singleShot(16, self._clear_transition_flag)  # ~60fps timing
 
     def _position_submenu_smooth(self, ui, w, *, anchor_global=None) -> None:
-        """Align ui so a same-named widget lands at the trigger's screen position.
+        """Align ``ui`` so the trigger's pair widget lands at the trigger's
+        screen position (pairing: :meth:`_find_pair_widget`).
 
         ``anchor_global`` is the path-captured global center of the trigger
         widget — the single source of truth for *where the cursor crossed
@@ -1536,12 +1553,43 @@ class MarkingMenu(
             else:
                 p1 = w.mapToGlobal(w.rect().center())
 
-            w2 = self.sb.get_widget(w.objectName(), ui)
+            w2 = self._find_pair_widget(ui, w)
             if w2:
                 self._align_widget_to_global_center(ui, w2, w.size(), p1)
 
         except Exception as e:
             self.logger.warning(f"Submenu positioning failed: {e}")
+
+    def _find_pair_widget(self, ui, w):
+        """Locate the widget in ``ui`` that represents the same node as ``w``.
+
+        ``MenuButton`` pairs are identified by ``target``: the launcher in the
+        departing menu and the arriving menu's self-anchor both point at the
+        same node, so the target IS the pair identity — the same property
+        hover-nav (``submenu_name``) and release-resolution already key on.
+        When several candidates share the bare target (a shared submenu
+        reached through different filter tags), the full ``submenu_name()``
+        disambiguates.
+
+        objectName matching remains only as a fallback for targetless
+        widgets: the historical scheme paired launcher and anchor by a
+        hand-maintained cross-file numbering convention (every button
+        pointing at node X named ``iNNN``), which nothing enforces — menu
+        sets that named buttons freely silently lost anchor alignment.
+        """
+        target = w.target if isinstance(w, MenuButton) else ""
+        if target:
+            candidates = [
+                b for b in ui.findChildren(MenuButton) if b.target == target
+            ]
+            if len(candidates) > 1:
+                wanted = w.submenu_name()
+                candidates = [
+                    b for b in candidates if b.submenu_name() == wanted
+                ] or candidates
+            if candidates:
+                return candidates[0]
+        return self.sb.get_widget(w.objectName(), ui)
 
     @staticmethod
     def _align_widget_to_global_center(ui, w2, source_size, target_global_center):
@@ -1580,8 +1628,9 @@ class MarkingMenu(
         self._last_ui_history_check = ui
 
     def _clear_transition_flag(self):
-        """Clear the transition flag to allow new transitions."""
+        """Clear the transition flag (and the swap pair) to allow new transitions."""
         self._in_transition = False
+        self._transition_swap = ()
 
     def _return_to_startmenu(self) -> None:
         """Return to the start menu, anchoring it at the gesture origin."""
@@ -2941,8 +2990,24 @@ class MarkingMenu(
                 # Hover opens the button's own submenu — component-specific when the
                 # button carries filter tags (the polygons Edge button →
                 # "polygons#edge#submenu", not the base "polygons#submenu").
+                # Identity gates (no timing heuristics): never re-open the menu the
+                # button lives in, the menu that is already current, or either side
+                # of the transition currently executing. A transition repositions
+                # the window under the cursor and Qt delivers enter events for
+                # whatever lands there — the departing menu's breadcrumb, then the
+                # arriving menu's own anchor — and navigating on those ping-pongs
+                # A->B->A forever (the live "Rigging is unreachable" report). A
+                # genuine hover mid-transition targets a THIRD menu and still
+                # resolves, as does a real breadcrumb back-hover afterwards.
                 submenu_name = w.submenu_name()
-                submenu = self._cached_ui(submenu_name) if submenu_name != w.ui.objectName() else None
+                current = self.sb.current_ui
+                current_name = current.objectName() if current is not None else None
+                blocked = (w.ui.objectName(), current_name, *self._transition_swap)
+                submenu = (
+                    self._cached_ui(submenu_name)
+                    if submenu_name not in blocked
+                    else None
+                )
                 if submenu:
                     self._set_submenu(submenu, w)
 

@@ -18,6 +18,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from conftest import BaseTestCase, setup_qt_application
@@ -55,6 +56,94 @@ class TestPresetsRootResolution(BaseTestCase):
     def test_env_var_override_redirects_root(self):
         os.environ[PRESETS_ROOT_ENV_VAR] = str(self._tmp / "custom")
         self.assertEqual(get_presets_root(), self._tmp / "custom")
+
+    def test_override_root_yields_no_legacy_drain_candidates(self):
+        # REGRESSION (this destroyed a real preset store): the candidates are
+        # absolute REAL machine paths and the drain hoists them with _merge_move —
+        # a MOVE. `<generic>/uitk` IS the live store and `uitk` IS a known_pkg, so
+        # against an overridden root the drain relocated the whole store into it;
+        # a test that redirects the root and rmtree's it in teardown then deleted
+        # the developer's presets outright. An explicit override must never pull
+        # the machine's real dirs in.
+        os.environ[PRESETS_ROOT_ENV_VAR] = str(self._tmp / "override")
+        self.assertEqual(pm._legacy_qt_root_candidates(), [])
+
+    def test_default_root_still_drains_legacy_candidates(self):
+        # The guard must not disable migration for real users, who never set the
+        # override — the candidates are still offered when the root is default.
+        os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
+        self.assertTrue(pm._legacy_qt_root_candidates())
+
+    def test_wrap_never_buries_a_package_outside_known_pkgs(self):
+        # REGRESSION (this silently unbound every blendertk macro hotkey): the wrap
+        # decided pre-wrap-ness from `known_pkgs`, derived from _LEGACY_PRESET_PATHS —
+        # a table frozen at {uitk, mayatk, extapps}. So blendertk/ and shots/ read as
+        # "non-known ⇒ pre-wrap" and were moved into <root>/uitk/<pkg>/. Because
+        # _merge_move keeps the destination on collision and leaves the source, the
+        # store SPLIT: .active relocated, m3trik.json stranded — PresetStore.active
+        # then read None and apply_saved_macros fell back to the empty 'default'.
+        root = self._tmp / "uitk"
+        for pkg, leaf in (("blendertk", "macro_manager"), ("shots", "")):
+            d = root / pkg / leaf if leaf else root / pkg
+            d.mkdir(parents=True)
+            (d / "m3trik.json").write_text('{"_meta": {"version": 1}}')
+
+        # Fixture premise: the table the old denylist was derived from predates
+        # blendertk — which is exactly why the wrap used to bury it.
+        self.assertNotIn(
+            "blendertk",
+            {k.split("/")[0] for k in pm._LEGACY_PRESET_PATHS},
+            "fixture premise: blendertk is not in _LEGACY_PRESET_PATHS",
+        )
+
+        pm._wrap_pre_wrap_uitk_state(root)
+
+        self.assertTrue(
+            (root / "blendertk" / "macro_manager" / "m3trik.json").is_file(),
+            "the wrap buried blendertk/ into uitk/ — its presets become unreadable",
+        )
+        self.assertFalse(
+            (root / "uitk" / "blendertk").exists(),
+            "blendertk/ must never be relocated into the inner uitk/ wrapper",
+        )
+        self.assertTrue((root / "shots" / "m3trik.json").is_file())
+
+    def test_wrap_still_moves_uitks_own_pre_wrap_state(self):
+        # The allowlist must not disable the wrap's actual job: uitk's OWN root-level
+        # state dirs still move down into the inner uitk/.
+        root = self._tmp / "uitk"
+        legacy = root / "style_presets"
+        legacy.mkdir(parents=True)
+        (legacy / "dark.json").write_text("{}")
+
+        pm._wrap_pre_wrap_uitk_state(root)
+
+        self.assertTrue((root / "uitk" / "style_presets" / "dark.json").is_file(),
+                        "uitk's own pre-wrap state must still be wrapped")
+
+    def test_override_root_leaves_the_real_store_untouched(self):
+        # End-to-end proof at the level that actually failed: run the real drain
+        # with the root redirected, and assert a stand-in "real store" is neither
+        # moved nor emptied. Pre-fix this MOVES fake_generic/uitk -> override/uitk.
+        fake_generic = self._tmp / "generic"
+        real_store = fake_generic / "uitk" / "mayatk" / "macro_manager"
+        real_store.mkdir(parents=True)
+        (real_store / "m3trik.json").write_text('{"_meta": {"version": 1}}')
+
+        override = self._tmp / "override"
+        os.environ[PRESETS_ROOT_ENV_VAR] = str(override)
+
+        with mock.patch.object(pm, "QStandardPaths_genericConfigLocation",
+                               lambda: str(fake_generic)), \
+             mock.patch.object(pm, "QStandardPaths_writableLocation",
+                               lambda: str(fake_generic / "python")):
+            pm._LEGACY_QT_ROOTS_CLEARED = False
+            pm._maybe_clear_legacy_qt_roots()
+
+        self.assertTrue(
+            (real_store / "m3trik.json").is_file(),
+            "the drain MOVED the real store into the overridden root — data loss",
+        )
 
     def test_root_is_always_absolute(self):
         # Relative override values must still produce an absolute path so
@@ -452,9 +541,9 @@ class TestLegacyMigration(BaseTestCase):
         keeps the wrap from firing at all (husks ignored); this one forces a
         genuine fire — real pre-wrap uitk state (``style_presets/`` *with*
         data) coexisting with a freshly-placed ``mayatk/`` package — and pins
-        the second half of the fix: only uitk's own pre-wrap dirs move into
-        the inner wrapper; the known-package sibling is never relocated. Fails
-        before the ``known_pkgs`` skip in ``_wrap_pre_wrap_uitk_state`` (mayatk
+        the second half of the fix: only uitk's own pre-wrap dirs
+        (``_UITK_OWN_PRE_WRAP_DIRS``) move into the inner wrapper; a package
+        sibling is never relocated. Fails before that allowlist existed (mayatk
         gets dragged down into ``<root>/uitk/mayatk/``).
         """
         # Genuine pre-wrap uitk state carrying real presets -> wrap must fire.

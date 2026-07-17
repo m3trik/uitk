@@ -1672,6 +1672,17 @@ def _merge_move(src: Path, dst: Path) -> None:
 _LEGACY_QT_ROOTS_CLEARED = False
 _INTERIM_STATE_ARTIFACTS = (".migrated", ".migration")
 
+# uitk's OWN state dirs, as they sat at ``<generic>/uitk/`` in the pre-wrap
+# layout. These are the ONLY children the wrap may relocate down into
+# ``<generic>/uitk/uitk/`` — see _looks_like_ecosystem_wrapper for why this is an
+# allowlist rather than "everything not in known_pkgs" (that denylist buried every
+# package younger than _LEGACY_PRESET_PATHS: blendertk, shots).
+# ``hotkey_presets`` is the pre-rename name of ``shortcut_presets`` and is listed
+# so a store that never launched post-rename still wraps correctly.
+_UITK_OWN_PRE_WRAP_DIRS = frozenset(
+    {"style_presets", "shortcut_presets", "hotkey_presets", "switchboard_browser"}
+)
+
 
 def _legacy_qt_root_candidates() -> List[Path]:
     """Old preset root locations to drain into the current root.
@@ -1694,7 +1705,25 @@ def _legacy_qt_root_candidates() -> List[Path]:
     re-processed by outer passes. Pulled out as a function so tests can
     monkey-patch it to point at tmp dirs (essential — without the patch
     the cleanup would touch the real developer machine's data).
+
+    Returns ``[]`` when the root came from ``$UITK_PRESETS_ROOT``. These are
+    absolute *real* machine paths, and the drain
+    (:func:`_maybe_clear_legacy_qt_roots`) hoists them with :func:`_merge_move`
+    — a **move**, not a copy. ``<generic>/uitk`` IS the live store and ``uitk``
+    IS one of the ``known_pkgs``, so against an overridden root the drain
+    relocates the user's entire store into that root. For a power user pointing
+    the override at a network share that is merely surprising; for a *test* —
+    which redirects the root to a tmp dir and ``rmtree``s it in teardown — it is
+    fatal, and it has already destroyed a real preset store once (mayatk's
+    ``test_macro_editor_window`` sets the env var without patching this
+    function, unlike ``TestLegacyMigration``). An explicit override means "use
+    exactly this location", never "hoover the machine into it", so there is
+    nothing legitimate to drain. The guard lives *here*, inside the seam tests
+    already replace, so a test that patches this function keeps its behaviour
+    while every test that merely sets the env var is protected by default.
     """
+    if os.environ.get(PRESETS_ROOT_ENV_VAR):
+        return []
     appconfig = Path(QStandardPaths_writableLocation())
     generic = Path(QStandardPaths_genericConfigLocation())
     return [appconfig / "m3trik" / "presets", appconfig, generic]
@@ -1717,20 +1746,27 @@ def _dir_has_preset_data(directory: Path) -> bool:
         return False
 
 
-def _looks_like_ecosystem_wrapper(uitk_dir: Path, known_pkgs: Set[str]) -> bool:
+def _looks_like_ecosystem_wrapper(uitk_dir: Path) -> bool:
     """True when *uitk_dir* is already in the wrapper layout.
 
-    A *clean* wrapper layout has only known-package subdirs (uitk /
-    mayatk / extapps) and possibly dotfiles. A non-known root-level dir
-    carrying preset data — ``style_presets``, ``hotkey_presets``,
-    ``some_window``, ... — is pre-wrap state that needs to be moved one
-    level deeper.
+    Pre-wrap evidence is **only** one of uitk's OWN state dirs
+    (:data:`_UITK_OWN_PRE_WRAP_DIRS`) sitting at the root, carrying data.
+    Anything else — ``mayatk/``, ``blendertk/``, ``shots/``, a package added
+    next year — is a correctly-placed sibling, never pre-wrap state.
 
-    Strict matching (vs. "any known-pkg present") also recovers from a
-    *partial* wrap: if a prior wrap was interrupted after creating the
-    inner ``uitk/`` subdir but before moving every stray sibling, the
-    next call still detects the data-bearing strays as pre-wrap and
-    finishes the job.
+    This is an **allowlist of uitk's own dirs**, not a denylist of
+    ``known_pkgs``. It used to be the latter, and *that was a data-corrupting
+    bug*: ``known_pkgs`` is derived from :data:`_LEGACY_PRESET_PATHS`, a table
+    frozen around the packages that existed when the legacy layouts died
+    (``uitk`` / ``mayatk`` / ``extapps``). Every package added afterwards —
+    ``blendertk``, ``shots`` — was therefore "non-known", so its live state read
+    as pre-wrap and got buried in ``<generic>/uitk/uitk/<pkg>/`` on the next
+    launch. Worse, the move is a :func:`_merge_move`, which keeps the
+    destination on a collision and leaves the source behind, so a store could be
+    *split across both levels* — the observed failure was blendertk's
+    ``macro_manager`` with ``.active`` relocated but ``m3trik.json`` stranded at
+    the source, leaving ``PresetStore.active`` reading ``None`` and every macro
+    hotkey silently unbound.
 
     Empty dirs — and data-less *husks* (only a ``.migrated`` sentinel,
     no ``*.json``) — count as "already wrapped": there is nothing to
@@ -1746,17 +1782,15 @@ def _looks_like_ecosystem_wrapper(uitk_dir: Path, known_pkgs: Set[str]) -> bool:
     if not child_dirs:
         return True
     for child in child_dirs:
-        if child.name in known_pkgs:
-            continue
-        if child.name.startswith("."):
-            continue
+        if child.name not in _UITK_OWN_PRE_WRAP_DIRS:
+            continue  # another package's state — correctly placed, never move it
         if not _dir_has_preset_data(child):
             continue  # husk left by a prior wrap — not real pre-wrap state
         return False
     return True
 
 
-def _wrap_pre_wrap_uitk_state(uitk_dir: Path, known_pkgs: Set[str]) -> None:
+def _wrap_pre_wrap_uitk_state(uitk_dir: Path) -> None:
     """Restructure ``<generic>/uitk/`` from pre-wrap to wrapper layout.
 
     Before this code: ``<generic>/uitk/`` held uitk-package state
@@ -1786,7 +1820,7 @@ def _wrap_pre_wrap_uitk_state(uitk_dir: Path, known_pkgs: Set[str]) -> None:
     """
     if not uitk_dir.exists() or not uitk_dir.is_dir():
         return
-    if _looks_like_ecosystem_wrapper(uitk_dir, known_pkgs):
+    if _looks_like_ecosystem_wrapper(uitk_dir):
         return
 
     # Snapshot children BEFORE creating the target so the target itself
@@ -1816,12 +1850,14 @@ def _wrap_pre_wrap_uitk_state(uitk_dir: Path, known_pkgs: Set[str]) -> None:
             except OSError as e:
                 _log.warning("preset wrap: could not remove %s: %s", child, e)
             continue
-        # A correctly-placed known-package sibling (mayatk/, extapps/, and
-        # the inner uitk/ itself) already lives at the right level — never
-        # relocate it into the wrapper, or presets saved under it get buried
-        # where the live load path won't find them. Only uitk's own pre-wrap
-        # state (the non-known root-level dirs) moves down.
-        if child.is_dir() and child.name in known_pkgs:
+        # Only uitk's OWN pre-wrap state moves down. Every other sibling —
+        # mayatk/, blendertk/, extapps/, shots/, the inner uitk/ itself, and any
+        # package added later — already lives at the right level; relocating it
+        # buries presets where the live load path will never find them (and
+        # _merge_move's keep-the-destination rule can strand half a store at each
+        # level). This was previously `child.name in known_pkgs`, a denylist that
+        # silently swallowed every package younger than _LEGACY_PRESET_PATHS.
+        if child.is_dir() and child.name not in _UITK_OWN_PRE_WRAP_DIRS:
             continue
         # The inner target itself shows up in the snapshot only if it
         # pre-existed; skip it so we don't try to move it into itself.
@@ -1876,7 +1912,7 @@ def _maybe_clear_legacy_qt_roots() -> None:
     known_pkgs = {key.split("/")[0] for key in _LEGACY_PRESET_PATHS}
 
     # Pass 1: handle the pre-wrap collision at the new root itself.
-    _wrap_pre_wrap_uitk_state(new_root, known_pkgs)
+    _wrap_pre_wrap_uitk_state(new_root)
 
     # Pass 2: drain candidates.
     candidates = _legacy_qt_root_candidates()

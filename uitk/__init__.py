@@ -85,6 +85,7 @@ DEFAULT_INCLUDE = {
     "widgets.editors.editor_panel": "EditorPanel",
     "widgets.comboBox": "ComboBox",
     "widgets.doubleSpinBox": "DoubleSpinBox",
+    "widgets.embeddedMenu": ["EmbeddedMenuWidget", "PersistentMenu"],
     "widgets.expandableList": "ExpandableList",
     "widgets.header": "Header",
     "widgets.footer": "Footer",

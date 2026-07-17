@@ -45,8 +45,10 @@ _Generated: 2026-07-17_
 - [`widgets/editors/editor_panel.py`](#widgets--editors--editor_panel) — Editor panel: WindowPanel + optional preset save/load row.
 - [`widgets/editors/shortcut_editor/manager_facade.py`](#widgets--editors--shortcut_editor--manager_facade) — Adapter that lets the unified :class:`ShortcutEditor` render a standalone
 - [`widgets/editors/shortcut_editor/registry_editor.py`](#widgets--editors--shortcut_editor--registry_editor)
+- [`widgets/editors/shortcut_editor/registry_facade.py`](#widgets--editors--shortcut_editor--registry_facade) — Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 - [`widgets/editors/style_editor.py`](#widgets--editors--style_editor)
 - [`widgets/editors/switchboard_browser.py`](#widgets--editors--switchboard_browser) — Searchable, tag-filtered launcher for any handler-exposed entry.
+- [`widgets/embeddedMenu.py`](#widgets--embeddedMenu) — Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to it.
 - [`widgets/expandableList.py`](#widgets--expandableList)
 - [`widgets/footer.py`](#widgets--footer)
 - [`widgets/header.py`](#widgets--header)
@@ -583,7 +585,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.format_current_display_text(self, text: str) -> str` — Compose the text painted for the *current* selection only.
   - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L407)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L414)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.clear(self)`
   - `ComboBox.addItem(self, *args, **kwargs)`
   - `ComboBox.addItems(self, *args, **kwargs)`
@@ -688,7 +690,7 @@ Reusable color-mapping editor widget.
 Editor panel: WindowPanel + optional preset save/load row.
 
 - **[`class EditorPanel(WindowPanel)`](uitk/uitk/widgets/editors/editor_panel.py#L27)** — Windowed editor with optional preset management.
-  - `EditorPanel.init_preset_row(self, dir_name, *, modified_value_provider=None, in_header_menu=False)` — Add the canonical preset row (combo + option-box toolbar).
+  - `EditorPanel.init_preset_row(self, dir_name, *, package='uitk', builtin_dir=None, modified_value_provider=None, in_header_menu=False)` — Add the canonical preset row (combo + option-box toolbar).
   - `EditorPanel.preset_dir(self) -> Path` *(property)* — The directory where this editor's preset files live.
   - `EditorPanel.export_preset_data(self) -> dict` — Override to provide data for preset saving.
   - `EditorPanel.import_preset_data(self, data: dict)` — Override to apply data from a loaded preset.
@@ -702,12 +704,7 @@ Editor panel: WindowPanel + optional preset save/load row.
 
 Adapter that lets the unified :class:`ShortcutEditor` render a standalone
 
-- **[`class ManagerSwitchboardFacade`](uitk/uitk/widgets/editors/shortcut_editor/manager_facade.py#L74)** — Switchboard-shaped view over a :class:`ShortcutManager` for the editor.
-  - `ManagerSwitchboardFacade.get_ui(self, _name=None)`
-  - `ManagerSwitchboardFacade.convert_to_legal_name(self, name: str) -> str`
-  - `ManagerSwitchboardFacade.get_shortcut_registry(self, _ui=None) -> List[dict]`
-  - `ManagerSwitchboardFacade.get_static_shortcut_registry(self, _name=None) -> List[dict]`
-  - `ManagerSwitchboardFacade.set_user_shortcut(self, _ui, method: str, sequence: str, scope=None)` — Apply an editor edit.
+- **[`class ManagerSwitchboardFacade(RegistrySwitchboardFacade)`](uitk/uitk/widgets/editors/shortcut_editor/manager_facade.py#L17)** — Switchboard-shaped view over a :class:`ShortcutManager` for the editor.
 
 <a id="widgets--editors--shortcut_editor--registry_editor"></a>
 ### `widgets/editors/shortcut_editor/registry_editor.py`
@@ -727,6 +724,18 @@ Adapter that lets the unified :class:`ShortcutEditor` render a standalone
   - `ShortcutEditor.scope_interactive(self, row: int) -> bool` — Whether a row's Scope cell is a live toggle (vs a fixed / disabled badge).
   - `ShortcutEditor.add_collision_checker(self, checker: Callable) -> None` — Register a collision checker.
   - `ShortcutEditor.remove_collision_checker(self, checker: Callable) -> None` — Unregister a previously added collision checker.
+
+<a id="widgets--editors--shortcut_editor--registry_facade"></a>
+### `widgets/editors/shortcut_editor/registry_facade.py`
+
+Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
+
+- **[`class RegistrySwitchboardFacade`](uitk/uitk/widgets/editors/shortcut_editor/registry_facade.py#L96)** — Switchboard-shaped view over grouped binding entries for the editor.
+  - `RegistrySwitchboardFacade.get_ui(self, name=None)` — Resolve a group name (or ``_GroupUI``) to its synthetic UI object.
+  - `RegistrySwitchboardFacade.convert_to_legal_name(self, name: str) -> str`
+  - `RegistrySwitchboardFacade.get_shortcut_registry(self, ui=None) -> List[dict]`
+  - `RegistrySwitchboardFacade.get_static_shortcut_registry(self, name=None) -> List[dict]`
+  - `RegistrySwitchboardFacade.set_user_shortcut(self, ui, method: str, sequence: str, scope=None)` — Commit an editor edit for *method* in *ui*'s group.
 
 <a id="widgets--editors--style_editor"></a>
 ### `widgets/editors/style_editor.py`
@@ -766,6 +775,22 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `SwitchboardBrowser.launch_options(self) -> LaunchOptions`
   - `SwitchboardBrowser.hide_inherited_tags(self) -> bool` *(property)*
   - `SwitchboardBrowser.showEvent(self, event) -> None`
+
+<a id="widgets--embeddedMenu"></a>
+### `widgets/embeddedMenu.py`
+
+Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to it.
+
+- **[`class PersistentMenu(QtWidgets.QMenu)`](uitk/uitk/widgets/embeddedMenu.py#L15)** — A QMenu that ignores attempts to hide it (e.g.
+  - `PersistentMenu.setVisible(self, visible)`
+- **[`class EmbeddedMenuWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/embeddedMenu.py#L24)** — Embeds a QMenu into a sizeable widget that fits content exactly.
+  - `EmbeddedMenuWidget.init_ui(self)`
+  - `EmbeddedMenuWidget.content_size(self)` — Exact size needed for header + populated menu, no dead space.
+  - `EmbeddedMenuWidget.sizeHint(self)`
+  - `EmbeddedMenuWidget.minimumSizeHint(self)`
+  - `EmbeddedMenuWidget.resizeEvent(self, event)`
+  - `EmbeddedMenuWidget.showEvent(self, event)`
+  - `EmbeddedMenuWidget.fit_to_window(self)` — Resize and lock the parent window to exact content size.
 
 <a id="widgets--expandableList"></a>
 ### `widgets/expandableList.py`
@@ -1723,18 +1748,27 @@ Utilities and helper functions for OptionBox.
 
 Host-agnostic script-output console widget.
 
-- [`default_rules() -> List[ScriptHighlightRule]`](uitk/uitk/widgets/scriptOutput.py#L82) — The default log-coloring rules (Maya-parity palette).
-- **[`class ScriptHighlightRule`](uitk/uitk/widgets/scriptOutput.py#L38)** — One regex → text-format rule for :class:`ScriptHighlighter`.
-- **[`class ScriptHighlighter(QtGui.QSyntaxHighlighter)`](uitk/uitk/widgets/scriptOutput.py#L61)** — Apply a list of :class:`ScriptHighlightRule` to a text document.
+- [`default_rules() -> List[ScriptHighlightRule]`](uitk/uitk/widgets/scriptOutput.py#L269) — The default single-line log-coloring rules (Maya-parity palette).
+- [`default_block_rules() -> List[ScriptBlockRule]`](uitk/uitk/widgets/scriptOutput.py#L293) — The default multi-line region rules — Python tracebacks, header to exception.
+- [`default_level_formats() -> Dict[int, QtGui.QTextCharFormat]`](uitk/uitk/widgets/scriptOutput.py#L310) — The default ``logging`` level → format map (same palette as the word rules).
+- **[`class ScriptHighlightRule`](uitk/uitk/widgets/scriptOutput.py#L84)** — One regex → text-format rule for :class:`ScriptHighlighter`, scoped to a line.
+- **[`class ScriptBlockRule`](uitk/uitk/widgets/scriptOutput.py#L100)** — One format spanning a multi-line *region* — the altitude a line rule can't reach.
+  - `ScriptBlockRule.starts(self, text: str) -> bool` — True when ``text`` opens a region.
+  - `ScriptBlockRule.continues(self, text: str) -> bool` — True when ``text`` belongs to an already-open region — i.e.
+- **[`class ScriptHighlighter(QtGui.QSyntaxHighlighter)`](uitk/uitk/widgets/scriptOutput.py#L152)** — Apply line rules, block rules and per-block log levels to a text document.
   - `ScriptHighlighter.highlightBlock(self, text: str) -> None`
-- **[`class ScriptOutput(QtWidgets.QTextEdit)`](uitk/uitk/widgets/scriptOutput.py#L100)** — Read-only, syntax-highlighted console view — host-agnostic.
+  - `ScriptHighlighter.stamp_level(self, block: QtGui.QTextBlock, level: int) -> None` — Record ``level`` on one ``block`` and recolor it.
+- **[`class ScriptOutput(QtWidgets.QTextEdit)`](uitk/uitk/widgets/scriptOutput.py#L326)** — Read-only, syntax-highlighted console view — host-agnostic.
   - `ScriptOutput.set_clear_callback(self, callback: Optional[Callable[[], None]]) -> None` — Set the callback the **Clear** context-menu action invokes.
   - `ScriptOutput.set_context_menu_hook(self, hook: Optional[Callable[[QtWidgets.QMenu], None]]) -> None` — Set a ``callable(menu)`` hook that appends host-specific actions.
-  - `ScriptOutput.set_rules(self, rules: List[ScriptHighlightRule]) -> None` — Replace the highlight rules and re-highlight the document.
-  - `ScriptOutput.append_text(self, text: str) -> None` — Append raw ``text`` at the end without disturbing the user's selection/caret.
+  - `ScriptOutput.set_rules(self, rules: List[ScriptHighlightRule]) -> None` — Replace the single-line highlight rules and re-highlight the document.
+  - `ScriptOutput.set_block_rules(self, block_rules: List[ScriptBlockRule]) -> None` — Replace the multi-line region rules and re-highlight the document.
+  - `ScriptOutput.append_text(self, text: str, level: Optional[int] = None) -> None` — Append raw ``text`` at the end without disturbing the user's selection/caret.
+  - `ScriptOutput.enterEvent(self, event: QtCore.QEvent)` — Focus on hover (see ``focus_on_hover``) so the console's shortcuts reach it
   - `ScriptOutput.keyPressEvent(self, event: QtGui.QKeyEvent)` — Ensure copy works reliably in the output widget.
   - `ScriptOutput.event(self, event: QtCore.QEvent)` — Intercept ShortcutOverride so the host doesn't steal Ctrl+C.
   - `ScriptOutput.eventFilter(self, obj, event: QtCore.QEvent)`
+  - `ScriptOutput.build_context_menu(self) -> QtWidgets.QMenu` — The context menu, built but not shown (``_context_menu`` execs it).
 
 <a id="widgets--separator"></a>
 ### `widgets/separator.py`

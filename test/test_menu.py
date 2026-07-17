@@ -2320,6 +2320,42 @@ class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
         header.menu.hide(force=True)
 
 
+class TestMenuHideEventFocusRestore(QtBaseTestCase):
+    """hideEvent must never restore focus to a HIDDEN window.
+
+    ``hideEvent`` re-activates ``_active_window_before_show`` when the menu closes (a Qt.Tool
+    popup takes activation with it). If that window has since hidden — the marking-menu overlay
+    after its gesture ended — ``activateWindow()`` on it strands the OS foreground on an
+    invisible window: on a non-Qt DCC host (Blender) the activation key then reaches neither
+    the DCC's native keymap nor Qt until the user clicks the viewport.
+    """
+
+    def _menu_with_prior_window(self, visible):
+        menu = self.track_widget(Menu())
+        menu.show()
+        prior = self.track_widget(QtWidgets.QWidget())
+        prior.setWindowFlag(QtCore.Qt.Window)
+        if visible:
+            prior.show()
+        menu._active_window_before_show = prior  # what showEvent captured
+        return menu, prior
+
+    def test_skips_hidden_previous_window(self):
+        menu, prior = self._menu_with_prior_window(visible=False)
+        with patch.object(prior, "raise_") as raise_spy, patch.object(
+            prior, "activateWindow"
+        ) as activate_spy:
+            menu.hide(force=True)
+        raise_spy.assert_not_called()
+        activate_spy.assert_not_called()
+
+    def test_restores_visible_previous_window(self):
+        menu, prior = self._menu_with_prior_window(visible=True)
+        with patch.object(prior, "activateWindow") as activate_spy:
+            menu.hide(force=True)
+        activate_spy.assert_called_once()
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

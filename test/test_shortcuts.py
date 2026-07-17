@@ -1024,6 +1024,184 @@ class TestShortcutManagerEditorIntegration(QtBaseTestCase):
         self.assertFalse(ed.scope_interactive(nr))
 
 
+class TestRegistryFacadeEditor(QtBaseTestCase):
+    """``RegistrySwitchboardFacade`` renders any grouped binding store in the
+    ONE unified ShortcutEditor — groups become the target combobox, edits and
+    clears route to the provider, and an opt-in preset row fronts the
+    provider's own store (the Macro Manager pattern)."""
+
+    def setUp(self):
+        super().setUp()
+        import uuid
+
+        self._ns = f"test_registry_facade_{uuid.uuid4().hex[:8]}"
+        # Provider state: {group: {method: (label, sequence)}} + applied calls.
+        self.store = {
+            "Display": {"m_grid": ["Grid", "Ctrl+G"]},
+            "Edit": {"m_group": ["Group", ""]},
+        }
+        self.applied = []
+
+    def _entries(self, group):
+        return [
+            {
+                "method": method,
+                "name": label,
+                "doc": f"{label} doc",
+                "current": seq,
+                "default": "",
+                "current_scope": "application",
+                "default_scope": "application",
+                "scope_editable": False,
+            }
+            for method, (label, seq) in self.store.get(group, {}).items()
+        ]
+
+    def _apply(self, group, method, sequence, _scope=None):
+        self.applied.append((group, method, sequence))
+        if method in self.store.get(group, {}):
+            self.store[group][method][1] = sequence
+
+    def _facade(self, **kwargs):
+        from uitk.widgets.editors.shortcut_editor import RegistrySwitchboardFacade
+
+        kwargs.setdefault("groups", lambda: sorted(self.store))
+        kwargs.setdefault("get_entries", self._entries)
+        kwargs.setdefault("apply_binding", self._apply)
+        kwargs.setdefault("settings_namespace", self._ns)
+        return RegistrySwitchboardFacade(**kwargs)
+
+    def _editor(self, facade):
+        ed = ShortcutEditor(facade)
+        self.track_widget(ed)
+        ed._set_show_hidden(False)
+        return ed
+
+    def _rows(self, ed):
+        return [
+            ed.table.item(r, 0).text()
+            for r in range(ed.table.rowCount())
+            if ed.table.item(r, 0) and ed.table.columnSpan(r, 0) == 1
+        ]
+
+    def test_groups_become_target_combo(self):
+        ed = self._editor(self._facade())
+        self.assertTrue(ed._manager_mode)
+        self.assertEqual(
+            [ed.cmb_ui.itemText(i) for i in range(ed.cmb_ui.count())],
+            ["Display", "Edit"],  # no Assigned/Commands pseudo-views
+        )
+        self.assertEqual(self._rows(ed), ["Grid"])  # first group's rows
+        ed.cmb_ui.setCurrentIndex(1)
+        self.assertEqual(self._rows(ed), ["Group"])
+
+    def test_show_all_flattens_groups_and_relabels_ui_column(self):
+        ed = self._editor(
+            self._facade(
+                editor_title="Macro Manager",
+                ui_column_label="Category",
+                default_show_all=True,
+            )
+        )
+        # Fresh settings namespace → the facade's show-all default applies.
+        self.assertTrue(ed._show_all)
+        self.assertEqual(sorted(self._rows(ed)), ["Grid", "Group"])
+        self.assertFalse(ed.table.isColumnHidden(ed.COL_UI))
+        self.assertEqual(
+            ed.table.horizontalHeaderItem(ed.COL_UI).text(), "Category"
+        )
+        # The group name renders in the (re-labeled) UI column.
+        col_ui = [
+            ed.table.item(r, ed.COL_UI).text()
+            for r in range(ed.table.rowCount())
+        ]
+        self.assertEqual(sorted(col_ui), ["Display", "Edit"])
+        # The header label elides at narrow widths; the OS window title
+        # carries the full facade branding.
+        self.assertEqual(ed.windowTitle(), "Macro Manager")
+
+    def test_edit_and_clear_route_to_provider_with_group(self):
+        ed = self._editor(self._facade(default_show_all=True))
+        rows = {
+            ed.table.item(r, 0).text(): r for r in range(ed.table.rowCount())
+        }
+        ed._apply_shortcut(rows["Group"], "Ctrl+J")  # assign
+        self.assertIn(("Edit", "m_group", "Ctrl+J"), self.applied)
+        rows = {
+            ed.table.item(r, 0).text(): r for r in range(ed.table.rowCount())
+        }
+        ed._apply_shortcut(rows["Grid"], "")  # clear passes through verbatim
+        self.assertIn(("Display", "m_grid", ""), self.applied)
+
+    def test_group_names_with_dots_are_not_truncated(self):
+        """Facade group names pass through verbatim. Regression: the editor's
+        UI-name gather stripped everything after the last '.' (filename-
+        extension logic), truncating a dotted group — e.g. Maya's hierarchical
+        runTimeCommand categories ("Custom Scripts.Foo") — into an empty view.
+        """
+        self.store["Custom Scripts.Foo"] = {"m_dot": ["Dotty", ""]}
+        ed = self._editor(self._facade())
+        combo = [ed.cmb_ui.itemText(i) for i in range(ed.cmb_ui.count())]
+        self.assertIn("Custom Scripts.Foo", combo)
+        ed.cmb_ui.setCurrentIndex(combo.index("Custom Scripts.Foo"))
+        self.assertEqual(self._rows(ed), ["Dotty"])
+
+    def test_builtin_collision_checker_spans_groups(self):
+        # Two application-scoped bindings on the same key collide across
+        # groups — the facade's synthetic UIs must not hide that.
+        ed = self._editor(self._facade())
+        conflicts = ed._builtin_internal_collision_checker(
+            "Ctrl+G", "application", "Edit", "m_group"
+        )
+        self.assertEqual(len(conflicts), 1)
+        self.assertIn("m_grid", conflicts[0].description)
+
+    def test_preset_config_builds_row_over_provider_store(self):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_root = os.environ.get("UITK_PRESETS_ROOT")
+            os.environ["UITK_PRESETS_ROOT"] = tmp
+            try:
+                exported, imported = [], []
+
+                def provider():
+                    exported.append(True)
+                    return {"m_grid": {"key": "ctl+g"}}
+
+                def applier(data):
+                    imported.append(data)
+                    return len(data)
+
+                ed = self._editor(
+                    self._facade(
+                        preset_config={
+                            "dir_name": "macro_manager",
+                            "package": "testpkg",
+                            "value_provider": provider,
+                            "value_applier": applier,
+                        }
+                    )
+                )
+                # Facade mode + preset_config → the preset row exists and
+                # fronts the provider's store (not export_shortcuts).
+                self.assertIsNotNone(ed._preset_mgr)
+                self.assertIn(
+                    os.path.join("testpkg", "macro_manager"),
+                    str(ed.preset_dir),
+                )
+                ed.save_preset("unit")
+                self.assertTrue(exported)
+                self.assertTrue(ed.load_preset("unit"))
+                self.assertEqual(imported[-1], {"m_grid": {"key": "ctl+g"}})
+            finally:
+                if old_root is None:
+                    os.environ.pop("UITK_PRESETS_ROOT", None)
+                else:
+                    os.environ["UITK_PRESETS_ROOT"] = old_root
+
+
 class TestStaticShortcutRegistry(QtBaseTestCase):
     """``get_static_shortcut_registry`` lists a UI's slots WITHOUT building it,
     matching the live registry's methods/defaults and reading the same

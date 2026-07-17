@@ -29,6 +29,17 @@ from typing import Optional
 # a crash surfaces only as an unexplained 0xC0000005 exit code on Windows.
 faulthandler.enable()
 
+# Windows consoles default to cp1252, which can't encode characters test
+# docstrings legitimately use ("→"); unittest's printErrors then raises
+# UnicodeEncodeError MID-REPORT, eating the failure list and the summary.
+# errors="replace" keeps the report flowing no matter the console codepage.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(errors="replace")
+        except (ValueError, OSError):
+            pass  # detached/duplicated stream — leave it be
+
 # Add package root to path
 PACKAGE_ROOT = Path(__file__).parent.parent.absolute()
 TEST_DIR = Path(__file__).parent

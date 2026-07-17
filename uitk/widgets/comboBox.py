@@ -102,7 +102,14 @@ class AlignedComboBox(QtWidgets.QComboBox):
     Attributes:
         header_text (str): Text displayed when currentIndex is -1.
         header_alignment (Qt.Alignment): Alignment for header text.
+        has_header (bool): Whether row 0 is a header *item* (see
+            :meth:`ComboBox.add_header`) rather than painted placeholder text.
     """
+
+    # Only ``ComboBox`` ever inserts a header row, but ``CustomStyle.drawControl``
+    # reads this off any AlignedComboBox it paints — so the base has to carry the
+    # default or a bare instance dies on first draw.
+    has_header = False
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -426,8 +433,7 @@ class ComboBox(
         super().__init__(parent)
         self.restore_previous_index = False
         self.prev_index = -1
-        self.has_header = False
-        self.header_text = None
+        # has_header / header_text come from AlignedComboBox.
         self._current_text_suffix = ""
         self._current_text_prefix = ""
         # `self.editable = editable` (a plain attribute) never made the combo
@@ -662,7 +668,14 @@ class ComboBox(
             self.setEditText(self.header_text)
 
     def focusOutEvent(self, event):
-        if self.isEditable():
+        # A popup taking focus is not the end of editing — the line edit's own
+        # right-click menu (Cut/Copy/Paste) and this combo's Menu both raise one
+        # while the user is still typing. Tearing down here is also a hard crash:
+        # Qt reaches this nested inside its delivery to the line edit, so
+        # setEditable(False) deletes that line edit mid-event and the stack unwinds
+        # into freed memory (access violation — takes the host DCC down).
+        # Genuine focus loss still exits edit mode below.
+        if event.reason() != QtCore.Qt.PopupFocusReason and self.isEditable():
             # Exit edit mode without emitting a signal
             self.setEditable(False, emit_signal=False)  # Pass emit_signal as False
         super().focusOutEvent(event)

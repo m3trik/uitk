@@ -3539,10 +3539,18 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Qt.Tool windows can cause focus loss when hidden
         focus_target = None
 
-        # Prefer the window that was active before menu showed
+        # Prefer the window that was active before menu showed — but only while it is still
+        # VISIBLE. Activating a hidden window (e.g. a marking-menu overlay whose gesture ended
+        # while this popup was open) can't give the user's DCC focus back; on a non-Qt host it
+        # strands the OS foreground on an invisible window, deadening every native shortcut
+        # until the user clicks the host window.
         if self._active_window_before_show:
             app = QtWidgets.QApplication.instance()
-            if app and self._active_window_before_show in app.topLevelWidgets():
+            if (
+                app
+                and self._active_window_before_show in app.topLevelWidgets()
+                and self._active_window_before_show.isVisible()
+            ):
                 focus_target = self._active_window_before_show
 
         # Fallback to parent window if still visible
