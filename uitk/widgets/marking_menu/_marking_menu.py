@@ -16,8 +16,8 @@ from .overlay import Overlay
 from ._resolver import parse_binding_keys, resolve_target_menu, count_buttons
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.menuButton import MenuButton
-from uitk.widgets.mixins.shortcuts import GlobalShortcut, host_namespace_suffix
-from uitk.widgets.mixins.style_sheet import repolish_tree
+from uitk.managers.shortcut_manager import GlobalShortcut, host_namespace_suffix
+from uitk.themes.style_sheet import repolish_tree
 from uitk.compile import precompile_async
 from uitk.loaders import CompiledLoader
 

@@ -24,8 +24,13 @@ Hand-written docs are ledgered in [`docs/DOCMAP.md`](docs/DOCMAP.md) (status, mo
 
 ## Architecture
 
-- `uitk/widgets/` — reusable widgets.
-- `uitk/themes/` — QSS-based style management.
-- `uitk/switchboard/slots.py` — slot wiring: `Signals` decorator, `SlotWrapper` dispatch.
+- `uitk/widgets/` — reusable widgets. **Module filenames are frozen public API**: `.ui` files across the ecosystem reference them as custom-widget headers (`uitk.widgets.pushButton`) — never rename or move a widget module.
+- `uitk/widgets/mixins/` — inheritance mixins only. Standalone services live in `uitk/managers/`.
+- `uitk/managers/` — service objects (settings, state, values, presets, icons, shortcuts) consumed compositionally by widgets, handlers, bridge, and Switchboard.
+- `uitk/themes/` — QSS theming: `StyleSheet` engine + `style.qss`.
+- `uitk/switchboard/` — dynamic UI loader; `slots.py`: `Signals` decorator, `SlotWrapper` dispatch.
+- `uitk/handlers/` — Switchboard launchable-entry handlers (UI, external apps).
+- `uitk/bridge/` — kind-driven parameter-panel contract shared with the DCC bridges.
+- `uitk/loaders/` + `uitk/compile.py` — runtime/compiled `.ui` loading.
 
 See [CHANGELOG.md](CHANGELOG.md) for history.

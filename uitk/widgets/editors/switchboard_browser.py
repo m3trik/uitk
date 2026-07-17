@@ -640,7 +640,7 @@ class _BrowserState:
         elif isinstance(widget, QtWidgets.QLineEdit):
             widget.setText("" if value is None else str(value))
         else:
-            from uitk.widgets.mixins.value_manager import ValueManager
+            from uitk.managers.value_manager import ValueManager
 
             ValueManager.set_value(widget, value)
 
@@ -844,7 +844,7 @@ class SwitchboardBrowser(EditorPanel):
         self._view.setColumnWidth(SwitchboardBrowserModel.COL_ACTION, 22)
         self._view.setColumnWidth(SwitchboardBrowserModel.COL_CLOSE, 22)
         # Selection / hover styling lives entirely in the global QSS
-        # (uitk/widgets/mixins/style.qss).  The only per-view override the
+        # (uitk/themes/style.qss).  The only per-view override the
         # browser still needs is zero item padding — the action columns
         # are exactly 22px wide and any inherited cell padding would
         # squeeze the icon buttons.
@@ -1743,7 +1743,7 @@ class SwitchboardBrowser(EditorPanel):
         """
         if not hasattr(self, "_view"):
             return
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         for r in range(self._proxy.rowCount()):
             proxy_idx_action = self._proxy.index(r, SwitchboardBrowserModel.COL_ACTION)

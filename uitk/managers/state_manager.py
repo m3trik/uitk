@@ -6,12 +6,12 @@ from contextlib import contextmanager
 from typing import Any, Optional, Union
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
-from uitk.widgets.mixins.settings_manager import (
+from uitk.managers.settings_manager import (
     SettingsManager,
     decode_stored_value,
     encode_stored_value,
 )
-from uitk.widgets.mixins.value_manager import ValueManager
+from uitk.managers.value_manager import ValueManager
 
 
 class StateManager(ptk.LoggingMixin):

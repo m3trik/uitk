@@ -174,7 +174,7 @@ class ButtonOption(BaseOption):
 
     def create_widget(self):
         """Create a QPushButton widget."""
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         # OptionButton (QPushButton + AttributesMixin) is defined at module
         # scope. NOTE: RichText mixin intentionally omitted — option buttons
@@ -397,7 +397,7 @@ class GatingMixin:
         """
         if self._widget is None:
             return
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         if active:
             IconManager.swap_icon(

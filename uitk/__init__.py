@@ -31,6 +31,9 @@ Key Modules:
     events: Event filters and mouse tracking utilities
     file_manager: File and path management utilities
     widgets: Enhanced Qt widget classes with mixins
+    managers: Standalone services (settings, state, values, presets,
+        icons, shortcuts) consumed compositionally across the package
+    themes: QSS-based theming — the ``StyleSheet`` engine + ``style.qss``
 
 Attributes:
     __version__: Current package version string.
@@ -62,8 +65,7 @@ DEFAULT_INCLUDE = {
     "widgets.attributeWindow._attributeWindow": "AttributeWindow",
     # AttributeSpec + the kind-handler registry live in ``uitk.bridge.spec``
     # so the AttributeWindow panels and the DCC bridges share one source of
-    # truth. ``widgets.attributeWindow._factory`` remains as a back-compat
-    # shim; the registration here points at the canonical home.
+    # truth.
     "bridge.spec": [
         "AttributeSpec",
         "KindHandler",
@@ -158,21 +160,23 @@ DEFAULT_INCLUDE = {
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",
     "widgets.mixins.convert": "ConvertMixin",
-    "widgets.mixins.icon_manager": "IconManager",
     "widgets.mixins.menu_mixin": "MenuMixin",
     "widgets.mixins.option_box_mixin": "OptionBoxMixin",
-    "widgets.mixins.recent_values_store": "RecentValuesStore",
-    "widgets.mixins.settings_manager": "SettingsManager",
-    "widgets.mixins.shortcuts": "ShortcutManager",
-    "widgets.mixins.state_manager": "StateManager",
-    "widgets.mixins.style_sheet": "StyleSheet",
     "widgets.mixins.text": [
         "RichTextFormatter",
         "TextTruncation",
         "RichText",
         "TextOverlay",
     ],
-    "widgets.mixins.value_manager": "ValueManager",
+    # Standalone services (uitk.managers / uitk.themes)
+    "managers.icon_manager": "IconManager",
+    "managers.preset_manager": "PresetManager",
+    "managers.recent_values_store": "RecentValuesStore",
+    "managers.settings_manager": "SettingsManager",
+    "managers.shortcut_manager": "ShortcutManager",
+    "managers.state_manager": "StateManager",
+    "managers.value_manager": "ValueManager",
+    "themes.style_sheet": "StyleSheet",
 }
 
 # Fallbacks removed - fix imports at source

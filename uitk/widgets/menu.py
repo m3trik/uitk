@@ -26,7 +26,7 @@ _logger = logging.getLogger(__name__)
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.separator import Separator
-from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.convert import ConvertMixin
 
@@ -1217,7 +1217,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             PresetManager: The preset manager bound to this menu.
         """
         if not hasattr(self, "_preset_manager"):
-            from uitk.widgets.mixins.preset_manager import PresetManager
+            from uitk.managers.preset_manager import PresetManager
 
             self._preset_manager = PresetManager(parent=self)
         return self._preset_manager

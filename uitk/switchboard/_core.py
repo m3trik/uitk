@@ -23,7 +23,7 @@ from uitk.switchboard.style import SwitchboardStyleMixin
 from uitk.switchboard.history import History
 from uitk.file_manager import FileManager
 from uitk.widgets.mixins.convert import ConvertMixin
-from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.managers.settings_manager import SettingsManager
 from uitk.loaders import CompiledLoader, RuntimeLoader
 
 

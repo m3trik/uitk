@@ -28,7 +28,7 @@ import pythontk as ptk
 from qtpy import QtCore, QtWidgets
 
 from ._options import ButtonOption
-from uitk.widgets.mixins.value_manager import ValueManager
+from uitk.managers.value_manager import ValueManager
 
 
 _DEFAULT_DISABLED_COLOR: str = ptk.Palette.status()["error"][0]  # soft coral
@@ -262,7 +262,7 @@ class ResetOption(ButtonOption):
     def _apply_visuals(self):
         if not self._widget:
             return
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         if self._is_bypassed:
             IconManager.swap_icon(

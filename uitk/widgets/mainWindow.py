@@ -8,10 +8,10 @@ import pythontk as ptk
 
 # From this package
 from uitk.widgets.footer import Footer
-from uitk.widgets.mixins.state_manager import StateManager
-from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.managers.state_manager import StateManager
+from uitk.managers.settings_manager import SettingsManager
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.mixins.tooltip_mixin import TooltipMixin, TooltipProxy
 
 
@@ -319,7 +319,7 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             PresetManager: The preset manager bound to this window.
         """
         if not hasattr(self, "_presets"):
-            from uitk.widgets.mixins.preset_manager import PresetManager
+            from uitk.managers.preset_manager import PresetManager
 
             self._presets = PresetManager(self, self.state)
         return self._presets

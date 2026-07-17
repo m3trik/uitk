@@ -1320,6 +1320,1063 @@
       ]
     },
     {
+      "relpath": "managers/icon_manager.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "IconManager",
+          "summary": "Theme-aware SVG icon loader with caching and color customization.",
+          "line": 10,
+          "bases": [],
+          "members": [
+            {
+              "name": "set_default_color",
+              "qualname": "IconManager.set_default_color",
+              "kind": "classmethod",
+              "signature": "(cls, color: str)",
+              "summary": "Set the default icon color for icons created without explicit color.",
+              "line": 32,
+              "deprecated": false
+            },
+            {
+              "name": "register_icon_dir",
+              "qualname": "IconManager.register_icon_dir",
+              "kind": "classmethod",
+              "signature": "(cls, path)",
+              "summary": "Register an additional icon directory (searched first).",
+              "line": 74,
+              "deprecated": false
+            },
+            {
+              "name": "get",
+              "qualname": "IconManager.get",
+              "kind": "classmethod",
+              "signature": "(cls, name: str, size=(16, 16), color: str = None, use_theme: bool = True) -> QtGui.QIcon",
+              "summary": "Get an icon, optionally colorized.",
+              "line": 285,
+              "deprecated": false
+            },
+            {
+              "name": "fit_size",
+              "qualname": "IconManager.fit_size",
+              "kind": "staticmethod",
+              "signature": "(container_size, margin: int = 4, min_size: int = 8) -> int",
+              "summary": "Compute a square icon extent that fits inside ``container_size`` px.",
+              "line": 371,
+              "deprecated": false
+            },
+            {
+              "name": "fit_icon",
+              "qualname": "IconManager.fit_icon",
+              "kind": "classmethod",
+              "signature": "(cls, widget, name: str, container_size, margin: int = 4, min_size: int = 8, color: str = None, auto_theme: bool = True) -> int",
+              "summary": "Render *name* onto *widget* sized to fit a square container.",
+              "line": 390,
+              "deprecated": false
+            },
+            {
+              "name": "swap_icon",
+              "qualname": "IconManager.swap_icon",
+              "kind": "classmethod",
+              "signature": "(cls, widget, name: str, color: str = None, auto_theme: bool = True, fallback_size=(16, 16)) -> None",
+              "summary": "Replace the icon on *widget* without changing its display size.",
+              "line": 417,
+              "deprecated": false
+            },
+            {
+              "name": "set_icon",
+              "qualname": "IconManager.set_icon",
+              "kind": "classmethod",
+              "signature": "(cls, widget, name: str, size=(16, 16), color: str = None, auto_theme: bool = True)",
+              "summary": "Set an icon on a widget.",
+              "line": 444,
+              "deprecated": false
+            },
+            {
+              "name": "registered_info",
+              "qualname": "IconManager.registered_info",
+              "kind": "classmethod",
+              "signature": "(cls, widget) -> 'dict | None'",
+              "summary": "The icon registry entry for *widget* — name/size/color — or None.",
+              "line": 511,
+              "deprecated": false
+            },
+            {
+              "name": "update_widget_icons",
+              "qualname": "IconManager.update_widget_icons",
+              "kind": "classmethod",
+              "signature": "(cls, root_widget: QtWidgets.QWidget, color: str)",
+              "summary": "Update all registered icons under a widget tree with a new color.",
+              "line": 527,
+              "deprecated": false
+            },
+            {
+              "name": "clear_cache",
+              "qualname": "IconManager.clear_cache",
+              "kind": "classmethod",
+              "signature": "(cls)",
+              "summary": "Clear all cached icons and SVG content.",
+              "line": 601,
+              "deprecated": false
+            },
+            {
+              "name": "get_cache_stats",
+              "qualname": "IconManager.get_cache_stats",
+              "kind": "classmethod",
+              "signature": "(cls) -> dict",
+              "summary": "Get statistics about the icon cache.",
+              "line": 612,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "managers/preset_manager.py",
+      "summary": "",
+      "functions": [
+        {
+          "name": "QStandardPaths_writableLocation",
+          "qualname": "QStandardPaths_writableLocation",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Return Qt's per-application writable config directory.",
+          "line": 1438,
+          "deprecated": false
+        },
+        {
+          "name": "QStandardPaths_genericConfigLocation",
+          "qualname": "QStandardPaths_genericConfigLocation",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Return Qt's host-independent writable config directory.",
+          "line": 1455,
+          "deprecated": false
+        },
+        {
+          "name": "get_presets_root",
+          "qualname": "get_presets_root",
+          "kind": "function",
+          "signature": "() -> Path",
+          "summary": "Root directory under which every relative ``preset_dir`` is resolved.",
+          "line": 1583,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "PresetManager",
+          "summary": "Manages named presets for widget state, stored as external JSON files.",
+          "line": 19,
+          "bases": [
+            "ptk.LoggingMixin"
+          ],
+          "members": [
+            {
+              "name": "from_widgets",
+              "qualname": "PresetManager.from_widgets",
+              "kind": "classmethod",
+              "signature": "(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'",
+              "summary": "Create a standalone PresetManager for an explicit list of widgets.",
+              "line": 229,
+              "deprecated": false
+            },
+            {
+              "name": "setup",
+              "qualname": "PresetManager.setup",
+              "kind": "method",
+              "signature": "(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'",
+              "summary": "Configure and optionally auto-wire a preset combo.",
+              "line": 249,
+              "deprecated": false
+            },
+            {
+              "name": "preset_dir",
+              "qualname": "PresetManager.preset_dir",
+              "kind": "property",
+              "signature": "(self) -> Path",
+              "summary": "The directory where preset files are stored.",
+              "line": 318,
+              "deprecated": false
+            },
+            {
+              "name": "on_change",
+              "qualname": "PresetManager.on_change",
+              "kind": "method",
+              "signature": "(self, callback) -> None",
+              "summary": "Register a callback invoked when presets are modified.",
+              "line": 374,
+              "deprecated": false
+            },
+            {
+              "name": "scope",
+              "qualname": "PresetManager.scope",
+              "kind": "property",
+              "signature": "(self) -> str",
+              "summary": "Which widget set a save/load operates on.",
+              "line": 397,
+              "deprecated": false
+            },
+            {
+              "name": "exclude",
+              "qualname": "PresetManager.exclude",
+              "kind": "method",
+              "signature": "(self, *names_or_widgets) -> 'PresetManager'",
+              "summary": "Exclude widgets (by ``objectName`` or instance) from capture/restore.",
+              "line": 437,
+              "deprecated": false
+            },
+            {
+              "name": "include",
+              "qualname": "PresetManager.include",
+              "kind": "method",
+              "signature": "(self, *names_or_widgets) -> 'PresetManager'",
+              "summary": "Restrict capture/restore to *only* these widgets (allowlist).",
+              "line": 447,
+              "deprecated": false
+            },
+            {
+              "name": "active_preset",
+              "qualname": "PresetManager.active_preset",
+              "kind": "property",
+              "signature": "(self) -> Optional[str]",
+              "summary": "Name of the preset currently in use, or ``None``.",
+              "line": 494,
+              "deprecated": false
+            },
+            {
+              "name": "is_modified",
+              "qualname": "PresetManager.is_modified",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "True when live values diverge from the active preset's stored values.",
+              "line": 527,
+              "deprecated": false
+            },
+            {
+              "name": "on_modified_changed",
+              "qualname": "PresetManager.on_modified_changed",
+              "kind": "method",
+              "signature": "(self, callback: Callable[[bool], None]) -> None",
+              "summary": "Register *callback(bool)* invoked when the modified state flips.",
+              "line": 553,
+              "deprecated": false
+            },
+            {
+              "name": "refresh_modified_state",
+              "qualname": "PresetManager.refresh_modified_state",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Recompute the modified state;",
+              "line": 557,
+              "deprecated": false
+            },
+            {
+              "name": "connect_value_widgets",
+              "qualname": "PresetManager.connect_value_widgets",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Wire managed widgets' change signals so the dirty marker updates live.",
+              "line": 573,
+              "deprecated": false
+            },
+            {
+              "name": "save",
+              "qualname": "PresetManager.save",
+              "kind": "method",
+              "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path",
+              "summary": "Save the current widget values as a named preset.",
+              "line": 630,
+              "deprecated": false
+            },
+            {
+              "name": "load",
+              "qualname": "PresetManager.load",
+              "kind": "method",
+              "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int",
+              "summary": "Load a named preset and apply its values to the matching widgets.",
+              "line": 715,
+              "deprecated": false
+            },
+            {
+              "name": "list",
+              "qualname": "PresetManager.list",
+              "kind": "method",
+              "signature": "(self) -> List[str]",
+              "summary": "Return a sorted list of available preset names across both tiers.",
+              "line": 850,
+              "deprecated": false
+            },
+            {
+              "name": "source",
+              "qualname": "PresetManager.source",
+              "kind": "method",
+              "signature": "(self, name: str) -> Optional[str]",
+              "summary": "Which tier *name* resolves from: ``\"user\"``, ``\"builtin\"``, or ``None``.",
+              "line": 858,
+              "deprecated": false
+            },
+            {
+              "name": "delete",
+              "qualname": "PresetManager.delete",
+              "kind": "method",
+              "signature": "(self, name: str) -> bool",
+              "summary": "Delete a *user* preset (built-ins are read-only).",
+              "line": 865,
+              "deprecated": false
+            },
+            {
+              "name": "rename",
+              "qualname": "PresetManager.rename",
+              "kind": "method",
+              "signature": "(self, old_name: str, new_name: str) -> bool",
+              "summary": "Rename a *user* preset.",
+              "line": 880,
+              "deprecated": false
+            },
+            {
+              "name": "exists",
+              "qualname": "PresetManager.exists",
+              "kind": "method",
+              "signature": "(self, name: str) -> bool",
+              "summary": "Check whether a named preset exists in either tier.",
+              "line": 898,
+              "deprecated": false
+            },
+            {
+              "name": "make_preset_combo",
+              "qualname": "PresetManager.make_preset_combo",
+              "kind": "method",
+              "signature": "(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None) -> 'QtWidgets.QWidget'",
+              "summary": "Create a fully-wired preset selector and return its layout container.",
+              "line": 1069,
+              "deprecated": false
+            },
+            {
+              "name": "wire_combo",
+              "qualname": "PresetManager.wire_combo",
+              "kind": "method",
+              "signature": "(self, combo, on_loaded=None)",
+              "summary": "Wire a uitk ``ComboBox`` as a fully-functional preset selector.",
+              "line": 1110,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "managers/recent_values_store.py",
+      "summary": "Widget-free *recent values* model — the shared source of truth for value history.",
+      "functions": [
+        {
+          "name": "normalize_value",
+          "qualname": "normalize_value",
+          "kind": "function",
+          "signature": "(value)",
+          "summary": "Normalize a value for comparison.",
+          "line": 105,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "RecentValueEntry",
+          "summary": "A recent value whose restore-data differs from its display string.",
+          "line": 64,
+          "bases": [],
+          "members": []
+        },
+        {
+          "name": "RecentValuesStore",
+          "summary": "Ordered, deduped, most-recent-first value history.",
+          "line": 121,
+          "bases": [],
+          "members": [
+            {
+              "name": "subscribe",
+              "qualname": "RecentValuesStore.subscribe",
+              "kind": "method",
+              "signature": "(self, callback: Callable[[], None]) -> None",
+              "summary": "Register *callback* to be invoked (no args) after any mutation.",
+              "line": 221,
+              "deprecated": false
+            },
+            {
+              "name": "unsubscribe",
+              "qualname": "RecentValuesStore.unsubscribe",
+              "kind": "method",
+              "signature": "(self, callback: Callable[[], None]) -> None",
+              "summary": "Remove a previously-registered *callback* (no-op if absent).",
+              "line": 226,
+              "deprecated": false
+            },
+            {
+              "name": "values",
+              "qualname": "RecentValuesStore.values",
+              "kind": "property",
+              "signature": "(self) -> List",
+              "summary": "A copy of the full history (most-recent first, raw values).",
+              "line": 247,
+              "deprecated": false
+            },
+            {
+              "name": "is_valid",
+              "qualname": "RecentValuesStore.is_valid",
+              "kind": "method",
+              "signature": "(self, value) -> bool",
+              "summary": "Whether *value* passes the configured validator (True if none).",
+              "line": 251,
+              "deprecated": false
+            },
+            {
+              "name": "valid_values",
+              "qualname": "RecentValuesStore.valid_values",
+              "kind": "method",
+              "signature": "(self) -> List",
+              "summary": "History filtered to entries passing the validator (non-destructive).",
+              "line": 260,
+              "deprecated": false
+            },
+            {
+              "name": "record",
+              "qualname": "RecentValuesStore.record",
+              "kind": "method",
+              "signature": "(self, value) -> None",
+              "summary": "Insert *value* at the front (most-recent), dedup, trim, persist.",
+              "line": 268,
+              "deprecated": false
+            },
+            {
+              "name": "add",
+              "qualname": "RecentValuesStore.add",
+              "kind": "method",
+              "signature": "(self, value) -> None",
+              "summary": "Seed *value* (append if new);",
+              "line": 279,
+              "deprecated": false
+            },
+            {
+              "name": "remove",
+              "qualname": "RecentValuesStore.remove",
+              "kind": "method",
+              "signature": "(self, value) -> None",
+              "summary": "Remove *value* from the history (no-op if absent).",
+              "line": 301,
+              "deprecated": false
+            },
+            {
+              "name": "clear",
+              "qualname": "RecentValuesStore.clear",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Drop all history.",
+              "line": 310,
+              "deprecated": false
+            },
+            {
+              "name": "prune_invalid",
+              "qualname": "RecentValuesStore.prune_invalid",
+              "kind": "method",
+              "signature": "(self) -> List",
+              "summary": "Drop every entry failing the validator;",
+              "line": 318,
+              "deprecated": false
+            },
+            {
+              "name": "display_map",
+              "qualname": "RecentValuesStore.display_map",
+              "kind": "method",
+              "signature": "(self, values=None) -> dict",
+              "summary": "Return ``{raw_value: display_string}`` for *values*.",
+              "line": 336,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "managers/settings_manager.py",
+      "summary": "",
+      "functions": [
+        {
+          "name": "decode_stored_value",
+          "qualname": "decode_stored_value",
+          "kind": "function",
+          "signature": "(value: Any) -> Any",
+          "summary": "Read-side mirror of :func:`encode_stored_value`.",
+          "line": 171,
+          "deprecated": false
+        },
+        {
+          "name": "encode_stored_value",
+          "qualname": "encode_stored_value",
+          "kind": "function",
+          "signature": "(value: Any) -> Any",
+          "summary": "Encode *value* for QSettings so a JSON-decoding read restores it losslessly.",
+          "line": 194,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "SettingsManager",
+          "summary": "Manages persistent storage and retrieval of settings via QSettings.",
+          "line": 227,
+          "bases": [],
+          "members": [
+            {
+              "name": "branch",
+              "qualname": "SettingsManager.branch",
+              "kind": "method",
+              "signature": "(self, name: str) -> 'SettingsManager'",
+              "summary": "Create a new SettingsManager instance targeted at a sub-namespace.",
+              "line": 353,
+              "deprecated": false
+            },
+            {
+              "name": "set_defaults",
+              "qualname": "SettingsManager.set_defaults",
+              "kind": "method",
+              "signature": "(self, defaults: dict) -> None",
+              "summary": "Apply default values for a set of keys if they are not already set.",
+              "line": 358,
+              "deprecated": false
+            },
+            {
+              "name": "value",
+              "qualname": "SettingsManager.value",
+              "kind": "method",
+              "signature": "(self, key: str, default: Any = None) -> Any",
+              "summary": "",
+              "line": 364,
+              "deprecated": false
+            },
+            {
+              "name": "setValue",
+              "qualname": "SettingsManager.setValue",
+              "kind": "method",
+              "signature": "(self, key: str, value: Any) -> None",
+              "summary": "",
+              "line": 373,
+              "deprecated": false
+            },
+            {
+              "name": "on_change",
+              "qualname": "SettingsManager.on_change",
+              "kind": "method",
+              "signature": "(self, key: str, callback: Callable[[Any], None]) -> None",
+              "summary": "Register a callback to be invoked when a key's value changes.",
+              "line": 390,
+              "deprecated": false
+            },
+            {
+              "name": "keys",
+              "qualname": "SettingsManager.keys",
+              "kind": "method",
+              "signature": "(self) -> list",
+              "summary": "Return all keys in the current namespace.",
+              "line": 402,
+              "deprecated": false
+            },
+            {
+              "name": "setByteArray",
+              "qualname": "SettingsManager.setByteArray",
+              "kind": "method",
+              "signature": "(self, key: str, value: QtCore.QByteArray) -> None",
+              "summary": "Set a QByteArray value directly without JSON serialization.",
+              "line": 418,
+              "deprecated": false
+            },
+            {
+              "name": "getByteArray",
+              "qualname": "SettingsManager.getByteArray",
+              "kind": "method",
+              "signature": "(self, key: str, default: QtCore.QByteArray = None) -> QtCore.QByteArray",
+              "summary": "Get a QByteArray value directly.",
+              "line": 422,
+              "deprecated": false
+            },
+            {
+              "name": "remove",
+              "qualname": "SettingsManager.remove",
+              "kind": "method",
+              "signature": "(self, key: str) -> None",
+              "summary": "Remove a single key from the current namespace.",
+              "line": 428,
+              "deprecated": false
+            },
+            {
+              "name": "clear",
+              "qualname": "SettingsManager.clear",
+              "kind": "method",
+              "signature": "(self, key: Optional[str] = None) -> None",
+              "summary": "Clears a specific key, or all keys in the current namespace.",
+              "line": 439,
+              "deprecated": false
+            },
+            {
+              "name": "sync",
+              "qualname": "SettingsManager.sync",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "",
+              "line": 448,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "managers/shortcut_manager.py",
+      "summary": "Generic keyboard-shortcut primitives, usable by any Qt widget.",
+      "functions": [
+        {
+          "name": "context_to_scope_name",
+          "qualname": "context_to_scope_name",
+          "kind": "function",
+          "signature": "(context: QtCore.Qt.ShortcutContext) -> str",
+          "summary": "Convert a Qt.ShortcutContext to its persistence string.",
+          "line": 36,
+          "deprecated": false
+        },
+        {
+          "name": "scope_name_to_context",
+          "qualname": "scope_name_to_context",
+          "kind": "function",
+          "signature": "(name: str) -> QtCore.Qt.ShortcutContext",
+          "summary": "Convert a persisted scope string to a Qt.ShortcutContext.",
+          "line": 41,
+          "deprecated": false
+        },
+        {
+          "name": "host_namespace_suffix",
+          "qualname": "host_namespace_suffix",
+          "kind": "function",
+          "signature": "(context_tags) -> str",
+          "summary": "Settings-key suffix namespacing persisted state by host context.",
+          "line": 46,
+          "deprecated": false
+        },
+        {
+          "name": "resolve_application_host",
+          "qualname": "resolve_application_host",
+          "kind": "function",
+          "signature": "(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]",
+          "summary": "Return an always-visible top-level window to own an application shortcut.",
+          "line": 68,
+          "deprecated": false
+        },
+        {
+          "name": "find_duplicate_application_shortcuts",
+          "qualname": "find_duplicate_application_shortcuts",
+          "kind": "function",
+          "signature": "(app=None) -> Dict[str, int]",
+          "summary": "Return ``{sequence: count}`` for key sequences bound by more than one",
+          "line": 115,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "GlobalShortcut",
+          "summary": "A robust global shortcut handler that detects both press and release events.",
+          "line": 157,
+          "bases": [
+            "QtCore.QObject"
+          ],
+          "members": [
+            {
+              "name": "eventFilter",
+              "qualname": "GlobalShortcut.eventFilter",
+              "kind": "method",
+              "signature": "(self, obj, event)",
+              "summary": "Monitor global events for the specific key release.",
+              "line": 261,
+              "deprecated": false
+            },
+            {
+              "name": "setEnabled",
+              "qualname": "GlobalShortcut.setEnabled",
+              "kind": "method",
+              "signature": "(self, enabled: bool)",
+              "summary": "",
+              "line": 292,
+              "deprecated": false
+            },
+            {
+              "name": "setKey",
+              "qualname": "GlobalShortcut.setKey",
+              "kind": "method",
+              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence])",
+              "summary": "",
+              "line": 298,
+              "deprecated": false
+            },
+            {
+              "name": "setContext",
+              "qualname": "GlobalShortcut.setContext",
+              "kind": "method",
+              "signature": "(self, context: QtCore.Qt.ShortcutContext)",
+              "summary": "Live-update the underlying QShortcut's context.",
+              "line": 307,
+              "deprecated": false
+            },
+            {
+              "name": "dispose",
+              "qualname": "GlobalShortcut.dispose",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Disable, unregister, and schedule deletion of this shortcut.",
+              "line": 315,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "ShortcutManager",
+          "summary": "Centralized shortcut management with clear separation of concerns",
+          "line": 333,
+          "bases": [],
+          "members": [
+            {
+              "name": "add_shortcut",
+              "qualname": "ShortcutManager.add_shortcut",
+              "kind": "method",
+              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut, hidden: bool = False) -> QtWidgets.QShortcut",
+              "summary": "Add a keyboard shortcut with optional description and context",
+              "line": 341,
+              "deprecated": false
+            },
+            {
+              "name": "add_shortcuts_batch",
+              "qualname": "ShortcutManager.add_shortcuts_batch",
+              "kind": "method",
+              "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
+              "summary": "Add multiple shortcuts from a configuration list",
+              "line": 386,
+              "deprecated": false
+            },
+            {
+              "name": "add_global_shortcut",
+              "qualname": "ShortcutManager.add_global_shortcut",
+              "kind": "method",
+              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut",
+              "summary": "Add a global shortcut (robust press/release detection).",
+              "line": 417,
+              "deprecated": false
+            },
+            {
+              "name": "add_info_entry",
+              "qualname": "ShortcutManager.add_info_entry",
+              "kind": "method",
+              "signature": "(self, key_label: str, description: str) -> None",
+              "summary": "Register a display-only entry (e.g.",
+              "line": 450,
+              "deprecated": false
+            },
+            {
+              "name": "remove_shortcut",
+              "qualname": "ShortcutManager.remove_shortcut",
+              "kind": "method",
+              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
+              "summary": "Remove a specific shortcut",
+              "line": 467,
+              "deprecated": false
+            },
+            {
+              "name": "clear_all",
+              "qualname": "ShortcutManager.clear_all",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Remove all shortcuts",
+              "line": 506,
+              "deprecated": false
+            },
+            {
+              "name": "on_change",
+              "qualname": "ShortcutManager.on_change",
+              "kind": "method",
+              "signature": "(self, callback: Callable) -> None",
+              "summary": "Register a callback invoked after any shortcut is rebound.",
+              "line": 514,
+              "deprecated": false
+            },
+            {
+              "name": "rebind_shortcut",
+              "qualname": "ShortcutManager.rebind_shortcut",
+              "kind": "method",
+              "signature": "(self, old_key: str, new_key: str) -> bool",
+              "summary": "Change the key sequence for an existing shortcut.",
+              "line": 524,
+              "deprecated": false
+            },
+            {
+              "name": "show_editor",
+              "qualname": "ShortcutManager.show_editor",
+              "kind": "method",
+              "signature": "(self, parent=None, title: str = 'Shortcuts') -> None",
+              "summary": "Open the unified shortcut editor for this manager's bindings.",
+              "line": 549,
+              "deprecated": false
+            },
+            {
+              "name": "get_shortcuts_info",
+              "qualname": "ShortcutManager.get_shortcuts_info",
+              "kind": "method",
+              "signature": "(self) -> Dict[str, str]",
+              "summary": "Get information about all registered shortcuts",
+              "line": 582,
+              "deprecated": false
+            },
+            {
+              "name": "has_shortcut",
+              "qualname": "ShortcutManager.has_shortcut",
+              "kind": "method",
+              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
+              "summary": "Check if a shortcut is registered",
+              "line": 590,
+              "deprecated": false
+            },
+            {
+              "name": "get_shortcut",
+              "qualname": "ShortcutManager.get_shortcut",
+              "kind": "method",
+              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]",
+              "summary": "Get a specific shortcut object",
+              "line": 605,
+              "deprecated": false
+            },
+            {
+              "name": "get_registry",
+              "qualname": "ShortcutManager.get_registry",
+              "kind": "method",
+              "signature": "(self) -> List[Dict]",
+              "summary": "Registry entries for this manager's shortcuts, in the shared editor",
+              "line": 627,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "managers/state_manager.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "StateManager",
+          "summary": "Manages widget state persistence using QSettings.",
+          "line": 17,
+          "bases": [
+            "ptk.LoggingMixin"
+          ],
+          "members": [
+            {
+              "name": "apply",
+              "qualname": "StateManager.apply",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
+              "summary": "Apply the given value to the widget using ValueManager.",
+              "line": 137,
+              "deprecated": false
+            },
+            {
+              "name": "suppress_save",
+              "qualname": "StateManager.suppress_save",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Context manager that temporarily suppresses QSettings writes.",
+              "line": 235,
+              "deprecated": false
+            },
+            {
+              "name": "save",
+              "qualname": "StateManager.save",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget, value: Any = None) -> None",
+              "summary": "Save the current value of the widget to QSettings.",
+              "line": 272,
+              "deprecated": false
+            },
+            {
+              "name": "save_value",
+              "qualname": "StateManager.save_value",
+              "kind": "method",
+              "signature": "(self, key: str, value: Any) -> None",
+              "summary": "Serialize and persist ``value`` at an explicit state ``key``.",
+              "line": 306,
+              "deprecated": false
+            },
+            {
+              "name": "load",
+              "qualname": "StateManager.load",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget) -> None",
+              "summary": "Load the saved value from QSettings and apply it to the widget.",
+              "line": 353,
+              "deprecated": false
+            },
+            {
+              "name": "reset_all",
+              "qualname": "StateManager.reset_all",
+              "kind": "method",
+              "signature": "(self, block_signals: bool = False) -> None",
+              "summary": "Reset all widgets with stored defaults to their original values.",
+              "line": 382,
+              "deprecated": false
+            },
+            {
+              "name": "reset",
+              "qualname": "StateManager.reset",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget) -> None",
+              "summary": "Reset a widget to its default value.",
+              "line": 426,
+              "deprecated": false
+            },
+            {
+              "name": "clear",
+              "qualname": "StateManager.clear",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget) -> None",
+              "summary": "Removes the stored state for the widget from QSettings.",
+              "line": 451,
+              "deprecated": false
+            },
+            {
+              "name": "has_default",
+              "qualname": "StateManager.has_default",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget) -> bool",
+              "summary": "Check if a widget has a stored default value.",
+              "line": 458,
+              "deprecated": false
+            },
+            {
+              "name": "capture_default",
+              "qualname": "StateManager.capture_default",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget) -> None",
+              "summary": "Capture the current widget value as its default.",
+              "line": 462,
+              "deprecated": false
+            },
+            {
+              "name": "set_default",
+              "qualname": "StateManager.set_default",
+              "kind": "method",
+              "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
+              "summary": "Explicitly set a widget's default value.",
+              "line": 479,
+              "deprecated": false
+            },
+            {
+              "name": "save_custom",
+              "qualname": "StateManager.save_custom",
+              "kind": "method",
+              "signature": "(self, key: str, value: Any) -> None",
+              "summary": "Persist an arbitrary key/value pair through QSettings.",
+              "line": 494,
+              "deprecated": false
+            },
+            {
+              "name": "load_custom",
+              "qualname": "StateManager.load_custom",
+              "kind": "method",
+              "signature": "(self, key: str, default: Any = None) -> Any",
+              "summary": "Retrieve a previously stored custom key/value pair.",
+              "line": 511,
+              "deprecated": false
+            },
+            {
+              "name": "clear_custom",
+              "qualname": "StateManager.clear_custom",
+              "kind": "method",
+              "signature": "(self, key: str) -> None",
+              "summary": "Remove a single custom key from storage.",
+              "line": 524,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "managers/value_manager.py",
+      "summary": "",
+      "functions": [],
+      "classes": [
+        {
+          "name": "ValueManager",
+          "summary": "Flexible value getting/setting for most Qt widgets.",
+          "line": 6,
+          "bases": [],
+          "members": [
+            {
+              "name": "get_value",
+              "qualname": "ValueManager.get_value",
+              "kind": "staticmethod",
+              "signature": "(widget)",
+              "summary": "Get the current value from a widget.",
+              "line": 24,
+              "deprecated": false
+            },
+            {
+              "name": "set_value",
+              "qualname": "ValueManager.set_value",
+              "kind": "staticmethod",
+              "signature": "(widget, value, block_signals=False)",
+              "summary": "Set a value on a widget.",
+              "line": 58,
+              "deprecated": false
+            },
+            {
+              "name": "get_widget_type_info",
+              "qualname": "ValueManager.get_widget_type_info",
+              "kind": "staticmethod",
+              "signature": "(widget)",
+              "summary": "Get information about widget type for display purposes.",
+              "line": 135,
+              "deprecated": false
+            },
+            {
+              "name": "is_supported_widget",
+              "qualname": "ValueManager.is_supported_widget",
+              "kind": "staticmethod",
+              "signature": "(widget)",
+              "summary": "Check if a widget type is supported for value operations.",
+              "line": 164,
+              "deprecated": false
+            },
+            {
+              "name": "get_value_by_signal",
+              "qualname": "ValueManager.get_value_by_signal",
+              "kind": "staticmethod",
+              "signature": "(widget, signal_name)",
+              "summary": "Get widget value based on its primary signal type.",
+              "line": 188,
+              "deprecated": false
+            },
+            {
+              "name": "set_value_by_signal",
+              "qualname": "ValueManager.set_value_by_signal",
+              "kind": "staticmethod",
+              "signature": "(widget, value, signal_name, block_signals=False)",
+              "summary": "Set widget value based on its primary signal type.",
+              "line": 222,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "switchboard/_core.py",
       "summary": "",
       "functions": [],
@@ -2396,6 +3453,151 @@
       ]
     },
     {
+      "relpath": "themes/style_sheet.py",
+      "summary": "",
+      "functions": [
+        {
+          "name": "repolish_tree",
+          "qualname": "repolish_tree",
+          "kind": "function",
+          "signature": "(root: QtWidgets.QWidget) -> None",
+          "summary": "Force re-evaluation of property-selector QSS for *root* and children.",
+          "line": 14,
+          "deprecated": false
+        }
+      ],
+      "classes": [
+        {
+          "name": "StyleSheet",
+          "summary": "Theme and stylesheet manager with light/dark theme support.",
+          "line": 52,
+          "bases": [
+            "QtCore.QObject",
+            "ptk.LoggingMixin"
+          ],
+          "members": [
+            {
+              "name": "theme_changed",
+              "qualname": "StyleSheet.theme_changed",
+              "kind": "property",
+              "signature": "(self)",
+              "summary": "Signal ``(widget, theme_name, theme_vars)`` emitted after a style applies.",
+              "line": 67,
+              "deprecated": false
+            },
+            {
+              "name": "get_icon_color",
+              "qualname": "StyleSheet.get_icon_color",
+              "kind": "classmethod",
+              "signature": "(cls, widget: QtWidgets.QWidget = None) -> str",
+              "summary": "Get the icon color for a widget based on its current theme.",
+              "line": 306,
+              "deprecated": false
+            },
+            {
+              "name": "set_theme",
+              "qualname": "StyleSheet.set_theme",
+              "kind": "classmethod",
+              "signature": "(cls, theme: str, widget: QtWidgets.QWidget = None)",
+              "summary": "Set a new theme for a specific widget or all registered widgets.",
+              "line": 332,
+              "deprecated": false
+            },
+            {
+              "name": "reload",
+              "qualname": "StyleSheet.reload",
+              "kind": "classmethod",
+              "signature": "(cls, widget: QtWidgets.QWidget = None)",
+              "summary": "Reload the style for a specific widget or all registered widgets.",
+              "line": 347,
+              "deprecated": false
+            },
+            {
+              "name": "clear_caches",
+              "qualname": "StyleSheet.clear_caches",
+              "kind": "classmethod",
+              "signature": "(cls) -> None",
+              "summary": "Drop QSS + parsed-template caches.",
+              "line": 406,
+              "deprecated": false
+            },
+            {
+              "name": "set_variable",
+              "qualname": "StyleSheet.set_variable",
+              "kind": "classmethod",
+              "signature": "(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)",
+              "summary": "Set a theme variable override.",
+              "line": 416,
+              "deprecated": false
+            },
+            {
+              "name": "get_variable",
+              "qualname": "StyleSheet.get_variable",
+              "kind": "classmethod",
+              "signature": "(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str",
+              "summary": "Get a theme variable value, resolving overrides.",
+              "line": 493,
+              "deprecated": false
+            },
+            {
+              "name": "get_variable_px",
+              "qualname": "StyleSheet.get_variable_px",
+              "kind": "classmethod",
+              "signature": "(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None, default: Union[int, None] = None) -> Union[int, None]",
+              "summary": "Get a length token as an integer pixel value.",
+              "line": 517,
+              "deprecated": false
+            },
+            {
+              "name": "get_variables",
+              "qualname": "StyleSheet.get_variables",
+              "kind": "classmethod",
+              "signature": "(cls, theme: str = 'light') -> list[str]",
+              "summary": "Get list of available theme variables.",
+              "line": 542,
+              "deprecated": false
+            },
+            {
+              "name": "export_overrides",
+              "qualname": "StyleSheet.export_overrides",
+              "kind": "classmethod",
+              "signature": "(cls) -> dict",
+              "summary": "Export the current global overrides as a plain dict.",
+              "line": 547,
+              "deprecated": false
+            },
+            {
+              "name": "import_overrides",
+              "qualname": "StyleSheet.import_overrides",
+              "kind": "classmethod",
+              "signature": "(cls, data: dict) -> None",
+              "summary": "Bulk-replace global overrides from a dict and reload once.",
+              "line": 559,
+              "deprecated": false
+            },
+            {
+              "name": "reset_overrides",
+              "qualname": "StyleSheet.reset_overrides",
+              "kind": "classmethod",
+              "signature": "(cls, widget: QtWidgets.QWidget = None)",
+              "summary": "Clear overrides.",
+              "line": 575,
+              "deprecated": false
+            },
+            {
+              "name": "set",
+              "qualname": "StyleSheet.set",
+              "kind": "method",
+              "signature": "(self, widget: Union[QtWidgets.QWidget, None] = None, theme: str = 'light', style_class: str = '', recursive: bool = False, resource: str = 'style.qss', package: str = 'uitk.themes', _qss_final: Union[str, None] = None, **kwargs)",
+              "summary": "Apply a themed stylesheet to ``widget`` and register it for reloads.",
+              "line": 659,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
       "relpath": "widgets/attributeWindow/_attributeWindow.py",
       "summary": "",
       "functions": [],
@@ -2423,7 +3625,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Refreshes the window with the latest attributes.",
-              "line": 104,
+              "line": 103,
               "deprecated": false
             },
             {
@@ -2432,7 +3634,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clears existing labels and widgets from the UI.",
-              "line": 119,
+              "line": 118,
               "deprecated": false
             },
             {
@@ -2441,7 +3643,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 131,
+              "line": 130,
               "deprecated": false
             },
             {
@@ -2450,7 +3652,7 @@
               "kind": "method",
               "signature": "(self, set_attribute_func)",
               "summary": "",
-              "line": 139,
+              "line": 138,
               "deprecated": false
             },
             {
@@ -2459,7 +3661,7 @@
               "kind": "method",
               "signature": "(self, name, value)",
               "summary": "",
-              "line": 162,
+              "line": 161,
               "deprecated": false
             },
             {
@@ -2468,7 +3670,7 @@
               "kind": "staticmethod",
               "signature": "(attr_name)",
               "summary": "",
-              "line": 170,
+              "line": 169,
               "deprecated": false
             },
             {
@@ -2477,7 +3679,7 @@
               "kind": "staticmethod",
               "signature": "(attribute_type)",
               "summary": "Return True if AttributeWindow can auto-build a widget for *attribute_type*.",
-              "line": 175,
+              "line": 174,
               "deprecated": false
             },
             {
@@ -2486,7 +3688,7 @@
               "kind": "method",
               "signature": "(self, attributes, value=None)",
               "summary": "Adds a single attribute or multiple attributes to the attribute window.",
-              "line": 213,
+              "line": 212,
               "deprecated": false
             },
             {
@@ -2495,7 +3697,7 @@
               "kind": "method",
               "signature": "(self, spec)",
               "summary": "Add one attribute via an explicit :class:`uitk.AttributeSpec`.",
-              "line": 251,
+              "line": 250,
               "deprecated": false
             },
             {
@@ -2504,7 +3706,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Emit the valueChanged signal for a widget (or composite-aware).",
-              "line": 310,
+              "line": 309,
               "deprecated": false
             },
             {
@@ -2513,7 +3715,7 @@
               "kind": "method",
               "signature": "(self, attribute_name)",
               "summary": "Construct and emit the full attribute value for a composite attribute.",
-              "line": 321,
+              "line": 320,
               "deprecated": false
             },
             {
@@ -2522,7 +3724,7 @@
               "kind": "method",
               "signature": "(self, attribute_name)",
               "summary": "Set up the label for the attribute.",
-              "line": 329,
+              "line": 328,
               "deprecated": false
             },
             {
@@ -2531,7 +3733,7 @@
               "kind": "method",
               "signature": "(self, label)",
               "summary": "Slot to be called when a label is toggled.",
-              "line": 349,
+              "line": 348,
               "deprecated": false
             },
             {
@@ -2540,7 +3742,7 @@
               "kind": "method",
               "signature": "(self, button, checked)",
               "summary": "Slot for buttonClicked signal of QButtonGroup.",
-              "line": 355,
+              "line": 354,
               "deprecated": false
             },
             {
@@ -2549,7 +3751,7 @@
               "kind": "method",
               "signature": "(self, label, widget)",
               "summary": "Add the label and widget to the layout.",
-              "line": 370,
+              "line": 369,
               "deprecated": false
             },
             {
@@ -2558,7 +3760,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the show event for the window.",
-              "line": 404,
+              "line": 403,
               "deprecated": false
             }
           ]
@@ -7184,120 +8386,6 @@
       ]
     },
     {
-      "relpath": "widgets/mixins/icon_manager.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "IconManager",
-          "summary": "Theme-aware SVG icon loader with caching and color customization.",
-          "line": 10,
-          "bases": [],
-          "members": [
-            {
-              "name": "set_default_color",
-              "qualname": "IconManager.set_default_color",
-              "kind": "classmethod",
-              "signature": "(cls, color: str)",
-              "summary": "Set the default icon color for icons created without explicit color.",
-              "line": 32,
-              "deprecated": false
-            },
-            {
-              "name": "register_icon_dir",
-              "qualname": "IconManager.register_icon_dir",
-              "kind": "classmethod",
-              "signature": "(cls, path)",
-              "summary": "Register an additional icon directory (searched first).",
-              "line": 74,
-              "deprecated": false
-            },
-            {
-              "name": "get",
-              "qualname": "IconManager.get",
-              "kind": "classmethod",
-              "signature": "(cls, name: str, size=(16, 16), color: str = None, use_theme: bool = True) -> QtGui.QIcon",
-              "summary": "Get an icon, optionally colorized.",
-              "line": 285,
-              "deprecated": false
-            },
-            {
-              "name": "fit_size",
-              "qualname": "IconManager.fit_size",
-              "kind": "staticmethod",
-              "signature": "(container_size, margin: int = 4, min_size: int = 8) -> int",
-              "summary": "Compute a square icon extent that fits inside ``container_size`` px.",
-              "line": 371,
-              "deprecated": false
-            },
-            {
-              "name": "fit_icon",
-              "qualname": "IconManager.fit_icon",
-              "kind": "classmethod",
-              "signature": "(cls, widget, name: str, container_size, margin: int = 4, min_size: int = 8, color: str = None, auto_theme: bool = True) -> int",
-              "summary": "Render *name* onto *widget* sized to fit a square container.",
-              "line": 390,
-              "deprecated": false
-            },
-            {
-              "name": "swap_icon",
-              "qualname": "IconManager.swap_icon",
-              "kind": "classmethod",
-              "signature": "(cls, widget, name: str, color: str = None, auto_theme: bool = True, fallback_size=(16, 16)) -> None",
-              "summary": "Replace the icon on *widget* without changing its display size.",
-              "line": 417,
-              "deprecated": false
-            },
-            {
-              "name": "set_icon",
-              "qualname": "IconManager.set_icon",
-              "kind": "classmethod",
-              "signature": "(cls, widget, name: str, size=(16, 16), color: str = None, auto_theme: bool = True)",
-              "summary": "Set an icon on a widget.",
-              "line": 444,
-              "deprecated": false
-            },
-            {
-              "name": "registered_info",
-              "qualname": "IconManager.registered_info",
-              "kind": "classmethod",
-              "signature": "(cls, widget) -> 'dict | None'",
-              "summary": "The icon registry entry for *widget* — name/size/color — or None.",
-              "line": 511,
-              "deprecated": false
-            },
-            {
-              "name": "update_widget_icons",
-              "qualname": "IconManager.update_widget_icons",
-              "kind": "classmethod",
-              "signature": "(cls, root_widget: QtWidgets.QWidget, color: str)",
-              "summary": "Update all registered icons under a widget tree with a new color.",
-              "line": 527,
-              "deprecated": false
-            },
-            {
-              "name": "clear_cache",
-              "qualname": "IconManager.clear_cache",
-              "kind": "classmethod",
-              "signature": "(cls)",
-              "summary": "Clear all cached icons and SVG content.",
-              "line": 601,
-              "deprecated": false
-            },
-            {
-              "name": "get_cache_stats",
-              "qualname": "IconManager.get_cache_stats",
-              "kind": "classmethod",
-              "signature": "(cls) -> dict",
-              "summary": "Get statistics about the icon cache.",
-              "line": 612,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
       "relpath": "widgets/mixins/icon_states.py",
       "summary": "Shared multi-state icon behavior for state-cycling buttons.",
       "functions": [],
@@ -7451,737 +8539,6 @@
       ]
     },
     {
-      "relpath": "widgets/mixins/preset_manager.py",
-      "summary": "",
-      "functions": [
-        {
-          "name": "QStandardPaths_writableLocation",
-          "qualname": "QStandardPaths_writableLocation",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "Return Qt's per-application writable config directory.",
-          "line": 1438,
-          "deprecated": false
-        },
-        {
-          "name": "QStandardPaths_genericConfigLocation",
-          "qualname": "QStandardPaths_genericConfigLocation",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "Return Qt's host-independent writable config directory.",
-          "line": 1455,
-          "deprecated": false
-        },
-        {
-          "name": "get_presets_root",
-          "qualname": "get_presets_root",
-          "kind": "function",
-          "signature": "() -> Path",
-          "summary": "Root directory under which every relative ``preset_dir`` is resolved.",
-          "line": 1583,
-          "deprecated": false
-        }
-      ],
-      "classes": [
-        {
-          "name": "PresetManager",
-          "summary": "Manages named presets for widget state, stored as external JSON files.",
-          "line": 19,
-          "bases": [
-            "ptk.LoggingMixin"
-          ],
-          "members": [
-            {
-              "name": "from_widgets",
-              "qualname": "PresetManager.from_widgets",
-              "kind": "classmethod",
-              "signature": "(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'",
-              "summary": "Create a standalone PresetManager for an explicit list of widgets.",
-              "line": 229,
-              "deprecated": false
-            },
-            {
-              "name": "setup",
-              "qualname": "PresetManager.setup",
-              "kind": "method",
-              "signature": "(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'",
-              "summary": "Configure and optionally auto-wire a preset combo.",
-              "line": 249,
-              "deprecated": false
-            },
-            {
-              "name": "preset_dir",
-              "qualname": "PresetManager.preset_dir",
-              "kind": "property",
-              "signature": "(self) -> Path",
-              "summary": "The directory where preset files are stored.",
-              "line": 318,
-              "deprecated": false
-            },
-            {
-              "name": "on_change",
-              "qualname": "PresetManager.on_change",
-              "kind": "method",
-              "signature": "(self, callback) -> None",
-              "summary": "Register a callback invoked when presets are modified.",
-              "line": 374,
-              "deprecated": false
-            },
-            {
-              "name": "scope",
-              "qualname": "PresetManager.scope",
-              "kind": "property",
-              "signature": "(self) -> str",
-              "summary": "Which widget set a save/load operates on.",
-              "line": 397,
-              "deprecated": false
-            },
-            {
-              "name": "exclude",
-              "qualname": "PresetManager.exclude",
-              "kind": "method",
-              "signature": "(self, *names_or_widgets) -> 'PresetManager'",
-              "summary": "Exclude widgets (by ``objectName`` or instance) from capture/restore.",
-              "line": 437,
-              "deprecated": false
-            },
-            {
-              "name": "include",
-              "qualname": "PresetManager.include",
-              "kind": "method",
-              "signature": "(self, *names_or_widgets) -> 'PresetManager'",
-              "summary": "Restrict capture/restore to *only* these widgets (allowlist).",
-              "line": 447,
-              "deprecated": false
-            },
-            {
-              "name": "active_preset",
-              "qualname": "PresetManager.active_preset",
-              "kind": "property",
-              "signature": "(self) -> Optional[str]",
-              "summary": "Name of the preset currently in use, or ``None``.",
-              "line": 494,
-              "deprecated": false
-            },
-            {
-              "name": "is_modified",
-              "qualname": "PresetManager.is_modified",
-              "kind": "method",
-              "signature": "(self) -> bool",
-              "summary": "True when live values diverge from the active preset's stored values.",
-              "line": 527,
-              "deprecated": false
-            },
-            {
-              "name": "on_modified_changed",
-              "qualname": "PresetManager.on_modified_changed",
-              "kind": "method",
-              "signature": "(self, callback: Callable[[bool], None]) -> None",
-              "summary": "Register *callback(bool)* invoked when the modified state flips.",
-              "line": 553,
-              "deprecated": false
-            },
-            {
-              "name": "refresh_modified_state",
-              "qualname": "PresetManager.refresh_modified_state",
-              "kind": "method",
-              "signature": "(self) -> bool",
-              "summary": "Recompute the modified state;",
-              "line": 557,
-              "deprecated": false
-            },
-            {
-              "name": "connect_value_widgets",
-              "qualname": "PresetManager.connect_value_widgets",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Wire managed widgets' change signals so the dirty marker updates live.",
-              "line": 573,
-              "deprecated": false
-            },
-            {
-              "name": "save",
-              "qualname": "PresetManager.save",
-              "kind": "method",
-              "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path",
-              "summary": "Save the current widget values as a named preset.",
-              "line": 630,
-              "deprecated": false
-            },
-            {
-              "name": "load",
-              "qualname": "PresetManager.load",
-              "kind": "method",
-              "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int",
-              "summary": "Load a named preset and apply its values to the matching widgets.",
-              "line": 715,
-              "deprecated": false
-            },
-            {
-              "name": "list",
-              "qualname": "PresetManager.list",
-              "kind": "method",
-              "signature": "(self) -> List[str]",
-              "summary": "Return a sorted list of available preset names across both tiers.",
-              "line": 850,
-              "deprecated": false
-            },
-            {
-              "name": "source",
-              "qualname": "PresetManager.source",
-              "kind": "method",
-              "signature": "(self, name: str) -> Optional[str]",
-              "summary": "Which tier *name* resolves from: ``\"user\"``, ``\"builtin\"``, or ``None``.",
-              "line": 858,
-              "deprecated": false
-            },
-            {
-              "name": "delete",
-              "qualname": "PresetManager.delete",
-              "kind": "method",
-              "signature": "(self, name: str) -> bool",
-              "summary": "Delete a *user* preset (built-ins are read-only).",
-              "line": 865,
-              "deprecated": false
-            },
-            {
-              "name": "rename",
-              "qualname": "PresetManager.rename",
-              "kind": "method",
-              "signature": "(self, old_name: str, new_name: str) -> bool",
-              "summary": "Rename a *user* preset.",
-              "line": 880,
-              "deprecated": false
-            },
-            {
-              "name": "exists",
-              "qualname": "PresetManager.exists",
-              "kind": "method",
-              "signature": "(self, name: str) -> bool",
-              "summary": "Check whether a named preset exists in either tier.",
-              "line": 898,
-              "deprecated": false
-            },
-            {
-              "name": "make_preset_combo",
-              "qualname": "PresetManager.make_preset_combo",
-              "kind": "method",
-              "signature": "(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None) -> 'QtWidgets.QWidget'",
-              "summary": "Create a fully-wired preset selector and return its layout container.",
-              "line": 1069,
-              "deprecated": false
-            },
-            {
-              "name": "wire_combo",
-              "qualname": "PresetManager.wire_combo",
-              "kind": "method",
-              "signature": "(self, combo, on_loaded=None)",
-              "summary": "Wire a uitk ``ComboBox`` as a fully-functional preset selector.",
-              "line": 1110,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/recent_values_store.py",
-      "summary": "Widget-free *recent values* model — the shared source of truth for value history.",
-      "functions": [
-        {
-          "name": "normalize_value",
-          "qualname": "normalize_value",
-          "kind": "function",
-          "signature": "(value)",
-          "summary": "Normalize a value for comparison.",
-          "line": 105,
-          "deprecated": false
-        }
-      ],
-      "classes": [
-        {
-          "name": "RecentValueEntry",
-          "summary": "A recent value whose restore-data differs from its display string.",
-          "line": 64,
-          "bases": [],
-          "members": []
-        },
-        {
-          "name": "RecentValuesStore",
-          "summary": "Ordered, deduped, most-recent-first value history.",
-          "line": 121,
-          "bases": [],
-          "members": [
-            {
-              "name": "subscribe",
-              "qualname": "RecentValuesStore.subscribe",
-              "kind": "method",
-              "signature": "(self, callback: Callable[[], None]) -> None",
-              "summary": "Register *callback* to be invoked (no args) after any mutation.",
-              "line": 221,
-              "deprecated": false
-            },
-            {
-              "name": "unsubscribe",
-              "qualname": "RecentValuesStore.unsubscribe",
-              "kind": "method",
-              "signature": "(self, callback: Callable[[], None]) -> None",
-              "summary": "Remove a previously-registered *callback* (no-op if absent).",
-              "line": 226,
-              "deprecated": false
-            },
-            {
-              "name": "values",
-              "qualname": "RecentValuesStore.values",
-              "kind": "property",
-              "signature": "(self) -> List",
-              "summary": "A copy of the full history (most-recent first, raw values).",
-              "line": 247,
-              "deprecated": false
-            },
-            {
-              "name": "is_valid",
-              "qualname": "RecentValuesStore.is_valid",
-              "kind": "method",
-              "signature": "(self, value) -> bool",
-              "summary": "Whether *value* passes the configured validator (True if none).",
-              "line": 251,
-              "deprecated": false
-            },
-            {
-              "name": "valid_values",
-              "qualname": "RecentValuesStore.valid_values",
-              "kind": "method",
-              "signature": "(self) -> List",
-              "summary": "History filtered to entries passing the validator (non-destructive).",
-              "line": 260,
-              "deprecated": false
-            },
-            {
-              "name": "record",
-              "qualname": "RecentValuesStore.record",
-              "kind": "method",
-              "signature": "(self, value) -> None",
-              "summary": "Insert *value* at the front (most-recent), dedup, trim, persist.",
-              "line": 268,
-              "deprecated": false
-            },
-            {
-              "name": "add",
-              "qualname": "RecentValuesStore.add",
-              "kind": "method",
-              "signature": "(self, value) -> None",
-              "summary": "Seed *value* (append if new);",
-              "line": 279,
-              "deprecated": false
-            },
-            {
-              "name": "remove",
-              "qualname": "RecentValuesStore.remove",
-              "kind": "method",
-              "signature": "(self, value) -> None",
-              "summary": "Remove *value* from the history (no-op if absent).",
-              "line": 301,
-              "deprecated": false
-            },
-            {
-              "name": "clear",
-              "qualname": "RecentValuesStore.clear",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Drop all history.",
-              "line": 310,
-              "deprecated": false
-            },
-            {
-              "name": "prune_invalid",
-              "qualname": "RecentValuesStore.prune_invalid",
-              "kind": "method",
-              "signature": "(self) -> List",
-              "summary": "Drop every entry failing the validator;",
-              "line": 318,
-              "deprecated": false
-            },
-            {
-              "name": "display_map",
-              "qualname": "RecentValuesStore.display_map",
-              "kind": "method",
-              "signature": "(self, values=None) -> dict",
-              "summary": "Return ``{raw_value: display_string}`` for *values*.",
-              "line": 336,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/settings_manager.py",
-      "summary": "",
-      "functions": [
-        {
-          "name": "decode_stored_value",
-          "qualname": "decode_stored_value",
-          "kind": "function",
-          "signature": "(value: Any) -> Any",
-          "summary": "Read-side mirror of :func:`encode_stored_value`.",
-          "line": 171,
-          "deprecated": false
-        },
-        {
-          "name": "encode_stored_value",
-          "qualname": "encode_stored_value",
-          "kind": "function",
-          "signature": "(value: Any) -> Any",
-          "summary": "Encode *value* for QSettings so a JSON-decoding read restores it losslessly.",
-          "line": 194,
-          "deprecated": false
-        }
-      ],
-      "classes": [
-        {
-          "name": "SettingsManager",
-          "summary": "Manages persistent storage and retrieval of settings via QSettings.",
-          "line": 227,
-          "bases": [],
-          "members": [
-            {
-              "name": "branch",
-              "qualname": "SettingsManager.branch",
-              "kind": "method",
-              "signature": "(self, name: str) -> 'SettingsManager'",
-              "summary": "Create a new SettingsManager instance targeted at a sub-namespace.",
-              "line": 353,
-              "deprecated": false
-            },
-            {
-              "name": "set_defaults",
-              "qualname": "SettingsManager.set_defaults",
-              "kind": "method",
-              "signature": "(self, defaults: dict) -> None",
-              "summary": "Apply default values for a set of keys if they are not already set.",
-              "line": 358,
-              "deprecated": false
-            },
-            {
-              "name": "value",
-              "qualname": "SettingsManager.value",
-              "kind": "method",
-              "signature": "(self, key: str, default: Any = None) -> Any",
-              "summary": "",
-              "line": 364,
-              "deprecated": false
-            },
-            {
-              "name": "setValue",
-              "qualname": "SettingsManager.setValue",
-              "kind": "method",
-              "signature": "(self, key: str, value: Any) -> None",
-              "summary": "",
-              "line": 373,
-              "deprecated": false
-            },
-            {
-              "name": "on_change",
-              "qualname": "SettingsManager.on_change",
-              "kind": "method",
-              "signature": "(self, key: str, callback: Callable[[Any], None]) -> None",
-              "summary": "Register a callback to be invoked when a key's value changes.",
-              "line": 390,
-              "deprecated": false
-            },
-            {
-              "name": "keys",
-              "qualname": "SettingsManager.keys",
-              "kind": "method",
-              "signature": "(self) -> list",
-              "summary": "Return all keys in the current namespace.",
-              "line": 402,
-              "deprecated": false
-            },
-            {
-              "name": "setByteArray",
-              "qualname": "SettingsManager.setByteArray",
-              "kind": "method",
-              "signature": "(self, key: str, value: QtCore.QByteArray) -> None",
-              "summary": "Set a QByteArray value directly without JSON serialization.",
-              "line": 418,
-              "deprecated": false
-            },
-            {
-              "name": "getByteArray",
-              "qualname": "SettingsManager.getByteArray",
-              "kind": "method",
-              "signature": "(self, key: str, default: QtCore.QByteArray = None) -> QtCore.QByteArray",
-              "summary": "Get a QByteArray value directly.",
-              "line": 422,
-              "deprecated": false
-            },
-            {
-              "name": "remove",
-              "qualname": "SettingsManager.remove",
-              "kind": "method",
-              "signature": "(self, key: str) -> None",
-              "summary": "Remove a single key from the current namespace.",
-              "line": 428,
-              "deprecated": false
-            },
-            {
-              "name": "clear",
-              "qualname": "SettingsManager.clear",
-              "kind": "method",
-              "signature": "(self, key: Optional[str] = None) -> None",
-              "summary": "Clears a specific key, or all keys in the current namespace.",
-              "line": 439,
-              "deprecated": false
-            },
-            {
-              "name": "sync",
-              "qualname": "SettingsManager.sync",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "",
-              "line": 448,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/shortcuts.py",
-      "summary": "Generic keyboard-shortcut primitives, usable by any Qt widget.",
-      "functions": [
-        {
-          "name": "context_to_scope_name",
-          "qualname": "context_to_scope_name",
-          "kind": "function",
-          "signature": "(context: QtCore.Qt.ShortcutContext) -> str",
-          "summary": "Convert a Qt.ShortcutContext to its persistence string.",
-          "line": 36,
-          "deprecated": false
-        },
-        {
-          "name": "scope_name_to_context",
-          "qualname": "scope_name_to_context",
-          "kind": "function",
-          "signature": "(name: str) -> QtCore.Qt.ShortcutContext",
-          "summary": "Convert a persisted scope string to a Qt.ShortcutContext.",
-          "line": 41,
-          "deprecated": false
-        },
-        {
-          "name": "host_namespace_suffix",
-          "qualname": "host_namespace_suffix",
-          "kind": "function",
-          "signature": "(context_tags) -> str",
-          "summary": "Settings-key suffix namespacing persisted state by host context.",
-          "line": 46,
-          "deprecated": false
-        },
-        {
-          "name": "resolve_application_host",
-          "qualname": "resolve_application_host",
-          "kind": "function",
-          "signature": "(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]",
-          "summary": "Return an always-visible top-level window to own an application shortcut.",
-          "line": 68,
-          "deprecated": false
-        },
-        {
-          "name": "find_duplicate_application_shortcuts",
-          "qualname": "find_duplicate_application_shortcuts",
-          "kind": "function",
-          "signature": "(app=None) -> Dict[str, int]",
-          "summary": "Return ``{sequence: count}`` for key sequences bound by more than one",
-          "line": 115,
-          "deprecated": false
-        }
-      ],
-      "classes": [
-        {
-          "name": "GlobalShortcut",
-          "summary": "A robust global shortcut handler that detects both press and release events.",
-          "line": 157,
-          "bases": [
-            "QtCore.QObject"
-          ],
-          "members": [
-            {
-              "name": "eventFilter",
-              "qualname": "GlobalShortcut.eventFilter",
-              "kind": "method",
-              "signature": "(self, obj, event)",
-              "summary": "Monitor global events for the specific key release.",
-              "line": 261,
-              "deprecated": false
-            },
-            {
-              "name": "setEnabled",
-              "qualname": "GlobalShortcut.setEnabled",
-              "kind": "method",
-              "signature": "(self, enabled: bool)",
-              "summary": "",
-              "line": 292,
-              "deprecated": false
-            },
-            {
-              "name": "setKey",
-              "qualname": "GlobalShortcut.setKey",
-              "kind": "method",
-              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence])",
-              "summary": "",
-              "line": 298,
-              "deprecated": false
-            },
-            {
-              "name": "setContext",
-              "qualname": "GlobalShortcut.setContext",
-              "kind": "method",
-              "signature": "(self, context: QtCore.Qt.ShortcutContext)",
-              "summary": "Live-update the underlying QShortcut's context.",
-              "line": 307,
-              "deprecated": false
-            },
-            {
-              "name": "dispose",
-              "qualname": "GlobalShortcut.dispose",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Disable, unregister, and schedule deletion of this shortcut.",
-              "line": 315,
-              "deprecated": false
-            }
-          ]
-        },
-        {
-          "name": "ShortcutManager",
-          "summary": "Centralized shortcut management with clear separation of concerns",
-          "line": 333,
-          "bases": [],
-          "members": [
-            {
-              "name": "add_shortcut",
-              "qualname": "ShortcutManager.add_shortcut",
-              "kind": "method",
-              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut, hidden: bool = False) -> QtWidgets.QShortcut",
-              "summary": "Add a keyboard shortcut with optional description and context",
-              "line": 341,
-              "deprecated": false
-            },
-            {
-              "name": "add_shortcuts_batch",
-              "qualname": "ShortcutManager.add_shortcuts_batch",
-              "kind": "method",
-              "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
-              "summary": "Add multiple shortcuts from a configuration list",
-              "line": 386,
-              "deprecated": false
-            },
-            {
-              "name": "add_global_shortcut",
-              "qualname": "ShortcutManager.add_global_shortcut",
-              "kind": "method",
-              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut",
-              "summary": "Add a global shortcut (robust press/release detection).",
-              "line": 417,
-              "deprecated": false
-            },
-            {
-              "name": "add_info_entry",
-              "qualname": "ShortcutManager.add_info_entry",
-              "kind": "method",
-              "signature": "(self, key_label: str, description: str) -> None",
-              "summary": "Register a display-only entry (e.g.",
-              "line": 450,
-              "deprecated": false
-            },
-            {
-              "name": "remove_shortcut",
-              "qualname": "ShortcutManager.remove_shortcut",
-              "kind": "method",
-              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
-              "summary": "Remove a specific shortcut",
-              "line": 467,
-              "deprecated": false
-            },
-            {
-              "name": "clear_all",
-              "qualname": "ShortcutManager.clear_all",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Remove all shortcuts",
-              "line": 506,
-              "deprecated": false
-            },
-            {
-              "name": "on_change",
-              "qualname": "ShortcutManager.on_change",
-              "kind": "method",
-              "signature": "(self, callback: Callable) -> None",
-              "summary": "Register a callback invoked after any shortcut is rebound.",
-              "line": 514,
-              "deprecated": false
-            },
-            {
-              "name": "rebind_shortcut",
-              "qualname": "ShortcutManager.rebind_shortcut",
-              "kind": "method",
-              "signature": "(self, old_key: str, new_key: str) -> bool",
-              "summary": "Change the key sequence for an existing shortcut.",
-              "line": 524,
-              "deprecated": false
-            },
-            {
-              "name": "show_editor",
-              "qualname": "ShortcutManager.show_editor",
-              "kind": "method",
-              "signature": "(self, parent=None, title: str = 'Shortcuts') -> None",
-              "summary": "Open the unified shortcut editor for this manager's bindings.",
-              "line": 549,
-              "deprecated": false
-            },
-            {
-              "name": "get_shortcuts_info",
-              "qualname": "ShortcutManager.get_shortcuts_info",
-              "kind": "method",
-              "signature": "(self) -> Dict[str, str]",
-              "summary": "Get information about all registered shortcuts",
-              "line": 582,
-              "deprecated": false
-            },
-            {
-              "name": "has_shortcut",
-              "qualname": "ShortcutManager.has_shortcut",
-              "kind": "method",
-              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
-              "summary": "Check if a shortcut is registered",
-              "line": 590,
-              "deprecated": false
-            },
-            {
-              "name": "get_shortcut",
-              "qualname": "ShortcutManager.get_shortcut",
-              "kind": "method",
-              "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]",
-              "summary": "Get a specific shortcut object",
-              "line": 605,
-              "deprecated": false
-            },
-            {
-              "name": "get_registry",
-              "qualname": "ShortcutManager.get_registry",
-              "kind": "method",
-              "signature": "(self) -> List[Dict]",
-              "summary": "Registry entries for this manager's shortcuts, in the shared editor",
-              "line": 627,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
       "relpath": "widgets/mixins/size_grip.py",
       "summary": "Reusable helper for attaching a QSizeGrip to arbitrary widgets.",
       "functions": [],
@@ -8305,294 +8662,6 @@
               "signature": "(self)",
               "summary": "The current value-text color override, or ``None`` if unset.",
               "line": 45,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/state_manager.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "StateManager",
-          "summary": "Manages widget state persistence using QSettings.",
-          "line": 17,
-          "bases": [
-            "ptk.LoggingMixin"
-          ],
-          "members": [
-            {
-              "name": "apply",
-              "qualname": "StateManager.apply",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
-              "summary": "Apply the given value to the widget using ValueManager.",
-              "line": 137,
-              "deprecated": false
-            },
-            {
-              "name": "suppress_save",
-              "qualname": "StateManager.suppress_save",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "Context manager that temporarily suppresses QSettings writes.",
-              "line": 235,
-              "deprecated": false
-            },
-            {
-              "name": "save",
-              "qualname": "StateManager.save",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget, value: Any = None) -> None",
-              "summary": "Save the current value of the widget to QSettings.",
-              "line": 272,
-              "deprecated": false
-            },
-            {
-              "name": "save_value",
-              "qualname": "StateManager.save_value",
-              "kind": "method",
-              "signature": "(self, key: str, value: Any) -> None",
-              "summary": "Serialize and persist ``value`` at an explicit state ``key``.",
-              "line": 306,
-              "deprecated": false
-            },
-            {
-              "name": "load",
-              "qualname": "StateManager.load",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget) -> None",
-              "summary": "Load the saved value from QSettings and apply it to the widget.",
-              "line": 353,
-              "deprecated": false
-            },
-            {
-              "name": "reset_all",
-              "qualname": "StateManager.reset_all",
-              "kind": "method",
-              "signature": "(self, block_signals: bool = False) -> None",
-              "summary": "Reset all widgets with stored defaults to their original values.",
-              "line": 382,
-              "deprecated": false
-            },
-            {
-              "name": "reset",
-              "qualname": "StateManager.reset",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget) -> None",
-              "summary": "Reset a widget to its default value.",
-              "line": 426,
-              "deprecated": false
-            },
-            {
-              "name": "clear",
-              "qualname": "StateManager.clear",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget) -> None",
-              "summary": "Removes the stored state for the widget from QSettings.",
-              "line": 451,
-              "deprecated": false
-            },
-            {
-              "name": "has_default",
-              "qualname": "StateManager.has_default",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget) -> bool",
-              "summary": "Check if a widget has a stored default value.",
-              "line": 458,
-              "deprecated": false
-            },
-            {
-              "name": "capture_default",
-              "qualname": "StateManager.capture_default",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget) -> None",
-              "summary": "Capture the current widget value as its default.",
-              "line": 462,
-              "deprecated": false
-            },
-            {
-              "name": "set_default",
-              "qualname": "StateManager.set_default",
-              "kind": "method",
-              "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
-              "summary": "Explicitly set a widget's default value.",
-              "line": 479,
-              "deprecated": false
-            },
-            {
-              "name": "save_custom",
-              "qualname": "StateManager.save_custom",
-              "kind": "method",
-              "signature": "(self, key: str, value: Any) -> None",
-              "summary": "Persist an arbitrary key/value pair through QSettings.",
-              "line": 494,
-              "deprecated": false
-            },
-            {
-              "name": "load_custom",
-              "qualname": "StateManager.load_custom",
-              "kind": "method",
-              "signature": "(self, key: str, default: Any = None) -> Any",
-              "summary": "Retrieve a previously stored custom key/value pair.",
-              "line": 511,
-              "deprecated": false
-            },
-            {
-              "name": "clear_custom",
-              "qualname": "StateManager.clear_custom",
-              "kind": "method",
-              "signature": "(self, key: str) -> None",
-              "summary": "Remove a single custom key from storage.",
-              "line": 524,
-              "deprecated": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/style_sheet.py",
-      "summary": "",
-      "functions": [
-        {
-          "name": "repolish_tree",
-          "qualname": "repolish_tree",
-          "kind": "function",
-          "signature": "(root: QtWidgets.QWidget) -> None",
-          "summary": "Force re-evaluation of property-selector QSS for *root* and children.",
-          "line": 14,
-          "deprecated": false
-        }
-      ],
-      "classes": [
-        {
-          "name": "StyleSheet",
-          "summary": "Theme and stylesheet manager with light/dark theme support.",
-          "line": 52,
-          "bases": [
-            "QtCore.QObject",
-            "ptk.LoggingMixin"
-          ],
-          "members": [
-            {
-              "name": "theme_changed",
-              "qualname": "StyleSheet.theme_changed",
-              "kind": "property",
-              "signature": "(self)",
-              "summary": "Signal ``(widget, theme_name, theme_vars)`` emitted after a style applies.",
-              "line": 67,
-              "deprecated": false
-            },
-            {
-              "name": "get_icon_color",
-              "qualname": "StyleSheet.get_icon_color",
-              "kind": "classmethod",
-              "signature": "(cls, widget: QtWidgets.QWidget = None) -> str",
-              "summary": "Get the icon color for a widget based on its current theme.",
-              "line": 306,
-              "deprecated": false
-            },
-            {
-              "name": "set_theme",
-              "qualname": "StyleSheet.set_theme",
-              "kind": "classmethod",
-              "signature": "(cls, theme: str, widget: QtWidgets.QWidget = None)",
-              "summary": "Set a new theme for a specific widget or all registered widgets.",
-              "line": 332,
-              "deprecated": false
-            },
-            {
-              "name": "reload",
-              "qualname": "StyleSheet.reload",
-              "kind": "classmethod",
-              "signature": "(cls, widget: QtWidgets.QWidget = None)",
-              "summary": "Reload the style for a specific widget or all registered widgets.",
-              "line": 347,
-              "deprecated": false
-            },
-            {
-              "name": "clear_caches",
-              "qualname": "StyleSheet.clear_caches",
-              "kind": "classmethod",
-              "signature": "(cls) -> None",
-              "summary": "Drop QSS + parsed-template caches.",
-              "line": 406,
-              "deprecated": false
-            },
-            {
-              "name": "set_variable",
-              "qualname": "StyleSheet.set_variable",
-              "kind": "classmethod",
-              "signature": "(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)",
-              "summary": "Set a theme variable override.",
-              "line": 416,
-              "deprecated": false
-            },
-            {
-              "name": "get_variable",
-              "qualname": "StyleSheet.get_variable",
-              "kind": "classmethod",
-              "signature": "(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str",
-              "summary": "Get a theme variable value, resolving overrides.",
-              "line": 493,
-              "deprecated": false
-            },
-            {
-              "name": "get_variable_px",
-              "qualname": "StyleSheet.get_variable_px",
-              "kind": "classmethod",
-              "signature": "(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None, default: Union[int, None] = None) -> Union[int, None]",
-              "summary": "Get a length token as an integer pixel value.",
-              "line": 517,
-              "deprecated": false
-            },
-            {
-              "name": "get_variables",
-              "qualname": "StyleSheet.get_variables",
-              "kind": "classmethod",
-              "signature": "(cls, theme: str = 'light') -> list[str]",
-              "summary": "Get list of available theme variables.",
-              "line": 542,
-              "deprecated": false
-            },
-            {
-              "name": "export_overrides",
-              "qualname": "StyleSheet.export_overrides",
-              "kind": "classmethod",
-              "signature": "(cls) -> dict",
-              "summary": "Export the current global overrides as a plain dict.",
-              "line": 547,
-              "deprecated": false
-            },
-            {
-              "name": "import_overrides",
-              "qualname": "StyleSheet.import_overrides",
-              "kind": "classmethod",
-              "signature": "(cls, data: dict) -> None",
-              "summary": "Bulk-replace global overrides from a dict and reload once.",
-              "line": 559,
-              "deprecated": false
-            },
-            {
-              "name": "reset_overrides",
-              "qualname": "StyleSheet.reset_overrides",
-              "kind": "classmethod",
-              "signature": "(cls, widget: QtWidgets.QWidget = None)",
-              "summary": "Clear overrides.",
-              "line": 575,
-              "deprecated": false
-            },
-            {
-              "name": "set",
-              "qualname": "StyleSheet.set",
-              "kind": "method",
-              "signature": "(self, widget: Union[QtWidgets.QWidget, None] = None, theme: str = 'light', style_class: str = '', recursive: bool = False, resource: str = 'style.qss', package: str = 'uitk.widgets.mixins', _qss_final: Union[str, None] = None, **kwargs)",
-              "summary": "Apply a themed stylesheet to ``widget`` and register it for reloads.",
-              "line": 659,
               "deprecated": false
             }
           ]
@@ -8937,75 +9006,6 @@
           "line": 224,
           "bases": [],
           "members": []
-        }
-      ]
-    },
-    {
-      "relpath": "widgets/mixins/value_manager.py",
-      "summary": "",
-      "functions": [],
-      "classes": [
-        {
-          "name": "ValueManager",
-          "summary": "Flexible value getting/setting for most Qt widgets.",
-          "line": 6,
-          "bases": [],
-          "members": [
-            {
-              "name": "get_value",
-              "qualname": "ValueManager.get_value",
-              "kind": "staticmethod",
-              "signature": "(widget)",
-              "summary": "Get the current value from a widget.",
-              "line": 24,
-              "deprecated": false
-            },
-            {
-              "name": "set_value",
-              "qualname": "ValueManager.set_value",
-              "kind": "staticmethod",
-              "signature": "(widget, value, block_signals=False)",
-              "summary": "Set a value on a widget.",
-              "line": 58,
-              "deprecated": false
-            },
-            {
-              "name": "get_widget_type_info",
-              "qualname": "ValueManager.get_widget_type_info",
-              "kind": "staticmethod",
-              "signature": "(widget)",
-              "summary": "Get information about widget type for display purposes.",
-              "line": 135,
-              "deprecated": false
-            },
-            {
-              "name": "is_supported_widget",
-              "qualname": "ValueManager.is_supported_widget",
-              "kind": "staticmethod",
-              "signature": "(widget)",
-              "summary": "Check if a widget type is supported for value operations.",
-              "line": 164,
-              "deprecated": false
-            },
-            {
-              "name": "get_value_by_signal",
-              "qualname": "ValueManager.get_value_by_signal",
-              "kind": "staticmethod",
-              "signature": "(widget, signal_name)",
-              "summary": "Get widget value based on its primary signal type.",
-              "line": 188,
-              "deprecated": false
-            },
-            {
-              "name": "set_value_by_signal",
-              "qualname": "ValueManager.set_value_by_signal",
-              "kind": "staticmethod",
-              "signature": "(widget, value, signal_name, block_signals=False)",
-              "summary": "Set widget value based on its primary signal type.",
-              "line": 222,
-              "deprecated": false
-            }
-          ]
         }
       ]
     },

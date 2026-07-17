@@ -29,8 +29,8 @@ app = setup_qt_application()
 from qtpy import QtCore, QtWidgets
 
 from uitk.switchboard import Switchboard
-from uitk.widgets.mixins.settings_manager import SettingsManager
-from uitk.widgets.mixins.state_manager import StateManager
+from uitk.managers.settings_manager import SettingsManager
+from uitk.managers.state_manager import StateManager
 from uitk.widgets.optionBox.utils import patch_common_widgets
 
 patch_common_widgets()

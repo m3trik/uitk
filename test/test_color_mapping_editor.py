@@ -21,7 +21,7 @@ from uitk.widgets.editors.color_mapping_editor import (  # noqa: E402
     ColorMappingDialog,
     ColorMappingEditor,
 )
-from uitk.widgets.mixins.settings_manager import SettingsManager  # noqa: E402
+from uitk.managers.settings_manager import SettingsManager  # noqa: E402
 
 
 PAIR_DEFAULTS = {

@@ -24,8 +24,8 @@ from uitk.widgets.editors.color_mapping_editor import (
     ColorMappingDialog,
 )
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.settings_manager import SettingsManager
-from uitk.widgets.mixins.shortcuts import ShortcutManager
+from uitk.managers.settings_manager import SettingsManager
+from uitk.managers.shortcut_manager import ShortcutManager
 
 from uitk.widgets.sequencer._data import (
     ClipData,

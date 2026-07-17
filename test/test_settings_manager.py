@@ -19,8 +19,8 @@ from conftest import BaseTestCase, setup_qt_application
 
 app = setup_qt_application()
 
-import uitk.widgets.mixins.settings_manager as sm  # noqa: E402
-from uitk.widgets.mixins.settings_manager import (  # noqa: E402
+import uitk.managers.settings_manager as sm  # noqa: E402
+from uitk.managers.settings_manager import (  # noqa: E402
     DEFAULT_APP_NAME,
     DEFAULT_ORG_NAME,
     SettingsManager,

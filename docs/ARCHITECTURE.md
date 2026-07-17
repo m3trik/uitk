@@ -77,9 +77,9 @@ Each partial lives in `uitk/switchboard/<name>.py` (e.g. `slots.py`,
 the `switchboard` subpackage is the encapsulation boundary, not the
 individual partials.
 
-The companion module [uitk/widgets/mixins/shortcuts.py](../uitk/widgets/mixins/shortcuts.py)
+The companion module [uitk/managers/shortcut_manager.py](../uitk/managers/shortcut_manager.py)
 holds the *generic* shortcut primitives (``GlobalShortcut``,
-``ShortcutManager``, ``ShortcutMixin``) that any Qt widget can adopt
+``ShortcutManager``) that any Qt widget can adopt
 without involving Switchboard.
 
 ### Registries
@@ -343,7 +343,7 @@ sb.configurable.clipboard.history_size.set(100)
 
 ## 9. StyleSheet & theming
 
-[widgets/mixins/style_sheet.py](../uitk/widgets/mixins/style_sheet.py). Palette-driven theming rather than free-form CSS.
+[themes/style_sheet.py](../uitk/themes/style_sheet.py). Palette-driven theming rather than free-form CSS.
 
 Themes are Python dicts:
 ```python
@@ -359,7 +359,7 @@ themes = {
 }
 ```
 
-`ui.style.set(theme=..., style_class=...)` substitutes `%(KEY)s` placeholders in the theme's QSS template (`widgets/mixins/style.qss`) and applies it to the window. Emits `theme_changed(widget, name, vars)` for downstream consumers (icon recoloring, custom overlays).
+`ui.style.set(theme=..., style_class=...)` substitutes `%(KEY)s` placeholders in the theme's QSS template (`themes/style.qss`) and applies it to the window. Emits `theme_changed(widget, name, vars)` for downstream consumers (icon recoloring, custom overlays).
 
 Action colors on `LineEdit`, `TableWidget`, `TreeWidget` read directly from the palette — `ACTION_VALID_FG/BG`, `ACTION_INVALID_FG/BG`, `ACTION_WARNING_FG/BG`, `ACTION_INFO_FG/BG`, `ACTION_INACTIVE_FG`.
 

@@ -26,10 +26,10 @@ from typing import Dict, List, Optional, Tuple, Union
 from qtpy import QtWidgets, QtCore, QtGui
 
 from uitk.widgets.colorSwatch import ColorSwatch
-from uitk.widgets.mixins.settings_manager import SettingsManager
-from uitk.widgets.mixins.style_sheet import StyleSheet
-from uitk.widgets.mixins.icon_manager import IconManager
-from uitk.widgets.mixins.preset_manager import PresetManager
+from uitk.managers.settings_manager import SettingsManager
+from uitk.themes.style_sheet import StyleSheet
+from uitk.managers.icon_manager import IconManager
+from uitk.managers.preset_manager import PresetManager
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.delegates.row_selection import RowSelectionBorderDelegate

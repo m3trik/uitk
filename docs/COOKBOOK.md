@@ -197,7 +197,7 @@ def btn_options_init(self, widget):
 
 ```python
 # Standalone, with explicit widget list
-from uitk.widgets.mixins.preset_manager import PresetManager
+from uitk.managers.preset_manager import PresetManager
 
 mgr = PresetManager.from_widgets(
     preset_dir="~/.myapp/presets",

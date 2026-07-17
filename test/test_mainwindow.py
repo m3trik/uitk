@@ -1280,7 +1280,7 @@ class TestSettingsManagerBranch(QtBaseTestCase):
     def test_branch_only_defined_once(self):
         """SettingsManager should have exactly one branch definition."""
         import inspect
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         source = inspect.getsource(SettingsManager)
         count = source.count("def branch(")
@@ -1292,7 +1292,7 @@ class TestSettingsManagerBranch(QtBaseTestCase):
 
     def test_branch_returns_settings_manager(self):
         """branch() should return a new SettingsManager instance."""
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         parent = SettingsManager(org="test_org", app="test_app")
         child = parent.branch("child_ns")
@@ -1300,7 +1300,7 @@ class TestSettingsManagerBranch(QtBaseTestCase):
 
     def test_branch_uses_sub_namespace(self):
         """branch() should create a sub-namespace under the parent."""
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         parent = SettingsManager(org="test_org", app="test_app", namespace="root")
         child = parent.branch("sub")
@@ -1308,7 +1308,7 @@ class TestSettingsManagerBranch(QtBaseTestCase):
 
     def test_branch_from_no_namespace(self):
         """branch() from a manager with no namespace should use the branch name directly."""
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         parent = SettingsManager(org="test_org", app="test_app")
         child = parent.branch("top")
@@ -1316,7 +1316,7 @@ class TestSettingsManagerBranch(QtBaseTestCase):
 
     def test_branch_shares_qsettings(self):
         """branch() should share the same QSettings backend."""
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         parent = SettingsManager(org="test_org", app="test_app")
         child = parent.branch("child_ns")
@@ -1338,7 +1338,7 @@ class TestSyncWidgetValues(QtBaseTestCase):
         from collections import namedtuple
         from uitk.switchboard import Switchboard
         from uitk.widgets.mainWindow import MainWindow
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
 
         self.SettingsManager = SettingsManager
 
@@ -1537,7 +1537,7 @@ class TestStateLoadFiresConnectedSlots(QtBaseTestCase):
         super().setUp()
         from uitk.switchboard import Switchboard
         from uitk.widgets.mainWindow import MainWindow
-        from uitk.widgets.mixins.settings_manager import SettingsManager
+        from uitk.managers.settings_manager import SettingsManager
         from collections import namedtuple
 
         self.SettingsManager = SettingsManager

@@ -172,7 +172,7 @@ class PinnedValuesPopup(QtCore.QObject):
 
     def _create_value_row(self, value_or_entry, is_current=False, is_pinned=False):
         """Create a row widget for a value."""
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         # Handle both raw values and PinnedValueEntry
         if isinstance(value_or_entry, PinnedValueEntry):
@@ -420,7 +420,7 @@ class PinValuesOption(ButtonOption):
     def _init_settings(self):
         """Initialize settings manager for persistence."""
         if self._settings is None and self._settings_key:
-            from uitk.widgets.mixins.settings_manager import SettingsManager
+            from uitk.managers.settings_manager import SettingsManager
 
             self._settings = SettingsManager(
                 org="uitk", app="PinValues", namespace=self._settings_key
@@ -688,7 +688,7 @@ class PinValuesOption(ButtonOption):
         if self._widget is None:
             return  # Widget not created yet
 
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         current_value = self._get_widget_value()
         current_is_pinned = self._get_entry_for_value(current_value) is not None

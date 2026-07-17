@@ -77,7 +77,7 @@ class TestStackedControllerInteractions(unittest.TestCase):
         # Without comprehensive teardown, subsequent tests in OTHER files
         # (notably test_marking_menu_integration's QTest mouse sequences)
         # hit a stale widget tree and report wrong "current UI" state.
-        from uitk.widgets.mixins.shortcuts import GlobalShortcut
+        from uitk.managers.shortcut_manager import GlobalShortcut
 
         try:
             self.controller.deleteLater()

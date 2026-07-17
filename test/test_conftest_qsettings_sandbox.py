@@ -21,7 +21,7 @@ from conftest import BaseTestCase, setup_qt_application, QSETTINGS_SANDBOX_DIR
 app = setup_qt_application()
 
 from qtpy import QtCore  # noqa: E402
-from uitk.widgets.mixins.settings_manager import (  # noqa: E402
+from uitk.managers.settings_manager import (  # noqa: E402
     DEFAULT_APP_NAME,
     DEFAULT_ORG_NAME,
     SettingsManager,

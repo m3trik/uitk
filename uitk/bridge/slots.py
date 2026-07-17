@@ -45,7 +45,7 @@ from qtpy import QtCore, QtWidgets
 from uitk.widgets.pushButton import PushButton
 from uitk.widgets.comboBox import ComboBox
 from uitk.widgets.separator import Separator
-from uitk.widgets.mixins.preset_manager import PresetManager
+from uitk.managers.preset_manager import PresetManager
 
 from uitk.bridge.spec import (
     AttributeSpec,

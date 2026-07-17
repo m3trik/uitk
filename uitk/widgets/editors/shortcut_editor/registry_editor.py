@@ -13,7 +13,7 @@ from uitk.widgets.delegates.centered_icon import (
     ICON_OPACITY_ROLE,
 )
 from uitk.widgets.delegates.shortcut_capture import install_shortcut_capture
-from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.managers.icon_manager import IconManager
 from uitk.widgets.separator import Separator
 
 

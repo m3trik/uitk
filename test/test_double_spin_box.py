@@ -3,7 +3,7 @@
 """Unit tests for DoubleSpinBox widget.
 
 DoubleSpinBox is the float-input widget used by the AttributeWindow factory
-(see uitk.widgets.attributeWindow._factory._build_float). It has the same
+(see uitk.bridge.spec._build_float). It has the same
 modifier-driven step semantics as SpinBox.
 
 Modifier ladder under test (symmetric: Ctrl scales up, Alt scales down,

@@ -2,11 +2,11 @@
 # coding=utf-8
 """Switchboard-side keyboard shortcut machinery.
 
-This module is paired with :mod:`uitk.widgets.mixins.shortcuts`:
+This module is paired with :mod:`uitk.managers.shortcut_manager`:
 
 * The generic primitives (``GlobalShortcut``, ``ShortcutManager``,
   ``ShortcutMixin``, scope-name <-> ``Qt.ShortcutContext`` helpers)
-  live in ``uitk.widgets.mixins.shortcuts`` and can be used by any
+  live in ``uitk.managers.shortcut_manager`` and can be used by any
   widget independent of Switchboard.
 
 * The Switchboard-only pieces (the ``@Shortcut`` slot-decorator and
@@ -21,7 +21,7 @@ import inspect
 from typing import Any, Callable, Dict, List, Optional
 from qtpy import QtCore, QtGui, QtWidgets
 
-from uitk.widgets.mixins.shortcuts import (
+from uitk.managers.shortcut_manager import (
     GlobalShortcut,
     SCOPE_NAME_TO_CONTEXT,
     context_to_scope_name,

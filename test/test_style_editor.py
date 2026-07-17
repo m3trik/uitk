@@ -9,7 +9,7 @@ from pathlib import Path
 
 from qtpy import QtWidgets, QtCore
 from conftest import QtBaseTestCase, setup_qt_application
-from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.colorSwatch import ColorSwatch
 from uitk.widgets.editors.style_editor import StyleEditor, BASIC_TOKENS, LENGTH_TOKENS
 from uitk.widgets.editors.editor_panel import EditorPanel

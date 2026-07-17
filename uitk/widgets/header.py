@@ -5,7 +5,7 @@ import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
-from uitk.widgets.mixins.icon_manager import IconManager
+from uitk.managers.icon_manager import IconManager
 
 
 class Header(

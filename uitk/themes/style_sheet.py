@@ -6,7 +6,7 @@ import importlib.resources
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
-from uitk.widgets.mixins.settings_manager import SettingsManager
+from uitk.managers.settings_manager import SettingsManager
 
 _logger = logging.getLogger(__name__)
 
@@ -593,7 +593,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
 
     @classmethod
     def _load_qss_file(
-        cls, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
+        cls, resource: str = "style.qss", package: str = "uitk.themes"
     ) -> str:
         """Read a QSS resource from a package, caching the result.
 
@@ -618,7 +618,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
 
     @classmethod
     def _get_template(
-        cls, resource: str = "style.qss", package: str = "uitk.widgets.mixins"
+        cls, resource: str = "style.qss", package: str = "uitk.themes"
     ) -> list[str]:
         """Return a parsed-template list for ``package/resource``.
 
@@ -663,7 +663,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         style_class: str = "",
         recursive: bool = False,
         resource: str = "style.qss",
-        package: str = "uitk.widgets.mixins",
+        package: str = "uitk.themes",
         _qss_final: Union[str, None] = None,
         **kwargs,
     ):
@@ -767,7 +767,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # Update default icon color and refresh icons for this widget tree
             # Use resolved color from theme_vars to ensure overrides are respected
             icon_color = theme_vars.get("ICON_COLOR", "#888888")
-            from uitk.widgets.mixins.icon_manager import IconManager
+            from uitk.managers.icon_manager import IconManager
 
             IconManager.set_default_color(icon_color)
             IconManager.update_widget_icons(widget, icon_color)

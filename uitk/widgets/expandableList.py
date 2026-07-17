@@ -1178,7 +1178,7 @@ if __name__ == "__main__":
 
     lw.on_item_interacted.connect(lambda x: print(x))
 
-    from uitk.widgets.mixins.style_sheet import StyleSheet
+    from uitk.themes.style_sheet import StyleSheet
 
     StyleSheet().set(widget=lw.get_items(), theme="dark")
 

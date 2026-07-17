@@ -89,9 +89,9 @@ def _legacy_qsettings_pairs_for(new_org: str, new_app: str) -> List[Tuple[str, s
     pairs = [(_LEGACY_WIDGETS_ORG, new_app)]
     if new_app == DEFAULT_APP_NAME:
         # The no-arg ``SettingsManager()`` fallback used to land at
-        # ``<__package__>/DefaultApp``, where ``__package__`` resolves to
-        # ``uitk.widgets.mixins`` at this module's import time. Drain it
-        # into the new shared bucket.
+        # ``<__package__>/DefaultApp``, where ``__package__`` resolved to
+        # ``uitk.widgets.mixins`` (this module's home before it moved to
+        # ``uitk.managers``). Drain it into the new shared bucket.
         pairs.append((_LEGACY_MIXINS_ORG, _LEGACY_MIXINS_DEFAULT_APP))
     return pairs
 

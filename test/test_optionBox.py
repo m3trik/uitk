@@ -1564,7 +1564,7 @@ class TestToggleOption(QtBaseTestCase):
     def test_active_color_override_used_when_on(self):
         """active_color overrides the auto-theme tint for the on state; the off
         state still uses disabled_color."""
-        from uitk.widgets.mixins.icon_manager import IconManager
+        from uitk.managers.icon_manager import IconManager
 
         calls = []
         orig = IconManager.swap_icon.__func__
@@ -2014,7 +2014,7 @@ class TestResetOption(QtBaseTestCase):
         # When a field is bypassed (holding a snapshot) and the panel's global
         # reset-to-default runs, the snapshot must follow to the new default so
         # restoring the field doesn't resurrect the pre-reset value.
-        from uitk.widgets.mixins.state_manager import StateManager
+        from uitk.managers.state_manager import StateManager
 
         window = self.track_widget(QtWidgets.QWidget())  # top-level -> isWindow()
         layout = QtWidgets.QVBoxLayout(window)

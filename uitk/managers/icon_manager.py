@@ -110,7 +110,7 @@ class IconManager:
 
         # 3. Fallback: local dev path
         if svg_content is None:
-            icon_dir = Path(__file__).parent.parent.parent / "icons"
+            icon_dir = Path(__file__).parent.parent / "icons"
             file_path = icon_dir / f"{name}.svg"
             if file_path.exists():
                 svg_content = file_path.read_text(encoding="utf-8")
@@ -360,7 +360,7 @@ class IconManager:
             pass
 
         # 3. Fallback: local dev path
-        icon_dir = Path(__file__).parent.parent.parent / "icons"
+        icon_dir = Path(__file__).parent.parent / "icons"
         file_path = icon_dir / f"{name}.svg"
         if file_path.exists():
             return QtGui.QIcon(str(file_path))
@@ -472,7 +472,7 @@ class IconManager:
 
         if pinned is None and auto_theme:
             # Get color from widget's theme (walks up hierarchy)
-            from uitk.widgets.mixins.style_sheet import StyleSheet
+            from uitk.themes.style_sheet import StyleSheet
 
             color = StyleSheet.get_icon_color(widget)
 

@@ -97,6 +97,48 @@ _Generated: 2026-07-17_
 - `class RuntimeLoader`
   - methods: load, read_ui_tags, on_tags_written
 
+### `managers/icon_manager.py`
+- `class IconManager`
+  - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
+
+### `managers/preset_manager.py`
+- `QStandardPaths_writableLocation() -> str`
+- `QStandardPaths_genericConfigLocation() -> str`
+- `get_presets_root() -> Path`
+- `class PresetManager(ptk.LoggingMixin)`
+  - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, make_preset_combo, wire_combo
+
+### `managers/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
+- `normalize_value(value)`
+- `class RecentValueEntry`
+- `class RecentValuesStore`
+  - methods: subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
+
+### `managers/settings_manager.py`
+- `decode_stored_value(value: Any) -> Any`
+- `encode_stored_value(value: Any) -> Any`
+- `class SettingsManager`
+  - methods: branch, set_defaults, value, setValue, on_change, keys, setByteArray, getByteArray, remove, clear, sync
+
+### `managers/shortcut_manager.py` — Generic keyboard-shortcut primitives, usable by any Qt widget.
+- `context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`
+- `scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`
+- `host_namespace_suffix(context_tags) -> str`
+- `resolve_application_host(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]`
+- `find_duplicate_application_shortcuts(app=None) -> Dict[str, int]`
+- `class GlobalShortcut(QtCore.QObject)`
+  - methods: eventFilter, setEnabled, setKey, setContext, dispose
+- `class ShortcutManager`
+  - methods: add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
+
+### `managers/state_manager.py`
+- `class StateManager(ptk.LoggingMixin)`
+  - methods: apply, suppress_save, save, save_value, load, reset_all, reset, clear, has_default, capture_default, set_default, save_custom, load_custom, clear_custom
+
+### `managers/value_manager.py`
+- `class ValueManager`
+  - methods: get_value, set_value, get_widget_type_info, is_supported_widget, get_value_by_signal, set_value_by_signal
+
 ### `switchboard/_core.py`
 - `class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin)`
   - methods: register_handler, iter_handler_entries, active_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last
@@ -139,6 +181,11 @@ _Generated: 2026-07-17_
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
   - methods: is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
+
+### `themes/style_sheet.py`
+- `repolish_tree(root: QtWidgets.QWidget) -> None`
+- `class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`
+  - methods: theme_changed, get_icon_color, set_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
 
 ### `widgets/attributeWindow/_attributeWindow.py`
 - `class AttributeWindow(Menu)`
@@ -320,10 +367,6 @@ _Generated: 2026-07-17_
 - `class FeedbackMixin`
   - methods: show_feedback
 
-### `widgets/mixins/icon_manager.py`
-- `class IconManager`
-  - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
-
 ### `widgets/mixins/icon_states.py` — Shared multi-state icon behavior for state-cycling buttons.
 - `class IconStates`
   - methods: states, widget, current_state, set_current_state, apply, resolve_callback, activate
@@ -336,36 +379,6 @@ _Generated: 2026-07-17_
 - `class OptionBoxMixin`
   - methods: option_box, container, options
 
-### `widgets/mixins/preset_manager.py`
-- `QStandardPaths_writableLocation() -> str`
-- `QStandardPaths_genericConfigLocation() -> str`
-- `get_presets_root() -> Path`
-- `class PresetManager(ptk.LoggingMixin)`
-  - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, make_preset_combo, wire_combo
-
-### `widgets/mixins/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
-- `normalize_value(value)`
-- `class RecentValueEntry`
-- `class RecentValuesStore`
-  - methods: subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
-
-### `widgets/mixins/settings_manager.py`
-- `decode_stored_value(value: Any) -> Any`
-- `encode_stored_value(value: Any) -> Any`
-- `class SettingsManager`
-  - methods: branch, set_defaults, value, setValue, on_change, keys, setByteArray, getByteArray, remove, clear, sync
-
-### `widgets/mixins/shortcuts.py` — Generic keyboard-shortcut primitives, usable by any Qt widget.
-- `context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`
-- `scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`
-- `host_namespace_suffix(context_tags) -> str`
-- `resolve_application_host(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]`
-- `find_duplicate_application_shortcuts(app=None) -> Dict[str, int]`
-- `class GlobalShortcut(QtCore.QObject)`
-  - methods: eventFilter, setEnabled, setKey, setContext, dispose
-- `class ShortcutManager`
-  - methods: add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
-
 ### `widgets/mixins/size_grip.py` — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - `class CornerSizeGrip(QtWidgets.QSizeGrip)`
   - methods: enterEvent, leaveEvent, getBaseColor, setBaseColor, getHoverColor, setHoverColor, paintEvent
@@ -375,15 +388,6 @@ _Generated: 2026-07-17_
 ### `widgets/mixins/spin_box_text_color.py` — Shared value-text coloring for spin-box widgets.
 - `class SpinBoxTextColorMixin`
   - methods: set_text_color, text_color
-
-### `widgets/mixins/state_manager.py`
-- `class StateManager(ptk.LoggingMixin)`
-  - methods: apply, suppress_save, save, save_value, load, reset_all, reset, clear, has_default, capture_default, set_default, save_custom, load_custom, clear_custom
-
-### `widgets/mixins/style_sheet.py`
-- `repolish_tree(root: QtWidgets.QWidget) -> None`
-- `class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`
-  - methods: theme_changed, get_icon_color, set_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
 
 ### `widgets/mixins/text.py` — Text rendering for uitk widgets.
 - `class RichTextFormatter`
@@ -402,10 +406,6 @@ _Generated: 2026-07-17_
 - `class TooltipProxy`
   - methods: bind
 - `class TooltipMixin`
-
-### `widgets/mixins/value_manager.py`
-- `class ValueManager`
-  - methods: get_value, set_value, get_widget_type_info, is_supported_widget, get_value_by_signal, set_value_by_signal
 
 ### `widgets/mixins/wheel_step.py` — Shared modifier-driven wheel-step handling for spin-box widgets.
 - `class WheelStepMixin`

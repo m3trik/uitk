@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 from qtpy import QtWidgets, QtGui, QtCore
 from conftest import QtBaseTestCase, setup_qt_application
-from uitk.widgets.mixins.style_sheet import StyleSheet
+from uitk.themes.style_sheet import StyleSheet
 
 # Ensure QApplication exists
 app = setup_qt_application()

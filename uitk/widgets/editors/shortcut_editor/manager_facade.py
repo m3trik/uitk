@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Adapter that lets the unified :class:`ShortcutEditor` render a standalone
-:class:`~uitk.widgets.mixins.shortcuts.ShortcutManager`.
+:class:`~uitk.managers.shortcut_manager.ShortcutManager`.
 
 A bare widget (e.g. the sequencer) owns a ``ShortcutManager`` with no
 Switchboard in sight. This is the thinnest configuration of the generic

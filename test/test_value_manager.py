@@ -23,7 +23,7 @@ app = setup_qt_application()
 from qtpy import QtWidgets
 
 from uitk.widgets.checkBox import CheckBox
-from uitk.widgets.mixins.value_manager import ValueManager
+from uitk.managers.value_manager import ValueManager
 
 
 class TestSetValueCheckableButtons(QtBaseTestCase):
@@ -187,7 +187,7 @@ class TestStateManagerPersistence(QtBaseTestCase):
         the primitive-type gate silently dropped tri-state checkbox state.
         Enums must be coerced to their value and stored."""
         from qtpy import QtCore
-        from uitk.widgets.mixins.state_manager import StateManager
+        from uitk.managers.state_manager import StateManager
 
         settings = self._SpySettings()
         sm = StateManager(settings)
@@ -211,7 +211,7 @@ class TestStateManagerPersistence(QtBaseTestCase):
         """_defaults uses weak keys: a garbage-collected widget's entry
         must disappear instead of leaking (and later crashing reset_all)."""
         import gc
-        from uitk.widgets.mixins.state_manager import StateManager
+        from uitk.managers.state_manager import StateManager
 
         sm = StateManager(self._SpySettings())
         w = QtWidgets.QSpinBox()
