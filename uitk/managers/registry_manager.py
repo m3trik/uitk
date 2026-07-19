@@ -84,9 +84,15 @@ class FileRegistry(ptk.NamedTupleContainer):
     def _record_signature(nt: namedtuple) -> tuple:
         """Duplicate-detection identity for a file record.
 
-        Path-like fields are case/sep-normalized (Windows-safe) and the live
-        ``classobj`` is excluded — a class's identity here is its name plus
-        where it lives, not whether the scanner could import it at the time.
+        Path-like fields are case/sep-normalized and the live ``classobj`` is
+        excluded — a class's identity here is its name plus where it lives, not
+        whether the scanner could import it at the time.
+
+        ``casefold`` (not just ``os.path.normcase``) makes the path key
+        case-insensitive on every platform: ``normcase`` lowercases on Windows
+        but is an identity on POSIX, which let case-variant spellings of the
+        same file register twice on Linux. The dedup contract — "case-variant
+        duplicates must not be re-added" — is platform-independent.
         """
         sig = []
         for field in nt._fields:
@@ -94,7 +100,7 @@ class FileRegistry(ptk.NamedTupleContainer):
             if field == "classobj" and len(nt._fields) > 1:
                 continue
             if field in ("filepath", "dirpath") and isinstance(value, str):
-                value = os.path.normcase(os.path.normpath(value))
+                value = os.path.normcase(os.path.normpath(value)).casefold()
             elif hasattr(value, "__name__") and hasattr(value, "__module__"):
                 value = (value.__name__, value.__module__)
             sig.append((field, value))
