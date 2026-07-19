@@ -1127,6 +1127,15 @@ class OptionBoxManager(ptk.LoggingMixin):
                 self._option_box = existing_option_box
                 self._container = existing_option_box.container
                 self._is_wrapped = True
+                # Migrate already-queued options into the adopted box before
+                # adding the current one. Without this, options queued while the
+                # widget was still unparented (awaiting the wrap-retry timer) are
+                # silently dropped: once _is_wrapped is True,
+                # _attempt_wrap_when_ready returns early and _pending_options is
+                # never wrapped.
+                for pending in self._pending_options:
+                    self._option_box.add_option(pending)
+                self._pending_options = []
                 self._option_box.add_option(option)
                 _log_step("reuse_and_add")
                 if timing_enabled:
@@ -1278,6 +1287,12 @@ class OptionBoxManager(ptk.LoggingMixin):
             ):
                 self._container = menu.option_box.container
                 self._option_box = menu.option_box
+                # The adopted box already wraps the widget; mark wrapped so a
+                # later add_option routes through the direct-add branch instead
+                # of building a SECOND OptionBox and re-wrapping the widget
+                # (which corrupts the layout). Mirrors the two sibling adoption
+                # sites (add_option reuse branch and _update_option_box).
+                self._is_wrapped = True
 
         return self._container
 
@@ -1356,6 +1371,11 @@ class OptionBoxManager(ptk.LoggingMixin):
             self._option_box = existing_option_box
             self._container = existing_option_box.container
             self._is_wrapped = True
+            # Migrate already-queued options into the adopted box so they aren't
+            # dropped once _is_wrapped short-circuits the deferred wrap path.
+            for pending in self._pending_options:
+                self._option_box.add_option(pending)
+            self._pending_options = []
             if self._clear_enabled:
                 self._option_box.set_clear_button_visible(True)
         elif self._clear_enabled:

@@ -190,6 +190,27 @@ class TestShortcutEditorPresets(QtBaseTestCase):
         self.assertIsNotNone(locked, "locked Maya button should be present")
         locked.setEnabled.assert_called_with(False)
 
+    def test_conflict_dialog_releases_message_box(self):
+        """The conflict QMessageBox is parented to the editor, so it must be
+        released with deleteLater() after use — otherwise every prompt leaves a
+        hidden child attached to the editor for the life of the window.
+        """
+        from unittest import mock
+        from uitk.widgets.editors.shortcut_editor.registry_editor import CollisionConflict
+        import uitk.widgets.editors.shortcut_editor.registry_editor as he
+
+        conf = CollisionConflict("uitk", "dup", breaks_binding=True,
+                                 clear_action=lambda: None)
+        buttons = {}
+        box = mock.MagicMock()
+        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(a[0], mock.Mock())
+        box.clickedButton.side_effect = lambda: buttons.get("Assign anyway")
+        MB = mock.MagicMock(return_value=box)
+        MB.Cancel, MB.Warning, MB.AcceptRole = "CANCEL", "WARN", "ACCEPT"
+        with mock.patch.object(he.QtWidgets, "QMessageBox", MB):
+            self.editor._prompt_conflicts("Ctrl+S", "window", [conf])
+        box.deleteLater.assert_called_once()
+
     def test_import_applies_shortcuts(self):
         """import_shortcuts should call set_user_shortcut for each entry."""
         registry = self.sb.get_shortcut_registry(self.ui)

@@ -2681,6 +2681,132 @@ class TestClearButtonDisableSticks(QtBaseTestCase):
         self.assertFalse(clear.widget.isHidden())
 
 
+class TestOptionBoxManagerMenuAdoption(QtBaseTestCase):
+    """Adopting a menu-owned option box must not drop pending options or
+    leave the manager mis-flagged (findings: utils.py L1130 / L1280).
+
+    When a widget's context menu materializes its own OptionBox after options
+    were already queued (widget still unparented, wrap deferred), the adoption
+    paths must migrate the queued options into the adopted box and mark the
+    manager wrapped — otherwise queued buttons vanish or the widget gets
+    re-wrapped into a second box.
+    """
+
+    def _make_menu_owned_box(self):
+        """A real OptionBox that already wraps its own field (has a container),
+        exposed through a minimal stand-in for the MenuMixin ``menu`` object."""
+        menu_field = self.track_widget(QtWidgets.QLineEdit())
+        existing_box = OptionBox(options=[])
+        self.track_widget(existing_box.wrap(menu_field))
+
+        class _FakeMenu:
+            option_box = existing_box
+
+        return existing_box, _FakeMenu()
+
+    def test_reuse_branch_migrates_pending_options(self):
+        """add_option's reuse branch must carry already-queued options into the
+        adopted box, not just the current one (finding L1130)."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.options.action import ActionOption
+        from uitk.widgets.optionBox.options.pin_values import PinValuesOption
+
+        existing_box, fake_menu = self._make_menu_owned_box()
+
+        # Parentless widget → the fast-path wrap is skipped, so set_action's
+        # ActionOption stays in _pending_options. No menu yet.
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        widget.has_menu = False
+        widget.menu = fake_menu
+
+        mgr = OptionBoxManager(widget)
+        mgr.set_action(lambda: None, icon="play")
+        self.assertTrue(
+            any(isinstance(o, ActionOption) for o in mgr._pending_options),
+            "precondition: the action must be queued while unwrapped",
+        )
+
+        # The context menu now owns an option box; the next add adopts it.
+        widget.has_menu = True
+        mgr.pin()
+
+        opts = existing_box.get_options()
+        self.assertTrue(
+            any(isinstance(o, ActionOption) for o in opts),
+            "the queued ActionOption must be migrated into the adopted box",
+        )
+        self.assertTrue(
+            any(isinstance(o, PinValuesOption) for o in opts),
+            "the current pin option must also be added to the adopted box",
+        )
+        self.assertEqual(
+            mgr._pending_options, [], "pending options must be drained after adoption"
+        )
+        self.assertIs(mgr._option_box, existing_box)
+
+    def test_update_option_box_adoption_migrates_pending_options(self):
+        """The _update_option_box adoption path (via enable_clear) must also
+        migrate queued options (finding L1130, second site)."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        existing_box, fake_menu = self._make_menu_owned_box()
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        widget.has_menu = False
+        widget.menu = fake_menu
+
+        mgr = OptionBoxManager(widget)
+        mgr.set_action(lambda: None, icon="play")  # queued while unwrapped
+        self.assertTrue(
+            any(isinstance(o, ActionOption) for o in mgr._pending_options)
+        )
+
+        widget.has_menu = True
+        mgr.enable_clear()  # clear_option setter → _update_option_box adoption
+
+        self.assertIs(mgr._option_box, existing_box)
+        self.assertTrue(
+            any(isinstance(o, ActionOption) for o in existing_box.get_options()),
+            "the queued ActionOption must be migrated during clear-option adoption",
+        )
+        self.assertEqual(mgr._pending_options, [])
+
+    def test_container_adoption_marks_wrapped_and_avoids_rewrap(self):
+        """Reading .container to adopt a menu-owned box must set _is_wrapped so a
+        subsequent add_option routes to direct-add instead of building a second
+        OptionBox and re-wrapping the widget (finding L1280)."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        existing_box, fake_menu = self._make_menu_owned_box()
+
+        # Parented widget so that, without the fix, the later add_option's
+        # deferred-wrap fast path fires synchronously and re-wraps the widget.
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        widget = QtWidgets.QLineEdit()
+        layout.addWidget(widget)
+        widget.has_menu = True
+        widget.menu = fake_menu
+
+        mgr = OptionBoxManager(widget)
+        # No pending options → the container property runs the adoption block.
+        container = mgr.container
+        self.assertIs(container, existing_box.container)
+        self.assertTrue(
+            mgr._is_wrapped,
+            "adopting a menu-owned box via .container must mark the manager wrapped",
+        )
+
+        # A subsequent add must reuse the adopted box, never build a second one.
+        mgr.pin()
+        self.assertIs(
+            mgr._option_box,
+            existing_box,
+            "add_option after container adoption must not re-wrap into a new box",
+        )
+
+
 # -----------------------------------------------------------------------------
 # Interactive Demo (Legacy)
 # -----------------------------------------------------------------------------

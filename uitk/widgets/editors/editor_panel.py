@@ -49,6 +49,8 @@ class EditorPanel(WindowPanel):
         builtin_dir=None,
         modified_value_provider=None,
         in_header_menu=False,
+        prefix="Preset:  ",
+        placeholder=None,
     ):
         """Add the canonical preset row (combo + option-box toolbar).
 
@@ -93,6 +95,13 @@ class EditorPanel(WindowPanel):
             the body focused on the editor's primary content. The header's
             ``menu`` button is added automatically if absent. Defaults to
             False (preset row in the body).
+        prefix : str, optional
+            Display-only label painted on the combo's current item
+            (default ``"Preset:  "``). Editors that rebrand the selector
+            pass their own — e.g. the style editor's ``"Theme:  "``.
+        placeholder : str, optional
+            No-selection text, forwarded to
+            :meth:`PresetManager.make_preset_combo` (default "Presets…").
         """
 
         def _apply_import(data):
@@ -114,15 +123,17 @@ class EditorPanel(WindowPanel):
         # toolbar); the container is what goes in the layout, the combo is
         # reachable as ``container.preset_combo``.
         container = self._preset_mgr.make_preset_combo(
-            name="cmb_preset", tooltip="Load a saved preset."
+            name="cmb_preset",
+            tooltip="Load a saved preset.",
+            placeholder=placeholder,
         )
         self._cmb_preset = container.preset_combo
-        # "Preset:" rides on the combo's current item as a display-only prefix
+        # The label rides on the combo's current item as a display-only prefix
         # (painted on the collapsed selection, absent from the dropdown items)
         # instead of a separate QLabel — mirrors the "Target UI:" combo in the
         # shortcut editor. The dirty marker keeps using current_text_suffix
         # (" *"), so a modified preset reads "Preset:  name *".
-        self._cmb_preset.current_text_prefix = "Preset:  "
+        self._cmb_preset.current_text_prefix = prefix
 
         preset_layout = QtWidgets.QHBoxLayout()
         preset_layout.addWidget(container)

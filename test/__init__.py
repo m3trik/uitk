@@ -9,7 +9,6 @@ Use run_all_tests.py to execute the complete test suite.
 
 __all__ = [
     "test_events",
-    "test_file_manager",
     "test_menu",
     "test_pin_values",
     "test_signals",

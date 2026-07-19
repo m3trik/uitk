@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-07-17_
+_Generated: 2026-07-19_
 
 ## Index
 
@@ -15,7 +15,6 @@ _Generated: 2026-07-17_
 - [`compile.py`](#compile) — Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.
 - [`events.py`](#events) — Event handling utilities for Qt applications.
 - [`examples/example.py`](#examples--example) — UITK Example — a polished tour of the framework.
-- [`file_manager.py`](#file_manager) — File and directory management utilities for UITK.
 - [`handlers/base_handler.py`](#handlers--base_handler) — Common infrastructure for Switchboard handlers.
 - [`handlers/external_app_handler.py`](#handlers--external_app_handler) — Register, install-on-demand, and launch external Python apps as subprocesses.
 - [`handlers/handler_entry.py`](#handlers--handler_entry) — Unified launchable-entry data class shared by all Switchboard handlers.
@@ -25,6 +24,7 @@ _Generated: 2026-07-17_
 - [`managers/icon_manager.py`](#managers--icon_manager)
 - [`managers/preset_manager.py`](#managers--preset_manager)
 - [`managers/recent_values_store.py`](#managers--recent_values_store) — Widget-free *recent values* model — the shared source of truth for value history.
+- [`managers/registry_manager.py`](#managers--registry_manager) — Typed file registries backing Switchboard discovery.
 - [`managers/settings_manager.py`](#managers--settings_manager)
 - [`managers/shortcut_manager.py`](#managers--shortcut_manager) — Generic keyboard-shortcut primitives, usable by any Qt widget.
 - [`managers/state_manager.py`](#managers--state_manager)
@@ -160,8 +160,9 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- [`ensure_bridge_temp_dir(tag: str) -> str`](uitk/uitk/bridge/slots.py#L86) — Create (once per host process) and return a temp Output Dir for *tag*.
-- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L111)** — Base class for DCC-bridge slot panels.
+- [`register_log_link_handler(handler: Callable) -> None`](uitk/uitk/bridge/slots.py#L87) — Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
+- [`ensure_bridge_temp_dir(tag: str) -> str`](uitk/uitk/bridge/slots.py#L111) — Create (once per host process) and return a temp Output Dir for *tag*.
+- **[`class BridgeSlotsBase`](uitk/uitk/bridge/slots.py#L136)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -263,22 +264,6 @@ UITK Example — a polished tour of the framework.
   - `ExampleSlots.tree_demo_init(self, widget)`
   - `ExampleSlots.tree_demo(self, item, column, widget=None)` — Default signal = itemClicked.
 
-<a id="file_manager"></a>
-### `file_manager.py`
-
-File and directory management utilities for UITK.
-
-- **[`class FileContainer(ptk.NamedTupleContainer)`](uitk/uitk/file_manager.py#L31)** — A specialized NamedTupleContainer for file management.
-  - `FileContainer.extend(self, objects: Union[List[namedtuple], List[tuple], Any], **metadata) -> None` — Extend the container with file objects using FileManager's processing logic.
-- **[`class FileManager(ptk.HelpMixin, ptk.LoggingMixin)`](uitk/uitk/file_manager.py#L91)** — Manages files and directories, supporting file queries and path manipulations.
-  - `FileManager.get_base_dir(self, caller_info: Union[str, int, Any] = 0) -> Optional[str]` — Identifies the base directory based on the caller's frame index or an object.
-  - `FileManager.resolve_path(self, target_obj: Union[str, Any], validate: int = 0, path_type: str = 'Path', **metadata) -> Optional[str]` — Resolve a target object to an absolute path.
-  - `FileManager.create(self, descriptor: str, objects: Optional[Union[str, List[str], Any]] = None, **metadata) -> ptk.NamedTupleContainer` — Creates a named tuple container for the specified files.
-  - `FileManager.contains_location(self, location: Union[str, Any], container_descriptor: str) -> bool` — Checks if the container with the given descriptor contains a specific location.
-  - `FileManager.get_container(self, descriptor: str) -> Optional[ptk.NamedTupleContainer]` — Get a container by its descriptor name.
-  - `FileManager.list_containers(self) -> List[str]` — List all container descriptors.
-  - `FileManager.remove_container(self, descriptor: str) -> bool` — Remove a container by its descriptor name.
-
 <a id="handlers--base_handler"></a>
 ### `handlers/base_handler.py`
 
@@ -375,9 +360,9 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
 <a id="managers--preset_manager"></a>
 ### `managers/preset_manager.py`
 
-- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/managers/preset_manager.py#L1438) — Return Qt's per-application writable config directory.
-- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/managers/preset_manager.py#L1455) — Return Qt's host-independent writable config directory.
-- [`get_presets_root() -> Path`](uitk/uitk/managers/preset_manager.py#L1583) — Root directory under which every relative ``preset_dir`` is resolved.
+- [`QStandardPaths_writableLocation() -> str`](uitk/uitk/managers/preset_manager.py#L1481) — Return Qt's per-application writable config directory.
+- [`QStandardPaths_genericConfigLocation() -> str`](uitk/uitk/managers/preset_manager.py#L1498) — Return Qt's host-independent writable config directory.
+- [`get_presets_root() -> Path`](uitk/uitk/managers/preset_manager.py#L1626) — Root directory under which every relative ``preset_dir`` is resolved.
 - **[`class PresetManager(ptk.LoggingMixin)`](uitk/uitk/managers/preset_manager.py#L19)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -398,8 +383,10 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
   - `PresetManager.delete(self, name: str) -> bool` — Delete a *user* preset (built-ins are read-only).
   - `PresetManager.rename(self, old_name: str, new_name: str) -> bool` — Rename a *user* preset.
   - `PresetManager.exists(self, name: str) -> bool` — Check whether a named preset exists in either tier.
-  - `PresetManager.make_preset_combo(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None) -> 'QtWidgets.QWidget'` — Create a fully-wired preset selector and return its layout container.
-  - `PresetManager.wire_combo(self, combo, on_loaded=None)` — Wire a uitk ``ComboBox`` as a fully-functional preset selector.
+  - `PresetManager.read(self, name: str) -> Optional[Dict[str, Any]]` — Return preset *name*'s stored values WITHOUT applying them.
+  - `PresetManager.refresh_combo(self, select_name: Optional[str] = None) -> None` — Repopulate the wired preset combo from disk (no-op when none).
+  - `PresetManager.make_preset_combo(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None, placeholder: Optional[str] = None) -> 'QtWidgets.QWidget'` — Create a fully-wired preset selector and return its layout container.
+  - `PresetManager.wire_combo(self, combo, on_loaded=None, placeholder=None)` — Wire a uitk ``ComboBox`` as a fully-functional preset selector.
 
 <a id="managers--recent_values_store"></a>
 ### `managers/recent_values_store.py`
@@ -420,6 +407,23 @@ Widget-free *recent values* model — the shared source of truth for value histo
   - `RecentValuesStore.clear(self) -> None` — Drop all history.
   - `RecentValuesStore.prune_invalid(self) -> List` — Drop every entry failing the validator;
   - `RecentValuesStore.display_map(self, values=None) -> dict` — Return ``{raw_value: display_string}`` for *values*.
+
+<a id="managers--registry_manager"></a>
+### `managers/registry_manager.py`
+
+Typed file registries backing Switchboard discovery.
+
+- **[`class FileRegistry(ptk.NamedTupleContainer)`](uitk/uitk/managers/registry_manager.py#L42)** — A named tuple container of file records.
+  - `FileRegistry.file_manager(self) -> 'RegistryManager'` *(property)* — Deprecated alias for :attr:`manager`.
+  - `FileRegistry.extend(self, objects: Union[List[namedtuple], List[tuple], Any], **metadata) -> None` — Extend the registry, collecting file records from raw objects.
+- **[`class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`](uitk/uitk/managers/registry_manager.py#L138)** — Creates and owns named file registries.
+  - `RegistryManager.get_base_dir(self, caller_info: Union[str, int, Any] = 0) -> Optional[str]` — Identify a base directory from a path, a caller frame index, or an object.
+  - `RegistryManager.resolve_path(self, target_obj: Union[str, Any], validate: int = 0, path_type: str = 'Path', **metadata) -> Optional[str]` — Resolve a target object to an absolute path.
+  - `RegistryManager.create(self, descriptor: str, objects: Optional[Union[str, List[str], Any]] = None, **metadata) -> FileRegistry` — Create a named registry and bind it as an attribute on this manager.
+  - `RegistryManager.contains_location(self, location: Union[str, Any], container_descriptor: str) -> bool` — Check whether a registry already holds a given file location.
+  - `RegistryManager.get_container(self, descriptor: str) -> Optional[FileRegistry]` — Get a registry by name.
+  - `RegistryManager.list_containers(self) -> List[str]` — List all registry descriptor names.
+  - `RegistryManager.remove_container(self, descriptor: str) -> bool` — Remove a registry by name.
 
 <a id="managers--settings_manager"></a>
 ### `managers/settings_manager.py`
@@ -665,6 +669,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `StyleSheet.theme_changed(self)` *(property)* — Signal ``(widget, theme_name, theme_vars)`` emitted after a style applies.
   - `StyleSheet.get_icon_color(cls, widget: QtWidgets.QWidget = None) -> str` *(class)* — Get the icon color for a widget based on its current theme.
   - `StyleSheet.set_theme(cls, theme: str, widget: QtWidgets.QWidget = None)` *(class)* — Set a new theme for a specific widget or all registered widgets.
+  - `StyleSheet.apply_theme(cls, theme: str, overrides: Union[dict, None] = None)` *(class)* — Switch every registered widget to *theme* in one pass.
   - `StyleSheet.reload(cls, widget: QtWidgets.QWidget = None)` *(class)* — Reload the style for a specific widget or all registered widgets.
   - `StyleSheet.clear_caches(cls) -> None` *(class)* — Drop QSS + parsed-template caches.
   - `StyleSheet.set_variable(cls, name: str, value: Union[str, QtGui.QColor, None], theme: str = 'light', widget: QtWidgets.QWidget = None)` *(class)* — Set a theme variable override.
@@ -853,7 +858,7 @@ Reusable color-mapping editor widget.
 Editor panel: WindowPanel + optional preset save/load row.
 
 - **[`class EditorPanel(WindowPanel)`](uitk/uitk/widgets/editors/editor_panel.py#L27)** — Windowed editor with optional preset management.
-  - `EditorPanel.init_preset_row(self, dir_name, *, package='uitk', builtin_dir=None, modified_value_provider=None, in_header_menu=False)` — Add the canonical preset row (combo + option-box toolbar).
+  - `EditorPanel.init_preset_row(self, dir_name, *, package='uitk', builtin_dir=None, modified_value_provider=None, in_header_menu=False, prefix='Preset:  ', placeholder=None)` — Add the canonical preset row (combo + option-box toolbar).
   - `EditorPanel.preset_dir(self) -> Path` *(property)* — The directory where this editor's preset files live.
   - `EditorPanel.export_preset_data(self) -> dict` — Override to provide data for preset saving.
   - `EditorPanel.import_preset_data(self, data: dict)` — Override to apply data from a loaded preset.
@@ -903,14 +908,16 @@ Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 <a id="widgets--editors--style_editor"></a>
 ### `widgets/editors/style_editor.py`
 
-- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L48)** — UI for editing global stylesheet variables with preset support.
+- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L62)** — UI for editing global stylesheet variables, with themes as presets.
+  - `StyleEditor.theme(self) -> str` *(property)* — The base theme currently shown/edited (set by loading a preset).
+  - `StyleEditor.set_tier(self, tier: str)` — Programmatic Basic/All switch (mirrors a user pick in the header
   - `StyleEditor.export_preset_data(self)`
   - `StyleEditor.import_preset_data(self, data)`
   - `StyleEditor.populate(self)` — Populate the table with variables for the current theme + tier.
   - `StyleEditor.on_color_changed(self, name, color)` — Handle color change from swatch.
   - `StyleEditor.on_length_changed(self, name, value)` — Handle length change from spinbox.
   - `StyleEditor.reset_variable(self, name)` — Reset a single variable.
-  - `StyleEditor.reset_all(self)` — Reset all overrides.
+  - `StyleEditor.reset_all(self)` — Reset all overrides (every theme, every widget).
   - `StyleEditor.refresh_row(self, name)` — Update the editor widget for a specific variable name.
 
 <a id="widgets--editors--switchboard_browser"></a>
@@ -930,7 +937,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `SwitchboardBrowserModel.set_entry_filter(self, inc: Union[str, List[str], None] = None, exc: Union[str, List[str], None] = None) -> None` — Replace the structural inc/exc entry filter and re-pull the registry.
   - `SwitchboardBrowserModel.entry_for_name(self, name: str) -> Optional[HandlerEntry]`
   - `SwitchboardBrowserModel.all_unique_tags(self) -> List[str]`
-- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L648)** — Searchable launcher for every UI registered with a Switchboard.
+- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L652)** — Searchable launcher for every UI registered with a Switchboard.
   - `SwitchboardBrowser.hidden_uis(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.hidden_tags(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.set_search_scope(self, value: str) -> None` — Public helper: set the search-line-edit scope to ``value``.
@@ -1669,11 +1676,11 @@ Inline editable value readout for OptionBox.
 
 Utilities and helper functions for OptionBox.
 
-- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1429) — Add an option box to any widget with one function call.
-- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1452) — Add just a clear button to a text widget.
-- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1465) — Add a menu option to any widget.
-- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1488) — Add option_box attribute to a widget class.
-- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1503) — Patch common Qt widgets with option box support.
+- [`add_option_box(widget, show_clear=False, options=None, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1449) — Add an option box to any widget with one function call.
+- [`add_clear_option(widget, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1472) — Add just a clear button to a text widget.
+- [`add_menu_option(widget, menu, **kwargs)`](uitk/uitk/widgets/optionBox/utils.py#L1485) — Add a menu option to any widget.
+- [`patch_widget_class(widget_class)`](uitk/uitk/widgets/optionBox/utils.py#L1508) — Add option_box attribute to a widget class.
+- [`patch_common_widgets()`](uitk/uitk/widgets/optionBox/utils.py#L1523) — Patch common Qt widgets with option box support.
 - **[`class OptionBoxManager(ptk.LoggingMixin)`](uitk/uitk/widgets/optionBox/utils.py#L10)** — Elegant manager for option box functionality accessible as widget.option_box
   - `OptionBoxManager.clear_option(self)` *(property)* — Get/set clear option state
   - `OptionBoxManager.option_order(self)` *(property)* — Get/set option ordering: ['clear', 'action'] or ['action', 'clear']
@@ -1996,6 +2003,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.zone_menu_enabled(self) -> bool` *(property)* — When ``True``, right-clicks emit :attr:`zone_context_menu_requested`
   - `SequencerWidget.shift_held_at_press(self) -> bool` *(property)* — Whether Shift was held when the last drag interaction started.
   - `SequencerWidget.attribute_colors(self) -> Dict[str, str]` *(property)* — Mapping of attribute name to hex color string.
+  - `SequencerWidget.set_attribute_color(self, name: str, color: str) -> None` — Set a single attribute's color and repaint.
   - `SequencerWidget.sub_row_height(self) -> int` *(property)* — Pixel height of expanded attribute sub-rows (default half track height).
   - `SequencerWidget.sub_row_provider(self)` *(property)* — Callable providing sub-row data for track expansion.
   - `SequencerWidget.expand_track(self, track_id: int, sub_row_data=None)` — Expand *track_id* to show sub-rows beneath it.
@@ -2098,11 +2106,11 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `CellFormatMixin.make_color_map_formatter(self, color_map: dict)`
   - `CellFormatMixin.add_section_row(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int` *(static)* — Insert a non-selectable section header that spans all columns.
   - `CellFormatMixin.is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool` *(static)* — Return ``True`` if *row* is a section header.
-- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L421)** — Immutable representation of a single selected row.
+- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L425)** — Immutable representation of a single selected row.
   - `TableSelection.get(self, key: str, default: Any = None)`
   - `TableSelection.item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]`
   - `TableSelection.text(self, key: str, default: str = '') -> str`
-- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L473)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L477)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
   - `TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None` — Enable MMB-drag value scrubbing for *columns*.
   - `TableWidget.add_scrub_column(self, column: int) -> None` — Add a single column to the MMB-scrub set.
   - `TableWidget.remove_scrub_column(self, column: int) -> None` — Remove a column from the MMB-scrub set.

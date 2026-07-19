@@ -1,24 +1,57 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for StyleEditor preset management and StyleSheet export/import."""
+"""Tests for StyleEditor theme-preset management and StyleSheet export/import."""
 import json
+import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets
 from conftest import QtBaseTestCase, setup_qt_application
 from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.colorSwatch import ColorSwatch
-from uitk.widgets.editors.style_editor import StyleEditor, BASIC_TOKENS, LENGTH_TOKENS
-from uitk.widgets.editors.editor_panel import EditorPanel
+from uitk.widgets.editors.style_editor import (
+    BASIC_TOKENS,
+    BUILTIN_THEMES_DIR,
+    LENGTH_TOKENS,
+    StyleEditor,
+)
 
 app = setup_qt_application()
 
+TEMP_ROOT = Path(__file__).parent / "temp_tests"
+
+
+class _PresetRootSandboxCase(QtBaseTestCase):
+    """Per-test preset root so ``.active`` / preset files never leak between
+    tests (the conftest-level sandbox is process-wide, but the style editor
+    persists an active-theme pointer at construction — sharing one root would
+    make test outcomes order-dependent)."""
+
+    def setUp(self):
+        super().setUp()
+        TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+        self._preset_root = Path(
+            tempfile.mkdtemp(prefix="style_presets_", dir=TEMP_ROOT)
+        )
+        self._prev_root = os.environ.get("UITK_PRESETS_ROOT")
+        os.environ["UITK_PRESETS_ROOT"] = str(self._preset_root)
+        StyleSheet.reset_overrides()
+
+    def tearDown(self):
+        StyleSheet.reset_overrides()
+        if self._prev_root is None:
+            os.environ.pop("UITK_PRESETS_ROOT", None)
+        else:
+            os.environ["UITK_PRESETS_ROOT"] = self._prev_root
+        shutil.rmtree(self._preset_root, ignore_errors=True)
+        super().tearDown()
+
 
 class TestStyleSheetExportImport(QtBaseTestCase):
-    """Tests for StyleSheet.export_overrides / import_overrides."""
+    """Tests for StyleSheet.export_overrides / import_overrides / apply_theme."""
 
     def setUp(self):
         super().setUp()
@@ -99,70 +132,169 @@ class TestStyleSheetExportImport(QtBaseTestCase):
         )
         self.assertEqual(StyleSheet.get_variable("ICON_COLOR", theme="dark"), "#ccc")
 
+    # apply_theme -------------------------------------------------------
 
-class TestStyleEditorPresets(QtBaseTestCase):
-    """Tests for StyleEditor preset save/load/delete/rename."""
+    def test_apply_theme_switches_registered_widgets(self):
+        """apply_theme re-themes every widget registered with the system."""
+        w = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(w, theme="light")
+        StyleSheet.apply_theme("dark")
+        self.assertEqual(StyleSheet._widget_configs[w]["theme"], "dark")
 
-    _test_preset_dir: Path = None
+    def test_apply_theme_replaces_overrides(self):
+        """The overrides arg REPLACES the theme's global override set."""
+        StyleSheet.set_variable("TEXT_COLOR", "#111111", theme="dark")
+        StyleSheet.apply_theme("dark", {"BUTTON_HOVER": "#abcdef"})
+
+        self.assertEqual(
+            StyleSheet.get_variable("BUTTON_HOVER", theme="dark"), "#abcdef"
+        )
+        # Pre-existing override was replaced away
+        self.assertEqual(
+            StyleSheet.get_variable("TEXT_COLOR", theme="dark"),
+            StyleSheet.themes["dark"]["TEXT_COLOR"],
+        )
+
+    def test_apply_theme_empty_overrides_clears(self):
+        """An empty overrides dict restores the pure base theme."""
+        StyleSheet.set_variable("TEXT_COLOR", "#111111", theme="dark")
+        StyleSheet.apply_theme("dark", {})
+        self.assertEqual(
+            StyleSheet.get_variable("TEXT_COLOR", theme="dark"),
+            StyleSheet.themes["dark"]["TEXT_COLOR"],
+        )
+
+    def test_apply_theme_drops_unknown_and_derived_tokens(self):
+        """Stale/derived keys in a preset never reach the override store."""
+        StyleSheet.apply_theme(
+            "dark",
+            {
+                "NOT_A_REAL_TOKEN": "#123",
+                "BUTTON_HOVER_TINT": "#456",  # derived — auto-computed
+                "BUTTON_HOVER": "#789",
+            },
+        )
+        overrides = StyleSheet.export_overrides()["dark"]
+        self.assertEqual(overrides, {"BUTTON_HOVER": "#789"})
+
+    def test_apply_theme_unknown_theme_raises(self):
+        with self.assertRaises(ValueError):
+            StyleSheet.apply_theme("no_such_theme")
+
+    # Theme definitions -------------------------------------------------
+
+    def test_all_themes_share_the_same_token_set(self):
+        """Every theme (incl. high-contrast) defines the identical tokens."""
+        reference = set(StyleSheet.themes["light"])
+        for name, theme in StyleSheet.themes.items():
+            self.assertEqual(
+                set(theme),
+                reference,
+                f"theme '{name}' token set drifted from 'light'",
+            )
+
+    def test_high_contrast_theme_exists(self):
+        """The accessibility default ships as a base theme."""
+        self.assertIn("high-contrast", StyleSheet.themes)
+
+
+class TestStyleEditorPresets(_PresetRootSandboxCase):
+    """Tests for StyleEditor preset save/load/delete/rename (semantic mode)."""
+
+    BUILTINS = ("dark", "high-contrast", "light")
 
     def setUp(self):
         super().setUp()
-        StyleSheet.reset_overrides()
         self.editor = self.track_widget(StyleEditor())
-        # Redirect storage to a unique temp dir through the real preset_dir
-        # setter (which routes the underlying PresetManager), so save/load go
-        # to the temp tree instead of the shared consolidated root.
-        temp_root = Path(__file__).parent / "temp_tests"
-        temp_root.mkdir(parents=True, exist_ok=True)
-        self._test_preset_dir = Path(
-            tempfile.mkdtemp(prefix="style_presets_", dir=temp_root)
-        )
-        self.editor.preset_dir = self._test_preset_dir
 
-    def tearDown(self):
-        StyleSheet.reset_overrides()
-        if self._test_preset_dir and self._test_preset_dir.exists():
-            shutil.rmtree(self._test_preset_dir, ignore_errors=True)
-        super().tearDown()
+    def test_builtin_themes_are_listed(self):
+        """The base themes appear in the preset list as built-ins."""
+        names = self.editor._list_presets()
+        for builtin in self.BUILTINS:
+            self.assertIn(builtin, names)
+
+    def test_builtin_theme_presets_match_engine_themes(self):
+        """Shipped preset files stay in lockstep with StyleSheet.themes."""
+        stems = sorted(p.stem for p in BUILTIN_THEMES_DIR.glob("*.json"))
+        self.assertEqual(stems, sorted(StyleSheet.themes))
+        for path in BUILTIN_THEMES_DIR.glob("*.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data.get("theme"), path.stem)
+            self.assertEqual(data.get("overrides"), {})
 
     def test_save_creates_json_file(self):
-        """save_preset should write a JSON file in preset_dir."""
-        StyleSheet.set_variable("BUTTON_HOVER", "#123456", theme="light")
+        """save_preset should write a JSON file in the new theme format."""
+        StyleSheet.set_variable("BUTTON_HOVER", "#123456", theme=self.editor.theme)
         path = self.editor.save_preset("test_preset")
         self.assertTrue(path.exists())
         with open(path, "r") as f:
             data = json.load(f)
         self.assertIn("_meta", data)
-        self.assertEqual(data["light"]["BUTTON_HOVER"], "#123456")
+        self.assertEqual(data["theme"], self.editor.theme)
+        self.assertEqual(data["overrides"]["BUTTON_HOVER"], "#123456")
 
-    def test_save_captures_both_themes(self):
-        """Preset should contain overrides for all themes."""
-        StyleSheet.set_variable("TEXT_COLOR", "#aaa", theme="light")
-        StyleSheet.set_variable("TEXT_COLOR", "#bbb", theme="dark")
-        path = self.editor.save_preset("both_themes")
+    def test_save_captures_current_theme_only(self):
+        """A preset is one base theme + its overrides — not other themes'."""
+        other = "light" if self.editor.theme != "light" else "dark"
+        StyleSheet.set_variable("TEXT_COLOR", "#aaa", theme=self.editor.theme)
+        StyleSheet.set_variable("TEXT_COLOR", "#bbb", theme=other)
+        path = self.editor.save_preset("one_theme")
 
         with open(path, "r") as f:
             data = json.load(f)
-        data.pop("_meta", None)
 
-        self.assertEqual(data["light"]["TEXT_COLOR"], "#aaa")
-        self.assertEqual(data["dark"]["TEXT_COLOR"], "#bbb")
+        self.assertEqual(data["overrides"]["TEXT_COLOR"], "#aaa")
+        self.assertNotIn(other, data)
 
-    def test_load_restores_overrides(self):
-        """load_preset should bulk-apply overrides via import_overrides."""
-        StyleSheet.set_variable("PANEL_BACKGROUND", "#abc", theme="light")
+    def test_load_restores_theme_and_overrides(self):
+        """load_preset should re-apply the stored base theme + overrides."""
+        theme = self.editor.theme
+        StyleSheet.set_variable("PANEL_BACKGROUND", "#abc", theme=theme)
         self.editor.save_preset("restore_test")
 
         StyleSheet.reset_overrides()
         self.assertNotEqual(
-            StyleSheet.get_variable("PANEL_BACKGROUND", theme="light"), "#abc"
+            StyleSheet.get_variable("PANEL_BACKGROUND", theme=theme), "#abc"
         )
 
         result = self.editor.load_preset("restore_test")
         self.assertTrue(result)
+        self.assertEqual(self.editor.theme, theme)
         self.assertEqual(
-            StyleSheet.get_variable("PANEL_BACKGROUND", theme="light"), "#abc"
+            StyleSheet.get_variable("PANEL_BACKGROUND", theme=theme), "#abc"
         )
+
+    def test_load_builtin_switches_theme(self):
+        """Loading a built-in theme preset switches the editor's base theme
+        globally and clears that theme's overrides."""
+        StyleSheet.set_variable("TEXT_COLOR", "#123", theme="light")
+        self.editor.load_preset("light")
+        self.assertEqual(self.editor.theme, "light")
+        # Built-in = pure base theme: its overrides were replaced with {}
+        self.assertEqual(
+            StyleSheet.get_variable("TEXT_COLOR", theme="light"),
+            StyleSheet.themes["light"]["TEXT_COLOR"],
+        )
+        # The editor itself re-themed
+        self.assertEqual(StyleSheet._widget_configs[self.editor]["theme"], "light")
+
+    def test_load_legacy_format_still_applies(self):
+        """Old presets ({theme: {var: value}} dumps) import via overrides."""
+        legacy = {
+            "_meta": {"version": 1},
+            "light": {"TEXT_COLOR": "#fedcba"},
+            "dark": {},
+        }
+        path = self.editor.preset_dir / "legacy.json"
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        theme_before = self.editor.theme
+        self.assertTrue(self.editor.load_preset("legacy"))
+        self.assertEqual(
+            StyleSheet.get_variable("TEXT_COLOR", theme="light"), "#fedcba"
+        )
+        # Legacy payloads carry no base theme — the current one is kept.
+        self.assertEqual(self.editor.theme, theme_before)
 
     def test_load_nonexistent_returns_false(self):
         """load_preset should return False for a missing file."""
@@ -175,6 +307,11 @@ class TestStyleEditorPresets(QtBaseTestCase):
 
         self.assertTrue(self.editor.delete_preset("to_delete"))
         self.assertNotIn("to_delete", self.editor._list_presets())
+
+    def test_delete_builtin_refused(self):
+        """Built-in theme presets are read-only."""
+        self.assertFalse(self.editor.delete_preset("light"))
+        self.assertIn("light", self.editor._list_presets())
 
     def test_rename_updates_filename(self):
         """rename_preset should rename the file on disk."""
@@ -190,53 +327,58 @@ class TestStyleEditorPresets(QtBaseTestCase):
         self.assertFalse(self.editor.rename_preset("name_a", "name_b"))
 
     def test_list_returns_sorted_names(self):
-        """_list_presets should return alphabetically sorted stems."""
+        """_list_presets returns sorted names (user saves + built-ins)."""
         self.editor.save_preset("zebra")
         self.editor.save_preset("alpha")
         names = self.editor._list_presets()
-        self.assertEqual(names, ["alpha", "zebra"])
+        self.assertEqual(names, sorted(names))
+        for expected in ("alpha", "zebra") + self.BUILTINS:
+            self.assertIn(expected, names)
 
     def test_batch_load_single_reload(self):
-        """Loading a preset should call import_overrides (one bulk update),
-        not set_variable per-var.
-
-        Bug prevention: Ensures batch-apply semantics to avoid N reloads.
-        """
-        StyleSheet.set_variable("BUTTON_HOVER", "#111", theme="light")
-        StyleSheet.set_variable("TEXT_COLOR", "#222", theme="dark")
+        """Loading a preset applies in ONE bulk reload pass, not per-var."""
+        theme = self.editor.theme
+        StyleSheet.set_variable("BUTTON_HOVER", "#111", theme=theme)
+        StyleSheet.set_variable("TEXT_COLOR", "#222", theme=theme)
         self.editor.save_preset("batch_test")
         StyleSheet.reset_overrides()
 
-        # Monkey-patch import_overrides to count calls
-        import_calls = []
-        original_import = StyleSheet.import_overrides
+        reload_calls = []
+        original_reload = StyleSheet.reload
 
         @classmethod
-        def counting_import(cls, data):
-            import_calls.append(1)
-            return original_import.__func__(cls, data)
+        def counting_reload(cls, widget=None):
+            reload_calls.append(widget)
+            return original_reload.__func__(cls, widget)
 
-        StyleSheet.import_overrides = counting_import
+        StyleSheet.reload = counting_reload
         try:
             self.editor.load_preset("batch_test")
             self.assertEqual(
-                len(import_calls), 1, "import_overrides should be called exactly once"
+                len(reload_calls), 1, "load should trigger exactly one reload pass"
             )
         finally:
-            StyleSheet.import_overrides = original_import
+            StyleSheet.reload = original_reload
+
+    def test_edits_flag_active_preset_modified(self):
+        """A table edit dirties the active preset; saving cleans it."""
+        mgr = self.editor._preset_mgr
+        self.editor.load_preset("dark")
+        self.assertFalse(mgr.refresh_modified_state())
+
+        StyleSheet.set_variable("BUTTON_HOVER", "#445566", theme="dark")
+        self.assertTrue(mgr.refresh_modified_state())
+
+        self.editor.save_preset("dark")  # user save shadows the built-in
+        self.assertFalse(mgr.refresh_modified_state())
 
 
-class TestStyleEditorTheming(QtBaseTestCase):
+class TestStyleEditorTheming(_PresetRootSandboxCase):
     """Tests for the editor's self-styling + tier/length-token behaviors."""
 
     def setUp(self):
         super().setUp()
-        StyleSheet.reset_overrides()
         self.editor = self.track_widget(StyleEditor())
-
-    def tearDown(self):
-        StyleSheet.reset_overrides()
-        super().tearDown()
 
     # Self-styling ----------------------------------------------------
 
@@ -244,33 +386,44 @@ class TestStyleEditorTheming(QtBaseTestCase):
         """``__init__`` registers the editor in ``StyleSheet._widget_configs``."""
         self.assertIn(self.editor, StyleSheet._widget_configs)
 
-    def test_initial_registered_theme_matches_combo(self):
-        """Editor's registered theme matches the combobox's initial value."""
+    def test_initial_registered_theme_matches_editor_theme(self):
+        """Editor's registered theme matches its current-theme property."""
         self.assertEqual(
             StyleSheet._widget_configs[self.editor]["theme"],
-            self.editor.cmb_theme.currentText(),
+            self.editor.theme,
         )
 
-    def test_theme_combo_change_rethemes_editor(self):
-        """Changing the theme combo updates the editor's registered theme."""
-        self.editor.cmb_theme.setCurrentText("dark")
-        self.assertEqual(
-            StyleSheet._widget_configs[self.editor]["theme"], "dark"
-        )
+    def test_default_theme_is_dark(self):
+        """With no persisted active preset, the editor edits 'dark'."""
+        self.assertEqual(self.editor.theme, "dark")
 
-    def test_theme_combo_change_rebuilds_table_with_new_swatches(self):
+    def test_default_activates_matching_builtin(self):
+        """A virgin session activates the built-in matching the default theme
+        so the combo reads 'Theme:  dark' instead of the placeholder."""
+        self.assertEqual(self.editor._preset_mgr.active_preset, "dark")
+
+    def test_no_separate_theme_combo(self):
+        """The theme combobox is gone — the preset combo IS the selector."""
+        self.assertFalse(hasattr(self.editor, "cmb_theme"))
+        self.assertEqual(self.editor._cmb_preset.current_text_prefix, "Theme:  ")
+
+    def test_theme_survives_editor_restart(self):
+        """The active theme (via the active preset) persists to a new editor."""
+        self.editor.load_preset("high-contrast")
+        second = self.track_widget(StyleEditor())
+        self.assertEqual(second.theme, "high-contrast")
+
+    def test_loading_theme_preset_rebuilds_table_with_new_swatches(self):
         """After switching themes, table cells are rebuilt for the new theme."""
-        # Capture the light-theme swatch identity for WIDGET_BACKGROUND
-        self.editor.cmb_tier.setCurrentText("All")
-        light_swatch = self._cell_for("WIDGET_BACKGROUND").findChild(ColorSwatch)
-
-        # Switching theme triggers ``populate()`` which clears rows and
-        # builds new cell widgets. The swatch should be a different
-        # instance (the table was rebuilt) and the underlying override
-        # store should now resolve against the dark theme.
-        self.editor.cmb_theme.setCurrentText("dark")
+        self.editor.set_tier("All")
         dark_swatch = self._cell_for("WIDGET_BACKGROUND").findChild(ColorSwatch)
-        self.assertIsNot(light_swatch, dark_swatch)
+
+        self.editor.load_preset("light")
+        light_swatch = self._cell_for("WIDGET_BACKGROUND").findChild(ColorSwatch)
+        self.assertIsNot(dark_swatch, light_swatch)
+        self.assertEqual(
+            StyleSheet._widget_configs[self.editor]["theme"], "light"
+        )
         # WIDGET_BACKGROUND is intentionally different per theme
         self.assertNotEqual(
             StyleSheet.get_variable("WIDGET_BACKGROUND", theme="light"),
@@ -279,17 +432,22 @@ class TestStyleEditorTheming(QtBaseTestCase):
 
     # Tier filter -----------------------------------------------------
 
+    def test_tier_combo_lives_in_header_menu(self):
+        """The Basic/All filter is a header ⋯-menu option, not a body row."""
+        self.assertIn("menu", self.editor.header.buttons)
+        self.assertIn(self.editor.cmb_tier, self.editor.header.menu.get_items())
+
     def test_basic_tier_filters_to_basic_tokens_only(self):
         """Basic tier shows exactly the tokens in ``BASIC_TOKENS``."""
-        self.editor.cmb_tier.setCurrentText("Basic")
+        self.editor.set_tier("Basic")
         self.assertEqual(self._visible_token_names(), BASIC_TOKENS)
 
     def test_all_tier_shows_every_token(self):
         """All tier shows every token defined in the current theme."""
-        self.editor.cmb_tier.setCurrentText("All")
+        self.editor.set_tier("All")
         self.assertEqual(
             self._visible_token_names(),
-            set(StyleSheet.themes["light"].keys()),
+            set(StyleSheet.themes[self.editor.theme].keys()),
         )
 
     def test_basic_tokens_all_exist_in_themes(self):
@@ -314,48 +472,52 @@ class TestStyleEditorTheming(QtBaseTestCase):
 
     def test_length_token_renders_as_spinbox_with_px_suffix(self):
         """RADIUS row contains a ``QSpinBox`` with a ``px`` suffix."""
-        self.editor.cmb_tier.setCurrentText("All")
+        self.editor.set_tier("All")
         cell = self._cell_for("RADIUS")
         self.assertIsNotNone(cell)
         spin = cell.findChild(QtWidgets.QSpinBox)
         self.assertIsNotNone(spin)
         self.assertIn("px", spin.suffix())
-        # Light theme default RADIUS is 4px; value mirrors the active theme.
-        expected = int(StyleSheet.get_variable("RADIUS", theme="light").rstrip("px"))
+        # Value mirrors the editor's current (active) theme.
+        expected = int(
+            StyleSheet.get_variable("RADIUS", theme=self.editor.theme).rstrip("px")
+        )
         self.assertEqual(spin.value(), expected)
 
     def test_length_spinbox_caps_at_8(self):
         """RADIUS caps at 8 (Qt border-radius degrades above this on small widgets)."""
-        self.editor.cmb_tier.setCurrentText("All")
+        self.editor.set_tier("All")
         spin = self._cell_for("RADIUS").findChild(QtWidgets.QSpinBox)
         self.assertEqual(spin.maximum(), 8)
         self.assertEqual(spin.minimum(), 0)
 
     def test_combobox_item_height_renders_as_spinbox(self):
         """COMBOBOX_ITEM_HEIGHT is a length token: spinbox, not a swatch, with
-        a ceiling tall enough for its 19px default."""
-        self.editor.cmb_tier.setCurrentText("All")
+        a ceiling tall enough for its default."""
+        self.editor.set_tier("All")
         cell = self._cell_for("COMBOBOX_ITEM_HEIGHT")
         self.assertIsNotNone(cell)
         self.assertIsNone(cell.findChild(ColorSwatch))
         spin = cell.findChild(QtWidgets.QSpinBox)
         self.assertIsNotNone(spin)
         expected = int(
-            StyleSheet.get_variable("COMBOBOX_ITEM_HEIGHT", theme="light").rstrip("px")
+            StyleSheet.get_variable(
+                "COMBOBOX_ITEM_HEIGHT", theme=self.editor.theme
+            ).rstrip("px")
         )
         self.assertEqual(spin.value(), expected)
         self.assertGreaterEqual(spin.maximum(), expected)
 
     def test_color_token_renders_as_swatch(self):
         """BUTTON_HOVER row contains a ``ColorSwatch``."""
-        self.editor.cmb_tier.setCurrentText("All")
+        self.editor.set_tier("All")
         cell = self._cell_for("BUTTON_HOVER")
         self.assertIsNotNone(cell)
         self.assertIsNotNone(cell.findChild(ColorSwatch))
 
     def test_section_divider_spans_all_columns(self):
         """The divider between colors and lengths spans all 3 columns."""
-        self.editor.cmb_tier.setCurrentText("All")
+        self.editor.set_tier("All")
         for i in range(self.editor.table.rowCount()):
             if self.editor.table.columnSpan(i, 0) == 3:
                 item = self.editor.table.item(i, 0)
@@ -364,24 +526,61 @@ class TestStyleEditorTheming(QtBaseTestCase):
                 return
         self.fail("no spanning section divider found")
 
+    # Cell geometry ------------------------------------------------------
+
+    def test_value_cells_not_clipped_by_row(self):
+        """No swatch / spinbox extends past its table row (the cropped-swatch
+        bug: QSS item padding shrank the cell-widget rect below the editors'
+        fixed height, clipping their bottom edge)."""
+        self.editor.set_tier("All")
+        self.editor.show()
+        QtWidgets.QApplication.processEvents()
+
+        table = self.editor.table
+        vp = table.viewport()
+        checked = 0
+        for row in range(table.rowCount()):
+            cell = table.cellWidget(row, 1)
+            if cell is None:
+                continue
+            child = cell.findChild(ColorSwatch) or cell.findChild(QtWidgets.QSpinBox)
+            if child is None:
+                continue
+            name = table.item(row, 0).text()
+            top = child.mapTo(vp, child.rect().topLeft()).y()
+            bottom = child.mapTo(vp, child.rect().bottomLeft()).y()
+            row_top = table.rowViewportPosition(row)
+            row_bottom = row_top + table.rowHeight(row) - 1
+            self.assertGreaterEqual(
+                top, row_top, f"{name}: editor starts above its row"
+            )
+            self.assertLessEqual(
+                bottom, row_bottom, f"{name}: editor clipped at row bottom"
+            )
+            checked += 1
+        self.assertGreater(checked, 0)
+
     # Value-change handlers --------------------------------------------
 
     def test_length_change_writes_px_suffix_to_overrides(self):
         """Spinbox value change writes ``f'{N}px'`` to the override store."""
-        self.editor.cmb_tier.setCurrentText("All")
+        self.editor.set_tier("All")
         spin = self._cell_for("RADIUS").findChild(QtWidgets.QSpinBox)
         spin.setValue(7)
-        self.assertEqual(StyleSheet.get_variable("RADIUS", theme="light"), "7px")
+        self.assertEqual(
+            StyleSheet.get_variable("RADIUS", theme=self.editor.theme), "7px"
+        )
 
     def test_color_change_writes_hex_to_overrides(self):
         """Swatch color change writes the hex to the override store."""
         from qtpy import QtGui
 
-        self.editor.cmb_tier.setCurrentText("All")
+        self.editor.set_tier("All")
         swatch = self._cell_for("BUTTON_HOVER").findChild(ColorSwatch)
         swatch.color = QtGui.QColor("#abcdef")
         self.assertEqual(
-            StyleSheet.get_variable("BUTTON_HOVER", theme="light"), "#abcdef"
+            StyleSheet.get_variable("BUTTON_HOVER", theme=self.editor.theme),
+            "#abcdef",
         )
 
     # Helpers -----------------------------------------------------------

@@ -38,7 +38,7 @@ Switchboard(
 | `registered_widgets` | `NamespaceHandler` | Custom widget classes discovered via `widget_source` |
 | `registered_icons` | `NamespaceHandler` | Icon paths discovered via `icon_source` |
 | `slot_instances` | `NamespaceHandler` | Instantiated slot class instances |
-| `registry` | `FileManager` | Typed registries: `ui_registry`, `slot_registry`, `widget_registry`, `icon_registry` |
+| `registry` | `RegistryManager` | Typed registries: `ui_registry`, `slot_registry`, `widget_registry`, `icon_registry` |
 | `handlers` | `SimpleNamespace` | `sb.handlers.ui`, `sb.handlers.marking_menu`, custom handlers |
 | `settings` | `SettingsManager` | QSettings wrapper with `namespace="switchboard"` |
 | `configurable` | `SettingsManager` | Branch of `settings` for handler DEFAULTS + app config |
@@ -360,11 +360,11 @@ Emits `enter(widget)` and `leave(widget)` signals for child widgets. `update_chi
 
 ---
 
-## `uitk.FileContainer`, `uitk.FileManager`
+## `uitk.FileRegistry`, `uitk.RegistryManager`
 
-Source: [file_manager.py](../uitk/file_manager.py)
+Source: [managers/registry_manager.py](../uitk/managers/registry_manager.py)
 
-`FileManager` owns the four registries on `Switchboard`. Its `create(name, objects, **cfg)` instantiates a `FileContainer` per registry with filter patterns (`inc_files`, `exc_files`).
+`RegistryManager` owns the four registries on `Switchboard`. Its `create(name, objects, **cfg)` instantiates a `FileRegistry` per registry with filter patterns (`inc_files`, `exc_files`).
 
 ```python
 sb.registry.ui_registry.get("filename")           # list of filenames
@@ -372,7 +372,11 @@ sb.registry.slot_registry.get(classname="EditorSlots", return_field="classobj")
 sb.registry.ui_registry.get(filename="editor.ui", return_field="filepath")
 ```
 
-For the full FileContainer query API see [file_manager.py](../uitk/file_manager.py) source.
+For the full FileRegistry query API see [managers/registry_manager.py](../uitk/managers/registry_manager.py) source.
+
+> Deprecated aliases: `uitk.FileManager` / `uitk.FileContainer` (and the
+> `uitk.file_manager` module) still resolve to these classes and emit a
+> `DeprecationWarning`.
 
 ---
 

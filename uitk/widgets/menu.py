@@ -2908,7 +2908,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             item = items[identifier]
         elif isinstance(identifier, str):  # get by text
             for i in items:
-                if i.text() == identifier:
+                # Resolve each item's label via the guarded helper — not every
+                # item type exposes text() (combos use currentText(), spin boxes
+                # value(), etc.), so a bare i.text() would AttributeError.
+                if self.get_item_text(i) == identifier:
                     item = i
                     break
             else:
@@ -3005,6 +3008,18 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """
         if self.gridLayout is None:
             return
+
+        # Tear down any transient empty-state placeholder first, while its
+        # C++ object is still alive (before the reverse-delete loop's
+        # deleteLater is processed). This mirrors add()'s teardown so the
+        # placeholder can't dangle: leaving self._empty_placeholder set would
+        # (1) make the next empty show no-op and (2) let _empty_timer fire
+        # _on_empty_timeout -> hide() -> _remove_empty_placeholder() on an
+        # already-destroyed label, raising RuntimeError from the timer.
+        if self._empty_placeholder is not None:
+            if self._empty_timer is not None:
+                self._empty_timer.stop()
+            self._remove_empty_placeholder()
 
         item_count = self.gridLayout.count()
         self.logger.debug(f"Menu.clear: Clearing {item_count} items")

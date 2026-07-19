@@ -1346,12 +1346,32 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     # -- attribute colors ---------------------------------------------------
     @property
     def attribute_colors(self) -> Dict[str, str]:
-        """Mapping of attribute name to hex color string."""
+        """Mapping of attribute name to hex color string.
+
+        The getter returns the *live* internal dict (it is read on the clip
+        paint path via ``_resolve_color``, so no defensive copy is made).
+        Mutating it in place therefore does **not** trigger a repaint --
+        assign a whole new mapping through the setter, or call
+        :meth:`set_attribute_color`, to have the change reflected on screen.
+        """
         return self._attribute_colors
 
     @attribute_colors.setter
     def attribute_colors(self, value: Dict[str, str]):
         self._attribute_colors = dict(value)
+        self._timeline._scene.update()
+
+    def set_attribute_color(self, name: str, color: str) -> None:
+        """Set a single attribute's color and repaint.
+
+        Prefer this over mutating the :attr:`attribute_colors` mapping in
+        place (e.g. ``seq.attribute_colors["translateX"] = "#FF0000"``):
+        the property getter returns the live dict for paint-path
+        efficiency, so an in-place assignment updates the backing store but
+        does not trigger the scene repaint this method (and the property
+        setter) perform.
+        """
+        self._attribute_colors[name] = color
         self._timeline._scene.update()
 
     # -- sub-row expansion --------------------------------------------------

@@ -343,6 +343,38 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         combo.actions.add("Only", lambda: None)
         self.assertEqual(combo._action_row_count, 2)
 
+    def test_add_widget_item_after_action_keeps_actions_at_tail(self):
+        """Regression: addWidgetItem after actions.add() must insert the widget
+        *above* the actions section, not append it below. Otherwise a second
+        actions.add() (which strips the tail rows) deletes the widget and
+        orphans the separator."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.actions.add("Rename", lambda: None)  # separator + buttons at tail
+
+        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        row = combo.addWidgetItem(slider)
+
+        # The slider lands above the (separator + button) action rows.
+        self.assertEqual(row, 0)
+        self.assertEqual(combo._action_row_count, 2)
+        self.assertEqual(combo._model.rowCount(), 3)
+        self.assertIs(combo.widgetAt(0), slider)
+
+        # Adding a second action rebuilds the tail without touching the slider.
+        combo.actions.add("Delete", lambda: None)
+        self.assertIs(combo.widgetAt(0), slider)
+        self.assertEqual(combo._action_row_count, 2)
+        self.assertEqual(combo._model.rowCount(), 3)
+
+        # The slider row is height-tracked (not left below the excluded tail).
+        combo._recompute_uniform_heights()
+        self.assertEqual(
+            combo._model.item(0).sizeHint().height(),
+            combo._row_target_height(),
+        )
+
 
 class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
     """The optional dropdown affordance: off by default, opt-in triangle,
@@ -417,6 +449,87 @@ class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
         _render()
         combo.arrow_alpha = 0.3
         _render()
+
+
+class TestWidgetComboBoxRowTracking(QtBaseTestCase):
+    """Row-index bookkeeping across ascending inserts and takeWidgetAt on a
+    never-shown popup, where the index widgets are still deferred."""
+
+    def test_take_before_popup_keeps_pending_widgets(self):
+        """takeWidgetAt on a never-shown combo must renumber the remaining
+        (still-deferred) widgets rather than reading them back from
+        view.indexWidget() — which returns None for un-flushed rows and would
+        drop the survivors from tracking entirely."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        w0 = QtWidgets.QCheckBox("zero")
+        w1 = QtWidgets.QCheckBox("one")
+        combo.addWidgetItem(w0)
+        combo.addWidgetItem(w1)
+        # Never shown: both index widgets are still deferred (pending flush).
+        self.assertEqual(
+            sorted(r for r, _ in combo._pending_index_widgets), [0, 1]
+        )
+
+        taken = combo.takeWidgetAt(0)
+        self.assertIs(taken, w0)
+        # The surviving widget stays tracked, renumbered down to row 0.
+        self.assertIs(combo.widgetAt(0), w1)
+        self.assertIsNone(combo.widgetAt(1))
+        self.assertEqual(combo._model.rowCount(), 1)
+        # Its deferred install now targets the new row 0, not the stale row 1.
+        self.assertEqual([r for r, _ in combo._pending_index_widgets], [0])
+
+    def test_ascending_widget_inserts_track_all_rows(self):
+        """Repeated ascending inserts must not overwrite row 0 — every inserted
+        widget stays tracked and reachable (regression: only the last survived;
+        earlier widgets and their containers were dropped and leaked)."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        w1 = QtWidgets.QCheckBox("one")
+        w2 = QtWidgets.QCheckBox("two")
+        w3 = QtWidgets.QCheckBox("three")
+        combo.add([w1, w2, w3], ascending=True)
+
+        self.assertEqual(combo._model.rowCount(), 3)
+        # Ascending inserts each at the top → top-to-bottom is w3, w2, w1.
+        self.assertIs(combo.widgetAt(0), w3)
+        self.assertIs(combo.widgetAt(1), w2)
+        self.assertIs(combo.widgetAt(2), w1)
+        # All three tracked (none overwritten) and every container retained.
+        self.assertEqual(set(combo._widget_items.values()), {w1, w2, w3})
+        self.assertEqual(len(combo._row_containers), 3)
+
+    def test_ascending_text_insert_shifts_tracked_widget_rows(self):
+        """An ascending *text* insert also shifts existing model rows down, so
+        already-tracked widget rows must be renumbered to stay aligned."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        widget = QtWidgets.QCheckBox("w")
+        combo.add(widget)  # row 0
+        combo.add("top", ascending=True, clear=False)  # inserts above the widget
+
+        self.assertEqual(combo._model.rowCount(), 2)
+        # The widget shifted from row 0 to row 1; tracking must follow it.
+        self.assertIs(combo.widgetAt(1), widget)
+        self.assertIsNone(combo.widgetAt(0))
+
+    def test_take_widget_prunes_captured_default(self):
+        """takeWidgetAt must drop the removed widget's captured default so it
+        neither leaks nor yields a wrong-type snapshot if its id is later
+        reused by a different widget type."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        cb = QtWidgets.QCheckBox("c")
+        combo.add(cb)
+        self.assertIn(id(cb), combo._widget_defaults)
+
+        combo.takeWidgetAt(0)
+        self.assertNotIn(id(cb), combo._widget_defaults)
 
 
 if __name__ == "__main__":

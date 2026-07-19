@@ -1,11 +1,18 @@
 # !/usr/bin/python
 # coding=utf-8
+from pathlib import Path
+
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.colorSwatch import ColorSwatch
 from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.managers.icon_manager import IconManager
 
+# Shipped read-only theme presets — one JSON per base theme in
+# ``StyleSheet.themes`` (``{"theme": <name>, "overrides": {}}``). They form
+# the built-in tier of the editor's preset store, so the base themes appear
+# in the same selector as user-saved looks ("themes ARE presets").
+BUILTIN_THEMES_DIR = Path(__file__).parents[2] / "themes" / "presets"
 
 # Tokens shown in the "Basic" tier — the ones a typical user edits to
 # personalize the look. Everything else (status palette, secondary
@@ -44,22 +51,42 @@ LENGTH_TOKENS = {
     "TEXT_INSET": (0, 16),
 }
 
+# Fixed 22px table rows (matches the UI Browser). The QSS QTableWidget::item
+# rule reserves a 1px (BORDER_W) border, and the grid another 1px, so the
+# rect Qt hands a cell widget is ~19px — value editors are sized 18px tall
+# to fit it with a hair of slack (they were clipped at 19px+margins before).
+ROW_H = 22
+CELL_EDITOR_H = 18
+
 
 class StyleEditor(EditorPanel):
-    """UI for editing global stylesheet variables with preset support.
+    """UI for editing global stylesheet variables, with themes as presets.
 
-    Presets capture *all* theme overrides (light + dark) in a single JSON
-    file so a named snapshot can be saved, restored, renamed, or deleted.
+    The single **Theme** selector is the canonical preset combo: the base
+    themes in :attr:`StyleSheet.themes` ship as read-only built-in presets
+    (``uitk/themes/presets/*.json``), and user-saved looks layer on top as
+    ordinary user presets — one selector, one store, no separate theme
+    combo. Loading a preset applies its base theme (and override set)
+    ecosystem-wide via :meth:`StyleSheet.apply_theme`; edits made in the
+    table become overrides on the loaded preset's base theme (flagged by
+    the combo's ``*`` dirty marker until saved).
 
-    The editor registers itself with the theme system so color/size edits
-    show up live in its own chrome. The theme combobox both filters the
-    table and re-themes the editor window — switching to "dark" makes the
-    editor go dark and its rows reflect the dark theme's values.
+    A preset persists ``{"theme": <base>, "overrides": {var: value}}``.
+    Legacy presets (a full ``{theme_name: {var: value}}`` override dump)
+    still load via :meth:`StyleSheet.import_overrides`.
+
+    Restore contract: overrides persist globally (QSettings) and this
+    editor re-opens on the active preset's base theme, but OTHER windows
+    take the theme their call site passes (``theme="dark"`` across the
+    ecosystem) until a preset is loaded — the standard semantic-preset
+    restore gap (see ``PresetManager``); an app wanting the saved theme
+    at startup applies it from its own entry point.
 
     Two value types are handled: color tokens get a :class:`ColorSwatch`;
     length tokens (see ``LENGTH_TOKENS``) get a ``QSpinBox`` with a ``" px"``
-    suffix, clamped to each token's pixel range. A "tier" combo filters the
-    table to either the 12 most-edited tokens (Basic) or every token (All).
+    suffix, clamped to each token's pixel range. The Basic/All tier combo
+    lives in the header's ⋯-menu ("Show:") and filters the table to either
+    the 12 most-edited tokens or every token.
     """
 
     def __init__(self, parent=None):
@@ -70,39 +97,46 @@ class StyleEditor(EditorPanel):
         )
         self.resize(420, 600)
 
-        FIXED_H = 20
+        # Current base theme — refined from the active preset below, after
+        # the preset manager exists. Must be set before init_preset_row:
+        # wiring the combo computes the dirty state, which calls
+        # export_preset_data (and thus reads _theme).
+        self._theme = "dark"
 
-        # Preset row
-        self.init_preset_row("style_presets")
-
-        # Theme + tier controls
-        controls_layout = QtWidgets.QHBoxLayout()
-        theme_label = QtWidgets.QLabel("Theme:")
-        theme_label.setFixedHeight(FIXED_H)
-        theme_label.setFixedWidth(
-            theme_label.fontMetrics().horizontalAdvance("Theme:") + 6
+        # Theme selector — the canonical preset row, rebranded.
+        self.init_preset_row(
+            "style_presets",
+            builtin_dir=BUILTIN_THEMES_DIR,
+            prefix="Theme:  ",
+            placeholder="Themes…",
         )
-        self.cmb_theme = QtWidgets.QComboBox()
-        self.cmb_theme.setFixedHeight(FIXED_H)
-        self.cmb_theme.addItems(list(StyleSheet.themes.keys()))
-        self.cmb_theme.currentTextChanged.connect(self._on_theme_changed)
+        active = self._preset_mgr.active_preset
+        if active:
+            stored = self._preset_mgr.read(active) or {}
+            if stored.get("theme") in StyleSheet.themes:
+                self._theme = stored["theme"]
+            self._preset_mgr.refresh_modified_state()
+        elif self._preset_mgr.exists(self._theme):
+            # Virgin session: activate the built-in matching the default
+            # theme so the combo reads "Theme:  dark" instead of the empty
+            # placeholder (values are NOT applied — selection only).
+            self._preset_mgr.active_preset = self._theme
+            self._preset_mgr.refresh_combo()
 
-        tier_label = QtWidgets.QLabel("Show:")
-        tier_label.setFixedHeight(FIXED_H)
-        tier_label.setFixedWidth(
-            tier_label.fontMetrics().horizontalAdvance("Show:") + 6
+        # Basic/All tier filter — a header ⋯-menu option rather than a body
+        # row, keeping the body down to selector + table.
+        from uitk.widgets.comboBox import ComboBox
+
+        if "menu" not in self.header.buttons:
+            self.header.config_buttons("menu", *self.header.buttons.keys())
+        self.cmb_tier = self.header.menu.add(
+            ComboBox,
+            setObjectName="cmb_tier",
+            setToolTip="Which variables to show: the basic set, or all of them.",
         )
-        self.cmb_tier = QtWidgets.QComboBox()
-        self.cmb_tier.setFixedHeight(FIXED_H)
         self.cmb_tier.addItems(["Basic", "All"])
+        self.cmb_tier.current_text_prefix = "Show:  "
         self.cmb_tier.currentTextChanged.connect(self.populate)
-
-        # Equal stretch — combos fill the row instead of clumping left.
-        controls_layout.addWidget(theme_label)
-        controls_layout.addWidget(self.cmb_theme, 1)
-        controls_layout.addWidget(tier_label)
-        controls_layout.addWidget(self.cmb_tier, 1)
-        self.body_layout.addLayout(controls_layout)
 
         # Table
         self.table = QtWidgets.QTableWidget()
@@ -122,11 +156,11 @@ class StyleEditor(EditorPanel):
         )
         self.table.verticalHeader().setVisible(False)
         # Match the UI Browser table's row height for a consistent look.
-        self.table.verticalHeader().setDefaultSectionSize(22)
+        self.table.verticalHeader().setDefaultSectionSize(ROW_H)
         self.body_layout.addWidget(self.table, 1)
 
         # Body layout spacing (2px) is set by EditorPanel; tighten every
-        # nested control row (preset row, theme row) to 1px for density.
+        # nested control row (the preset row) to 1px for density.
         self.tighten_sublayouts(1)
 
         # Footer actions
@@ -139,32 +173,54 @@ class StyleEditor(EditorPanel):
         # Register this editor with the theme system. ``recursive=False``
         # because Qt stylesheets cascade to children naturally; recursing
         # would wipe ColorSwatch's inline self-styling.
-        StyleSheet().set(self, theme=self.cmb_theme.currentText())
+        StyleSheet().set(self, theme=self._theme)
+
+    # ------------------------------------------------------------------
+    # Theme state
+    # ------------------------------------------------------------------
+
+    @property
+    def theme(self) -> str:
+        """The base theme currently shown/edited (set by loading a preset)."""
+        return self._theme
+
+    def set_tier(self, tier: str):
+        """Programmatic Basic/All switch (mirrors a user pick in the header
+        menu). Needed because the uitk ``ComboBox`` deliberately suppresses
+        signals on programmatic selection (``setCurrentText`` is
+        ``@Signals.blockSignals``) — a user pick repopulates via
+        ``currentTextChanged``; this path repopulates explicitly.
+        """
+        self.cmb_tier.setCurrentText(tier)
+        self.populate()
 
     # ------------------------------------------------------------------
     # Preset hooks
     # ------------------------------------------------------------------
 
     def export_preset_data(self):
-        return StyleSheet.export_overrides()
+        return {
+            "theme": self._theme,
+            "overrides": StyleSheet.export_overrides().get(self._theme, {}),
+        }
 
     def import_preset_data(self, data):
-        StyleSheet.import_overrides(data)
-        self.populate()
-
-    # ------------------------------------------------------------------
-    # Theme switch
-    # ------------------------------------------------------------------
-
-    def _on_theme_changed(self, theme):
-        """Combobox callback: re-theme the editor + repopulate the table.
-
-        Uses ``StyleSheet().set`` rather than ``set_theme(widget=self)``
-        so we always re-apply the QSS even if ``self`` somehow fell out
-        of ``_widget_configs`` (e.g. a prior reload hit a RuntimeError);
-        ``set_theme`` silently no-ops in that case.
-        """
-        StyleSheet().set(self, theme=theme)
+        theme = data.get("theme")
+        if theme is not None:
+            if theme in StyleSheet.themes:
+                self._theme = theme
+                # Applies base theme + overrides to every registered widget
+                # (this editor included — it registered itself in __init__).
+                StyleSheet.apply_theme(theme, data.get("overrides") or {})
+            else:
+                # Unknown base theme (hand-edited file, or a preset from a
+                # newer uitk): keep the current state, but say so.
+                self.footer.setStatusText(f"Unknown base theme: {theme!r}")
+        else:
+            # Legacy payload: {theme_name: {var: value}, ...} override dump.
+            StyleSheet.import_overrides(
+                {k: v for k, v in data.items() if isinstance(v, dict)}
+            )
         self.populate()
 
     # ------------------------------------------------------------------
@@ -180,7 +236,7 @@ class StyleEditor(EditorPanel):
         """
         self.table.setRowCount(0)
         self.table.clearSpans()
-        current_theme = self.cmb_theme.currentText()
+        current_theme = self._theme
         tier = self.cmb_tier.currentText()
         all_vars = StyleSheet.get_variables(current_theme)
 
@@ -219,15 +275,9 @@ class StyleEditor(EditorPanel):
 
         current_val = StyleSheet.get_variable(var_name, theme=theme)
 
-        swatch_container = QtWidgets.QWidget()
-        swatch_layout = QtWidgets.QHBoxLayout(swatch_container)
-        swatch_layout.setContentsMargins(4, 2, 4, 2)
-        swatch_layout.setAlignment(QtCore.Qt.AlignCenter)
-
         swatch = ColorSwatch(color=current_val)
-        swatch.setFixedSize(50, 19)
-        swatch_layout.addWidget(swatch)
-        self.table.setCellWidget(row, 1, swatch_container)
+        swatch.setFixedSize(50, CELL_EDITOR_H)
+        self.table.setCellWidget(row, 1, self._centered_cell(swatch, h_margin=4))
 
         swatch.colorChanged.connect(
             lambda c, name=var_name: self.on_color_changed(name, c)
@@ -242,20 +292,13 @@ class StyleEditor(EditorPanel):
 
         n = StyleSheet.get_variable_px(var_name, theme=theme, default=0)
 
-        container = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout(container)
-        # No horizontal padding — cell QSS padding is enough breathing room.
-        layout.setContentsMargins(0, 2, 0, 2)
-        layout.setAlignment(QtCore.Qt.AlignCenter)
-
         spin = QtWidgets.QSpinBox()
         spin.setRange(*LENGTH_TOKENS[var_name])
         spin.setSuffix(" px")
         spin.setValue(n)
         # 76px: Qt reserves internal width for hidden up/down arrow buttons.
-        spin.setFixedSize(76, 19)
-        layout.addWidget(spin)
-        self.table.setCellWidget(row, 1, container)
+        spin.setFixedSize(76, CELL_EDITOR_H)
+        self.table.setCellWidget(row, 1, self._centered_cell(spin))
 
         spin.valueChanged.connect(
             lambda v, name=var_name: self.on_length_changed(name, v)
@@ -263,15 +306,31 @@ class StyleEditor(EditorPanel):
 
         self._add_reset_button(row, var_name)
 
+    @staticmethod
+    def _centered_cell(child, h_margin=0):
+        """Wrap *child* in a zero-height-margin, center-aligned container.
+
+        Vertical margins must stay 0: the QSS ``QTableWidget::item`` border
+        already eats into the rect Qt gives cell widgets, so any fixed
+        vertical margin here pushes a fixed-height child past the row's
+        bottom edge (the clipped-swatch bug).
+        """
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(h_margin, 0, h_margin, 0)
+        layout.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(child)
+        return container
+
     def _add_reset_button(self, row, var_name):
         reset_btn = QtWidgets.QPushButton()
-        reset_btn.setFixedSize(24, 24)
+        reset_btn.setFixedSize(CELL_EDITOR_H, CELL_EDITOR_H)
         reset_btn.setToolTip(f"Reset {var_name} to default")
-        IconManager.set_icon(reset_btn, "undo", size=(16, 16))
+        IconManager.set_icon(reset_btn, "undo", size=(14, 14))
         reset_btn.clicked.connect(
             lambda *args, name=var_name: self.reset_variable(name)
         )
-        self.table.setCellWidget(row, 2, reset_btn)
+        self.table.setCellWidget(row, 2, self._centered_cell(reset_btn))
 
     def _add_section_header(self, row, title):
         item = QtWidgets.QTableWidgetItem(title)
@@ -290,28 +349,29 @@ class StyleEditor(EditorPanel):
 
     def on_color_changed(self, name, color):
         """Handle color change from swatch."""
-        theme = self.cmb_theme.currentText()
-        StyleSheet.set_variable(name, color, theme=theme)
+        StyleSheet.set_variable(name, color, theme=self._theme)
+        self._preset_mgr.refresh_modified_state()
         self.footer.setStatusText(
             f"{name} → {color.name() if hasattr(color, 'name') else color}"
         )
 
     def on_length_changed(self, name, value):
         """Handle length change from spinbox."""
-        theme = self.cmb_theme.currentText()
-        StyleSheet.set_variable(name, f"{value}px", theme=theme)
+        StyleSheet.set_variable(name, f"{value}px", theme=self._theme)
+        self._preset_mgr.refresh_modified_state()
         self.footer.setStatusText(f"{name} → {value}px")
 
     def reset_variable(self, name):
         """Reset a single variable."""
-        theme = self.cmb_theme.currentText()
-        StyleSheet.set_variable(name, None, theme=theme)
+        StyleSheet.set_variable(name, None, theme=self._theme)
+        self._preset_mgr.refresh_modified_state()
         self.refresh_row(name)
         self.footer.setStatusText(f"Reset {name}")
 
     def reset_all(self):
-        """Reset all overrides."""
+        """Reset all overrides (every theme, every widget)."""
         StyleSheet.reset_overrides()
+        self._preset_mgr.refresh_modified_state()
         self.populate()
         self.footer.setStatusText("All overrides reset")
 
@@ -330,8 +390,7 @@ class StyleEditor(EditorPanel):
         container = self.table.cellWidget(row, 1)
         if container is None:
             return
-        theme = self.cmb_theme.currentText()
-        val = StyleSheet.get_variable(name, theme=theme)
+        val = StyleSheet.get_variable(name, theme=self._theme)
 
         swatch = container.findChild(ColorSwatch)
         if swatch:
@@ -343,5 +402,7 @@ class StyleEditor(EditorPanel):
         spin = container.findChild(QtWidgets.QSpinBox)
         if spin:
             spin.blockSignals(True)
-            spin.setValue(StyleSheet.get_variable_px(name, theme=theme, default=0))
+            spin.setValue(
+                StyleSheet.get_variable_px(name, theme=self._theme, default=0)
+            )
             spin.blockSignals(False)

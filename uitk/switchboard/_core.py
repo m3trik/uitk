@@ -21,7 +21,7 @@ from uitk.switchboard.style import SwitchboardStyleMixin
 
 # Generic infrastructure (shared with non-Switchboard widgets):
 from uitk.switchboard.history import History
-from uitk.file_manager import FileManager
+from uitk.managers.registry_manager import RegistryManager
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.managers.settings_manager import SettingsManager
 from uitk.loaders import CompiledLoader, RuntimeLoader
@@ -184,7 +184,7 @@ class Switchboard(
 
         self.tag_delimiter = tag_delimiter or self.TAG_DELIMITER
         self.ui_name_delimiters = ui_name_delimiters or self.UI_NAME_DELIMITER
-        self.registry = FileManager()
+        self.registry = RegistryManager()
         if base_dir is None:
             base_dir = 1 if not __name__ == "__main__" else 0
 
@@ -683,10 +683,10 @@ class Switchboard(
                 continue
 
             # Check if we should add this location
-            # Note: FileContainer.extend handles duplicates if configured,
+            # Note: FileRegistry.extend handles duplicates if configured,
             # but we can do a quick check here if it's a single path string.
             # However, since location can be a list or module, simple string check isn't enough.
-            # We rely on FileContainer/FileManager to resolve and handle it.
+            # We rely on FileRegistry/RegistryManager to resolve and handle it.
 
             # Helper to validate a single path item if validation is requested
             def _validate_item(item):

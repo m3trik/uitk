@@ -1641,6 +1641,11 @@ class ShortcutEditor(EditorPanel):
 
         box.exec_()
         clicked = box.clickedButton()
+        # Parented to ``self``, so PySide will not free the box when the local
+        # reference drops — the parent owns it. Release it explicitly (deferred,
+        # so the button-identity checks below still resolve) to avoid a hidden
+        # QMessageBox child accumulating on the editor for every conflict prompt.
+        box.deleteLater()
 
         if clicked is cancel_btn:
             return False

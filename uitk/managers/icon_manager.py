@@ -76,6 +76,10 @@ class IconManager:
         path = Path(path)
         if path not in cls._icon_dirs:
             cls._icon_dirs.insert(0, path)  # Insert at front for precedence
+            # A newly-registered dir may override already-resolved names, and
+            # the name-keyed caches (_svg_cache, _cache) are consulted before
+            # _icon_dirs — drop them so the next get()/_load_svg_content re-resolves.
+            cls.clear_cache()
 
     @classmethod
     def _evict_cache_if_needed(cls):

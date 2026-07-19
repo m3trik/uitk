@@ -163,6 +163,55 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "LINK_COLOR": "rgb(130,170,210)",
             "LINK_VISITED_COLOR": "rgb(160,150,190)",
         },
+        # Accessibility default: WCAG-minded high-contrast dark. Opaque
+        # surfaces (no translucency — it degrades legibility over busy
+        # viewports), white text on near-black (~18:1+), every control
+        # outlined in white, and a yellow hover/selection indicator.
+        # Accents are chosen to keep >=4.5:1 against white text.
+        "high-contrast": {
+            # Surfaces
+            "PANEL_BACKGROUND": "rgb(0,0,0)",
+            "WINDOW_BACKGROUND": "rgb(0,0,0)",
+            "WIDGET_BACKGROUND": "rgb(16,16,16)",
+            "WIDGET_BACKGROUND_HOVER": "rgb(48,48,48)",
+            "DISABLED_BACKGROUND": "rgb(26,26,26)",
+            "ALTERNATE_BACKGROUND": "rgba(255,255,255,24)",
+            "TREE_ALTERNATE_BG": "rgb(26,26,26)",
+            # Text
+            "TEXT_COLOR": "rgb(255,255,255)",
+            "TEXT_HOVER": "rgb(255,255,255)",
+            "TEXT_CHECKED": "rgb(255,255,255)",
+            "TEXT_DISABLED": "rgb(163,163,163)",  # >=7:1 on the disabled bg
+            # Accents
+            "BUTTON_HOVER": "rgb(0,96,192)",  # ~6.5:1 under white text
+            "BUTTON_CHECKED": "rgb(153,68,0)",  # ~6.6:1 under white text
+            "PROGRESS_BAR_COLOR": "rgb(0,200,255)",
+            # Borders + shape
+            "BORDER_COLOR": "rgb(255,255,255)",
+            "BORDER_HOVER": "rgb(255,255,0)",
+            "BORDER_W": "1px",
+            "RADIUS": "2px",
+            # Metrics (layout, themeable)
+            "COMBOBOX_ITEM_HEIGHT": "22px",  # larger hit target
+            "TEXT_INSET": "3px",
+            # Selection (text-selection inside inputs)
+            "SELECTION_BG": "rgb(255,255,0)",
+            "SELECTION_FG": "rgb(0,0,0)",
+            # Status (input feedback)
+            "ACTION_VALID_FG": "rgb(0,230,118)",
+            "ACTION_VALID_BG": "rgb(0,40,20)",
+            "ACTION_INVALID_FG": "rgb(255,105,97)",
+            "ACTION_INVALID_BG": "rgb(64,0,0)",
+            "ACTION_WARNING_FG": "rgb(255,214,0)",
+            "ACTION_WARNING_BG": "rgb(51,43,0)",
+            "ACTION_INFO_FG": "rgb(64,196,255)",
+            "ACTION_INFO_BG": "rgb(0,37,64)",
+            "ACTION_INACTIVE_FG": "rgb(200,200,200)",
+            # Misc (Python-consumed)
+            "ICON_COLOR": "rgb(255,255,255)",
+            "LINK_COLOR": "rgb(77,166,255)",
+            "LINK_VISITED_COLOR": "rgb(204,153,255)",
+        },
     }
 
     # Token substitution: ``{TOKEN_NAME}`` where TOKEN_NAME is UPPER_SNAKE.
@@ -341,7 +390,39 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         for w in targets:
             if w in cls._widget_configs:
                 cls._widget_configs[w]["theme"] = theme
-                cls.reload(w)
+        # One reload pass AFTER all configs are stamped — reload() groups
+        # widgets by config, so the shared QSS is assembled once per group
+        # instead of once per widget (the old per-widget loop).
+        cls.reload(widget)
+
+    @classmethod
+    def apply_theme(cls, theme: str, overrides: Union[dict, None] = None):
+        """Switch every registered widget to *theme* in one pass.
+
+        The engine-level primitive behind named theme presets (see
+        ``StyleEditor``): optionally **replaces** the theme's global
+        overrides (an empty dict clears them — the pure base theme),
+        persists them, then re-themes all registered widgets.
+
+        Args:
+            theme: Name of the base theme (a key of :attr:`themes`).
+            overrides: When given, the new global override set for *theme*
+                (replacing the current one). Unknown and derived token
+                names are dropped. ``None`` leaves overrides untouched.
+        """
+        cls._ensure_settings_loaded()
+        if theme not in cls.themes:
+            raise ValueError(
+                f"Unknown theme {theme!r}. Available: {list(cls.themes)}"
+            )
+        if overrides is not None:
+            cls._global_overrides[theme] = {
+                k: str(v)
+                for k, v in overrides.items()
+                if k in cls.themes[theme] and not cls._is_derived_token(k)
+            }
+            cls._settings.setValue("global", cls._global_overrides)
+        cls.set_theme(theme)
 
     @classmethod
     def reload(cls, widget: QtWidgets.QWidget = None):

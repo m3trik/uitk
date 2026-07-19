@@ -386,6 +386,12 @@ def _build_path(spec, parent):
     hl.setContentsMargins(0, 0, 0, 0)
     hl.setSpacing(2)
     edit = QtWidgets.QLineEdit("" if spec.default is None else str(spec.default))
+    # Name the inner edit (mirrors make_widget's container objectName == spec.key)
+    # so preset capture keys it: consumers that snapshot the value-bearing child
+    # rather than the container (e.g. the DCC bridges substitute ``_line_edit``
+    # into their managed set) skip empty-objectName widgets, silently dropping
+    # path fields from saved widget-state presets.
+    edit.setObjectName(spec.key)
     edit.setMinimumHeight(19)
     edit.setMaximumHeight(19)
     browse = QtWidgets.QPushButton("...")

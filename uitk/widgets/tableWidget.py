@@ -77,10 +77,14 @@ class CellFormatMixin(ConvertMixin):
         idx = self._resolve_col(header)
         if idx is None:
             return
+        # Key by the resolved, canonical header text so storage matches the
+        # lookup in _get_formatters (which keys by self._header(col)). Storing
+        # under the raw `header` arg would miss when it is an int column index.
+        key = self._header(idx)
         if append:
-            self._header_formatters.setdefault(header, []).append(formatter)
+            self._header_formatters.setdefault(key, []).append(formatter)
         else:
-            self._header_formatters[header] = [formatter]
+            self._header_formatters[key] = [formatter]
 
     def set_cell_formatter(self, row, col, formatter, append=False):
         """Set a formatter for a specific cell (row, column)."""
@@ -973,12 +977,23 @@ class TableWidget(
         wheelEvent).
         """
         signed = self._wheel_signed_delta(event)
-        steps = signed // 120
+        # Accumulate per cell so precision touchpads / free-spin wheels that
+        # only ever send sub-notch deltas (e.g. ±8) still reach a full notch
+        # across events — plain truncation made them permanently dead in both
+        # directions. Truncate toward zero (not floor) so equal-magnitude
+        # up/down accumulations quantize symmetrically, and keep the residual
+        # so nothing is lost between events. The residual resets when the
+        # hovered cell changes (no cross-cell carry-over).
+        cell = (index.row(), index.column())
+        if getattr(self, "_wheel_accum_cell", None) != cell:
+            self._wheel_accum_cell = cell
+            self._wheel_accum = 0
+        self._wheel_accum += signed
+        steps = int(self._wheel_accum / 120)
         if not steps:
             return
-        self.cellWheelScrolled.emit(
-            index.row(), index.column(), int(steps), event.modifiers()
-        )
+        self._wheel_accum -= steps * 120
+        self.cellWheelScrolled.emit(cell[0], cell[1], int(steps), event.modifiers())
 
     def active_editor(self) -> Optional[QtWidgets.QWidget]:
         """Return the currently-open cell editor widget, or ``None``.
@@ -1190,7 +1205,7 @@ class TableWidget(
             ):
                 col_headers = list(data.keys())
                 cols = len(col_headers)
-                maxlen = max(len(col) for col in data.values())
+                maxlen = max((len(col) for col in data.values()), default=0)
                 rows = [
                     [data[k][i] if i < len(data[k]) else "" for k in col_headers]
                     for i in range(maxlen)
@@ -1583,13 +1598,6 @@ if __name__ == "__main__":
 
     tbl = TableWidget()
     tbl.add([("Texture1", "Node1"), ("Texture2", "Node2"), ("Texture3", "Node3")])
-    tbl.on_cell_edited.connect(
-        lambda row, col, text: print(f"Cell edited at ({row}, {col}): {text}")
-    )
-    tbl.on_row_selected.connect(
-        lambda row, node: print(f"Row selected: {row}, Node: {node}")
-    )
-    tbl.on_context_menu.connect(lambda pos: print(f"Context menu requested at {pos}"))
 
     tbl.show()
     sys.exit(app.exec_())

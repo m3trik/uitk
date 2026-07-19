@@ -684,7 +684,17 @@ class MarkingMenu(
             The UI widget.
         """
         # First check if it's a stacked menu
-        ui = self.sb.get_ui(name)
+        try:
+            ui = self.sb.get_ui(name)
+        except AttributeError as e:
+            # An unresolvable name raises AttributeError out of the slot
+            # resolver ("Slot class '<name>' not found"); degrade to None so a
+            # stale target falls through to WindowManager delegation / None
+            # return instead of raising (mirrors _cached_ui). get_ui lazily
+            # LOADS the UI though, so this can also swallow a real defect in a
+            # valid name's module — log the text so that stays diagnosable.
+            self.logger.debug(f"get_ui('{name}') raised AttributeError: {e}")
+            ui = None
         if ui and ui.has_tags(_MARKING_MENU_TAGS):
             # Ensure proper styling is applied (WindowManager owns the styling logic)
             self.ui_handler.apply_styles(ui)
@@ -2320,7 +2330,18 @@ class MarkingMenu(
             return self
 
         # Resolve the UI object
-        found_ui = self.sb.get_ui(ui)
+        try:
+            found_ui = self.sb.get_ui(ui)
+        except AttributeError as e:
+            # get_ui resolves an unknown name through the slot resolver, which
+            # raises AttributeError ("Slot class '<name>' not found") for a
+            # stale binding target. Degrade to the submenu-cache fallback +
+            # logged None return below (mirrors _cached_ui) rather than
+            # escaping into the Qt event loop. The lazy load means this can
+            # also swallow a real defect in a valid name's module — log the
+            # text so that stays diagnosable.
+            self.logger.debug(f"get_ui('{ui}') raised AttributeError: {e}")
+            found_ui = None
         if not found_ui:
             # Fallback: check submenu cache
             found_ui = self._submenu_cache.get(ui)

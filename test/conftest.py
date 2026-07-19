@@ -6,6 +6,7 @@ This module provides common test infrastructure, fixtures, and utilities
 used across all UITK test modules.
 """
 
+import os
 import sys
 import atexit
 import shutil
@@ -107,6 +108,29 @@ def _sandbox_qsettings() -> str:
 # Sandbox QSettings storage for the entire test process. See the docstring
 # for why this is import-time and not a fixture.
 QSETTINGS_SANDBOX_DIR = _sandbox_qsettings()
+
+
+def _sandbox_presets_root() -> str:
+    """Keep the test process off the real consolidated preset store.
+
+    Presets live outside QSettings — JSON files under
+    ``<GenericConfigLocation>/uitk/<pkg>/<dir>/`` (see
+    ``preset_manager.get_presets_root``) — so the QSettings sandbox above
+    doesn't cover them. Merely *constructing* a preset-enabled editor touches
+    that store (legacy migration, dir creation, and the style editor's
+    first-run activation writes an ``.active`` sidecar), so without isolation
+    a test run mutates the developer's live preset state. The root honors the
+    ``UITK_PRESETS_ROOT`` env override; point it at a throwaway temp dir for
+    the whole process. Import-time for the same reason as the QSettings
+    sandbox: it must precede the first preset-dir resolution.
+    """
+    tmp = tempfile.mkdtemp(prefix="uitk_test_presets_")
+    os.environ["UITK_PRESETS_ROOT"] = tmp
+    atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
+    return tmp
+
+
+PRESETS_SANDBOX_DIR = _sandbox_presets_root()
 
 
 def setup_qt_application():
