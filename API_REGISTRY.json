@@ -1753,7 +1753,7 @@
               "kind": "method",
               "signature": "(self, objects: Union[List[namedtuple], List[tuple], Any], **metadata) -> None",
               "summary": "Extend the registry, collecting file records from raw objects.",
-              "line": 103,
+              "line": 109,
               "deprecated": false
             }
           ]
@@ -1761,7 +1761,7 @@
         {
           "name": "RegistryManager",
           "summary": "Creates and owns named file registries.",
-          "line": 138,
+          "line": 144,
           "bases": [
             "ptk.HelpMixin",
             "ptk.LoggingMixin"
@@ -1773,7 +1773,7 @@
               "kind": "method",
               "signature": "(self, caller_info: Union[str, int, Any] = 0) -> Optional[str]",
               "summary": "Identify a base directory from a path, a caller frame index, or an object.",
-              "line": 161,
+              "line": 167,
               "deprecated": false
             },
             {
@@ -1782,7 +1782,7 @@
               "kind": "method",
               "signature": "(self, target_obj: Union[str, Any], validate: int = 0, path_type: str = 'Path', **metadata) -> Optional[str]",
               "summary": "Resolve a target object to an absolute path.",
-              "line": 204,
+              "line": 210,
               "deprecated": false
             },
             {
@@ -1791,7 +1791,7 @@
               "kind": "method",
               "signature": "(self, descriptor: str, objects: Optional[Union[str, List[str], Any]] = None, **metadata) -> FileRegistry",
               "summary": "Create a named registry and bind it as an attribute on this manager.",
-              "line": 255,
+              "line": 261,
               "deprecated": false
             },
             {
@@ -1800,7 +1800,7 @@
               "kind": "method",
               "signature": "(self, location: Union[str, Any], container_descriptor: str) -> bool",
               "summary": "Check whether a registry already holds a given file location.",
-              "line": 433,
+              "line": 439,
               "deprecated": false
             },
             {
@@ -1809,7 +1809,7 @@
               "kind": "method",
               "signature": "(self, descriptor: str) -> Optional[FileRegistry]",
               "summary": "Get a registry by name.",
-              "line": 483,
+              "line": 489,
               "deprecated": false
             },
             {
@@ -1818,7 +1818,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "List all registry descriptor names.",
-              "line": 496,
+              "line": 502,
               "deprecated": false
             },
             {
@@ -1827,7 +1827,7 @@
               "kind": "method",
               "signature": "(self, descriptor: str) -> bool",
               "summary": "Remove a registry by name.",
-              "line": 508,
+              "line": 514,
               "deprecated": false
             }
           ]

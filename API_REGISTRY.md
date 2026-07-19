@@ -416,7 +416,7 @@ Typed file registries backing Switchboard discovery.
 - **[`class FileRegistry(ptk.NamedTupleContainer)`](uitk/uitk/managers/registry_manager.py#L42)** — A named tuple container of file records.
   - `FileRegistry.file_manager(self) -> 'RegistryManager'` *(property)* — Deprecated alias for :attr:`manager`.
   - `FileRegistry.extend(self, objects: Union[List[namedtuple], List[tuple], Any], **metadata) -> None` — Extend the registry, collecting file records from raw objects.
-- **[`class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`](uitk/uitk/managers/registry_manager.py#L138)** — Creates and owns named file registries.
+- **[`class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`](uitk/uitk/managers/registry_manager.py#L144)** — Creates and owns named file registries.
   - `RegistryManager.get_base_dir(self, caller_info: Union[str, int, Any] = 0) -> Optional[str]` — Identify a base directory from a path, a caller frame index, or an object.
   - `RegistryManager.resolve_path(self, target_obj: Union[str, Any], validate: int = 0, path_type: str = 'Path', **metadata) -> Optional[str]` — Resolve a target object to an absolute path.
   - `RegistryManager.create(self, descriptor: str, objects: Optional[Union[str, List[str], Any]] = None, **metadata) -> FileRegistry` — Create a named registry and bind it as an attribute on this manager.
