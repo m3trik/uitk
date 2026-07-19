@@ -22,13 +22,13 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
                      ┌─────────────────────────────────────┐
                      │           Switchboard                │
                      │ (loader delegate + 7 partials +      │
-                     │  FileManager)                        │
+                     │  RegistryManager)                    │
                      └─────────────────────────────────────┘
                                        │
           ┌────────────────┬───────────┼─────────────┬──────────────────┐
           │                │           │             │                  │
           ▼                ▼           ▼             ▼                  ▼
-    FileManager     loaded_ui   registered_    slot_instances      sb.handlers
+    RegistryManager loaded_ui   registered_    slot_instances      sb.handlers
     ui_registry    (WeakValue)  widgets        (per-UI)            .ui  (UiHandler)
     slot_registry               registered_                         .marking_menu
     widget_registry             icons                               .<custom>
@@ -84,7 +84,8 @@ without involving Switchboard.
 
 ### Registries
 
-Built by `FileManager` in [uitk/file_manager.py](../uitk/file_manager.py). Four typed registries:
+Built by `RegistryManager` in [uitk/managers/registry_manager.py](../uitk/managers/registry_manager.py)
+(formerly `FileManager` in `uitk/file_manager.py`, which remains as a deprecated alias shim). Four typed registries:
 
 | Registry | Inclusion pattern | Fields |
 |:---|:---|:---|
@@ -93,7 +94,7 @@ Built by `FileManager` in [uitk/file_manager.py](../uitk/file_manager.py). Four 
 | `widget_registry` | `*.py` (excluding `*_ui.py`) | classname, classobj, filename, filepath |
 | `icon_registry` | `*.svg, *.png, *.jpg, *.jpeg, *.bmp, *.ico` | filename, filepath |
 
-Each accepts paths, module objects, directories (recursive or not), or class objects. The `FileContainer` abstraction extends `ptk.NamedTupleContainer` for query / filter operations.
+Each accepts paths, module objects, directories (recursive or not), or class objects. The `FileRegistry` abstraction (formerly `FileContainer`) extends `ptk.NamedTupleContainer` for query / filter operations.
 
 ### Namespace handlers
 
@@ -502,8 +503,23 @@ Both delegates read `uitk_tags` from the .ui XML directly (`extract_metadata`), 
 uitk/
 ├── __init__.py                # DEFAULT_INCLUDE + bootstrap_package
 ├── compile.py                 # .ui → hash-stamped _ui.py compiler + precompile_async + CLI
-├── file_manager.py            # typed registries
+├── file_manager.py            # deprecated shim → managers/registry_manager.py
 ├── events.py                  # EventFactoryFilter, MouseTracking
+│
+├── managers/                  # standalone services (Switchboard- and widget-consumed)
+│   ├── registry_manager.py    # RegistryManager + FileRegistry (typed registries)
+│   ├── settings_manager.py    # QSettings wrapper
+│   ├── state_manager.py       # widget state persistence
+│   ├── value_manager.py       # get/set widget value by signal
+│   ├── icon_manager.py        # theme-aware icon coloring
+│   ├── preset_manager.py      # named preset save/load
+│   ├── shortcut_manager.py    # GlobalShortcut, ShortcutManager, ShortcutMixin
+│   └── recent_values_store.py # per-widget recent-value history
+│
+├── themes/
+│   ├── style_sheet.py         # StyleSheet engine (themes + QSS template)
+│   ├── style.qss              # QSS template
+│   └── presets/               # built-in theme presets
 │
 ├── switchboard/               # orchestrator package
 │   ├── _core.py               # Switchboard class (composes the partials below)
@@ -543,16 +559,10 @@ uitk/
 │       ├── attributes.py      # set_attributes / set_flags
 │       ├── menu_mixin.py      # .menu descriptor
 │       ├── option_box_mixin.py # .option_box descriptor
-│       ├── state_manager.py   # widget state persistence
-│       ├── settings_manager.py # QSettings wrapper
-│       ├── value_manager.py   # get/set widget value by signal
-│       ├── style_sheet.py     # themes + QSS template
-│       ├── icon_manager.py    # theme-aware icon coloring
-│       ├── shortcuts.py       # GlobalShortcut, ShortcutManager, ShortcutMixin
-│       ├── preset_manager.py  # named preset save/load
 │       ├── text.py            # RichText, TextOverlay, TextTruncation
-│       ├── tooltip_mixin.py    # lazy-refreshed tooltips via event filter
-│       ├── convert.py, docking.py, size_grip.py, style.qss
+│       ├── tooltip_mixin.py   # lazy-refreshed tooltips via event filter
+│       ├── convert.py, docking.py, size_grip.py, feedback.py,
+│       ├── icon_states.py, spin_box_text_color.py, wheel_step.py
 │
 ├── icons/                     # monochrome SVGs (auto-colored)
 └── examples/

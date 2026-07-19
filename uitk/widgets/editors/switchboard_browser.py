@@ -126,7 +126,6 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
             )
             entries = [e for e in entries if e.name in allowed]
         entries.sort(key=lambda e: e.name.lower())
-        self._entries = entries
         seen: Dict[str, HandlerEntry] = {}
         for e in entries:
             if e.name in seen:
@@ -137,6 +136,11 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
                 )
             seen[e.name] = e
         self._by_name = seen
+        # One row per name (last-write-wins) so rows stay consistent with the
+        # entry_for_name dispatch used by launch/close/focus — a shadowed
+        # duplicate no longer renders a ghost row that misroutes to the other
+        # handler. Dict preserves insertion order, so rows stay sorted by name.
+        self._entries = list(seen.values())
         self.endResetModel()
 
     def _on_entries_changed(self, _handler_name: str) -> None:
@@ -1221,6 +1225,13 @@ class SwitchboardBrowser(EditorPanel):
             finally:
                 combo.blockSignals(False)
         self._settings.setValue("show_mode", self._show.currentText())
+        # The theme combo is set with signals blocked above, so its
+        # currentTextChanged->opt_theme persistence never fired. Persist it
+        # explicitly (guarded on the preset carrying a theme) so the loaded
+        # theme survives a restart like every other launch option.
+        theme_val = (data.get("launch") or {}).get("theme")
+        if theme_val is not None:
+            self._settings.setValue("opt_theme", self._cmb_theme.currentText())
 
         # Active chip filters; cleared first so the loaded set is exact.
         self._active_tag_filters = set(data.get("active_tag_filters") or [])
@@ -1476,6 +1487,9 @@ class SwitchboardBrowser(EditorPanel):
 
     def _on_chip_context_menu(self, tag: str, btn: QtWidgets.QPushButton, pos) -> None:
         menu = QtWidgets.QMenu(self)
+        # Free the menu (and its actions/lambda connections) when it closes;
+        # otherwise it lingers as a child of self for the browser's lifetime.
+        menu.setAttribute(QtCore.Qt.WA_DeleteOnClose)
         if tag in self.hidden_tags:
             act = menu.addAction(f"Unhide tag #{tag}")
             act.triggered.connect(lambda: self._toggle_hide_tag(tag, hide=False))
@@ -1502,6 +1516,9 @@ class SwitchboardBrowser(EditorPanel):
         path = idx.data(SwitchboardBrowserModel.PathRole)
 
         menu = QtWidgets.QMenu(self)
+        # Free the menu (and its actions/lambda connections) when it closes;
+        # otherwise it lingers as a child of self for the browser's lifetime.
+        menu.setAttribute(QtCore.Qt.WA_DeleteOnClose)
 
         if path and path.lower().endswith(".ui") and os.path.isfile(path):
             designer_act = menu.addAction("Open in Designer")

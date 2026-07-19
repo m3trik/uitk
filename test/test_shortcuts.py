@@ -397,6 +397,36 @@ class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
             for k in keys:
                 self.sb.settings.clear(k)
 
+    def test_ui_names_strip_host_suffix_from_branch(self):
+        # Cold-start Maya: an app-scoped override persisted under the
+        # host-namespaced branch ('mirror_maya', via _host_namespaced_branch)
+        # must surface as the REAL UI name ('mirror') so downstream
+        # get_static_shortcut_registry / loaded_ui.peek can resolve its slots.
+        # Passing the raw branch name resolves no slot class -> dead shortcut.
+        original = self.sb.context_tags
+        self.sb.context_tags = {"maya"}
+        self.assertEqual(self.sb._host_suffix(), "_maya")  # guard the premise
+        keys = [
+            "mirror_maya/shortcuts_maya.MirrorSlots.do_mirror",
+            "mirror_maya/shortcuts_maya.MirrorSlots.do_mirror.scope",
+            # migrated-user plain twin under the un-suffixed branch: must
+            # dedupe to the same 'mirror', not add a separate entry.
+            "mirror/shortcuts_maya.MirrorSlots.do_mirror",
+            # another host's overrides must be ignored by a Maya scan.
+            "other_blender/shortcuts_blender.OtherSlots.act",
+        ]
+        for k in keys:
+            self.sb.settings.setValue(k, "x")
+        try:
+            names = self.sb._ui_names_with_shortcut_overrides()
+            self.assertIn("mirror", names)  # suffix stripped -> real UI name
+            self.assertNotIn("mirror_maya", names)  # NOT the raw branch
+            self.assertNotIn("other_blender", names)  # other host ignored
+        finally:
+            for k in keys:
+                self.sb.settings.clear(k)
+            self.sb.context_tags = original
+
     def test_scan_creates_standin_only_for_app_scoped_unbound_unbuilt(self):
         from unittest import mock
 
@@ -822,6 +852,50 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
         # A no-op removal (key absent) must not notify.
         self.assertFalse(mgr.remove_shortcut("Space"))
         self.assertEqual(len(calls), 2)
+
+
+class TestShortcutManagerOverwriteDispose(QtBaseTestCase):
+    """Re-adding a binding on an already-registered key must dispose the old
+    shortcut, not orphan it.
+
+    Regression: ``add_shortcut`` / ``add_global_shortcut`` overwrote the
+    ``self.shortcuts[key]`` entry without tearing down the previous shortcut.
+    The old QShortcut stayed enabled + parented to the widget, so Qt logged an
+    ambiguous-overload and fired NEITHER handler, and the orphaned object was
+    unreachable from ``self.shortcuts`` (never cleared -> leak).
+    """
+
+    def test_add_shortcut_overwrite_disposes_previous(self):
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        host = self.track_widget(QtWidgets.QWidget())
+        mgr = ShortcutManager(host)
+
+        first = mgr.add_shortcut("Ctrl+G", lambda: None)
+        second = mgr.add_shortcut("Ctrl+G", lambda: None)
+
+        self.assertIsNot(first, second)
+        # Old shortcut was disabled by _dispose (inert immediately) ...
+        self.assertFalse(first.isEnabled())
+        # ... and the registry now points only at the replacement.
+        self.assertIs(mgr.shortcuts["Ctrl+G"]["shortcut"], second)
+
+    def test_add_global_shortcut_overwrite_disposes_previous(self):
+        from uitk.managers.shortcut_manager import ShortcutManager, GlobalShortcut
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        mgr = ShortcutManager(host)
+
+        first = mgr.add_global_shortcut("Ctrl+Alt+Shift+F9")
+        self.assertIn(first, GlobalShortcut._instances)
+
+        second = mgr.add_global_shortcut("Ctrl+Alt+Shift+F9")
+        # Overwrite disposes the old GlobalShortcut (drops the static _instances
+        # ref + event filter) and keeps only the replacement registered.
+        self.assertNotIn(first, GlobalShortcut._instances)
+        self.assertIn(second, GlobalShortcut._instances)
+        self.assertIs(mgr.shortcuts["Ctrl+Alt+Shift+F9"]["shortcut"], second)
 
 
 class TestShortcutManagerRegistry(QtBaseTestCase):

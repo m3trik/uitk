@@ -1169,10 +1169,20 @@ class SwitchboardShortcutMixin:
         store, not a UI.
         """
         prefix = self._shortcut_ns()
+        suffix = self._host_suffix()
         names = set()
         for key in self.settings.keys():
             head, sep, tail = key.partition("/")
             if sep and head != "commands" and tail.startswith(prefix):
+                # ``head`` is the per-panel settings BRANCH, host-namespaced via
+                # ``_host_namespaced_branch`` (``mirror`` -> ``mirror_maya``).
+                # Invert it so the real UI name reaches ``get_static_shortcut_registry``
+                # / ``loaded_ui.peek`` — else the branch name resolves no slot
+                # class and the app-scoped standin never binds. Dedupes cleanly
+                # with any migrated-user plain twin (``mirror`` and ``mirror_maya``
+                # both collapse to ``mirror``).
+                if suffix and head.endswith(suffix):
+                    head = head[: -len(suffix)]
                 names.add(head)
         return names
 

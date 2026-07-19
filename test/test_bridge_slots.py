@@ -241,5 +241,155 @@ class TestRequireOutputDir(BaseTestCase):
         self.assertEqual(s.require_output_dir(), "")
 
 
+class LogLinkDispatchTest(unittest.TestCase):
+    """The dependency-inverted log-panel link registry.
+
+    uitk handles ``action://open`` itself and delegates node actions
+    (``select`` / ``reveal``) to handlers the DCC packages register — so uitk
+    never imports mayatk/blendertk. Exercises the real
+    ``BridgeSlotsBase._on_log_link_clicked`` against a minimal fake ``self``.
+    """
+
+    def setUp(self):
+        from uitk.bridge.slots import _LOG_LINK_HANDLERS
+
+        self._registry = _LOG_LINK_HANDLERS
+        self._saved = list(_LOG_LINK_HANDLERS)
+        _LOG_LINK_HANDLERS.clear()
+
+    def tearDown(self):
+        self._registry[:] = self._saved
+
+    @staticmethod
+    def _fake_slots():
+        import logging
+        import types
+
+        return types.SimpleNamespace(
+            bridge=types.SimpleNamespace(logger=logging.getLogger("test_log_link"))
+        )
+
+    @staticmethod
+    def _dispatch(url_str):
+        from qtpy.QtCore import QUrl
+
+        BridgeSlotsBase._on_log_link_clicked(
+            LogLinkDispatchTest._fake_slots(), QUrl(url_str)
+        )
+
+    def test_register_is_idempotent(self):
+        from uitk.bridge.slots import register_log_link_handler
+
+        def handler(url, logger):
+            return True
+
+        register_log_link_handler(handler)
+        register_log_link_handler(handler)
+        self.assertEqual(self._registry.count(handler), 1)
+
+    def test_public_reexport(self):
+        from uitk.bridge import register_log_link_handler as reexported
+        from uitk.bridge.slots import register_log_link_handler as canonical
+
+        self.assertIs(reexported, canonical)
+
+    def test_registered_handler_receives_non_open_action(self):
+        from uitk.bridge.slots import register_log_link_handler
+
+        seen = []
+
+        def handler(url, logger):
+            seen.append(url.host())
+            return True
+
+        register_log_link_handler(handler)
+        self._dispatch("action://select?node=pCube1")
+        self.assertEqual(seen, ["select"])
+
+    def test_first_handler_to_report_handled_short_circuits(self):
+        from uitk.bridge.slots import register_log_link_handler
+
+        order = []
+        register_log_link_handler(lambda u, l: (order.append("a"), True)[1])
+        register_log_link_handler(lambda u, l: (order.append("b"), True)[1])
+        self._dispatch("action://reveal?node=x")
+        self.assertEqual(order, ["a"])  # 'b' never tried once 'a' handled it
+
+    def test_handler_returning_false_falls_through(self):
+        from uitk.bridge.slots import register_log_link_handler
+
+        order = []
+        register_log_link_handler(lambda u, l: (order.append("a"), False)[1])
+        register_log_link_handler(lambda u, l: (order.append("b"), True)[1])
+        self._dispatch("action://select?node=x")
+        self.assertEqual(order, ["a", "b"])
+
+    def test_raising_handler_does_not_shadow_the_next(self):
+        from uitk.bridge.slots import register_log_link_handler
+
+        order = []
+
+        def boom(url, logger):
+            order.append("boom")
+            raise RuntimeError("handler blew up")
+
+        register_log_link_handler(boom)
+        register_log_link_handler(lambda u, l: (order.append("ok"), True)[1])
+        self._dispatch("action://select?node=x")  # must not raise
+        self.assertEqual(order, ["boom", "ok"])
+
+    def test_open_action_never_reaches_handlers(self):
+        from uitk.bridge.slots import register_log_link_handler
+
+        reached = []
+        register_log_link_handler(lambda u, l: (reached.append(1), True)[1])
+        self._dispatch("action://open?path=")  # empty path → internal no-op
+        self.assertEqual(reached, [])
+
+    def test_empty_registry_no_ops(self):
+        # No DCC registered (standalone app): a node action is silently ignored.
+        self._dispatch("action://select?node=x")  # no handler, no exception
+
+
+class TestPathWidgetPresetPersistence(BaseTestCase):
+    """A ``path``-kind widget's inner QLineEdit must be name-keyed so it
+    survives widget-state presets.
+
+    The DCC bridges snapshot the value-bearing child, substituting the
+    container's ``_line_edit`` into the managed set
+    (``[getattr(w, "_line_edit", w) for w in ...]``). ``_capture_values`` /
+    ``load`` skip empty-objectName widgets, so before the fix the inner edit
+    (objectName "") was silently dropped -- a saved path came back empty.
+    """
+
+    def test_path_inner_edit_has_objectname(self):
+        # The fix: make_widget's path container names its inner edit.
+        w = make_widget(AttributeSpec(key="render_output", kind="path"))
+        self.assertEqual(w._line_edit.objectName(), "render_output")
+
+    def test_path_value_round_trips_through_widget_state_preset(self):
+        tmp = Path(tempfile.mkdtemp(prefix="bridge_path_preset_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+
+        container = make_widget(AttributeSpec(key="render_output", kind="path"))
+        set_value(container, "C:/renders/hero.png")
+
+        # Mirror _build_preset_controls' widget-state managed set: the inner
+        # edit stands in for the composite path container.
+        managed = [getattr(container, "_line_edit", container)]
+        mgr = PresetManager.from_widgets(preset_dir=tmp / "user", widgets=managed)
+        mgr.save("hero")
+
+        # The path actually reached disk (before the fix the key was absent).
+        saved = json.loads((tmp / "user" / "hero.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved.get("render_output"), "C:/renders/hero.png")
+
+        # And it restores after the field is cleared.
+        set_value(container, "")
+        self.assertEqual(read_value(container), "")
+        mgr.load("hero")
+        self.assertEqual(read_value(container), "C:/renders/hero.png")
+
+
 if __name__ == "__main__":
     unittest.main()

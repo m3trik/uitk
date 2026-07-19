@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 from conftest import QtBaseTestCase
 from uitk.switchboard import Switchboard
-from uitk.file_manager import FileManager
 
 
 class TestSwitchboardSources(QtBaseTestCase):
@@ -106,7 +105,7 @@ class TestSwitchboardSources(QtBaseTestCase):
 
         sb = Switchboard(ui_source=[self.test_dir, mod], base_dir=None)
         # It should process both. Since they point to same dir, we might get dupes
-        # FileContainer logic might handle duplicates if configured,
+        # FileRegistry logic might handle duplicates if configured,
         # but here we just check it doesn't crash
         self.assertTrue(len(sb.registry.ui_registry) >= 1)
 

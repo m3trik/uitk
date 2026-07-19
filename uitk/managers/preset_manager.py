@@ -149,6 +149,10 @@ class PresetManager(ptk.LoggingMixin):
         # dynamically inside the closure so the attribute always exists.
         self._pending_preset_action: Optional[str] = None
 
+        # Repopulate-closure of the wired combo (set by ``wire_combo``);
+        # exposed publicly via :meth:`refresh_combo`.
+        self._refresh_combo: Optional[Callable] = None
+
         # Active-preset / modified tracking. ``_active_snapshot`` is the stored
         # value dict (minus ``_meta``) of the active preset, captured on load
         # (or when ``active_preset`` is assigned for a session restore), and is
@@ -515,13 +519,7 @@ class PresetManager(ptk.LoggingMixin):
         baseline + marker are refreshed.
         """
         active = self._store.active
-        if not active:
-            self._active_snapshot = None
-        else:
-            try:
-                self._active_snapshot = self._strip_meta(self._store.load(active))
-            except (KeyError, ValueError, OSError):
-                self._active_snapshot = None
+        self._active_snapshot = self.read(active) if active else None
         self.refresh_modified_state()
 
     def is_modified(self) -> bool:
@@ -899,6 +897,33 @@ class PresetManager(ptk.LoggingMixin):
         """Check whether a named preset exists in either tier."""
         return self._store.exists(name)
 
+    def read(self, name: str) -> Optional[Dict[str, Any]]:
+        """Return preset *name*'s stored values WITHOUT applying them.
+
+        The peek counterpart of :meth:`load`: same tier resolution (user
+        shadows built-in), ``_meta`` stripped, but no widget/applier side
+        effects and no active-preset bookkeeping. ``None`` when the preset
+        is absent or unreadable. Lets an owner inspect the active preset at
+        startup (e.g. which base theme a style preset targets) without
+        triggering a full value re-apply.
+        """
+        try:
+            return self._strip_meta(self._store.load(name))
+        except (KeyError, ValueError, OSError):
+            return None
+
+    def refresh_combo(self, select_name: Optional[str] = None) -> None:
+        """Repopulate the wired preset combo from disk (no-op when none).
+
+        Public handle on :meth:`wire_combo`'s internal *refresh* closure so
+        owners that change the store outside the combo's own toolbar (e.g.
+        assigning :attr:`active_preset` programmatically at startup) can
+        bring the display back in sync. Selection follows *select_name*,
+        defaulting to the persisted active preset. Values are never applied.
+        """
+        if self._refresh_combo is not None:
+            self._refresh_combo(select_name)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -1072,6 +1097,7 @@ class PresetManager(ptk.LoggingMixin):
         name: Optional[str] = None,
         tooltip: Optional[str] = None,
         on_loaded: Optional[Callable[[], None]] = None,
+        placeholder: Optional[str] = None,
     ) -> "QtWidgets.QWidget":
         """Create a fully-wired preset selector and return its layout container.
 
@@ -1088,6 +1114,7 @@ class PresetManager(ptk.LoggingMixin):
             name: ``objectName`` for the combo (default :attr:`PRESET_COMBO_NAME`).
             tooltip: Combo tooltip (default :attr:`PRESET_COMBO_TOOLTIP`).
             on_loaded: Forwarded to :meth:`wire_combo`.
+            placeholder: Forwarded to :meth:`wire_combo` (no-selection text).
 
         Returns:
             The ``OptionBoxContainer`` holding the combo and its toolbar.
@@ -1100,14 +1127,14 @@ class PresetManager(ptk.LoggingMixin):
         combo.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
         )
-        container = self.wire_combo(combo, on_loaded=on_loaded)
+        container = self.wire_combo(combo, on_loaded=on_loaded, placeholder=placeholder)
         # Stash the combo on the container so callers don't have to dig through
         # the option-box layout to reach it.
         if container is not None:
             container.preset_combo = combo
         return container
 
-    def wire_combo(self, combo, on_loaded=None):
+    def wire_combo(self, combo, on_loaded=None, placeholder=None):
         """Wire a uitk ``ComboBox`` as a fully-functional preset selector.
 
         Builds the canonical preset template: the combo's :attr:`option_box`
@@ -1149,6 +1176,9 @@ class PresetManager(ptk.LoggingMixin):
             on_loaded: Optional callable invoked (with no arguments) after
                 a preset is successfully loaded.  When omitted, widget
                 signals are left unblocked so slot handlers fire naturally.
+            placeholder: Text shown when no preset is selected (default
+                ``"Presets…"``). Lets an owner rebrand the selector — e.g.
+                the style editor's ``"Themes…"``.
 
         Returns:
             The :attr:`option_box` container (combo + toolbar). Place this in
@@ -1157,6 +1187,7 @@ class PresetManager(ptk.LoggingMixin):
             ignored.
         """
         mgr = self
+        placeholder = placeholder or "Presets…"
 
         def mark_builtins(names):
             """Italicise read-only built-in presets (+ a read-only tooltip).
@@ -1211,7 +1242,7 @@ class PresetManager(ptk.LoggingMixin):
                     # findText -> -1 when the (stale) name is gone, which falls
                     # through to the placeholder rather than a silent item-0.
                     combo.setCurrentIndex(combo.findText(select_name) if select_name else -1)
-                    combo.setPlaceholderText("Presets…")
+                    combo.setPlaceholderText(placeholder)
                 else:
                     combo.setCurrentIndex(-1)
                     combo.setPlaceholderText("No saved presets")
@@ -1431,8 +1462,20 @@ class PresetManager(ptk.LoggingMixin):
 
 
 def _is_serializable(value: Any) -> bool:
-    """Check if a value can be safely serialized to JSON."""
-    return isinstance(value, (int, float, str, bool, list, dict, tuple))
+    """Check if a value can be safely serialized to JSON.
+
+    Attempts a real ``json.dumps`` rather than a shallow top-level type check,
+    so a container holding a nested non-serializable element (e.g. a set or
+    ``Path`` inside a dict/list) is correctly rejected. This keeps the capture
+    gate consistent with the write path — ``PresetStore``'s JSON codec dumps
+    with no ``default=str`` fallback, so a value that passes here must actually
+    survive ``json.dumps`` or ``save()`` would raise an uncaught ``TypeError``.
+    """
+    try:
+        json.dumps(value)
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def QStandardPaths_writableLocation() -> str:

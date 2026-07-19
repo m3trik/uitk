@@ -3,7 +3,7 @@ QWidget {
     background-color: transparent;
     border: none;
 }
-/* Suppress Qt's native blue focus rectangle on inputs â€” without this,
+/* Suppress Qt's native blue focus rectangle on inputs — without this,
    the focus indicator lingers visibly when the cursor leaves a focused
    widget (e.g., a combobox that was clicked into and out of). */
 QLineEdit, QComboBox, QTextEdit, QPlainTextEdit, QAbstractSpinBox,
@@ -278,7 +278,7 @@ QPushButton[class~="PinButton"]::menu-indicator {
     background: transparent;
 }
 
-/* Option-box buttons â€” keep icon centered inside the 19x19 button.
+/* Option-box buttons — keep icon centered inside the 19x19 button.
    Class-based selectors survive _assign_option_object_name's rename. */
 QPushButton[class~="ActionButton"],
 QPushButton[class~="BrowseButton"],
@@ -629,8 +629,8 @@ QPlainTextEdit:disabled {
 /* -- Item Views --
    Default: standard blue selection fill (matches the theme's BUTTON_HOVER
    so it reads as the canonical "active" accent) and a white-tint hover.
-   Editors whose cells carry colour-coded backgrounds â€” color swatches,
-   tag chips, status palettes â€” can opt out by installing
+   Editors whose cells carry colour-coded backgrounds — color swatches,
+   tag chips, status palettes — can opt out by installing
    RowSelectionBorderDelegate, which mutes ``State_Selected`` and draws a
    row-spanning border so the cell colour bleeds through underneath. */
 QAbstractItemView {
@@ -706,7 +706,7 @@ QTableCornerButton::section {
     border: none;
 }
 
-/* Default QTableWidget â€” solid base background like TreeWidget, standard
+/* Default QTableWidget — solid base background like TreeWidget, standard
    blue selection fill, and a white-tint hover. More specific than the
    QAbstractItemView rules above, so it overrides without affecting other
    item views. Editors that want the row-spanning outline style (with
@@ -722,7 +722,11 @@ QTableWidget {
     outline: 0;
 }
 QTableWidget::item {
-    padding: 2px 5px;
+    /* Horizontal-only padding: Qt places cell widgets (setCellWidget) in the
+       item's padded content rect, so vertical padding here shrinks the rect
+       handed to embedded editors (swatches, spin boxes) and clips them
+       against a fixed row height. Text stays vertically centered without it. */
+    padding: 0px 5px;
     border: {BORDER_W} solid transparent;
 }
 QTableWidget::item:hover:!selected {
@@ -833,7 +837,7 @@ QAbstractSlider::handle {
     margin-top: -6px;
     margin-bottom: -6px;
     border: {BORDER_W} solid {BORDER_COLOR};
-    /* Literal 1px: handle is width:10px by design â€” {RADIUS} > 5 distorts it. */
+    /* Literal 1px: handle is width:10px by design — {RADIUS} > 5 distorts it. */
     border-radius: 1px;
     /* A hair brighter than the panel so the knob reads as grabbable. */
     background-color: {PANEL_BACKGROUND_TINT};
@@ -1171,7 +1175,7 @@ Header > QPushButton#hdr_hide:hover {
     background-color: red;
     border: none;
 }
-/* Footer widgets â€” transparent when footerWidget="true", normal otherwise */
+/* Footer widgets — transparent when footerWidget="true", normal otherwise */
 [footerWidget="true"] {
     background-color: transparent;
     border: none;

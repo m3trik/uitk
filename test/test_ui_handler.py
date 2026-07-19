@@ -383,5 +383,83 @@ class TestUiHandlerGetSignature(unittest.TestCase):
         self.assertIs(handler.get("polygons", reload=True, frameless=True), sentinel)
 
 
+class _FakeScreen:
+    """Stand-in for QScreen exposing only ``availableGeometry()``.
+
+    Models a primary screen whose available origin is non-zero — the shape
+    produced by a top- or left-docked Windows taskbar.
+    """
+
+    def __init__(self, geo):
+        self._geo = geo
+
+    def availableGeometry(self):
+        return self._geo
+
+
+class _FakePositionWin:
+    """Minimal window double for ``_position_window`` — records ``move()``.
+
+    Avoids a real top-level QWidget (whose frame geometry / window-manager
+    placement would perturb the moved position) so the test can assert the
+    exact target point the branch computes.
+    """
+
+    def __init__(self, size):
+        from qtpy import QtCore
+
+        self._rect = QtCore.QRect(0, 0, size[0], size[1])
+        self.moved = None
+
+    def layout(self):
+        return None
+
+    def rect(self):
+        return self._rect
+
+    def parentWidget(self):
+        return None
+
+    def isWindow(self):
+        return True
+
+    def move(self, point):
+        self.moved = point
+
+
+class TestPositionWindowScreen(unittest.TestCase):
+    """``_position_window(ui, "screen")`` centers on the available geometry.
+
+    Regression: the branch added ``screen_geo.topLeft()`` on top of the
+    already-global ``center() - rect().center()`` offset, double-counting a
+    non-zero available origin (e.g. a top-docked taskbar) and pushing the
+    window off-center by exactly that origin. Must match ``center_widget``.
+    """
+
+    def test_non_zero_available_origin_not_double_added(self):
+        from unittest import mock
+        from qtpy import QtCore, QtWidgets
+
+        # Available origin offset down 48px, as with a top-docked taskbar.
+        screen_geo = QtCore.QRect(0, 48, 1920, 1032)
+        screen = _FakeScreen(screen_geo)
+        win = _FakePositionWin((200, 100))
+
+        handler = object.__new__(UiHandler)
+        with mock.patch.object(
+            QtWidgets.QApplication, "primaryScreen", lambda: screen
+        ):
+            handler._position_window(win, "screen")
+
+        expected = screen_geo.center() - win.rect().center()
+        self.assertEqual(win.moved, expected)
+
+        # The pre-fix double-add would have shifted the target down by the
+        # full available origin (48px); assert we did NOT land there.
+        buggy = screen_geo.topLeft() + expected
+        self.assertNotEqual(win.moved, buggy)
+        self.assertEqual(win.moved.y(), expected.y())
+
+
 if __name__ == "__main__":
     unittest.main()

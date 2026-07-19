@@ -371,6 +371,13 @@ class ShortcutManager:
 
         # Store for potential cleanup or reference
         shortcut_key = sequence.toString()
+        # Overwriting an existing same-sequence binding must dispose the old
+        # QShortcut first; otherwise it stays enabled+parented to self.widget
+        # (Qt then logs an ambiguous-overload and fires NEITHER) and is orphaned
+        # out of self.shortcuts where it can never be removed/cleared.
+        prev = self.shortcuts.get(shortcut_key)
+        if prev is not None:
+            self._dispose(prev.get("shortcut"))
         self.shortcuts[shortcut_key] = {
             "shortcut": shortcut,
             "action": action,
@@ -439,6 +446,12 @@ class ShortcutManager:
             shortcut.released.connect(on_release)
 
         shortcut_key = shortcut._key_sequence.toString()
+        # Same overwrite discipline as add_shortcut: dispose any prior binding on
+        # this sequence (GlobalShortcut._dispose also drops its static _instances
+        # ref + event filter) before replacing it, else it leaks and ambiguates.
+        prev = self.shortcuts.get(shortcut_key)
+        if prev is not None:
+            self._dispose(prev.get("shortcut"))
         self.shortcuts[shortcut_key] = {
             "shortcut": shortcut,
             "description": description,

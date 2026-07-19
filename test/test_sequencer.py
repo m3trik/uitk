@@ -548,6 +548,27 @@ class TestAttributeColors(BaseTestCase):
         resolved = item._resolve_color()
         self.assertEqual(resolved.name(), "#ddeeff")
 
+    def test_set_attribute_color_updates_map_and_repaints(self):
+        """set_attribute_color mutates a single entry and triggers a repaint.
+
+        Regression: the ``attribute_colors`` getter returns the live dict,
+        so in-place mutation silently bypasses the scene repaint the setter
+        performs.  ``set_attribute_color`` provides a repainting single-entry
+        mutator and is reflected by ``_resolve_color``.
+        """
+        tid = self.w.add_track("Obj")
+        cid = self.w.add_clip(tid, 0, 10, attributes=["translateX"])
+        item = self.w._clip_items[cid]
+
+        updated = {}
+        self.w._timeline._scene.update = lambda *a, **k: updated.setdefault("hit", True)
+
+        self.w.set_attribute_color("translateX", "#123456")
+
+        self.assertTrue(updated.get("hit"), "scene.update was not called")
+        self.assertEqual(self.w.attribute_colors["translateX"], "#123456")
+        self.assertEqual(item._resolve_color().name(), "#123456")
+
 
 class TestAttributeColorDialog(BaseTestCase):
     """Tests for the AttributeColorDialog UI."""

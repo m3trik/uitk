@@ -1280,5 +1280,148 @@ class EntryFilterStructural(QtBaseTestCase):
         )
 
 
+class DuplicateNameCollisionRendersOneRow(BrowserBase):
+    """Regression: two entries sharing a name (e.g. a .ui and an external app
+    both named 'foo') from different handlers must render exactly ONE row —
+    the last-write-wins entry that launch/close/focus dispatch to via
+    entry_for_name. Previously ``_entries`` kept every duplicate, so a
+    shadowed ghost row rendered and its Launch/Close/Focus buttons operated
+    on the OTHER handler's entry.
+    """
+
+    class _StubHandler:
+        def __init__(self, label):
+            self.label = label
+
+        def is_visible(self, name):
+            return False
+
+        def entries(self):
+            return []
+
+    def _dup_entries(self):
+        from uitk.handlers.handler_entry import HandlerEntry
+
+        return [
+            HandlerEntry(name="dup", kind="ui_file", handler=self._StubHandler("a")),
+            HandlerEntry(
+                name="dup",
+                kind="external_subprocess",
+                handler=self._StubHandler("b"),
+            ),
+        ]
+
+    def test_duplicate_name_renders_single_row(self):
+        entries = self._dup_entries()
+        model = self.browser._model
+        orig = self.sb.iter_handler_entries
+        self.sb.iter_handler_entries = lambda: iter(entries)
+        try:
+            model._refresh()
+            self.assertEqual(model.rowCount(), 1)
+            self.assertEqual(model._names, ["dup"])
+        finally:
+            self.sb.iter_handler_entries = orig
+            model._refresh()
+
+    def test_rendered_row_is_the_dispatch_target(self):
+        entries = self._dup_entries()
+        model = self.browser._model
+        orig = self.sb.iter_handler_entries
+        self.sb.iter_handler_entries = lambda: iter(entries)
+        try:
+            model._refresh()
+            rendered = model._entries[0]
+            dispatched = model.entry_for_name("dup")
+            # The single rendered row IS the entry launch/close/focus resolve
+            # to (the last-registered handler wins) — no misrouting ghost row.
+            self.assertIs(rendered, dispatched)
+            self.assertIs(dispatched.handler, entries[1].handler)
+        finally:
+            self.sb.iter_handler_entries = orig
+            model._refresh()
+
+
+class ImportPresetPersistsTheme(BrowserBase):
+    """Regression: importing a preset that carries a launch.theme must persist
+    ``opt_theme`` to settings. The theme combo is set with signals blocked, so
+    its currentTextChanged->opt_theme persistence never fired and the theme
+    silently reverted on the next restart (every other launch option survived).
+    """
+
+    def test_import_preset_writes_opt_theme(self):
+        combo = self.browser._cmb_theme
+        current = combo.currentText()
+        other = next(
+            (
+                combo.itemText(i)
+                for i in range(combo.count())
+                if combo.itemText(i) != current
+            ),
+            None,
+        )
+        self.assertIsNotNone(other, "need at least two registered themes")
+
+        self.browser._import_preset_data({"launch": {"theme": other}})
+
+        self.assertEqual(combo.currentText(), other)
+        self.assertEqual(self.browser._settings.value("opt_theme"), other)
+
+    def test_import_preset_without_theme_leaves_opt_theme_unset(self):
+        # A preset that omits launch.theme must not write opt_theme.
+        self.browser._import_preset_data({"search": {"text": "expo"}})
+        self.assertIsNone(self.browser._settings.value("opt_theme"))
+
+
+class ContextMenusFreedOnClose(BrowserBase):
+    """Regression: right-click context menus were parented to the browser and
+    never freed, accumulating one orphan QMenu (plus its actions/lambda
+    connections) per right-click for the browser's lifetime. Each menu must now
+    carry WA_DeleteOnClose so it is scheduled for deletion when it closes.
+    """
+
+    def _recording_menu_cls(self, sink):
+        class _RecordingMenu(QtWidgets.QMenu):
+            def exec_(self_inner, *a, **k):  # noqa: N805
+                sink.append(self_inner)
+                return None
+
+        return _RecordingMenu
+
+    def test_chip_context_menu_sets_delete_on_close(self):
+        import uitk.widgets.editors.switchboard_browser as mod
+
+        created = []
+        orig = mod.QtWidgets.QMenu
+        mod.QtWidgets.QMenu = self._recording_menu_cls(created)
+        try:
+            btn = QtWidgets.QPushButton()
+            self.browser._on_chip_context_menu("rig", btn, QtCore.QPoint(0, 0))
+        finally:
+            mod.QtWidgets.QMenu = orig
+        self.assertEqual(len(created), 1)
+        self.assertTrue(created[0].testAttribute(QtCore.Qt.WA_DeleteOnClose))
+
+    def test_row_context_menu_sets_delete_on_close(self):
+        import uitk.widgets.editors.switchboard_browser as mod
+
+        view = self.browser._view
+        idx = view.model().index(0, 0)
+        self.assertTrue(idx.isValid(), "need at least one visible row")
+
+        created = []
+        orig_menu = mod.QtWidgets.QMenu
+        orig_index_at = view.indexAt
+        mod.QtWidgets.QMenu = self._recording_menu_cls(created)
+        view.indexAt = lambda pos: idx
+        try:
+            self.browser._on_row_context_menu(QtCore.QPoint(1, 1))
+        finally:
+            mod.QtWidgets.QMenu = orig_menu
+            view.indexAt = orig_index_at
+        self.assertEqual(len(created), 1)
+        self.assertTrue(created[0].testAttribute(QtCore.Qt.WA_DeleteOnClose))
+
+
 if __name__ == "__main__":
     unittest.main()

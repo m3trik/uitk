@@ -90,6 +90,28 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
         result = self.ui.txt_input.call_slot()
         self.assertIsNone(result)
 
+    def test_get_slot_error_branch_uses_instance_class_name(self):
+        """get_slot's ``except Exception`` branch must log the raised error
+        and return None -- not raise AttributeError from ``slot_class.__name__``
+        on an *instance* (slot_class is a slots instance, so ``.__name__`` does
+        not exist). Regression for slots.py get_slot error handler.
+        """
+
+        class _Boom:
+            @property
+            def boom(self):  # attribute access raises a non-AttributeError
+                raise RuntimeError("touched a torn-down Qt object")
+
+        instance = _Boom()
+
+        # No-widget branch: must return None, not raise AttributeError.
+        self.assertIsNone(self.sb.get_slot(instance, "boom"))
+
+        # Widget branch (needs widget.ui.objectName()): same contract.
+        self.assertIsNone(
+            self.sb.get_slot(instance, "boom", widget=self.ui.button_a)
+        )
+
 
 class TestSlotWrapperSignatureCache(QtBaseTestCase):
     """The signature cache must key on the function, not id() of a bound method.
@@ -1787,13 +1809,13 @@ class TestLoggerHandlerSyncPerformance(unittest.TestCase):
             )
 
 
-class TestSlotWrapperSignatureCache(QtBaseTestCase):
+class TestSlotWrapperSignatureCachePerf(QtBaseTestCase):
     """Regression: SlotWrapper must cache inspect.signature per slot function.
 
     Bug: inspect.signature() was called in every SlotWrapper.__init__, which
     runs for every widget×signal connection. For the same slot function connected
     to multiple widgets, the signature is identical.
-    Fix: Cache by slot function id in a class-level dict.
+    Fix: Cache by slot function object in a class-level WeakKeyDictionary.
     Fixed: 2026-03-01
     """
 
@@ -2359,6 +2381,35 @@ class TestExplicitSlotBinding(QtBaseTestCase):
         # More than one class: the fallback can't disambiguate even when allowed.
         self.assertIsNone(
             sb._find_slots_class("nomatch", allow_sole_fallback=True)
+        )
+
+
+class TestNoDuplicateTopLevelDefinitions(unittest.TestCase):
+    """Regression: no top-level class/function may shadow an earlier same-named def.
+
+    Bug: a second ``class TestSlotWrapperSignatureCache`` (perf-focused) shadowed
+    the earlier cache-correctness class at module scope (F811), so the first
+    class's tests silently never ran. Guard the whole module against any repeat
+    of that shadowing.
+    """
+
+    def test_module_has_no_duplicate_top_level_names(self):
+        import ast
+        from collections import Counter
+
+        with open(__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=__file__)
+
+        names = [
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        dupes = [name for name, count in Counter(names).items() if count > 1]
+        self.assertEqual(
+            dupes,
+            [],
+            f"Duplicate top-level definitions shadow earlier ones (F811): {dupes}",
         )
 
 

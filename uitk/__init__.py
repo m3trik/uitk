@@ -29,10 +29,10 @@ Key Modules:
     switchboard: Dynamic UI loader and event handler (also home of the
         ``Signals`` slot-annotation decorator, in ``switchboard.slots``)
     events: Event filters and mouse tracking utilities
-    file_manager: File and path management utilities
     widgets: Enhanced Qt widget classes with mixins
     managers: Standalone services (settings, state, values, presets,
-        icons, shortcuts) consumed compositionally across the package
+        icons, shortcuts, file registries) consumed compositionally
+        across the package
     themes: QSS-based theming — the ``StyleSheet`` engine + ``style.qss``
 
 Attributes:
@@ -57,6 +57,8 @@ DEFAULT_INCLUDE = {
     "switchboard.slots": ["Signals", "SlotWrapper"],
     "switchboard.shortcuts": "Shortcut",
     "events": ["EventFactoryFilter", "MouseTracking"],
+    # Deprecated aliases for the registry classes (moved to
+    # uitk.managers.registry_manager); resolving them warns via the shim.
     "file_manager": ["FileContainer", "FileManager"],
     "compile": ["compile_ui", "ensure_compiled", "is_compiled_fresh", "precompile_async"],
     "loaders": ["CompiledLoader", "RuntimeLoader"],
@@ -172,6 +174,7 @@ DEFAULT_INCLUDE = {
     "managers.icon_manager": "IconManager",
     "managers.preset_manager": "PresetManager",
     "managers.recent_values_store": "RecentValuesStore",
+    "managers.registry_manager": ["FileRegistry", "RegistryManager"],
     "managers.settings_manager": "SettingsManager",
     "managers.shortcut_manager": "ShortcutManager",
     "managers.state_manager": "StateManager",

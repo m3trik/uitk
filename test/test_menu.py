@@ -2356,6 +2356,74 @@ class TestMenuHideEventFocusRestore(QtBaseTestCase):
         activate_spy.assert_called_once()
 
 
+class TestMenuGetItemByTextNonTextWidget(QtBaseTestCase):
+    """Regression: get_item(str) must not crash on items lacking a .text().
+
+    Bug: the by-text branch of get_item called i.text() directly. Many menu
+    item types have no text() method (QComboBox -> currentText(), QSlider,
+    QDial, QProgressBar, plain QWidget), so iterating past one raised
+    AttributeError before the intended label was ever reached. The fix routes
+    each item through the guarded get_item_text() helper instead.
+    """
+
+    def test_get_item_by_text_skips_non_text_widget(self):
+        menu = self.track_widget(Menu())
+        menu.add("QComboBox")  # has currentText(), NOT text()
+        label = menu.add("QLabel", setText="Foo")
+        # The combo is reached first; a bare i.text() would AttributeError here.
+        self.assertIs(menu.get_item("Foo"), label)
+
+    def test_get_item_by_text_still_raises_for_unknown(self):
+        menu = self.track_widget(Menu())
+        menu.add("QComboBox")
+        menu.add("QLabel", setText="Foo")
+        with self.assertRaises(ValueError):
+            menu.get_item("Nonexistent")
+
+
+class TestMenuClearEmptyPlaceholder(QtBaseTestCase):
+    """Regression: clear() must tear down the empty-state placeholder + timer.
+
+    Bug: clear()'s reverse-delete loop deleteLater()'d the placeholder label
+    but never reset self._empty_placeholder or stopped self._empty_timer.
+    Consequences: (1) the next empty show no-op'd because _add_empty_placeholder
+    early-returns on a non-None placeholder, and (2) _empty_timer later fired
+    _on_empty_timeout -> _remove_empty_placeholder() on an already-destroyed
+    C++ label, raising RuntimeError from the timer callback.
+    """
+
+    def test_clear_resets_empty_placeholder(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        menu.clear()
+        self.assertIsNone(menu._empty_placeholder)
+        menu.hide()
+
+    def test_clear_stops_empty_timer(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=5000))
+        menu.show()
+        self.assertIsNotNone(menu._empty_timer)
+        self.assertTrue(menu._empty_timer.isActive())
+        menu.clear()
+        self.assertFalse(menu._empty_timer.isActive())
+        menu.hide()
+
+    def test_empty_placeholder_reappears_after_clear(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        menu.clear()
+        menu.hide()
+        # A second empty show must produce a live placeholder in the grid; with
+        # the stale reference _add_empty_placeholder would early-return.
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        self.assertIs(
+            menu.gridLayout.itemAt(0).widget(), menu._empty_placeholder
+        )
+        menu.hide()
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

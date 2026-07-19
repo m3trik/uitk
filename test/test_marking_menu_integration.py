@@ -662,5 +662,58 @@ class MarkingMenuStackedRehost(QtBaseTestCase):
         self.assertIs(ui.parent(), self.mm)
 
 
+class MarkingMenuStaleBindingTarget(QtBaseTestCase):
+    """A stale/renamed binding target must degrade to a logged ``None`` return
+    instead of letting ``get_ui``'s ``AttributeError`` escape a Qt event handler.
+
+    Real ``Switchboard.get_ui`` resolves an unknown name via
+    ``getattr(self.loaded_ui, name)``, which raises ``AttributeError``
+    ("Slot class '<name>' not found") — exactly what ``_cached_ui`` already
+    guards. ``StubSwitchboard.get_ui`` instead returns ``None`` for unknown
+    names, so these tests install a resolver that mirrors the real raising
+    behavior before exercising ``show()`` / ``get()``. Regression for a stale
+    chord binding (e.g. ``Key_F12|LeftButton`` -> a menu renamed in a package
+    update) surviving ``_reconcile_bindings`` and crashing the press/release
+    handlers, which (unlike ``_on_activation_press``) have no try/except.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.parent = QtWidgets.QWidget()
+        self.track_widget(self.parent)
+        self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
+        self.track_widget(self.mm)
+
+        # Mirror real Switchboard: raise AttributeError for names that don't
+        # resolve to a registered UI (the Stub otherwise returns None silently),
+        # so the tests exercise the guard rather than the Stub's soft miss.
+        registered = self.mm.sb._uis
+
+        def raising_get_ui(name):
+            if name is None:
+                return self.mm.sb.current_ui
+            try:
+                return registered[name]
+            except KeyError:
+                raise AttributeError(f"Slot class '{name}' not found")
+
+        self.mm.sb.get_ui = raising_get_ui
+
+    def test_show_stale_target_returns_none_without_raising(self):
+        """show() with a stale binding target degrades to None rather than
+        letting get_ui's AttributeError escape into the Qt event loop."""
+        self.assertIsNone(self.mm.show("renamed_or_removed_menu"))
+
+    def test_get_stale_name_returns_none_without_raising(self):
+        """get() with a stale name falls through to WindowManager delegation
+        (StubUiHandler.get -> None) instead of raising."""
+        self.assertIsNone(self.mm.get("renamed_or_removed_menu"))
+
+    def test_show_known_target_still_resolves(self):
+        """Positive control: the AttributeError guard must not swallow a
+        legitimately-resolvable target."""
+        self.assertIsNotNone(self.mm.show("hud"))
+
+
 if __name__ == "__main__":
     unittest.main()

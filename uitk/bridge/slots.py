@@ -38,7 +38,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from qtpy import QtCore, QtWidgets
 
@@ -70,6 +70,31 @@ def _open_in_file_manager(path: str) -> None:
         subprocess.Popen(["open", path])
     else:
         subprocess.Popen(["xdg-open", path])
+
+
+# --- Log-panel link dispatch (dependency inversion) ------------------------
+# uitk handles the DCC-agnostic ``action://open`` link itself; the DCC-specific
+# actions (``select`` / ``reveal`` a node) are delegated to handlers that the
+# DCC package registers here. This keeps the dependency direction honest: uitk
+# sits ABOVE pythontk and BELOW mayatk/blendertk, so it must not import them —
+# each DCC registers its ``dispatch_log_link`` from its ``UiHandler.__init__``
+# instead. (Before this, uitk hard-imported ``mayatk``, which both inverted the
+# layering AND left node links dead in a Blender session, where the mayatk
+# import fails even though ``blendertk.dispatch_log_link`` exists.)
+_LOG_LINK_HANDLERS: List[Callable] = []
+
+
+def register_log_link_handler(handler: Callable) -> None:
+    """Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
+    ``action://`` links (returns True when it handled the link).
+
+    DCC packages (mayatk / blendertk) call this from their ``UiHandler.__init__``
+    so their node-dispatch runs without uitk importing them. Handlers are tried
+    in registration order until one returns True. Idempotent — re-registering
+    the same callable is a no-op.
+    """
+    if handler not in _LOG_LINK_HANDLERS:
+        _LOG_LINK_HANDLERS.append(handler)
 
 
 # One temp Output Dir per bridge tag per host process, removed when the process exits.
@@ -872,9 +897,9 @@ class BridgeSlotsBase:
         handled here with the cross-platform file-manager opener — this is what
         lets output-dir links work when a panel runs as a standalone external
         app (no Maya), which is the common case for the photogrammetry bridges.
-        Node-based actions (``select`` / ``reveal`` in the Maya Outliner) are
-        delegated to the Maya-side dispatcher, imported lazily so uitk stays
-        DCC-agnostic at module-import time.
+        Node-based actions (``select`` / ``reveal``) are delegated to whatever
+        handler the active DCC registered (see :func:`register_log_link_handler`),
+        so uitk never imports a DCC package.
         """
         try:
             if url.scheme() == "action" and url.host() == "open":
@@ -891,16 +916,17 @@ class BridgeSlotsBase:
         except Exception as e:  # noqa: BLE001
             self.bridge.logger.error(f"Could not open link: {e}")
             return
-        # Node-based actions live in mayatk; import lazily so uitk has no
-        # hard DCC dependency.
-        try:
-            from mayatk.ui_utils._ui_utils import UiUtils
-        except Exception:  # noqa: BLE001
-            return
-        try:
-            UiUtils.dispatch_log_link(url, self.bridge.logger)
-        except Exception as e:  # noqa: BLE001
-            self.bridge.logger.error(f"Could not open link: {e}")
+        # Non-``open`` actions: hand off to the DCC-registered dispatchers
+        # (dependency inversion — uitk never imports mayatk/blendertk). Try each
+        # until one reports it handled the link; an empty registry (standalone
+        # app, no DCC) simply no-ops. A misbehaving handler is logged but does
+        # not shadow the others.
+        for handler in _LOG_LINK_HANDLERS:
+            try:
+                if handler(url, self.bridge.logger):
+                    return
+            except Exception as e:  # noqa: BLE001
+                self.bridge.logger.error(f"Could not open link: {e}")
 
     def _show_startup_info(self) -> None:
         """Pipe the bridge's ``STARTUP_INFO`` into the log panel once.

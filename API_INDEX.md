@@ -19,6 +19,7 @@ _Generated: 2026-07-19_
 - `render_context(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = python_literal) -> Dict[str, str]`
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
+- `register_log_link_handler(handler: Callable) -> None`
 - `ensure_bridge_temp_dir(tag: str) -> str`
 - `class BridgeSlotsBase`
   - methods: params_module, template_dir, make_bridge, make_preset_store, list_template_modes, b000, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, bridge, resolved_output_dir, require_output_dir, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
@@ -65,12 +66,6 @@ _Generated: 2026-07-19_
 - `class ExampleSlots(ptk.LoggingMixin)`
   - methods: header_init, txt_input_init, txt_input, cmb_options_init, cmb_options, cmb_view_init, tree_demo_init, tree_demo
 
-### `file_manager.py` — File and directory management utilities for UITK.
-- `class FileContainer(ptk.NamedTupleContainer)`
-  - methods: extend
-- `class FileManager(ptk.HelpMixin, ptk.LoggingMixin)`
-  - methods: get_base_dir, resolve_path, create, contains_location, get_container, list_containers, remove_container
-
 ### `handlers/base_handler.py` — Common infrastructure for Switchboard handlers.
 - `class BaseHandler(ptk.SingletonMixin, ptk.LoggingMixin)`
   - methods: instance, config
@@ -106,13 +101,19 @@ _Generated: 2026-07-19_
 - `QStandardPaths_genericConfigLocation() -> str`
 - `get_presets_root() -> Path`
 - `class PresetManager(ptk.LoggingMixin)`
-  - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, make_preset_combo, wire_combo
+  - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo
 
 ### `managers/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
 - `normalize_value(value)`
 - `class RecentValueEntry`
 - `class RecentValuesStore`
   - methods: subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
+
+### `managers/registry_manager.py` — Typed file registries backing Switchboard discovery.
+- `class FileRegistry(ptk.NamedTupleContainer)`
+  - methods: file_manager, extend
+- `class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`
+  - methods: get_base_dir, resolve_path, create, contains_location, get_container, list_containers, remove_container
 
 ### `managers/settings_manager.py`
 - `decode_stored_value(value: Any) -> Any`
@@ -185,7 +186,7 @@ _Generated: 2026-07-19_
 ### `themes/style_sheet.py`
 - `repolish_tree(root: QtWidgets.QWidget) -> None`
 - `class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`
-  - methods: theme_changed, get_icon_color, set_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
+  - methods: theme_changed, get_icon_color, set_theme, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
 
 ### `widgets/attributeWindow/_attributeWindow.py`
 - `class AttributeWindow(Menu)`
@@ -263,7 +264,7 @@ _Generated: 2026-07-19_
 
 ### `widgets/editors/style_editor.py`
 - `class StyleEditor(EditorPanel)`
-  - methods: export_preset_data, import_preset_data, populate, on_color_changed, on_length_changed, reset_variable, reset_all, refresh_row
+  - methods: theme, set_tier, export_preset_data, import_preset_data, populate, on_color_changed, on_length_changed, reset_variable, reset_all, refresh_row
 
 ### `widgets/editors/switchboard_browser.py` — Searchable, tag-filtered launcher for any handler-exposed entry.
 - `class LaunchOptions`
@@ -579,7 +580,7 @@ _Generated: 2026-07-19_
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, attribute_colors, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
+  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`

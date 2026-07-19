@@ -1074,11 +1074,11 @@ class SwitchboardSlotsMixin:
         except Exception:
             if widget:
                 self.logger.error(
-                    f"[get_slot] [{widget.ui.objectName()}.{slot_name}] Error accessing slot in '{slot_class.__name__}':\n{traceback.format_exc()}"
+                    f"[get_slot] [{widget.ui.objectName()}.{slot_name}] Error accessing slot in '{slot_class.__class__.__name__}':\n{traceback.format_exc()}"
                 )
             else:
                 self.logger.error(
-                    f"[get_slot] [{slot_name}] Error accessing slot in '{slot_class.__name__}':\n{traceback.format_exc()}"
+                    f"[get_slot] [{slot_name}] Error accessing slot in '{slot_class.__class__.__name__}':\n{traceback.format_exc()}"
                 )
             return None
 

@@ -353,5 +353,49 @@ class TestFooterStatefulButton(IconTestCase):
         )
 
 
+class TestRegisterIconDirInvalidatesCache(IconTestCase):
+    """register_icon_dir must invalidate the name-keyed caches so a dir
+    registered after a name was already resolved actually overrides it."""
+
+    def setUp(self):
+        super().setUp()
+        self._saved_dirs = list(IconManager._icon_dirs)
+        IconManager.clear_cache()
+
+    def tearDown(self):
+        IconManager._icon_dirs[:] = self._saved_dirs
+        IconManager.clear_cache()
+        super().tearDown()
+
+    def test_override_dir_takes_effect_after_prior_resolution(self):
+        import tempfile
+        from pathlib import Path
+
+        # An SVG whose colorized bounding fill differs from the packaged glyph.
+        override_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">'
+            '<rect x="0" y="0" width="16" height="16" fill="#ffffff"/></svg>'
+        )
+        name = "save"  # a name that also exists in the packaged icon set
+
+        with tempfile.TemporaryDirectory() as tmp:
+            svg_path = Path(tmp) / f"{name}.svg"
+            svg_path.write_text(override_svg, encoding="utf-8")
+
+            # Resolve+cache the packaged version first.
+            IconManager.get(name, (16, 16), "#000000")
+            self.assertIn(name, IconManager._svg_cache)
+            packaged_svg = IconManager._svg_cache[name]
+
+            # Register the override dir AFTER the name was already resolved.
+            IconManager.register_icon_dir(tmp)
+
+            # Caches must have been dropped so the override is now picked up.
+            self.assertNotIn(name, IconManager._svg_cache)
+            resolved = IconManager._load_svg_content(name)
+            self.assertEqual(resolved, override_svg)
+            self.assertNotEqual(resolved, packaged_svg)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

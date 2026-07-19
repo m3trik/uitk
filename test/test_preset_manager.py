@@ -1384,6 +1384,35 @@ class TestSemanticPresetMode(BaseTestCase):
         mgr.save("specular")
         self.assertFalse(mgr.is_modified())
 
+    def test_nested_non_serializable_value_dropped_not_crash_on_save(self):
+        """A provider value that is a container holding a nested
+        non-JSON-serializable element (e.g. a set inside a dict) must be
+        dropped by the capture gate, not passed through to ``_store.save`` where
+        ``json.dumps(..., indent=4)`` (no ``default=str``) would raise an
+        uncaught ``TypeError`` and abort the save.
+
+        Regression: ``_is_serializable`` used to check only the top-level type,
+        so a dict/list/tuple passed regardless of its contents -- letting
+        ``is_modified`` (which tolerates via ``default=str``) and ``save``
+        disagree about what is serializable.
+        """
+        # The helper now actually attempts json.dumps rather than a shallow
+        # type check: a dict carrying a nested set is rejected...
+        self.assertFalse(pm._is_serializable({"tags": {1, 2}}))
+        self.assertFalse(pm._is_serializable([Path("x")]))
+        # ...while genuinely serializable containers still pass.
+        self.assertTrue(pm._is_serializable({"n": [1, 2, 3]}))
+        self.assertTrue(pm._is_serializable((1, "a", 2.0)))
+
+        # A save whose live payload carries a nested non-serializable value must
+        # not raise -- the offending key is silently dropped, serializable
+        # siblings survive to disk.
+        self.live = {"align_downscale": 1, "opts": {"tags": {1, 2}}}
+        path = self.mgr.save("custom")  # must not raise TypeError
+        on_disk = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["align_downscale"], 1)
+        self.assertNotIn("opts", on_disk)
+
     def test_semantic_refresh_discards_edits_even_when_index_minus_one(self):
         from uitk.widgets.comboBox import ComboBox
 

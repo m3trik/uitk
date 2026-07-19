@@ -238,8 +238,12 @@ class UiHandler(BaseHandler):
             screen = QtWidgets.QApplication.primaryScreen()
             if screen:
                 screen_geo = screen.availableGeometry()
-                center = screen_geo.center() - ui.rect().center()
-                target_global = screen_geo.topLeft() + center
+                # availableGeometry() is already in global coords, so its center
+                # yields the correct global top-left after subtracting the window
+                # half-extent. Adding topLeft() again would double-count the
+                # screen's available origin (e.g. a top/left-docked taskbar),
+                # off-centering the window. Matches utils.center_widget.
+                target_global = screen_geo.center() - ui.rect().center()
         elif isinstance(pos, QtCore.QPoint):
             target_global = pos
         elif isinstance(pos, (tuple, list)) and len(pos) >= 2:

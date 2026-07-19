@@ -35,7 +35,7 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 | `compile.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
 | `events.py` | [API_REFERENCE.md](API_REFERENCE.md) | `uitk.events` section |
 | `examples/` | — | demo code; run `python -m uitk.examples.example`, don't document it |
-| `file_manager.py` | [API_REFERENCE.md](API_REFERENCE.md) | FileContainer / FileManager section |
+| `managers/registry_manager.py` | [API_REFERENCE.md](API_REFERENCE.md) | FileRegistry / RegistryManager section; `file_manager.py` is its deprecated alias shim |
 | `handlers/` | [ARCHITECTURE.md](ARCHITECTURE.md) | handler-ecosystem section |
 | `loaders/` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
 | `managers/` | [WIDGETS.md](WIDGETS.md) | standalone services (settings/state/values/presets/icons/shortcuts), split out of `widgets/mixins/` 2026-07; settings/state user-level detail in USER_GUIDE.md |

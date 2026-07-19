@@ -40,7 +40,10 @@ from uitk.bridge.tooltip import (  # noqa: F401 -- re-export surface
     format_param_tooltip,
     template_description,
 )
-from uitk.bridge.slots import BridgeSlotsBase  # noqa: F401 -- re-export surface
+from uitk.bridge.slots import (  # noqa: F401 -- re-export surface
+    BridgeSlotsBase,
+    register_log_link_handler,
+)
 
 
 # Friendlier alias for bridge consumers -- the dataclass IS the bridge

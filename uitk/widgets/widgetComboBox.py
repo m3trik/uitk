@@ -304,6 +304,15 @@ class WidgetComboBox(ComboBox):
         if widget.parent() is not None and widget.parent() is not self.view():
             widget.setParent(None)
 
+        # Keep the persistent actions section pinned to the tail: strip it,
+        # append the new selectable row, then re-append the actions last. Without
+        # this, an addWidgetItem after actions.add() buries the widget below the
+        # action rows — it never gets height-synced and the next actions.add()
+        # (via _strip_actions_section) deletes it and orphans the separator.
+        had_actions = self._action_row_count > 0
+        if had_actions:
+            self._strip_actions_section()
+
         row_item = QtGui.QStandardItem(label)
         payload = data if data is not None else widget
         row_item.setData(payload, QtCore.Qt.UserRole)
@@ -317,6 +326,9 @@ class WidgetComboBox(ComboBox):
 
         self._widget_items[row] = widget
         self._row_containers[row] = container
+
+        if had_actions:
+            self._rebuild_actions_section()
 
         if select:
             self.setCurrentIndex(row)
@@ -368,12 +380,35 @@ class WidgetComboBox(ComboBox):
 
         container = self._row_containers.pop(row, None)
         widget = self._widget_items.pop(row)
+        # Drop the widget's captured default so it can't leak across takes and
+        # so a later widget that reuses this (freed) id can't inherit a stale,
+        # wrong-type snapshot on Restore Defaults.
+        self._widget_defaults.pop(id(widget), None)
 
         if container is not None:
             container.deleteLater()
 
         self._model.removeRow(row)
-        self._rebuild_index_maps()
+        # Renumber tracked AND still-pending widgets: drop the removed row and
+        # shift every higher row down by one. Rebuilding from view.indexWidget()
+        # would silently lose rows whose index widget was deferred and never
+        # installed (a never-shown popup), dropping them from tracking. Qt
+        # already shifts realized index widgets via QPersistentModelIndex, so
+        # this stays consistent with the view.
+        def _renumber(mapping):
+            return {
+                (r - 1 if r > row else r): v
+                for r, v in mapping.items()
+                if r != row
+            }
+
+        self._widget_items = _renumber(self._widget_items)
+        self._row_containers = _renumber(self._row_containers)
+        self._pending_index_widgets = [
+            (r - 1 if r > row else r, c)
+            for r, c in self._pending_index_widgets
+            if r != row
+        ]
         return widget
 
     def currentWidget(self) -> Optional[QtWidgets.QWidget]:
@@ -481,26 +516,21 @@ class WidgetComboBox(ComboBox):
             self._item_spacing = value
             self._resync_uniform_heights()
 
-    def _rebuild_index_maps(self) -> None:
-        """After row removal remap stored widgets to their new rows."""
+    def _shift_tracked_rows_down(self) -> None:
+        """Bump every tracked (and still-pending) row index up by one.
 
-        if not self._widget_items:
-            return
-
-        new_widgets: dict[int, QtWidgets.QWidget] = {}
-        new_containers: dict[int, QtWidgets.QWidget] = {}
-        for row in range(self._model.rowCount()):
-            index = self._model.index(row, 0)
-            widget = self.view().indexWidget(index)
-            if widget is None:
-                continue
-            inner_widget = widget.property("_embedded_widget")
-            if inner_widget is None:
-                continue
-            new_widgets[row] = inner_widget
-            new_containers[row] = widget
-        self._widget_items = new_widgets
-        self._row_containers = new_containers
+        Called immediately after an ``insertRow(0)`` so an ascending insert
+        doesn't overwrite ``_widget_items[0]`` / ``_row_containers[0]`` and drop
+        the previously-tracked row. Qt shifts realized index widgets via
+        QPersistentModelIndex; this keeps the Python-side maps in step so every
+        inserted widget stays reachable (and its container is still freed on
+        clear()).
+        """
+        self._widget_items = {r + 1: w for r, w in self._widget_items.items()}
+        self._row_containers = {r + 1: c for r, c in self._row_containers.items()}
+        self._pending_index_widgets = [
+            (r + 1, c) for r, c in self._pending_index_widgets
+        ]
 
     def _on_index_changed(self, row: int) -> None:
         widget = self._widget_items.get(row)
@@ -1138,6 +1168,7 @@ class WidgetComboBox(ComboBox):
 
                 if ascending:
                     self._model.insertRow(0, row_item)
+                    self._shift_tracked_rows_down()
                 else:
                     self._model.appendRow(row_item)
 
@@ -1306,6 +1337,7 @@ class WidgetComboBox(ComboBox):
 
         if ascending:
             self._model.insertRow(0, row_item)
+            self._shift_tracked_rows_down()
             row = 0
         else:
             self._model.appendRow(row_item)
