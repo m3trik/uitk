@@ -13,6 +13,7 @@ gate (non-text host skipped), and inline (non-square) sizing/ordering.
 
 Run standalone: python -m test.test_affix_option
 """
+
 import unittest
 
 from conftest import QtBaseTestCase, setup_qt_application
@@ -137,9 +138,9 @@ class TestAffixOptionManager(QtBaseTestCase):
         # surface must work regardless (regression guard: callers use set_affix,
         # not .options.affix, precisely for this).
         from qtpy import QtWidgets
-        from uitk.widgets.optionBox.utils import patch_common_widgets
+        from uitk.widgets.optionBox.utils import OptionBoxManager
 
-        patch_common_widgets()
+        OptionBoxManager.patch_common_widgets()
         le = self.track_widget(QtWidgets.QLineEdit())
         self.assertFalse(hasattr(le, "options"))  # no fluent wrapper on the bare class
         le.option_box.set_affix(default="prefix")

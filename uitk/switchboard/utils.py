@@ -8,84 +8,86 @@ from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 
-def pop_override_cursor_stack(app):
-    """Pop the whole application override-cursor stack.
-
-    Shared primitive for the cursor-suspension helpers below and the
-    dispatcher's modal guard. Returns the popped cursors **top-first** so
-    they can be re-pushed in the original order via
-    :func:`push_override_cursor_stack`. No-op (empty list) when no
-    override is active or ``app`` is ``None``.
-    """
-    saved = []
-    if app is not None:
-        while True:
-            current = app.overrideCursor()
-            if current is None:
-                break
-            saved.append(QtGui.QCursor(current))
-            app.restoreOverrideCursor()
-    return saved
-
-
-def push_override_cursor_stack(app, saved):
-    """Re-push cursors captured by :func:`pop_override_cursor_stack`,
-    restoring the original stack order. No-op when ``app`` is ``None``."""
-    if app is not None:
-        for cursor in reversed(saved):
-            app.setOverrideCursor(cursor)
-
-
-@contextlib.contextmanager
-def _suspend_override_cursor():
-    """Temporarily clear the application override-cursor stack.
-
-    The slot dispatcher pushes a :data:`Qt.WaitCursor` override for the
-    duration of every slot (see ``SlotWrapper._invoke``). A
-    ``QApplication`` override cursor takes precedence over *every* widget
-    cursor, so any dialog a slot spawns inherits the busy hourglass —
-    even over its buttons, text fields, and file lists, where the user is
-    expected to interact. A per-widget ``setCursor`` cannot win against an
-    active override, so the only correct fix is to suspend the override
-    for the dialog's (modal) lifetime, letting each widget show its
-    natural cursor (arrow on buttons, I-beam in line edits), then restore
-    the exact stack afterward so the slot's busy feedback resumes.
-
-    No-op when no override is active (dialogs opened outside a slot).
-    """
-    app = QtWidgets.QApplication.instance()
-    saved = pop_override_cursor_stack(app)
-    try:
-        yield
-    finally:
-        push_override_cursor_stack(app, saved)
-
-
-def _drain_override_cursor():
-    """Pop the entire application override-cursor stack.
-
-    Counterpart to :func:`_suspend_override_cursor` for *non-modal*
-    windows. A modal dialog can suspend the slot's busy cursor for the
-    bounded lifetime of its event loop and restore it on close. A
-    non-modal viewer (see :meth:`text_view_dialog`) outlives the slot
-    that spawned it — by the time the user closes it the dispatcher's
-    ``finally`` has long since restored the cursor, so there is nothing
-    to restore *to*. Re-pushing a ``WaitCursor`` on the window's close
-    would strand a busy hourglass with no matching pop (the reported
-    "cursor stays active" symptom). The correct behaviour is therefore
-    to *cancel* the busy cursor outright when the window appears: the
-    slot's work product is on screen and the user is now meant to
-    interact with it. Draining the whole stack also leaves the
-    dispatcher's matching ``restoreOverrideCursor`` a harmless no-op,
-    keeping the override stack balanced.
-
-    No-op when no override is active (window opened outside a slot).
-    """
-    pop_override_cursor_stack(QtWidgets.QApplication.instance())
-
-
 class SwitchboardUtilsMixin:
     """Utility methods for widget positioning, centering, and screen geometry."""
+
+    @staticmethod
+    def pop_override_cursor_stack(app):
+        """Pop the whole application override-cursor stack.
+
+        Shared primitive for the cursor-suspension helpers below and the
+        dispatcher's modal guard. Returns the popped cursors **top-first** so
+        they can be re-pushed in the original order via
+        :meth:`push_override_cursor_stack`. No-op (empty list) when no
+        override is active or ``app`` is ``None``.
+        """
+        saved = []
+        if app is not None:
+            while True:
+                current = app.overrideCursor()
+                if current is None:
+                    break
+                saved.append(QtGui.QCursor(current))
+                app.restoreOverrideCursor()
+        return saved
+
+    @staticmethod
+    def push_override_cursor_stack(app, saved):
+        """Re-push cursors captured by :meth:`pop_override_cursor_stack`,
+        restoring the original stack order. No-op when ``app`` is ``None``."""
+        if app is not None:
+            for cursor in reversed(saved):
+                app.setOverrideCursor(cursor)
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _suspend_override_cursor():
+        """Temporarily clear the application override-cursor stack.
+
+        The slot dispatcher pushes a :data:`Qt.WaitCursor` override for the
+        duration of every slot (see ``SlotWrapper._invoke``). A
+        ``QApplication`` override cursor takes precedence over *every* widget
+        cursor, so any dialog a slot spawns inherits the busy hourglass —
+        even over its buttons, text fields, and file lists, where the user is
+        expected to interact. A per-widget ``setCursor`` cannot win against an
+        active override, so the only correct fix is to suspend the override
+        for the dialog's (modal) lifetime, letting each widget show its
+        natural cursor (arrow on buttons, I-beam in line edits), then restore
+        the exact stack afterward so the slot's busy feedback resumes.
+
+        No-op when no override is active (dialogs opened outside a slot).
+        """
+        app = QtWidgets.QApplication.instance()
+        saved = SwitchboardUtilsMixin.pop_override_cursor_stack(app)
+        try:
+            yield
+        finally:
+            SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)
+
+    @staticmethod
+    def _drain_override_cursor():
+        """Pop the entire application override-cursor stack.
+
+        Counterpart to :meth:`_suspend_override_cursor` for *non-modal*
+        windows. A modal dialog can suspend the slot's busy cursor for the
+        bounded lifetime of its event loop and restore it on close. A
+        non-modal viewer (see :meth:`text_view_dialog`) outlives the slot
+        that spawned it — by the time the user closes it the dispatcher's
+        ``finally`` has long since restored the cursor, so there is nothing
+        to restore *to*. Re-pushing a ``WaitCursor`` on the window's close
+        would strand a busy hourglass with no matching pop (the reported
+        "cursor stays active" symptom). The correct behaviour is therefore
+        to *cancel* the busy cursor outright when the window appears: the
+        slot's work product is on screen and the user is now meant to
+        interact with it. Draining the whole stack also leaves the
+        dispatcher's matching ``restoreOverrideCursor`` a harmless no-op,
+        keeping the override stack balanced.
+
+        No-op when no override is active (window opened outside a slot).
+        """
+        SwitchboardUtilsMixin.pop_override_cursor_stack(
+            QtWidgets.QApplication.instance()
+        )
 
     @staticmethod
     def get_cursor_offset_from_center(widget):
@@ -569,6 +571,24 @@ class SwitchboardUtilsMixin:
             sb.add_reset_buttons(ui, skip=("s025", "s026", "s027"))
             sb.add_reset_buttons(ui, "cmb000-1")          # specific combos
         """
+        wired = []
+        for widget in self._resolve_option_widgets(ui, widgets, types, skip):
+            try:
+                widget.option_box.set_reset(**set_reset_kwargs)
+                wired.append(widget)
+            except Exception as e:
+                self.logger.debug(f"[add_reset_buttons] skipped a widget: {e}")
+        return wired
+
+    def _resolve_option_widgets(self, ui, widgets, types, skip):
+        """Resolve + skip-filter the widget set for the option-box batch helpers.
+
+        Shared by :meth:`add_reset_buttons` and :meth:`link_spinboxes`: *widgets*
+        may be a shorthand pattern string, an explicit list, or ``None`` to
+        auto-discover every child of *types*; *skip* (objectNames and/or widget
+        instances) is removed. Runs before any wrapping, so every resolved
+        widget is still live — a dead one is dropped defensively.
+        """
         if widgets is None:
             widgets = []
             for t in ptk.make_iterable(types):
@@ -583,22 +603,143 @@ class SwitchboardUtilsMixin:
         skip_names = {s for s in skip if isinstance(s, str)}
         skip_ids = {id(s) for s in skip if not isinstance(s, str)}
 
-        wired = []
-        for widget in widgets:
-            if not widget:
-                continue
-            name = widget.objectName()
-            if name in skip_names or id(widget) in skip_ids:
+        out = []
+        for w in widgets:
+            if not w:
                 continue
             try:
-                widget.option_box.set_reset(**set_reset_kwargs)
+                name = w.objectName()
+            except RuntimeError:
+                continue
+            if name in skip_names or id(w) in skip_ids:
+                continue
+            out.append(w)
+        return out
+
+    def link_spinboxes(
+        self,
+        ui,
+        widgets=None,
+        *,
+        types=(QtWidgets.QAbstractSpinBox,),
+        skip=(),
+        icon: str = "lock",
+        icon_off: str = "unlock",
+        tooltip_on: str = "Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.",
+        tooltip_off: str = "Unlinked. Click to link this field so it moves with the others.",
+        initial: bool = False,
+        **set_toggle_kwargs,
+    ):
+        """Give each spin box a *lock* toggle that links locked boxes by an equal delta.
+
+        A batch companion to :meth:`add_reset_buttons`: each resolved widget gets
+        an option-box lock toggle (a persisted :class:`ToggleOption`). When a
+        **locked** box's value changes, every *other* **locked** box is shifted by
+        the same delta; unlocked boxes are independent. Each field opts in on its
+        own, so the user can link any subset (e.g. X+Y but not Z).
+
+        The lock state persists per widget (via the ToggleOption's own settings),
+        so a session reopens with the same fields linked. Composes with
+        :meth:`add_reset_buttons` — a field can carry both a reset and a lock
+        button (option ordering keeps ``reset`` before ``toggle``).
+
+        Widget resolution mirrors :meth:`connect_multi` / :meth:`add_reset_buttons`.
+        Call it in the same place (before ``connect_multi``) for the same
+        wrap-before-defer reason.
+
+        Parameters:
+            ui (QWidget): A previously loaded dynamic UI object.
+            widgets (str/list/None): Widgets to wire — a shorthand pattern
+                (``'s003-5'``), an explicit list, or ``None`` to auto-discover
+                every child of *types*.
+            types (tuple): Widget class(es) auto-discovered when *widgets* is
+                ``None`` (default: spin boxes).
+            skip (str/iterable): objectName(s) and/or widget instance(s) to leave
+                alone.
+            icon / icon_off: Toggle icons for the linked / unlinked states.
+            tooltip_on / tooltip_off: Toggle tooltips.
+            initial (bool): Starting lock state (default unlinked). Overridden by
+                any persisted per-field value.
+            **set_toggle_kwargs: Forwarded verbatim to ``option_box.set_toggle``.
+
+        Returns:
+            list: The widgets that received a lock toggle.
+        """
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        widgets = self._resolve_option_widgets(ui, widgets, types, skip)
+        state = getattr(ui, "state", None)
+
+        # Read the lock state live from each field's ToggleOption rather than
+        # shadowing it: ToggleOption restores its persisted state silently (no
+        # ``toggled`` emission), so a shadow dict seeded from the signal would
+        # miss a field that reopened already-locked.
+        def _is_locked(w):
+            try:
+                opt = w.option_box.find_option(ToggleOption)
+            except Exception:
+                return False
+            return bool(opt and opt.is_on)
+
+        # Last-seen value per field, so a change yields a delta. Re-baselined on
+        # every change (locked or not) so toggling lock on mid-session doesn't
+        # replay a stale delta.
+        prev = {}
+        # Re-entrancy guard: the equal-delta writes below emit ``valueChanged``
+        # on the other fields, which must not recurse into another propagation.
+        guard = {"active": False}
+
+        def _make_handler(src):
+            def _on_changed(val):
+                if guard["active"]:
+                    prev[src] = val
+                    return
+                last = prev.get(src, val)
+                prev[src] = val
+                # During a programmatic state restore / preset load (saves
+                # suppressed) values are applied field-by-field, not by a user
+                # gesture — re-baseline only. Otherwise restoring a locked field
+                # would fire a spurious delta into its locked siblings and
+                # corrupt their restored values (order-dependent). Mirrors how
+                # MainWindow.sync_widget_values gates on the same flag.
+                if state is not None and getattr(state, "_save_suppressed", 0):
+                    return
+                if not _is_locked(src):
+                    return
+                delta = val - last
+                if not delta:
+                    return
+                guard["active"] = True
+                try:
+                    for other in widgets:
+                        if other is src or not _is_locked(other):
+                            continue
+                        other.setValue(other.value() + delta)
+                        prev[other] = other.value()
+                finally:
+                    guard["active"] = False
+
+            return _on_changed
+
+        def _apply(w):
+            prev[w] = w.value()
+            w.option_box.set_toggle(
+                icon=icon,
+                icon_off=icon_off,
+                tooltip_on=tooltip_on,
+                tooltip_off=tooltip_off,
+                initial=initial,
+                **set_toggle_kwargs,
+            )
+            w.valueChanged.connect(_make_handler(w))
+
+        wired = []
+        for widget in widgets:
+            try:
+                _apply(widget)
                 wired.append(widget)
             except Exception as e:
-                # Use the name captured above rather than re-reading the widget:
-                # if set_reset failed because the underlying C++ object was torn
-                # down mid-wrap, calling back into it here would raise again and
-                # abort the whole batch.
-                self.logger.debug(f"[add_reset_buttons] skipped '{name}': {e}")
+                self.logger.debug(f"[link_spinboxes] skipped a widget: {e}")
         return wired
 
     def set_axis_for_checkboxes(self, checkboxes, axis, ui=None):
@@ -890,7 +1031,7 @@ class SwitchboardUtilsMixin:
             msg_box.setStandardButtons(*buttons)
             msg_box.setText(string, background=background)
             # Modal: suspend any slot busy-cursor so buttons show an arrow.
-            with _suspend_override_cursor():
+            with SwitchboardUtilsMixin._suspend_override_cursor():
                 return msg_box.exec_()
         else:
             # Safe to reuse for passive popups
@@ -986,7 +1127,7 @@ class SwitchboardUtilsMixin:
         # modal dialogs above we cannot suspend-and-restore around a
         # bounded event loop, so cancel the busy cursor outright — the
         # report is on screen and the user is meant to interact with it.
-        _drain_override_cursor()
+        SwitchboardUtilsMixin._drain_override_cursor()
         return dlg
 
     @staticmethod
@@ -1016,7 +1157,7 @@ class SwitchboardUtilsMixin:
         options = QtWidgets.QFileDialog.Options()
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
-        with _suspend_override_cursor():
+        with SwitchboardUtilsMixin._suspend_override_cursor():
             if allow_multiple:
                 files, _ = QtWidgets.QFileDialog.getOpenFileNames(
                     None, title, start_dir, file_types_string, options=options
@@ -1042,7 +1183,7 @@ class SwitchboardUtilsMixin:
             directory_path = dir_dialog(title="Select a project folder")
         """
         options = QtWidgets.QFileDialog.Options()
-        with _suspend_override_cursor():
+        with SwitchboardUtilsMixin._suspend_override_cursor():
             directory_path = QtWidgets.QFileDialog.getExistingDirectory(
                 None, title, start_dir, options=options
             )
@@ -1080,7 +1221,7 @@ class SwitchboardUtilsMixin:
 
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
-        with _suspend_override_cursor():
+        with SwitchboardUtilsMixin._suspend_override_cursor():
             path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 None, title, start_dir, file_types_string
             )
@@ -1175,7 +1316,7 @@ class SwitchboardUtilsMixin:
 
         # Modal: suspend any slot busy-cursor so the line edit shows an
         # I-beam and the buttons an arrow instead of the busy hourglass.
-        with _suspend_override_cursor():
+        with SwitchboardUtilsMixin._suspend_override_cursor():
             accepted = dlg.exec_() == QtWidgets.QDialog.Accepted
         if accepted:
             result = line.text().strip()

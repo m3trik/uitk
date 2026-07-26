@@ -10,6 +10,7 @@ option-box manager skips an incompatible (non-text) host.
 
 Run standalone: python -m test.test_filter_option
 """
+
 import unittest
 
 from conftest import QtBaseTestCase, setup_qt_application
@@ -18,7 +19,9 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets
 
-from uitk.widgets.optionBox.options.filter import FilterOption, to_patterns
+from uitk.widgets.optionBox.options.filter import FilterOption
+
+to_patterns = FilterOption.to_patterns
 from uitk.widgets.optionBox.options._options import BaseOption
 from uitk.widgets.optionBox.utils import OptionBoxManager
 

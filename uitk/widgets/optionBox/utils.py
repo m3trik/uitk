@@ -153,9 +153,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         type, so they pass a type/predicate test and this drops the matches
         from both the pending list and an already-wrapped option box.
         """
-        self._pending_options = [
-            o for o in self._pending_options if not predicate(o)
-        ]
+        self._pending_options = [o for o in self._pending_options if not predicate(o)]
         if self._option_box:
             for o in [o for o in self._option_box.get_options() if predicate(o)]:
                 self._option_box.remove_option(o)
@@ -199,8 +197,9 @@ class OptionBoxManager(ptk.LoggingMixin):
             # Remove existing ActionOption instances (but NOT MenuOption
             # subclasses — those are managed by enable_menu/disable_menu).
             self._remove_options(
-                lambda opt: isinstance(opt, ActionOption)
-                and not isinstance(opt, MenuOption)
+                lambda opt: (
+                    isinstance(opt, ActionOption) and not isinstance(opt, MenuOption)
+                )
             )
 
         action_option = ActionOption(
@@ -1440,97 +1439,93 @@ class OptionBoxManager(ptk.LoggingMixin):
             self._is_wrapped = False
             self._pending_options = []
 
+    # -------------------------------------------------------------------------
+    # Convenience factories & widget patching (class-only public surface)
+    # -------------------------------------------------------------------------
 
-# -------------------------------------------------------------------------
-# Convenience functions for easy integration
-# -------------------------------------------------------------------------
+    @staticmethod
+    def add_option_box(widget, show_clear=False, options=None, **kwargs):
+        """Add an option box to any widget with one call.
 
+        Args:
+            widget: The widget to wrap
+            show_clear: Whether to show clear button for text widgets
+            options: List of option plugins to add
+            **kwargs: Additional options
 
-def add_option_box(widget, show_clear=False, options=None, **kwargs):
-    """Add an option box to any widget with one function call.
+        Returns:
+            The container widget that should be added to layouts
 
-    Args:
-        widget: The widget to wrap
-        show_clear: Whether to show clear button for text widgets
-        options: List of option plugins to add
-        **kwargs: Additional options
+        Example:
+            line_edit = QtWidgets.QLineEdit()
+            container = OptionBoxManager.add_option_box(line_edit, show_clear=True)
+            layout.addWidget(container)
+        """
+        from ._optionBox import OptionBox
 
-    Returns:
-        The container widget that should be added to layouts
+        option_box = OptionBox(show_clear=show_clear, options=options, **kwargs)
+        return option_box.wrap(widget)
 
-    Example:
-        line_edit = QtWidgets.QLineEdit()
-        container = add_option_box(line_edit, show_clear=True)
-        layout.addWidget(container)
-    """
-    from ._optionBox import OptionBox
+    @staticmethod
+    def add_clear_option(widget, **kwargs):
+        """Add just a clear button to a text widget.
 
-    option_box = OptionBox(show_clear=show_clear, options=options, **kwargs)
-    return option_box.wrap(widget)
+        Args:
+            widget: The text widget to add clear button to
+            **kwargs: Additional options
 
+        Returns:
+            The container widget that should be added to layouts
+        """
+        return OptionBoxManager.add_option_box(widget, show_clear=True, **kwargs)
 
-def add_clear_option(widget, **kwargs):
-    """Add just a clear button to a text widget.
+    @staticmethod
+    def add_menu_option(widget, menu, **kwargs):
+        """Add a menu option to any widget.
 
-    Args:
-        widget: The text widget to add clear button to
-        **kwargs: Additional options
+        Args:
+            widget: The widget to wrap
+            menu: Menu object to show
+            **kwargs: Additional options
 
-    Returns:
-        The container widget that should be added to layouts
-    """
-    return add_option_box(widget, show_clear=True, **kwargs)
+        Returns:
+            The container widget that should be added to layouts
+        """
+        # ``menu`` is not an OptionBox constructor argument; it configures a
+        # MenuOption plugin. Passing it straight through raised TypeError.
+        from .options.action import MenuOption
 
+        return OptionBoxManager.add_option_box(
+            widget, options=[MenuOption(menu=menu)], **kwargs
+        )
 
-def add_menu_option(widget, menu, **kwargs):
-    """Add a menu option to any widget.
+    @staticmethod
+    def patch_widget_class(widget_class):
+        """Add option_box attribute to a widget class."""
 
-    Args:
-        widget: The widget to wrap
-        menu: Menu object to show
-        **kwargs: Additional options
+        def get_option_box(self):
+            """Get or create option box manager"""
+            if not hasattr(self, "_option_box_manager"):
+                self._option_box_manager = OptionBoxManager(self)
+            return self._option_box_manager
 
-    Returns:
-        The container widget that should be added to layouts
-    """
-    # ``menu`` is not an OptionBox constructor argument; it configures a
-    # MenuOption plugin. Passing it straight through raised TypeError.
-    from .options.action import MenuOption
+        # Only add if not already present
+        if not hasattr(widget_class, "option_box"):
+            widget_class.option_box = property(get_option_box)
+        return widget_class
 
-    return add_option_box(widget, options=[MenuOption(menu=menu)], **kwargs)
+    @staticmethod
+    def patch_common_widgets():
+        """Patch common Qt widgets with option box support."""
+        common_widgets = [
+            QtWidgets.QLineEdit,
+            QtWidgets.QTextEdit,
+            QtWidgets.QPlainTextEdit,
+            QtWidgets.QPushButton,
+            QtWidgets.QComboBox,
+            QtWidgets.QSpinBox,
+            QtWidgets.QDoubleSpinBox,
+        ]
 
-
-# -------------------------------------------------------------------------
-# Widget patching for elegant usage
-# -------------------------------------------------------------------------
-
-
-def patch_widget_class(widget_class):
-    """Add option_box attribute to a widget class."""
-
-    def get_option_box(self):
-        """Get or create option box manager"""
-        if not hasattr(self, "_option_box_manager"):
-            self._option_box_manager = OptionBoxManager(self)
-        return self._option_box_manager
-
-    # Only add if not already present
-    if not hasattr(widget_class, "option_box"):
-        widget_class.option_box = property(get_option_box)
-    return widget_class
-
-
-def patch_common_widgets():
-    """Patch common Qt widgets with option box support."""
-    common_widgets = [
-        QtWidgets.QLineEdit,
-        QtWidgets.QTextEdit,
-        QtWidgets.QPlainTextEdit,
-        QtWidgets.QPushButton,
-        QtWidgets.QComboBox,
-        QtWidgets.QSpinBox,
-        QtWidgets.QDoubleSpinBox,
-    ]
-
-    for widget_class in common_widgets:
-        patch_widget_class(widget_class)
+        for widget_class in common_widgets:
+            OptionBoxManager.patch_widget_class(widget_class)

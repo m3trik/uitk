@@ -30,7 +30,6 @@ import uitk.managers.preset_manager as pm  # noqa: E402
 from uitk.managers.preset_manager import (  # noqa: E402
     PresetManager,
     PRESETS_ROOT_ENV_VAR,
-    get_presets_root,
 )
 
 
@@ -55,7 +54,7 @@ class TestPresetsRootResolution(BaseTestCase):
 
     def test_env_var_override_redirects_root(self):
         os.environ[PRESETS_ROOT_ENV_VAR] = str(self._tmp / "custom")
-        self.assertEqual(get_presets_root(), self._tmp / "custom")
+        self.assertEqual(PresetManager.get_presets_root(), self._tmp / "custom")
 
     def test_override_root_yields_no_legacy_drain_candidates(self):
         # REGRESSION (this destroyed a real preset store): the candidates are
@@ -66,13 +65,13 @@ class TestPresetsRootResolution(BaseTestCase):
         # the developer's presets outright. An explicit override must never pull
         # the machine's real dirs in.
         os.environ[PRESETS_ROOT_ENV_VAR] = str(self._tmp / "override")
-        self.assertEqual(pm._legacy_qt_root_candidates(), [])
+        self.assertEqual(pm.PresetManager._legacy_qt_root_candidates(), [])
 
     def test_default_root_still_drains_legacy_candidates(self):
         # The guard must not disable migration for real users, who never set the
         # override — the candidates are still offered when the root is default.
         os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
-        self.assertTrue(pm._legacy_qt_root_candidates())
+        self.assertTrue(pm.PresetManager._legacy_qt_root_candidates())
 
     def test_wrap_never_buries_a_package_outside_known_pkgs(self):
         # REGRESSION (this silently unbound every blendertk macro hotkey): the wrap
@@ -96,7 +95,7 @@ class TestPresetsRootResolution(BaseTestCase):
             "fixture premise: blendertk is not in _LEGACY_PRESET_PATHS",
         )
 
-        pm._wrap_pre_wrap_uitk_state(root)
+        pm.PresetManager._wrap_pre_wrap_uitk_state(root)
 
         self.assertTrue(
             (root / "blendertk" / "macro_manager" / "m3trik.json").is_file(),
@@ -116,10 +115,12 @@ class TestPresetsRootResolution(BaseTestCase):
         legacy.mkdir(parents=True)
         (legacy / "dark.json").write_text("{}")
 
-        pm._wrap_pre_wrap_uitk_state(root)
+        pm.PresetManager._wrap_pre_wrap_uitk_state(root)
 
-        self.assertTrue((root / "uitk" / "style_presets" / "dark.json").is_file(),
-                        "uitk's own pre-wrap state must still be wrapped")
+        self.assertTrue(
+            (root / "uitk" / "style_presets" / "dark.json").is_file(),
+            "uitk's own pre-wrap state must still be wrapped",
+        )
 
     def test_override_root_leaves_the_real_store_untouched(self):
         # End-to-end proof at the level that actually failed: run the real drain
@@ -133,12 +134,20 @@ class TestPresetsRootResolution(BaseTestCase):
         override = self._tmp / "override"
         os.environ[PRESETS_ROOT_ENV_VAR] = str(override)
 
-        with mock.patch.object(pm, "QStandardPaths_genericConfigLocation",
-                               lambda: str(fake_generic)), \
-             mock.patch.object(pm, "QStandardPaths_writableLocation",
-                               lambda: str(fake_generic / "python")):
+        with (
+            mock.patch.object(
+                pm.PresetManager,
+                "QStandardPaths_genericConfigLocation",
+                lambda: str(fake_generic),
+            ),
+            mock.patch.object(
+                pm.PresetManager,
+                "QStandardPaths_writableLocation",
+                lambda: str(fake_generic / "python"),
+            ),
+        ):
             pm._LEGACY_QT_ROOTS_CLEARED = False
-            pm._maybe_clear_legacy_qt_roots()
+            pm.PresetManager._maybe_clear_legacy_qt_roots()
 
         self.assertTrue(
             (real_store / "m3trik.json").is_file(),
@@ -149,7 +158,7 @@ class TestPresetsRootResolution(BaseTestCase):
         # Relative override values must still produce an absolute path so
         # callers can rely on ``relative_to`` and ``mkdir`` semantics.
         os.environ[PRESETS_ROOT_ENV_VAR] = "relative/subdir"
-        root = get_presets_root()
+        root = PresetManager.get_presets_root()
         self.assertTrue(root.is_absolute(), f"root is relative: {root}")
 
     def test_relative_preset_dir_resolves_under_root(self):
@@ -196,8 +205,8 @@ class TestLegacyMigration(BaseTestCase):
         # Redirect the legacy Qt-root candidates to point at the fake
         # config dirs. Essential — without this, the cleanup would see
         # (and potentially modify) the developer's real config dirs.
-        self._saved_root_candidates = pm._legacy_qt_root_candidates
-        pm._legacy_qt_root_candidates = lambda: [
+        self._saved_root_candidates = pm.PresetManager._legacy_qt_root_candidates
+        pm.PresetManager._legacy_qt_root_candidates = lambda: [
             self._fake_appconfig / "m3trik" / "presets",
             self._fake_appconfig,
             self._fake_generic,
@@ -212,7 +221,7 @@ class TestLegacyMigration(BaseTestCase):
         pm._LEGACY_PRESET_PATHS.clear()
         pm._LEGACY_PRESET_PATHS.update(self.SAVED_LEGACY_PATHS)
         if self._saved_root_candidates is not None:
-            pm._legacy_qt_root_candidates = self._saved_root_candidates
+            pm.PresetManager._legacy_qt_root_candidates = self._saved_root_candidates
         if self._prior_env is None:
             os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
         else:
@@ -256,11 +265,12 @@ class TestLegacyMigration(BaseTestCase):
         self.assertTrue((resolved / "green.json").exists())
         # Legacy source is fully drained — no files left and the dir
         # itself rmdir'd.
-        self.assertFalse((self._legacy_root / "blue.json").exists(),
-                         "legacy source preserved instead of moved")
+        self.assertFalse(
+            (self._legacy_root / "blue.json").exists(),
+            "legacy source preserved instead of moved",
+        )
         self.assertFalse((self._legacy_root / "green.json").exists())
-        self.assertFalse(self._legacy_root.exists(),
-                         "empty legacy root not cleaned up")
+        self.assertFalse(self._legacy_root.exists(), "empty legacy root not cleaned up")
 
     def test_whole_package_migrated_when_leaf_requested(self):
         """The bug fix: requesting one bridge template must bring siblings along."""
@@ -290,7 +300,9 @@ class TestLegacyMigration(BaseTestCase):
         _ = mgr2.preset_dir
 
         with open(first_dir / "alpha.json", "r", encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["v"], 2, "migration re-copied over user edits")
+            self.assertEqual(
+                json.load(f)["v"], 2, "migration re-copied over user edits"
+            )
 
     def test_existing_files_not_overwritten(self):
         self._write_legacy("a.json", {"src": "legacy"})
@@ -304,8 +316,9 @@ class TestLegacyMigration(BaseTestCase):
         _ = mgr.preset_dir
 
         with open(new_pkg / "a.json", "r", encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["src"], "user",
-                             "migration overwrote a user-authored file")
+            self.assertEqual(
+                json.load(f)["src"], "user", "migration overwrote a user-authored file"
+            )
 
     def test_no_legacy_still_marks_migrated(self):
         # Legacy root does not exist. Migration should be a no-op but still
@@ -315,9 +328,10 @@ class TestLegacyMigration(BaseTestCase):
         mgr = PresetManager(preset_dir=self.TEST_KEY)
         _ = mgr.preset_dir
 
-        sentinel = pm._migration_sentinel_path(self.TEST_KEY)
-        self.assertTrue(sentinel.exists(),
-                        "sentinel not written when legacy was absent")
+        sentinel = pm.PresetManager._migration_sentinel_path(self.TEST_KEY)
+        self.assertTrue(
+            sentinel.exists(), "sentinel not written when legacy was absent"
+        )
 
     def test_m3trik_wrapper_data_hoisted_up(self):
         """Data stranded in the interim ``<appconfig>/m3trik/presets/`` wrapper is rescued."""
@@ -331,11 +345,14 @@ class TestLegacyMigration(BaseTestCase):
         _ = mgr.preset_dir
 
         hoisted = self._new_root / "mayatk" / "color_manager" / "red.json"
-        self.assertTrue(hoisted.exists(),
-                        f"m3trik-wrapped data not hoisted to {hoisted}")
+        self.assertTrue(
+            hoisted.exists(), f"m3trik-wrapped data not hoisted to {hoisted}"
+        )
         # The empty m3trik shell should be removed.
-        self.assertFalse((self._fake_appconfig / "m3trik").exists(),
-                         "empty m3trik subtree was not cleaned up")
+        self.assertFalse(
+            (self._fake_appconfig / "m3trik").exists(),
+            "empty m3trik subtree was not cleaned up",
+        )
 
     def test_appconfig_wrapper_data_hoisted_up(self):
         """Data at ``<appconfig>/<pkg>/`` (the Qt python/ wrapper layout) is rescued.
@@ -347,20 +364,23 @@ class TestLegacyMigration(BaseTestCase):
         """
         stranded_pkg = self._fake_appconfig / "mayatk" / "substance_bridge"
         stranded_pkg.mkdir(parents=True)
-        (stranded_pkg / "matte.json").write_text(json.dumps({"r": 0.7}),
-                                                 encoding="utf-8")
+        (stranded_pkg / "matte.json").write_text(
+            json.dumps({"r": 0.7}), encoding="utf-8"
+        )
 
         mgr = PresetManager(preset_dir=self.TEST_KEY)
         _ = mgr.preset_dir
 
         hoisted = self._new_root / "mayatk" / "substance_bridge" / "matte.json"
-        self.assertTrue(hoisted.exists(),
-                        f"appconfig-wrapped data not hoisted to {hoisted}")
+        self.assertTrue(
+            hoisted.exists(), f"appconfig-wrapped data not hoisted to {hoisted}"
+        )
         # The fake appconfig itself is NOT removed — it may hold other apps' data.
         self.assertTrue(self._fake_appconfig.exists())
         # The hoisted package dir under fake appconfig should be empty / gone.
-        self.assertFalse(stranded_pkg.exists(),
-                         "source package dir not consumed by the move")
+        self.assertFalse(
+            stranded_pkg.exists(), "source package dir not consumed by the move"
+        )
 
     def test_appconfig_wrapper_leaves_unrelated_dirs_alone(self):
         """Non-uitk subdirs under AppConfigLocation are not touched."""
@@ -379,10 +399,14 @@ class TestLegacyMigration(BaseTestCase):
         _ = mgr.preset_dir
 
         # Unrelated content untouched.
-        self.assertTrue((unrelated / "wheel.bin").exists(),
-                        "cleanup disturbed unrelated AppConfigLocation content")
+        self.assertTrue(
+            (unrelated / "wheel.bin").exists(),
+            "cleanup disturbed unrelated AppConfigLocation content",
+        )
         # uitk content hoisted.
-        self.assertTrue((self._new_root / "mayatk" / "color_manager" / "red.json").exists())
+        self.assertTrue(
+            (self._new_root / "mayatk" / "color_manager" / "red.json").exists()
+        )
 
     def test_legacy_cleanup_does_not_overwrite_user_data(self):
         """Live data wins on collision; the stranded copy stays on disk."""
@@ -395,44 +419,57 @@ class TestLegacyMigration(BaseTestCase):
 
         live_dir = self._new_root / "mayatk" / "color_manager"
         live_dir.mkdir(parents=True)
-        (live_dir / "shared.json").write_text(json.dumps({"src": "live"}),
-                                              encoding="utf-8")
+        (live_dir / "shared.json").write_text(
+            json.dumps({"src": "live"}), encoding="utf-8"
+        )
 
         mgr = PresetManager(preset_dir=self.TEST_KEY)
         _ = mgr.preset_dir
 
         with open(live_dir / "shared.json", "r", encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["src"], "live",
-                             "legacy cleanup overwrote a live file")
+            self.assertEqual(
+                json.load(f)["src"], "live", "legacy cleanup overwrote a live file"
+            )
         # Collision leaves stranded data on disk for forensics; future
         # changes that delete it would silently destroy user-visible work.
-        self.assertTrue(stranded_file.exists(),
-                        "stranded data was deleted instead of preserved")
+        self.assertTrue(
+            stranded_file.exists(), "stranded data was deleted instead of preserved"
+        )
 
     def test_legacy_cleanup_recursive_merge(self):
         """Deep collisions don't orphan data — recursion merges at every level."""
         live_inner = self._new_root / "uitk" / "switchboard_browser" / "presets"
         live_inner.mkdir(parents=True)
-        (live_inner / "keep.json").write_text(json.dumps({"src": "live"}),
-                                              encoding="utf-8")
+        (live_inner / "keep.json").write_text(
+            json.dumps({"src": "live"}), encoding="utf-8"
+        )
 
         # Stranded data four levels deep under the m3trik wrapper.
         stranded_inner = (
-            self._fake_appconfig / "m3trik" / "presets"
-            / "uitk" / "switchboard_browser" / "presets"
+            self._fake_appconfig
+            / "m3trik"
+            / "presets"
+            / "uitk"
+            / "switchboard_browser"
+            / "presets"
         )
         stranded_inner.mkdir(parents=True)
-        (stranded_inner / "rescue.json").write_text(json.dumps({"src": "stranded"}),
-                                                    encoding="utf-8")
+        (stranded_inner / "rescue.json").write_text(
+            json.dumps({"src": "stranded"}), encoding="utf-8"
+        )
 
         mgr = PresetManager(preset_dir=self.TEST_KEY)
         _ = mgr.preset_dir
 
         self.assertTrue((live_inner / "keep.json").exists())
-        self.assertTrue((live_inner / "rescue.json").exists(),
-                        "recursive merge failed to rescue deeply-nested data")
-        self.assertFalse((self._fake_appconfig / "m3trik").exists(),
-                         "m3trik subtree not collapsed after recursive merge")
+        self.assertTrue(
+            (live_inner / "rescue.json").exists(),
+            "recursive merge failed to rescue deeply-nested data",
+        )
+        self.assertFalse(
+            (self._fake_appconfig / "m3trik").exists(),
+            "m3trik subtree not collapsed after recursive merge",
+        )
 
     def test_generic_era_data_hoisted_to_wrapper(self):
         """Data at ``<generic>/<pkg>/`` (bare generic-config era) is wrapped up."""
@@ -441,15 +478,13 @@ class TestLegacyMigration(BaseTestCase):
         # ecosystem wrapper.
         stranded_pkg = self._fake_generic / "mayatk" / "color_manager"
         stranded_pkg.mkdir(parents=True)
-        (stranded_pkg / "red.json").write_text(json.dumps({"r": 255}),
-                                               encoding="utf-8")
+        (stranded_pkg / "red.json").write_text(json.dumps({"r": 255}), encoding="utf-8")
 
         mgr = PresetManager(preset_dir=self.TEST_KEY)
         _ = mgr.preset_dir
 
         hoisted = self._new_root / "mayatk" / "color_manager" / "red.json"
-        self.assertTrue(hoisted.exists(),
-                        f"generic-era data not hoisted to {hoisted}")
+        self.assertTrue(hoisted.exists(), f"generic-era data not hoisted to {hoisted}")
         # Source consumed by the move.
         self.assertFalse(stranded_pkg.exists())
 
@@ -480,10 +515,12 @@ class TestLegacyMigration(BaseTestCase):
         # Both pre-wrap dirs should now live under the inner uitk/ wrapper.
         self.assertTrue(
             (self._new_root / "uitk" / "style_presets" / "dark.json").exists(),
-            "pre-wrap style_presets not nested into uitk/uitk/")
+            "pre-wrap style_presets not nested into uitk/uitk/",
+        )
         self.assertTrue(
             (self._new_root / "uitk" / "hotkey_presets" / "vim.json").exists(),
-            "pre-wrap hotkey_presets not nested into uitk/uitk/")
+            "pre-wrap hotkey_presets not nested into uitk/uitk/",
+        )
         # Old locations are gone.
         self.assertFalse((self._new_root / "style_presets").exists())
         self.assertFalse((self._new_root / "hotkey_presets").exists())
@@ -530,7 +567,9 @@ class TestLegacyMigration(BaseTestCase):
         )
         # ...and must NOT have been relocated under the inner uitk/ wrapper.
         self.assertFalse(
-            (self._new_root / "uitk" / "mayatk" / "curtain" / "MyCurtain.json").exists(),
+            (
+                self._new_root / "uitk" / "mayatk" / "curtain" / "MyCurtain.json"
+            ).exists(),
             "mayatk tree buried under <root>/uitk/mayatk/",
         )
 
@@ -591,8 +630,10 @@ class TestLegacyMigration(BaseTestCase):
 
         # The wrap must NOT have nested everything one more level deep.
         self.assertTrue((self._new_root / "uitk" / "style_presets" / "x.json").exists())
-        self.assertFalse((self._new_root / "uitk" / "uitk").exists(),
-                         "wrap ran on an already-wrapped layout")
+        self.assertFalse(
+            (self._new_root / "uitk" / "uitk").exists(),
+            "wrap ran on an already-wrapped layout",
+        )
 
     def test_pre_wrap_resumes_partial_wrap(self):
         """A prior wrap that was killed mid-move is resumed on the next access.
@@ -618,34 +659,40 @@ class TestLegacyMigration(BaseTestCase):
         _ = mgr.preset_dir
 
         # Previously-moved file still in place; orphaned sibling resumed.
-        self.assertTrue((self._new_root / "uitk" / "hotkey_presets" / "moved.json").exists())
+        self.assertTrue(
+            (self._new_root / "uitk" / "hotkey_presets" / "moved.json").exists()
+        )
         self.assertTrue(
             (self._new_root / "uitk" / "style_presets" / "stuck.json").exists(),
-            "partial-wrap recovery did not pick up the orphaned sibling")
-        self.assertFalse((self._new_root / "style_presets").exists(),
-                         "orphaned sibling still at root after recovery")
+            "partial-wrap recovery did not pick up the orphaned sibling",
+        )
+        self.assertFalse(
+            (self._new_root / "style_presets").exists(),
+            "orphaned sibling still at root after recovery",
+        )
 
     def test_renamed_domain_carries_presets_forward(self):
         """A renamed preset domain carries the user's saved snapshots into the
         new dir (hotkey_presets -> shortcut_presets) on first ensure."""
-        from uitk.managers.preset_manager import _maybe_migrate_renamed_domain
+        from uitk.managers.preset_manager import PresetManager
 
         old = self._new_root / "hotkey_presets"
         old.mkdir(parents=True)
         (old / "vim.json").write_text(json.dumps({"esc": "Esc"}), encoding="utf-8")
 
         new = self._new_root / "shortcut_presets"
-        _maybe_migrate_renamed_domain(new)
+        PresetManager._maybe_migrate_renamed_domain(new)
 
-        self.assertTrue((new / "vim.json").exists(),
-                        "renamed-domain preset not carried into the new dir")
-        self.assertFalse(old.exists(),
-                         "fully-carried old domain dir should be removed")
+        self.assertTrue(
+            (new / "vim.json").exists(),
+            "renamed-domain preset not carried into the new dir",
+        )
+        self.assertFalse(old.exists(), "fully-carried old domain dir should be removed")
 
     def test_renamed_domain_never_clobbers_existing(self):
         """A preset already under the new name wins — a post-rename edit is
         never overwritten by the old domain's copy."""
-        from uitk.managers.preset_manager import _maybe_migrate_renamed_domain
+        from uitk.managers.preset_manager import PresetManager
 
         old = self._new_root / "hotkey_presets"
         old.mkdir(parents=True)
@@ -654,19 +701,19 @@ class TestLegacyMigration(BaseTestCase):
         new.mkdir(parents=True)
         (new / "vim.json").write_text(json.dumps({"v": "new"}), encoding="utf-8")
 
-        _maybe_migrate_renamed_domain(new)
+        PresetManager._maybe_migrate_renamed_domain(new)
 
         self.assertEqual(
-            json.loads((new / "vim.json").read_text(encoding="utf-8"))["v"], "new",
-            "post-rename edit was clobbered by the old domain copy")
+            json.loads((new / "vim.json").read_text(encoding="utf-8"))["v"],
+            "new",
+            "post-rename edit was clobbered by the old domain copy",
+        )
 
     def test_pre_wrap_drops_interim_artifacts(self):
         """``.migrated`` / ``.migration/`` at root level don't get wrapped into uitk/."""
         # Plant a real pre-wrap dir + dead-state artifacts at the same level.
         (self._new_root / "style_presets").mkdir(parents=True)
-        (self._new_root / "style_presets" / "x.json").write_text(
-            "{}", encoding="utf-8"
-        )
+        (self._new_root / "style_presets" / "x.json").write_text("{}", encoding="utf-8")
         (self._new_root / ".migrated").write_text("[]", encoding="utf-8")
         (self._new_root / ".migration").mkdir()
         (self._new_root / ".migration" / "ghost").touch()
@@ -676,10 +723,14 @@ class TestLegacyMigration(BaseTestCase):
 
         self.assertTrue((self._new_root / "uitk" / "style_presets" / "x.json").exists())
         # Dead-state artifacts dropped, not preserved inside the wrapper.
-        self.assertFalse((self._new_root / "uitk" / ".migrated").exists(),
-                         ".migrated artifact carried into wrapper")
-        self.assertFalse((self._new_root / "uitk" / ".migration").exists(),
-                         ".migration artifact carried into wrapper")
+        self.assertFalse(
+            (self._new_root / "uitk" / ".migrated").exists(),
+            ".migrated artifact carried into wrapper",
+        )
+        self.assertFalse(
+            (self._new_root / "uitk" / ".migration").exists(),
+            ".migration artifact carried into wrapper",
+        )
         # And not at the root level either.
         self.assertFalse((self._new_root / ".migrated").exists())
         self.assertFalse((self._new_root / ".migration").exists())
@@ -708,11 +759,13 @@ class TestLegacyMigration(BaseTestCase):
         # Pass 1 result: uitk-pkg state nested.
         self.assertTrue(
             (self._new_root / "uitk" / "style_presets" / "wrap.json").exists(),
-            "pass 1 (wrap) did not run in combined scenario")
+            "pass 1 (wrap) did not run in combined scenario",
+        )
         # Pass 2 result: mayatk hoisted into the wrapper sibling.
         self.assertTrue(
             (self._new_root / "mayatk" / "color_manager" / "hoist.json").exists(),
-            "pass 2 (candidate drain) did not run in combined scenario")
+            "pass 2 (candidate drain) did not run in combined scenario",
+        )
 
     def test_legacy_cleanup_drops_interim_state_artifacts(self):
         """Interim ``.migrated`` / ``.migration`` files don't leak up."""
@@ -728,10 +781,14 @@ class TestLegacyMigration(BaseTestCase):
         _ = mgr.preset_dir
 
         self.assertTrue((self._new_root / "mayatk" / "x.json").exists())
-        self.assertFalse((self._new_root / ".migrated").exists(),
-                         "interim .migrated file leaked to root")
-        self.assertFalse((self._new_root / ".migration").exists(),
-                         "interim .migration dir leaked to root")
+        self.assertFalse(
+            (self._new_root / ".migrated").exists(),
+            "interim .migrated file leaked to root",
+        )
+        self.assertFalse(
+            (self._new_root / ".migration").exists(),
+            "interim .migration dir leaked to root",
+        )
 
 
 class TestBuiltinTier(BaseTestCase):
@@ -887,17 +944,21 @@ class TestBuiltinTier(BaseTestCase):
     def test_wire_combo_italicises_builtins(self):
         combo = self._wire_combo()
         model = combo.model()
-        items = {
-            model.item(i).text(): model.item(i) for i in range(model.rowCount())
-        }
+        items = {model.item(i).text(): model.item(i) for i in range(model.rowCount())}
         # Built-in shown italic; user preset is not. Text stays the raw name in
         # both cases so load/rename/delete still resolve.
         self.assertTrue(items["studio"].font().italic(), "built-in not italicised")
-        self.assertFalse(items["custom"].font().italic(), "user preset wrongly italicised")
+        self.assertFalse(
+            items["custom"].font().italic(), "user preset wrongly italicised"
+        )
         # Marking must be font-only — no item icons (they shifted the collapsed
         # display's text and pushed the dropdown arrow into the name).
-        self.assertTrue(items["studio"].icon().isNull(), "built-in should carry no icon")
-        self.assertTrue(items["custom"].icon().isNull(), "user preset should carry no icon")
+        self.assertTrue(
+            items["studio"].icon().isNull(), "built-in should carry no icon"
+        )
+        self.assertTrue(
+            items["custom"].icon().isNull(), "user preset should carry no icon"
+        )
 
     def test_wire_combo_shadowed_builtin_is_not_italicised(self):
         # A user preset that shadows a built-in of the same name is editable, so
@@ -930,9 +991,7 @@ class TestBuiltinTier(BaseTestCase):
         self.assertEqual(self._menu_labels(combo), ["Open Folder"])
 
         combo.setCurrentIndex(combo.findText("custom"))  # user
-        self.assertEqual(
-            self._menu_labels(combo), ["Rename", "Open Folder", "Delete"]
-        )
+        self.assertEqual(self._menu_labels(combo), ["Rename", "Open Folder", "Delete"])
 
     @staticmethod
     def _toolbar_buttons(combo):
@@ -950,7 +1009,9 @@ class TestBuiltinTier(BaseTestCase):
         btns = self._toolbar_buttons(combo)
         self.assertEqual(len(btns), 3, "toolbar = [refresh][save][menu]")
         tips = [b.toolTip() for b in btns]
-        self.assertTrue(tips[0].startswith("Rescan"), f"button0 not Refresh: {tips[0]!r}")
+        self.assertTrue(
+            tips[0].startswith("Rescan"), f"button0 not Refresh: {tips[0]!r}"
+        )
         self.assertTrue(tips[1].startswith("Save"), f"button1 not Save: {tips[1]!r}")
         self.assertIn("rename", tips[2].lower(), f"button2 not the menu: {tips[2]!r}")
         # All icon-only -> no visible text.
@@ -966,7 +1027,9 @@ class TestBuiltinTier(BaseTestCase):
 
         combo = ComboBox()
         self.addCleanup(combo.deleteLater)
-        self.assertGreaterEqual(combo.maximumHeight(), 16777215, "combo starts unbounded")
+        self.assertGreaterEqual(
+            combo.maximumHeight(), 16777215, "combo starts unbounded"
+        )
         self.mgr.wire_combo(combo)
         self.assertLess(combo.maximumHeight(), 16777215, "height left unbounded")
         self.assertEqual(
@@ -994,9 +1057,13 @@ class TestBuiltinTier(BaseTestCase):
         menu = opt.menu
         self.assertEqual(menu.position, "cursorPos", "menu not cursor-centred")
         self.assertFalse(menu.add_header, "menu should have no header")
-        self.assertFalse(getattr(menu, "add_footer", False), "menu should have no footer")
+        self.assertFalse(
+            getattr(menu, "add_footer", False), "menu should have no footer"
+        )
         self.assertFalse(menu.add_apply_button, "menu should have no apply button")
-        self.assertFalse(menu.add_defaults_button, "menu should have no defaults button")
+        self.assertFalse(
+            menu.add_defaults_button, "menu should have no defaults button"
+        )
 
     def _refresh_button(self, combo):
         return self._toolbar_buttons(combo)[0]
@@ -1037,7 +1104,9 @@ class TestBuiltinTier(BaseTestCase):
 
         self.spn.setValue(7)  # user edits away from the preset
         self._refresh_button(combo).click()
-        self.assertEqual(self.spn.value(), 42, "Refresh must reload the selected preset")
+        self.assertEqual(
+            self.spn.value(), 42, "Refresh must reload the selected preset"
+        )
 
     def test_refresh_picks_up_preset_added_to_dir_by_hand(self):
         # A preset file dropped into the dir outside the UI must show up in the
@@ -1056,7 +1125,8 @@ class TestBuiltinTier(BaseTestCase):
         )
         self._refresh_button(combo).click()
         self.assertGreaterEqual(
-            combo.findText("manual"), 0,
+            combo.findText("manual"),
+            0,
             "Refresh must re-scan the dir for hand-added presets",
         )
 
@@ -1075,7 +1145,8 @@ class TestBuiltinTier(BaseTestCase):
         (self.user / "custom.json").unlink()  # user deletes the file by hand
         self._refresh_button(combo).click()
         self.assertEqual(
-            combo.findText("custom"), -1,
+            combo.findText("custom"),
+            -1,
             "Refresh must drop presets removed from the dir",
         )
 
@@ -1085,7 +1156,9 @@ class TestBuiltinTier(BaseTestCase):
         self._save_button(combo).click()  # enter inline edit
         self.assertTrue(combo.isEditable(), "Save enters inline edit mode")
         self._inline_commit(combo, "fresh")
-        self.assertEqual(self.mgr.source("fresh"), "user", "inline Save wrote a user preset")
+        self.assertEqual(
+            self.mgr.source("fresh"), "user", "inline Save wrote a user preset"
+        )
         self.assertEqual(self.mgr.active_preset, "fresh")
         self.assertEqual(combo.currentText(), "fresh")
         self.assertFalse(self.mgr.is_modified(), "marker clean right after save")
@@ -1129,7 +1202,8 @@ class TestBuiltinTier(BaseTestCase):
         self.assertFalse(combo.isEditable(), "focus-out should exit edit mode")
         stored = json.loads((self.user / "custom.json").read_text(encoding="utf-8"))
         self.assertEqual(
-            stored.get("spn_b"), 5,
+            stored.get("spn_b"),
+            5,
             "focus-out cancel overwrote the active preset with the in-progress value",
         )
 
@@ -1266,13 +1340,17 @@ class TestSemanticPresetMode(BaseTestCase):
         self.builtin.mkdir()
         # A shipped built-in run-template (semantic keys, like the CLI writes).
         (self.builtin / "specular.json").write_text(
-            json.dumps({"_meta": {"version": 1},
-                        "align_downscale": 2, "depth_filter": "moderate"}),
+            json.dumps(
+                {
+                    "_meta": {"version": 1},
+                    "align_downscale": 2,
+                    "depth_filter": "moderate",
+                }
+            ),
             encoding="utf-8",
         )
         # Stand-in for a panel's live param values + an applied-into sink.
-        self.live = {"align_downscale": 1, "depth_filter": "mild",
-                     "face_count": "high"}
+        self.live = {"align_downscale": 1, "depth_filter": "mild", "face_count": "high"}
         self.applied: dict = {}
 
         def applier(data):
@@ -1294,8 +1372,9 @@ class TestSemanticPresetMode(BaseTestCase):
         n = self.mgr.load("specular")
         self.assertEqual(n, 2)
         # The applier sees the semantic payload, with `_meta` already stripped.
-        self.assertEqual(self.applied, {"align_downscale": 2,
-                                        "depth_filter": "moderate"})
+        self.assertEqual(
+            self.applied, {"align_downscale": 2, "depth_filter": "moderate"}
+        )
         self.assertNotIn("_meta", self.applied)
 
     def test_save_writes_provider_payload_to_user_tier(self):
@@ -1398,11 +1477,11 @@ class TestSemanticPresetMode(BaseTestCase):
         """
         # The helper now actually attempts json.dumps rather than a shallow
         # type check: a dict carrying a nested set is rejected...
-        self.assertFalse(pm._is_serializable({"tags": {1, 2}}))
-        self.assertFalse(pm._is_serializable([Path("x")]))
+        self.assertFalse(pm.PresetManager._is_serializable({"tags": {1, 2}}))
+        self.assertFalse(pm.PresetManager._is_serializable([Path("x")]))
         # ...while genuinely serializable containers still pass.
-        self.assertTrue(pm._is_serializable({"n": [1, 2, 3]}))
-        self.assertTrue(pm._is_serializable((1, "a", 2.0)))
+        self.assertTrue(pm.PresetManager._is_serializable({"n": [1, 2, 3]}))
+        self.assertTrue(pm.PresetManager._is_serializable((1, "a", 2.0)))
 
         # A save whose live payload carries a nested non-serializable value must
         # not raise -- the offending key is silently dropped, serializable
@@ -1556,7 +1635,13 @@ class TestCaptureScope(BaseTestCase):
         self.transient = _mk(QtWidgets.QCheckBox, "transient", restore=False)
 
         self.window = self._FakeWindow(
-            [self.menu_chk, self.panel_chk, self.panel_txt, self.path_txt, self.transient]
+            [
+                self.menu_chk,
+                self.panel_chk,
+                self.panel_txt,
+                self.path_txt,
+                self.transient,
+            ]
         )
         self.menu = self._FakeMenu([self.menu_chk], self.window)
 
@@ -1621,9 +1706,9 @@ class TestCaptureScope(BaseTestCase):
         self.path_txt.setText("C:/other")
         mgr.load("tmpl")
 
-        self.assertTrue(self.panel_chk.isChecked())          # restored
-        self.assertEqual(self.panel_txt.text(), "hello")     # restored
-        self.assertEqual(self.path_txt.text(), "C:/other")   # excluded, untouched
+        self.assertTrue(self.panel_chk.isChecked())  # restored
+        self.assertEqual(self.panel_txt.text(), "hello")  # restored
+        self.assertEqual(self.path_txt.text(), "C:/other")  # excluded, untouched
 
     def test_value_filter_only_applies_to_explicit_window_scope(self):
         # Back-compat guard: the legacy auto/MainWindow path

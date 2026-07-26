@@ -461,5 +461,332 @@ class TestPositionWindowScreen(unittest.TestCase):
         self.assertEqual(win.moved.y(), expected.y())
 
 
+class _StyleOnlyUi:
+    """Records what ``apply_styles`` pushed through ``ui.style.set``."""
+
+    def __init__(self, *tags):
+        self._tags = set(tags)
+        self.applied = {}
+        outer = self
+
+        class _Style:
+            def set(self, **kwargs):
+                outer.applied = kwargs
+
+        self.style = _Style()
+
+    def has_tags(self, tags):
+        return bool(self._tags & set(tags))
+
+
+class TestApplyStylesThemeResolution(unittest.TestCase):
+    """``apply_styles`` resolves its theme from the marking menu's per-style
+    preference, so the two hosted window themes are user-configurable instead
+    of pinned to ``DEFAULT_STYLE["theme"]``.
+
+    The subclass handlers (mayatk / blendertk) always hand in a pre-built style
+    copied from ``DEFAULT_STYLE``, so "pre-built" alone must NOT opt out of
+    resolution — only a style whose theme was deliberately changed does.
+    """
+
+    def _handler(self, resolved="light"):
+        handler = object.__new__(UiHandler)
+        menu = types.SimpleNamespace(resolve_hosted_theme=lambda ui: resolved)
+        handler.sb = types.SimpleNamespace(
+            handlers=types.SimpleNamespace(marking_menu=menu)
+        )
+        return handler
+
+    def test_default_path_uses_resolved_theme(self):
+        ui = _StyleOnlyUi("startmenu")
+        self._handler("light").apply_styles(ui)
+        self.assertEqual(ui.applied["theme"], "light")
+
+    def test_prebuilt_default_style_still_resolves(self):
+        """The mayatk / blendertk header-button override path."""
+        import copy
+
+        handler = self._handler("high-contrast")
+        style = copy.deepcopy(UiHandler.DEFAULT_STYLE)
+        style["header_buttons"] = ("menu", "collapse", "hide")
+        handler.apply_styles(_StyleOnlyUi("mayatk"), style=style)
+        self.assertEqual(style["theme"], "high-contrast")
+
+    def test_explicit_theme_arg_wins(self):
+        ui = _StyleOnlyUi("startmenu")
+        self._handler("light").apply_styles(ui, theme="dark")
+        self.assertEqual(ui.applied["theme"], "dark")
+
+    def test_deliberate_style_theme_is_kept(self):
+        """A caller that picked a non-default theme keeps it."""
+        ui = _StyleOnlyUi("startmenu")
+        self._handler("light").apply_styles(ui, style={"theme": "high-contrast"})
+        self.assertEqual(ui.applied["theme"], "high-contrast")
+
+    def test_no_marking_menu_falls_back_to_default_style(self):
+        """Plain Switchboard usage (no marking menu) keeps DEFAULT_STYLE."""
+        handler = object.__new__(UiHandler)
+        handler.sb = types.SimpleNamespace(handlers=None)
+        ui = _StyleOnlyUi("startmenu")
+        handler.apply_styles(ui)
+        self.assertEqual(ui.applied["theme"], UiHandler.DEFAULT_STYLE["theme"])
+
+
+class TestShowRestoresCollapsedHeader(unittest.TestCase):
+    """``show`` must present the FULL window when its header left it collapsed.
+
+    A header-collapsed window is still visible (a bare title strip), so Qt's
+    ``show()`` no-ops on it and ``Header.showEvent`` — which resets collapse
+    state on a hidden→shown transition — never fires. Re-showing via the
+    handler (e.g. a marking-menu MenuButton relaunching the tool) therefore
+    positioned the collapsed strip at the cursor instead of the real window
+    ("shows in a corrupted state").
+    Fixed: 2026-07-25
+    """
+
+    def setUp(self):
+        from conftest import setup_qt_application
+
+        self.app = setup_qt_application()
+        self.handler = object.__new__(UiHandler)
+        # `config` is a read-only property backed by sb.configurable.
+        self.handler.sb = types.SimpleNamespace(
+            configurable=types.SimpleNamespace(
+                branch=lambda name: {"default_position": None}
+            )
+        )
+
+    def _collapsed_window(self):
+        from qtpy import QtWidgets, QtCore
+        from uitk.widgets.header import Header
+
+        window = QtWidgets.QWidget()
+        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        layout = QtWidgets.QVBoxLayout(window)
+        layout.setContentsMargins(0, 0, 0, 0)
+        header = Header(parent=window, config_buttons=["collapse", "hide"])
+        layout.addWidget(header)
+        body = QtWidgets.QLabel("body", parent=window)
+        body.setMinimumHeight(150)
+        layout.addWidget(body)
+        window.header = header  # what attach_to/apply_styles normally set
+        window.show()
+        window.resize(400, 300)
+        self.app.processEvents()
+        header.collapse_window(fixed_width=200)
+        self.app.processEvents()
+        self.addCleanup(window.deleteLater)
+        return window, header, body
+
+    def test_show_expands_visible_collapsed_window(self):
+        window, header, body = self._collapsed_window()
+        self.assertTrue(window.isVisible())
+        self.handler.show(window, force=True)
+        self.app.processEvents()
+        self.assertFalse(header._collapsed)
+        self.assertTrue(body.isVisible())
+        self.assertEqual(window.height(), 300)
+
+    def test_show_positions_with_expanded_size(self):
+        """Cursor positioning must measure the expanded window, not the strip."""
+        from unittest.mock import patch
+        from qtpy import QtCore, QtGui
+
+        window, header, _ = self._collapsed_window()
+        # Pin the cursor read — the suite runs on the native QPA, so the live
+        # mouse could move between show()'s read and this test's expectation.
+        cursor = QtCore.QPoint(600, 400)
+        with patch.object(QtGui.QCursor, "pos", return_value=cursor):
+            self.handler.show(window, pos="cursor", force=True)
+        self.app.processEvents()
+        self.assertFalse(header._collapsed)
+        self.assertEqual(window.width(), 400)
+        # _position_window centers on the cursor with a 25%-height downward
+        # offset — asserting both axes proves the EXPANDED size was measured.
+        self.assertEqual(window.x(), cursor.x() - window.width() // 2)
+        self.assertEqual(
+            window.y(),
+            cursor.y() - window.height() // 2 + int(window.height() * 0.25),
+        )
+
+    def test_show_headerless_window_unaffected(self):
+        """A plain window without a header attribute must show as before."""
+        from qtpy import QtWidgets
+
+        window = QtWidgets.QWidget()
+        self.addCleanup(window.deleteLater)
+        self.handler.show(window, force=True)
+        self.assertTrue(window.isVisible())
+
+
+class _RecordingHeader:
+    """Header double recording the button set ``config_buttons`` installs."""
+
+    def __init__(self, buttons=()):
+        self.buttons = list(buttons)
+
+    def config_buttons(self, *names):
+        self.buttons = list(names)
+
+
+class _UiWithHeader:
+    def __init__(self, header):
+        self.header = header
+
+
+class TestUiHandlerPersistenceHeader(unittest.TestCase):
+    """The persistence->header-button-set mapping and the two apply paths.
+
+    Pure logic (no Qt window): choosing the header set is what makes a launched
+    window transient (pin -> participates in the marking-menu auto-hide via
+    MainWindow.request_hide) or sticky (hide -> request_hide refuses).
+    """
+
+    def test_persistence_header_mapping(self):
+        self.assertEqual(
+            UiHandler._persistence_header("transient"), UiHandler.TRANSIENT_HEADER
+        )
+        self.assertEqual(
+            UiHandler._persistence_header("sticky"), UiHandler.STICKY_HEADER
+        )
+        # None (and any unknown value) -> sticky, preserving the standalone
+        # hide-button default this path has always applied.
+        self.assertEqual(UiHandler._persistence_header(None), UiHandler.STICKY_HEADER)
+        self.assertEqual(
+            UiHandler._persistence_header("bogus"), UiHandler.STICKY_HEADER
+        )
+
+    def test_default_style_uses_transient_header(self):
+        """The canonical/marking-menu default chrome is the transient pin set."""
+        self.assertEqual(
+            UiHandler.DEFAULT_STYLE["header_buttons"], UiHandler.TRANSIENT_HEADER
+        )
+        self.assertIn("pin", UiHandler.TRANSIENT_HEADER)
+        self.assertIn("hide", UiHandler.STICKY_HEADER)
+
+    def test_configure_launched_header_none_is_hide(self):
+        ui = _UiWithHeader(_RecordingHeader())
+        UiHandler._configure_launched_header(ui)
+        self.assertEqual(tuple(ui.header.buttons), UiHandler.STICKY_HEADER)
+
+    def test_configure_launched_header_transient_is_pin(self):
+        ui = _UiWithHeader(_RecordingHeader())
+        UiHandler._configure_launched_header(ui, persistence="transient")
+        self.assertEqual(tuple(ui.header.buttons), UiHandler.TRANSIENT_HEADER)
+        self.assertIn("pin", ui.header.buttons)
+        self.assertNotIn("hide", ui.header.buttons)
+
+    def test_configure_launched_header_preserves_custom_set(self):
+        """A header that already has buttons is a deliberate custom set — skip."""
+        ui = _UiWithHeader(_RecordingHeader(buttons=("menu", "maximize")))
+        UiHandler._configure_launched_header(ui, persistence="sticky")
+        self.assertEqual(tuple(ui.header.buttons), ("menu", "maximize"))
+
+    def test_apply_persistence_chrome_overrides_existing_set(self):
+        """The canonical override forces the set even over existing pin chrome,
+        so a sticky choice drops the pin button (request_hide then refuses)."""
+        ui = _UiWithHeader(_RecordingHeader(buttons=UiHandler.TRANSIENT_HEADER))
+        UiHandler._apply_persistence_chrome(ui, "sticky")
+        self.assertEqual(tuple(ui.header.buttons), UiHandler.STICKY_HEADER)
+        self.assertNotIn("pin", ui.header.buttons)
+
+    def test_ui_header_none_when_absent(self):
+        self.assertIsNone(UiHandler._ui_header(types.SimpleNamespace()))
+
+
+class TestLaunchPersistenceWiring(unittest.TestCase):
+    """``launch`` forwards the resolved persistence to the right chrome path.
+
+    Standalone (no marking menu) -> ``_configure_launched_header``; canonical
+    (marking menu present) with an explicit choice -> ``_apply_persistence_chrome``
+    overriding the pin chrome; canonical with no choice -> neither override runs.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        _write_ui(os.path.join(self.tmp.name, "tool.ui"), "tool")
+        from uitk.switchboard import Switchboard
+
+        self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
+
+    def tearDown(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.tmp.cleanup()
+
+    def test_standalone_forwards_persistence(self):
+        from unittest import mock
+
+        handler = self.sb.handlers.ui
+        with mock.patch.object(handler, "_configure_launched_header") as chrome:
+            ui = handler.launch("tool", persistence="transient")
+        try:
+            chrome.assert_called_once()
+            self.assertEqual(chrome.call_args.kwargs.get("persistence"), "transient")
+        finally:
+            ui.deleteLater()
+
+    def test_standalone_default_persistence_is_none(self):
+        from unittest import mock
+
+        handler = self.sb.handlers.ui
+        with mock.patch.object(handler, "_configure_launched_header") as chrome:
+            ui = handler.launch("tool")
+        try:
+            chrome.assert_called_once()
+            self.assertIsNone(chrome.call_args.kwargs.get("persistence"))
+        finally:
+            ui.deleteLater()
+
+    def test_canonical_explicit_choice_overrides_chrome(self):
+        from unittest import mock
+
+        self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
+        handler = self.sb.handlers.ui
+        with mock.patch.object(handler, "_apply_persistence_chrome") as override:
+            ui = handler.launch("tool", persistence="sticky")
+        try:
+            override.assert_called_once()
+            self.assertEqual(override.call_args.args[1], "sticky")
+        finally:
+            ui.deleteLater()
+
+    def test_canonical_without_choice_skips_override(self):
+        from unittest import mock
+
+        self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
+        handler = self.sb.handlers.ui
+        with mock.patch.object(handler, "_apply_persistence_chrome") as override:
+            ui = handler.launch("tool")
+        try:
+            override.assert_not_called()
+        finally:
+            ui.deleteLater()
+
+    def test_canonical_ignores_unrecognized_persistence(self):
+        """Only "transient"/"sticky" override canonical pin chrome — an unknown
+        value (e.g. the browser's "context" sentinel) must leave it untouched."""
+        from unittest import mock
+
+        self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
+        handler = self.sb.handlers.ui
+        with mock.patch.object(handler, "_apply_persistence_chrome") as override:
+            ui = handler.launch("tool", persistence="context")
+        try:
+            override.assert_not_called()
+        finally:
+            ui.deleteLater()
+
+
 if __name__ == "__main__":
     unittest.main()

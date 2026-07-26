@@ -7,13 +7,14 @@ Regression coverage for the PySide6 crash where ``key | modifiers``
 raised ``TypeError: QKeyCombination.__init__ called with wrong argument
 types``. The fix coerces both operands to int before the OR.
 """
+
 import unittest
 
 from qtpy import QtWidgets, QtCore, QtGui
 from conftest import QtBaseTestCase, setup_qt_application
 from uitk.widgets.delegates.shortcut_capture import (
     ShortcutCaptureEdit,
-    install_shortcut_capture,
+    ShortcutCaptureDelegate,
 )
 
 app = setup_qt_application()
@@ -101,7 +102,7 @@ class TestInstallShortcutCapture(QtBaseTestCase):
     def test_capture_emits_row_col_sequence(self):
         table = self._table()
         captured = []
-        install_shortcut_capture(
+        ShortcutCaptureDelegate.install_shortcut_capture(
             table, 1, lambda r, c, s: captured.append((r, c, s))
         )
 
@@ -128,7 +129,7 @@ class TestInstallShortcutCapture(QtBaseTestCase):
 
         table = self._table()
         captured = []
-        delegate = install_shortcut_capture(
+        delegate = ShortcutCaptureDelegate.install_shortcut_capture(
             table, 1, lambda r, c, s: captured.append(s), bordered=True
         )
         self.assertIsInstance(delegate, BorderedShortcutCaptureDelegate)
@@ -147,7 +148,7 @@ class TestInstallShortcutCapture(QtBaseTestCase):
         table = self._table()
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         captured = []
-        install_shortcut_capture(
+        ShortcutCaptureDelegate.install_shortcut_capture(
             table, 1, lambda r, c, s: captured.append(s)
         )
 
@@ -170,7 +171,9 @@ class TestInstallShortcutCapture(QtBaseTestCase):
         table = self._table()
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         captured = []
-        install_shortcut_capture(table, 1, lambda r, c, s: captured.append(s))
+        ShortcutCaptureDelegate.install_shortcut_capture(
+            table, 1, lambda r, c, s: captured.append(s)
+        )
 
         table.setCurrentCell(0, 1)
         # Route a letter key through the table the way a focused view would.
@@ -181,12 +184,8 @@ class TestInstallShortcutCapture(QtBaseTestCase):
         )
         QtWidgets.QApplication.processEvents()
 
-        self.assertNotEqual(
-            table.state(), QtWidgets.QAbstractItemView.EditingState
-        )
-        self.assertNotIsInstance(
-            table.viewport().focusWidget(), ShortcutCaptureEdit
-        )
+        self.assertNotEqual(table.state(), QtWidgets.QAbstractItemView.EditingState)
+        self.assertNotIsInstance(table.viewport().focusWidget(), ShortcutCaptureEdit)
         self.assertEqual(captured, [])
 
 

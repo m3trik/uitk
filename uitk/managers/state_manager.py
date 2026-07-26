@@ -6,11 +6,7 @@ from contextlib import contextmanager
 from typing import Any, Optional, Union
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
-from uitk.managers.settings_manager import (
-    SettingsManager,
-    decode_stored_value,
-    encode_stored_value,
-)
+from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.value_manager import ValueManager
 
 
@@ -150,11 +146,7 @@ class StateManager(ptk.LoggingMixin):
         # init runs). Applying it would silently clamp/no-op, and a later
         # change could then persist the wrong (lower) index. Skip until the
         # model is large enough; the value stays on disk for a fuller restore.
-        if (
-            signal_name == self._INDEX_SIGNAL
-            and isinstance(value, int)
-            and value >= 0
-        ):
+        if signal_name == self._INDEX_SIGNAL and isinstance(value, int) and value >= 0:
             count = getattr(widget, "count", None)
             if callable(count) and value >= count():
                 self.logger.debug(
@@ -197,7 +189,9 @@ class StateManager(ptk.LoggingMixin):
                     f"Could not apply value '{value}' to widget {widget}: {e}"
                 )
 
-    def _apply_combo_identity(self, widget: QtWidgets.QWidget, value: Any, mode: str) -> None:
+    def _apply_combo_identity(
+        self, widget: QtWidgets.QWidget, value: Any, mode: str
+    ) -> None:
         """Select a combo item by stable identity (``text`` / ``data``).
 
         The text/data counterpart of :meth:`apply`'s index path: it resolves the
@@ -266,7 +260,11 @@ class StateManager(ptk.LoggingMixin):
             # once). Raw QSettings gets the shared encoding — containers
             # JSON-encoded, ambiguous strings ("1.10", "true") quoted so
             # load()'s decode restores them verbatim.
-            return value if self._store_encodes else encode_stored_value(value)
+            return (
+                value
+                if self._store_encodes
+                else SettingsManager.encode_stored_value(value)
+            )
         return self._UNSUPPORTED
 
     def save(self, widget: QtWidgets.QWidget, value: Any = None) -> None:
@@ -372,7 +370,7 @@ class StateManager(ptk.LoggingMixin):
                 if self._store_encodes:
                     parsed_value = value
                 else:
-                    parsed_value = decode_stored_value(value)
+                    parsed_value = SettingsManager.decode_stored_value(value)
                 with self.suppress_save():
                     self.apply(widget, parsed_value)
                 self.logger.debug(f"Loaded state: {key} -> {parsed_value}")
@@ -430,7 +428,9 @@ class StateManager(ptk.LoggingMixin):
             self.apply(widget, default)
             self._sync_stored_default(widget, default)
 
-    def _sync_stored_default(self, widget: QtWidgets.QWidget, default_value: Any) -> None:
+    def _sync_stored_default(
+        self, widget: QtWidgets.QWidget, default_value: Any
+    ) -> None:
         """Let a stored-value override on the widget re-sync to the new default.
 
         An option-box *reset* toggle in bypass mode holds a snapshot of the
@@ -459,22 +459,73 @@ class StateManager(ptk.LoggingMixin):
         """Check if a widget has a stored default value."""
         return widget in self._defaults
 
+    # Dynamic (C++) property under which a captured default is mirrored onto the
+    # widget's QObject. ``_defaults`` is keyed by the Python *wrapper*; a dynamic
+    # property lives on the underlying C++ object and so survives a wrapper swap
+    # (an option-box wrap or deferred-widget revive re-resolves the same widget
+    # to a NEW wrapper). See :meth:`capture_default`.
+    _DEFAULT_PROP = "_uitk_captured_default"
+    # Types a Qt dynamic property round-trips losslessly. A default outside this
+    # set (e.g. an arbitrary combo ``itemData`` object) is kept only in
+    # ``_defaults`` and simply forgoes the cross-wrapper guarantee — acceptable,
+    # as the reset-after-revive bug this guards is a value-widget (spin box)
+    # concern, and combos persist by stable identity anyway (``restore_by``).
+    _PROP_SAFE_TYPES = (bool, int, float, str)
+
+    def _read_default_property(self, widget: QtWidgets.QWidget) -> Any:
+        """Return the widget's mirrored-default value, or ``None`` if none was set.
+
+        Only simple, non-``None`` values are ever mirrored (see
+        :meth:`_mirror_default_property`), so a ``None`` read unambiguously means
+        "no mirror" — no need to enumerate ``dynamicPropertyNames`` to tell an
+        absent property from one set to ``None``.
+        """
+        try:
+            return widget.property(self._DEFAULT_PROP)
+        except (RuntimeError, AttributeError):
+            return None
+
+    def _mirror_default_property(self, widget: QtWidgets.QWidget, value: Any) -> None:
+        """Mirror a captured default onto the widget's C++ object so it outlives
+        a Python-wrapper swap. Only simple, QVariant-round-trippable types."""
+        if isinstance(value, self._PROP_SAFE_TYPES):
+            try:
+                widget.setProperty(self._DEFAULT_PROP, value)
+            except (RuntimeError, AttributeError):
+                pass
+
     def capture_default(self, widget: QtWidgets.QWidget) -> None:
         """Capture the current widget value as its default.
 
         This should be called early during widget registration, before any
         init methods or state restoration that might modify the value.
         Only captures for widgets with restore_state=True.
+
+        A widget re-registered under a NEW Python wrapper (an option-box wrap —
+        e.g. ``add_reset_buttons`` — or a deferred-widget revive re-resolves the
+        same C++ widget to a fresh wrapper) is absent from the wrapper-keyed
+        ``_defaults`` even though its ``.ui`` default was already captured under
+        the prior wrapper. By the time that re-registration runs, the widget's
+        state has typically been RESTORED, so capturing the live value here would
+        store the *persisted* value as the "default" — the bug where a per-field
+        reset restores the session value instead of the default. The first
+        (pre-restore) capture mirrors the default onto a C++ dynamic property,
+        which survives the wrapper swap; re-adopt it rather than re-capturing a
+        post-restore value.
         """
         if not getattr(widget, "restore_state", False):
             return
-        if widget not in self._defaults:
-            value = self._get_current_value(widget)
-            if value is not None:
-                self._defaults[widget] = value
-                self.logger.debug(
-                    f"Captured default for {widget.objectName()}: {value}"
-                )
+        if widget in self._defaults:
+            return
+        mirrored = self._read_default_property(widget)
+        if mirrored is not None:
+            self._defaults[widget] = mirrored
+            return
+        value = self._get_current_value(widget)
+        if value is not None:
+            self._defaults[widget] = value
+            self._mirror_default_property(widget, value)
+            self.logger.debug(f"Captured default for {widget.objectName()}: {value}")
 
     def set_default(self, widget: QtWidgets.QWidget, value: Any) -> None:
         """Explicitly set a widget's default value.
@@ -487,6 +538,9 @@ class StateManager(ptk.LoggingMixin):
             value: The value to use as the default.
         """
         self._defaults[widget] = value
+        # Mirror onto the C++ object too, so the explicit default (like a
+        # captured one) survives a later wrapper swap — see capture_default.
+        self._mirror_default_property(widget, value)
         self.logger.debug(f"Set explicit default for {widget.objectName()}: {value}")
 
     # ---- custom key/value persistence ------------------------------------
@@ -518,7 +572,9 @@ class StateManager(ptk.LoggingMixin):
             # returns the default verbatim on a missing key; decoding again
             # would mangle strings like "1.10" a second time.
             return self.qsettings.value(f"custom/{key}", default)
-        decoded = decode_stored_value(self.qsettings.value(f"custom/{key}"))
+        decoded = SettingsManager.decode_stored_value(
+            self.qsettings.value(f"custom/{key}")
+        )
         return default if decoded is None else decoded
 
     def clear_custom(self, key: str) -> None:

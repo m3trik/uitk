@@ -7,6 +7,7 @@
 ``table_actions._CenteredIconDelegate`` (TableWidget action columns), so the
 per-state background tint + centered icon render the same way everywhere.
 """
+
 import unittest
 from unittest import mock
 
@@ -14,9 +15,7 @@ from qtpy import QtGui, QtCore
 from conftest import setup_qt_application
 
 from uitk.widgets.delegates.centered_icon import (
-    fill_cell_background,
-    paint_centered_icon,
-    ICON_OPACITY_ROLE,
+    CenteredIconActionDelegate,
 )
 
 app = setup_qt_application()
@@ -35,13 +34,19 @@ class TestFillCellBackground(unittest.TestCase):
         painter = mock.Mock()
         rect = QtCore.QRect(0, 0, 10, 10)
         idx = self._index(QtGui.QBrush(QtGui.QColor("#3a5a3a")))
-        self.assertTrue(fill_cell_background(painter, rect, idx))
+        self.assertTrue(
+            CenteredIconActionDelegate.fill_cell_background(painter, rect, idx)
+        )
         painter.fillRect.assert_called_once()
 
     def test_skips_unset_background(self):
         painter = mock.Mock()
         rect = QtCore.QRect(0, 0, 10, 10)
-        self.assertFalse(fill_cell_background(painter, rect, self._index(None)))
+        self.assertFalse(
+            CenteredIconActionDelegate.fill_cell_background(
+                painter, rect, self._index(None)
+            )
+        )
         painter.fillRect.assert_not_called()
 
     def test_skips_nobrush(self):
@@ -50,7 +55,9 @@ class TestFillCellBackground(unittest.TestCase):
         painter = mock.Mock()
         rect = QtCore.QRect(0, 0, 10, 10)
         self.assertFalse(
-            fill_cell_background(painter, rect, self._index(QtGui.QBrush()))
+            CenteredIconActionDelegate.fill_cell_background(
+                painter, rect, self._index(QtGui.QBrush())
+            )
         )
         painter.fillRect.assert_not_called()
 
@@ -58,7 +65,7 @@ class TestFillCellBackground(unittest.TestCase):
 class TestPaintCenteredIcon(unittest.TestCase):
     def test_null_icon_is_noop(self):
         painter = mock.Mock()
-        paint_centered_icon(
+        CenteredIconActionDelegate.paint_centered_icon(
             painter, QtGui.QIcon(), QtCore.QRect(0, 0, 22, 22), QtCore.QSize(14, 14)
         )
         painter.drawPixmap.assert_not_called()
@@ -69,7 +76,7 @@ class TestPaintCenteredIcon(unittest.TestCase):
 
         icon = IconManager.get("undo", size=(14, 14))
         painter = mock.Mock()
-        paint_centered_icon(
+        CenteredIconActionDelegate.paint_centered_icon(
             painter,
             icon,
             QtCore.QRect(0, 0, 22, 22),
@@ -86,7 +93,7 @@ class TestPaintCenteredIcon(unittest.TestCase):
 
         icon = IconManager.get("undo", size=(14, 14))
         painter = mock.Mock()
-        paint_centered_icon(
+        CenteredIconActionDelegate.paint_centered_icon(
             painter, icon, QtCore.QRect(0, 0, 22, 22), QtCore.QSize(14, 14)
         )
         painter.setOpacity.assert_not_called()

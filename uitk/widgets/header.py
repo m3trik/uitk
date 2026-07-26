@@ -83,8 +83,8 @@ class Header(
         self._saved_pos = None
         self._saved_parent_min_heights = {}  # Store min heights of ancestors
         self._saved_parent_min_widths = {}  # Store min widths of ancestors
-        self._collapse_saved_pos = (
-            None  # Position before collapse (for right-edge anchoring)
+        self._collapse_anchor_right = (
+            False  # Collapse narrowed the window (expand re-anchors right edge)
         )
         self.__mousePressPos = None
         self.buttons = {}  # Initialize buttons dict to avoid AttributeError
@@ -748,11 +748,6 @@ class Header(
             margins = parent.layout().contentsMargins()
             new_height += margins.top() + margins.bottom()
 
-        # Save position so we can anchor the right edge in place — keeps the
-        # collapse button under the cursor regardless of which way width changes.
-        if fixed_width is not None:
-            self._collapse_saved_pos = window.pos()
-
         # Use setFixedHeight to force the exact collapsed height.
         # This overrides any layout size hints that might resist the resize.
         window.setMinimumSize(0, 0)
@@ -761,11 +756,17 @@ class Header(
         if fixed_width is not None:
             window.setMaximumWidth(fixed_width)
             window.resize(fixed_width, new_height)
-
-        # Move window so the right edge stays in place
-        if fixed_width is not None and self._collapse_saved_pos is not None:
-            original_right = self._collapse_saved_pos.x() + self._saved_size.width()
+            # Anchor the right edge in place — keeps the collapse button under
+            # the cursor regardless of which way width changes. (Resizes never
+            # move the top-left, so x() still reads the pre-collapse position.)
+            original_right = window.x() + self._saved_size.width()
             window.move(original_right - fixed_width, window.y())
+            self._collapse_anchor_right = True
+
+        # Suppress geometry persistence while collapsed — the strip geometry
+        # must never be what a later session restores (see MainWindow.
+        # save_window_geometry; mirrors the _header_minimized suppression).
+        window.setProperty("_header_collapsed", True)
 
         # Update icon to expand (chevron down)
         if "collapse" in self.buttons:
@@ -779,6 +780,12 @@ class Header(
             return
 
         window = self.window()
+
+        # Strip width BEFORE the restores below widen the window in place —
+        # the expand re-anchors the right edge against where the strip sits
+        # NOW, since the user may have dragged it while collapsed (restoring
+        # the collapse-time position would teleport it back).
+        collapsed_width = window.width()
 
         # Restore visibility of siblings
         self._set_siblings_visibility(True)
@@ -815,10 +822,23 @@ class Header(
         else:
             window.adjustSize()
 
-        # Restore position if right-edge anchoring moved the window
-        if self._collapse_saved_pos is not None:
-            window.move(self._collapse_saved_pos)
-            self._collapse_saved_pos = None
+        # Undo the collapse's right-edge anchoring: keep the right edge where
+        # the strip's right edge is now. When the strip was never moved this
+        # lands exactly on the pre-collapse position; when the user dragged it,
+        # the window expands in place instead of teleporting back.
+        if self._collapse_anchor_right:
+            window.move(window.x() + collapsed_width - window.width(), window.y())
+            self._collapse_anchor_right = False
+            # A strip dragged near the screen edge can expand off-screen;
+            # clamp when the window supports it (same contract as
+            # UiHandler._position_window).
+            if getattr(window, "ensure_on_screen", False) and hasattr(
+                window, "_ensure_on_screen"
+            ):
+                window._ensure_on_screen()
+
+        # Re-enable geometry persistence now that real geometry is back.
+        window.setProperty("_header_collapsed", False)
 
         # Update icon to collapse (chevron up)
         if "collapse" in self.buttons:

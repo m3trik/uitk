@@ -17,6 +17,7 @@ This module is paired with :mod:`uitk.managers.shortcut_manager`:
 Public surface re-exported from :mod:`uitk.switchboard`:
     Shortcut — slot-method decorator, e.g. ``@Shortcut("Ctrl+S")``.
 """
+
 import inspect
 from typing import Any, Callable, Dict, List, Optional
 from qtpy import QtCore, QtGui, QtWidgets
@@ -24,24 +25,8 @@ from qtpy import QtCore, QtGui, QtWidgets
 from uitk.managers.shortcut_manager import (
     GlobalShortcut,
     SCOPE_NAME_TO_CONTEXT,
-    context_to_scope_name,
-    host_namespace_suffix,
-    resolve_application_host,
-    scope_name_to_context,
+    ShortcutManager,
 )
-
-
-def _as_bool(value: Any) -> bool:
-    """Coerce a persisted settings value to ``bool``.
-
-    The QSettings backend may round-trip a bool as a real ``bool`` or as a
-    ``"true"``/``"false"`` / ``"1"``/``"0"`` string depending on platform, so a
-    bare ``bool(value)`` would read the string ``"false"`` as ``True``. Normalize
-    both forms here.
-    """
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return bool(value)
 
 
 class Shortcut:
@@ -106,6 +91,19 @@ class Shortcut:
 class SwitchboardShortcutMixin:
     """Mixin for managing keyboard shortcuts for Switchboard Slots."""
 
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        """Coerce a persisted settings value to ``bool``.
+
+        The QSettings backend may round-trip a bool as a real ``bool`` or as a
+        ``"true"``/``"false"`` / ``"1"``/``"0"`` string depending on platform, so a
+        bare ``bool(value)`` would read the string ``"false"`` as ``True``. Normalize
+        both forms here.
+        """
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+
     # ─────────────────────────────────────────────────────────────────
     # Host-namespaced persistence
     #
@@ -125,7 +123,9 @@ class SwitchboardShortcutMixin:
         to the marking-menu binding store's scheme (drift would re-introduce
         cross-host collisions). Underpins both :meth:`_shortcut_ns` (shortcut/command
         keys) and :meth:`_host_namespaced_branch` (per-panel widget-state branches)."""
-        return host_namespace_suffix(getattr(self, "context_tags", None))
+        return ShortcutManager.host_namespace_suffix(
+            getattr(self, "context_tags", None)
+        )
 
     def _shortcut_ns(self) -> str:
         """Settings-key prefix for every slot/command override, host-namespaced
@@ -182,7 +182,7 @@ class SwitchboardShortcutMixin:
             head, sep, tail = key.partition("/")
             if not sep or not tail.startswith(legacy_prefix):
                 continue
-            leaf = tail[len(legacy_prefix):]
+            leaf = tail[len(legacy_prefix) :]
             for twin_head in (head, self._host_namespaced_branch(head)):
                 twin = f"{twin_head}/{host_prefix}{leaf}"
                 if self.settings.value(twin) is None:
@@ -271,7 +271,9 @@ class SwitchboardShortcutMixin:
                 # Validate against known scopes so legacy/garbage values
                 # silently fall back to the decorator default.
                 if scope_override in SCOPE_NAME_TO_CONTEXT:
-                    final_context = scope_name_to_context(scope_override)
+                    final_context = ShortcutManager.scope_name_to_context(
+                        scope_override
+                    )
 
             # Nothing to bind: no decorator default AND no (non-empty) override.
             if not final_sequence:
@@ -328,7 +330,7 @@ class SwitchboardShortcutMixin:
             # so own it by an always-visible host window instead of the slot UI,
             # which is hidden whenever the tool isn't open. See
             # resolve_application_host for the Qt rationale.
-            parent = resolve_application_host(ui)
+            parent = ShortcutManager.resolve_application_host(ui)
         elif context == QtCore.Qt.WidgetShortcut:
             # If strictly widget scoped, we might need a specific widget provided.
             # But normally Switchboard shortcuts are Window scoped (Global implementations).
@@ -457,7 +459,7 @@ class SwitchboardShortcutMixin:
             doc = meta.get("doc") or method.__doc__ or ""
 
             default_context = meta.get("context", QtCore.Qt.WindowShortcut)
-            default_scope = context_to_scope_name(default_context)
+            default_scope = ShortcutManager.context_to_scope_name(default_context)
 
             # Current = user override when present. Present-but-empty ("") is an
             # explicit clear (no shortcut); only a missing override (None)
@@ -488,10 +490,10 @@ class SwitchboardShortcutMixin:
             editable = bool(meta.get("editable", True))
             hidden_override = settings_value(f"{settings_key}.hidden")
             if hidden_override is not None:
-                hidden = _as_bool(hidden_override)
+                hidden = SwitchboardShortcutMixin._as_bool(hidden_override)
             editable_override = settings_value(f"{settings_key}.editable")
             if editable_override is not None:
-                editable = _as_bool(editable_override)
+                editable = SwitchboardShortcutMixin._as_bool(editable_override)
 
             registry.append(
                 {
@@ -548,9 +550,7 @@ class SwitchboardShortcutMixin:
             and not name.endswith("_init")
             and not name.startswith("_")
         }
-        for name, func in inspect.getmembers(
-            slots_cls, predicate=inspect.isfunction
-        ):
+        for name, func in inspect.getmembers(slots_cls, predicate=inspect.isfunction):
             if getattr(func, "_shortcut_meta", {}).get("sequence"):
                 slot_method_names.add(name)
 
@@ -644,11 +644,11 @@ class SwitchboardShortcutMixin:
         # a "" scope. Stored overrides are also validated against the
         # known scope set so legacy bad data can't sneak through.
         if scope and scope in SCOPE_NAME_TO_CONTEXT:
-            target_context = scope_name_to_context(scope)
+            target_context = ShortcutManager.scope_name_to_context(scope)
         elif hasattr(ui, "settings"):
             existing_scope = ui.settings.value(scope_key)
             target_context = (
-                scope_name_to_context(existing_scope)
+                ShortcutManager.scope_name_to_context(existing_scope)
                 if existing_scope in SCOPE_NAME_TO_CONTEXT
                 else default_context
             )
@@ -682,7 +682,7 @@ class SwitchboardShortcutMixin:
             )
             self.logger.info(
                 f"[set_user_shortcut] Rebound {slot_name} to {sequence} "
-                f"({context_to_scope_name(target_context)})"
+                f"({ShortcutManager.context_to_scope_name(target_context)})"
             )
 
     @staticmethod
@@ -840,7 +840,7 @@ class SwitchboardShortcutMixin:
 
         carrier._shortcut_meta = {
             "sequence": spec["sequence"],
-            "context": scope_name_to_context(spec["scope"]),
+            "context": ShortcutManager.scope_name_to_context(spec["scope"]),
             "name": spec["label"],
             "doc": spec["doc"],
             "hidden": spec.get("hidden", False),
@@ -1005,7 +1005,7 @@ class SwitchboardShortcutMixin:
             except RuntimeError:
                 continue
         # An always-visible application host (DCC window / visible top-level).
-        host = resolve_application_host(None)
+        host = ShortcutManager.resolve_application_host(None)
         if host is None:
             return None
         try:
@@ -1041,12 +1041,10 @@ class SwitchboardShortcutMixin:
             sequence,
             host,
             self._adapt_shortcut_callback(spec["callback"]),
-            scope_name_to_context(scope),
+            ShortcutManager.scope_name_to_context(scope),
         )
         self._command_shortcuts[name] = shortcut
-        self.logger.debug(
-            f"[command] Bound '{sequence}' ({scope}) -> command '{name}'"
-        )
+        self.logger.debug(f"[command] Bound '{sequence}' ({scope}) -> command '{name}'")
 
     @staticmethod
     def _make_host_shortcut(
@@ -1081,7 +1079,7 @@ class SwitchboardShortcutMixin:
         window/widget scopes keep the given *host* as the owner.
         """
         parent = (
-            resolve_application_host(host)
+            ShortcutManager.resolve_application_host(host)
             if context == QtCore.Qt.ApplicationShortcut
             else host
         )
@@ -1134,7 +1132,7 @@ class SwitchboardShortcutMixin:
             sequence, scope = self._resolve_command_binding(name)
             try:
                 in_sync = live.key().toString() == (sequence or "") and (
-                    live.context() == scope_name_to_context(scope)
+                    live.context() == ShortcutManager.scope_name_to_context(scope)
                 )
             except RuntimeError:
                 in_sync = False  # underlying C++ shortcut gone -> rebind

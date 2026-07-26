@@ -193,8 +193,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         preset = self.PRESETS.get(preset_name)
         if preset is None:
             raise ValueError(
-                f"Unknown preset '{preset_name}'. "
-                f"Available: {', '.join(self.PRESETS)}"
+                f"Unknown preset '{preset_name}'. Available: {', '.join(self.PRESETS)}"
             )
 
         self.position = preset["root_position"]
@@ -206,6 +205,18 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             self.sublist_y_offset = self.fixed_item_height + ry
         else:
             self.sublist_y_offset = ry
+
+        # Whether the first sublist opens on top of the root list — either an
+        # explicit overlay position, or a use_item_height preset (expand_up)
+        # whose y-offset slides the first sublist over the root button. In
+        # both cases the sublist visually replaces the "starting widget", so
+        # it must open at least as wide as the root rather than hug its own
+        # items; _handle_widget_enter_event reads this to floor the width.
+        # Deeper (child) sublists never carry this flag, so they keep sizing
+        # to content.
+        self._first_sublist_overlays_root = preset["root_position"].startswith(
+            "overlay"
+        ) or bool(preset.get("use_item_height"))
 
         # Store child config so _create_sublist_config can propagate it
         # to sublists created by root items.
@@ -252,6 +263,13 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             str: The text associated with the widget, or None if the widget does not have a text attribute.
         """
+        # An icon-composited label (IconManager.set_label_icon) keeps its plain
+        # text on this property while its .text() holds rich-text <img> markup;
+        # prefer it so text-based dispatch/lookup never sees the markup.
+        if hasattr(widget, "property"):
+            plain = widget.property("iconLabelText")
+            if plain is not None:
+                return plain
         return self._get_widget_attribute(widget, "text")
 
     def get_parent_item_text(self, widget):
@@ -1045,15 +1063,19 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self._cancel_sublist_hide(widget)
 
         # Ensure correct size before positioning. Every layout sizes the sublist
-        # to its own contents (its sizeHint), except the overlay presets: their
-        # first sublist sits directly on top of the starting list, so it must be
+        # to its own contents (its sizeHint), except the presets whose first
+        # sublist sits directly on top of the starting list (explicit overlay
+        # positions and expand_up's use_item_height cover): that sublist must be
         # at least as wide as this list to cover it fully (it may still grow
-        # wider for longer content). ``self`` is the list that owns the trigger,
-        # so this only widens the *first* overlay sublist; deeper fan-out
-        # sublists (child position "right"/"left") keep sizing to content.
+        # wider for longer content). ``self`` is the list that owns the trigger
+        # and only a root list carries ``_first_sublist_overlays_root``, so this
+        # widens only the *first* covering sublist; deeper fan-out sublists
+        # (child position "right"/"left") keep sizing to content.
         hint = widget.sublist.sizeHint()
         target_width = hint.width()
-        if self.position.startswith("overlay"):
+        if self.position.startswith("overlay") or getattr(
+            self, "_first_sublist_overlays_root", False
+        ):
             target_width = max(target_width, self.width())
         widget.sublist.resize(target_width, hint.height())
         widget.updateGeometry()
@@ -1138,6 +1160,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         elif event_type == QtCore.QEvent.MouseButtonRelease:
             # Check if widget is a child of this ExpandableList
             if widget in self.get_items():
+                # We consume the release so the item's own release handling
+                # never runs (the list drives interaction via on_item_interacted).
+                # A QAbstractButton item received the press — which sank it and
+                # armed its auto-repeat/down state — but will now never see the
+                # release, so it would stay visually pressed. Reset it before
+                # emitting. Harmless no-op on non-button items (QLabel rows).
+                if hasattr(widget, "setDown"):
+                    widget.setDown(False)
                 self.on_item_interacted.emit(widget)
                 return True  # Consume event to prevent double-firing
 

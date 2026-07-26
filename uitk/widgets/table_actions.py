@@ -35,6 +35,7 @@ Usage::
     # Query state
     table.actions.get(row, 1)  # -> "locked"
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, TYPE_CHECKING
@@ -43,8 +44,8 @@ from qtpy import QtWidgets, QtGui, QtCore
 
 from uitk.managers.icon_manager import IconManager
 from uitk.widgets.delegates.centered_icon import (
-    fill_cell_background,
-    paint_centered_icon,
+    ACTION_NONINTERACTIVE_ROLE,
+    CenteredIconActionDelegate,
 )
 
 if TYPE_CHECKING:
@@ -90,7 +91,7 @@ class _CenteredIconDelegate(QtWidgets.QStyledItemDelegate):
         # Paint a per-state ``background`` tint ourselves — the stylesheet
         # style's CE_ItemViewItem drops the item brush for the QSS ``::item``
         # rules; cleared from ``opt`` so drawControl doesn't double-fill.
-        fill_cell_background(painter, option.rect, index)
+        CenteredIconActionDelegate.fill_cell_background(painter, option.rect, index)
         opt.backgroundBrush = QtGui.QBrush()
 
         # Clear icon/text and the corresponding feature flags so the
@@ -102,17 +103,22 @@ class _CenteredIconDelegate(QtWidgets.QStyledItemDelegate):
         opt.features &= ~QtWidgets.QStyleOptionViewItem.HasDecoration
         opt.features &= ~QtWidgets.QStyleOptionViewItem.HasDisplay
 
+        # A non-interactive cell (a state with no click action) drops its hover
+        # cue: strip State_MouseOver so the style paints no hover tint, and don't
+        # brighten the icon — otherwise an inert cell reads as clickable.
+        hover = CenteredIconActionDelegate.suppress_hover_if_noninteractive(opt, index)
+
         widget = option.widget
         style = widget.style() if widget else QtWidgets.QApplication.style()
         style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, widget)
 
         # Centered-icon painting is shared with CenteredIconActionDelegate.
-        paint_centered_icon(
+        CenteredIconActionDelegate.paint_centered_icon(
             painter,
             icon,
             option.rect,
             option.decorationSize,
-            hover=bool(option.state & QtWidgets.QStyle.State_MouseOver),
+            hover=hover,
         )
 
 
@@ -218,6 +224,12 @@ class TableActions:
             item.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable
         )
 
+        # A state with no ``action`` callback is inert — flag the cell so the
+        # icon delegate suppresses its hover cue (no icon brighten / cell tint),
+        # so it doesn't read as clickable. Interactive states clear the flag.
+        # Mirror ``_on_click``'s truthiness test so the two never disagree.
+        item.setData(ACTION_NONINTERACTIVE_ROLE, not state.get("action"))
+
         # Center the icon in the cell.  Qt positions the decoration via
         # the item's TextAlignmentRole even when text is empty; without
         # this the icon hugs the left edge and visibly clips when the
@@ -291,6 +303,13 @@ class TableActions:
         self._table.setItemDelegateForColumn(column, self._icon_delegate)
 
     def _apply_sizing(self, column: int) -> None:
+        # Guard out-of-range columns (same guard _reapply uses): an action column is
+        # often registered before the table's columns exist (e.g. add() at *_init time,
+        # setColumnCount/TableWidget.add later), and Qt 6.5's
+        # QHeaderView.setSectionResizeMode access-violates on a nonexistent section
+        # (hard-crashed Maya 2025). _reapply re-applies sizing once the columns exist.
+        if column >= self._table.columnCount():
+            return
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(column, QtWidgets.QHeaderView.Fixed)
         row_h = self._table.verticalHeader().defaultSectionSize()

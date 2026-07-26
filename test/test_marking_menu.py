@@ -1,11 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
 """Tests for MarkingMenu show/hide behaviour when standalone windows are opened."""
+
 import unittest
 from qtpy import QtWidgets, QtCore
 
 from conftest import QtBaseTestCase
-from uitk.widgets.marking_menu._resolver import resolve_target_menu
+from uitk.widgets.marking_menu._resolver import MenuResolver
+
+resolve_target_menu = MenuResolver.resolve_target_menu
 
 
 class MarkingMenuStub(QtWidgets.QStackedWidget):
@@ -259,6 +262,11 @@ class _InitOnlyMarkingMenu(QtWidgets.QWidget):
         self._init_ui = MarkingMenu._init_ui.__get__(self, type(self))
         self._host_stacked = MarkingMenu._host_stacked.__get__(self, type(self))
         self.addWidget = MarkingMenu.addWidget.__get__(self, type(self))
+        # _host_stacked styles the page with the menu's configured theme.
+        # That's a persisted per-host setting needing a settings backend;
+        # orthogonal to the persistence behaviour under test, so pin the
+        # class default rather than booting one.
+        self.menu_theme = MarkingMenu.DEFAULT_MENU_THEME
 
     def add_child_event_filter(self, widgets):
         # Real impl needs self.sb / self.child_event_filter; orthogonal to
@@ -451,8 +459,12 @@ class TestNavButtonMenuResolution(QtBaseTestCase):
 
         resolved = menu._resolve_button_menu(btn)
 
-        self.assertIs(resolved, ui)  # used submenu_name(), not bare "cameras" (would raise)
-        self.assertEqual(sb.hidden, [(ui, ("lower",))])  # filter tags applied to the submenu
+        self.assertIs(
+            resolved, ui
+        )  # used submenu_name(), not bare "cameras" (would raise)
+        self.assertEqual(
+            sb.hidden, [(ui, ("lower",))]
+        )  # filter tags applied to the submenu
 
     def test_click_resolves_standalone_target_directly(self):
         ui = object()
@@ -693,6 +705,106 @@ class TestMarkingMenuBrowserEntryFilter(QtBaseTestCase):
             HOSTED_PAGE_PATTERNS=self.MarkingMenu.HOSTED_PAGE_PATTERNS,
         )
         self.MarkingMenu._register_browser_entry_filter(bare)  # must not raise
+
+
+class _ThemeStoreNS:
+    """Mirrors ``SettingsManager.__getattr__`` — any name yields a proxy."""
+
+    class _Item:
+        def __init__(self):
+            self._value = None
+
+        def get(self, default=None):
+            return self._value if self._value is not None else default
+
+        def set(self, value):
+            self._value = value
+
+    def __init__(self):
+        self._items = {}
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return self._items.setdefault(name, self._Item())
+
+
+class TestHostedWindowThemes(QtBaseTestCase):
+    """``menu_theme`` / ``window_theme`` — the two hosted window styles.
+
+    Formerly hard-pinned to "dark" at the call sites. They now persist per host
+    and drive both styling entry points (``_host_stacked`` and
+    ``UiHandler.apply_styles`` via :meth:`resolve_hosted_theme`), so a
+    preference change reaches menu pages and standalone windows independently.
+    Built on a bare instance: the properties only touch ``self.sb`` and
+    ``StyleSheet``, so no DCC or Switchboard boot is needed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import types
+
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+        from uitk.themes.style_sheet import StyleSheet
+
+        self.StyleSheet = StyleSheet
+        self.mm = MarkingMenu.__new__(MarkingMenu)
+        self.mm.sb = types.SimpleNamespace(
+            configurable=_ThemeStoreNS(), loaded_ui={}, context_tags=None
+        )
+
+    def _ui(self, *tags):
+        import types
+
+        tagset = set(tags)
+        return types.SimpleNamespace(has_tags=lambda t: bool(tagset & set(t)))
+
+    def test_defaults_preserve_previous_hardcoded_look(self):
+        """A fresh install must look identical to the pre-preference build."""
+        self.assertEqual(self.mm.menu_theme, "dark")
+        self.assertEqual(self.mm.window_theme, "dark")
+
+    def test_setting_one_style_leaves_the_other_alone(self):
+        self.mm.menu_theme = "light"
+        self.assertEqual(self.mm.menu_theme, "light")
+        self.assertEqual(self.mm.window_theme, "dark")
+
+    def test_resolve_hosted_theme_splits_by_tag(self):
+        """Menu pages get menu_theme; everything else gets window_theme."""
+        self.mm.menu_theme = "light"
+        self.mm.window_theme = "high-contrast"
+        self.assertEqual(self.mm.resolve_hosted_theme(self._ui("startmenu")), "light")
+        self.assertEqual(self.mm.resolve_hosted_theme(self._ui("submenu")), "light")
+        self.assertEqual(
+            self.mm.resolve_hosted_theme(self._ui("mayatk")), "high-contrast"
+        )
+
+    def test_resolve_hosted_theme_tolerates_untagged_object(self):
+        """A plain widget (no has_tags) is treated as a standalone window."""
+        self.mm.window_theme = "light"
+        self.assertEqual(self.mm.resolve_hosted_theme(object()), "light")
+
+    def test_unknown_theme_raises(self):
+        with self.assertRaises(ValueError):
+            self.mm.menu_theme = "no_such_theme"
+        with self.assertRaises(ValueError):
+            self.mm.window_theme = "no_such_theme"
+
+    def test_setter_rethemes_only_matching_live_windows(self):
+        """A live menu page follows menu_theme; a standalone window doesn't."""
+        page = self.track_widget(QtWidgets.QWidget())
+        page.has_tags = lambda t: bool({"startmenu"} & set(t))
+        window = self.track_widget(QtWidgets.QWidget())
+        window.has_tags = lambda t: False
+
+        self.StyleSheet().set(page, theme="dark")
+        self.StyleSheet().set(window, theme="dark")
+        self.mm.sb.loaded_ui = {"page": page, "window": window}
+
+        self.mm.menu_theme = "light"
+
+        self.assertEqual(self.StyleSheet._widget_configs[page]["theme"], "light")
+        self.assertEqual(self.StyleSheet._widget_configs[window]["theme"], "dark")
 
 
 if __name__ == "__main__":

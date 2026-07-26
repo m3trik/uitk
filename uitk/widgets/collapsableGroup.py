@@ -2,6 +2,7 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.managers.settings_manager import SettingsManager
 
 
@@ -150,7 +151,11 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         # raise it back too.
         if min_h >= 0 and window.minimumHeight() != min_h:
             window.setMinimumHeight(min_h)
-        window.resize(window.width(), new_height)
+        # Mirror MainWindow.adjust_height_by's content-max sync: lock the
+        # window max when every remaining visible child is height-fixed (so
+        # the collapse can't leave a dead band), and free it again on expand.
+        SizeGripMixin.sync_window_max_to_content(window)
+        window.resize(window.width(), new_height)  # Qt clamps to synced max
 
     def _set_content_visible(self, visible):
         """Show or hide all child widgets.

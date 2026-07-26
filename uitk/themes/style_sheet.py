@@ -11,30 +11,6 @@ from uitk.managers.settings_manager import SettingsManager
 _logger = logging.getLogger(__name__)
 
 
-def repolish_tree(root: QtWidgets.QWidget) -> None:
-    """Force re-evaluation of property-selector QSS for *root* and children.
-
-    Dynamic-property rules (``[class="..."]``) are only re-matched on an
-    ``unpolish``/``polish`` cycle — a property stamped after a widget's first
-    polish leaves stale metrics until then (show performs the cycle
-    implicitly, which is why post-show measurements differ from pre-show
-    ones: the init-flash mechanism). Call this after stamping style-bearing
-    properties and BEFORE measuring size hints, so first measurements are
-    final. ``QStyle.polish`` is per-widget, so the tree is walked explicitly;
-    cheap for row/menu-scale trees.
-    """
-    for w in [root] + root.findChildren(QtWidgets.QWidget):
-        try:
-            # NOT w.style(): uitk widgets attach a StyleSheet manager as the
-            # instance attribute ``style`` (e.g. Menu.__init__), shadowing
-            # QWidget.style() — the unbound base-class call bypasses that.
-            style = QtWidgets.QWidget.style(w)
-            style.unpolish(w)
-            style.polish(w)
-        except RuntimeError:
-            pass  # C++ side died mid-walk
-
-
 class _ThemeSignalBus(QtCore.QObject):
     """Process-wide emitter backing :attr:`StyleSheet.theme_changed`.
 
@@ -55,6 +31,30 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     # Shared theme-change emitter (see _ThemeSignalBus). Lazily instantiated
     # on first access so importing this module never constructs a QObject.
     _signal_bus: "Union[_ThemeSignalBus, None]" = None
+
+    @staticmethod
+    def repolish_tree(root: QtWidgets.QWidget) -> None:
+        """Force re-evaluation of property-selector QSS for *root* and children.
+
+        Dynamic-property rules (``[class="..."]``) are only re-matched on an
+        ``unpolish``/``polish`` cycle — a property stamped after a widget's first
+        polish leaves stale metrics until then (show performs the cycle
+        implicitly, which is why post-show measurements differ from pre-show
+        ones: the init-flash mechanism). Call this after stamping style-bearing
+        properties and BEFORE measuring size hints, so first measurements are
+        final. ``QStyle.polish`` is per-widget, so the tree is walked explicitly;
+        cheap for row/menu-scale trees.
+        """
+        for w in [root] + root.findChildren(QtWidgets.QWidget):
+            try:
+                # NOT w.style(): uitk widgets attach a StyleSheet manager as the
+                # instance attribute ``style`` (e.g. Menu.__init__), shadowing
+                # QWidget.style() — the unbound base-class call bypasses that.
+                style = QtWidgets.QWidget.style(w)
+                style.unpolish(w)
+                style.polish(w)
+            except RuntimeError:
+                pass  # C++ side died mid-walk
 
     @classmethod
     def _theme_signal_bus(cls) -> "_ThemeSignalBus":
@@ -274,7 +274,13 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             if not m:
                 return None
             if m.group(1) is not None:
-                return int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4), "rgb"
+                return (
+                    int(m.group(1)),
+                    int(m.group(2)),
+                    int(m.group(3)),
+                    m.group(4),
+                    "rgb",
+                )
             h6, ha = m.group(5), m.group(6)
             return int(h6[0:2], 16), int(h6[2:4], 16), int(h6[4:6], 16), ha, "hex"
 
@@ -378,6 +384,19 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         return "#888888"
 
     @classmethod
+    def _stamp_theme(cls, theme: str, widget: QtWidgets.QWidget = None):
+        """Record *theme* on a widget's (or every widget's) config — no reload.
+
+        Split out of :meth:`set_theme` so callers that already own a reload
+        pass (see :meth:`set_theme_overrides`) can re-theme without paying a
+        second one.
+        """
+        targets = [widget] if widget else list(cls._widget_configs.keys())
+        for w in targets:
+            if w in cls._widget_configs:
+                cls._widget_configs[w]["theme"] = theme
+
+    @classmethod
     def set_theme(cls, theme: str, widget: QtWidgets.QWidget = None):
         """Set a new theme for a specific widget or all registered widgets.
 
@@ -385,24 +404,70 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             theme: Name of the theme to apply (e.g. "light", "dark")
             widget: Specific widget to update. If None, updates all registered widgets.
         """
-        targets = [widget] if widget else list(cls._widget_configs.keys())
-
-        for w in targets:
-            if w in cls._widget_configs:
-                cls._widget_configs[w]["theme"] = theme
         # One reload pass AFTER all configs are stamped — reload() groups
         # widgets by config, so the shared QSS is assembled once per group
         # instead of once per widget (the old per-widget loop).
+        cls._stamp_theme(theme, widget)
         cls.reload(widget)
+
+    @classmethod
+    def _store_theme_overrides(cls, theme: str, overrides: Union[dict, None]):
+        """Validate *theme*, then replace and persist its global override set.
+
+        The shared, reload-free core of :meth:`set_theme_overrides` and
+        :meth:`apply_theme`, so each public entry point pays exactly one
+        reload pass. Unknown and derived token names are dropped.
+        """
+        cls._ensure_settings_loaded()
+        if theme not in cls.themes:
+            raise ValueError(f"Unknown theme {theme!r}. Available: {list(cls.themes)}")
+        if overrides is None:
+            return
+        cls._global_overrides[theme] = {
+            k: str(v)
+            for k, v in overrides.items()
+            if k in cls.themes[theme] and not cls._is_derived_token(k)
+        }
+        cls._settings.setValue("global", cls._global_overrides)
+
+    @classmethod
+    def set_theme_overrides(
+        cls,
+        theme: str,
+        overrides: Union[dict, None],
+        widget: QtWidgets.QWidget = None,
+    ):
+        """Replace *theme*'s global override set (persisted) and refresh only
+        widgets already wearing that theme.
+
+        The scoped counterpart to :meth:`apply_theme`: it updates and persists
+        one theme's overrides and reloads, but never switches the base theme of
+        any widget other than *widget* — so editing a theme in the
+        ``StyleEditor`` cannot pull unrelated live windows onto it. Unknown /
+        derived tokens are dropped.
+
+        Args:
+            theme: Name of the base theme (a key of :attr:`themes`).
+            overrides: The new global override set for *theme*, replacing the
+                current one. ``None`` leaves overrides untouched.
+            widget: Optionally switch just this widget onto *theme* as part of
+                the same reload pass — an editor previewing the theme it edits,
+                without the global re-theme :meth:`apply_theme` performs.
+        """
+        cls._store_theme_overrides(theme, overrides)
+        if widget is not None:
+            cls._stamp_theme(theme, widget)
+        cls.reload()
 
     @classmethod
     def apply_theme(cls, theme: str, overrides: Union[dict, None] = None):
         """Switch every registered widget to *theme* in one pass.
 
-        The engine-level primitive behind named theme presets (see
-        ``StyleEditor``): optionally **replaces** the theme's global
-        overrides (an empty dict clears them — the pure base theme),
-        persists them, then re-themes all registered widgets.
+        The engine-level primitive behind named theme presets: optionally
+        **replaces** the theme's global overrides (an empty dict clears them —
+        the pure base theme), persists them, then re-themes all registered
+        widgets. Use :meth:`set_theme_overrides` to edit a theme without
+        dragging every window onto it.
 
         Args:
             theme: Name of the base theme (a key of :attr:`themes`).
@@ -410,18 +475,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                 (replacing the current one). Unknown and derived token
                 names are dropped. ``None`` leaves overrides untouched.
         """
-        cls._ensure_settings_loaded()
-        if theme not in cls.themes:
-            raise ValueError(
-                f"Unknown theme {theme!r}. Available: {list(cls.themes)}"
-            )
-        if overrides is not None:
-            cls._global_overrides[theme] = {
-                k: str(v)
-                for k, v in overrides.items()
-                if k in cls.themes[theme] and not cls._is_derived_token(k)
-            }
-            cls._settings.setValue("global", cls._global_overrides)
+        cls._store_theme_overrides(theme, overrides)
         cls.set_theme(theme)
 
     @classmethod

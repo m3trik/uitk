@@ -12,7 +12,7 @@ from uitk.widgets.delegates.centered_icon import (
     CenteredIconActionDelegate,
     ICON_OPACITY_ROLE,
 )
-from uitk.widgets.delegates.shortcut_capture import install_shortcut_capture
+from uitk.widgets.delegates.shortcut_capture import ShortcutCaptureDelegate
 from uitk.managers.icon_manager import IconManager
 from uitk.widgets.separator import Separator
 
@@ -290,13 +290,9 @@ class ShortcutEditor(EditorPanel):
         self.table.setColumnWidth(self.COL_SCOPE, self.ROW_HEIGHT)
         header.setSectionResizeMode(self.COL_RESET, QtWidgets.QHeaderView.Fixed)
         self.table.setColumnWidth(self.COL_RESET, self.ROW_HEIGHT)
-        header.setSectionResizeMode(
-            self.COL_DESCRIPTION, QtWidgets.QHeaderView.Stretch
-        )
+        header.setSectionResizeMode(self.COL_DESCRIPTION, QtWidgets.QHeaderView.Stretch)
         # UI column — sized to its content, revealed only in 'show all' mode.
-        header.setSectionResizeMode(
-            self.COL_UI, QtWidgets.QHeaderView.ResizeToContents
-        )
+        header.setSectionResizeMode(self.COL_UI, QtWidgets.QHeaderView.ResizeToContents)
         self.table.setColumnHidden(self.COL_UI, not self._show_all)
         self.table.verticalHeader().setVisible(False)
         # Match the UI Browser table's row height for a consistent look. The
@@ -331,7 +327,7 @@ class ShortcutEditor(EditorPanel):
         # The Shortcut column (1) is edited in-cell: double-click opens a
         # key-capture editor instead of a modal dialog. ``bordered`` keeps
         # the row-spanning selection outline on that column.
-        install_shortcut_capture(
+        ShortcutCaptureDelegate.install_shortcut_capture(
             self.table,
             self.COL_SHORTCUT,
             lambda row, _col, seq: self._apply_shortcut(row, seq),
@@ -528,7 +524,9 @@ class ShortcutEditor(EditorPanel):
             # not a UI switcher. Populate just that (no other UIs, no show-all
             # option), so there's nothing to switch and no orphaned option-box
             # overlay: the combo stays visible, stripped to the one view at hand.
-            specials = [(self._COMMANDS_LABEL, "The global (UI-less) command triggers.")]
+            specials = [
+                (self._COMMANDS_LABEL, "The global (UI-less) command triggers.")
+            ]
             self.cmb_ui.addItem(self._COMMANDS_LABEL)
             self._style_special_items(specials)
             self.cmb_ui.blockSignals(True)
@@ -1027,9 +1025,7 @@ class ShortcutEditor(EditorPanel):
         # View section.
         menu.add(Separator(title="View"))
         cb = QtWidgets.QCheckBox("Show hidden bindings")
-        cb.setToolTip(
-            "Reveal bindings registered hidden (functional / semantic keys)."
-        )
+        cb.setToolTip("Reveal bindings registered hidden (functional / semantic keys).")
         cb.setFixedHeight(self.HEADER_WIDGET_HEIGHT)
         cb.setChecked(self._show_hidden)  # set before connect so it doesn't fire
         cb.toggled.connect(self._set_show_hidden)
@@ -1047,9 +1043,7 @@ class ShortcutEditor(EditorPanel):
             menu.add(Separator(title="Presets"))
             self.init_preset_row(
                 "shortcut_presets",
-                modified_value_provider=lambda: self.export_shortcuts(
-                    loaded_only=True
-                ),
+                modified_value_provider=lambda: self.export_shortcuts(loaded_only=True),
                 in_header_menu=True,
             )
             self._cmb_preset.setFixedHeight(self.HEADER_WIDGET_HEIGHT)
@@ -1220,9 +1214,7 @@ class ShortcutEditor(EditorPanel):
         ui_name = self._row_ui_name(row)
         current_scope = self.scope_at(row) or "window"
 
-        if not self._resolve_collisions(
-            ui_name, method_name, new_seq, current_scope
-        ):
+        if not self._resolve_collisions(ui_name, method_name, new_seq, current_scope):
             # The user declined the conflict prompt (or it was otherwise
             # blocked). Make the cancel visible: an eye-catching coloured footer
             # plus a console line, so a refused duplicate isn't a silent no-op.
@@ -1244,9 +1236,7 @@ class ShortcutEditor(EditorPanel):
         else:
             target_ui = self.sb.get_ui(ui_name)
             if target_ui is None:  # statically-listed UI that fails to build
-                self.footer.setStatusText(
-                    f"Could not load '{ui_name}'.", level="error"
-                )
+                self.footer.setStatusText(f"Could not load '{ui_name}'.", level="error")
                 return
             self.sb.set_user_shortcut(target_ui, method_name, new_seq, current_scope)
 
@@ -1408,9 +1398,7 @@ class ShortcutEditor(EditorPanel):
                 scope=current_scope,
                 action={"kind": "scope", "default_scope": default_scope},
                 bg=(
-                    self._SCOPE_MODIFIED_BG
-                    if current_scope != default_scope
-                    else None
+                    self._SCOPE_MODIFIED_BG if current_scope != default_scope else None
                 ),
             )
         self.table.setItem(i, self.COL_SCOPE, item)
@@ -1509,9 +1497,7 @@ class ShortcutEditor(EditorPanel):
             conflicts = self._collect_conflicts(
                 ui_name, method_name, current_seq, new_scope
             )
-            self.sb.set_user_shortcut(
-                target_ui, method_name, current_seq, new_scope
-            )
+            self.sb.set_user_shortcut(target_ui, method_name, current_seq, new_scope)
             self._refresh_preset_state()
             self.populate()
 
@@ -1593,7 +1579,9 @@ class ShortcutEditor(EditorPanel):
         """
         breaks = [c for c in conflicts if c.breaks_binding and c.clear_action]
         maya_clearable = [c for c in conflicts if c.source == "maya" and c.clear_action]
-        maya_locked = [c for c in conflicts if c.source == "maya" and not c.clear_action]
+        maya_locked = [
+            c for c in conflicts if c.source == "maya" and not c.clear_action
+        ]
         soft = [c for c in conflicts if not (c.breaks_binding and c.clear_action)]
 
         lines = [f"<b>{sequence}</b> ({SCOPE_LABELS.get(scope, scope)}) conflicts:"]
@@ -1760,9 +1748,9 @@ class ShortcutEditor(EditorPanel):
                 # instance, so get_ui builds it on demand only when the user
                 # actually accepts the clear.
                 clear = (
-                    lambda name=other_ui_name, m=other_method, dscope=entry.get(
-                        "default_scope", "window"
-                    ): self.sb.set_user_shortcut(self.sb.get_ui(name), m, "", dscope)
+                    lambda name=other_ui_name, m=other_method, dscope=entry.get("default_scope", "window"): (
+                        self.sb.set_user_shortcut(self.sb.get_ui(name), m, "", dscope)
+                    )
                 )
                 conflicts.append(
                     CollisionConflict(
@@ -1796,9 +1784,9 @@ class ShortcutEditor(EditorPanel):
             clearable = entry.get("clearable", True)
             clear = (
                 (
-                    lambda m=other_method, dscope=entry.get(
-                        "default_scope", "application"
-                    ): self.sb.set_command_shortcut(m, "", dscope)
+                    lambda m=other_method, dscope=entry.get("default_scope", "application"): (
+                        self.sb.set_command_shortcut(m, "", dscope)
+                    )
                 )
                 if clearable
                 else None

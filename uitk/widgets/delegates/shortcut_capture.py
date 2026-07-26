@@ -22,6 +22,7 @@ Two delegate flavours:
   for tables that install that delegate elsewhere (so the captured column
   doesn't fall back to the QSS blue selection fill and break the outline).
 """
+
 from __future__ import annotations
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -139,8 +140,62 @@ class ShortcutCaptureDelegate(QtWidgets.QStyledItemDelegate):
         row, col = index.row(), index.column()
         QtCore.QTimer.singleShot(0, lambda: self.captured.emit(row, col, seq))
 
+    @staticmethod
+    def install_shortcut_capture(
+        table: QtWidgets.QTableWidget,
+        column: int,
+        on_capture,
+        *,
+        bordered: bool = False,
+    ) -> ShortcutCaptureDelegate:
+        """Wire in-cell shortcut capture onto a table column.
 
-class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorderDelegate):
+        Installs the capture delegate on ``column`` and opens it on a
+        double-click of that column — independent of the table's
+        ``editTriggers``, so tables set to ``NoEditTriggers`` work too. The
+        target cell's item must carry ``Qt.ItemIsEditable`` (the default for
+        ``QTableWidgetItem``) for the editor to open. Programmatic opens via
+        ``table.editItem(item)`` (e.g. a context-menu "Assign…" action) route
+        through the same delegate and fire ``on_capture`` identically.
+
+        Recommended: set the table to ``NoEditTriggers``. The default triggers
+        include ``AnyKeyPressed``/``EditKeyPressed``, so a stray keystroke on a
+        selected editable cell would open the editor and silently rebind; the
+        double-click wired here works regardless of triggers.
+
+        Args:
+            table: Target table (``QTableWidget`` or compatible view).
+            column: Column index to make capture-editable.
+            on_capture: Callable ``(row, col, sequence) -> None`` invoked once
+                a chord is committed. ``sequence`` is a NativeText shortcut
+                string, ``""`` when cleared.
+            bordered: Use :class:`BorderedShortcutCaptureDelegate` for tables
+                that paint the row-spanning selection border elsewhere.
+
+        Returns:
+            The installed delegate (already connected to ``on_capture``).
+        """
+        delegate_cls = (
+            BorderedShortcutCaptureDelegate if bordered else ShortcutCaptureDelegate
+        )
+        delegate = delegate_cls(table)
+        delegate.captured.connect(on_capture)
+        table.setItemDelegateForColumn(column, delegate)
+
+        def _open(row, col):
+            if col != column:
+                return
+            item = table.item(row, col)
+            if item is not None and (item.flags() & QtCore.Qt.ItemIsEditable):
+                table.editItem(item)
+
+        table.cellDoubleClicked.connect(_open)
+        return delegate
+
+
+class BorderedShortcutCaptureDelegate(
+    ShortcutCaptureDelegate, RowSelectionBorderDelegate
+):
     """:class:`ShortcutCaptureDelegate` that paints the row-spanning
     selection border.
 
@@ -152,53 +207,3 @@ class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorde
     :class:`RowSelectionBorderDelegate` (both share the single
     ``QStyledItemDelegate`` Qt base, so the MRO is unambiguous).
     """
-
-
-def install_shortcut_capture(
-    table: QtWidgets.QTableWidget,
-    column: int,
-    on_capture,
-    *,
-    bordered: bool = False,
-) -> ShortcutCaptureDelegate:
-    """Wire in-cell shortcut capture onto a table column.
-
-    Installs the capture delegate on ``column`` and opens it on a
-    double-click of that column — independent of the table's
-    ``editTriggers``, so tables set to ``NoEditTriggers`` work too. The
-    target cell's item must carry ``Qt.ItemIsEditable`` (the default for
-    ``QTableWidgetItem``) for the editor to open. Programmatic opens via
-    ``table.editItem(item)`` (e.g. a context-menu "Assign…" action) route
-    through the same delegate and fire ``on_capture`` identically.
-
-    Recommended: set the table to ``NoEditTriggers``. The default triggers
-    include ``AnyKeyPressed``/``EditKeyPressed``, so a stray keystroke on a
-    selected editable cell would open the editor and silently rebind; the
-    double-click wired here works regardless of triggers.
-
-    Args:
-        table: Target table (``QTableWidget`` or compatible view).
-        column: Column index to make capture-editable.
-        on_capture: Callable ``(row, col, sequence) -> None`` invoked once
-            a chord is committed. ``sequence`` is a NativeText shortcut
-            string, ``""`` when cleared.
-        bordered: Use :class:`BorderedShortcutCaptureDelegate` for tables
-            that paint the row-spanning selection border elsewhere.
-
-    Returns:
-        The installed delegate (already connected to ``on_capture``).
-    """
-    delegate_cls = BorderedShortcutCaptureDelegate if bordered else ShortcutCaptureDelegate
-    delegate = delegate_cls(table)
-    delegate.captured.connect(on_capture)
-    table.setItemDelegateForColumn(column, delegate)
-
-    def _open(row, col):
-        if col != column:
-            return
-        item = table.item(row, col)
-        if item is not None and (item.flags() & QtCore.Qt.ItemIsEditable):
-            table.editItem(item)
-
-    table.cellDoubleClicked.connect(_open)
-    return delegate

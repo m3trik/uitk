@@ -28,6 +28,7 @@ Coverage:
 - **``option_box.add_option(plugin)`` plugin path** — bypasses ``Menu.add``,
   routes through the same deferred-wrap machinery.
 """
+
 import os
 import tempfile
 import unittest
@@ -79,7 +80,9 @@ def _write_ui(path, name, child_specs):
     """
     children = "\n".join(_child_xml(c, n) for c, n in child_specs)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(_UI_TEMPLATE.format(cls=name.capitalize(), name=name, children=children))
+        f.write(
+            _UI_TEMPLATE.format(cls=name.capitalize(), name=name, children=children)
+        )
 
 
 class _DynamicInitBase(QtBaseTestCase):
@@ -105,9 +108,9 @@ class _DynamicInitBase(QtBaseTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        from uitk.widgets.optionBox.utils import patch_common_widgets
+        from uitk.widgets.optionBox.utils import OptionBoxManager
 
-        patch_common_widgets()
+        OptionBoxManager.patch_common_widgets()
 
     def setUp(self):
         super().setUp()
@@ -191,7 +194,7 @@ class TestSlotConstructorReentrancy(_DynamicInitBase):
         # tb000_init must not appear between ctor:start and ctor:after_tb000_access
         ctor_start = events.index("ctor:start")
         ctor_end = events.index("ctor:after_tb000_access")
-        between = events[ctor_start + 1:ctor_end]
+        between = events[ctor_start + 1 : ctor_end]
         self.assertNotIn(
             "tb000_init",
             between,
@@ -328,7 +331,9 @@ class TestRefreshOnShow(_DynamicInitBase):
 
         # Two calls: first time is_initialized=False, second time is_initialized=True
         # (set just before the gated re-entry path runs).
-        self.assertEqual(len(calls), 2, f"expected 2 init calls, got {len(calls)}: {calls}")
+        self.assertEqual(
+            len(calls), 2, f"expected 2 init calls, got {len(calls)}: {calls}"
+        )
         self.assertEqual(calls[0], False)
         self.assertTrue(calls[1])
 
@@ -440,9 +445,7 @@ class TestReentrantInitSlotFromMenuHandler(_DynamicInitBase):
                 if not widget.is_initialized:
                     widget.refresh_on_show = True
                     structural_runs[0] += 1
-                    widget.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_first"
-                    )
+                    widget.option_box.menu.add("QCheckBox", setObjectName="chk_first")
                 refresh_runs[0] += 1
 
         self._make_sb(Dyn)
@@ -459,7 +462,8 @@ class TestReentrantInitSlotFromMenuHandler(_DynamicInitBase):
         # The single chk_first must exist exactly once on the menu.
         menu = self.ui.cmb000.option_box.menu
         chk_count = sum(
-            1 for w in menu.findChildren(QtWidgets.QCheckBox)
+            1
+            for w in menu.findChildren(QtWidgets.QCheckBox)
             if w.objectName() == "chk_first"
         )
         self.assertEqual(chk_count, 1)
@@ -589,9 +593,7 @@ class TestOptionBoxAddOptionPluginPath(_DynamicInitBase):
 
         # The wrap should have completed synchronously — no QTimer schedule
         # for _attempt_wrap_when_ready.
-        wrap_schedules = [
-            s for s in scheduled if s[1] == "_attempt_wrap_when_ready"
-        ]
+        wrap_schedules = [s for s in scheduled if s[1] == "_attempt_wrap_when_ready"]
         self.assertEqual(
             len(wrap_schedules),
             0,
@@ -761,12 +763,8 @@ class TestFlickerDetection(_DynamicInitBase):
                 events.append(("slot_init", "tb000"))
 
             def tb001_init(self_slot, widget):
-                widget.option_box.menu.add(
-                    "QSpinBox", setObjectName="tb001_s0"
-                )
-                widget.option_box.menu.add(
-                    "QSpinBox", setObjectName="tb001_s1"
-                )
+                widget.option_box.menu.add("QSpinBox", setObjectName="tb001_s0")
+                widget.option_box.menu.add("QSpinBox", setObjectName="tb001_s1")
                 events.append(("slot_init", "tb001"))
 
             def tb002_init(self_slot, widget):
@@ -832,7 +830,7 @@ class TestFlickerDetection(_DynamicInitBase):
         events = []
         cleanups = self._instrument(events)
         try:
-            sb = self._make_sb(self._make_tentacle_like_slot(events))
+            self._make_sb(self._make_tentacle_like_slot(events))
 
             # Hook MainWindow.showEvent to mark the boundary.
             ui = self.ui
@@ -844,9 +842,7 @@ class TestFlickerDetection(_DynamicInitBase):
                 events.append(("ui_showEvent_returned", None))
 
             type(ui).showEvent = marking_show_event
-            cleanups.append(
-                lambda: setattr(type(ui), "showEvent", original_show_event)
-            )
+            cleanups.append(lambda: setattr(type(ui), "showEvent", original_show_event))
 
             # Trigger the show flow.  MainWindow.showEvent calls
             # register_children if not yet initialized.
@@ -865,7 +861,7 @@ class TestFlickerDetection(_DynamicInitBase):
             except StopIteration:
                 self.fail(f"showEvent never returned; events: {events}")
 
-            after_show = events[returned_idx + 1:]
+            after_show = events[returned_idx + 1 :]
             offenders = [
                 e
                 for e in after_show
@@ -921,7 +917,7 @@ class TestFlickerDetection(_DynamicInitBase):
         cleanups.append(lambda: setattr(Menu, "move", original_move))
 
         try:
-            sb = self._make_sb(self._make_tentacle_like_slot(events))
+            self._make_sb(self._make_tentacle_like_slot(events))
             ui = self.ui
             ui.show()
             self._drain(pumps=10)
@@ -959,7 +955,7 @@ class TestFlickerDetection(_DynamicInitBase):
             )
             late_moves = [
                 e
-                for e in events[drain_idx + 1:]
+                for e in events[drain_idx + 1 :]
                 if e[0] == "menu_move" and e[1] == menu_id
             ]
             self.assertEqual(
@@ -1007,7 +1003,7 @@ class TestFlickerDetection(_DynamicInitBase):
         cleanups.append(lambda: setattr(Menu, "move", original_move))
 
         try:
-            sb = self._make_sb(self._make_tentacle_like_slot(events))
+            self._make_sb(self._make_tentacle_like_slot(events))
             ui = self.ui
             ui.show()
             self._drain(pumps=10)
@@ -1031,7 +1027,7 @@ class TestFlickerDetection(_DynamicInitBase):
             )
             moves_during_drain = [
                 e
-                for e in events[drain_idx + 1:]
+                for e in events[drain_idx + 1 :]
                 if e[0] == "menu_move" and e[1] == menu_id
             ]
             self.assertEqual(
@@ -1058,7 +1054,7 @@ class TestFlickerDetection(_DynamicInitBase):
         events = []
         cleanups = self._instrument(events)
         try:
-            sb = self._make_sb(self._make_tentacle_like_slot(events))
+            self._make_sb(self._make_tentacle_like_slot(events))
             ui = self.ui
 
             original_show_event = type(ui).showEvent
@@ -1069,9 +1065,7 @@ class TestFlickerDetection(_DynamicInitBase):
                 events.append(("ui_showEvent_returned", None))
 
             type(ui).showEvent = marking_show_event
-            cleanups.append(
-                lambda: setattr(type(ui), "showEvent", original_show_event)
-            )
+            cleanups.append(lambda: setattr(type(ui), "showEvent", original_show_event))
 
             ui.show()
             self._drain(pumps=20)
@@ -1083,9 +1077,7 @@ class TestFlickerDetection(_DynamicInitBase):
             except StopIteration:
                 self.fail("showEvent never returned")
 
-            wrap_end_indices = [
-                i for i, e in enumerate(events) if e[0] == "wrap_end"
-            ]
+            wrap_end_indices = [i for i, e in enumerate(events) if e[0] == "wrap_end"]
             late_wraps = [i for i in wrap_end_indices if i > returned_idx]
             self.assertEqual(
                 late_wraps,
@@ -1167,7 +1159,7 @@ class TestFlickerDetection(_DynamicInitBase):
         )
 
         try:
-            sb = self._make_sb(self._make_tentacle_like_slot(events))
+            self._make_sb(self._make_tentacle_like_slot(events))
             ui = self.ui
             ui.show()
             self._drain(pumps=10)
@@ -1261,9 +1253,7 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
                 widget.option_box.menu.add(
                     "QCheckBox", setObjectName="tb000_chk0", setText="A"
                 )
-                widget.option_box.menu.add(
-                    "QSpinBox", setObjectName="tb000_s0"
-                )
+                widget.option_box.menu.add("QSpinBox", setObjectName="tb000_s0")
 
             def tb001_init(self_slot, widget):
                 widget.option_box.menu.add(
@@ -1317,7 +1307,7 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
         from uitk.widgets.menu import Menu
 
         events = []
-        sb = self._make_sb(self._make_slot())
+        self._make_sb(self._make_slot())
         ui = self.ui
 
         original_register = type(ui).register_widget
@@ -1328,7 +1318,9 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
                 for m in ui.findChildren(Menu)
                 if getattr(m, "_add_depth", 0)
             ]
-            events.append(("register", widget.objectName(), max(menu_add_depths or [0])))
+            events.append(
+                ("register", widget.objectName(), max(menu_add_depths or [0]))
+            )
             return original_register(self_ui, widget)
 
         original_show_event = type(ui).showEvent
@@ -1352,7 +1344,7 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
         )
         self.assertIsNotNone(returned_idx, f"showEvent never returned: {events}")
 
-        after = [e for e in events[returned_idx + 1:] if e[0] == "register"]
+        after = [e for e in events[returned_idx + 1 :] if e[0] == "register"]
         self.assertEqual(
             after,
             [],
@@ -1371,7 +1363,7 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
         must drop it (not crash MainWindow.showEvent) and still drain live
         menus."""
         from uitk.widgets.menu import (
-            _flush_pending_registrations,
+            Menu,
             _menus_awaiting_registration,
         )
 
@@ -1390,7 +1382,7 @@ class TestPrePaintRegistrationFlush(_DynamicInitBase):
             window_sentinel = QtWidgets.QWidget()
             self.track_widget(window_sentinel)
             # Must not raise, and must evict the dead wrapper.
-            _flush_pending_registrations(window_sentinel)
+            Menu._flush_pending_registrations(window_sentinel)
             self.assertNotIn(dead, list(_menus_awaiting_registration))
         finally:
             _menus_awaiting_registration.discard(dead)

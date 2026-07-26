@@ -290,6 +290,22 @@ QPushButton[class~="PinButton"] {
     text-align: center;
 }
 
+/* Popup-launcher option buttons (pin / recent-values): :checked only mirrors
+   "my popup is open" — transient UI state, not a persisted on/off — so it
+   gets a quiet engaged shade from the hover family instead of the full
+   checked accent (reserved for real boolean state). Content state is shown in
+   the ICON itself (pin: hollow/filled glyph; recent: dimmed while its menu
+   would be empty), not via a button-background accent. */
+QPushButton[class~="PinButton"]:checked,
+QPushButton[class~="RecentButton"]:checked {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+}
+QPushButton[class~="PinButton"]:checked:hover,
+QPushButton[class~="RecentButton"]:checked:hover {
+    background-color: {BUTTON_HOVER_TINT};
+}
+
 /* Within the option box container, suppress any menu indicators on buttons */
 QWidget#optionBoxContainer QPushButton::menu-indicator {
     image: none;

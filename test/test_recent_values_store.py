@@ -12,6 +12,7 @@ persistence, never widgets, so no QApplication is required.
 
 Run standalone: python test/test_recent_values_store.py
 """
+
 import os
 import tempfile
 import unittest
@@ -23,10 +24,11 @@ from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.recent_values_store import (
     RecentValuesStore,
     RecentValueEntry,
-    normalize_value,
-    _is_filesystem_path,
-    _build_display_map_smart_path,
 )
+
+normalize_value = RecentValuesStore.normalize_value
+_is_filesystem_path = RecentValuesStore._is_filesystem_path
+_build_display_map_smart_path = RecentValuesStore._build_display_map_smart_path
 
 
 def _ini_settings():

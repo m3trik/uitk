@@ -342,7 +342,7 @@ class LineEdit(
 if __name__ == "__main__":
     import sys
     from uitk.widgets.menu import Menu
-    from uitk.widgets.optionBox.utils import add_clear_option, add_menu_option
+    from uitk.widgets.optionBox.utils import OptionBoxManager
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
@@ -381,7 +381,7 @@ if __name__ == "__main__":
     layout.addWidget(QtWidgets.QLabel("4. LineEdit with Clear Button (legacy):"))
     line_edit4_legacy = LineEdit()
     line_edit4_legacy.setText("Legacy clear button approach")
-    container4 = add_clear_option(line_edit4_legacy)
+    container4 = OptionBoxManager.add_clear_option(line_edit4_legacy)
     layout.addWidget(container4)
 
     # Example 5: LineEdit with menu using ELEGANT interface (NEW)
@@ -417,7 +417,7 @@ if __name__ == "__main__":
     legacy_menu.leg1.clicked.connect(lambda: print("Legacy Option 1 clicked"))
     legacy_menu.leg2.clicked.connect(lambda: print("Legacy Option 2 clicked"))
 
-    container6 = add_menu_option(line_edit6, legacy_menu)
+    container6 = OptionBoxManager.add_menu_option(line_edit6, legacy_menu)
     layout.addWidget(container6)
 
     # Example 7: Any Qt widget works (demo with QTextEdit using elegant interface)
@@ -443,7 +443,7 @@ if __name__ == "__main__":
         "✅ ELEGANT OPTIONBOX INTERFACE:\n"
         "• NEW: widget.option_box.clear_option = True  (elegant attribute access)\n"
         "• NEW: widget.option_box.enable_clear().set_action(func)  (fluent interface)\n"
-        "• Legacy: add_option_box(), add_clear_option() still supported\n"
+        "• Factories: OptionBoxManager.add_option_box(), .add_clear_option()\n"
         "• Similar to menu: widget.menu.add() → widget.option_box.clear_option\n"
         "• Works with ANY widget: LineEdit, TextEdit, Button, ComboBox, etc.\n"
         "• Menu compatible: Menu class works exactly the same as before\n"

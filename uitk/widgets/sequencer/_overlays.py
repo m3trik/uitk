@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Range-related overlay items: static ranges, gap hatching, and highlights."""
+
 from __future__ import annotations
 
 from typing import Optional, TYPE_CHECKING
@@ -12,13 +13,12 @@ if TYPE_CHECKING:
 
 from uitk.widgets.sequencer._data import (
     _SHOT_LANE_HEIGHT,
-    _styled_menu,
-    _menu_exec_pos,
-    pattern_brush,
+    MenuUtils,
+    PatternRegistry,
     HATCH_SPARSE,
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
-from uitk.widgets.sequencer._draggable import DraggableItemMixin, snap_time
+from uitk.widgets.sequencer._draggable import DraggableItemMixin
 
 # ---------------------------------------------------------------------------
 #  _StaticRangeOverlay
@@ -232,14 +232,18 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         dt = dx / ppu if ppu else 0
 
         if self._drag_mode == "right":
-            new_end = snap_time(self._drag_origin_end + dt, self._timeline)
+            new_end = DraggableItemMixin.snap_time(
+                self._drag_origin_end + dt, self._timeline
+            )
             if new_end >= self._start:
                 self.prepareGeometryChange()
                 self._end = new_end
                 self._update_tooltip()
                 self.update()
         elif self._drag_mode == "left":
-            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
+            new_start = DraggableItemMixin.snap_time(
+                self._drag_origin_start + dt, self._timeline
+            )
             if new_start <= self._end:
                 self.prepareGeometryChange()
                 self._start = new_start
@@ -247,7 +251,9 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
                 self.update()
         elif self._drag_mode == "move":
             span = self._drag_origin_end - self._drag_origin_start
-            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
+            new_start = DraggableItemMixin.snap_time(
+                self._drag_origin_start + dt, self._timeline
+            )
             self.prepareGeometryChange()
             self._start = new_start
             self._end = new_start + span
@@ -263,7 +269,8 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def _show_gap_drag_tooltip(self, scene_pos):
         self._drag_tooltip.show(
-            self.scene(), scene_pos,
+            self.scene(),
+            scene_pos,
             label=FrameTooltip.format_frame(self._gap_drag_frame()),
             color=self._line_color.name(),
         )
@@ -311,7 +318,7 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         event.accept()
 
     def contextMenuEvent(self, event):
-        menu = _styled_menu()
+        menu = MenuUtils._styled_menu()
         act_lock = menu.addAction("Unlock Gap" if self._locked else "Lock Gap")
         menu.addSeparator()
         act_lock_all = menu.addAction("Lock All Gaps")
@@ -321,7 +328,7 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         sq = self._timeline.parent_sequencer
         sq.gap_menu_requested.emit(menu, self._start, self._end)
 
-        chosen = menu.exec_(_menu_exec_pos(event))
+        chosen = menu.exec_(MenuUtils._menu_exec_pos(event))
         if chosen == act_lock:
             self._locked = not self._locked
             self._update_tooltip()
@@ -340,7 +347,9 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         painter.save()
         painter.setClipRect(r)
         painter.fillRect(r, self._color)
-        painter.fillRect(r, pattern_brush("diagonal", self._line_color, HATCH_SPARSE))
+        painter.fillRect(
+            r, PatternRegistry.pattern_brush("diagonal", self._line_color, HATCH_SPARSE)
+        )
         # Edge handle highlights
         w = r.width()
         hw = min(self._EDGE_WIDTH, w / 2)
@@ -568,15 +577,21 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
         if self._drag_mode == "move":
             span = self._drag_origin_end - self._drag_origin_start
-            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
+            new_start = DraggableItemMixin.snap_time(
+                self._drag_origin_start + dt, self._timeline
+            )
             self._start = new_start
             self._end = new_start + span
         elif self._drag_mode == "left":
-            new_start = snap_time(self._drag_origin_start + dt, self._timeline)
+            new_start = DraggableItemMixin.snap_time(
+                self._drag_origin_start + dt, self._timeline
+            )
             if new_start < self._end:
                 self._start = new_start
         elif self._drag_mode == "right":
-            new_end = snap_time(self._drag_origin_end + dt, self._timeline)
+            new_end = DraggableItemMixin.snap_time(
+                self._drag_origin_end + dt, self._timeline
+            )
             if new_end > self._start:
                 self._end = new_end
 
@@ -591,7 +606,8 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def _show_range_drag_tooltip(self, scene_pos):
         self._drag_tooltip.show(
-            self.scene(), scene_pos,
+            self.scene(),
+            scene_pos,
             label=FrameTooltip.format_frame(self._range_drag_frame()),
             color=self._handle_color.name(),
         )

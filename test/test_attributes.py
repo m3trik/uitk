@@ -50,5 +50,35 @@ class TestSetCheckStateInt(QtBaseTestCase):
         self.assertEqual(self.cb.checkState(), QtCore.Qt.CheckState.Checked)
 
 
+class TestSetLimitsStep(QtBaseTestCase):
+    """``set_limits`` must never apply a zero/negative step.
+
+    A zero singleStep freezes the spinbox entirely: Qt's default wheel
+    stepping and every WheelStepMixin modifier branch scale off singleStep,
+    and set_limits also hides the up/down buttons (NoButtons). Regression:
+    the tentacle select-similar tolerance spinbox was stuck at 0.000.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.mixin = AttributesMixin()
+        self.sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+
+    def test_zero_step_falls_back(self):
+        self.mixin.set_attributes(self.sb, set_limits=[0, 9999, 0.0, 3])
+        self.assertGreater(self.sb.singleStep(), 0)
+        self.assertEqual(self.sb.minimum(), 0)
+        self.assertEqual(self.sb.maximum(), 9999)
+        self.assertEqual(self.sb.decimals(), 3)
+
+    def test_negative_step_falls_back(self):
+        self.mixin.set_attributes(self.sb, set_limits=[0, 10, -0.5])
+        self.assertGreater(self.sb.singleStep(), 0)
+
+    def test_valid_step_preserved(self):
+        self.mixin.set_attributes(self.sb, set_limits=[0, 9999, 0.1, 3])
+        self.assertAlmostEqual(self.sb.singleStep(), 0.1)
+
+
 if __name__ == "__main__":
     unittest.main()

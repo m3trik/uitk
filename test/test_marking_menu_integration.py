@@ -7,6 +7,7 @@ and stub UIs, then drive Qt events via QTest. They cover the full sequence of
 press/release combinations to ensure no flicker, no stuck states, and no
 "press twice to switch" regressions.
 """
+
 import logging
 import unittest
 from unittest import mock
@@ -15,7 +16,9 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from conftest import QtBaseTestCase
 from uitk.widgets.marking_menu._marking_menu import MarkingMenu
-from uitk.widgets.marking_menu._resolver import parse_binding_keys
+from uitk.widgets.marking_menu._resolver import MenuResolver
+
+parse_binding_keys = MenuResolver.parse_binding_keys
 
 
 # Default binding fixture mirrors TclMaya's defaults so behavior is realistic.
@@ -34,7 +37,11 @@ class StubUi(QtWidgets.QWidget):
     def __init__(self, name: str, parent=None):
         super().__init__(parent)
         self.setObjectName(name)
-        self._tags = {"startmenu"} if name.endswith(("hud", "cameras", "editors", "main", "maya")) else set()
+        self._tags = (
+            {"startmenu"}
+            if name.endswith(("hud", "cameras", "editors", "main", "maya"))
+            else set()
+        )
         self.is_initialized = True
         self.header = None
         self.widgets = []
@@ -94,8 +101,21 @@ class StubConfigurable:
 
 
 class StubConfigurableNS:
+    """Mirrors ``SettingsManager.__getattr__``: ANY name yields a setting proxy.
+
+    The menu reads several host-namespaced keys off this namespace
+    (``marking_menu_bindings*``, ``marking_menu_menu_theme*``,
+    ``marking_menu_window_theme*``), so hard-coding one attribute would make
+    the stub go stale every time a new persisted setting is added.
+    """
+
     def __init__(self, bindings):
-        self.marking_menu_bindings = StubConfigurable(bindings)
+        self._items = {"marking_menu_bindings": StubConfigurable(bindings)}
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return self._items.setdefault(name, StubConfigurable(None))
 
 
 class StubSwitchboard:
@@ -164,7 +184,9 @@ class DriveableMarkingMenu(MarkingMenu):
         self.logger.setLevel(logging.WARNING)
 
         self._bindings, self._activation_key_str = parse_binding_keys(bindings)
-        self._activation_key = QtCore.Qt.Key_F12 if self._activation_key_str == "Key_F12" else None
+        self._activation_key = (
+            QtCore.Qt.Key_F12 if self._activation_key_str == "Key_F12" else None
+        )
         self._activation_key_held = False
         self._standalone_suppress = False
         self._suppress_default_on_reentry = False
@@ -469,7 +491,9 @@ class MarkingMenuInputScenarios(QtBaseTestCase):
         """L+M+R has no binding → priority button (R) wins."""
         self.activate()
         self.press(QtCore.Qt.LeftButton, QtCore.Qt.LeftButton)
-        self.press(QtCore.Qt.MiddleButton, QtCore.Qt.LeftButton | QtCore.Qt.MiddleButton)
+        self.press(
+            QtCore.Qt.MiddleButton, QtCore.Qt.LeftButton | QtCore.Qt.MiddleButton
+        )
         # L+M has no binding; priority is M → editors
         self.assert_current("editors")
         self.press(

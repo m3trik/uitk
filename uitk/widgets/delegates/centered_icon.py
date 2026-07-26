@@ -8,8 +8,8 @@ decoration via ``QStyle::SE_ItemViewItemDecoration`` — style-dependent,
 left-aligned, and offset by the cell's ``::item`` padding — so a small
 icon ends up shoved sideways and clipping inconsistently.
 
-:func:`paint_centered_icon` is the single source of truth for "draw this
-icon centered in this cell", shared by:
+:meth:`CenteredIconActionDelegate.paint_centered_icon` is the single source
+of truth for "draw this icon centered in this cell", shared by:
 
 - :class:`CenteredIconActionDelegate` — centers the icon **and** keeps the
   row-spanning selection border (for tables that opt into
@@ -17,6 +17,7 @@ icon centered in this cell", shared by:
 - :class:`uitk.widgets.table_actions._CenteredIconDelegate` — centers the
   icon with the plain (filled) selection.
 """
+
 from __future__ import annotations
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -29,85 +30,14 @@ from uitk.widgets.delegates.row_selection import RowSelectionBorderDelegate
 # button's icon. Absent / 1.0 paints at full opacity.
 ICON_OPACITY_ROLE = QtCore.Qt.UserRole + 200
 
-
-def fill_cell_background(painter, rect, index):
-    """Paint an item's ``BackgroundRole`` tint into *rect*; ``True`` if it did.
-
-    A delegate that paints its own content (a centered icon) and lets the style
-    draw the cell chrome must fill the item brush itself: the stylesheet style's
-    ``CE_ItemViewItem`` drops the item's ``BackgroundRole`` in favour of the QSS
-    ``::item`` rules, so a per-state tint (a ``TableActions`` ``background``
-    state, a "modified" cue) silently vanishes otherwise. Call this *before*
-    ``drawControl`` (and clear ``opt.backgroundBrush`` so the style doesn't
-    double-fill); the style still layers hover / selection over the tint.
-    """
-    brush = index.data(QtCore.Qt.BackgroundRole)
-    if isinstance(brush, QtGui.QBrush) and brush.style() != QtCore.Qt.NoBrush:
-        painter.fillRect(rect, brush)
-        return True
-    if isinstance(brush, QtGui.QColor) and brush.alpha() > 0:
-        painter.fillRect(rect, brush)
-        return True
-    return False
-
-
-def paint_centered_icon(painter, icon, cell, decoration_size, hover=False, opacity=1.0):
-    """Draw *icon* centered within the *cell* rect.
-
-    Parameters
-    ----------
-    painter : QtGui.QPainter
-        Active painter (the delegate's).
-    icon : QtGui.QIcon | None
-        Icon to paint; ``None`` / null is a no-op.
-    cell : QtCore.QRect
-        The cell rectangle (``option.rect``).
-    decoration_size : QtCore.QSize
-        Preferred icon size (``option.decorationSize``); when invalid a
-        square that fits the cell minus a small margin is used instead.
-    hover : bool
-        When ``True`` the icon's own opaque pixels are brightened
-        (``SourceAtop``) so faint "inactive" tones read on hover without
-        tinting the surrounding cell.
-    opacity : float
-        Painter opacity for the icon (``< 1.0`` dims it, e.g. a disabled cell).
-    """
-    if icon is None or icon.isNull():
-        return
-
-    target_size = decoration_size
-    if not target_size.isValid() or target_size.width() <= 0:
-        edge = max(8, min(cell.width(), cell.height()) - 4)
-        target_size = QtCore.QSize(edge, edge)
-
-    actual = icon.actualSize(target_size)
-    if actual.width() <= 0 or actual.height() <= 0:
-        edge = max(8, min(cell.width(), cell.height()) - 4)
-        actual = QtCore.QSize(edge, edge)
-    # Clamp so the pixmap never overflows the cell.
-    actual = QtCore.QSize(
-        min(actual.width(), cell.width()),
-        min(actual.height(), cell.height()),
-    )
-
-    pixmap = icon.pixmap(actual)
-
-    if hover:
-        pixmap = pixmap.copy()
-        p = QtGui.QPainter(pixmap)
-        p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceAtop)
-        p.fillRect(pixmap.rect(), QtGui.QColor(255, 255, 255, 110))
-        p.end()
-
-    x = cell.x() + (cell.width() - pixmap.width()) // 2
-    y = cell.y() + (cell.height() - pixmap.height()) // 2
-    if opacity < 1.0:
-        painter.save()
-        painter.setOpacity(opacity)
-        painter.drawPixmap(x, y, pixmap)
-        painter.restore()
-    else:
-        painter.drawPixmap(x, y, pixmap)
+# Optional per-item "non-interactive" flag read by the action-icon delegates. Set
+# it on an item (``item.setData(ACTION_NONINTERACTIVE_ROLE, True)``) to suppress
+# every hover cue — the style's ``State_MouseOver`` cell tint AND the icon
+# brighten — so a cell that has no click action (e.g. a display state that isn't
+# applicable to the row) doesn't read as clickable. Absent / False hovers
+# normally. ``TableActions.set`` sets this automatically from whether the state
+# defines an ``action`` callback.
+ACTION_NONINTERACTIVE_ROLE = QtCore.Qt.UserRole + 201
 
 
 class CenteredIconActionDelegate(RowSelectionBorderDelegate):
@@ -123,7 +53,108 @@ class CenteredIconActionDelegate(RowSelectionBorderDelegate):
     The icon, its colour, and any background tint come from the item's
     ``DecorationRole`` / ``BackgroundRole`` (set by the caller), so a state
     change is a plain ``setIcon`` / ``setBackground`` — no widget churn.
+
+    :meth:`fill_cell_background` and :meth:`paint_centered_icon` are the
+    shared painting primitives (also used by
+    :class:`uitk.widgets.table_actions._CenteredIconDelegate`).
     """
+
+    @staticmethod
+    def fill_cell_background(painter, rect, index):
+        """Paint an item's ``BackgroundRole`` tint into *rect*; ``True`` if it did.
+
+        A delegate that paints its own content (a centered icon) and lets the style
+        draw the cell chrome must fill the item brush itself: the stylesheet style's
+        ``CE_ItemViewItem`` drops the item's ``BackgroundRole`` in favour of the QSS
+        ``::item`` rules, so a per-state tint (a ``TableActions`` ``background``
+        state, a "modified" cue) silently vanishes otherwise. Call this *before*
+        ``drawControl`` (and clear ``opt.backgroundBrush`` so the style doesn't
+        double-fill); the style still layers hover / selection over the tint.
+        """
+        brush = index.data(QtCore.Qt.BackgroundRole)
+        if isinstance(brush, QtGui.QBrush) and brush.style() != QtCore.Qt.NoBrush:
+            painter.fillRect(rect, brush)
+            return True
+        if isinstance(brush, QtGui.QColor) and brush.alpha() > 0:
+            painter.fillRect(rect, brush)
+            return True
+        return False
+
+    @staticmethod
+    def suppress_hover_if_noninteractive(opt, index):
+        """Strip ``State_MouseOver`` from *opt* when the cell is flagged non-interactive.
+
+        Returns the hover flag the centered-icon painter should use: ``False`` (no
+        icon brighten) for a cell carrying a truthy ``ACTION_NONINTERACTIVE_ROLE``,
+        otherwise the cell's real mouse-over state. Shared by both action-icon
+        delegates so a state without a click action never paints a hover cue.
+        """
+        mouse_over = bool(opt.state & QtWidgets.QStyle.State_MouseOver)
+        if index.data(ACTION_NONINTERACTIVE_ROLE):
+            opt.state &= ~QtWidgets.QStyle.State_MouseOver
+            return False
+        return mouse_over
+
+    @staticmethod
+    def paint_centered_icon(
+        painter, icon, cell, decoration_size, hover=False, opacity=1.0
+    ):
+        """Draw *icon* centered within the *cell* rect.
+
+        Parameters
+        ----------
+        painter : QtGui.QPainter
+            Active painter (the delegate's).
+        icon : QtGui.QIcon | None
+            Icon to paint; ``None`` / null is a no-op.
+        cell : QtCore.QRect
+            The cell rectangle (``option.rect``).
+        decoration_size : QtCore.QSize
+            Preferred icon size (``option.decorationSize``); when invalid a
+            square that fits the cell minus a small margin is used instead.
+        hover : bool
+            When ``True`` the icon's own opaque pixels are brightened
+            (``SourceAtop``) so faint "inactive" tones read on hover without
+            tinting the surrounding cell.
+        opacity : float
+            Painter opacity for the icon (``< 1.0`` dims it, e.g. a disabled cell).
+        """
+        if icon is None or icon.isNull():
+            return
+
+        target_size = decoration_size
+        if not target_size.isValid() or target_size.width() <= 0:
+            edge = max(8, min(cell.width(), cell.height()) - 4)
+            target_size = QtCore.QSize(edge, edge)
+
+        actual = icon.actualSize(target_size)
+        if actual.width() <= 0 or actual.height() <= 0:
+            edge = max(8, min(cell.width(), cell.height()) - 4)
+            actual = QtCore.QSize(edge, edge)
+        # Clamp so the pixmap never overflows the cell.
+        actual = QtCore.QSize(
+            min(actual.width(), cell.width()),
+            min(actual.height(), cell.height()),
+        )
+
+        pixmap = icon.pixmap(actual)
+
+        if hover:
+            pixmap = pixmap.copy()
+            p = QtGui.QPainter(pixmap)
+            p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceAtop)
+            p.fillRect(pixmap.rect(), QtGui.QColor(255, 255, 255, 110))
+            p.end()
+
+        x = cell.x() + (cell.width() - pixmap.width()) // 2
+        y = cell.y() + (cell.height() - pixmap.height()) // 2
+        if opacity < 1.0:
+            painter.save()
+            painter.setOpacity(opacity)
+            painter.drawPixmap(x, y, pixmap)
+            painter.restore()
+        else:
+            painter.drawPixmap(x, y, pixmap)
 
     def paint(self, painter, option, index):
         is_selected, opt = self._make_unselected_option(option, index)
@@ -142,7 +173,7 @@ class CenteredIconActionDelegate(RowSelectionBorderDelegate):
         # green 'modified' or a command-badge fill) — the stylesheet style would
         # otherwise drop it; cleared from ``opt`` so drawControl doesn't double-
         # fill. (Shared with table_actions._CenteredIconDelegate.)
-        fill_cell_background(painter, option.rect, index)
+        CenteredIconActionDelegate.fill_cell_background(painter, option.rect, index)
         opt.backgroundBrush = QtGui.QBrush()
 
         # Let the style paint only the rest of the cell background (hover /
@@ -152,17 +183,21 @@ class CenteredIconActionDelegate(RowSelectionBorderDelegate):
         opt.text = ""
         opt.features &= ~QtWidgets.QStyleOptionViewItem.HasDecoration
         opt.features &= ~QtWidgets.QStyleOptionViewItem.HasDisplay
+        # A non-interactive cell (a state with no click action) drops its hover
+        # cue: strip State_MouseOver before the style paints the cell tint, and
+        # don't brighten the icon.
+        hover = self.suppress_hover_if_noninteractive(opt, index)
         widget = opt.widget
         style = widget.style() if widget else QtWidgets.QApplication.style()
         style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, widget)
 
         opacity = index.data(ICON_OPACITY_ROLE)
-        paint_centered_icon(
+        CenteredIconActionDelegate.paint_centered_icon(
             painter,
             icon,
             option.rect,
             option.decorationSize,
-            hover=bool(option.state & QtWidgets.QStyle.State_MouseOver),
+            hover=hover,
             opacity=float(opacity) if opacity is not None else 1.0,
         )
 

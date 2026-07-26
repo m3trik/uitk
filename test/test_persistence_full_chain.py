@@ -15,6 +15,7 @@ Locks down the chain that powers ``MainWindow.state.save`` /
   relying on host-app close events (see
   :class:`TestSaveSurvivesWithoutExplicitSync`)
 """
+
 import os
 import sys
 import tempfile
@@ -31,9 +32,9 @@ from qtpy import QtCore, QtWidgets
 from uitk.switchboard import Switchboard
 from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.state_manager import StateManager
-from uitk.widgets.optionBox.utils import patch_common_widgets
+from uitk.widgets.optionBox.utils import OptionBoxManager
 
-patch_common_widgets()
+OptionBoxManager.patch_common_widgets()
 
 
 _UI_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -54,7 +55,7 @@ _UI_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 
 def _make_ui(path, name, button_names):
     items = "\n".join(
-        f"    <item><widget class=\"QPushButton\" name=\"{b}\"/></item>"
+        f'    <item><widget class="QPushButton" name="{b}"/></item>'
         for b in button_names
     )
     with open(path, "w", encoding="utf-8") as f:
@@ -91,9 +92,7 @@ class _PersistBase(QtBaseTestCase):
 
     def _drain(self, pumps=10):
         for _ in range(pumps):
-            QtWidgets.QApplication.processEvents(
-                QtCore.QEventLoop.AllEvents, 12
-            )
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 12)
 
     def _make_sb(self, ui_name, button_names, slot_class, use_branch=True):
         """Build a switchboard pointing at a synthetic UI + slot class.
@@ -117,27 +116,24 @@ class _PersistBase(QtBaseTestCase):
             )
             ui.settings = sb.settings.branch(ui.objectName())
         else:
-            ui.settings = SettingsManager(
-                org=self.TEST_ORG, app=self.TEST_APP
-            )
+            ui.settings = SettingsManager(org=self.TEST_ORG, app=self.TEST_APP)
         ui.state = StateManager(ui.settings)
         ui.register_children()
-        self._drain(); self._drain()
+        self._drain()
+        self._drain()
         return sb, ui
 
     def _raw_keys(self):
         """All keys in the isolated test store (no namespace filter)."""
-        return sorted(
-            SettingsManager(org=self.TEST_ORG, app=self.TEST_APP).keys()
-        )
+        return sorted(SettingsManager(org=self.TEST_ORG, app=self.TEST_APP).keys())
 
 
 # ===========================================================================
 # Scenario 1: single option_box menu, single checkbox (baseline)
 # ===========================================================================
 
-class TestSingleOptionBoxCheckbox(_PersistBase):
 
+class TestSingleOptionBoxCheckbox(_PersistBase):
     def test_toggle_persists_to_branched_namespace(self):
         class Repro:
             def __init__(s, switchboard, **_):
@@ -146,21 +142,18 @@ class TestSingleOptionBoxCheckbox(_PersistBase):
 
             def tb000_init(s, w):
                 if not w.is_initialized:
-                    w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_single"
-                    )
+                    w.option_box.menu.add("QCheckBox", setObjectName="chk_single")
 
         sb, ui = self._make_sb("repro", ["tb000"], Repro)
         ui.tb000.option_box.menu.chk_single.setChecked(True)
         self._drain()
-        self.assertIn(
-            "switchboard/repro/chk_single/toggled", self._raw_keys()
-        )
+        self.assertIn("switchboard/repro/chk_single/toggled", self._raw_keys())
 
 
 # ===========================================================================
 # Scenario 2: polygons-pattern (mutual-exclusion cascade)
 # ===========================================================================
+
 
 class TestPolygonsMutualExclusionCascade(_PersistBase):
     """Mimic polygons tb007_init: chk008/009/010 with mutual-exclusion
@@ -216,23 +209,18 @@ class TestPolygonsMutualExclusionCascade(_PersistBase):
         # And the persisted values reflect the final cascade state.
         sm = SettingsManager(org=self.TEST_ORG, app=self.TEST_APP)
         # SettingsManager.value() parses booleans coming back as JSON.
-        self.assertEqual(
-            sm.value("switchboard/repro/chk010/toggled"), True
-        )
+        self.assertEqual(sm.value("switchboard/repro/chk010/toggled"), True)
         # The cascade un-checked chk008/009 — those False values must
         # also have persisted (the production bug we're guarding against
         # is values being stuck at their .ui-file defaults).
-        self.assertEqual(
-            sm.value("switchboard/repro/chk008/toggled"), False
-        )
-        self.assertEqual(
-            sm.value("switchboard/repro/chk009/toggled"), False
-        )
+        self.assertEqual(sm.value("switchboard/repro/chk008/toggled"), False)
+        self.assertEqual(sm.value("switchboard/repro/chk009/toggled"), False)
 
 
 # ===========================================================================
 # Scenario 3: many widgets, only some toggled
 # ===========================================================================
+
 
 class TestManyWidgetsOnlySomeToggled(_PersistBase):
     """Toggle a subset of widgets across multiple option_box menus and
@@ -246,29 +234,19 @@ class TestManyWidgetsOnlySomeToggled(_PersistBase):
 
             def tb000_init(s, w):
                 if not w.is_initialized:
-                    w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_a"
-                    )
+                    w.option_box.menu.add("QCheckBox", setObjectName="chk_a")
 
             def tb001_init(s, w):
                 if not w.is_initialized:
-                    w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_b"
-                    )
-                    w.option_box.menu.add(
-                        "QSpinBox", setObjectName="s_b"
-                    )
+                    w.option_box.menu.add("QCheckBox", setObjectName="chk_b")
+                    w.option_box.menu.add("QSpinBox", setObjectName="s_b")
 
             def tb002_init(s, w):
                 if not w.is_initialized:
-                    cmb = w.option_box.menu.add(
-                        "QComboBox", setObjectName="cmb_c"
-                    )
+                    cmb = w.option_box.menu.add("QComboBox", setObjectName="cmb_c")
                     cmb.addItems(["one", "two", "three"])
 
-        sb, ui = self._make_sb(
-            "repro", ["tb000", "tb001", "tb002"], Repro
-        )
+        sb, ui = self._make_sb("repro", ["tb000", "tb001", "tb002"], Repro)
 
         # Toggle chk_a. Nothing else.
         ui.tb000.option_box.menu.chk_a.setChecked(True)
@@ -288,20 +266,17 @@ class TestManyWidgetsOnlySomeToggled(_PersistBase):
         keys = self._raw_keys()
         self.assertIn("switchboard/repro/chk_b/toggled", keys)
         self.assertIn("switchboard/repro/s_b/valueChanged", keys)
-        self.assertIn(
-            "switchboard/repro/cmb_c/currentIndexChanged", keys
-        )
+        self.assertIn("switchboard/repro/cmb_c/currentIndexChanged", keys)
 
         sm = SettingsManager(org=self.TEST_ORG, app=self.TEST_APP)
         self.assertEqual(sm.value("switchboard/repro/s_b/valueChanged"), 42)
-        self.assertEqual(
-            sm.value("switchboard/repro/cmb_c/currentIndexChanged"), 2
-        )
+        self.assertEqual(sm.value("switchboard/repro/cmb_c/currentIndexChanged"), 2)
 
 
 # ===========================================================================
 # Scenario 4: session-restart round-trip
 # ===========================================================================
+
 
 class TestSimulatedSessionRestart(_PersistBase):
     """Toggle, tear down, rebuild — values restore from QSettings."""
@@ -319,9 +294,7 @@ class TestSimulatedSessionRestart(_PersistBase):
                         setObjectName="chk_persist",
                         setChecked=False,
                     )
-                    w.option_box.menu.add(
-                        "QSpinBox", setObjectName="s_persist"
-                    )
+                    w.option_box.menu.add("QSpinBox", setObjectName="s_persist")
                     # IMPORTANT: addItems BEFORE state.load runs, so the
                     # restored currentIndex is valid against the populated
                     # model. Tentacle slots that populate comboboxes from
@@ -354,11 +327,13 @@ class TestSimulatedSessionRestart(_PersistBase):
             "checkbox not restored across simulated session restart",
         )
         self.assertEqual(
-            menu2.s_persist.value(), 7,
+            menu2.s_persist.value(),
+            7,
             "spinbox value not restored across simulated session restart",
         )
         self.assertEqual(
-            menu2.cmb_persist.currentIndex(), 2,
+            menu2.cmb_persist.currentIndex(),
+            2,
             "combobox index not restored across simulated session restart",
         )
 
@@ -366,6 +341,7 @@ class TestSimulatedSessionRestart(_PersistBase):
 # ===========================================================================
 # Scenario 5: option_box menu shown (popup setup) BEFORE add()
 # ===========================================================================
+
 
 class TestMenuShownBeforeAddingWidgets(_PersistBase):
     """Menu does Qt.Tool|FramelessWindowHint reparenting on first show.
@@ -389,21 +365,25 @@ class TestMenuShownBeforeAddingWidgets(_PersistBase):
         self._drain()
 
         chk = menu.add("QCheckBox", setObjectName="chk_post_show")
-        self._drain(); self._drain()
+        self._drain()
+        self._drain()
 
         self.assertIn(
-            chk, ui.widgets,
+            chk,
+            ui.widgets,
             "chk added after menu show was not registered with MainWindow",
         )
         self.assertIs(
-            getattr(chk, "ui", None), ui,
+            getattr(chk, "ui", None),
+            ui,
             "chk.ui not set to MainWindow after post-show add",
         )
 
         chk.setChecked(True)
         self._drain()
         self.assertIn(
-            "switchboard/repro/chk_post_show/toggled", self._raw_keys(),
+            "switchboard/repro/chk_post_show/toggled",
+            self._raw_keys(),
             "value did not persist for widget added after menu was shown",
         )
 
@@ -411,6 +391,7 @@ class TestMenuShownBeforeAddingWidgets(_PersistBase):
 # ===========================================================================
 # Scenario 6: refresh_on_show re-init does NOT overwrite saved value
 # ===========================================================================
+
 
 class TestReinitDoesNotResetSavedState(_PersistBase):
     """Re-running ``init_slot`` (the ``refresh_on_show`` pattern) calls
@@ -429,7 +410,8 @@ class TestReinitDoesNotResetSavedState(_PersistBase):
                 if not w.is_initialized:
                     w.refresh_on_show = True
                     w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_refresh",
+                        "QCheckBox",
+                        setObjectName="chk_refresh",
                         setChecked=False,
                     )
 
@@ -458,7 +440,8 @@ class TestReinitDoesNotResetSavedState(_PersistBase):
         )
         after = sm.value("switchboard/repro/chk_refresh/toggled")
         self.assertEqual(
-            after, True,
+            after,
+            True,
             "stored value changed during refresh re-inits — suppress_save leaked",
         )
 
@@ -467,8 +450,8 @@ class TestReinitDoesNotResetSavedState(_PersistBase):
 # Scenario 7: branched vs unbranched
 # ===========================================================================
 
-class TestBranchedVsUnbranched(_PersistBase):
 
+class TestBranchedVsUnbranched(_PersistBase):
     def _toggle(self, use_branch):
         class Repro:
             def __init__(s, switchboard, **_):
@@ -477,9 +460,7 @@ class TestBranchedVsUnbranched(_PersistBase):
 
             def tb000_init(s, w):
                 if not w.is_initialized:
-                    w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_x"
-                    )
+                    w.option_box.menu.add("QCheckBox", setObjectName="chk_x")
 
         sb, ui = self._make_sb("repro", ["tb000"], Repro, use_branch=use_branch)
         ui.tb000.option_box.menu.chk_x.setChecked(True)
@@ -498,6 +479,7 @@ class TestBranchedVsUnbranched(_PersistBase):
 # ===========================================================================
 # Scenario 8: per-save sync makes value visible without explicit sync()
 # ===========================================================================
+
 
 class TestSaveSurvivesWithoutExplicitSync(_PersistBase):
     """Regression for the production scenario: host app exits without
@@ -518,7 +500,8 @@ class TestSaveSurvivesWithoutExplicitSync(_PersistBase):
             def tb000_init(s, w):
                 if not w.is_initialized:
                     w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_no_sync",
+                        "QCheckBox",
+                        setObjectName="chk_no_sync",
                         setChecked=False,
                     )
 
@@ -530,7 +513,8 @@ class TestSaveSurvivesWithoutExplicitSync(_PersistBase):
         fresh = QtCore.QSettings(self.TEST_ORG, self.TEST_APP)
         keys = fresh.allKeys()
         self.assertIn(
-            "switchboard/repro/chk_no_sync/toggled", keys,
+            "switchboard/repro/chk_no_sync/toggled",
+            keys,
             "save() did not sync to disk; the production class of bug where "
             "Maya exits without close events would lose this write",
         )
@@ -539,6 +523,7 @@ class TestSaveSurvivesWithoutExplicitSync(_PersistBase):
 # ===========================================================================
 # Scenario 9: button with both *_init and action method
 # ===========================================================================
+
 
 class TestSlotMethodAndInitCoexist(_PersistBase):
     """Tentacle convention: ``tb000_init`` builds structure, ``tb000``
@@ -556,9 +541,7 @@ class TestSlotMethodAndInitCoexist(_PersistBase):
 
             def tb000_init(s, w):
                 if not w.is_initialized:
-                    w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_under_button"
-                    )
+                    w.option_box.menu.add("QCheckBox", setObjectName="chk_under_button")
 
             def tb000(s, widget):
                 action_calls.append(True)
@@ -567,11 +550,10 @@ class TestSlotMethodAndInitCoexist(_PersistBase):
         ui.tb000.option_box.menu.chk_under_button.setChecked(True)
         self._drain()
 
-        self.assertIn(
-            "switchboard/repro/chk_under_button/toggled", self._raw_keys()
-        )
+        self.assertIn("switchboard/repro/chk_under_button/toggled", self._raw_keys())
         self.assertEqual(
-            action_calls, [],
+            action_calls,
+            [],
             "toggling a child widget incorrectly fired the parent button's action",
         )
 
@@ -579,6 +561,7 @@ class TestSlotMethodAndInitCoexist(_PersistBase):
 # ===========================================================================
 # Scenario 10: StateManager does not double-decode values
 # ===========================================================================
+
 
 class TestStateManagerNoDoubleDecode(_PersistBase):
     """``MainWindow`` passes a ``SettingsManager`` (not a raw ``QSettings``)
@@ -683,6 +666,7 @@ class TestSyncStoredDefaultHook(QtBaseTestCase):
 # backend, per mainWindow.py's Switchboard.add_ui / _relative_state fix)
 # ===========================================================================
 
+
 class TestHostNamespacedWidgetState(_PersistBase):
     """A co-located mayatk/blendertk panel pair uses the SAME ``ui_name``
     (e.g. ``"mirror"``). Without host-namespacing, both hosts' ``add_ui``
@@ -723,15 +707,11 @@ class TestHostNamespacedWidgetState(_PersistBase):
                 s.sb = switchboard
                 s.ui = switchboard.loaded_ui.repro_branch
 
-        sb_m, ui_m = self._make_sb_for_host(
-            "repro_branch", ["tb000"], Repro, {"maya"}
-        )
+        sb_m, ui_m = self._make_sb_for_host("repro_branch", ["tb000"], Repro, {"maya"})
         sb_b, ui_b = self._make_sb_for_host(
             "repro_branch", ["tb000"], Repro, {"blender"}
         )
-        sb_s, ui_s = self._make_sb_for_host(
-            "repro_branch", ["tb000"], Repro, None
-        )
+        sb_s, ui_s = self._make_sb_for_host("repro_branch", ["tb000"], Repro, None)
 
         self.assertEqual(ui_m.settings.namespace, "switchboard/repro_branch_maya")
         self.assertEqual(ui_b.settings.namespace, "switchboard/repro_branch_blender")
@@ -746,9 +726,7 @@ class TestHostNamespacedWidgetState(_PersistBase):
 
             def tb000_init(s, w):
                 if not w.is_initialized:
-                    w.option_box.menu.add(
-                        "QCheckBox", setObjectName="chk_host"
-                    )
+                    w.option_box.menu.add("QCheckBox", setObjectName="chk_host")
 
         sb_m, ui_m = self._make_sb_for_host(
             "repro_isolated", ["tb000"], Repro, {"maya"}
@@ -778,14 +756,13 @@ class TestHostNamespacedWidgetState(_PersistBase):
         must resolve to the SAME branch a loaded sibling would use, or a
         value written via the fallback lands in the wrong host's store.
         """
+
         class Repro:
             def __init__(s, switchboard, **_):
                 s.sb = switchboard
                 s.ui = switchboard.loaded_ui.repro_rel
 
-        sb_m, ui_m = self._make_sb_for_host(
-            "repro_rel", ["tb000"], Repro, {"maya"}
-        )
+        sb_m, ui_m = self._make_sb_for_host("repro_rel", ["tb000"], Repro, {"maya"})
         sibling_state = ui_m._relative_state("repro_rel_sibling")
         self.assertEqual(
             sibling_state.qsettings.namespace,

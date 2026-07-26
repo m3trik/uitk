@@ -7,6 +7,7 @@ opens a ``QComboBox`` editor on double-click and commits the picked /
 typed value via ``captured(row, col, value)`` — replacing a persistent
 combo cell widget (which grabs hover/select).
 """
+
 import unittest
 
 from qtpy import QtWidgets, QtCore
@@ -14,7 +15,6 @@ from conftest import QtBaseTestCase, setup_qt_application
 from uitk.widgets.delegates.choice_capture import (
     ChoiceCaptureDelegate,
     BorderedChoiceCaptureDelegate,
-    install_choice_capture,
 )
 
 app = setup_qt_application()
@@ -44,7 +44,7 @@ class TestInstallChoiceCapture(QtBaseTestCase):
     def test_pick_emits_row_col_value_and_sets_cell(self):
         table = self._table()
         captured = []
-        install_choice_capture(
+        ChoiceCaptureDelegate.install_choice_capture(
             table, 1, CHOICES, lambda r, c, v: captured.append((r, c, v))
         )
 
@@ -64,7 +64,7 @@ class TestInstallChoiceCapture(QtBaseTestCase):
     def test_editable_allows_typed_value(self):
         table = self._table()
         captured = []
-        install_choice_capture(
+        ChoiceCaptureDelegate.install_choice_capture(
             table, 1, CHOICES, lambda r, c, v: captured.append(v), editable=True
         )
 
@@ -82,7 +82,7 @@ class TestInstallChoiceCapture(QtBaseTestCase):
 
     def test_non_editable_combo(self):
         table = self._table()
-        install_choice_capture(
+        ChoiceCaptureDelegate.install_choice_capture(
             table, 1, CHOICES, lambda *a: None, editable=False
         )
         editor = self._open_editor(table)
@@ -91,7 +91,7 @@ class TestInstallChoiceCapture(QtBaseTestCase):
     def test_stored_custom_value_is_preserved_in_editor(self):
         """A pre-existing value outside CHOICES must show up as selectable."""
         table = self._table(value="Custom")
-        install_choice_capture(table, 1, CHOICES, lambda *a: None)
+        ChoiceCaptureDelegate.install_choice_capture(table, 1, CHOICES, lambda *a: None)
         editor = self._open_editor(table)
         self.assertEqual(editor.currentText(), "Custom")
         self.assertGreaterEqual(editor.findText("Custom"), 0)
@@ -99,7 +99,7 @@ class TestInstallChoiceCapture(QtBaseTestCase):
     def test_bordered_delegate_captures(self):
         table = self._table()
         captured = []
-        delegate = install_choice_capture(
+        delegate = ChoiceCaptureDelegate.install_choice_capture(
             table, 1, CHOICES, lambda r, c, v: captured.append(v), bordered=True
         )
         self.assertIsInstance(delegate, BorderedChoiceCaptureDelegate)
@@ -114,7 +114,7 @@ class TestInstallChoiceCapture(QtBaseTestCase):
         table = self._table()
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         captured = []
-        install_choice_capture(
+        ChoiceCaptureDelegate.install_choice_capture(
             table, 1, CHOICES, lambda r, c, v: captured.append(v)
         )
 
@@ -126,10 +126,14 @@ class TestInstallChoiceCapture(QtBaseTestCase):
 
     def test_set_choices_updates_next_edit(self):
         table = self._table()
-        delegate = install_choice_capture(table, 1, CHOICES, lambda *a: None)
+        delegate = ChoiceCaptureDelegate.install_choice_capture(
+            table, 1, CHOICES, lambda *a: None
+        )
         delegate.set_choices(["A", "B"])
         editor = self._open_editor(table)
-        self.assertEqual([editor.itemText(i) for i in range(editor.count())], ["A", "B"])
+        self.assertEqual(
+            [editor.itemText(i) for i in range(editor.count())], ["A", "B"]
+        )
 
 
 class TestChoiceCaptureOnTableWidget(QtBaseTestCase):
@@ -148,7 +152,7 @@ class TestChoiceCaptureOnTableWidget(QtBaseTestCase):
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
         captured = []
-        install_choice_capture(
+        ChoiceCaptureDelegate.install_choice_capture(
             table, 1, CHOICES, lambda r, c, v: captured.append(v)
         )
         # The category cell is a plain item, never a cell widget.

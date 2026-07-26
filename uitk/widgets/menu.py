@@ -53,19 +53,6 @@ _LAZY_WIDGET_TYPES: Dict[str, Tuple[str, str]] = {
 }
 
 
-def _resolve_widget_class(name: str):
-    cls = _WIDGET_TYPE_CACHE.get(name)
-    if cls is not None:
-        return cls
-    spec = _LAZY_WIDGET_TYPES.get(name)
-    if spec is None:
-        return None
-    import importlib
-
-    cls = getattr(importlib.import_module(spec[0]), spec[1])
-    _WIDGET_TYPE_CACHE[name] = cls
-    return cls
-
 # Widget types that should have item height constraints applied
 # (includes derived classes via isinstance check)
 # Note: QTextEdit is intentionally excluded as it's multi-line and needs variable height
@@ -102,6 +89,7 @@ class MenuConfig:
     add_apply_button: bool = False
     add_defaults_button: bool = False
     hide_on_leave: bool = False
+    hide_on_trigger: bool = False
     match_parent_width: bool = True
     ensure_on_screen: bool = True
     extra_attrs: Dict[str, Any] = field(default_factory=dict)
@@ -533,7 +521,9 @@ class _DismissOnAncestorMove(QtCore.QObject):
     ``Menu.hide(force=False)`` no-ops when the menu is pinned.
     """
 
-    def __init__(self, target_menu: QtWidgets.QWidget, anchor_widget: QtWidgets.QWidget):
+    def __init__(
+        self, target_menu: QtWidgets.QWidget, anchor_widget: QtWidgets.QWidget
+    ):
         super().__init__(target_menu)
         self._target = target_menu
         self._watched: list = []
@@ -581,64 +571,6 @@ class _DismissOnAncestorMove(QtCore.QObject):
 _menus_awaiting_registration: "weakref.WeakSet" = weakref.WeakSet()
 
 
-def _flush_pending_registrations(window=None) -> int:
-    """Synchronously drain every menu's deferred item registrations.
-
-    ``Menu.add`` defers each item's ``register_widget`` to a coalesced
-    ``QTimer.singleShot(0, ...)`` — deliberately, to escape *mid-add*
-    recursion (a synchronous ``init_slot`` during ``add()`` can re-enter menu
-    population; see ``Menu.add``). That deferral was never meant to escape
-    the pre-paint window, yet on first show the timer fires only AFTER the
-    window painted — item state-restore and nested option-box wraps then
-    mutate on screen (the init flash).
-
-    Called at the end of ``MainWindow.register_children`` (all ``add()``
-    frames unwound, window not yet painted). Only menus outside an ``add()``
-    frame (``_add_depth == 0``) and belonging to *window* (when given) are
-    drained — the recursion contract is preserved exactly. Loops to fixpoint
-    (a drained ``init_slot`` may populate nested menus, scheduling more) with
-    a safety cap. The already-armed tick-0 timers later find empty queues
-    and no-op.
-
-    Returns the number of menus drained.
-    """
-    drained = 0
-    for _ in range(10):  # fixpoint cap — see warning below
-        # Snapshot: draining mutates the set (menus discard themselves).
-        batch = [
-            m
-            for m in list(_menus_awaiting_registration)
-            # Plain Python attrs — safe even on a dead C++ wrapper.
-            if m._pending_registrations and m._add_depth == 0
-        ]
-        if window is not None:
-            alive = []
-            for m in batch:
-                try:
-                    # C++ access (walks parent()): a deleteLater'd menu's
-                    # wrapper lingers in the WeakSet until GC and raises
-                    # RuntimeError here — it must be dropped, not allowed to
-                    # crash the flush inside MainWindow.showEvent.
-                    if m._resolve_registration_window() is window:
-                        alive.append(m)
-                except RuntimeError:
-                    _menus_awaiting_registration.discard(m)
-            batch = alive
-        if not batch:
-            return drained
-        for menu in batch:
-            try:
-                menu._drain_pending_registrations()
-                drained += 1
-            except RuntimeError:
-                continue  # menu died mid-flush
-    _logger.warning(
-        "_flush_pending_registrations: fixpoint cap reached — menu "
-        "registrations still pending after 10 rounds (recursive add loop?)."
-    )
-    return drained
-
-
 class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     """A custom Qt Widget that serves as a popup menu with additional features.
 
@@ -657,6 +589,78 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     on_item_interacted = QtCore.Signal(object)
     on_hidden = QtCore.Signal()
 
+    @staticmethod
+    def _resolve_widget_class(name: str):
+        cls = _WIDGET_TYPE_CACHE.get(name)
+        if cls is not None:
+            return cls
+        spec = _LAZY_WIDGET_TYPES.get(name)
+        if spec is None:
+            return None
+        import importlib
+
+        cls = getattr(importlib.import_module(spec[0]), spec[1])
+        _WIDGET_TYPE_CACHE[name] = cls
+        return cls
+
+    @staticmethod
+    def _flush_pending_registrations(window=None) -> int:
+        """Synchronously drain every menu's deferred item registrations.
+
+        ``Menu.add`` defers each item's ``register_widget`` to a coalesced
+        ``QTimer.singleShot(0, ...)`` — deliberately, to escape *mid-add*
+        recursion (a synchronous ``init_slot`` during ``add()`` can re-enter menu
+        population; see ``Menu.add``). That deferral was never meant to escape
+        the pre-paint window, yet on first show the timer fires only AFTER the
+        window painted — item state-restore and nested option-box wraps then
+        mutate on screen (the init flash).
+
+        Called at the end of ``MainWindow.register_children`` (all ``add()``
+        frames unwound, window not yet painted). Only menus outside an ``add()``
+        frame (``_add_depth == 0``) and belonging to *window* (when given) are
+        drained — the recursion contract is preserved exactly. Loops to fixpoint
+        (a drained ``init_slot`` may populate nested menus, scheduling more) with
+        a safety cap. The already-armed tick-0 timers later find empty queues
+        and no-op.
+
+        Returns the number of menus drained.
+        """
+        drained = 0
+        for _ in range(10):  # fixpoint cap — see warning below
+            # Snapshot: draining mutates the set (menus discard themselves).
+            batch = [
+                m
+                for m in list(_menus_awaiting_registration)
+                # Plain Python attrs — safe even on a dead C++ wrapper.
+                if m._pending_registrations and m._add_depth == 0
+            ]
+            if window is not None:
+                alive = []
+                for m in batch:
+                    try:
+                        # C++ access (walks parent()): a deleteLater'd menu's
+                        # wrapper lingers in the WeakSet until GC and raises
+                        # RuntimeError here — it must be dropped, not allowed to
+                        # crash the flush inside MainWindow.showEvent.
+                        if m._resolve_registration_window() is window:
+                            alive.append(m)
+                    except RuntimeError:
+                        _menus_awaiting_registration.discard(m)
+                batch = alive
+            if not batch:
+                return drained
+            for menu in batch:
+                try:
+                    menu._drain_pending_registrations()
+                    drained += 1
+                except RuntimeError:
+                    continue  # menu died mid-flush
+        _logger.warning(
+            "Menu._flush_pending_registrations: fixpoint cap reached — menu "
+            "registrations still pending after 10 rounds (recursive add loop?)."
+        )
+        return drained
+
     def __init__(
         self,
         parent: Optional[QtWidgets.QWidget] = None,
@@ -671,6 +675,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         add_apply_button: bool = False,
         add_defaults_button: bool = False,
         hide_on_leave: bool = False,
+        hide_on_trigger: bool = False,
         match_parent_width: bool = True,
         ensure_on_screen: bool = True,
         empty_message: Optional[str] = "No options",
@@ -706,6 +711,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 The button is only shown when the menu contains stateful option widgets
                 (checkboxes, spinboxes, combos, etc.).
             hide_on_leave (bool, optional): Whether to automatically hide the menu when the mouse leaves. Defaults to False.
+            hide_on_trigger (bool, optional): Whether to hide the menu after one of its items is
+                interacted with (released on). Defaults to False. Applies to every item; individual
+                widgets can be included/excluded via :meth:`set_hide_on_trigger`.
             match_parent_width (bool, optional): Whether to match the parent widget's width when using positioned menus
                 (e.g., position="bottom"). Defaults to True. Only applies when position is relative to parent (not "cursorPos").
             ensure_on_screen (bool, optional): Whether to ensure the menu is fully on screen when shown. Defaults to True.
@@ -837,6 +845,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         self._hide_on_leave = False
         self.hide_on_leave = hide_on_leave
+        self.hide_on_trigger = hide_on_trigger
+        # Deferred hide used by hide_on_trigger (parented so it dies with the
+        # menu instead of firing into a deleted widget).
+        self._trigger_hide_timer: Optional[QtCore.QTimer] = None
         self.ensure_on_screen = ensure_on_screen
 
         # Empty-state behavior: when shown with no items, display a brief
@@ -940,6 +952,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             add_apply_button=config.add_apply_button,
             add_defaults_button=config.add_defaults_button,
             hide_on_leave=config.hide_on_leave,
+            hide_on_trigger=config.hide_on_trigger,
             match_parent_width=config.match_parent_width,
             ensure_on_screen=config.ensure_on_screen,
             **config.extra_attrs,
@@ -1255,6 +1268,64 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self._leave_timer = None
 
     # ------------------------------------------------------------------
+    # Hide on trigger (dismiss the menu after an item is interacted with)
+    # ------------------------------------------------------------------
+
+    def set_hide_on_trigger(
+        self, widget: QtWidgets.QWidget, hide: Optional[bool]
+    ) -> None:
+        """Include/exclude one item from the menu-level :attr:`hide_on_trigger`.
+
+        Parameters:
+            widget: A menu item (as returned by :meth:`add`).
+            hide: ``True`` — this item always hides the menu when triggered;
+                ``False`` — this item never hides it; ``None`` — clear the
+                override and follow the menu-level setting again.
+        """
+        widget.setProperty("hide_on_trigger", hide)
+
+    def _resolve_hide_on_trigger(self, widget: QtWidgets.QWidget) -> bool:
+        """Effective hide-on-trigger for *widget*: its override, else the menu's."""
+        override = widget.property("hide_on_trigger")
+        if override is not None:
+            return bool(override)
+        # Separators are non-interactive: a release on a titled section row is
+        # not a trigger, so it must not dismiss the menu. (An explicit
+        # per-widget include above still wins.)
+        if isinstance(widget, Separator):
+            return False
+        return bool(self.hide_on_trigger)
+
+    def _is_wrapped_item(self, widget, items) -> bool:
+        """True when *widget* is an added item now nested under a grid cell.
+
+        An option-box wrap replaces the item with its container in the grid
+        layout; the event filter installed at ``add()`` time still reports the
+        original widget, so resolve through its parent chain (up to this menu).
+        """
+        if not isinstance(widget, QtWidgets.QWidget):
+            return False
+        parent = widget.parentWidget()
+        while parent is not None and parent is not self:
+            if parent in items:
+                return True
+            parent = parent.parentWidget()
+        return False
+
+    def _schedule_hide_on_trigger(self) -> None:
+        """Hide on the next event-loop tick.
+
+        Deferred so the triggering mouse-release finishes delivery to the item
+        first — hiding synchronously from inside the event filter would tear
+        the item down before its own clicked/released signals fire.
+        """
+        if self._trigger_hide_timer is None:
+            self._trigger_hide_timer = QtCore.QTimer(self)
+            self._trigger_hide_timer.setSingleShot(True)
+            self._trigger_hide_timer.timeout.connect(self.hide)
+        self._trigger_hide_timer.start(0)
+
+    # ------------------------------------------------------------------
     # Persistent mode (keep menu visible even when parent hides)
     # ------------------------------------------------------------------
 
@@ -1502,9 +1573,8 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             return
 
         # Prefer signal-based triggering for left-button clicks
-        if (
-            self._trigger_button == QtCore.Qt.LeftButton
-            and self._connect_parent_signal(parent)
+        if self._trigger_button == QtCore.Qt.LeftButton and self._connect_parent_signal(
+            parent
         ):
             if self._event_filters_installed or self._filter_target:
                 self._remove_parent_event_filter()
@@ -2253,9 +2323,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # _pointer_in_family / adopt_transient.
         if self._pointer_in_family():
             if not self._mouse_has_entered:
-                self.logger.debug(
-                    "_check_cursor_position: Pointer entered menu family"
-                )
+                self.logger.debug("_check_cursor_position: Pointer entered menu family")
             self._mouse_has_entered = True
             self._outside_samples = 0
             return
@@ -3116,7 +3184,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             if isinstance(x, str):
                 # OPTIMIZATION: Create widgets WITHOUT parent to avoid Qt tree overhead
                 # Parent will be assigned implicitly when added to gridLayout
-                widget_class = _resolve_widget_class(x)
+                widget_class = Menu._resolve_widget_class(x)
                 if widget_class:
                     widget = widget_class()
                 else:
@@ -3185,19 +3253,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
             self.set_attributes(widget, **kwargs)
             widget.installEventFilter(self)
-            # Expose the item as an attribute for ergonomic access
-            # (menu.<objectName>), but never clobber Menu's own API: an item
-            # named "clear"/"show"/"add" would silently replace the method.
-            item_name = widget.objectName()
-            if item_name:
-                existing = getattr(self, item_name, None)
-                if existing is None or isinstance(existing, QtWidgets.QWidget):
-                    setattr(self, item_name, widget)
-                else:
-                    self.logger.warning(
-                        f"[Menu.add] item objectName {item_name!r} collides with "
-                        f"an existing Menu attribute; skipping attribute exposure."
-                    )
+            self._expose_as_attribute(widget)
 
             # Defer registration to the next event-loop tick so it happens
             # AFTER add() finishes (updates re-enabled, signals unblocked).
@@ -3269,6 +3325,136 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 if not self.signalsBlocked():
                     for added in pending:
                         self.on_item_added.emit(added)
+
+    def _expose_as_attribute(self, widget: QtWidgets.QWidget) -> None:
+        """Expose an item as ``menu.<objectName>`` for ergonomic access.
+
+        Never clobbers Menu's own API: an item named "clear"/"show"/"add"
+        would silently replace the method, so a name that collides with a
+        non-widget attribute is skipped with a warning. Shared by ``add`` and
+        ``add_row`` so nested-container rows expose their children identically.
+        """
+        item_name = widget.objectName()
+        if not item_name:
+            return
+        existing = getattr(self, item_name, None)
+        if existing is None or isinstance(existing, QtWidgets.QWidget):
+            setattr(self, item_name, widget)
+        else:
+            self.logger.warning(
+                f"[Menu.add] item objectName {item_name!r} collides with "
+                f"an existing Menu attribute; skipping attribute exposure."
+            )
+
+    def add_row(
+        self,
+        items: list,
+        title: Optional[str] = None,
+        spacing: int = 4,
+        stretch: bool = True,
+        justify: Optional[str] = None,
+        **shared_kwargs,
+    ) -> list:
+        """Add a single horizontal row of widgets, optionally under a titled separator.
+
+        The menu's default is one widget per full-width row. ``add_row`` places
+        several controls side-by-side by nesting them in a lightweight container
+        so the surrounding single-column rows are never reflowed (adding raw
+        multi-column grid cells would grow the grid's column count and squeeze
+        every other row into the first column). Each child is still exposed as
+        ``menu.<objectName>`` and is discoverable via ``findChildren``, so the
+        preset system and ``getattr(menu, name)`` lookups behave exactly as they
+        do for widgets added one-per-row.
+
+        Parameters:
+            items (list): One entry per column. Each entry is a widget-type
+                string (e.g. ``"QCheckBox"``), a ``QWidget`` instance/subclass,
+                or a ``(spec, kwargs)`` tuple whose ``kwargs`` configure that one
+                widget (``setObjectName`` / ``setText`` / ``setChecked`` /
+                ``setToolTip`` / ``addItems`` / …).
+            title (str, optional): When given, a titled ``Separator`` is added on
+                the row above (mirrors ``add("Separator", setTitle=title)``).
+            spacing (int): Horizontal spacing, in px, between the row's widgets.
+            stretch (bool): Legacy left-pack toggle used only when ``justify`` is
+                ``None``: ``True`` appends a trailing stretch so the widgets pack
+                to the left; ``False`` lets them fill the row.
+            justify (str, optional): How to distribute the widgets across the
+                container's full width (the container itself always spans the
+                menu column). Overrides ``stretch`` when given. One of:
+                ``"left"`` (trailing stretch — same as the legacy default),
+                ``"right"`` (leading stretch), ``"center"`` (stretch both ends),
+                ``"between"`` (equal gaps between widgets, first/last flush to the
+                edges — spans the width), ``"around"`` (equal gaps including the
+                ends), or ``"expand"`` (every widget gets an equal stretch factor,
+                so each occupies an equal-width slot).
+            **shared_kwargs: Applied to every widget in the row (an item's own
+                kwargs win on conflict).
+
+        Returns:
+            list: The created widgets, in column order.
+        """
+        if title is not None:
+            self.add("Separator", setTitle=title)
+
+        container = QtWidgets.QWidget()
+        hbox = QtWidgets.QHBoxLayout(container)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(spacing)
+
+        # Resolve the distribution mode. ``justify`` wins; otherwise fall back to
+        # the legacy boolean (``stretch=True`` → left-pack, ``False`` → fill).
+        mode = justify if justify is not None else ("left" if stretch else "expand")
+
+        lead = mode in ("right", "center", "around")
+        if lead:  # a stretch before the first widget pushes the row rightward
+            hbox.addStretch(1)
+
+        widgets = []
+        for i, item in enumerate(items):
+            spec, item_kwargs = item if isinstance(item, tuple) else (item, {})
+            widget = self._create_row_widget(spec)
+            self.set_attributes(widget, **{**shared_kwargs, **item_kwargs})
+            # "expand" gives every widget an equal stretch factor so the slots are
+            # equal-width; the others add bare (natural-width) widgets.
+            hbox.addWidget(widget, 1 if mode == "expand" else 0)
+            # Inter-widget stretches for the space-distributing modes (not after
+            # the last widget for "between", which keeps the last one edge-flush).
+            if i < len(items) - 1 and mode in ("between", "around"):
+                hbox.addStretch(1)
+            self._expose_as_attribute(widget)
+            widgets.append(widget)
+
+        trail = mode in ("left", "center", "around")
+        if trail:  # a trailing stretch left-packs (or balances center/around)
+            hbox.addStretch(1)
+
+        # One grid cell, full width: the grid stays single-column so no sibling
+        # row is reflowed. A bare QWidget isn't height-constrained, so the row
+        # keeps the natural height of its checkboxes.
+        self.add(container)
+        return widgets
+
+    def _create_row_widget(
+        self, x: Union[str, QtWidgets.QWidget, type]
+    ) -> QtWidgets.QWidget:
+        """Resolve one ``add_row`` item spec to a widget (mirror of ``add``'s dispatch)."""
+        if isinstance(x, str):
+            widget_class = Menu._resolve_widget_class(x)
+            if widget_class:
+                return widget_class()
+            try:
+                return getattr(QtWidgets, x)()
+            except (AttributeError, TypeError):
+                label = QtWidgets.QLabel()
+                label.setText(x)
+                return label
+        if isinstance(x, QtWidgets.QWidget) or (
+            inspect.isclass(x) and issubclass(x, QtWidgets.QWidget)
+        ):
+            return x() if callable(x) else x
+        raise TypeError(
+            f"add_row: unsupported item type {type(x)!r}; expected str, QWidget, or (spec, kwargs)."
+        )
 
     def _add_action_widget(
         self,
@@ -3370,11 +3556,13 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
 
         # Adjust for layout's top and bottom margins
         total_height += (
-            self._layout.contentsMargins().top() + self._layout.contentsMargins().bottom()
+            self._layout.contentsMargins().top()
+            + self._layout.contentsMargins().bottom()
         )
         # Adjust for layout's left and right margins for width
         total_width += (
-            self._layout.contentsMargins().left() + self._layout.contentsMargins().right()
+            self._layout.contentsMargins().left()
+            + self._layout.contentsMargins().right()
         )
 
         return QtCore.QSize(total_width, total_height)
@@ -3680,11 +3868,21 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 self.hide()
 
         elif event_type == QtCore.QEvent.MouseButtonRelease:
-            if widget in self.get_items():
+            items = self.get_items()
+            is_item = widget in items
+            if is_item:
                 self.logger.debug(
                     f"eventFilter: Item interacted: {widget.objectName() or type(widget).__name__}"
                 )
                 self.on_item_interacted.emit(widget)
+            # Dismissal also resolves through an option-box wrap (the wrap
+            # replaces the item with its container in the grid, so the direct
+            # membership test misses it). on_item_interacted keeps its
+            # historical direct-item scope — external consumers depend on it.
+            if (
+                is_item or self._is_wrapped_item(widget, items)
+            ) and self._resolve_hide_on_trigger(widget):
+                self._schedule_hide_on_trigger()
 
         return super().eventFilter(widget, event)
 

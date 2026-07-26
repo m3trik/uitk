@@ -287,5 +287,85 @@ class TestDataMode(_ComboPersistBase):
         self.assertEqual(c2.currentText(), "presetB")
 
 
+class TestDefaultSurvivesWrapperSwap(QtBaseTestCase):
+    """A captured default must survive a Python-wrapper swap.
+
+    An option-box wrap (``add_reset_buttons``) or a deferred-widget revive
+    re-resolves the same C++ widget to a NEW Python wrapper. ``_defaults`` is
+    keyed by wrapper, so the re-registered wrapper is absent from it — and by
+    then the widget's state has been RESTORED. Without the C++-dynamic-property
+    mirror, ``capture_default`` on the new wrapper would store the *restored*
+    (persisted) value as the default, so a per-field reset would restore the
+    session value instead of the true default (the Translate-X → 0.55 bug).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._dir = tempfile.TemporaryDirectory()
+        ini = os.path.join(self._dir.name, "state.ini")
+        self.store = QtCore.QSettings(ini, QtCore.QSettings.IniFormat)
+        self.sm = StateManager(self.store)
+
+    def tearDown(self):
+        self._dir.cleanup()
+        super().tearDown()
+
+    def _spinbox(self, value):
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setObjectName("s000")
+        sb.setRange(-1e9, 1e9)
+        sb.setDecimals(5)
+        sb.restore_state = True
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.setValue(value)
+        return sb
+
+    def test_recapture_after_restore_keeps_ui_default(self):
+        # 1) First (pre-restore) capture records the .ui default 0.0.
+        sb = self._spinbox(0.0)
+        self.sm.capture_default(sb)
+        self.assertEqual(self.sm._defaults.get(sb), 0.0)
+
+        # 2) State restore applies the persisted session value.
+        sb.setValue(0.55)
+
+        # 3) Simulate the wrapper swap: the re-resolved wrapper is absent from
+        #    the wrapper-keyed _defaults (WeakKeyDictionary) even though the same
+        #    C++ object — and its dynamic property — persist.
+        self.sm._defaults.pop(sb, None)
+        self.assertNotIn(sb, self.sm._defaults)
+
+        # 4) Re-capture on the "new wrapper": must re-adopt the mirrored .ui
+        #    default (0.0), NOT the current restored value (0.55).
+        self.sm.capture_default(sb)
+        self.assertEqual(
+            self.sm._defaults.get(sb),
+            0.0,
+            "re-capture after restore must yield the .ui default, not the "
+            "restored session value",
+        )
+
+        # 5) And reset restores the true default.
+        self.sm.reset(sb)
+        self.assertEqual(sb.value(), 0.0)
+
+    def test_first_capture_still_uses_live_value(self):
+        # A genuinely fresh widget (no mirrored property) captures its live value.
+        sb = self._spinbox(3.25)
+        self.sm.capture_default(sb)
+        self.assertEqual(self.sm._defaults.get(sb), 3.25)
+
+    def test_set_default_survives_wrapper_swap(self):
+        sb = self._spinbox(0.0)
+        self.sm.set_default(sb, 2.0)  # explicit default overrides the .ui value
+        sb.setValue(9.0)  # user/restore change
+        self.sm._defaults.pop(sb, None)  # wrapper swap
+        self.sm.capture_default(sb)  # re-register
+        self.assertEqual(
+            self.sm._defaults.get(sb), 2.0, "explicit default must survive the swap"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

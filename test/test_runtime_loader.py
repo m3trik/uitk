@@ -14,6 +14,7 @@ Covers:
 - The ``loader`` kwarg also accepts a class object and a pre-built
   instance (parity with the docstring contract).
 """
+
 import os
 import shutil
 import tempfile
@@ -27,7 +28,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets
 
-from uitk import compile as compile_mod
+from uitk.compile import UiCompiler as compile_mod
 from uitk.loaders.runtime import RuntimeLoader
 from uitk.loaders.compiled import CompiledLoader
 from uitk.switchboard import Switchboard
@@ -104,6 +105,7 @@ class SwitchboardLoaderSelection(QtBaseTestCase):
         class IncompleteLoader:
             def __init__(self, switchboard):
                 self.sb = switchboard
+
             # Missing: load, read_ui_tags, on_tags_written
 
         with self.assertRaises(TypeError) as ctx:

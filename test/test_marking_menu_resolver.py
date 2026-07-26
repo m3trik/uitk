@@ -5,20 +5,22 @@
 These tests don't touch Qt or the event loop — they verify the
 state-to-menu mapping rules in isolation.
 """
+
 import unittest
 
 from uitk.widgets.marking_menu._resolver import (
     LEFT_BUTTON,
     RIGHT_BUTTON,
     MIDDLE_BUTTON,
-    SHIFT_MOD,
     CTRL_MOD,
-    build_state_key,
-    count_buttons,
-    parse_binding_keys,
-    priority_button,
-    resolve_target_menu,
+    MenuResolver,
 )
+
+build_state_key = MenuResolver.build_state_key
+count_buttons = MenuResolver.count_buttons
+parse_binding_keys = MenuResolver.parse_binding_keys
+priority_button = MenuResolver.priority_button
+resolve_target_menu = MenuResolver.resolve_target_menu
 
 
 # Bindings shared across most tests, mirroring the TclMaya defaults.
@@ -70,9 +72,7 @@ class TestPriorityAndCount(unittest.TestCase):
         self.assertEqual(count_buttons(0), 0)
         self.assertEqual(count_buttons(LEFT_BUTTON), 1)
         self.assertEqual(count_buttons(LEFT_BUTTON | RIGHT_BUTTON), 2)
-        self.assertEqual(
-            count_buttons(LEFT_BUTTON | RIGHT_BUTTON | MIDDLE_BUTTON), 3
-        )
+        self.assertEqual(count_buttons(LEFT_BUTTON | RIGHT_BUTTON | MIDDLE_BUTTON), 3)
 
 
 class TestResolveTargetMenu(unittest.TestCase):
@@ -114,9 +114,7 @@ class TestResolveTargetMenu(unittest.TestCase):
 
     def test_chord_with_no_explicit_binding_falls_back_to_priority(self):
         """L+M has no binding; priority is M -> use editors."""
-        self.assertEqual(
-            self.resolve(buttons=LEFT_BUTTON | MIDDLE_BUTTON), "editors"
-        )
+        self.assertEqual(self.resolve(buttons=LEFT_BUTTON | MIDDLE_BUTTON), "editors")
 
     def test_chord_three_buttons_falls_back_to_priority(self):
         """L+M+R has no binding; priority is R -> use main (since chord 'maya'
@@ -142,9 +140,7 @@ class TestResolveTargetMenu(unittest.TestCase):
     def test_modifier_specific_binding_wins(self):
         bindings = {**DEFAULTS, "ControlModifier|Key_F12|LeftButton": "ctrl_cams"}
         self.assertEqual(
-            self.resolve(
-                buttons=LEFT_BUTTON, modifiers=CTRL_MOD, bindings=bindings
-            ),
+            self.resolve(buttons=LEFT_BUTTON, modifiers=CTRL_MOD, bindings=bindings),
             "ctrl_cams",
         )
 

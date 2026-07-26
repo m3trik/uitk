@@ -24,27 +24,8 @@ Usage:
             if self.has_menu:
                 self.menu.clear()
 """
+
 from typing import Any, Optional, Type
-
-_CACHED_MENU_CLASS: Optional[Type] = None
-
-
-def _get_menu_class():
-    """Return the uitk Menu class lazily to avoid circular import issues.
-
-    Caches the class after first successful import. If import fails (during
-    early module loading), returns None so callers can degrade gracefully.
-    """
-    global _CACHED_MENU_CLASS
-    if _CACHED_MENU_CLASS is not None:
-        return _CACHED_MENU_CLASS
-    try:  # local import to break cycles
-        from uitk.widgets.menu import Menu  # type: ignore
-
-        _CACHED_MENU_CLASS = Menu
-    except Exception:
-        return None
-    return _CACHED_MENU_CLASS
 
 
 class _MenuDescriptor:
@@ -57,6 +38,25 @@ class _MenuDescriptor:
     1. Existing instance menu (cached) - FAST PATH
     2. Create new menu on first access - SLOW PATH (applies deferred config)
     """
+
+    _CACHED_MENU_CLASS: Optional[Type] = None
+
+    @staticmethod
+    def _get_menu_class():
+        """Return the uitk Menu class lazily to avoid circular import issues.
+
+        Caches the class after first successful import. If import fails (during
+        early module loading), returns None so callers can degrade gracefully.
+        """
+        if _MenuDescriptor._CACHED_MENU_CLASS is not None:
+            return _MenuDescriptor._CACHED_MENU_CLASS
+        try:  # local import to break cycles
+            from uitk.widgets.menu import Menu  # type: ignore
+
+            _MenuDescriptor._CACHED_MENU_CLASS = Menu
+        except Exception:
+            return None
+        return _MenuDescriptor._CACHED_MENU_CLASS
 
     def __get__(self, instance: Any, owner: type):
         if instance is None:
@@ -95,7 +95,7 @@ class _MenuDescriptor:
         2. Class-level _menu_defaults dict (for widget-specific defaults)
         3. Deferred configure_menu() calls (for instance-specific config)
         """
-        MenuCls = _get_menu_class()
+        MenuCls = _MenuDescriptor._get_menu_class()
         if MenuCls is None:
             return None
 
@@ -130,7 +130,7 @@ class _MenuDescriptor:
 
     def __set__(self, instance: Any, value: Any) -> None:  # type: ignore[override]
         """Allow explicit menu assignment."""
-        MenuCls = _get_menu_class()
+        MenuCls = _MenuDescriptor._get_menu_class()
         if MenuCls is not None and isinstance(value, MenuCls):
             instance.__dict__["_menu_instance"] = value
             return

@@ -8,6 +8,7 @@ Uses the real Switchboard with the examples module to test:
 - User shortcut assignment and persistence
 - ShortcutEditor UI functionality
 """
+
 import unittest
 from qtpy import QtWidgets, QtCore, QtGui
 
@@ -74,7 +75,7 @@ class TestShortcutRegistry(QtBaseTestCase):
         method_names = [r["method"] for r in registry]
 
         # Get the slots instance to check what methods exist
-        slots = self.sb.get_slots_instance(self.ui)
+        self.sb.get_slots_instance(self.ui)
 
         # Verify none of the excluded method types are present
         for name in method_names:
@@ -211,7 +212,6 @@ class TestClearedShortcutBinding(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from uitk.switchboard import Shortcut
 
         class _DefaultShortcutSlots(ExampleSlots):
             @Shortcut("Ctrl+Alt+9")
@@ -288,9 +288,7 @@ class TestUndecoratedSlotShortcutPersistence(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
         QtWidgets.QApplication.processEvents()
@@ -369,9 +367,7 @@ class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
         QtWidgets.QApplication.processEvents()
@@ -433,14 +429,21 @@ class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
         self.sb._deferred_slots_scanned = False
         self.sb._deferred_slot_shortcuts.clear()
         entries = [
-            {"method": "act_app", "current": "Ctrl+Alt+0", "current_scope": "application"},
+            {
+                "method": "act_app",
+                "current": "Ctrl+Alt+0",
+                "current_scope": "application",
+            },
             {"method": "act_win", "current": "Ctrl+Alt+1", "current_scope": "window"},
             {"method": "act_empty", "current": "", "current_scope": "application"},
         ]
-        with mock.patch.object(
-            self.sb, "_ui_names_with_shortcut_overrides", return_value={"ghost_ui"}
-        ), mock.patch.object(
-            self.sb, "get_static_shortcut_registry", return_value=entries
+        with (
+            mock.patch.object(
+                self.sb, "_ui_names_with_shortcut_overrides", return_value={"ghost_ui"}
+            ),
+            mock.patch.object(
+                self.sb, "get_static_shortcut_registry", return_value=entries
+            ),
         ):
             self.sb._bind_deferred_slot_shortcuts()
 
@@ -458,11 +461,12 @@ class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
         self.sb._deferred_slot_shortcuts.clear()
         # 'example' IS loaded (setUp), so it must be skipped — its real
         # shortcuts own the keys; a standin would be ambiguous.
-        with mock.patch.object(
-            self.sb, "_ui_names_with_shortcut_overrides", return_value={"example"}
-        ), mock.patch.object(
-            self.sb, "get_static_shortcut_registry"
-        ) as static:
+        with (
+            mock.patch.object(
+                self.sb, "_ui_names_with_shortcut_overrides", return_value={"example"}
+            ),
+            mock.patch.object(self.sb, "get_static_shortcut_registry") as static,
+        ):
             self.sb._bind_deferred_slot_shortcuts()
         static.assert_not_called()
         self.assertEqual(self.sb._deferred_slot_shortcuts, {})
@@ -497,9 +501,10 @@ class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
                 fired.append(widget)
 
         cb = self.sb._make_deferred_slot_callback("ghost_ui", "act")
-        with mock.patch.object(
-            self.sb, "get_ui", return_value=object()
-        ), mock.patch.object(self.sb, "get_slots_instance", return_value=_Inst()):
+        with (
+            mock.patch.object(self.sb, "get_ui", return_value=object()),
+            mock.patch.object(self.sb, "get_slots_instance", return_value=_Inst()),
+        ):
             cb()
         self.assertEqual(fired, [None])  # widget injected as None on a bare trigger
 
@@ -666,7 +671,7 @@ class TestResolveApplicationHost(QtBaseTestCase):
     """
 
     def test_prefers_named_dcc_host(self):
-        from uitk.managers.shortcut_manager import resolve_application_host
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         maya = self.track_widget(QtWidgets.QWidget())
         maya.setObjectName("MayaWindow")
@@ -674,12 +679,12 @@ class TestResolveApplicationHost(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
 
         hidden = self.track_widget(QtWidgets.QWidget())  # parentless, never shown
-        host = resolve_application_host(hidden)
+        host = ShortcutManager.resolve_application_host(hidden)
         self.assertIs(host, maya)
         self.assertTrue(host.isVisible())
 
     def test_falls_back_to_any_visible_top_level(self):
-        from uitk.managers.shortcut_manager import resolve_application_host
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         visible = self.track_widget(QtWidgets.QWidget())
         visible.setObjectName("SomeStandaloneMainWindow")
@@ -687,15 +692,15 @@ class TestResolveApplicationHost(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
 
         hidden = self.track_widget(QtWidgets.QWidget())
-        host = resolve_application_host(hidden)
+        host = ShortcutManager.resolve_application_host(hidden)
         self.assertTrue(host.isVisible(), "resolved host must be visible")
         self.assertIsNot(host, hidden)
 
     def test_never_returns_none(self):
-        from uitk.managers.shortcut_manager import resolve_application_host
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         w = self.track_widget(QtWidgets.QWidget())
-        self.assertIsNotNone(resolve_application_host(w))
+        self.assertIsNotNone(ShortcutManager.resolve_application_host(w))
 
 
 class TestApplicationScopeOwner(QtBaseTestCase):
@@ -914,8 +919,15 @@ class TestShortcutManagerRegistry(QtBaseTestCase):
         entry = {e["method"]: e for e in mgr.get_registry()}["Ctrl+G"]
         # Same keys the editor's _build_row consumes.
         for field in (
-            "method", "name", "current", "default",
-            "current_scope", "default_scope", "doc", "hidden", "editable",
+            "method",
+            "name",
+            "current",
+            "default",
+            "current_scope",
+            "default_scope",
+            "doc",
+            "hidden",
+            "editable",
         ):
             self.assertIn(field, entry)
         self.assertEqual(entry["name"], "Do G")
@@ -938,9 +950,7 @@ class TestShortcutManagerRegistry(QtBaseTestCase):
 
     def test_scope_reflects_context(self):
         mgr = self._mgr()
-        mgr.add_shortcut(
-            "Ctrl+W", lambda: None, "Win", QtCore.Qt.WindowShortcut
-        )
+        mgr.add_shortcut("Ctrl+W", lambda: None, "Win", QtCore.Qt.WindowShortcut)
         entry = {e["method"]: e for e in mgr.get_registry()}["Ctrl+W"]
         self.assertEqual(entry["current_scope"], "window")
 
@@ -1016,9 +1026,7 @@ class TestShortcutManagerEditorIntegration(QtBaseTestCase):
         # Scope + Reset are icon-only columns with blank headers; the assertion
         # of interest is the order — Reset precedes Description (a prior regression
         # swapped them).
-        self.assertEqual(
-            headers, ["Action", "Shortcut", "", "", "Description", "UI"]
-        )
+        self.assertEqual(headers, ["Action", "Shortcut", "", "", "Description", "UI"])
         self.assertLess(ed.COL_RESET, ed.COL_DESCRIPTION)
 
     def test_manager_view_hides_description_column(self):
@@ -1046,9 +1054,7 @@ class TestShortcutManagerEditorIntegration(QtBaseTestCase):
         from uitk.widgets.separator import Separator
 
         _mgr, ed = self._editor_for(("Ctrl+G", lambda: None, "Do G"))
-        titles = [
-            s.title for s in ed.header.menu.findChildren(Separator) if s.title
-        ]
+        titles = [s.title for s in ed.header.menu.findChildren(Separator) if s.title]
         self.assertEqual(titles, ["View"])  # no Presets section in manager mode
         self.assertEqual(
             ed._show_hidden_checkbox.maximumHeight(), ed.HEADER_WIDGET_HEIGHT
@@ -1086,15 +1092,11 @@ class TestShortcutManagerEditorIntegration(QtBaseTestCase):
                 by_name[it.text()] = r
         # Info row: not rebindable, scope locked.
         ir = by_name["Switch to shot"]
-        self.assertFalse(
-            bool(ed.table.item(ir, 1).flags() & QtCore.Qt.ItemIsEditable)
-        )
+        self.assertFalse(bool(ed.table.item(ir, 1).flags() & QtCore.Qt.ItemIsEditable))
         self.assertFalse(ed.scope_interactive(ir))
         # Normal row: rebindable, but scope is owner-fixed (locked).
         nr = by_name["Do G"]
-        self.assertTrue(
-            bool(ed.table.item(nr, 1).flags() & QtCore.Qt.ItemIsEditable)
-        )
+        self.assertTrue(bool(ed.table.item(nr, 1).flags() & QtCore.Qt.ItemIsEditable))
         self.assertFalse(ed.scope_interactive(nr))
 
 
@@ -1181,13 +1183,10 @@ class TestRegistryFacadeEditor(QtBaseTestCase):
         self.assertTrue(ed._show_all)
         self.assertEqual(sorted(self._rows(ed)), ["Grid", "Group"])
         self.assertFalse(ed.table.isColumnHidden(ed.COL_UI))
-        self.assertEqual(
-            ed.table.horizontalHeaderItem(ed.COL_UI).text(), "Category"
-        )
+        self.assertEqual(ed.table.horizontalHeaderItem(ed.COL_UI).text(), "Category")
         # The group name renders in the (re-labeled) UI column.
         col_ui = [
-            ed.table.item(r, ed.COL_UI).text()
-            for r in range(ed.table.rowCount())
+            ed.table.item(r, ed.COL_UI).text() for r in range(ed.table.rowCount())
         ]
         self.assertEqual(sorted(col_ui), ["Display", "Edit"])
         # The header label elides at narrow widths; the OS window title
@@ -1196,14 +1195,10 @@ class TestRegistryFacadeEditor(QtBaseTestCase):
 
     def test_edit_and_clear_route_to_provider_with_group(self):
         ed = self._editor(self._facade(default_show_all=True))
-        rows = {
-            ed.table.item(r, 0).text(): r for r in range(ed.table.rowCount())
-        }
+        rows = {ed.table.item(r, 0).text(): r for r in range(ed.table.rowCount())}
         ed._apply_shortcut(rows["Group"], "Ctrl+J")  # assign
         self.assertIn(("Edit", "m_group", "Ctrl+J"), self.applied)
-        rows = {
-            ed.table.item(r, 0).text(): r for r in range(ed.table.rowCount())
-        }
+        rows = {ed.table.item(r, 0).text(): r for r in range(ed.table.rowCount())}
         ed._apply_shortcut(rows["Grid"], "")  # clear passes through verbatim
         self.assertIn(("Display", "m_grid", ""), self.applied)
 
@@ -1290,9 +1285,7 @@ class TestStaticShortcutRegistry(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
         QtWidgets.QApplication.processEvents()
@@ -1365,9 +1358,7 @@ class TestStaticShortcutRegistry(QtBaseTestCase):
         self.assertEqual(static[method]["current_scope"], "application")
 
     def test_unknown_ui_returns_empty(self):
-        self.assertEqual(
-            self.sb.get_static_shortcut_registry("no_such_ui_xyz"), []
-        )
+        self.assertEqual(self.sb.get_static_shortcut_registry("no_such_ui_xyz"), [])
 
 
 if __name__ == "__main__":

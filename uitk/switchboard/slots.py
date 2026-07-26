@@ -8,10 +8,7 @@ from functools import wraps
 from typing import Optional, Union, Type, Callable
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
-from uitk.switchboard.utils import (
-    pop_override_cursor_stack,
-    push_override_cursor_stack,
-)
+from uitk.switchboard.utils import SwitchboardUtilsMixin
 
 
 class Signals:
@@ -127,31 +124,6 @@ class Cancelable:
         return func
 
 
-def _slot_busy_opt_out(widget, sb) -> bool:
-    """True when the slot dispatcher should skip the busy-cursor change.
-
-    Rapid-fire signals (sliders, text-changed) set
-    ``widget.no_busy_indicator = True`` to avoid flashing the cursor on
-    every event. The UI may also set ``ui.no_busy_indicator`` to
-    suppress for an entire window. Defensive: a misbehaving ``@property``
-    must not propagate into slot dispatch.
-    """
-    try:
-        if getattr(widget, "no_busy_indicator", False):
-            return True
-    except Exception:
-        pass
-    ui = getattr(sb, "active_ui", None)
-    if ui is None:
-        ui = getattr(sb, "_current_ui", None)
-    try:
-        if ui is not None and getattr(ui, "no_busy_indicator", False):
-            return True
-    except Exception:
-        pass
-    return False
-
-
 class _ModalBusyCursorFilter(QtCore.QObject):
     """Suspend the slot busy-cursor while a modal dialog blocks the app.
 
@@ -182,7 +154,7 @@ class _ModalBusyCursorFilter(QtCore.QObject):
         self._saved = []
 
     def _restore_all(self):
-        push_override_cursor_stack(self._app, self._saved)
+        SwitchboardUtilsMixin.push_override_cursor_stack(self._app, self._saved)
         self._saved = []
 
     def eventFilter(self, obj, event):
@@ -190,7 +162,9 @@ class _ModalBusyCursorFilter(QtCore.QObject):
             etype = event.type()
             if etype == QtCore.QEvent.WindowBlocked:
                 if self._depth == 0:
-                    self._saved = pop_override_cursor_stack(self._app)
+                    self._saved = SwitchboardUtilsMixin.pop_override_cursor_stack(
+                        self._app
+                    )
                 self._depth += 1
             elif etype == QtCore.QEvent.WindowUnblocked:
                 if self._depth > 0:
@@ -235,6 +209,31 @@ class SlotWrapper:
     # as long as its class) both avoids id reuse and self-evicts when the
     # defining class is dropped.
     _sig_cache: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+    @staticmethod
+    def _slot_busy_opt_out(widget, sb) -> bool:
+        """True when the slot dispatcher should skip the busy-cursor change.
+
+        Rapid-fire signals (sliders, text-changed) set
+        ``widget.no_busy_indicator = True`` to avoid flashing the cursor on
+        every event. The UI may also set ``ui.no_busy_indicator`` to
+        suppress for an entire window. Defensive: a misbehaving ``@property``
+        must not propagate into slot dispatch.
+        """
+        try:
+            if getattr(widget, "no_busy_indicator", False):
+                return True
+        except Exception:
+            pass
+        ui = getattr(sb, "active_ui", None)
+        if ui is None:
+            ui = getattr(sb, "_current_ui", None)
+        try:
+            if ui is not None and getattr(ui, "no_busy_indicator", False):
+                return True
+        except Exception:
+            pass
+        return False
 
     def __init__(self, slot, widget, switchboard):
         self.slot = slot
@@ -387,7 +386,7 @@ class SlotWrapper:
         # dispatch.
         cursor_set = False
         modal_filter = None
-        if not _slot_busy_opt_out(self.widget, self.sb):
+        if not SlotWrapper._slot_busy_opt_out(self.widget, self.sb):
             try:
                 QtWidgets.QApplication.setOverrideCursor(
                     QtGui.QCursor(QtCore.Qt.WaitCursor)
@@ -411,7 +410,9 @@ class SlotWrapper:
                 # when one was supplied; otherwise build a generic one
                 # from the slot identity.
                 meta = getattr(self.slot, "_cancelable_meta", None)
-                custom_msg = (meta or {}).get("message") if isinstance(meta, dict) else None
+                custom_msg = (
+                    (meta or {}).get("message") if isinstance(meta, dict) else None
+                )
                 msg = custom_msg or (
                     f"Slot '{self.slot.__name__}' on '{self.widget.objectName()}'"
                 )
@@ -601,7 +602,9 @@ class SwitchboardSlotsMixin:
         if allow_sole_fallback:
             registered = [
                 c
-                for c in (self.registry.slot_registry.get(return_field="classobj") or [])
+                for c in (
+                    self.registry.slot_registry.get(return_field="classobj") or []
+                )
                 if c is not None
             ]
             unique = list(dict.fromkeys(registered))
@@ -1191,9 +1194,9 @@ class SwitchboardSlotsMixin:
             try:
                 slot_wrapper = self._create_slot_wrapper(slot, widget)
                 signal.connect(slot_wrapper)
-                widget.ui.connected_slots.setdefault(widget, {})[
-                    signal_name
-                ] = slot_wrapper
+                widget.ui.connected_slots.setdefault(widget, {})[signal_name] = (
+                    slot_wrapper
+                )
                 self.logger.debug(
                     f"[connect_slot] [{ui_name}.{widget_name}] Connected to signal '{signal_name}'"
                 )

@@ -5,6 +5,7 @@
 Covers stylesheet propagation to reparented sublists, sublist positioning
 before show, and _logical_ancestor integration for marking menu hit-testing.
 """
+
 import sys
 from pathlib import Path
 
@@ -82,7 +83,7 @@ class TestExpandableList(QtBaseTestCase):
         self.track_widget(lw)
         w1 = lw.add("Item 1")
         w2 = w1.sublist.add("Sub Item")
-        w3 = w2.sublist.add("Deep Item")
+        w2.sublist.add("Deep Item")
 
         # Each level of sublist should have a stylesheet
         self.assertTrue(len(w1.sublist.styleSheet()) > 0)
@@ -136,7 +137,7 @@ class TestExpandableList(QtBaseTestCase):
         lw.show()
 
         w1 = lw.add("QPushButton", setText="Button 1")
-        sub_item = w1.sublist.add("Sub Label")
+        w1.sublist.add("Sub Label")
 
         # Trigger the enter event on w1 to show the sublist
         lw._handle_widget_enter_event(w1)
@@ -173,9 +174,7 @@ class TestExpandableList(QtBaseTestCase):
         (``_add_sublist`` resets its min/max size), so it always tracks sizeHint.
         Fixed: 2026-07-10
         """
-        lw = ExpandableList(
-            self.window, fixed_item_height=21, setMinimumWidth=200
-        )
+        lw = ExpandableList(self.window, fixed_item_height=21, setMinimumWidth=200)
         self.track_widget(lw)
         w1 = lw.add("A wide-ish parent item")
         w1.sublist.add("x")  # a single, narrow child
@@ -199,9 +198,7 @@ class TestExpandableList(QtBaseTestCase):
         first sublist — a grandchild sublist must not inherit the root's width
         either (the root's kwargs propagate down the chain, so each level's
         ``_add_sublist`` must clear them)."""
-        lw = ExpandableList(
-            self.window, fixed_item_height=21, setFixedWidth=180
-        )
+        lw = ExpandableList(self.window, fixed_item_height=21, setFixedWidth=180)
         self.track_widget(lw)
         w1 = lw.add("Parent")
         w2 = w1.sublist.add("Child")
@@ -215,9 +212,7 @@ class TestExpandableList(QtBaseTestCase):
         """A root max-width cap must not clip a wider sublist either — a max
         constraint inherited from the root would shrink a flyout whose contents
         are wider than the starting list, still failing 'size to own content'."""
-        lw = ExpandableList(
-            self.window, fixed_item_height=21, setMaximumWidth=30
-        )
+        lw = ExpandableList(self.window, fixed_item_height=21, setMaximumWidth=30)
         self.track_widget(lw)
         w1 = lw.add("Parent")
         w1.sublist.add("A fairly long child item that exceeds 30px")
@@ -233,19 +228,21 @@ class TestExpandableList(QtBaseTestCase):
         self.assertGreater(sublist.sizeHint().width(), 30)
 
     def test_overlay_first_sublist_covers_starting_list_width(self):
-        """Overlay presets are the exception to content-sizing: the first sublist
-        sits on top of the starting list, so it must be at least as wide as that
-        list to cover it fully — even when its own content is narrower.
+        """Covering presets are the exception to content-sizing: the first
+        sublist sits on top of the starting list, so it must be at least as wide
+        as that list to cover it fully — even when its own content is narrower.
 
-        Covers both overlay presets: ``expand_overlay`` (position ``overlay``)
-        and ``expand_overlay_left`` (position ``overlay_right``).
+        Covers the explicit overlay presets ``expand_overlay`` (position
+        ``overlay``) and ``expand_overlay_left`` (position ``overlay_right``),
+        plus ``expand_up`` — whose ``use_item_height`` offset slides the first
+        sublist over the root button (the preset the Select-by-Type list uses).
         """
         # A wide PARENT item drives the list width through content (the list fits
         # its widest item) — the way the starting list is actually wide in
         # production. ``resize()`` alone can't force it: the list re-fits to its
         # content on add/show, so a resize to 220 collapses back to the item width.
         wide = "A deliberately wide starting-list parent item"
-        for preset in ("expand_overlay", "expand_overlay_left"):
+        for preset in ("expand_overlay", "expand_overlay_left", "expand_up"):
             with self.subTest(preset=preset):
                 win = QtWidgets.QMainWindow()
                 self.track_widget(win)
@@ -309,6 +306,39 @@ class TestExpandableList(QtBaseTestCase):
             lw.width(),
             "a deep overlay-chain sublist must size to content, not cover the root",
         )
+
+    def test_consumed_release_resets_button_item_down_state(self):
+        """A button item (no option box) that got the press but never the
+        release — the list consumes it to drive ``on_item_interacted`` — must
+        not be left visually sunken.
+
+        Bug: ``eventFilter`` consumed the MouseButtonRelease and emitted, but a
+        QAbstractButton item stayed ``isDown()`` True (it sank on press and
+        never saw the release), stranding the row visually pressed. The filter
+        now resets the down state before emitting.
+        """
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        root = lw.add("By Type")
+        btn = QtWidgets.QPushButton("Settings")
+        root.sublist.add(btn)
+
+        emitted = []
+        root.sublist.on_item_interacted.connect(emitted.append)
+
+        btn.setDown(True)  # simulate the sink from a press
+        rel = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonRelease,
+            QtCore.QPointF(2, 2),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+        consumed = root.sublist.eventFilter(btn, rel)
+
+        self.assertTrue(consumed, "the list must consume the item's release")
+        self.assertEqual(emitted, [btn], "on_item_interacted must carry the item")
+        self.assertFalse(btn.isDown(), "button item must not be left sunken")
 
     def test_force_hide_collapses_sublist_shown_under_hidden_ancestor(self):
         """A sublist open at hide-time must reopen collapsed.
@@ -519,9 +549,7 @@ class TestExpandableList(QtBaseTestCase):
 
         # Deliver a Hide to the WINDOW only — the list/UI are left visible,
         # modelling the spontaneous hide where descendants get no QHideEvent.
-        QtWidgets.QApplication.sendEvent(
-            self.window, QtCore.QEvent(QtCore.QEvent.Hide)
-        )
+        QtWidgets.QApplication.sendEvent(self.window, QtCore.QEvent(QtCore.QEvent.Hide))
 
         self.assertTrue(
             w1.sublist.isHidden(),
@@ -603,11 +631,13 @@ class TestExpandableList(QtBaseTestCase):
         )
 
         # Hide on the watched window collapses — but still must not consume.
-        consumed_hide = lw.eventFilter(
-            self.window, QtCore.QEvent(QtCore.QEvent.Hide)
+        consumed_hide = lw.eventFilter(self.window, QtCore.QEvent(QtCore.QEvent.Hide))
+        self.assertFalse(
+            consumed_hide, "even the Hide must return False (never consume)"
         )
-        self.assertFalse(consumed_hide, "even the Hide must return False (never consume)")
-        self.assertTrue(w1.sublist.isHidden(), "Hide on the watched window must collapse")
+        self.assertTrue(
+            w1.sublist.isHidden(), "Hide on the watched window must collapse"
+        )
 
     def test_modal_dialog_blocking_window_collapses_sublists(self):
         """A modal dialog opening over the window must collapse open sublists.
@@ -699,7 +729,8 @@ class TestExpandableList(QtBaseTestCase):
         inner = QtWidgets.QWidget(central)
         QtWidgets.QVBoxLayout(central).addWidget(inner)
         inner_lay = QtWidgets.QVBoxLayout(inner)
-        central.show(); inner.show()
+        central.show()
+        inner.show()
         lw = ExpandableList(inner, fixed_item_height=21)
         inner_lay.addWidget(lw)
         lw.show()
@@ -800,7 +831,9 @@ class TestExpandableList(QtBaseTestCase):
 
         lw.setParent(win_b)
         lw._watch_window_hide()
-        self.assertIs(lw._watched_window, win_b, "watch must re-target to the new window")
+        self.assertIs(
+            lw._watched_window, win_b, "watch must re-target to the new window"
+        )
 
         # Idempotent: re-calling with the same window is a no-op.
         lw._watch_window_hide()
@@ -819,7 +852,8 @@ class TestExpandableList(QtBaseTestCase):
 
         lw.eventFilter(win_a, QtCore.QEvent(QtCore.QEvent.Hide))
         self.assertFalse(
-            w1.sublist.isHidden(), "the old, unwatched window must not collapse sublists"
+            w1.sublist.isHidden(),
+            "the old, unwatched window must not collapse sublists",
         )
         lw.eventFilter(win_b, QtCore.QEvent(QtCore.QEvent.Hide))
         self.assertTrue(
@@ -865,6 +899,31 @@ class TestClearCancelsPendingHide(QtBaseTestCase):
 
         # A queued timer firing on a torn-down item must be a safe no-op.
         lw._maybe_hide_sublist(_DeadItem())
+
+    def test_item_text_prefers_plain_text_of_icon_composited_label(self):
+        """An icon-composited row (IconManager.set_label_icon) holds rich-text
+        <img> markup in .text(); item_text() must still return the plain text
+        so the codebase's text-based dispatch keeps working on iconified lists."""
+        from uitk.managers.icon_manager import IconManager
+
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        item = lw.add("textures", data="/proj/textures")
+        IconManager.set_label_icon(item, "folder")
+
+        self.assertIn("<img", item.text(), "row must carry the icon markup")
+        self.assertEqual(
+            lw.get_item_text(item),
+            "textures",
+            "item_text() must return plain text, not the <img> markup",
+        )
+        self.assertEqual(item.item_text(), "textures")
+        # The rich text must not have flipped on QLabel mouse tracking — that
+        # floods MouseTracking with button-less moves and collapses hover.
+        self.assertFalse(
+            item.hasMouseTracking(),
+            "iconified row must keep mouse tracking off (hover-collapse regression)",
+        )
 
 
 if __name__ == "__main__":

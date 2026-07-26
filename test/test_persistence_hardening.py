@@ -22,6 +22,7 @@ Three intermittent "values reset to defaults a few sessions later" bugs:
    index against a not-yet-populated model); persisting that transient
    wiped a valid stored index.
 """
+
 import os
 import sys
 import tempfile
@@ -40,9 +41,9 @@ from uitk.widgets.mainWindow import MainWindow
 from uitk.widgets.comboBox import ComboBox
 from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.state_manager import StateManager
-from uitk.widgets.optionBox.utils import patch_common_widgets
+from uitk.widgets.optionBox.utils import OptionBoxManager
 
-patch_common_widgets()
+OptionBoxManager.patch_common_widgets()
 
 
 _UI_HEAD = """<?xml version="1.0" encoding="UTF-8"?>
@@ -126,6 +127,7 @@ class _Base(QtBaseTestCase):
 # 1. Cross-surface divergence
 # ===========================================================================
 
+
 class TestCrossSurfaceSync(_Base):
     """A change in the panel must persist into a sibling surface's store
     even when that surface was never opened this session."""
@@ -152,9 +154,7 @@ class TestCrossSurfaceSync(_Base):
         self._drain()
 
         # Panel's own store.
-        self.assertEqual(
-            self._raw("switchboard/repro/chk_x/toggled"), True
-        )
+        self.assertEqual(self._raw("switchboard/repro/chk_x/toggled"), True)
         # The sibling surface's store must have been written too, despite
         # never being shown/registered this session.
         self.assertEqual(
@@ -182,6 +182,7 @@ class TestCrossSurfaceSync(_Base):
 # ===========================================================================
 # 2. Deferred-init batch runs under save-suppression
 # ===========================================================================
+
 
 class TestDeferredBatchSuppressesSaves(_Base):
     """The deferred-widget batch (slots.py ``_process_deferred_widgets``)
@@ -228,6 +229,7 @@ class TestDeferredBatchSuppressesSaves(_Base):
 # ===========================================================================
 # 3. Combobox index transients
 # ===========================================================================
+
 
 class TestComboIndexTransients(QtBaseTestCase):
     """StateManager must not persist a -1 (no-selection) transient, and
@@ -276,6 +278,7 @@ class TestComboIndexTransients(QtBaseTestCase):
 # 4. Combobox populate-time clobber (Qt-native addItems/clear)
 # ===========================================================================
 
+
 class TestComboPopulateClobber(QtBaseTestCase):
     """A uitk ``ComboBox`` populated via the Qt-native API after registration
     must not persist the populate-time ``currentIndexChanged`` over the user's
@@ -310,9 +313,7 @@ class TestComboPopulateClobber(QtBaseTestCase):
         """A fresh window + registered ComboBox sharing ``sm`` (one 'session')."""
         sb = Switchboard()
         win = self.track_widget(
-            MainWindow(
-                name, sb, settings=sm, central_widget=QtWidgets.QWidget()
-            )
+            MainWindow(name, sb, settings=sm, central_widget=QtWidgets.QWidget())
         )
         c = ComboBox()
         c.setObjectName("cmb_chan")
@@ -384,6 +385,7 @@ class TestComboPopulateClobber(QtBaseTestCase):
 # 5. Plain-QLineEdit persistence round-trip (coverage gap)
 # ===========================================================================
 
+
 class TestLineEditPersistence(QtBaseTestCase):
     """A registered *plain* (unpromoted) ``QLineEdit`` saves on ``textChanged``
     and restores its value across sessions — the line-edit analogue of the combo
@@ -409,9 +411,7 @@ class TestLineEditPersistence(QtBaseTestCase):
         """A fresh window + registered *plain* QLineEdit sharing ``sm``."""
         sb = Switchboard()
         win = self.track_widget(
-            MainWindow(
-                win_name, sb, settings=sm, central_widget=QtWidgets.QWidget()
-            )
+            MainWindow(win_name, sb, settings=sm, central_widget=QtWidgets.QWidget())
         )
         le = QtWidgets.QLineEdit()
         le.setObjectName("le_path")
@@ -458,7 +458,8 @@ class TestLineEditPersistence(QtBaseTestCase):
         win2.state.capture_default(le2)
         le2.perform_restore_state()
         self.assertEqual(
-            le2.text(), "1.10",
+            le2.text(),
+            "1.10",
             "numeric-looking text was JSON-mangled across sessions",
         )
 
@@ -509,9 +510,7 @@ class TestTextEditPersistence(QtBaseTestCase):
     def _registered_textedit(self, sm, win_name):
         sb = Switchboard()
         win = self.track_widget(
-            MainWindow(
-                win_name, sb, settings=sm, central_widget=QtWidgets.QWidget()
-            )
+            MainWindow(win_name, sb, settings=sm, central_widget=QtWidgets.QWidget())
         )
         te = QtWidgets.QTextEdit()
         te.setObjectName("te_notes")
@@ -531,7 +530,8 @@ class TestTextEditPersistence(QtBaseTestCase):
         te1.setPlainText("session notes")  # user edit (post-restore)
         self._pump()
         self.assertEqual(
-            sm.value(self.KEY), "session notes",
+            sm.value(self.KEY),
+            "session notes",
             "QTextEdit change never reached the store (no-arg signal dropped)",
         )
         win1.close()
@@ -540,7 +540,8 @@ class TestTextEditPersistence(QtBaseTestCase):
         win2.state.capture_default(te2)
         te2.perform_restore_state()
         self.assertEqual(
-            te2.toPlainText(), "session notes",
+            te2.toPlainText(),
+            "session notes",
             "QTextEdit did not restore its value across sessions",
         )
 

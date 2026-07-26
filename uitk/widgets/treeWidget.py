@@ -355,18 +355,6 @@ class TreeFormatMixin(ConvertMixin):
         return formatters
 
 
-def _alpha_over(base, overlay):
-    """Alpha-composite *overlay* onto an opaque *base*, return opaque QColor.
-
-    Both arguments are ``QColor``.  The result always has alpha 255.
-    """
-    a = overlay.alphaF()
-    r = min(int(base.red() * (1 - a) + overlay.red() * a + 0.5), 255)
-    g = min(int(base.green() * (1 - a) + overlay.green() * a + 0.5), 255)
-    b = min(int(base.blue() * (1 - a) + overlay.blue() * a + 0.5), 255)
-    return QtGui.QColor(r, g, b)
-
-
 class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
     """Composites column tints, row tints, and per-item colors into a single
     solid opaque background that is immune to Maya's QSS overrides.
@@ -385,6 +373,18 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
     """
 
     _SEL_TINT = QtGui.QColor(90, 140, 190, 45)
+
+    @staticmethod
+    def _alpha_over(base, overlay):
+        """Alpha-composite *overlay* onto an opaque *base*, return opaque QColor.
+
+        Both arguments are ``QColor``.  The result always has alpha 255.
+        """
+        a = overlay.alphaF()
+        r = min(int(base.red() * (1 - a) + overlay.red() * a + 0.5), 255)
+        g = min(int(base.green() * (1 - a) + overlay.green() * a + 0.5), 255)
+        b = min(int(base.blue() * (1 - a) + overlay.blue() * a + 0.5), 255)
+        return QtGui.QColor(r, g, b)
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
@@ -408,7 +408,7 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
         # Layer 1 — column tint
         tint = tree._column_tints.get(col)
         if tint and tint.isValid() and tint.alpha() > 0:
-            bg = _alpha_over(bg, tint)
+            bg = _RowTintDelegate._alpha_over(bg, tint)
 
         # Layer 2 — row tint (parent vs child)
         if item is not None:
@@ -417,7 +417,7 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
             else:
                 row_color = tree._parent_row_color
             if row_color and row_color.isValid() and row_color.alpha() > 0:
-                bg = _alpha_over(bg, row_color)
+                bg = _RowTintDelegate._alpha_over(bg, row_color)
 
         # Layer 3 — per-item background (assessment / status)
         item_bg = index.data(QtCore.Qt.BackgroundRole)
@@ -426,13 +426,13 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
             if c.alpha() == 255:
                 bg = QtGui.QColor(c)
             elif c.alpha() > 0:
-                bg = _alpha_over(bg, c)
+                bg = _RowTintDelegate._alpha_over(bg, c)
 
         # Layer 4 — selection tint (only when selection_style == "tint")
         use_tint = getattr(tree, "_selection_style", "border") == "tint"
         selected = bool(option.state & QtWidgets.QStyle.State_Selected)
         if use_tint and selected:
-            bg = _alpha_over(bg, self._SEL_TINT)
+            bg = _RowTintDelegate._alpha_over(bg, self._SEL_TINT)
             # Strip State_Selected so the QSS border rule doesn't fire.
             option.state &= ~QtWidgets.QStyle.State_Selected
 

@@ -22,6 +22,7 @@ Direct registration is still available for ad-hoc / out-of-band apps::
         install_spec="extapps",
     )
 """
+
 import os
 import shutil
 import subprocess
@@ -45,31 +46,6 @@ _DCC_HOST_SIBLINGS = {
     "blender.exe": "python.exe",  # Blender ships python in <install>/<ver>/python/bin
     "blender": "python",
 }
-
-
-def _default_python() -> str:
-    """Best-effort pick of a standalone Python interpreter.
-
-    Order:
-      1. ``python`` / ``python3`` on PATH (a real CPython, ideal for pip).
-      2. Sibling pythonised binary if ``sys.executable`` is a DCC host
-         (e.g. maya.exe -> mayapy.exe in the same bin/).
-      3. ``sys.executable`` (last resort).
-    """
-    for name in ("python", "python3"):
-        found = shutil.which(name)
-        if found:
-            return found
-
-    exe = sys.executable or ""
-    base = os.path.basename(exe).lower()
-    sibling = _DCC_HOST_SIBLINGS.get(base)
-    if sibling:
-        candidate = os.path.join(os.path.dirname(exe), sibling)
-        if os.path.isfile(candidate):
-            return candidate
-
-    return exe
 
 
 class _VisibilityForwarder:
@@ -133,6 +109,31 @@ class ExternalAppHandler(BaseHandler):
 
     CONFIG_BRANCH = "external_app"
     DEFAULTS: dict = {}
+
+    @staticmethod
+    def _default_python() -> str:
+        """Best-effort pick of a standalone Python interpreter.
+
+        Order:
+          1. ``python`` / ``python3`` on PATH (a real CPython, ideal for pip).
+          2. Sibling pythonised binary if ``sys.executable`` is a DCC host
+             (e.g. maya.exe -> mayapy.exe in the same bin/).
+          3. ``sys.executable`` (last resort).
+        """
+        for name in ("python", "python3"):
+            found = shutil.which(name)
+            if found:
+                return found
+
+        exe = sys.executable or ""
+        base = os.path.basename(exe).lower()
+        sibling = _DCC_HOST_SIBLINGS.get(base)
+        if sibling:
+            candidate = os.path.join(os.path.dirname(exe), sibling)
+            if os.path.isfile(candidate):
+                return candidate
+
+        return exe
 
     # Entry-point groups consulted by :meth:`discover` to find
     # self-describing apps installed in the current environment.
@@ -206,15 +207,17 @@ class ExternalAppHandler(BaseHandler):
         Returns the count of apps newly registered. Re-registers
         existing entries on each call (idempotent).
         """
-        scan = dict(self.DISCOVERY_GROUPS) if groups is None else {
-            g: self.DISCOVERY_GROUPS.get(g, "subprocess") for g in groups
-        }
+        scan = (
+            dict(self.DISCOVERY_GROUPS)
+            if groups is None
+            else {g: self.DISCOVERY_GROUPS.get(g, "subprocess") for g in groups}
+        )
         count = 0
         for group, mode in scan.items():
             for ep in self._entry_points(group):
                 try:
                     module = ep.module  # left of ':' — never imports
-                    attr = ep.attr      # right of ':'
+                    attr = ep.attr  # right of ':'
                     extras = list(ep.extras) if getattr(ep, "extras", None) else []
                 except Exception:
                     self.logger.warning(
@@ -245,8 +248,7 @@ class ExternalAppHandler(BaseHandler):
                 count += 1
         if count:
             self.logger.debug(
-                f"[discover] registered {count} app(s) "
-                f"from groups {list(scan)}"
+                f"[discover] registered {count} app(s) from groups {list(scan)}"
             )
         return count
 
@@ -281,7 +283,7 @@ class ExternalAppHandler(BaseHandler):
         hidden_in: Set[str] = set()
         for extra in extras:
             if extra.startswith(cls.HIDE_PREFIX):
-                gate = extra[len(cls.HIDE_PREFIX):].strip()
+                gate = extra[len(cls.HIDE_PREFIX) :].strip()
                 if gate:
                     hidden_in.add(gate)
             else:
@@ -392,8 +394,14 @@ class ExternalAppHandler(BaseHandler):
             prov = self._providers[spec]
             group = prov.get("group")
             mode = self.DISCOVERY_GROUPS.get(group) if group else "in_process"
-            py = python or prov.get("python") or (
-                sys.executable if mode == "in_process" else _default_python()
+            py = (
+                python
+                or prov.get("python")
+                or (
+                    sys.executable
+                    if mode == "in_process"
+                    else ExternalAppHandler._default_python()
+                )
             )
             if self._is_importable(prov["probe_module"], py):
                 continue  # already present — re-discovery below surfaces it
@@ -451,7 +459,7 @@ class ExternalAppHandler(BaseHandler):
                 app's distribution (``entry_point.dist.name``).
             python: Path to the Python interpreter to use for the
                 subprocess. Ignored in ``mode="in_process"``. ``None``
-                (default) uses :func:`_default_python`.
+                (default) uses :meth:`_default_python`.
             show_kwargs: Extra kwargs forwarded to the UI's ``show()``
                 call in subprocess mode. Defaults to
                 ``{"pos": "screen", "app_exec": True}``. Ignored in
@@ -527,9 +535,7 @@ class ExternalAppHandler(BaseHandler):
                 continue
             mode = cfg.get("mode", "subprocess")
             kind = (
-                "external_in_process"
-                if mode == "in_process"
-                else "external_subprocess"
+                "external_in_process" if mode == "in_process" else "external_subprocess"
             )
             yield HandlerEntry(
                 name=name,
@@ -566,12 +572,14 @@ class ExternalAppHandler(BaseHandler):
         for app_name, tags in raw.items():
             if not isinstance(tags, (list, tuple)):
                 continue
-            kept = sorted({
-                stripped
-                for t in tags
-                if isinstance(t, str)
-                and (stripped := t.strip().lstrip("#").strip())
-            })
+            kept = sorted(
+                {
+                    stripped
+                    for t in tags
+                    if isinstance(t, str)
+                    and (stripped := t.strip().lstrip("#").strip())
+                }
+            )
             if kept:
                 cleaned[app_name] = kept
         return cleaned
@@ -589,11 +597,9 @@ class ExternalAppHandler(BaseHandler):
         # Strip leading "#" too — that prefix is display formatting,
         # not part of the tag identity. Stored values stay "clean" so
         # filtering / set-comparison works without double-hashing.
-        clean = sorted({
-            stripped
-            for t in tags
-            if (stripped := t.strip().lstrip("#").strip())
-        })
+        clean = sorted(
+            {stripped for t in tags if (stripped := t.strip().lstrip("#").strip())}
+        )
         store = dict(self._user_tags())
         if clean:
             store[name] = clean
@@ -705,13 +711,13 @@ class ExternalAppHandler(BaseHandler):
                 cfg = _resolve()
 
         if not cfg.get("module"):
-            raise ValueError(
-                "launch() requires a registered name or module= kwarg."
-            )
+            raise ValueError("launch() requires a registered name or module= kwarg.")
 
         run_mode = cfg.get("mode", "subprocess")
-        py = sys.executable if run_mode == "in_process" else (
-            cfg.get("python") or _default_python()
+        py = (
+            sys.executable
+            if run_mode == "in_process"
+            else (cfg.get("python") or ExternalAppHandler._default_python())
         )
 
         importable = self._is_importable(cfg["module"], py)
@@ -947,9 +953,7 @@ class ExternalAppHandler(BaseHandler):
         mod = importlib.import_module(module)
         entry_obj = getattr(mod, entry, None)
         if entry_obj is None:
-            raise AttributeError(
-                f"Module {module!r} has no attribute {entry!r}."
-            )
+            raise AttributeError(f"Module {module!r} has no attribute {entry!r}.")
         return entry_obj()
 
     @staticmethod
@@ -961,15 +965,17 @@ class ExternalAppHandler(BaseHandler):
     ):
         """Spawn a detached subprocess that opens *module*'s UI."""
         if entry:
-            sk = show_kwargs if show_kwargs is not None else {
-                "pos": "screen",
-                "app_exec": True,
-            }
+            sk = (
+                show_kwargs
+                if show_kwargs is not None
+                else {
+                    "pos": "screen",
+                    "app_exec": True,
+                }
+            )
             kwargs_src = ", ".join(f"{k}={v!r}" for k, v in sk.items())
             snippet = (
-                f"from {module} import {entry};"
-                f"ui = {entry}();"
-                f"ui.show({kwargs_src})"
+                f"from {module} import {entry};ui = {entry}();ui.show({kwargs_src})"
             )
             args = ["-c", snippet]
         else:

@@ -3,23 +3,13 @@
 """Shared drag infrastructure for sequencer graphics items.
 
 Provides:
-- :func:`snap_time` — unified time-snap helper (Ctrl = per-frame).
+- :meth:`DraggableItemMixin.snap_time` — unified time-snap helper (Ctrl = per-frame).
 - :class:`DraggableItemMixin` — template for ``cancel_drag()`` support.
 """
+
 from __future__ import annotations
 
 from qtpy import QtWidgets, QtCore
-
-
-def snap_time(value: float, timeline) -> float:
-    """Snap *value* to the timeline's grid, or to 1 when Ctrl is held."""
-    modifiers = QtWidgets.QApplication.keyboardModifiers()
-    if modifiers & QtCore.Qt.ControlModifier:
-        return round(value)
-    interval = timeline.parent_sequencer.snap_interval
-    if interval > 0:
-        return round(value / interval) * interval
-    return value
 
 
 class DraggableItemMixin:
@@ -34,6 +24,17 @@ class DraggableItemMixin:
     """
 
     _undo_captured: bool = False
+
+    @staticmethod
+    def snap_time(value: float, timeline) -> float:
+        """Snap *value* to the timeline's grid, or to 1 when Ctrl is held."""
+        modifiers = QtWidgets.QApplication.keyboardModifiers()
+        if modifiers & QtCore.Qt.ControlModifier:
+            return round(value)
+        interval = timeline.parent_sequencer.snap_interval
+        if interval > 0:
+            return round(value / interval) * interval
+        return value
 
     def _is_drag_active(self) -> bool:
         raise NotImplementedError

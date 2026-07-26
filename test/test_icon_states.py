@@ -242,9 +242,7 @@ class TestIconStates(IconTestCase):
 
         self.assertEqual(log, [], "programmatic sync must not fire callbacks")
         self.assertEqual(btn.toolTip(), "on-state")
-        self.assertEqual(
-            _icon_image(btn), _reference_image("target", btn, ACTIVE)
-        )
+        self.assertEqual(_icon_image(btn), _reference_image("target", btn, ACTIVE))
 
     def test_on_change_hook_and_notify_suppression(self):
         seen = []
@@ -348,9 +346,7 @@ class TestFooterStatefulButton(IconTestCase):
         )
         btn.icon_states.current_state = 1
         self.assertEqual(btn.toolTip(), "single")
-        self.assertEqual(
-            _icon_image(btn), _reference_image("target", btn, ACTIVE)
-        )
+        self.assertEqual(_icon_image(btn), _reference_image("target", btn, ACTIVE))
 
 
 class TestRegisterIconDirInvalidatesCache(IconTestCase):
@@ -395,6 +391,61 @@ class TestRegisterIconDirInvalidatesCache(IconTestCase):
             resolved = IconManager._load_svg_content(name)
             self.assertEqual(resolved, override_svg)
             self.assertNotEqual(resolved, packaged_svg)
+
+
+class TestSetLabelIcon(IconTestCase):
+    """set_label_icon composites a themed icon into a text-only widget (QLabel
+    has no setIcon) via rich text, preserving the plain text out-of-band."""
+
+    def test_composites_icon_into_richtext(self):
+        lbl = self.track_widget(QtWidgets.QLabel("textures"))
+        IconManager.set_label_icon(lbl, "folder")
+
+        self.assertEqual(lbl.textFormat(), QtCore.Qt.RichText)
+        self.assertIn("<img", lbl.text())
+        self.assertIn("base64,", lbl.text(), "icon must embed as a self-contained URI")
+        self.assertIn("textures", lbl.text())
+
+    def test_preserves_plain_text_on_property(self):
+        lbl = self.track_widget(QtWidgets.QLabel("textures"))
+        IconManager.set_label_icon(lbl, "folder")
+        self.assertEqual(lbl.property("iconLabelText"), "textures")
+
+    def test_reapplication_is_idempotent(self):
+        """Rebuilt-on-show menus may re-icon the same row — markup must not nest."""
+        lbl = self.track_widget(QtWidgets.QLabel("textures"))
+        IconManager.set_label_icon(lbl, "folder")
+        IconManager.set_label_icon(lbl, "folder")
+        self.assertEqual(lbl.text().count("<img"), 1)
+        self.assertEqual(lbl.property("iconLabelText"), "textures")
+
+    def test_escapes_html_in_text(self):
+        lbl = self.track_widget(QtWidgets.QLabel("R&D <build>"))
+        IconManager.set_label_icon(lbl, "folder")
+        self.assertIn("&amp;", lbl.text())
+        self.assertIn("&lt;build&gt;", lbl.text())
+        # The un-escaped original is still recoverable off the property.
+        self.assertEqual(lbl.property("iconLabelText"), "R&D <build>")
+
+    def test_missing_icon_leaves_plain_text(self):
+        lbl = self.track_widget(QtWidgets.QLabel("textures"))
+        IconManager.set_label_icon(lbl, "definitely_not_an_icon_name")
+        self.assertNotIn("<img", lbl.text())
+        self.assertEqual(lbl.text(), "textures")
+
+    def test_does_not_enable_mouse_tracking(self):
+        """Regression: rich text makes QLabel auto-enable mouse tracking, which
+        floods uitk's MouseTracking with button-less MouseMove events and
+        collapses ExpandableList/marking-menu hover on the first micro-move.
+        The iconified label must keep the plain-item baseline (tracking off,
+        no text interaction)."""
+        lbl = self.track_widget(QtWidgets.QLabel("textures"))
+        IconManager.set_label_icon(lbl, "folder")
+        self.assertFalse(
+            lbl.hasMouseTracking(),
+            "icon-composited label must not enable mouse tracking",
+        )
+        self.assertEqual(lbl.textInteractionFlags(), QtCore.Qt.NoTextInteraction)
 
 
 if __name__ == "__main__":

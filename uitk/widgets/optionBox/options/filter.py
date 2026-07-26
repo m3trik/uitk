@@ -39,6 +39,7 @@ Typical use (fluent, via the manager)::
     )
     filt = le.option_box.find_option(FilterOption)
 """
+
 from typing import Callable, Mapping, Optional, Sequence
 
 from .action import ActionOption
@@ -51,40 +52,6 @@ NEGATE_PREFIX = "!"
 Honoured by :func:`to_patterns` (it keeps the marker and the remainder verbatim)
 and by :func:`pythontk.filter_list` when called with ``negate_prefix=NEGATE_PREFIX``
 (which moves the matching includes to its exclude set)."""
-
-
-def to_patterns(text: str, *, negate_prefix: str = NEGATE_PREFIX):
-    """Split comma-separated filter ``text`` into fnmatch patterns (verbatim).
-
-    Terms pass through **verbatim** — matching is strict ``fnmatch``: a bare term
-    matches exactly, and wildcards must be explicit. Use ``*`` for any run of
-    characters (``*char*`` = substring, ``char*`` = startswith, ``*char`` =
-    endswith), ``?`` for a single character, ``[seq]`` for a set. A term led by
-    ``negate_prefix`` (default ``"!"``) is an exclude: the marker is kept and the
-    remainder is its pattern, so ``!*temp*`` excludes anything containing 'temp'.
-    Blank terms and a bare marker are dropped.
-
-    Pair with :func:`pythontk.filter_list` (called with the same
-    ``negate_prefix``), which moves the marked terms to its exclude set. Strict
-    bare matching is deliberate: silently wrapping ``term`` → ``*term*`` would
-    make a plain term *broader* than an explicit wildcard pattern, defeating the
-    point of wildcards.
-    """
-    patterns = []
-    for raw in text.split(","):
-        term = raw.strip()
-        if not term:
-            continue
-        # Preserve a leading negation marker; the remainder is the pattern,
-        # verbatim. A bare marker (no remainder) is dropped — matching filter_list.
-        marker = ""
-        if negate_prefix and term.startswith(negate_prefix):
-            remainder = term[len(negate_prefix):].strip()
-            if not remainder:
-                continue
-            marker, term = negate_prefix, remainder
-        patterns.append(f"{marker}{term}")
-    return patterns
 
 
 class FilterOption(BinaryToggleOption):
@@ -253,11 +220,45 @@ class FilterOption(BinaryToggleOption):
     # Patterns
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def to_patterns(text: str, *, negate_prefix: str = NEGATE_PREFIX):
+        """Split comma-separated filter ``text`` into fnmatch patterns (verbatim).
+
+        Terms pass through **verbatim** — matching is strict ``fnmatch``: a bare term
+        matches exactly, and wildcards must be explicit. Use ``*`` for any run of
+        characters (``*char*`` = substring, ``char*`` = startswith, ``*char`` =
+        endswith), ``?`` for a single character, ``[seq]`` for a set. A term led by
+        ``negate_prefix`` (default ``"!"``) is an exclude: the marker is kept and the
+        remainder is its pattern, so ``!*temp*`` excludes anything containing 'temp'.
+        Blank terms and a bare marker are dropped.
+
+        Pair with :func:`pythontk.filter_list` (called with the same
+        ``negate_prefix``), which moves the marked terms to its exclude set. Strict
+        bare matching is deliberate: silently wrapping ``term`` → ``*term*`` would
+        make a plain term *broader* than an explicit wildcard pattern, defeating the
+        point of wildcards.
+        """
+        patterns = []
+        for raw in text.split(","):
+            term = raw.strip()
+            if not term:
+                continue
+            # Preserve a leading negation marker; the remainder is the pattern,
+            # verbatim. A bare marker (no remainder) is dropped — matching filter_list.
+            marker = ""
+            if negate_prefix and term.startswith(negate_prefix):
+                remainder = term[len(negate_prefix) :].strip()
+                if not remainder:
+                    continue
+                marker, term = negate_prefix, remainder
+            patterns.append(f"{marker}{term}")
+        return patterns
+
     def patterns(self):
         """Active glob patterns, or ``None`` when the filter is off or empty.
 
         ``None`` means "match everything" (filter disabled or no text). Otherwise
-        returns :func:`to_patterns` of the field text — ready for
+        returns :meth:`to_patterns` of the field text — ready for
         :func:`pythontk.filter_list`.
         """
         if not self._is_on:
@@ -266,7 +267,7 @@ class FilterOption(BinaryToggleOption):
         text = le.text().strip() if le is not None else ""
         if not text:
             return None
-        return to_patterns(text)
+        return FilterOption.to_patterns(text)
 
     # ------------------------------------------------------------------
     # Scope

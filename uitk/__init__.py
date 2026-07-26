@@ -38,18 +38,19 @@ Key Modules:
 Attributes:
     __version__: Current package version string.
 """
+
 import importlib
 
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.3.29"
+__version__ = "1.3.32"
 
 
 DEFAULT_INCLUDE = {
     # Standalone-process bootstrap (kept Switchboard-free so high-DPI setup
     # can run before any Qt machinery loads).
-    "_bootstrap": "configure_high_dpi",
+    "_bootstrap": "Bootstrap",
     # Switchboard symbols are mapped to their specific composition modules
     # (rather than the package facade) to preserve per-symbol lazy loading.
     # `from uitk import Signals` should not drag in the Switchboard machinery.
@@ -60,7 +61,7 @@ DEFAULT_INCLUDE = {
     # Deprecated aliases for the registry classes (moved to
     # uitk.managers.registry_manager); resolving them warns via the shim.
     "file_manager": ["FileContainer", "FileManager"],
-    "compile": ["compile_ui", "ensure_compiled", "is_compiled_fresh", "precompile_async"],
+    "compile": ["UiCompiler", "PrecompileJob"],
     "loaders": ["CompiledLoader", "RuntimeLoader"],
     "widgets.marking_menu._marking_menu": "MarkingMenu",
     # Widgets
@@ -71,13 +72,7 @@ DEFAULT_INCLUDE = {
     "bridge.spec": [
         "AttributeSpec",
         "KindHandler",
-        "make_widget",
-        "read_value",
-        "set_value",
-        "connect_changed",
-        "infer_kind",
-        "register_kind",
-        "get_handler",
+        "KindFactory",
     ],
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
@@ -105,11 +100,6 @@ DEFAULT_INCLUDE = {
     ],
     "widgets.optionBox.utils": [
         "OptionBoxManager",
-        "add_option_box",
-        "add_clear_option",
-        "add_menu_option",
-        "patch_widget_class",
-        "patch_common_widgets",
     ],
     "widgets.optionBox.options._options": ["BaseOption", "ButtonOption"],
     "widgets.optionBox.options.action": ["ActionOption", "MenuOption"],
@@ -130,18 +120,15 @@ DEFAULT_INCLUDE = {
     "widgets.delegates.row_selection": "RowSelectionBorderDelegate",
     "widgets.delegates.centered_icon": [
         "CenteredIconActionDelegate",
-        "paint_centered_icon",
-        "fill_cell_background",
+        "ICON_OPACITY_ROLE",
     ],
     "widgets.delegates.shortcut_capture": [
         "ShortcutCaptureDelegate",
         "BorderedShortcutCaptureDelegate",
-        "install_shortcut_capture",
     ],
     "widgets.delegates.choice_capture": [
         "ChoiceCaptureDelegate",
         "BorderedChoiceCaptureDelegate",
-        "install_choice_capture",
     ],
     "widgets.separator": "Separator",
     "widgets.slider": "Slider",

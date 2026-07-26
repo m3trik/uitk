@@ -209,9 +209,19 @@ class StyleEditor(EditorPanel):
         if theme is not None:
             if theme in StyleSheet.themes:
                 self._theme = theme
-                # Applies base theme + overrides to every registered widget
-                # (this editor included — it registered itself in __init__).
-                StyleSheet.apply_theme(theme, data.get("overrides") or {})
+                # Load this theme's overrides (persisted) and refresh only the
+                # widgets already wearing it — NOT a global re-theme. The
+                # selector picks which theme you EDIT; which theme each window
+                # WEARS is a separate, app-level preference (see the marking-
+                # menu / standalone theme selectors in tentacle preferences).
+                # Previously this called apply_theme(), which dragged every
+                # registered window onto the edited theme (the "marking menu
+                # goes dark" leak that did not persist across sessions).
+                # ``widget=self`` previews the edited theme on THIS editor only
+                # (contained, and folded into the same single reload pass).
+                StyleSheet.set_theme_overrides(
+                    theme, data.get("overrides") or {}, widget=self
+                )
             else:
                 # Unknown base theme (hand-edited file, or a preset from a
                 # newer uitk): keep the current state, but say so.

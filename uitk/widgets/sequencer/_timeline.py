@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Timeline view, scene, and track-header widgets."""
+
 from __future__ import annotations
 
 from typing import Dict, List, TYPE_CHECKING
@@ -14,10 +15,9 @@ from uitk.widgets.sequencer._data import (
     _TRACK_HEIGHT,
     _TRACK_PADDING,
     _RULER_HEIGHT,
-    _styled_menu,
-    build_curve_path,
-    make_value_mapper,
-    paint_pattern,
+    MenuUtils,
+    CurveUtils,
+    PatternRegistry,
 )
 from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._overlays import (
@@ -287,7 +287,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         # Selection is already adjusted by eventFilter (right-click path).
         names = self.selected_names()
         count = len(names)
-        menu = _styled_menu(self)
+        menu = MenuUtils._styled_menu(self)
         hide_label = f"Hide {count} Tracks" if count > 1 else "Hide Track"
         menu.addAction(hide_label, lambda: self.track_hide_requested.emit(names))
         del_label = f"Delete {count} Tracks" if count > 1 else "Delete Track"
@@ -736,7 +736,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         self._show_default_context_menu(sq, t, event.globalPos())
 
     def _show_default_context_menu(self, sq, t, global_pos):
-        menu = _styled_menu(self)
+        menu = MenuUtils._styled_menu(self)
         add_action = menu.addAction(f"Add Marker at {int(t)}\u2026")
 
         menu.addSeparator()
@@ -848,7 +848,7 @@ class TimelineView(QtWidgets.QGraphicsView):
             if not is_sub:
                 td = sq.get_track(track_id)
                 if td is not None and td.pattern is not None:
-                    paint_pattern(painter, row_rect, td.pattern)
+                    PatternRegistry.paint_pattern(painter, row_rect, td.pattern)
             if is_sub:
                 cy = y + h / 2.0
                 painter.setPen(QtGui.QPen(_CENTER_LINE, 1))
@@ -883,13 +883,13 @@ class TimelineView(QtWidgets.QGraphicsView):
                 if not segs:
                     continue
                 row_y, row_h = sq._row_position(track_id, sub_row)
-                map_y, _is_flat = make_value_mapper(
+                map_y, _is_flat = CurveUtils.make_value_mapper(
                     row_y,
                     row_h,
                     preview.get("val_min", 0.0),
                     preview.get("val_max", 1.0),
                 )
-                path = build_curve_path(segs, self.time_to_x, map_y)
+                path = CurveUtils.build_curve_path(segs, self.time_to_x, map_y)
                 c = QtGui.QColor(entry.get("color", "#CCCCCC"))
                 c.setAlpha(180)
                 painter.setPen(QtGui.QPen(c, 1.2))

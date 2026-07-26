@@ -144,10 +144,14 @@ class PresetManager(ptk.LoggingMixin):
 
         self._on_change_callbacks = []
 
-        # Pending inline-edit action for wire_combo's Save/Rename flow
-        # ("save" / "rename" / None). Declared here rather than created
-        # dynamically inside the closure so the attribute always exists.
-        self._pending_preset_action: Optional[str] = None
+        # Pending inline-edit action for wire_combo's Save/Rename flow:
+        # a ("save"/"rename", subject_name) tuple, or None. The subject is
+        # captured when the edit BEGINS — the combo item already carries the
+        # NEW text by the time on_editing_finished fires, so reading the old
+        # name back off the combo at commit time is not possible. Declared
+        # here rather than created dynamically inside the closure so the
+        # attribute always exists.
+        self._pending_preset_action: Optional[tuple] = None
 
         # Repopulate-closure of the wired combo (set by ``wire_combo``);
         # exposed publicly via :meth:`refresh_combo`.
@@ -200,7 +204,7 @@ class PresetManager(ptk.LoggingMixin):
         """
         p = Path(os.path.expandvars(str(raw))).expanduser()
         if not p.is_absolute():
-            p = get_presets_root() / p
+            p = PresetManager.get_presets_root() / p
         return p
 
     @staticmethod
@@ -225,8 +229,10 @@ class PresetManager(ptk.LoggingMixin):
         """
         user_dir = self.preset_dir
         return ptk.PresetStore(
-            user_dir.name, package="uitk",
-            builtin_dir=self._builtin_dir, user_dir=user_dir,
+            user_dir.name,
+            package="uitk",
+            builtin_dir=self._builtin_dir,
+            user_dir=user_dir,
         )
 
     @classmethod
@@ -350,7 +356,7 @@ class PresetManager(ptk.LoggingMixin):
                 )
                 # Strip switchboard instance suffixes (e.g. "name#1")
                 name = name.split("#")[0]
-                self._preset_dir = get_presets_root() / "uitk" / name
+                self._preset_dir = PresetManager.get_presets_root() / "uitk" / name
             else:
                 raise ValueError(
                     "preset_dir must be provided for standalone PresetManager"
@@ -361,8 +367,8 @@ class PresetManager(ptk.LoggingMixin):
         # self-heal the dir at the PresetStore layer (its save/active-write both
         # mkdir), so skipping the per-read FS calls is safe.
         if self._ensured_dir != self._preset_dir:
-            _maybe_migrate_legacy(self._preset_dir)
-            _maybe_migrate_renamed_domain(self._preset_dir)
+            PresetManager._maybe_migrate_legacy(self._preset_dir)
+            PresetManager._maybe_migrate_renamed_domain(self._preset_dir)
             self._preset_dir.mkdir(parents=True, exist_ok=True)
             self._ensured_dir = self._preset_dir
         return self._preset_dir
@@ -690,7 +696,7 @@ class PresetManager(ptk.LoggingMixin):
             provider = self.modified_value_provider
         if provider is not None:
             for key, value in provider().items():
-                if value is not None and _is_serializable(value):
+                if value is not None and PresetManager._is_serializable(value):
                     values[key] = value
             return values
         for widget in self._get_widgets(scope):
@@ -701,7 +707,7 @@ class PresetManager(ptk.LoggingMixin):
                 value = self.state._get_current_value(widget)
             else:
                 value = self._get_widget_value(widget)
-            if value is not None and _is_serializable(value):
+            if value is not None and PresetManager._is_serializable(value):
                 values[obj_name] = value
         return values
 
@@ -797,9 +803,7 @@ class PresetManager(ptk.LoggingMixin):
                     # onto a widget that never had it (which would silently
                     # suppress slot execution on every future restore).
                     had_attr = hasattr(widget, "block_signals_on_restore")
-                    original_block = getattr(
-                        widget, "block_signals_on_restore", False
-                    )
+                    original_block = getattr(widget, "block_signals_on_restore", False)
                     widget.block_signals_on_restore = block_signals
                     try:
                         self.state.apply(widget, value)
@@ -1241,7 +1245,9 @@ class PresetManager(ptk.LoggingMixin):
                     mark_builtins(names)
                     # findText -> -1 when the (stale) name is gone, which falls
                     # through to the placeholder rather than a silent item-0.
-                    combo.setCurrentIndex(combo.findText(select_name) if select_name else -1)
+                    combo.setCurrentIndex(
+                        combo.findText(select_name) if select_name else -1
+                    )
                     combo.setPlaceholderText(placeholder)
                 else:
                     combo.setCurrentIndex(-1)
@@ -1301,14 +1307,16 @@ class PresetManager(ptk.LoggingMixin):
             if active and mgr.exists(active):
                 apply_preset(active)
 
-        def begin_inline_edit(mode: str, seed: str):
+        def begin_inline_edit(mode: str, seed: str, subject: str = ""):
             """Enter in-place edit mode pre-filled with *seed* for *mode*.
 
-            *mode* (``"save"`` / ``"rename"``) is consumed by
-            :func:`on_edit_committed` on the next Enter. Clicking away fires no
+            *mode* (``"save"`` / ``"rename"``) and *subject* (the preset being
+            renamed) are consumed by :func:`on_edit_committed` on the next
+            Enter. The subject must be captured now: the combo item text is
+            already the NEW name when the commit fires. Clicking away fires no
             commit (``ComboBox.focusOutEvent`` exits edit mode silently).
             """
-            mgr._pending_preset_action = mode
+            mgr._pending_preset_action = (mode, subject)
             combo.setEditable(True)
             line_edit = combo.lineEdit()
             if line_edit is not None:
@@ -1329,14 +1337,15 @@ class PresetManager(ptk.LoggingMixin):
             current = selected_name()
             if not current or mgr.source(current) != "user":
                 return
-            begin_inline_edit("rename", current)
+            begin_inline_edit("rename", current, subject=current)
 
         def on_edit_committed(text: str):
             """Dispatch the committed inline-edit text per the pending action."""
-            mode = getattr(mgr, "_pending_preset_action", None)
+            pending = getattr(mgr, "_pending_preset_action", None)
             mgr._pending_preset_action = None
-            if mode is None:
+            if pending is None:
                 return
+            mode, subject = pending
             name = (text or "").strip()
             if mode == "save":
                 if not name:
@@ -1347,7 +1356,7 @@ class PresetManager(ptk.LoggingMixin):
                 mgr.active_preset = name
                 refresh(select_name=name)
             elif mode == "rename":
-                old = selected_name() or mgr.active_preset
+                old = subject or mgr.active_preset
                 if name and old and name != old and mgr.source(old) == "user":
                     if mgr.rename(old, name):
                         refresh(select_name=name)
@@ -1455,57 +1464,543 @@ class PresetManager(ptk.LoggingMixin):
 
         return combo.option_box.container
 
+    # ------------------------------------------------------------------
+    # Encapsulated helpers (formerly module-level functions)
+    # ------------------------------------------------------------------
 
-# ------------------------------------------------------------------
-# Module-level helpers
-# ------------------------------------------------------------------
+    @staticmethod
+    def _is_serializable(value: Any) -> bool:
+        """Check if a value can be safely serialized to JSON.
 
+        Attempts a real ``json.dumps`` rather than a shallow top-level type check,
+        so a container holding a nested non-serializable element (e.g. a set or
+        ``Path`` inside a dict/list) is correctly rejected. This keeps the capture
+        gate consistent with the write path — ``PresetStore``'s JSON codec dumps
+        with no ``default=str`` fallback, so a value that passes here must actually
+        survive ``json.dumps`` or ``save()`` would raise an uncaught ``TypeError``.
+        """
+        try:
+            json.dumps(value)
+            return True
+        except (TypeError, ValueError):
+            return False
 
-def _is_serializable(value: Any) -> bool:
-    """Check if a value can be safely serialized to JSON.
+    @staticmethod
+    def QStandardPaths_writableLocation() -> str:
+        """Return Qt's per-application writable config directory.
 
-    Attempts a real ``json.dumps`` rather than a shallow top-level type check,
-    so a container holding a nested non-serializable element (e.g. a set or
-    ``Path`` inside a dict/list) is correctly rejected. This keeps the capture
-    gate consistent with the write path — ``PresetStore``'s JSON codec dumps
-    with no ``default=str`` fallback, so a value that passes here must actually
-    survive ``json.dumps`` or ``save()`` would raise an uncaught ``TypeError``.
-    """
-    try:
-        json.dumps(value)
+        On Windows this is ``<LOCALAPPDATA>/<exeName>`` (e.g.
+        ``C:/Users/<u>/AppData/Local/python``) when no organisation/application
+        name has been set on ``QCoreApplication`` — the ``<exeName>`` segment
+        is Qt auto-naming from the executable, *not* a pre-existing dir.
+
+        Used for *finding legacy* preset data written under previous layouts.
+        The current root uses :func:`QStandardPaths_genericConfigLocation`
+        instead, which is host-independent.
+        """
+        return QtCore.QStandardPaths.writableLocation(
+            QtCore.QStandardPaths.AppConfigLocation
+        )
+
+    @staticmethod
+    def QStandardPaths_genericConfigLocation() -> str:
+        """Return Qt's host-independent writable config directory.
+
+        On Windows this is ``<LOCALAPPDATA>`` directly (no executable-name
+        segment); on macOS ``~/Library/Preferences``; on Linux ``~/.config``.
+        Same path regardless of which host process (standalone Python, Maya,
+        Painter, ...) is running, so presets stay visible across hosts.
+        """
+        return QtCore.QStandardPaths.writableLocation(
+            QtCore.QStandardPaths.GenericConfigLocation
+        )
+
+    @staticmethod
+    def get_presets_root() -> Path:
+        """Root directory under which every relative ``preset_dir`` is resolved.
+
+        Defaults to ``<GenericConfigLocation>/uitk/`` — the host-independent
+        user config dir plus a ``uitk`` wrapper folder that keeps the
+        ecosystem's state grouped under one entry in AppData/Local rather
+        than scattered as siblings of Microsoft, Google, pip, etc. The
+        wrapper is named after the foundation library that owns the preset
+        system.
+
+        Set ``UITK_PRESETS_ROOT`` to redirect every relative preset path
+        wholesale (network share, alternate drive, Documents subfolder…).
+        The override is used as-given — no implicit ``uitk/`` wrapper is
+        appended — so a power-user override has full control. It accepts
+        ``~`` and ``%ENVVAR%`` syntax; relative overrides resolve against
+        the process working directory at access time so the return is
+        always absolute.
+        """
+        override = os.environ.get(PRESETS_ROOT_ENV_VAR)
+        if override:
+            p = Path(os.path.expandvars(override)).expanduser()
+        else:
+            p = (
+                Path(PresetManager.QStandardPaths_genericConfigLocation())
+                / _ECOSYSTEM_WRAPPER_NAME
+            )
+        return p if p.is_absolute() else p.absolute()
+
+    @staticmethod
+    def _resolve_legacy_template(template: str) -> Path:
+        """Expand ``{APPCONFIG}``, environment variables, and ``~`` in *template*."""
+        if "{APPCONFIG}" in template:
+            template = template.replace(
+                "{APPCONFIG}", PresetManager.QStandardPaths_writableLocation()
+            )
+        return Path(os.path.expandvars(template)).expanduser()
+
+    @staticmethod
+    def _migration_sentinel_path(key: str) -> Path:
+        """Path to the per-package sentinel marking a completed migration.
+
+        The sentinel lives *inside* the migrated package dir itself (as a
+        dotfile that ``glob('*.json')`` ignores) so it travels with its
+        data — if the user wipes the package dir, the sentinel goes too
+        and the next access re-migrates from legacy, which is normally
+        what they want.
+        """
+        return (
+            PresetManager.get_presets_root().joinpath(*key.split("/"))
+            / _MIGRATION_SENTINEL_NAME
+        )
+
+    @staticmethod
+    def _has_migrated(key: str) -> bool:
+        return PresetManager._migration_sentinel_path(key).exists()
+
+    @staticmethod
+    def _mark_migrated(key: str) -> None:
+        p = PresetManager._migration_sentinel_path(key)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.touch(exist_ok=True)
+        except OSError as e:
+            _log.warning("preset migration: could not mark %s migrated: %s", key, e)
+
+    @staticmethod
+    def _merge_move(src: Path, dst: Path) -> None:
+        """Move *src* tree into *dst*, never overwriting existing destination files.
+
+        Unlike ``shutil.move`` (which fails or overwrites on collisions), this
+        walks the source tree and moves each file into place only if the
+        corresponding destination doesn't exist. Empty source dirs are removed
+        as the walk unwinds so a fully-merged subtree leaves nothing behind.
+        Collisions silently keep the destination version — the assumption is
+        that whatever the live code wrote is the user's intent.
+        """
+        if not dst.exists():
+            try:
+                shutil.move(str(src), str(dst))
+            except (OSError, shutil.Error) as e:
+                _log.warning("preset merge: could not move %s -> %s: %s", src, dst, e)
+            return
+        if src.is_file():
+            # Collision at a leaf file. Keep the destination (whatever the
+            # live code wrote is the user's intent) and leave the source in
+            # place as evidence — a user investigating "missing preset"
+            # symptoms can find it via the debug log and the on-disk copy.
+            _log.debug("preset merge: collision at %s, kept destination", dst)
+            return
+        for item in list(src.iterdir()):
+            PresetManager._merge_move(item, dst / item.name)
+        try:
+            src.rmdir()
+        except OSError:
+            pass
+
+    @staticmethod
+    def _legacy_qt_root_candidates() -> List[Path]:
+        """Old preset root locations to drain into the current root.
+
+        Three prior layouts existed:
+
+        A. ``<AppConfigLocation>/m3trik/presets/<pkg>/...`` — an interim
+           revision wrapped every relative preset in an unsolicited
+           ``m3trik/presets`` segment.
+        B. ``<AppConfigLocation>/<pkg>/...`` — used Qt's
+           ``AppConfigLocation`` directly. That path embeds the host
+           application name (``python/`` standalone, ``maya/`` from Maya,
+           etc.), making presets invisible across hosts.
+        C. ``<GenericConfigLocation>/<pkg>/...`` — used the host-independent
+           config dir but as a bare root, so the ecosystem's packages were
+           siblings of unrelated apps (pip, npm, Microsoft, ...). The
+           current layout wraps everything in a single ``uitk/`` folder.
+
+        Order matters: deepest layouts first so their contents don't get
+        re-processed by outer passes. Pulled out as a function so tests can
+        monkey-patch it to point at tmp dirs (essential — without the patch
+        the cleanup would touch the real developer machine's data).
+
+        Returns ``[]`` when the root came from ``$UITK_PRESETS_ROOT``. These are
+        absolute *real* machine paths, and the drain
+        (:func:`_maybe_clear_legacy_qt_roots`) hoists them with :func:`_merge_move`
+        — a **move**, not a copy. ``<generic>/uitk`` IS the live store and ``uitk``
+        IS one of the ``known_pkgs``, so against an overridden root the drain
+        relocates the user's entire store into that root. For a power user pointing
+        the override at a network share that is merely surprising; for a *test* —
+        which redirects the root to a tmp dir and ``rmtree``s it in teardown — it is
+        fatal, and it has already destroyed a real preset store once (mayatk's
+        ``test_macro_editor_window`` sets the env var without patching this
+        function, unlike ``TestLegacyMigration``). An explicit override means "use
+        exactly this location", never "hoover the machine into it", so there is
+        nothing legitimate to drain. The guard lives *here*, inside the seam tests
+        already replace, so a test that patches this function keeps its behaviour
+        while every test that merely sets the env var is protected by default.
+        """
+        if os.environ.get(PRESETS_ROOT_ENV_VAR):
+            return []
+        appconfig = Path(PresetManager.QStandardPaths_writableLocation())
+        generic = Path(PresetManager.QStandardPaths_genericConfigLocation())
+        return [appconfig / "m3trik" / "presets", appconfig, generic]
+
+    @staticmethod
+    def _dir_has_preset_data(directory: Path) -> bool:
+        """True when *directory* holds at least one preset file (``*.json``).
+
+        Distinguishes a *husk* — an empty shell a prior wrap left behind,
+        holding only a ``.migrated`` sentinel (the merge keeps the destination
+        on a sentinel collision, so the source dir survives) — from genuine
+        pre-wrap state that still carries presets to relocate. A husk must not
+        count as pre-wrap evidence, or it re-triggers the wrap on every launch
+        and keeps reburying correctly-placed packages (the "saved preset gone
+        next session" bug).
+        """
+        try:
+            return any(directory.rglob("*.json"))
+        except OSError:
+            return False
+
+    @staticmethod
+    def _looks_like_ecosystem_wrapper(uitk_dir: Path) -> bool:
+        """True when *uitk_dir* is already in the wrapper layout.
+
+        Pre-wrap evidence is **only** one of uitk's OWN state dirs
+        (:data:`_UITK_OWN_PRE_WRAP_DIRS`) sitting at the root, carrying data.
+        Anything else — ``mayatk/``, ``blendertk/``, ``shots/``, a package added
+        next year — is a correctly-placed sibling, never pre-wrap state.
+
+        This is an **allowlist of uitk's own dirs**, not a denylist of
+        ``known_pkgs``. It used to be the latter, and *that was a data-corrupting
+        bug*: ``known_pkgs`` is derived from :data:`_LEGACY_PRESET_PATHS`, a table
+        frozen around the packages that existed when the legacy layouts died
+        (``uitk`` / ``mayatk`` / ``extapps``). Every package added afterwards —
+        ``blendertk``, ``shots`` — was therefore "non-known", so its live state read
+        as pre-wrap and got buried in ``<generic>/uitk/uitk/<pkg>/`` on the next
+        launch. Worse, the move is a :func:`_merge_move`, which keeps the
+        destination on a collision and leaves the source behind, so a store could be
+        *split across both levels* — the observed failure was blendertk's
+        ``macro_manager`` with ``.active`` relocated but ``m3trik.json`` stranded at
+        the source, leaving ``PresetStore.active`` reading ``None`` and every macro
+        hotkey silently unbound.
+
+        Empty dirs — and data-less *husks* (only a ``.migrated`` sentinel,
+        no ``*.json``) — count as "already wrapped": there is nothing to
+        move, and treating them as pre-wrap would re-fire the wrap forever,
+        burying any package freshly re-created at the root in between.
+        """
+        if not uitk_dir.is_dir():
+            return False
+        try:
+            child_dirs = [p for p in uitk_dir.iterdir() if p.is_dir()]
+        except OSError:
+            return False
+        if not child_dirs:
+            return True
+        for child in child_dirs:
+            if child.name not in _UITK_OWN_PRE_WRAP_DIRS:
+                continue  # another package's state — correctly placed, never move it
+            if not PresetManager._dir_has_preset_data(child):
+                continue  # husk left by a prior wrap — not real pre-wrap state
+            return False
         return True
-    except (TypeError, ValueError):
-        return False
 
+    @staticmethod
+    def _wrap_pre_wrap_uitk_state(uitk_dir: Path) -> None:
+        """Restructure ``<generic>/uitk/`` from pre-wrap to wrapper layout.
 
-def QStandardPaths_writableLocation() -> str:
-    """Return Qt's per-application writable config directory.
+        Before this code: ``<generic>/uitk/`` held uitk-package state
+        directly (``style_presets/``, ``hotkey_presets/``, ...). The
+        current layout uses ``<generic>/uitk/`` as the *ecosystem wrapper*
+        with uitk's own state nested at ``<generic>/uitk/uitk/``. This
+        function detects the pre-wrap state and moves the existing contents
+        one level deeper, in place, without a sibling temp dir.
 
-    On Windows this is ``<LOCALAPPDATA>/<exeName>`` (e.g.
-    ``C:/Users/<u>/AppData/Local/python``) when no organisation/application
-    name has been set on ``QCoreApplication`` — the ``<exeName>`` segment
-    is Qt auto-naming from the executable, *not* a pre-existing dir.
+        Robust to a previously-interrupted wrap: the detector treats any
+        *data-bearing* non-known-pkg / non-dotfile child as evidence of
+        pre-wrap state, so a partial wrap (inner ``uitk/`` already created,
+        some siblings not yet moved) gets finished on the next call.
 
-    Used for *finding legacy* preset data written under previous layouts.
-    The current root uses :func:`QStandardPaths_genericConfigLocation`
-    instead, which is host-independent.
-    """
-    return QtCore.QStandardPaths.writableLocation(
-        QtCore.QStandardPaths.AppConfigLocation
-    )
+        Only uitk's own pre-wrap dirs move down. A known-package sibling
+        (``mayatk/``, ``extapps/``, and the inner ``uitk/`` itself) already
+        lives at the correct level, so it is left in place — relocating it
+        would bury presets saved under it where the live load path can't
+        find them (the "saved preset gone next session" bug).
 
+        Interim migration-state artifacts (``.migrated``, ``.migration/``)
+        that survive from older revisions of this module are dropped
+        rather than carried into the new layout.
 
-def QStandardPaths_genericConfigLocation() -> str:
-    """Return Qt's host-independent writable config directory.
+        No-op if *uitk_dir* doesn't exist or is already in the wrapper
+        layout.
+        """
+        if not uitk_dir.exists() or not uitk_dir.is_dir():
+            return
+        if PresetManager._looks_like_ecosystem_wrapper(uitk_dir):
+            return
 
-    On Windows this is ``<LOCALAPPDATA>`` directly (no executable-name
-    segment); on macOS ``~/Library/Preferences``; on Linux ``~/.config``.
-    Same path regardless of which host process (standalone Python, Maya,
-    Painter, ...) is running, so presets stay visible across hosts.
-    """
-    return QtCore.QStandardPaths.writableLocation(
-        QtCore.QStandardPaths.GenericConfigLocation
-    )
+        # Snapshot children BEFORE creating the target so the target itself
+        # (created below) doesn't appear in our iteration.
+        try:
+            children = list(uitk_dir.iterdir())
+        except OSError as e:
+            _log.warning("preset wrap: could not iterate %s: %s", uitk_dir, e)
+            return
+
+        target = uitk_dir / _ECOSYSTEM_WRAPPER_NAME
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            _log.warning("preset wrap: could not create %s: %s", target, e)
+            return
+
+        for child in children:
+            # Drop interim migration-state artifacts; they're dead state
+            # from older revisions and shouldn't be preserved.
+            if child.name in _INTERIM_STATE_ARTIFACTS:
+                try:
+                    if child.is_file():
+                        child.unlink()
+                    elif child.is_dir():
+                        shutil.rmtree(child)
+                except OSError as e:
+                    _log.warning("preset wrap: could not remove %s: %s", child, e)
+                continue
+            # Only uitk's OWN pre-wrap state moves down. Every other sibling —
+            # mayatk/, blendertk/, extapps/, shots/, the inner uitk/ itself, and any
+            # package added later — already lives at the right level; relocating it
+            # buries presets where the live load path will never find them (and
+            # _merge_move's keep-the-destination rule can strand half a store at each
+            # level). This was previously `child.name in known_pkgs`, a denylist that
+            # silently swallowed every package younger than _LEGACY_PRESET_PATHS.
+            if child.is_dir() and child.name not in _UITK_OWN_PRE_WRAP_DIRS:
+                continue
+            # The inner target itself shows up in the snapshot only if it
+            # pre-existed; skip it so we don't try to move it into itself.
+            if child.resolve() == target.resolve():
+                continue
+            dest = target / child.name
+            if dest.exists():
+                PresetManager._merge_move(child, dest)
+            else:
+                try:
+                    shutil.move(str(child), str(dest))
+                    _log.debug("preset wrap: moved %s -> %s", child, dest)
+                except (OSError, shutil.Error) as e:
+                    _log.warning(
+                        "preset wrap: could not move %s -> %s: %s", child, dest, e
+                    )
+
+    @staticmethod
+    def _maybe_clear_legacy_qt_roots() -> None:
+        """Hoist preset data from older root layouts to the current root.
+
+        Runs two passes:
+
+        1. **Pre-wrap detection.** If the new root (``<generic>/uitk/``)
+           already exists but holds *uitk-package* state directly (the
+           pre-wrap layout where ``<generic>/uitk/style_presets/`` lived
+           at the root level), restructure it in place into the wrapper
+           layout (``<generic>/uitk/uitk/style_presets/``). See
+           :func:`_wrap_pre_wrap_uitk_state`.
+
+        2. **Candidate drain.** Iterates :func:`_legacy_qt_root_candidates`
+           in nesting order and, for each candidate, hoists only the
+           *known package* subdirs (uitk / mayatk / extapps — derived from
+           ``_LEGACY_PRESET_PATHS`` keys) into the new root. Other contents
+           — pip's cache, other Python tools' configs, unrelated apps'
+           data — are left strictly alone.
+
+        Before each drain, interim migration-state artifacts
+        (``.migrated``, ``.migration/``) are deleted so they don't leak up.
+        Empty ``m3trik`` shells are removed afterward; bare
+        AppConfigLocation / GenericConfigLocation dirs are never removed
+        since they usually hold other apps' data.
+
+        Guarded by a process-global flag so subsequent ``preset_dir``
+        accesses are zero-cost.
+        """
+        global _LEGACY_QT_ROOTS_CLEARED
+        if _LEGACY_QT_ROOTS_CLEARED:
+            return
+        _LEGACY_QT_ROOTS_CLEARED = True
+
+        new_root = PresetManager.get_presets_root()
+        known_pkgs = {key.split("/")[0] for key in _LEGACY_PRESET_PATHS}
+
+        # Pass 1: handle the pre-wrap collision at the new root itself.
+        PresetManager._wrap_pre_wrap_uitk_state(new_root)
+
+        # Pass 2: drain candidates.
+        candidates = PresetManager._legacy_qt_root_candidates()
+        for old_root in candidates:
+            # Skip when old_root *is* the new root — pass 1 already handled it.
+            try:
+                if old_root.resolve() == new_root.resolve():
+                    continue
+            except OSError:
+                continue
+            if not old_root.exists() or not old_root.is_dir():
+                continue
+
+            # Drop interim migration-state artifacts so they don't litter
+            # the new root.
+            for artifact in _INTERIM_STATE_ARTIFACTS:
+                artifact_path = old_root / artifact
+                try:
+                    if artifact_path.is_file():
+                        artifact_path.unlink()
+                    elif artifact_path.is_dir():
+                        shutil.rmtree(artifact_path)
+                except OSError as e:
+                    _log.warning(
+                        "preset cleanup: could not remove %s: %s", artifact_path, e
+                    )
+
+            # Hoist only known package subdirs. If a candidate *contains*
+            # the new root (e.g. old_root == <generic>, new_root ==
+            # <generic>/uitk), the uitk subdir IS the new root — pass 1
+            # already handled it, so skip that single pkg here.
+            for pkg in known_pkgs:
+                src = old_root / pkg
+                if not src.exists() or not src.is_dir():
+                    continue
+                try:
+                    if src.resolve() == new_root.resolve():
+                        continue  # pass 1 territory
+                except OSError:
+                    continue
+                dst = new_root / pkg
+                _log.debug("preset cleanup: hoisting %s -> %s", src, dst)
+                PresetManager._merge_move(src, dst)
+
+        # Clean up the m3trik shell if it's now empty. Identified by the path
+        # shape ``.../m3trik/presets`` so the cleanup works whether candidates
+        # come from the real QStandardPaths or a test monkey-patch. The bare
+        # AppConfigLocation / GenericConfigLocation candidates are never
+        # removed — they hold unrelated apps' data.
+        for cand in candidates:
+            if cand.name == "presets" and cand.parent.name == "m3trik":
+                for p in (cand, cand.parent):
+                    try:
+                        p.rmdir()
+                    except OSError:
+                        pass
+
+    @staticmethod
+    def _maybe_migrate_legacy(new_dir: Path) -> None:
+        """Copy a legacy preset tree into the consolidated root once.
+
+        Finds the longest prefix of *new_dir*'s relative path that maps to a
+        known legacy location in :data:`_LEGACY_PRESET_PATHS`. When such a
+        package boundary is found and the migration sentinel does not yet
+        exist, copies the *entire* legacy tree (every subdir, every preset)
+        so sibling subdirs not yet requested are present too — this matters
+        for bridges that switch active template at runtime.
+
+        Existing files at the destination are never overwritten; if the user
+        already has presets in the new location, the legacy contents merge
+        in beside them. Marks the package migrated either way so subsequent
+        accesses are no-ops. Best-effort: I/O failures swallow rather than
+        propagate to keep preset loading robust at runtime.
+        """
+        PresetManager._maybe_clear_legacy_qt_roots()
+        presets_root = PresetManager.get_presets_root()
+        try:
+            rel = new_dir.relative_to(presets_root)
+        except ValueError:
+            return  # absolute path outside the consolidated root
+
+        matched_key: Optional[str] = None
+        for length in range(len(rel.parts), 0, -1):
+            candidate = "/".join(rel.parts[:length])
+            if candidate in _LEGACY_PRESET_PATHS:
+                matched_key = candidate
+                break
+        if matched_key is None or PresetManager._has_migrated(matched_key):
+            return
+
+        # Migrate the whole package, not the requested leaf — sibling subdirs
+        # (e.g. other bridge templates) would otherwise be silently orphaned
+        # once the package is marked migrated.
+        legacy_pkg_root = PresetManager._resolve_legacy_template(
+            _LEGACY_PRESET_PATHS[matched_key]
+        )
+        new_pkg_root = presets_root.joinpath(*matched_key.split("/"))
+
+        if legacy_pkg_root.exists() and legacy_pkg_root.is_dir():
+            try:
+                new_pkg_root.mkdir(parents=True, exist_ok=True)
+                for item in legacy_pkg_root.iterdir():
+                    PresetManager._merge_move(item, new_pkg_root / item.name)
+                # Drop the legacy package root if empty after the merge.
+                # Non-empty means collisions left files in place (forensic
+                # preservation — see _merge_move docs); leaving the dir
+                # gives the user something to inspect.
+                try:
+                    legacy_pkg_root.rmdir()
+                except OSError:
+                    pass
+            except OSError as e:
+                # see docstring: best-effort. Logged so users can opt into
+                # diagnostics; default is silent.
+                _log.warning(
+                    "preset migration: %s from %s failed: %s",
+                    matched_key,
+                    legacy_pkg_root,
+                    e,
+                )
+
+        PresetManager._mark_migrated(matched_key)
+
+    @staticmethod
+    def _maybe_migrate_renamed_domain(new_dir: Path) -> None:
+        """Move presets from a renamed sibling domain into *new_dir*, once.
+
+        Looks up *new_dir*'s leaf name in :data:`_RENAMED_PRESET_DOMAINS`; when it
+        was renamed from a prior leaf, a same-parent dir under that prior name is
+        merged in via :func:`_merge_move` (which never overwrites an existing
+        destination file, so a post-rename edit always wins). Interim migration
+        artifacts are dropped rather than carried. Best-effort: I/O failures are
+        swallowed so preset loading stays robust.
+        """
+        old_name = _RENAMED_PRESET_DOMAINS.get(new_dir.name)
+        if not old_name:
+            return
+        old_dir = new_dir.with_name(old_name)
+        if old_dir == new_dir or not old_dir.is_dir():
+            return
+        try:
+            new_dir.mkdir(parents=True, exist_ok=True)
+            for item in list(old_dir.iterdir()):
+                if item.name in _INTERIM_STATE_ARTIFACTS:
+                    try:
+                        item.unlink()
+                    except OSError:
+                        pass
+                    continue
+                PresetManager._merge_move(item, new_dir / item.name)
+            try:
+                old_dir.rmdir()  # removed only if fully carried (no collisions left)
+            except OSError:
+                pass
+        except OSError as e:
+            _log.warning(
+                "preset domain rename %s -> %s failed: %s", old_name, new_dir.name, e
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1552,6 +2047,7 @@ def QStandardPaths_genericConfigLocation() -> str:
 
 PRESETS_ROOT_ENV_VAR = "UITK_PRESETS_ROOT"
 _ECOSYSTEM_WRAPPER_NAME = "uitk"
+
 
 # =============================================================================
 # DEPRECATED MIGRATION LOGIC — scheduled for removal
@@ -1600,6 +2096,7 @@ _ECOSYSTEM_WRAPPER_NAME = "uitk"
 
 _MIGRATION_SENTINEL_NAME = ".migrated"
 
+
 # Map: new relative path under the consolidated root → legacy absolute path
 # template. ``{APPCONFIG}`` is substituted with QStandardPaths.AppConfigLocation
 # at resolution time so the table itself stays declarative.
@@ -1623,95 +2120,6 @@ _LEGACY_PRESET_PATHS: Dict[str, str] = {
 }
 
 
-def get_presets_root() -> Path:
-    """Root directory under which every relative ``preset_dir`` is resolved.
-
-    Defaults to ``<GenericConfigLocation>/uitk/`` — the host-independent
-    user config dir plus a ``uitk`` wrapper folder that keeps the
-    ecosystem's state grouped under one entry in AppData/Local rather
-    than scattered as siblings of Microsoft, Google, pip, etc. The
-    wrapper is named after the foundation library that owns the preset
-    system.
-
-    Set ``UITK_PRESETS_ROOT`` to redirect every relative preset path
-    wholesale (network share, alternate drive, Documents subfolder…).
-    The override is used as-given — no implicit ``uitk/`` wrapper is
-    appended — so a power-user override has full control. It accepts
-    ``~`` and ``%ENVVAR%`` syntax; relative overrides resolve against
-    the process working directory at access time so the return is
-    always absolute.
-    """
-    override = os.environ.get(PRESETS_ROOT_ENV_VAR)
-    if override:
-        p = Path(os.path.expandvars(override)).expanduser()
-    else:
-        p = Path(QStandardPaths_genericConfigLocation()) / _ECOSYSTEM_WRAPPER_NAME
-    return p if p.is_absolute() else p.absolute()
-
-
-def _resolve_legacy_template(template: str) -> Path:
-    """Expand ``{APPCONFIG}``, environment variables, and ``~`` in *template*."""
-    if "{APPCONFIG}" in template:
-        template = template.replace("{APPCONFIG}", QStandardPaths_writableLocation())
-    return Path(os.path.expandvars(template)).expanduser()
-
-
-def _migration_sentinel_path(key: str) -> Path:
-    """Path to the per-package sentinel marking a completed migration.
-
-    The sentinel lives *inside* the migrated package dir itself (as a
-    dotfile that ``glob('*.json')`` ignores) so it travels with its
-    data — if the user wipes the package dir, the sentinel goes too
-    and the next access re-migrates from legacy, which is normally
-    what they want.
-    """
-    return get_presets_root().joinpath(*key.split("/")) / _MIGRATION_SENTINEL_NAME
-
-
-def _has_migrated(key: str) -> bool:
-    return _migration_sentinel_path(key).exists()
-
-
-def _mark_migrated(key: str) -> None:
-    p = _migration_sentinel_path(key)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.touch(exist_ok=True)
-    except OSError as e:
-        _log.warning("preset migration: could not mark %s migrated: %s", key, e)
-
-
-def _merge_move(src: Path, dst: Path) -> None:
-    """Move *src* tree into *dst*, never overwriting existing destination files.
-
-    Unlike ``shutil.move`` (which fails or overwrites on collisions), this
-    walks the source tree and moves each file into place only if the
-    corresponding destination doesn't exist. Empty source dirs are removed
-    as the walk unwinds so a fully-merged subtree leaves nothing behind.
-    Collisions silently keep the destination version — the assumption is
-    that whatever the live code wrote is the user's intent.
-    """
-    if not dst.exists():
-        try:
-            shutil.move(str(src), str(dst))
-        except (OSError, shutil.Error) as e:
-            _log.warning("preset merge: could not move %s -> %s: %s", src, dst, e)
-        return
-    if src.is_file():
-        # Collision at a leaf file. Keep the destination (whatever the
-        # live code wrote is the user's intent) and leave the source in
-        # place as evidence — a user investigating "missing preset"
-        # symptoms can find it via the debug log and the on-disk copy.
-        _log.debug("preset merge: collision at %s, kept destination", dst)
-        return
-    for item in list(src.iterdir()):
-        _merge_move(item, dst / item.name)
-    try:
-        src.rmdir()
-    except OSError:
-        pass
-
-
 _LEGACY_QT_ROOTS_CLEARED = False
 _INTERIM_STATE_ARTIFACTS = (".migrated", ".migration")
 
@@ -1727,352 +2135,6 @@ _UITK_OWN_PRE_WRAP_DIRS = frozenset(
 )
 
 
-def _legacy_qt_root_candidates() -> List[Path]:
-    """Old preset root locations to drain into the current root.
-
-    Three prior layouts existed:
-
-    A. ``<AppConfigLocation>/m3trik/presets/<pkg>/...`` — an interim
-       revision wrapped every relative preset in an unsolicited
-       ``m3trik/presets`` segment.
-    B. ``<AppConfigLocation>/<pkg>/...`` — used Qt's
-       ``AppConfigLocation`` directly. That path embeds the host
-       application name (``python/`` standalone, ``maya/`` from Maya,
-       etc.), making presets invisible across hosts.
-    C. ``<GenericConfigLocation>/<pkg>/...`` — used the host-independent
-       config dir but as a bare root, so the ecosystem's packages were
-       siblings of unrelated apps (pip, npm, Microsoft, ...). The
-       current layout wraps everything in a single ``uitk/`` folder.
-
-    Order matters: deepest layouts first so their contents don't get
-    re-processed by outer passes. Pulled out as a function so tests can
-    monkey-patch it to point at tmp dirs (essential — without the patch
-    the cleanup would touch the real developer machine's data).
-
-    Returns ``[]`` when the root came from ``$UITK_PRESETS_ROOT``. These are
-    absolute *real* machine paths, and the drain
-    (:func:`_maybe_clear_legacy_qt_roots`) hoists them with :func:`_merge_move`
-    — a **move**, not a copy. ``<generic>/uitk`` IS the live store and ``uitk``
-    IS one of the ``known_pkgs``, so against an overridden root the drain
-    relocates the user's entire store into that root. For a power user pointing
-    the override at a network share that is merely surprising; for a *test* —
-    which redirects the root to a tmp dir and ``rmtree``s it in teardown — it is
-    fatal, and it has already destroyed a real preset store once (mayatk's
-    ``test_macro_editor_window`` sets the env var without patching this
-    function, unlike ``TestLegacyMigration``). An explicit override means "use
-    exactly this location", never "hoover the machine into it", so there is
-    nothing legitimate to drain. The guard lives *here*, inside the seam tests
-    already replace, so a test that patches this function keeps its behaviour
-    while every test that merely sets the env var is protected by default.
-    """
-    if os.environ.get(PRESETS_ROOT_ENV_VAR):
-        return []
-    appconfig = Path(QStandardPaths_writableLocation())
-    generic = Path(QStandardPaths_genericConfigLocation())
-    return [appconfig / "m3trik" / "presets", appconfig, generic]
-
-
-def _dir_has_preset_data(directory: Path) -> bool:
-    """True when *directory* holds at least one preset file (``*.json``).
-
-    Distinguishes a *husk* — an empty shell a prior wrap left behind,
-    holding only a ``.migrated`` sentinel (the merge keeps the destination
-    on a sentinel collision, so the source dir survives) — from genuine
-    pre-wrap state that still carries presets to relocate. A husk must not
-    count as pre-wrap evidence, or it re-triggers the wrap on every launch
-    and keeps reburying correctly-placed packages (the "saved preset gone
-    next session" bug).
-    """
-    try:
-        return any(directory.rglob("*.json"))
-    except OSError:
-        return False
-
-
-def _looks_like_ecosystem_wrapper(uitk_dir: Path) -> bool:
-    """True when *uitk_dir* is already in the wrapper layout.
-
-    Pre-wrap evidence is **only** one of uitk's OWN state dirs
-    (:data:`_UITK_OWN_PRE_WRAP_DIRS`) sitting at the root, carrying data.
-    Anything else — ``mayatk/``, ``blendertk/``, ``shots/``, a package added
-    next year — is a correctly-placed sibling, never pre-wrap state.
-
-    This is an **allowlist of uitk's own dirs**, not a denylist of
-    ``known_pkgs``. It used to be the latter, and *that was a data-corrupting
-    bug*: ``known_pkgs`` is derived from :data:`_LEGACY_PRESET_PATHS`, a table
-    frozen around the packages that existed when the legacy layouts died
-    (``uitk`` / ``mayatk`` / ``extapps``). Every package added afterwards —
-    ``blendertk``, ``shots`` — was therefore "non-known", so its live state read
-    as pre-wrap and got buried in ``<generic>/uitk/uitk/<pkg>/`` on the next
-    launch. Worse, the move is a :func:`_merge_move`, which keeps the
-    destination on a collision and leaves the source behind, so a store could be
-    *split across both levels* — the observed failure was blendertk's
-    ``macro_manager`` with ``.active`` relocated but ``m3trik.json`` stranded at
-    the source, leaving ``PresetStore.active`` reading ``None`` and every macro
-    hotkey silently unbound.
-
-    Empty dirs — and data-less *husks* (only a ``.migrated`` sentinel,
-    no ``*.json``) — count as "already wrapped": there is nothing to
-    move, and treating them as pre-wrap would re-fire the wrap forever,
-    burying any package freshly re-created at the root in between.
-    """
-    if not uitk_dir.is_dir():
-        return False
-    try:
-        child_dirs = [p for p in uitk_dir.iterdir() if p.is_dir()]
-    except OSError:
-        return False
-    if not child_dirs:
-        return True
-    for child in child_dirs:
-        if child.name not in _UITK_OWN_PRE_WRAP_DIRS:
-            continue  # another package's state — correctly placed, never move it
-        if not _dir_has_preset_data(child):
-            continue  # husk left by a prior wrap — not real pre-wrap state
-        return False
-    return True
-
-
-def _wrap_pre_wrap_uitk_state(uitk_dir: Path) -> None:
-    """Restructure ``<generic>/uitk/`` from pre-wrap to wrapper layout.
-
-    Before this code: ``<generic>/uitk/`` held uitk-package state
-    directly (``style_presets/``, ``hotkey_presets/``, ...). The
-    current layout uses ``<generic>/uitk/`` as the *ecosystem wrapper*
-    with uitk's own state nested at ``<generic>/uitk/uitk/``. This
-    function detects the pre-wrap state and moves the existing contents
-    one level deeper, in place, without a sibling temp dir.
-
-    Robust to a previously-interrupted wrap: the detector treats any
-    *data-bearing* non-known-pkg / non-dotfile child as evidence of
-    pre-wrap state, so a partial wrap (inner ``uitk/`` already created,
-    some siblings not yet moved) gets finished on the next call.
-
-    Only uitk's own pre-wrap dirs move down. A known-package sibling
-    (``mayatk/``, ``extapps/``, and the inner ``uitk/`` itself) already
-    lives at the correct level, so it is left in place — relocating it
-    would bury presets saved under it where the live load path can't
-    find them (the "saved preset gone next session" bug).
-
-    Interim migration-state artifacts (``.migrated``, ``.migration/``)
-    that survive from older revisions of this module are dropped
-    rather than carried into the new layout.
-
-    No-op if *uitk_dir* doesn't exist or is already in the wrapper
-    layout.
-    """
-    if not uitk_dir.exists() or not uitk_dir.is_dir():
-        return
-    if _looks_like_ecosystem_wrapper(uitk_dir):
-        return
-
-    # Snapshot children BEFORE creating the target so the target itself
-    # (created below) doesn't appear in our iteration.
-    try:
-        children = list(uitk_dir.iterdir())
-    except OSError as e:
-        _log.warning("preset wrap: could not iterate %s: %s", uitk_dir, e)
-        return
-
-    target = uitk_dir / _ECOSYSTEM_WRAPPER_NAME
-    try:
-        target.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        _log.warning("preset wrap: could not create %s: %s", target, e)
-        return
-
-    for child in children:
-        # Drop interim migration-state artifacts; they're dead state
-        # from older revisions and shouldn't be preserved.
-        if child.name in _INTERIM_STATE_ARTIFACTS:
-            try:
-                if child.is_file():
-                    child.unlink()
-                elif child.is_dir():
-                    shutil.rmtree(child)
-            except OSError as e:
-                _log.warning("preset wrap: could not remove %s: %s", child, e)
-            continue
-        # Only uitk's OWN pre-wrap state moves down. Every other sibling —
-        # mayatk/, blendertk/, extapps/, shots/, the inner uitk/ itself, and any
-        # package added later — already lives at the right level; relocating it
-        # buries presets where the live load path will never find them (and
-        # _merge_move's keep-the-destination rule can strand half a store at each
-        # level). This was previously `child.name in known_pkgs`, a denylist that
-        # silently swallowed every package younger than _LEGACY_PRESET_PATHS.
-        if child.is_dir() and child.name not in _UITK_OWN_PRE_WRAP_DIRS:
-            continue
-        # The inner target itself shows up in the snapshot only if it
-        # pre-existed; skip it so we don't try to move it into itself.
-        if child.resolve() == target.resolve():
-            continue
-        dest = target / child.name
-        if dest.exists():
-            _merge_move(child, dest)
-        else:
-            try:
-                shutil.move(str(child), str(dest))
-                _log.debug("preset wrap: moved %s -> %s", child, dest)
-            except (OSError, shutil.Error) as e:
-                _log.warning("preset wrap: could not move %s -> %s: %s",
-                             child, dest, e)
-
-
-def _maybe_clear_legacy_qt_roots() -> None:
-    """Hoist preset data from older root layouts to the current root.
-
-    Runs two passes:
-
-    1. **Pre-wrap detection.** If the new root (``<generic>/uitk/``)
-       already exists but holds *uitk-package* state directly (the
-       pre-wrap layout where ``<generic>/uitk/style_presets/`` lived
-       at the root level), restructure it in place into the wrapper
-       layout (``<generic>/uitk/uitk/style_presets/``). See
-       :func:`_wrap_pre_wrap_uitk_state`.
-
-    2. **Candidate drain.** Iterates :func:`_legacy_qt_root_candidates`
-       in nesting order and, for each candidate, hoists only the
-       *known package* subdirs (uitk / mayatk / extapps — derived from
-       ``_LEGACY_PRESET_PATHS`` keys) into the new root. Other contents
-       — pip's cache, other Python tools' configs, unrelated apps'
-       data — are left strictly alone.
-
-    Before each drain, interim migration-state artifacts
-    (``.migrated``, ``.migration/``) are deleted so they don't leak up.
-    Empty ``m3trik`` shells are removed afterward; bare
-    AppConfigLocation / GenericConfigLocation dirs are never removed
-    since they usually hold other apps' data.
-
-    Guarded by a process-global flag so subsequent ``preset_dir``
-    accesses are zero-cost.
-    """
-    global _LEGACY_QT_ROOTS_CLEARED
-    if _LEGACY_QT_ROOTS_CLEARED:
-        return
-    _LEGACY_QT_ROOTS_CLEARED = True
-
-    new_root = get_presets_root()
-    known_pkgs = {key.split("/")[0] for key in _LEGACY_PRESET_PATHS}
-
-    # Pass 1: handle the pre-wrap collision at the new root itself.
-    _wrap_pre_wrap_uitk_state(new_root)
-
-    # Pass 2: drain candidates.
-    candidates = _legacy_qt_root_candidates()
-    for old_root in candidates:
-        # Skip when old_root *is* the new root — pass 1 already handled it.
-        try:
-            if old_root.resolve() == new_root.resolve():
-                continue
-        except OSError:
-            continue
-        if not old_root.exists() or not old_root.is_dir():
-            continue
-
-        # Drop interim migration-state artifacts so they don't litter
-        # the new root.
-        for artifact in _INTERIM_STATE_ARTIFACTS:
-            artifact_path = old_root / artifact
-            try:
-                if artifact_path.is_file():
-                    artifact_path.unlink()
-                elif artifact_path.is_dir():
-                    shutil.rmtree(artifact_path)
-            except OSError as e:
-                _log.warning("preset cleanup: could not remove %s: %s",
-                             artifact_path, e)
-
-        # Hoist only known package subdirs. If a candidate *contains*
-        # the new root (e.g. old_root == <generic>, new_root ==
-        # <generic>/uitk), the uitk subdir IS the new root — pass 1
-        # already handled it, so skip that single pkg here.
-        for pkg in known_pkgs:
-            src = old_root / pkg
-            if not src.exists() or not src.is_dir():
-                continue
-            try:
-                if src.resolve() == new_root.resolve():
-                    continue  # pass 1 territory
-            except OSError:
-                continue
-            dst = new_root / pkg
-            _log.debug("preset cleanup: hoisting %s -> %s", src, dst)
-            _merge_move(src, dst)
-
-    # Clean up the m3trik shell if it's now empty. Identified by the path
-    # shape ``.../m3trik/presets`` so the cleanup works whether candidates
-    # come from the real QStandardPaths or a test monkey-patch. The bare
-    # AppConfigLocation / GenericConfigLocation candidates are never
-    # removed — they hold unrelated apps' data.
-    for cand in candidates:
-        if cand.name == "presets" and cand.parent.name == "m3trik":
-            for p in (cand, cand.parent):
-                try:
-                    p.rmdir()
-                except OSError:
-                    pass
-
-
-def _maybe_migrate_legacy(new_dir: Path) -> None:
-    """Copy a legacy preset tree into the consolidated root once.
-
-    Finds the longest prefix of *new_dir*'s relative path that maps to a
-    known legacy location in :data:`_LEGACY_PRESET_PATHS`. When such a
-    package boundary is found and the migration sentinel does not yet
-    exist, copies the *entire* legacy tree (every subdir, every preset)
-    so sibling subdirs not yet requested are present too — this matters
-    for bridges that switch active template at runtime.
-
-    Existing files at the destination are never overwritten; if the user
-    already has presets in the new location, the legacy contents merge
-    in beside them. Marks the package migrated either way so subsequent
-    accesses are no-ops. Best-effort: I/O failures swallow rather than
-    propagate to keep preset loading robust at runtime.
-    """
-    _maybe_clear_legacy_qt_roots()
-    presets_root = get_presets_root()
-    try:
-        rel = new_dir.relative_to(presets_root)
-    except ValueError:
-        return  # absolute path outside the consolidated root
-
-    matched_key: Optional[str] = None
-    for length in range(len(rel.parts), 0, -1):
-        candidate = "/".join(rel.parts[:length])
-        if candidate in _LEGACY_PRESET_PATHS:
-            matched_key = candidate
-            break
-    if matched_key is None or _has_migrated(matched_key):
-        return
-
-    # Migrate the whole package, not the requested leaf — sibling subdirs
-    # (e.g. other bridge templates) would otherwise be silently orphaned
-    # once the package is marked migrated.
-    legacy_pkg_root = _resolve_legacy_template(_LEGACY_PRESET_PATHS[matched_key])
-    new_pkg_root = presets_root.joinpath(*matched_key.split("/"))
-
-    if legacy_pkg_root.exists() and legacy_pkg_root.is_dir():
-        try:
-            new_pkg_root.mkdir(parents=True, exist_ok=True)
-            for item in legacy_pkg_root.iterdir():
-                _merge_move(item, new_pkg_root / item.name)
-            # Drop the legacy package root if empty after the merge.
-            # Non-empty means collisions left files in place (forensic
-            # preservation — see _merge_move docs); leaving the dir
-            # gives the user something to inspect.
-            try:
-                legacy_pkg_root.rmdir()
-            except OSError:
-                pass
-        except OSError as e:
-            # see docstring: best-effort. Logged so users can opt into
-            # diagnostics; default is silent.
-            _log.warning("preset migration: %s from %s failed: %s",
-                         matched_key, legacy_pkg_root, e)
-
-    _mark_migrated(matched_key)
-
-
 # Intra-root preset-domain renames: { new_leaf_dir: prior_leaf_dir } under the
 # same parent. When the new domain dir is first ensured, presets saved under the
 # prior name (same parent) are carried across so *renaming* a preset domain keeps
@@ -2085,40 +2147,19 @@ _RENAMED_PRESET_DOMAINS: Dict[str, str] = {
 }
 
 
-def _maybe_migrate_renamed_domain(new_dir: Path) -> None:
-    """Move presets from a renamed sibling domain into *new_dir*, once.
-
-    Looks up *new_dir*'s leaf name in :data:`_RENAMED_PRESET_DOMAINS`; when it
-    was renamed from a prior leaf, a same-parent dir under that prior name is
-    merged in via :func:`_merge_move` (which never overwrites an existing
-    destination file, so a post-rename edit always wins). Interim migration
-    artifacts are dropped rather than carried. Best-effort: I/O failures are
-    swallowed so preset loading stays robust.
-    """
-    old_name = _RENAMED_PRESET_DOMAINS.get(new_dir.name)
-    if not old_name:
-        return
-    old_dir = new_dir.with_name(old_name)
-    if old_dir == new_dir or not old_dir.is_dir():
-        return
-    try:
-        new_dir.mkdir(parents=True, exist_ok=True)
-        for item in list(old_dir.iterdir()):
-            if item.name in _INTERIM_STATE_ARTIFACTS:
-                try:
-                    item.unlink()
-                except OSError:
-                    pass
-                continue
-            _merge_move(item, new_dir / item.name)
-        try:
-            old_dir.rmdir()  # removed only if fully carried (no collisions left)
-        except OSError:
-            pass
-    except OSError as e:
-        _log.warning(
-            "preset domain rename %s -> %s failed: %s", old_name, new_dir.name, e
-        )
+# ---------------------------------------------------------------------------
+# Back-compat module-level aliases
+# ---------------------------------------------------------------------------
+# These were module-level functions before being encapsulated on
+# PresetManager as @staticmethods. Re-exported at module scope for external
+# callers/tests that import or reference them by module attribute
+# (e.g. test/test_preset_manager.py). NOTE: reassigning one of these module
+# attributes (monkeypatch) will NOT affect PresetManager's internal calls,
+# which resolve via the class.
+QStandardPaths_writableLocation = PresetManager.QStandardPaths_writableLocation
+QStandardPaths_genericConfigLocation = (
+    PresetManager.QStandardPaths_genericConfigLocation
+)
 
 
 # -----------------------------------------------------------------------------

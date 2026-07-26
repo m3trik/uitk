@@ -13,12 +13,12 @@ import pythontk as ptk
 from uitk.switchboard import Switchboard
 from uitk.events import EventFactoryFilter, MouseTracking
 from .overlay import Overlay
-from ._resolver import parse_binding_keys, resolve_target_menu, count_buttons
+from ._resolver import MenuResolver
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.menuButton import MenuButton
-from uitk.managers.shortcut_manager import GlobalShortcut, host_namespace_suffix
-from uitk.themes.style_sheet import repolish_tree
-from uitk.compile import precompile_async
+from uitk.managers.shortcut_manager import GlobalShortcut, ShortcutManager
+from uitk.themes.style_sheet import StyleSheet
+from uitk.compile import UiCompiler
 from uitk.loaders import CompiledLoader
 
 
@@ -239,7 +239,7 @@ class MarkingMenu(
                 entry.filepath for entry in self.sb.registry.ui_registry.named_tuples
             ]
             if ui_paths:
-                precompile_async(*ui_paths)
+                UiCompiler.precompile_async(*ui_paths)
 
         # Initialize bindings: explicit arg > stored > empty. The store is
         # namespaced per host context (see _bindings_store) so Maya/Blender don't
@@ -424,7 +424,7 @@ class MarkingMenu(
         if modifiers is None:
             modifiers = self._to_int(QtWidgets.QApplication.keyboardModifiers())
 
-        target = resolve_target_menu(
+        target = MenuResolver.resolve_target_menu(
             activation_held=self._activation_key_held,
             activation_key_str=self._activation_key_str,
             buttons=buttons,
@@ -620,11 +620,14 @@ class MarkingMenu(
         (``..._maya`` / ``..._blender``) keeps each DCC's binding set independent;
         an empty/absent context (standalone) keeps the legacy un-suffixed key.
 
-        The host suffix is computed by the shared :func:`host_namespace_suffix`,
-        the same one the shortcut/command store uses — so the two binding systems
-        can never disagree on a host's identity.
+        The host suffix is computed by the shared
+        :meth:`ShortcutManager.host_namespace_suffix`, the same one the
+        shortcut/command store uses — so the two binding systems can never
+        disagree on a host's identity.
         """
-        return "marking_menu_bindings" + host_namespace_suffix(context_tags)
+        return "marking_menu_bindings" + ShortcutManager.host_namespace_suffix(
+            context_tags
+        )
 
     @property
     def _bindings_store(self):
@@ -664,6 +667,74 @@ class MarkingMenu(
         internal detail rather than something every editor reimplements.
         """
         self._bindings_store.changed.connect(callback)
+
+    # ── Hosted-window themes ────────────────────────────────────────────
+    # The two window styles this menu hosts were historically hard-pinned to
+    # "dark": the radial startmenu/submenu pages (menu_theme) and the standalone
+    # tool windows (window_theme). Now user-selectable and persisted per host
+    # (Maya/Blender share the QSettings backend — see _binding_store_key for the
+    # namespacing rationale). tentacle's preferences exposes both.
+    DEFAULT_MENU_THEME = "dark"
+    DEFAULT_WINDOW_THEME = "dark"
+
+    def _theme_store(self, kind: str):
+        """The persisted ``SettingItem`` for a hosted style ("menu"/"window")."""
+        suffix = ShortcutManager.host_namespace_suffix(
+            getattr(self.sb, "context_tags", None)
+        )
+        return getattr(self.sb.configurable, f"marking_menu_{kind}_theme{suffix}")
+
+    @property
+    def menu_theme(self) -> str:
+        """Theme applied to the radial startmenu / submenu pages."""
+        return self._theme_store("menu").get(self.DEFAULT_MENU_THEME)
+
+    @menu_theme.setter
+    def menu_theme(self, theme: str):
+        self._set_hosted_theme("menu", theme)
+
+    @property
+    def window_theme(self) -> str:
+        """Theme applied to standalone tool windows."""
+        return self._theme_store("window").get(self.DEFAULT_WINDOW_THEME)
+
+    @window_theme.setter
+    def window_theme(self, theme: str):
+        self._set_hosted_theme("window", theme)
+
+    def resolve_hosted_theme(self, ui) -> str:
+        """Theme for *ui* by hosted style — menu page vs standalone window.
+
+        The single source ``UiHandler.apply_styles`` reads, so both styling
+        entry points (this menu's ``_host_stacked`` and the handler) agree on
+        which of the two configured themes a UI wears.
+        """
+        try:
+            is_menu = ui.has_tags(_MARKING_MENU_TAGS)
+        except AttributeError:
+            is_menu = False
+        return self.menu_theme if is_menu else self.window_theme
+
+    def _set_hosted_theme(self, kind: str, theme: str):
+        """Persist *theme* for a hosted style and re-theme its live windows.
+
+        Future loads read the stored value at style time; already-loaded UIs of
+        the matching style are re-themed per-widget, so the other style and
+        every unrelated window stay untouched.
+        """
+        if theme not in StyleSheet.themes:
+            raise ValueError(
+                f"Unknown theme {theme!r}. Available: {list(StyleSheet.themes)}"
+            )
+        self._theme_store(kind).set(theme)
+        want_menu = kind == "menu"
+        for ui in list(getattr(self.sb, "loaded_ui", {}).values()):
+            try:
+                if ui.has_tags(_MARKING_MENU_TAGS) != want_menu:
+                    continue
+                StyleSheet.set_theme(theme, widget=ui)
+            except (AttributeError, RuntimeError):
+                continue
 
     @property
     def ui_handler(self):
@@ -746,7 +817,7 @@ class MarkingMenu(
             self._activation_key_str = None
             return
 
-        normalized, activation_key_str = parse_binding_keys(self.bindings)
+        normalized, activation_key_str = MenuResolver.parse_binding_keys(self.bindings)
         self._bindings = normalized
         self._activation_key_str = activation_key_str
 
@@ -1074,9 +1145,7 @@ class MarkingMenu(
         # Update mouse tracking cache for the new widget
         self.mouse_tracking.update_child_widgets()
 
-    def _position_current_widget(
-        self, anchor: Optional[QtCore.QPoint] = None
-    ) -> None:
+    def _position_current_widget(self, anchor: Optional[QtCore.QPoint] = None) -> None:
         """Center the current page on ``anchor`` (global; defaults to the
         cursor). Split from ``setCurrentWidget`` so a cold page can be
         re-centered against its settled geometry after the present delivers
@@ -1102,9 +1171,10 @@ class MarkingMenu(
         # display.
         global_top_left = anchor - widget.rect().center()
         if getattr(widget, "ensure_on_screen", True):
-            screen = QtWidgets.QApplication.screenAt(
-                anchor
-            ) or QtWidgets.QApplication.primaryScreen()
+            screen = (
+                QtWidgets.QApplication.screenAt(anchor)
+                or QtWidgets.QApplication.primaryScreen()
+            )
             if screen is not None:
                 ag = screen.availableGeometry()
                 # max(ag.left(), ...) guards the degenerate case of a widget
@@ -1142,7 +1212,7 @@ class MarkingMenu(
         concerns (child event filters, ``on_child_registered`` wiring) stay
         in ``_init_ui``: re-running them here would stack connections.
         """
-        ui.style.set(theme="dark", style_class="translucentBgNoBorder")
+        ui.style.set(theme=self.menu_theme, style_class="translucentBgNoBorder")
         ui.ensure_on_screen = False
         # Stacked menus are transient — they hide on every transition
         # and reshow on the next gesture. Persisting their geometry via
@@ -1291,9 +1361,7 @@ class MarkingMenu(
             return
         if ui is None or getattr(ui, "is_initialized", False):
             return
-        if not (
-            getattr(ui, "has_tags", None) and ui.has_tags(_MARKING_MENU_TAGS)
-        ):
+        if not (getattr(ui, "has_tags", None) and ui.has_tags(_MARKING_MENU_TAGS)):
             # Standalone windows (and anything without a tag surface) stay
             # lazy: their show is user-driven and positioned by the
             # ui_handler at launch time.
@@ -1589,9 +1657,7 @@ class MarkingMenu(
         """
         target = w.target if isinstance(w, MenuButton) else ""
         if target:
-            candidates = [
-                b for b in ui.findChildren(MenuButton) if b.target == target
-            ]
+            candidates = [b for b in ui.findChildren(MenuButton) if b.target == target]
             if len(candidates) > 1:
                 wanted = w.submenu_name()
                 candidates = [
@@ -1907,7 +1973,7 @@ class MarkingMenu(
         # concurrent button → count > 1, and bare M/R presses) resolving as a chord.
         if event.button() != QtCore.Qt.LeftButton:
             return False
-        if count_buttons(self._to_int(event.buttons())) != 1:
+        if MenuResolver.count_buttons(self._to_int(event.buttons())) != 1:
             return False
         current_ui = self.sb.active_ui
         if not (current_ui and current_ui.has_tags(_MARKING_MENU_TAGS)):
@@ -1986,7 +2052,7 @@ class MarkingMenu(
 
         key_name = self._get_key_name(event.key())
         if key_name:
-            target = resolve_target_menu(
+            target = MenuResolver.resolve_target_menu(
                 activation_held=self._activation_key_held,
                 activation_key_str=self._activation_key_str,
                 buttons=self._to_int(QtWidgets.QApplication.mouseButtons()),
@@ -2971,7 +3037,7 @@ class MarkingMenu(
                 # polish (stale until an unpolish/polish cycle), so the fit
                 # below measures final metrics.
                 w.ui.style.set(widget=w)
-                repolish_tree(w)
+                StyleSheet.repolish_tree(w)
                 self.sb.center_widget(w, padding_x=35)
 
             if w.type == self.sb.registered_widgets.Region:

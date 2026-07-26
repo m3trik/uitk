@@ -810,6 +810,61 @@ class TestHeaderWindowActions(QtBaseTestCase):
         self.assertEqual(window.width(), 200)
         self.assertTrue(header._collapsed)
 
+    def test_expand_after_move_keeps_current_location(self):
+        """Expanding a collapsed strip the user moved must not teleport back.
+
+        Bug: expand_window restored the position saved at collapse time, so
+        moving the collapsed strip and then expanding snapped the window back
+        to wherever it had been collapsed. Expand now re-anchors the right
+        edge at the strip's CURRENT position (equivalent to the old restore
+        when the strip was never moved).
+        Fixed: 2026-07-25
+        """
+        window, header, _ = self._make_header_window()
+        # Capture the ACTUAL pre-collapse size — harness styling can nudge the
+        # fixture's 400x300 request by a few px, so a hardcoded expectation is
+        # platform-fragile (the sibling toggle-restore tests compare read-back
+        # sizes for the same reason).
+        orig_size = window.size()
+        header.collapse_window(fixed_width=200)
+        app.processEvents()
+        window.move(400, 150)
+        app.processEvents()
+        header.expand_window()
+        app.processEvents()
+        # Size restored; right edge stays at the moved strip's right edge
+        # (400 + 200 = 600).
+        self.assertEqual(window.size(), orig_size)
+        self.assertEqual(window.pos(), QtCore.QPoint(600 - window.width(), 150))
+
+    def test_expand_without_move_restores_original_position(self):
+        """Right-edge re-anchoring must reduce to the original position when
+        the collapsed strip was never moved."""
+        window, header, _ = self._make_header_window()
+        orig_pos = window.pos()
+        header.collapse_window(fixed_width=200)
+        app.processEvents()
+        header.expand_window()
+        app.processEvents()
+        self.assertEqual(window.pos(), orig_pos)
+
+    def test_collapse_sets_geometry_suppression_property(self):
+        """Collapse must flag the window so geometry persistence skips the
+        strip geometry (mirrors the existing _header_minimized suppression).
+
+        Bug: the move/resize save debounce persisted the collapsed strip's
+        geometry; the next session's first show restored a header-high window
+        with all content visible ("shows in a corrupted state").
+        Fixed: 2026-07-25
+        """
+        window, header, _ = self._make_header_window()
+        header.collapse_window()
+        app.processEvents()
+        self.assertTrue(window.property("_header_collapsed"))
+        header.expand_window()
+        app.processEvents()
+        self.assertFalse(bool(window.property("_header_collapsed")))
+
     def test_collapse_with_fixed_width_below_minimum(self):
         """Should collapse below the window's minimum width.
 

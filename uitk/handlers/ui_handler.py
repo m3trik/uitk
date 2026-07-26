@@ -23,13 +23,21 @@ class UiHandler(BaseHandler):
     # Format: {"ui_name": {"ui": "path/to/file.ui", "slot": "path/to/slots.py"}}
     UI_REGISTRY: Dict[str, Dict[str, str]] = {}
 
+    # Header button sets keyed by window "persistence" mode. The pin set is
+    # transient chrome — it participates in the marking-menu key_show_release
+    # auto-hide lifecycle (via MainWindow.request_hide / _has_pin_button) and
+    # is user-pinnable. The hide set is sticky chrome — request_hide refuses,
+    # so the window stays open until an explicit dismiss.
+    TRANSIENT_HEADER = ("menu", "collapse", "pin")
+    STICKY_HEADER = ("menu", "collapse", "hide")
+
     # Default styling configuration
     DEFAULT_STYLE: Dict[str, Any] = {
         "attributes": {"WA_TranslucentBackground": True},
         "flags": {"FramelessWindowHint": True},
         "theme": "dark",
         "style_class": "translucentBgWithBorder",
-        "header_buttons": ("menu", "collapse", "pin"),
+        "header_buttons": TRANSIENT_HEADER,
     }
 
     # Configuration defaults exposed to Switchboard
@@ -195,11 +203,30 @@ class UiHandler(BaseHandler):
 
         if force or not ui.isVisible():
             ui.show()
+            self._restore_collapsed_header(ui)
             self._position_window(ui, pos)
             ui.raise_()
             ui.activateWindow()
 
         return ui
+
+    @staticmethod
+    def _restore_collapsed_header(ui) -> None:
+        """Present the FULL window: undo a header collapse/minimize left on it.
+
+        A header-collapsed window is still visible (a bare title strip), so
+        Qt's ``show()`` no-ops on it and ``Header.showEvent`` — which resets
+        collapse state on a hidden→shown transition — never fires. Restore
+        before positioning so cursor-centering measures the real size.
+        """
+        header = getattr(ui, "header", None)
+        if header is None:
+            return
+        try:
+            header.restore_window()  # no-op unless header-minimized
+            header.expand_window()  # no-op unless collapsed
+        except (AttributeError, RuntimeError):
+            pass  # not a uitk Header, or its window is already gone
 
     def _position_window(
         self,
@@ -289,9 +316,35 @@ class UiHandler(BaseHandler):
                 f"[{ui.objectName()}] Connected hide_signal -> request_hide"
             )
 
-    def apply_styles(self, ui, style: Dict = None):
+    def _resolve_hosted_theme(self, ui) -> Optional[str]:
+        """The configured theme for *ui*'s hosted style, or ``None``.
+
+        Delegates to the marking menu, the owner of the menu-page vs
+        standalone-window theme preferences, so both styling entry points
+        (``MarkingMenu._host_stacked`` and this handler) agree. Returns ``None``
+        when no marking menu is present (plain Switchboard usage), leaving the
+        caller's ``DEFAULT_STYLE`` theme in place.
         """
-        Apply default styles to the UI instance.
+        mm = getattr(getattr(self.sb, "handlers", None), "marking_menu", None)
+        resolve = getattr(mm, "resolve_hosted_theme", None)
+        if resolve is None:
+            return None
+        try:
+            return resolve(ui)
+        except (AttributeError, RuntimeError):
+            return None
+
+    def apply_styles(self, ui, style: Dict = None, theme: str = None):
+        """Apply default styles to the UI instance.
+
+        ``theme`` overrides the theme for this call. When omitted, a style still
+        carrying ``DEFAULT_STYLE``'s theme is treated as "no deliberate choice"
+        and the theme is resolved from the marking menu's per-style setting
+        (menu pages vs standalone windows), so the two hosted window themes are
+        user-configurable rather than hard-pinned. Subclass overrides that
+        pre-build a style from ``DEFAULT_STYLE`` (mayatk / blendertk swap header
+        buttons) therefore still participate; a caller that deliberately set a
+        different theme keeps it.
         """
         # Always use the class-level DEFAULT_STYLE as the authoritative source.
         # Persisted config may contain stale values from previous code versions.
@@ -309,6 +362,15 @@ class UiHandler(BaseHandler):
                 style["style_class"] = "translucentBgNoBorder"
         except AttributeError:
             pass
+
+        # Theme: explicit arg wins; otherwise the marking menu's per-style
+        # setting drives any style that hasn't deliberately picked a theme.
+        if theme:
+            style["theme"] = theme
+        elif style.get("theme") == self.DEFAULT_STYLE.get("theme"):
+            resolved = self._resolve_hosted_theme(ui)
+            if resolved:
+                style["theme"] = resolved
 
         # Apply generic ptk/qt styles
         if "attributes" in style:
@@ -333,16 +395,8 @@ class UiHandler(BaseHandler):
             pass
 
         if "header_buttons" in style:
-            # ui.header may not be registered yet (register_children runs
-            # later in showEvent), so fall back to findChild by objectName.
-            header = getattr(ui, "header", None)
-            if not hasattr(header, "config_buttons"):
-                header = (
-                    ui.findChild(QtWidgets.QWidget, "header")
-                    if hasattr(ui, "findChild")
-                    else None
-                )
-            if header is not None and hasattr(header, "config_buttons"):
+            header = self._ui_header(ui)
+            if header is not None:
                 current = tuple(getattr(header, "buttons", {}).keys())
                 # The help button is auto-installed by ``Header.set_help_text``
                 # (typically from a slot's ``header_init``). It is additive, not
@@ -439,7 +493,12 @@ class UiHandler(BaseHandler):
             parent_to_sb (default True — parent to the sb's own parent
             for DCC embedding; only honored on switchboards WITHOUT a
             marking menu — the canonical init below owns parenting
-            otherwise).
+            otherwise),
+            persistence ("transient" | "sticky" | None) — selects the
+            header button set: "transient" gives the pin button (auto-hides
+            with the marking menu, user-pinnable); "sticky" gives the hide
+            button (stays open). ``None`` keeps the default (canonical/
+            marking-menu windows -> pin, standalone launches -> hide).
 
         Any unrecognized keys are ignored — keeps the contract stable
         when callers pass options targeted at other handler kinds.
@@ -465,6 +524,7 @@ class UiHandler(BaseHandler):
         on_top = options.get("on_top", True)
         restore_geometry = options.get("restore_geometry", True)
         theme = options.get("theme")
+        persistence = options.get("persistence")  # None | "transient" | "sticky"
 
         # Standalone windows on a marking-menu switchboard are the SAME
         # singleton the menu manages — route window init through the menu's
@@ -500,9 +560,18 @@ class UiHandler(BaseHandler):
                 pass
 
         if not canonical:
-            # Launcher-only chrome (menu/collapse/hide) — the canonical
-            # marking-menu init owns the header set otherwise.
-            self._configure_launched_header(ui)
+            # Launcher-only chrome — the canonical marking-menu init owns the
+            # header set otherwise. ``persistence`` picks pin (transient) vs
+            # hide (sticky); None -> hide, preserving the standalone default.
+            self._configure_launched_header(ui, persistence=persistence)
+        elif persistence in ("transient", "sticky"):
+            # An EXPLICIT persistence choice (e.g. from the UI Browser) on a
+            # marking-menu window: apply_styles already installed the pin
+            # chrome, so override it. "sticky" drops the pin button, and
+            # MainWindow.request_hide then refuses -> the window survives
+            # key_show_release; "transient" re-asserts the pin chrome. Any other
+            # value (None, or an unrecognized mode) leaves the canonical chrome.
+            self._apply_persistence_chrome(ui, persistence)
 
         if not restore_geometry and hasattr(ui, "clear_saved_geometry"):
             ui.clear_saved_geometry()
@@ -516,29 +585,71 @@ class UiHandler(BaseHandler):
         self._notify_entries_changed(name)
         return ui
 
-    @staticmethod
-    def _configure_launched_header(ui) -> None:
-        """Add hide/collapse/menu buttons to a launched UI's header.
+    @classmethod
+    def _persistence_header(cls, persistence) -> tuple:
+        """Header button set for a launch ``persistence`` mode.
 
-        Skips if the header already has buttons (deliberate custom set
-        should be preserved). Lifted from SwitchboardBrowser so launch
-        styling lives on the handler.
+        ``"transient"`` -> pin chrome (auto-hides with the marking menu,
+        user-pinnable). Anything else (incl. ``None`` / ``"sticky"``) ->
+        hide chrome (stays open) — so ``None`` preserves the standalone
+        default this method has always applied.
+        """
+        return cls.TRANSIENT_HEADER if persistence == "transient" else cls.STICKY_HEADER
+
+    @staticmethod
+    def _ui_header(ui, attr: str = "config_buttons"):
+        """Resolve a UI's header widget exposing *attr*, or None.
+
+        ``ui.header`` may not be registered yet (``register_children`` runs later
+        in ``showEvent``), so fall back to ``findChild`` by objectName. *attr* is
+        the capability the caller needs (e.g. ``config_buttons`` for chrome,
+        ``hide_window`` for dismissal) — a header lacking it resolves to None.
         """
         header = getattr(ui, "header", None)
-        if header is None or not hasattr(header, "config_buttons"):
-            header = (
-                ui.findChild(QtWidgets.QWidget, "header")
-                if hasattr(ui, "findChild")
-                else None
-            )
-        if header is None or not hasattr(header, "config_buttons"):
+        if header is not None and hasattr(header, attr):
+            return header
+        header = (
+            ui.findChild(QtWidgets.QWidget, "header")
+            if hasattr(ui, "findChild")
+            else None
+        )
+        if header is not None and hasattr(header, attr):
+            return header
+        return None
+
+    @classmethod
+    def _set_header_chrome(cls, ui, persistence, force: bool) -> None:
+        """Apply the persistence button set to a UI's header (single source).
+
+        ``force=False`` preserves a header that already carries a deliberate
+        custom button set; ``force=True`` replaces it regardless.
+        """
+        header = cls._ui_header(ui)
+        if header is None:
             return
-        if getattr(header, "buttons", None):
+        if not force and getattr(header, "buttons", None):
             return
         try:
-            header.config_buttons("menu", "collapse", "hide")
+            header.config_buttons(*cls._persistence_header(persistence))
         except Exception:
             pass
+
+    @classmethod
+    def _configure_launched_header(cls, ui, persistence=None) -> None:
+        """Add menu/collapse plus a pin (transient) or hide (sticky) button to
+        a launched UI's header, unless it already has a deliberate custom set.
+
+        Lifted from SwitchboardBrowser so launch styling lives on the handler.
+        ``persistence`` selects the button set; ``None`` -> hide.
+        """
+        cls._set_header_chrome(ui, persistence, force=False)
+
+    @classmethod
+    def _apply_persistence_chrome(cls, ui, persistence) -> None:
+        """Force the header button set for *persistence*, replacing any existing
+        set. Honors an explicit persistence choice on the canonical marking-menu
+        path, where apply_styles already installed pin chrome."""
+        cls._set_header_chrome(ui, persistence, force=True)
 
     def close(self, name: str) -> None:
         """Hide the named UI via its header (matches the in-window hide button).
@@ -550,15 +661,9 @@ class UiHandler(BaseHandler):
         ui = self.sb.loaded_ui.peek(name)
         if not isinstance(ui, QtWidgets.QWidget):
             return
-        header = getattr(ui, "header", None)
-        if header is None or not hasattr(header, "hide_window"):
-            header = (
-                ui.findChild(QtWidgets.QWidget, "header")
-                if hasattr(ui, "findChild")
-                else None
-            )
+        header = self._ui_header(ui, attr="hide_window")
         hidden = False
-        if header is not None and hasattr(header, "hide_window"):
+        if header is not None:
             try:
                 header.hide_window()
                 hidden = True

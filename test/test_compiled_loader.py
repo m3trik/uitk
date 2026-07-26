@@ -10,6 +10,7 @@ Covers:
   next load.
 - Real-world load of the uitk.examples.example UI succeeds.
 """
+
 import shutil
 import tempfile
 import unittest
@@ -21,7 +22,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets
 
-from uitk import compile as compile_mod
+from uitk.compile import UiCompiler as compile_mod
 from uitk.switchboard import Switchboard
 
 
@@ -175,9 +176,7 @@ class CompiledLoaderTagPersistence(QtBaseTestCase):
         self.assertEqual(xml_tags, {"alpha", "beta"})
         # _ui.py header is fresh and contains the new tags
         self.assertTrue(compile_mod.is_compiled_fresh(self.ui, self.py))
-        self.assertEqual(
-            compile_mod.read_embedded_tags(self.py), {"alpha", "beta"}
-        )
+        self.assertEqual(compile_mod.read_embedded_tags(self.py), {"alpha", "beta"})
 
     def test_save_emits_on_ui_tags_changed(self):
         received = []
@@ -304,35 +303,39 @@ class LoaderInternals(QtBaseTestCase):
     """Defensive checks on the loader's helper functions."""
 
     def test_module_name_is_stable_across_calls(self):
-        from uitk.loaders.compiled import _module_name_for
+        from uitk.loaders.compiled import CompiledLoader
 
         p = Path("/some/dir/foo_ui.py")
-        self.assertEqual(_module_name_for(p), _module_name_for(p))
+        self.assertEqual(
+            CompiledLoader._module_name_for(p), CompiledLoader._module_name_for(p)
+        )
 
     def test_module_name_differs_for_different_paths(self):
-        from uitk.loaders.compiled import _module_name_for
+        from uitk.loaders.compiled import CompiledLoader
 
-        a = _module_name_for(Path("/some/dir/foo_ui.py"))
-        b = _module_name_for(Path("/other/dir/foo_ui.py"))
+        a = CompiledLoader._module_name_for(Path("/some/dir/foo_ui.py"))
+        b = CompiledLoader._module_name_for(Path("/other/dir/foo_ui.py"))
         self.assertNotEqual(a, b)
 
     def test_resolve_qt_class_raises_on_unknown(self):
-        from uitk.loaders.compiled import _resolve_qt_class
+        from uitk.loaders.compiled import CompiledLoader
 
         with self.assertRaises(AttributeError):
-            _resolve_qt_class("NotARealQtClass")
+            CompiledLoader._resolve_qt_class("NotARealQtClass")
 
     def test_resolve_qt_class_returns_known(self):
-        from uitk.loaders.compiled import _resolve_qt_class
+        from uitk.loaders.compiled import CompiledLoader
 
-        self.assertIs(_resolve_qt_class("QMainWindow"), QtWidgets.QMainWindow)
-        self.assertIs(_resolve_qt_class("QWidget"), QtWidgets.QWidget)
+        self.assertIs(
+            CompiledLoader._resolve_qt_class("QMainWindow"), QtWidgets.QMainWindow
+        )
+        self.assertIs(CompiledLoader._resolve_qt_class("QWidget"), QtWidgets.QWidget)
 
     def test_failed_import_does_not_pollute_sys_modules(self):
         """A _ui.py with a bad import must not leave a half-broken entry behind."""
         import sys
 
-        from uitk.loaders.compiled import _import_compiled_module, _module_name_for
+        from uitk.loaders.compiled import CompiledLoader
 
         tmp = tempfile.mkdtemp()
         try:
@@ -342,9 +345,9 @@ class LoaderInternals(QtBaseTestCase):
                 "class Ui_X:\n    def setupUi(self, w): pass\n",
                 encoding="utf-8",
             )
-            mod_name = _module_name_for(broken)
+            mod_name = CompiledLoader._module_name_for(broken)
             with self.assertRaises(ImportError):
-                _import_compiled_module(broken)
+                CompiledLoader._import_compiled_module(broken)
             self.assertNotIn(mod_name, sys.modules)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

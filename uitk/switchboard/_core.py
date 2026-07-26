@@ -79,8 +79,9 @@ class Switchboard(
     # on-import rule. Resolved on first access instead; works on both the
     # class (Switchboard.app) and instances (sb.app).
     app = ptk.ClassProperty(
-        lambda cls: QtWidgets.QApplication.instance()
-        or QtWidgets.QApplication(sys.argv)
+        lambda cls: (
+            QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        )
     )
 
     # Emitted when a new UI enters ui_registry via register().
@@ -176,9 +177,9 @@ class Switchboard(
         # Ensure plain QtWidgets (e.g. unpromoted QLineEdit in .ui files) expose
         # `widget.option_box`. patch_widget_class is idempotent (no-op if the
         # class already has the property), so repeated Switchboard inits are safe.
-        from uitk.widgets.optionBox.utils import patch_common_widgets
+        from uitk.widgets.optionBox.utils import OptionBoxManager
 
-        patch_common_widgets()
+        OptionBoxManager.patch_common_widgets()
 
         self._loader = self._build_loader(loader)
 
@@ -458,7 +459,9 @@ class Switchboard(
         else:
             # Caller passed a constructed instance.
             instance = loader
-        missing = [m for m in self._LOADER_CONTRACT if not callable(getattr(instance, m, None))]
+        missing = [
+            m for m in self._LOADER_CONTRACT if not callable(getattr(instance, m, None))
+        ]
         if missing:
             raise TypeError(
                 f"Loader {type(instance).__name__} is missing required "
@@ -585,9 +588,7 @@ class Switchboard(
             self.on_ui_loaded.emit(name)
         except Exception:
             # Signal emission must not block the load — log and move on.
-            self.logger.debug(
-                f"[on_ui_loaded] emit failed for {name!r}", exc_info=True
-            )
+            self.logger.debug(f"[on_ui_loaded] emit failed for {name!r}", exc_info=True)
         return ui
 
     def _resolve_ui_using_slots(self, attr_name) -> QtWidgets.QWidget:

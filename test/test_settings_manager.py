@@ -52,13 +52,13 @@ class TestSettingsManagerDefaults(BaseTestCase):
     def setUp(self):
         super().setUp()
         # Never let construction migrate/drain real legacy registry data.
-        self._saved_pairs_fn = sm._legacy_qsettings_pairs_for
-        sm._legacy_qsettings_pairs_for = lambda new_org, new_app: []
+        self._saved_pairs_fn = sm.SettingsManager._legacy_qsettings_pairs_for
+        sm.SettingsManager._legacy_qsettings_pairs_for = lambda new_org, new_app: []
         # Reset the process-cache so each test exercises the migration check.
         sm._MIGRATED_REGISTRY_PAIRS.clear()
 
     def tearDown(self):
-        sm._legacy_qsettings_pairs_for = self._saved_pairs_fn
+        sm.SettingsManager._legacy_qsettings_pairs_for = self._saved_pairs_fn
         super().tearDown()
 
     def test_no_arg_construction_uses_uitk_shared(self):
@@ -88,7 +88,7 @@ class TestRegistryMigration(BaseTestCase):
     def setUp(self):
         super().setUp()
         # Override the legacy-pair function so production data is never touched.
-        self._saved_pairs_fn = sm._legacy_qsettings_pairs_for
+        self._saved_pairs_fn = sm.SettingsManager._legacy_qsettings_pairs_for
 
         def fake_pairs(new_org: str, new_app: str) -> List[Tuple[str, str]]:
             if new_org != self.TEST_NEW_ORG:
@@ -98,7 +98,7 @@ class TestRegistryMigration(BaseTestCase):
                 pairs.append((self.TEST_LEGACY_ORG_B, self.TEST_LEGACY_DEFAULT_APP))
             return pairs
 
-        sm._legacy_qsettings_pairs_for = fake_pairs
+        sm.SettingsManager._legacy_qsettings_pairs_for = fake_pairs
 
         # Reset process-cache so each test triggers the migration check.
         sm._MIGRATED_REGISTRY_PAIRS.clear()
@@ -114,7 +114,7 @@ class TestRegistryMigration(BaseTestCase):
             _wipe(org, app)
 
     def tearDown(self):
-        sm._legacy_qsettings_pairs_for = self._saved_pairs_fn
+        sm.SettingsManager._legacy_qsettings_pairs_for = self._saved_pairs_fn
         for org, app in [
             (self.TEST_NEW_ORG, self.TEST_APP),
             (self.TEST_NEW_ORG, self.TEST_SHARED_APP),
@@ -146,8 +146,9 @@ class TestRegistryMigration(BaseTestCase):
         _ = SettingsManager(org=self.TEST_NEW_ORG, app=self.TEST_APP)
 
         legacy_after = QtCore.QSettings(self.TEST_LEGACY_ORG_A, self.TEST_APP)
-        self.assertIsNone(legacy_after.value("foo"),
-                          "legacy source preserved instead of drained")
+        self.assertIsNone(
+            legacy_after.value("foo"), "legacy source preserved instead of drained"
+        )
 
     def test_live_data_wins_on_collision(self):
         """If the new location already has a key, the legacy value doesn't overwrite."""
@@ -182,8 +183,11 @@ class TestRegistryMigration(BaseTestCase):
         # Second construction: the process-cache should make the migration
         # a no-op so the second legacy value does NOT get pulled in.
         mgr2 = SettingsManager(org=self.TEST_NEW_ORG, app=self.TEST_APP)
-        self.assertEqual(mgr2.settings.value("k"), "v1",
-                         "second construction re-ran migration despite cache")
+        self.assertEqual(
+            mgr2.settings.value("k"),
+            "v1",
+            "second construction re-ran migration despite cache",
+        )
 
     def test_idempotent_across_processes_via_marker(self):
         """The on-disk marker prevents re-migration after the process-cache resets."""
@@ -200,8 +204,11 @@ class TestRegistryMigration(BaseTestCase):
         legacy.sync()
 
         mgr2 = SettingsManager(org=self.TEST_NEW_ORG, app=self.TEST_APP)
-        self.assertEqual(mgr2.settings.value("k"), "first-value",
-                         "on-disk marker did not prevent re-migration")
+        self.assertEqual(
+            mgr2.settings.value("k"),
+            "first-value",
+            "on-disk marker did not prevent re-migration",
+        )
 
     def test_shared_app_drains_both_legacy_orgs(self):
         """The default-app bucket pulls from both ``uitk.widgets`` and ``uitk.widgets.mixins``."""
@@ -226,8 +233,9 @@ class TestRegistryMigration(BaseTestCase):
 
         # Construct with an org that is NOT the default — migration should skip.
         mgr = SettingsManager(org="some_other_org", app=self.TEST_APP)
-        self.assertIsNone(mgr.settings.value("k"),
-                          "migration ran for a non-default org")
+        self.assertIsNone(
+            mgr.settings.value("k"), "migration ran for a non-default org"
+        )
         # Cleanup
         _wipe("some_other_org", self.TEST_APP)
 
@@ -250,8 +258,11 @@ class TestRegistryMigration(BaseTestCase):
         # User-authored data is visible.
         self.assertIn("user_key", keys)
         # Marker is NOT visible — even though raw allKeys() includes it.
-        self.assertNotIn(sm._REGISTRY_MIGRATED_KEY, keys,
-                         "migration marker leaked into keys() output")
+        self.assertNotIn(
+            sm._REGISTRY_MIGRATED_KEY,
+            keys,
+            "migration marker leaked into keys() output",
+        )
         # Raw QSettings.allKeys still includes the marker (it's stored;
         # we just filter it at the SettingsManager layer).
         self.assertIn(sm._REGISTRY_MIGRATED_KEY, mgr.settings.allKeys())
@@ -331,7 +342,8 @@ class TestStringValueRoundTrip(BaseTestCase):
         for s in ("1.10", "123", "true", "false", "null", "None", "1e5"):
             mgr.setValue("k", s)
             self.assertEqual(
-                mgr.value("k"), s,
+                mgr.value("k"),
+                s,
                 f"string {s!r} did not round-trip verbatim",
             )
 
