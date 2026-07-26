@@ -482,9 +482,18 @@ def _hard_exit(code: int) -> None:
             # os._exit here re-enters DLL_PROCESS_DETACH (the exact segfault
             # this function exists to skip) and clobbers the exit code with
             # 0xC0000005 (observed live: a green run reported as failed).
-            # Park until the kill lands.
+            # Park until the kill lands — with a SINGLE never-returning wait,
+            # not a Sleep loop: the loop re-entered Python bytecode + ctypes
+            # marshalling once per second inside the dying process, and that
+            # execution surface is where an access violation clobbered a
+            # green run's exit code with 0xC0000005 (shell-reported as 5)
+            # despite this parking (observed live 2026-07-25).
+            INFINITE = 0xFFFFFFFF
             while True:
-                kernel32.Sleep(1000)
+                # Looped only against a spurious return (e.g. WAIT_FAILED):
+                # falling through to os._exit would re-enter the detach
+                # callbacks this function exists to skip.
+                kernel32.WaitForSingleObject(kernel32.GetCurrentProcess(), INFINITE)
     os._exit(code)
 
 

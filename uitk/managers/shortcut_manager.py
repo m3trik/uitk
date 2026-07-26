@@ -15,6 +15,7 @@ This is the lower layer: it has no Switchboard dependency, so the split
 is by layer (primitives vs. orchestration), not duplication — merging the
 two would force the widget layer to import :mod:`uitk.switchboard`.
 """
+
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -33,125 +34,9 @@ SCOPE_CONTEXT_TO_NAME: Dict[QtCore.Qt.ShortcutContext, str] = {
 }
 
 
-def context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str:
-    """Convert a Qt.ShortcutContext to its persistence string."""
-    return SCOPE_CONTEXT_TO_NAME.get(context, "window")
-
-
-def scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext:
-    """Convert a persisted scope string to a Qt.ShortcutContext."""
-    return SCOPE_NAME_TO_CONTEXT.get(name, QtCore.Qt.WindowShortcut)
-
-
-def host_namespace_suffix(context_tags) -> str:
-    """Settings-key suffix namespacing persisted state by host context.
-
-    QSettings is shared across processes by ``(org, app)``, so without a per-host
-    suffix a Maya and a Blender session read/write the SAME keys and their
-    bindings collide. Returns ``"_maya"`` / ``"_blender"`` (tags sorted + joined)
-    for a non-empty ``context_tags``, or ``""`` for standalone.
-
-    Single source of the convention, shared by the marking-menu binding store
-    (``MarkingMenu._binding_store_key``) and the shortcut/command store
-    (``SwitchboardShortcutMixin._shortcut_ns``) so the two can't drift — drift
-    would re-introduce the cross-host collision both are guarding against.
-    """
-    tags = sorted(context_tags or ())
-    return ("_" + "_".join(tags)) if tags else ""
-
-
 # Known DCC host top-level window object names, searched when resolving an
 # always-visible owner for application-scoped shortcuts.
 _HOST_WINDOW_NAMES = ("MayaWindow", "3dsMaxWindow")
-
-
-def resolve_application_host(
-    widget: Optional[QtWidgets.QWidget],
-) -> Optional[QtWidgets.QWidget]:
-    """Return an always-visible top-level window to own an application shortcut.
-
-    Qt deactivates a ``QShortcut`` whenever its owner widget is hidden — even at
-    ``Qt.ApplicationShortcut`` scope, because the visibility check runs *before*
-    the context check (see ``QShortcutMap::correctContextWidget``). Tool UIs are
-    usually hidden when idle, which is exactly when an application-scoped
-    shortcut is meant to fire, so owning the shortcut by the slot window makes it
-    silently inert. Owning it by the host's main window (which stays visible)
-    makes the shortcut genuinely application-wide.
-
-    Resolution order:
-        1. A known DCC host top-level (``MayaWindow`` / ``3dsMaxWindow``).
-        2. The nearest visible top-level ancestor of *widget*.
-        3. Any visible top-level window.
-        4. *widget* itself (last resort — preserves prior behaviour).
-    """
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        return widget
-
-    # 1. Known DCC host windows are the canonical application owner.
-    for w in app.topLevelWidgets():
-        if w.objectName() in _HOST_WINDOW_NAMES and w.isVisible():
-            return w
-
-    # 2. Nearest visible top-level ancestor of the widget (DCC-agnostic).
-    w = widget
-    seen: set = set()
-    while w is not None and id(w) not in seen:
-        seen.add(id(w))
-        win = w.window()
-        if win is not None and win.isWindow() and win.isVisible():
-            return win
-        w = w.parentWidget()
-
-    # 3. Any visible top-level window (e.g. a standalone app's main window).
-    for w in app.topLevelWidgets():
-        if w.isWindow() and w.isVisible():
-            return w
-
-    # 4. Last resort: keep prior behaviour rather than dropping the shortcut.
-    return widget
-
-
-def find_duplicate_application_shortcuts(app=None) -> Dict[str, int]:
-    """Return ``{sequence: count}`` for key sequences bound by more than one
-    *enabled, application-scoped* ``QShortcut`` in the running application.
-
-    An application-scoped shortcut fires regardless of which window has focus, so
-    two enabled ones on the same sequence are ambiguous — Qt logs an "Ambiguous
-    shortcut overload" and fires **neither**. That is the exact failure mode that
-    silently killed repeat-last in Maya (one app shortcut was created per slot
-    instance, so several identical ``Ctrl+Shift+R`` shortcuts stacked up).
-
-    Use it as a diagnostic or a test invariant: a healthy application returns an
-    empty dict. Empty key sequences (an unbound ``QShortcut``) are ignored, and
-    so are window-/widget-scoped shortcuts (those are disambiguated by focus, so
-    the same key is legitimately reusable across windows). Returns ``{}`` when no
-    ``QApplication`` exists.
-    """
-    app = app or QtWidgets.QApplication.instance()
-    if app is None:
-        return {}
-    # QShortcut moved QtWidgets -> QtGui in Qt6; accept whichever the binding has.
-    shortcut_types = tuple(
-        t
-        for t in (getattr(QtWidgets, "QShortcut", None), getattr(QtGui, "QShortcut", None))
-        if isinstance(t, type)
-    )
-    counts: Dict[str, int] = {}
-    seen: set = set()
-    for w in app.allWidgets():
-        for child in w.children():
-            if not isinstance(child, shortcut_types) or id(child) in seen:
-                continue
-            seen.add(id(child))
-            if not child.isEnabled():
-                continue
-            if child.context() != QtCore.Qt.ApplicationShortcut:
-                continue
-            seq = child.key().toString()
-            if seq:
-                counts[seq] = counts.get(seq, 0) + 1
-    return {seq: n for seq, n in counts.items() if n > 1}
 
 
 class GlobalShortcut(QtCore.QObject):
@@ -332,6 +217,125 @@ class GlobalShortcut(QtCore.QObject):
 
 class ShortcutManager:
     """Centralized shortcut management with clear separation of concerns"""
+
+    @staticmethod
+    def context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str:
+        """Convert a Qt.ShortcutContext to its persistence string."""
+        return SCOPE_CONTEXT_TO_NAME.get(context, "window")
+
+    @staticmethod
+    def scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext:
+        """Convert a persisted scope string to a Qt.ShortcutContext."""
+        return SCOPE_NAME_TO_CONTEXT.get(name, QtCore.Qt.WindowShortcut)
+
+    @staticmethod
+    def host_namespace_suffix(context_tags) -> str:
+        """Settings-key suffix namespacing persisted state by host context.
+
+        QSettings is shared across processes by ``(org, app)``, so without a per-host
+        suffix a Maya and a Blender session read/write the SAME keys and their
+        bindings collide. Returns ``"_maya"`` / ``"_blender"`` (tags sorted + joined)
+        for a non-empty ``context_tags``, or ``""`` for standalone.
+
+        Single source of the convention, shared by the marking-menu binding store
+        (``MarkingMenu._binding_store_key``) and the shortcut/command store
+        (``SwitchboardShortcutMixin._shortcut_ns``) so the two can't drift — drift
+        would re-introduce the cross-host collision both are guarding against.
+        """
+        tags = sorted(context_tags or ())
+        return ("_" + "_".join(tags)) if tags else ""
+
+    @staticmethod
+    def resolve_application_host(
+        widget: Optional[QtWidgets.QWidget],
+    ) -> Optional[QtWidgets.QWidget]:
+        """Return an always-visible top-level window to own an application shortcut.
+
+        Qt deactivates a ``QShortcut`` whenever its owner widget is hidden — even at
+        ``Qt.ApplicationShortcut`` scope, because the visibility check runs *before*
+        the context check (see ``QShortcutMap::correctContextWidget``). Tool UIs are
+        usually hidden when idle, which is exactly when an application-scoped
+        shortcut is meant to fire, so owning the shortcut by the slot window makes it
+        silently inert. Owning it by the host's main window (which stays visible)
+        makes the shortcut genuinely application-wide.
+
+        Resolution order:
+            1. A known DCC host top-level (``MayaWindow`` / ``3dsMaxWindow``).
+            2. The nearest visible top-level ancestor of *widget*.
+            3. Any visible top-level window.
+            4. *widget* itself (last resort — preserves prior behaviour).
+        """
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return widget
+
+        # 1. Known DCC host windows are the canonical application owner.
+        for w in app.topLevelWidgets():
+            if w.objectName() in _HOST_WINDOW_NAMES and w.isVisible():
+                return w
+
+        # 2. Nearest visible top-level ancestor of the widget (DCC-agnostic).
+        w = widget
+        seen: set = set()
+        while w is not None and id(w) not in seen:
+            seen.add(id(w))
+            win = w.window()
+            if win is not None and win.isWindow() and win.isVisible():
+                return win
+            w = w.parentWidget()
+
+        # 3. Any visible top-level window (e.g. a standalone app's main window).
+        for w in app.topLevelWidgets():
+            if w.isWindow() and w.isVisible():
+                return w
+
+        # 4. Last resort: keep prior behaviour rather than dropping the shortcut.
+        return widget
+
+    @staticmethod
+    def find_duplicate_application_shortcuts(app=None) -> Dict[str, int]:
+        """Return ``{sequence: count}`` for key sequences bound by more than one
+        *enabled, application-scoped* ``QShortcut`` in the running application.
+
+        An application-scoped shortcut fires regardless of which window has focus, so
+        two enabled ones on the same sequence are ambiguous — Qt logs an "Ambiguous
+        shortcut overload" and fires **neither**. That is the exact failure mode that
+        silently killed repeat-last in Maya (one app shortcut was created per slot
+        instance, so several identical ``Ctrl+Shift+R`` shortcuts stacked up).
+
+        Use it as a diagnostic or a test invariant: a healthy application returns an
+        empty dict. Empty key sequences (an unbound ``QShortcut``) are ignored, and
+        so are window-/widget-scoped shortcuts (those are disambiguated by focus, so
+        the same key is legitimately reusable across windows). Returns ``{}`` when no
+        ``QApplication`` exists.
+        """
+        app = app or QtWidgets.QApplication.instance()
+        if app is None:
+            return {}
+        # QShortcut moved QtWidgets -> QtGui in Qt6; accept whichever the binding has.
+        shortcut_types = tuple(
+            t
+            for t in (
+                getattr(QtWidgets, "QShortcut", None),
+                getattr(QtGui, "QShortcut", None),
+            )
+            if isinstance(t, type)
+        )
+        counts: Dict[str, int] = {}
+        seen: set = set()
+        for w in app.allWidgets():
+            for child in w.children():
+                if not isinstance(child, shortcut_types) or id(child) in seen:
+                    continue
+                seen.add(id(child))
+                if not child.isEnabled():
+                    continue
+                if child.context() != QtCore.Qt.ApplicationShortcut:
+                    continue
+                seq = child.key().toString()
+                if seq:
+                    counts[seq] = counts.get(seq, 0) + 1
+        return {seq: n for seq, n in counts.items() if n > 1}
 
     def __init__(self, widget: QtWidgets.QWidget):
         self.widget = widget
@@ -652,7 +656,7 @@ class ShortcutManager:
         """
         entries: List[Dict] = []
         for key, data in self.shortcuts.items():
-            scope = context_to_scope_name(
+            scope = ShortcutManager.context_to_scope_name(
                 data.get("context", QtCore.Qt.WidgetShortcut)
             )
             entries.append(

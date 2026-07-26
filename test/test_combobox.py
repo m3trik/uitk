@@ -765,5 +765,130 @@ class SetAsCurrentByText(QtBaseTestCase):
             combo.setAsCurrent("Missing", strict=True)
 
 
+class EditCommitPersistsTypedText(QtBaseTestCase):
+    """Finishing an inline edit (Enter) must commit the typed text into the
+    CURRENT item.
+
+    Regression: ``setEditable(False)`` handed the typed text to the fixed
+    ``setCurrentText`` override, which re-selects by text and therefore no-ops
+    when no item matches the NEW text — so the rename a user typed never
+    reached the item and the combo kept displaying the old name (tentacle's
+    "material rename doesn't update the combobox" bug). Item DATA must stay
+    untouched (it's the caller's to update via ``on_editing_finished``), and a
+    signal-less exit (focus-out) is a cancel, not a commit.
+    """
+
+    def _editing_combo(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        self.data = object()
+        combo.addItem("mat_old", self.data)
+        combo.addItem("other", "other_data")
+        combo.setCurrentIndex(0)
+        combo.setEditable(True)
+        combo.lineEdit().setText("mat_new")
+        return combo
+
+    def test_commit_updates_current_item_text(self):
+        combo = self._editing_combo()
+        combo.setEditable(False)
+
+        self.assertEqual(combo.itemText(0), "mat_new")
+        self.assertEqual(combo.currentIndex(), 0, "commit must not move selection")
+        self.assertEqual(combo.currentText(), "mat_new")
+
+    def test_commit_preserves_item_data(self):
+        combo = self._editing_combo()
+        combo.setEditable(False)
+
+        self.assertIs(
+            combo.itemData(0),
+            self.data,
+            "the edit renames the display text only; data is the caller's",
+        )
+
+    def test_commit_emits_on_editing_finished_with_typed_text(self):
+        combo = self._editing_combo()
+        fired = []
+        combo.on_editing_finished.connect(fired.append)
+        combo.setEditable(False)
+
+        self.assertEqual(fired, ["mat_new"])
+
+    def test_signal_less_exit_cancels_instead_of_committing(self):
+        """``emit_signal=False`` is the focus-out / programmatic exit path —
+        the typed text is discarded and the item keeps its name."""
+        combo = self._editing_combo()
+        combo.setEditable(False, emit_signal=False)
+
+        self.assertEqual(combo.itemText(0), "mat_old")
+        self.assertEqual(combo.currentIndex(), 0)
+
+    def test_commit_with_unchanged_text_is_a_noop_rename(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("alpha", 1)
+        combo.setCurrentIndex(0)
+        combo.setEditable(True)  # line edit seeded with "alpha"
+        combo.setEditable(False)
+
+        self.assertEqual(combo.itemText(0), "alpha")
+        self.assertEqual(combo.itemData(0), 1)
+
+    def test_empty_text_is_emitted_but_never_committed(self):
+        """Clearing the line edit and pressing Enter is a cancelled rename:
+        the signal still fires (callers use it to react/veto) but a blank
+        item row is never valid, so the item keeps its name."""
+        combo = self._editing_combo()
+        combo.lineEdit().setText("")
+        fired = []
+        combo.on_editing_finished.connect(fired.append)
+        combo.setEditable(False)
+
+        self.assertEqual(fired, [""])
+        self.assertEqual(combo.itemText(0), "mat_old")
+
+    def test_handler_reentering_setEditable_false_does_not_reemit(self):
+        """A handler that calls ``setEditable(False)`` from inside the
+        ``on_editing_finished`` emission (mayatk/blendertk shader_templates'
+        'name unchanged' branch does exactly this) must not re-emit — there is
+        no editing session left to finish. Previously this recursed until
+        RecursionError, crashing the host DCC on an unchanged-name commit."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("alpha")
+        combo.setCurrentIndex(0)
+        combo.setEditable(True)
+
+        calls = []
+
+        def handler(text):
+            calls.append(text)
+            if len(calls) > 5:  # cap: report a failure, don't blow the stack
+                return
+            combo.setEditable(False)
+
+        combo.on_editing_finished.connect(handler)
+        combo.setEditable(False)
+
+        self.assertEqual(calls, ["alpha"], "nested exit must not re-emit")
+
+    def test_setEditable_false_on_non_editable_combo_does_not_emit(self):
+        """No editing session -> nothing finished. uic-generated setupUi calls
+        setEditable(False) on construction; that must not fire the signal."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("alpha")
+        fired = []
+        combo.on_editing_finished.connect(fired.append)
+        combo.setEditable(False)
+
+        self.assertEqual(fired, [])
+
+
 if __name__ == "__main__":
     unittest.main()

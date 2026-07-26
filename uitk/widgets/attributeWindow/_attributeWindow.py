@@ -3,9 +3,9 @@
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.menu import Menu
 
-# Alias the spec module so every `factory.<...>` call site reads
-# naturally; importing it also registers the built-in kind handlers.
-from uitk.bridge import spec as factory
+# Import the spec factory + dataclass directly; importing the module also
+# registers the built-in kind handlers (KindFactory.register_kind at import).
+from uitk.bridge.spec import AttributeSpec, KindFactory
 
 
 class AttributeWindow(Menu):
@@ -234,7 +234,7 @@ class AttributeWindow(Menu):
                 self.add_attributes(k, v)
             return
 
-        if isinstance(attributes, factory.AttributeSpec):
+        if isinstance(attributes, AttributeSpec):
             self.add_attribute_spec(attributes)
             return
 
@@ -255,9 +255,9 @@ class AttributeWindow(Menu):
         ``key`` becomes the attribute name; the displayed label uses
         ``spec.label`` (falling back to ``spec.key``).
         """
-        widget = factory.make_widget(spec, self)
+        widget = KindFactory.make_widget(spec, self)
         widget.setProperty("attribute_name", spec.key)
-        factory.connect_changed(
+        KindFactory.connect_changed(
             widget, lambda _v, _w=widget: self.emit_value_changed(_w)
         )
         self.attribute_to_widgets[spec.key] = [widget]
@@ -272,11 +272,11 @@ class AttributeWindow(Menu):
         ``infer_kind`` always returns a built-in kind, so the factory call
         cannot KeyError here.
         """
-        spec = factory.AttributeSpec.from_value(name, value)
+        spec = AttributeSpec.from_value(name, value)
         spec = self._apply_float_precision(spec)
-        widget = factory.make_widget(spec, self)
+        widget = KindFactory.make_widget(spec, self)
         widget.setProperty("attribute_name", spec.key)
-        factory.connect_changed(
+        KindFactory.connect_changed(
             widget, lambda _v, _w=widget: self.emit_value_changed(_w)
         )
         self.attribute_to_widgets[spec.key] = [widget]
@@ -290,13 +290,15 @@ class AttributeWindow(Menu):
         widget_layout.setContentsMargins(0, 0, 0, 0)
         widgets = []
         for element in values:
-            if not self.allow_unsupported_types and not self.is_type_supported(type(element)):
+            if not self.allow_unsupported_types and not self.is_type_supported(
+                type(element)
+            ):
                 continue
-            spec = factory.AttributeSpec.from_value(name, element)
+            spec = AttributeSpec.from_value(name, element)
             spec = self._apply_float_precision(spec)
-            w = factory.make_widget(spec, self)
+            w = KindFactory.make_widget(spec, self)
             w.setProperty("attribute_name", spec.key)
-            factory.connect_changed(
+            KindFactory.connect_changed(
                 w, lambda _v, _n=spec.key: self.emit_composite_value_changed(_n)
             )
             widgets.append(w)
@@ -315,13 +317,12 @@ class AttributeWindow(Menu):
         ):
             self.emit_composite_value_changed(attribute_name)
             return
-        self.valueChanged.emit(attribute_name, factory.read_value(widget))
+        self.valueChanged.emit(attribute_name, KindFactory.read_value(widget))
 
     def emit_composite_value_changed(self, attribute_name):
         """Construct and emit the full attribute value for a composite attribute."""
         attribute_value = [
-            factory.read_value(w)
-            for w in self.attribute_to_widgets[attribute_name]
+            KindFactory.read_value(w) for w in self.attribute_to_widgets[attribute_name]
         ]
         self.valueChanged.emit(attribute_name, attribute_value)
 

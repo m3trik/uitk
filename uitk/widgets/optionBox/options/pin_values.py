@@ -6,13 +6,6 @@ from qtpy import QtWidgets, QtCore
 from ._options import ButtonOption
 
 
-def _normalize_value(value):
-    """Normalize a value for comparison (strips whitespace from strings)."""
-    if isinstance(value, str):
-        return value.strip()
-    return value
-
-
 class PinnedValueEntry:
     """Represents a pinned value with an optional alias."""
 
@@ -25,13 +18,24 @@ class PinnedValueEntry:
         """Get the text to display (alias if set, otherwise value)."""
         return self.alias if self.alias else str(self.value)
 
+    @staticmethod
+    def _normalize_value(value):
+        """Normalize a value for comparison (strips whitespace from strings)."""
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
     def __eq__(self, other):
         if isinstance(other, PinnedValueEntry):
-            return _normalize_value(self.value) == _normalize_value(other.value)
-        return _normalize_value(self.value) == _normalize_value(other)
+            return PinnedValueEntry._normalize_value(
+                self.value
+            ) == PinnedValueEntry._normalize_value(other.value)
+        return PinnedValueEntry._normalize_value(
+            self.value
+        ) == PinnedValueEntry._normalize_value(other)
 
     def __hash__(self):
-        return hash(_normalize_value(self.value))
+        return hash(PinnedValueEntry._normalize_value(self.value))
 
 
 class PinnedValuesPopup(QtCore.QObject):
@@ -476,7 +480,12 @@ class PinValuesOption(ButtonOption):
         # landed on the tick AFTER first paint, flickering the glyph on
         # screen. A wrapped-widget state restore that lands later fires the
         # value-change signals connected above, which re-run the (idempotent)
-        # update pre-paint.
+        # update pre-paint. _widget must be assigned first: this runs inside
+        # BaseOption.widget's lazy create (which assigns _widget only on
+        # return), and _update_button_icon no-ops while _widget is None — the
+        # unassigned call was dead code and the button kept its constructor
+        # glyph until the first value-change signal.
+        self._widget = button
         self._update_button_icon()
 
         return button
@@ -605,12 +614,12 @@ class PinValuesOption(ButtonOption):
 
         # Get pinned values excluding current, sorted alphabetically by display text
         # Use normalized comparison to handle trailing slashes/whitespace differences
-        normalized_current = _normalize_value(current_value)
+        normalized_current = PinnedValueEntry._normalize_value(current_value)
         pinned_excluding_current = sorted(
             [
                 e
                 for e in self._pinned_entries
-                if _normalize_value(e.value) != normalized_current
+                if PinnedValueEntry._normalize_value(e.value) != normalized_current
             ],
             key=lambda e: e.display_text.lower(),
         )
@@ -688,11 +697,13 @@ class PinValuesOption(ButtonOption):
         if self._widget is None:
             return  # Widget not created yet
 
-        from uitk.managers.icon_manager import IconManager
-
         current_value = self._get_widget_value()
         current_is_pinned = self._get_entry_for_value(current_value) is not None
 
+        # The GLYPH is the state channel: a filled "radio" = the value in the
+        # field right now is already pinned; hollow "radio_empty" = it isn't.
+        # No color tint — the icon swap alone carries the meaning, and the
+        # resting glyph follows the theme.
         if current_is_pinned:
             icon_name = "radio"
             tooltip = (
@@ -706,17 +717,7 @@ class PinValuesOption(ButtonOption):
             tooltip = "Pin values"
 
         self._widget.setToolTip(tooltip)
-        # Idempotent: signal-driven re-runs (every valueChanged) skip the
-        # rasterize+setIcon when the glyph is already correct — keeps the
-        # synchronous create-time init plus repeated updates visually and
-        # computationally free. registered_info validates ownership (id
-        # reuse on a dead widget's entry). Preserve the size set by the
-        # parent OptionBox so swapping pinned state doesn't oscillate the
-        # icon size.
-        info = IconManager.registered_info(self._widget)
-        if info and info.get("name") == icon_name:
-            return
-        IconManager.swap_icon(self._widget, icon_name, fallback_size=(17, 17))
+        self._swap_state_icon(icon_name)
 
     @property
     def pinned_values(self):

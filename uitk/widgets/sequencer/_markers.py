@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """MarkerItem — named marker on the timeline with drag and context menu."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -13,10 +14,10 @@ if TYPE_CHECKING:
 from uitk.widgets.sequencer._data import (
     MarkerData,
     _RULER_HEIGHT,
-    _styled_menu,
+    MenuUtils,
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
-from uitk.widgets.sequencer._draggable import DraggableItemMixin, snap_time
+from uitk.widgets.sequencer._draggable import DraggableItemMixin
 
 _MARKER_TRI_SIZE = 8  # size of the triangle pennant in pixels
 
@@ -189,7 +190,9 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             return super().mouseMoveEvent(event)
         tl = self._timeline
         dx_time = tl.x_to_time(event.scenePos().x()) - tl.x_to_time(self._drag_origin_x)
-        new_time = max(0.0, snap_time(self._drag_origin_time + dx_time, tl))
+        new_time = max(
+            0.0, DraggableItemMixin.snap_time(self._drag_origin_time + dx_time, tl)
+        )
         self._data.time = new_time
         self.sync()
         self.update()
@@ -248,7 +251,8 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def _show_drag_tooltip(self, scene_pos):
         self._drag_tooltip.show(
-            self.scene(), scene_pos,
+            self.scene(),
+            scene_pos,
             label=FrameTooltip.format_frame(self._data.time),
             color=self._data.color,
         )
@@ -270,7 +274,7 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def contextMenuEvent(self, event):
         widget = self._timeline.parent_sequencer
-        menu = _styled_menu()
+        menu = MenuUtils._styled_menu()
 
         # Inline note editor
         note_edit = QtWidgets.QLineEdit(self._data.note)

@@ -5,12 +5,12 @@
 Public symbols are lazy-loaded via the root ``uitk`` package's
 ``DEFAULT_INCLUDE``. Import them from there::
 
-    from uitk import (
-        AttributeWindow,
-        AttributeSpec, KindHandler,
-        make_widget, read_value, set_value, connect_changed,
-        infer_kind, register_kind, get_handler,
-    )
+    from uitk import AttributeWindow, AttributeSpec, KindHandler, KindFactory
+
+The former module-level factory functions are now staticmethods on
+:class:`KindFactory` (``KindFactory.make_widget`` / ``read_value`` /
+``set_value`` / ``connect_changed`` / ``infer_kind`` / ``register_kind`` /
+``get_handler``).
 
 Implementation lives in:
 

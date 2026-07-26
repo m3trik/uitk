@@ -29,6 +29,7 @@ Custom widget kinds (e.g. an HSV picker) plug in via the shared
 :func:`uitk.bridge.spec.register_kind`; new bridges inherit every kind
 the registry knows about.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -47,85 +48,8 @@ from uitk.widgets.comboBox import ComboBox
 from uitk.widgets.separator import Separator
 from uitk.managers.preset_manager import PresetManager
 
-from uitk.bridge.spec import (
-    AttributeSpec,
-    connect_changed,
-    make_widget,
-    read_value,
-    set_value,
-)
-from uitk.bridge.tooltip import format_param_tooltip, template_description
-
-
-# ----------------------------------------------------------------------
-# Module-level utilities
-# ----------------------------------------------------------------------
-
-
-def _open_in_file_manager(path: str) -> None:
-    """Best-effort reveal of *path* in the platform's file manager."""
-    if sys.platform == "win32":
-        os.startfile(path)  # noqa: S606 — Windows-only API
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", path])
-    else:
-        subprocess.Popen(["xdg-open", path])
-
-
-# --- Log-panel link dispatch (dependency inversion) ------------------------
-# uitk handles the DCC-agnostic ``action://open`` link itself; the DCC-specific
-# actions (``select`` / ``reveal`` a node) are delegated to handlers that the
-# DCC package registers here. This keeps the dependency direction honest: uitk
-# sits ABOVE pythontk and BELOW mayatk/blendertk, so it must not import them —
-# each DCC registers its ``dispatch_log_link`` from its ``UiHandler.__init__``
-# instead. (Before this, uitk hard-imported ``mayatk``, which both inverted the
-# layering AND left node links dead in a Blender session, where the mayatk
-# import fails even though ``blendertk.dispatch_log_link`` exists.)
-_LOG_LINK_HANDLERS: List[Callable] = []
-
-
-def register_log_link_handler(handler: Callable) -> None:
-    """Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
-    ``action://`` links (returns True when it handled the link).
-
-    DCC packages (mayatk / blendertk) call this from their ``UiHandler.__init__``
-    so their node-dispatch runs without uitk importing them. Handlers are tried
-    in registration order until one returns True. Idempotent — re-registering
-    the same callable is a no-op.
-    """
-    if handler not in _LOG_LINK_HANDLERS:
-        _LOG_LINK_HANDLERS.append(handler)
-
-
-# One temp Output Dir per bridge tag per host process, removed when the process exits.
-_BRIDGE_TEMP_DIRS: Dict[str, str] = {}
-
-
-def _remove_bridge_temp_dir(key: str) -> None:
-    """atexit handler: remove the temp Output Dir created for *key* (best-effort)."""
-    path = _BRIDGE_TEMP_DIRS.pop(key, None)
-    if path:
-        shutil.rmtree(path, ignore_errors=True)
-
-
-def ensure_bridge_temp_dir(tag: str) -> str:
-    """Create (once per host process) and return a temp Output Dir for *tag*.
-
-    Backs :attr:`BridgeSlotsBase.TEMP_OUTPUT_FALLBACK`: the last-resort Output Dir when neither the
-    user's value nor the DCC scene/workspace default resolves (e.g. an unsaved scene with no
-    workspace), so a hand-off bridge can still export without forcing the user to pick a path. The
-    directory is registered for cleanup at process exit — it lives for the whole session (long
-    enough for the launched external app to read the exported files) and is then removed. Reused
-    across sends for the same *tag* (keyed by tag; the PID keeps concurrent DCCs from colliding on
-    a shared temp path)."""
-    key = tag or "bridge"
-    path = _BRIDGE_TEMP_DIRS.get(key)
-    if path is None:
-        path = os.path.join(tempfile.gettempdir(), "uitk_bridge", f"{key}_{os.getpid()}")
-        os.makedirs(path, exist_ok=True)
-        _BRIDGE_TEMP_DIRS[key] = path
-        atexit.register(_remove_bridge_temp_dir, key)
-    return path
+from uitk.bridge.spec import AttributeSpec, KindFactory
+from uitk.bridge.tooltip import Tooltip
 
 
 # ----------------------------------------------------------------------
@@ -133,7 +57,48 @@ def ensure_bridge_temp_dir(tag: str) -> str:
 # ----------------------------------------------------------------------
 
 
-class BridgeSlotsBase:
+class _BridgeSlotsInternal(object):
+    """Private log-link-dispatch + temp-dir runtime for :class:`BridgeSlotsBase`.
+
+    The two registries are class attrs on this base so every bridge subclass
+    shares one process-wide log-link handler list and one temp-dir map (these
+    were module-level globals before the class-only encapsulation).
+    """
+
+    # --- Log-panel link dispatch (dependency inversion) --------------------
+    # uitk handles the DCC-agnostic ``action://open`` link itself; the DCC-specific
+    # actions (``select`` / ``reveal`` a node) are delegated to handlers the DCC
+    # package registers via ``BridgeSlotsBase.register_log_link_handler``. This keeps
+    # the dependency direction honest: uitk sits ABOVE pythontk and BELOW
+    # mayatk/blendertk, so it must not import them — each DCC registers its
+    # ``dispatch_log_link`` from its ``UiHandler.__init__`` instead. (Before this,
+    # uitk hard-imported ``mayatk``, which both inverted the layering AND left node
+    # links dead in a Blender session, where the mayatk import fails even though
+    # ``blendertk.dispatch_log_link`` exists.)
+    _LOG_LINK_HANDLERS: List[Callable] = []
+
+    # One temp Output Dir per bridge tag per host process, removed at process exit.
+    _BRIDGE_TEMP_DIRS: Dict[str, str] = {}
+
+    @staticmethod
+    def _open_in_file_manager(path: str) -> None:
+        """Best-effort reveal of *path* in the platform's file manager."""
+        if sys.platform == "win32":
+            os.startfile(path)  # noqa: S606 — Windows-only API
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+
+    @staticmethod
+    def _remove_bridge_temp_dir(key: str) -> None:
+        """atexit handler: remove the temp Output Dir created for *key* (best-effort)."""
+        path = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.pop(key, None)
+        if path:
+            shutil.rmtree(path, ignore_errors=True)
+
+
+class BridgeSlotsBase(_BridgeSlotsInternal):
     """Base class for DCC-bridge slot panels.
 
     Subclasses **must** set:
@@ -224,12 +189,14 @@ class BridgeSlotsBase:
     HEADER_MENU_TITLE: str = "Utilities"
     HEADER_MENU_ITEMS: Tuple[Tuple[str, str, str, str], ...] = (
         (
-            "Open Templates Folder", "btn_open_templates",
+            "Open Templates Folder",
+            "btn_open_templates",
             "Reveal the bundled template folder in Explorer.",
             "open_templates_folder",
         ),
         (
-            "Refresh Templates", "btn_refresh_templates",
+            "Refresh Templates",
+            "btn_refresh_templates",
             "Re-scan the templates folder and rebuild the template combo.",
             "refresh_templates",
         ),
@@ -298,11 +265,48 @@ class BridgeSlotsBase:
 
     def template_description(self, template_path: Path) -> Optional[str]:
         """Hook: extract a brief description from a template file."""
-        return template_description(template_path)
+        return Tooltip.template_description(template_path)
 
     def format_param_tooltip(self, spec: AttributeSpec) -> str:
         """Hook: build the rich-text tooltip for one parameter spec."""
-        return format_param_tooltip(spec)
+        return Tooltip.format_param_tooltip(spec)
+
+    # ------------------ Bridge runtime utilities ----------------------
+
+    @staticmethod
+    def register_log_link_handler(handler: Callable) -> None:
+        """Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
+        ``action://`` links (returns True when it handled the link).
+
+        DCC packages (mayatk / blendertk) call this from their ``UiHandler.__init__``
+        so their node-dispatch runs without uitk importing them. Handlers are tried
+        in registration order until one returns True. Idempotent — re-registering
+        the same callable is a no-op.
+        """
+        if handler not in _BridgeSlotsInternal._LOG_LINK_HANDLERS:
+            _BridgeSlotsInternal._LOG_LINK_HANDLERS.append(handler)
+
+    @staticmethod
+    def ensure_bridge_temp_dir(tag: str) -> str:
+        """Create (once per host process) and return a temp Output Dir for *tag*.
+
+        Backs :attr:`TEMP_OUTPUT_FALLBACK`: the last-resort Output Dir when neither the
+        user's value nor the DCC scene/workspace default resolves (e.g. an unsaved scene with no
+        workspace), so a hand-off bridge can still export without forcing the user to pick a path. The
+        directory is registered for cleanup at process exit — it lives for the whole session (long
+        enough for the launched external app to read the exported files) and is then removed. Reused
+        across sends for the same *tag* (keyed by tag; the PID keeps concurrent DCCs from colliding on
+        a shared temp path)."""
+        key = tag or "bridge"
+        path = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.get(key)
+        if path is None:
+            path = os.path.join(
+                tempfile.gettempdir(), "uitk_bridge", f"{key}_{os.getpid()}"
+            )
+            os.makedirs(path, exist_ok=True)
+            _BridgeSlotsInternal._BRIDGE_TEMP_DIRS[key] = path
+            atexit.register(_BridgeSlotsInternal._remove_bridge_temp_dir, key)
+        return path
 
     # ------------------ Init flow -------------------------------------
 
@@ -513,7 +517,7 @@ class BridgeSlotsBase:
             return fallback
 
         if self.TEMP_OUTPUT_FALLBACK:
-            temp_dir = ensure_bridge_temp_dir(self.LOG_TAG)
+            temp_dir = self.ensure_bridge_temp_dir(self.LOG_TAG)
             self._apply_output_dir_fallback(
                 temp_dir,
                 "Output Dir not set and no scene/workspace default; using a "
@@ -576,7 +580,7 @@ class BridgeSlotsBase:
             label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             label.setToolTip(tooltip_html)
 
-            widget = make_widget(spec, row)
+            widget = KindFactory.make_widget(spec, row)
             # Prefix the registry key so two panels in the same window
             # can host the same AttributeSpec without objectName clashes.
             widget.setObjectName(f"param_{key.lower()}")
@@ -599,11 +603,11 @@ class BridgeSlotsBase:
 
     def _read_param(self, key: str) -> Any:
         """Extract the current value via the registered KindHandler."""
-        return read_value(self._param_widgets[key])
+        return KindFactory.read_value(self._param_widgets[key])
 
     def _write_param(self, key: str, value: Any) -> None:
         """Push *value* into the widget for *key* via the KindHandler."""
-        set_value(self._param_widgets[key], value)
+        KindFactory.set_value(self._param_widgets[key], value)
 
     def collect_param_values(self) -> Dict[str, Any]:
         """Snapshot every widget's current value, regardless of visibility."""
@@ -646,10 +650,12 @@ class BridgeSlotsBase:
         # A category divider shows only while at least one of its params does,
         # so a section that's fully hidden for the mode doesn't leave a stray rule.
         for section, sep in self._section_separators.items():
-            sep.setVisible(any(
-                self._param_section.get(k) == section and k in used
-                for k in self._param_rows
-            ))
+            sep.setVisible(
+                any(
+                    self._param_section.get(k) == section and k in used
+                    for k in self._param_rows
+                )
+            )
         if self._param_group is not None:
             self._param_group.setVisible(bool(used))
 
@@ -723,7 +729,7 @@ class BridgeSlotsBase:
         # change signals during session restore, so the marker self-corrects
         # regardless of whether widgets restore before or after this wiring.
         for widget in self._param_widgets.values():
-            connect_changed(
+            KindFactory.connect_changed(
                 widget, lambda *_: self._preset_mgr.refresh_modified_state()
             )
         # Insurance against any widgets restored with signals blocked: one
@@ -850,9 +856,7 @@ class BridgeSlotsBase:
         """
         self._refresh_param_visibility()
         if self._preset_mgr is not None and not self._semantic_presets:
-            self._preset_mgr.preset_dir = (
-                self.PRESETS_ROOT / self._active_template()
-            )
+            self._preset_mgr.preset_dir = self.PRESETS_ROOT / self._active_template()
             refresh = getattr(self._preset_mgr, "_refresh_combo", None)
             if callable(refresh):
                 refresh()
@@ -906,12 +910,9 @@ class BridgeSlotsBase:
                 from urllib.parse import parse_qs
 
                 params = parse_qs(url.query())
-                path = (
-                    params.get("path", [""])[0]
-                    or params.get("filepath", [""])[0]
-                )
+                path = params.get("path", [""])[0] or params.get("filepath", [""])[0]
                 if path:
-                    _open_in_file_manager(path)
+                    self._open_in_file_manager(path)
                 return
         except Exception as e:  # noqa: BLE001
             self.bridge.logger.error(f"Could not open link: {e}")
@@ -921,7 +922,7 @@ class BridgeSlotsBase:
         # until one reports it handled the link; an empty registry (standalone
         # app, no DCC) simply no-ops. A misbehaving handler is logged but does
         # not shadow the others.
-        for handler in _LOG_LINK_HANDLERS:
+        for handler in _BridgeSlotsInternal._LOG_LINK_HANDLERS:
             try:
                 if handler(url, self.bridge.logger):
                     return
@@ -972,7 +973,9 @@ class BridgeSlotsBase:
         widget.menu.add("Separator", setTitle=self.HEADER_MENU_TITLE)
         for label, name, tooltip, handler in self.header_menu_items():
             widget.menu.add(
-                "QPushButton", setText=label, setObjectName=name,
+                "QPushButton",
+                setText=label,
+                setObjectName=name,
                 setToolTip=tooltip,
             )
             getattr(widget.menu, name).clicked.connect(getattr(self, handler))
@@ -980,9 +983,9 @@ class BridgeSlotsBase:
         spec = self.help_spec()
         if spec:
             try:
-                from uitk.widgets.mixins.tooltip_mixin import fmt
+                from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
 
-                widget.set_help_text(fmt(**spec))
+                widget.set_help_text(TooltipFormat.fmt(**spec))
             except Exception:  # noqa: BLE001 - help is non-essential chrome
                 pass
 
@@ -996,7 +999,7 @@ class BridgeSlotsBase:
             self.bridge.logger.info(f"Folder not found: {path or '(unset)'}")
             return False
         try:
-            _open_in_file_manager(str(path))
+            self._open_in_file_manager(str(path))
             return True
         except Exception as e:  # noqa: BLE001
             self.bridge.logger.error(f"Could not open folder: {e}")

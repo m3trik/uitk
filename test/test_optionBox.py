@@ -24,16 +24,17 @@ from qtpy import QtWidgets, QtCore
 from pathlib import Path
 
 from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
-from uitk.widgets.optionBox.options._options import ButtonOption
 from uitk.widgets.optionBox.options.reset import ResetOption
 from uitk.widgets.optionBox.options.pin_values import PinValuesOption
 from uitk.widgets.optionBox.options.browse import BrowseOption
 from uitk.widgets.optionBox.options.recent_values import (
     RecentValuesOption,
     RecentValuesPopup,
-    _is_filesystem_path,
-    _build_display_map_smart_path,
 )
+from uitk.managers.recent_values_store import RecentValuesStore
+
+_is_filesystem_path = RecentValuesStore._is_filesystem_path
+_build_display_map_smart_path = RecentValuesStore._build_display_map_smart_path
 
 
 class TestConvenienceHelpers(QtBaseTestCase):
@@ -45,13 +46,12 @@ class TestConvenienceHelpers(QtBaseTestCase):
         Regression: it forwarded menu= into OptionBox.__init__, which accepts
         no such kwarg -> TypeError on every call.
         """
-        from uitk.widgets.optionBox.utils import add_menu_option
-        from uitk.widgets.optionBox.options.action import MenuOption
+        from uitk.widgets.optionBox.utils import OptionBoxManager
         from uitk.widgets.menu import Menu
 
         button = self.track_widget(QtWidgets.QPushButton("x"))
         menu = self.track_widget(Menu())
-        container = add_menu_option(button, menu)
+        container = OptionBoxManager.add_menu_option(button, menu)
         self.assertIsNotNone(container)
 
 
@@ -302,7 +302,9 @@ class TestOptionBoxOverlayRefit(QtBaseTestCase):
         parent = self.track_widget(QtWidgets.QWidget())
         parent.resize(600, 600)
         btn = QtWidgets.QPushButton("Extrude", parent)
-        btn.setGeometry(100, 100, btn.fontMetrics().horizontalAdvance("Extrude") + 40, 21)
+        btn.setGeometry(
+            100, 100, btn.fontMetrics().horizontalAdvance("Extrude") + 40, 21
+        )
 
         option = _StubFieldOption()
         opt = OptionBox(options=[option])
@@ -330,7 +332,7 @@ class TestOptionBoxOverlayRefit(QtBaseTestCase):
         btn.setGeometry(270, 290, wide, 21)
 
         opt = OptionBox(options=[])
-        container = self.track_widget(opt.wrap(btn))
+        self.track_widget(opt.wrap(btn))
 
         parent.show()
         QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 100)
@@ -759,7 +761,6 @@ class TestRecentValuesCenterTruncation(QtBaseTestCase):
 
     def test_long_value_truncated_from_middle(self):
         """Long values should be truncated from the center, keeping both ends visible."""
-        import pythontk as ptk
 
         long_value = (
             "A" * 50 + "B" * 50 + "C" * 50
@@ -1069,7 +1070,7 @@ class TestBrowseOption(QtBaseTestCase):
 
     def test_string_start_dir(self):
         """start_dir should accept a plain string."""
-        import tempfile, os
+        import tempfile
 
         tmp = tempfile.gettempdir()
         widget = self.track_widget(QtWidgets.QLineEdit())
@@ -1090,7 +1091,8 @@ class TestBrowseOption(QtBaseTestCase):
 
     def test_start_dir_falls_back_to_parent_of_file(self):
         """When widget contains a file path, should use parent directory."""
-        import tempfile, os
+        import tempfile
+        import os
 
         tmp = tempfile.gettempdir()
         fake_file = os.path.join(tmp, "nonexistent_file.txt")
@@ -1221,7 +1223,7 @@ class TestActionOptionMultiInstance(QtBaseTestCase):
         # Now replace all
         mgr.set_action(lambda: None, icon="c")
 
-        container = mgr.container
+        self.assertIsNotNone(mgr.container)  # force wrap
         options = mgr._option_box.get_options()
         action_opts = [
             o
@@ -1248,7 +1250,7 @@ class TestBrowseOptionIntegration(QtBaseTestCase):
         )
         browse = BrowseOption(wrapped_widget=widget)
         ob = OptionBox(options=[recent, browse])
-        container = self.track_widget(ob.wrap(widget))
+        self.track_widget(ob.wrap(widget))
         mgr._option_box = ob
         mgr._is_wrapped = True
 
@@ -1388,7 +1390,7 @@ class TestOptionBoxManagerFindOption(QtBaseTestCase):
         widget = self.track_widget(QtWidgets.QLineEdit())
         browse = BrowseOption(wrapped_widget=widget)
         ob = OptionBox(options=[browse])
-        container = self.track_widget(ob.wrap(widget))
+        self.track_widget(ob.wrap(widget))
 
         from uitk.widgets.optionBox.utils import OptionBoxManager
 
@@ -1476,10 +1478,14 @@ class TestToggleOption(QtBaseTestCase):
         _, toggle = self._make_toggle(initial=True, gated_widgets=[gated])
         # Trigger setup_widget which applies initial gating state
         _ = toggle.widget
-        self.assertTrue(gated.isEnabled(), "Gated widget should be enabled when toggle is on")
+        self.assertTrue(
+            gated.isEnabled(), "Gated widget should be enabled when toggle is on"
+        )
 
         toggle.set_on(False)
-        self.assertFalse(gated.isEnabled(), "Gated widget should be disabled when toggle is off")
+        self.assertFalse(
+            gated.isEnabled(), "Gated widget should be disabled when toggle is off"
+        )
 
         toggle.set_on(True)
         self.assertTrue(gated.isEnabled())
@@ -1572,7 +1578,11 @@ class TestToggleOption(QtBaseTestCase):
         def spy(cls, w, name, color=None, auto_theme=True, fallback_size=(16, 16)):
             calls.append((color, auto_theme))
             return orig(
-                cls, w, name, color=color, auto_theme=auto_theme,
+                cls,
+                w,
+                name,
+                color=color,
+                auto_theme=auto_theme,
                 fallback_size=fallback_size,
             )
 
@@ -1621,16 +1631,12 @@ class TestToggleOption(QtBaseTestCase):
         # Use an in-memory-ish settings key unique to this test run
         key = "test_toggle_round_trip"
         widget = self.track_widget(QtWidgets.QLineEdit())
-        toggle = ToggleOption(
-            wrapped_widget=widget, initial=True, settings_key=key
-        )
+        toggle = ToggleOption(wrapped_widget=widget, initial=True, settings_key=key)
         toggle.set_on(False)  # writes is_on=False to QSettings under `key`
 
         widget2 = self.track_widget(QtWidgets.QLineEdit())
         # `initial=True` would normally win, but persisted False should override.
-        toggle2 = ToggleOption(
-            wrapped_widget=widget2, initial=True, settings_key=key
-        )
+        toggle2 = ToggleOption(wrapped_widget=widget2, initial=True, settings_key=key)
         self.assertFalse(toggle2.is_on, "Persisted state must override initial=True")
 
         # Clean up so subsequent runs start fresh.
@@ -1678,7 +1684,9 @@ class TestDisableOption(QtBaseTestCase):
 
         option.set_on(False)  # disable
         container._sync_option_buttons_enabled()
-        self.assertFalse(widget.isEnabled(), "DisableOption off should disable the widget")
+        self.assertFalse(
+            widget.isEnabled(), "DisableOption off should disable the widget"
+        )
         self.assertTrue(
             btn.isEnabled(), "ban button must stay clickable so the user can re-enable"
         )
@@ -1769,9 +1777,7 @@ class TestOptionBoxManagerToggle(QtBaseTestCase):
         _, mgr = self._make_manager()
         mgr.set_toggle(settings_key=False)
 
-        toggles = [
-            o for o in mgr._pending_options if isinstance(o, ToggleOption)
-        ]
+        toggles = [o for o in mgr._pending_options if isinstance(o, ToggleOption)]
         self.assertEqual(len(toggles), 1)
 
     def test_set_toggle_replaces_existing_by_default(self):
@@ -1781,9 +1787,7 @@ class TestOptionBoxManagerToggle(QtBaseTestCase):
         mgr.set_toggle(icon="filter", settings_key=False)
         mgr.set_toggle(icon="lock", settings_key=False)
 
-        toggles = [
-            o for o in mgr._pending_options if isinstance(o, ToggleOption)
-        ]
+        toggles = [o for o in mgr._pending_options if isinstance(o, ToggleOption)]
         self.assertEqual(len(toggles), 1, "Second set_toggle should replace the first")
         self.assertEqual(toggles[0]._icon_on, "lock")
 
@@ -1794,9 +1798,7 @@ class TestOptionBoxManagerToggle(QtBaseTestCase):
         mgr.set_toggle(icon="filter", settings_key=False)
         mgr.add_toggle(icon="lock", settings_key=False)
 
-        toggles = [
-            o for o in mgr._pending_options if isinstance(o, ToggleOption)
-        ]
+        toggles = [o for o in mgr._pending_options if isinstance(o, ToggleOption)]
         self.assertEqual(len(toggles), 2)
 
     def test_set_toggle_on_toggled_wires_signal(self):
@@ -2094,7 +2096,9 @@ class TestResetOption(QtBaseTestCase):
         self.track_widget(box.wrap(sb))
 
         opt.set_bypassed(True)
-        self.assertEqual(calls, [sb], "auto reset should call window.state.reset(widget)")
+        self.assertEqual(
+            calls, [sb], "auto reset should call window.state.reset(widget)"
+        )
 
     def test_bypass_suppresses_the_persistence_save(self):
         # The bypass reset must run inside the StateManager's suppress_save() so
@@ -2106,7 +2110,9 @@ class TestResetOption(QtBaseTestCase):
 
         opt.set_bypassed(True)
         self.assertEqual(
-            events, ["enter", "reset", "exit"], "bypass reset must run inside suppress_save"
+            events,
+            ["enter", "reset", "exit"],
+            "bypass reset must run inside suppress_save",
         )
 
     def test_plain_reset_does_not_suppress_the_persistence_save(self):
@@ -2118,7 +2124,9 @@ class TestResetOption(QtBaseTestCase):
         self.track_widget(box.wrap(sb))
 
         opt.reset()
-        self.assertEqual(events, ["reset"], "plain reset must persist (no suppress_save)")
+        self.assertEqual(
+            events, ["reset"], "plain reset must persist (no suppress_save)"
+        )
 
     def _make_state_window(self):
         """A top-level window carrying a StateManager that records save-suppression."""
@@ -2337,8 +2345,10 @@ class TestOptionMenuClickableRows(QtBaseTestCase):
         opt._show_menu()  # populate + show the real menu
 
         rows = opt.menu.get_items()
-        self.assertTrue(rows and all(hasattr(r, "clicked") for r in rows),
-                        "context-menu rows are not clickable buttons")
+        self.assertTrue(
+            rows and all(hasattr(r, "clicked") for r in rows),
+            "context-menu rows are not clickable buttons",
+        )
         self.assertEqual([r.text() for r in rows], ["Alpha", "Beta"])
 
         beta = next(r for r in rows if r.text() == "Beta")
@@ -2543,9 +2553,7 @@ class TestOptionMenuManagerWiring(QtBaseTestCase):
         widget, mgr = self._make_managed_widget()
         wrapper = OptionBoxMixin._OptionsWrapper(widget)
         # Must not raise.
-        result = wrapper.option_menu(
-            items=[("A", lambda: None), ("B", lambda: None)]
-        )
+        result = wrapper.option_menu(items=[("A", lambda: None), ("B", lambda: None)])
         self.assertIs(result, wrapper)  # fluent
         self.assertIsNotNone(mgr.find_option(OptionMenuOption))
         # Force the wrap — still no error.
@@ -2574,36 +2582,32 @@ class TestOptionMenuManagerWiring(QtBaseTestCase):
 
         widget, mgr = self._make_managed_widget()
         mgr.set_action(lambda: None, icon="play")  # pending ActionOption
-        mgr.set_order(["action", "clear"])          # reorder BEFORE wrapping
-        self.assertIsNotNone(mgr.container)          # force wrap
+        mgr.set_order(["action", "clear"])  # reorder BEFORE wrapping
+        self.assertIsNotNone(mgr.container)  # force wrap
         actions = [
             o for o in mgr._option_box.get_options() if isinstance(o, ActionOption)
         ]
-        self.assertEqual(
-            len(actions), 1, "reorder must not discard the pending action"
-        )
+        self.assertEqual(len(actions), 1, "reorder must not discard the pending action")
 
     def test_set_order_after_wrap_preserves_options(self):
         from uitk.widgets.optionBox.options.action import ActionOption
 
         widget, mgr = self._make_managed_widget()
         mgr.set_action(lambda: None, icon="play")
-        self.assertIsNotNone(mgr.container)   # wrap now
-        mgr.set_order(["action", "clear"])    # reorder the wrapped box
+        self.assertIsNotNone(mgr.container)  # wrap now
+        mgr.set_order(["action", "clear"])  # reorder the wrapped box
         actions = [
             o for o in mgr._option_box.get_options() if isinstance(o, ActionOption)
         ]
-        self.assertEqual(
-            len(actions), 1, "reorder must not discard the wrapped action"
-        )
+        self.assertEqual(len(actions), 1, "reorder must not discard the wrapped action")
 
     # ── Finding 6b/6c: menu enable/disable idempotency + setter ──
     def test_disable_menu_removes_button_and_reenable_is_single(self):
         from uitk.widgets.optionBox.options.action import MenuOption
 
         widget, mgr = self._make_managed_widget()
-        mgr.enable_menu()                     # 1 MenuOption
-        self.assertIsNotNone(mgr.container)   # wrap
+        mgr.enable_menu()  # 1 MenuOption
+        self.assertIsNotNone(mgr.container)  # wrap
         self.track_widget(mgr._menu)
         self.assertEqual(self._count(mgr, MenuOption), 1)
 
@@ -2613,7 +2617,7 @@ class TestOptionMenuManagerWiring(QtBaseTestCase):
         )
         self.assertIsNone(mgr._menu)
 
-        mgr.enable_menu()                     # re-enable
+        mgr.enable_menu()  # re-enable
         if mgr._menu is not None:
             self.track_widget(mgr._menu)
         self.assertEqual(
@@ -2626,19 +2630,21 @@ class TestOptionMenuManagerWiring(QtBaseTestCase):
 
         widget, mgr = self._make_managed_widget()
         m1 = self.track_widget(Menu())
-        mgr.menu = m1                          # was a dead-end (no button)
-        self.assertIsNotNone(mgr.container)    # wrap
+        mgr.menu = m1  # was a dead-end (no button)
+        self.assertIsNotNone(mgr.container)  # wrap
         self.assertEqual(self._count(mgr, MenuOption), 1)
         self.assertIs(mgr._menu, m1)
 
         m2 = self.track_widget(Menu())
-        mgr.menu = m2                          # reassign — still exactly one
+        mgr.menu = m2  # reassign — still exactly one
         self.assertEqual(self._count(mgr, MenuOption), 1)
         self.assertIs(mgr._menu, m2)
 
     @staticmethod
     def _count(mgr, option_type):
-        opts = mgr._option_box.get_options() if mgr._option_box else mgr._pending_options
+        opts = (
+            mgr._option_box.get_options() if mgr._option_box else mgr._pending_options
+        )
         return len([o for o in opts if isinstance(o, option_type)])
 
 
@@ -2758,9 +2764,7 @@ class TestOptionBoxManagerMenuAdoption(QtBaseTestCase):
 
         mgr = OptionBoxManager(widget)
         mgr.set_action(lambda: None, icon="play")  # queued while unwrapped
-        self.assertTrue(
-            any(isinstance(o, ActionOption) for o in mgr._pending_options)
-        )
+        self.assertTrue(any(isinstance(o, ActionOption) for o in mgr._pending_options))
 
         widget.has_menu = True
         mgr.enable_clear()  # clear_option setter → _update_option_box adoption
@@ -2805,6 +2809,99 @@ class TestOptionBoxManagerMenuAdoption(QtBaseTestCase):
             existing_box,
             "add_option after container adoption must not re-wrap into a new box",
         )
+
+
+class TestPopupLauncherStatePersistence(QtBaseTestCase):
+    """Checked state of popup-launcher buttons (pin / recent) must not persist.
+
+    On these buttons ``:checked`` only mirrors "my popup is open" — transient
+    UI state. Regression: ``register_children`` registered them with
+    ``restore_state=True`` and their default signal ``clicked`` persisted
+    ``isChecked()``; opening the popup saved ``True``, the programmatic
+    uncheck on popup close never re-saved (``setChecked`` emits no
+    ``clicked``), and the next session restored the button into the colored
+    menu-open state with no menu on screen.
+    """
+
+    def test_option_buttons_opt_out_of_state_restore(self):
+        """Every option button pre-sets restore_state=False before registration.
+
+        register_widget only defaults restore_state=True when the attribute is
+        absent, so the pre-set opt-out sticks.
+        """
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        for option in (PinValuesOption(), RecentValuesOption(), ActionOption()):
+            button = self.track_widget(option.widget)
+            self.assertFalse(
+                getattr(button, "restore_state", True),
+                f"{type(option).__name__} button must opt out of state restore",
+            )
+
+    def test_state_manager_treats_option_button_as_keyless(self):
+        """StateManager derives no state key for an option button, so a stale
+        persisted checked=True from an old session can never be applied."""
+        from uitk.managers.state_manager import StateManager
+        from uitk.managers.settings_manager import SettingsManager
+
+        option = PinValuesOption()
+        button = self.track_widget(option.widget)
+        button.setObjectName("host_PinValuesOption")
+        state = StateManager(SettingsManager(org="uitk", app="test_state"))
+        self.assertIsNone(state._get_state_key(button))
+
+
+class TestPluginStateIconVisuals(QtBaseTestCase):
+    """Icon visuals report plugin content state without redundant accents.
+
+    Pin: the GLYPH swaps (hollow/filled) — no color tint. Recent: the clock
+    glyph is constant but DIMS while the popup would be empty.
+    """
+
+    def test_pin_glyph_swaps_without_color_tint(self):
+        from uitk.managers.icon_manager import IconManager
+
+        line_edit = self.track_widget(QtWidgets.QLineEdit("hello"))
+        option = PinValuesOption(line_edit)
+        button = self.track_widget(option.widget)
+
+        info = IconManager.registered_info(button)
+        self.assertIsNotNone(info, "pin button icon must be registered")
+        self.assertEqual(info["name"], "radio_empty")
+        self.assertIsNone(info.get("color"), "pin never tints — glyph carries state")
+
+        option.add_pinned_value("hello")
+        info = IconManager.registered_info(button)
+        self.assertEqual(info["name"], "radio", "current pinned value fills the glyph")
+        self.assertIsNone(info.get("color"), "pinned state is glyph-only, no tint")
+
+        line_edit.setText("other")
+        info = IconManager.registered_info(button)
+        self.assertEqual(info["name"], "radio_empty")
+        self.assertIsNone(info.get("color"))
+
+    def test_recent_icon_dimmed_while_history_empty(self):
+        from uitk.managers.icon_manager import IconManager
+
+        line_edit = self.track_widget(QtWidgets.QLineEdit())
+        option = RecentValuesOption(line_edit)
+        button = self.track_widget(option.widget)
+
+        dim = IconManager._normalize_color(RecentValuesOption._EMPTY_DIM)
+
+        info = IconManager.registered_info(button)
+        self.assertIsNotNone(info, "recent button icon must be registered")
+        self.assertEqual(info["name"], "clock")
+        self.assertEqual(info.get("color"), dim, "empty history dims the button")
+
+        option.add_recent_value("some/value")
+        info = IconManager.registered_info(button)
+        self.assertEqual(info["name"], "clock", "glyph is constant")
+        self.assertIsNone(info.get("color"), "history present → full theme color")
+
+        option.clear_recent_values()
+        info = IconManager.registered_info(button)
+        self.assertEqual(info.get("color"), dim, "clearing history re-dims the button")
 
 
 # -----------------------------------------------------------------------------

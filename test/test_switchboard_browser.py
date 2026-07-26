@@ -32,6 +32,10 @@ from uitk.widgets.editors.switchboard_browser import (
     SCOPE_NAME,
     SCOPE_TAGS,
     SCOPE_BOTH,
+    PERSISTENCE_STICKY,
+    PERSISTENCE_TRANSIENT,
+    PERSISTENCE_CONTEXT,
+    PERSISTENCE_DEFAULT,
 )
 
 
@@ -1421,6 +1425,162 @@ class ContextMenusFreedOnClose(BrowserBase):
             view.indexAt = orig_index_at
         self.assertEqual(len(created), 1)
         self.assertTrue(created[0].testAttribute(QtCore.Qt.WA_DeleteOnClose))
+
+
+class PersistenceOverride(BrowserBase):
+    """Global default + per-entry override for launched-window persistence.
+
+    "sticky" -> hide button (stays open); "transient" -> pin button (auto-hides
+    with the marking menu); "context" (the default) passes no override so each
+    launch keeps its context chrome. The browser resolves an effective value
+    (override beats global) and forwards it — None for context — to
+    ``handler.launch``.
+    """
+
+    def _label(self, value):
+        return self.browser._persistence_label(value)
+
+    def test_default_global_is_context(self):
+        # Fresh (cleared) settings -> "Default (context)", which preserves each
+        # launch context's established behavior (no silent chrome change).
+        self.assertEqual(self.browser._global_persistence(), PERSISTENCE_CONTEXT)
+        self.assertEqual(PERSISTENCE_DEFAULT, PERSISTENCE_CONTEXT)
+        self.assertEqual(
+            self.browser._cmb_persistence.currentText(),
+            self._label(PERSISTENCE_CONTEXT),
+        )
+
+    def test_launch_options_none_by_default(self):
+        # Context default -> the resolved value handed to the handler is None.
+        self.assertIsNone(self.browser.launch_options().persistence)
+
+    def test_global_combo_change_persists(self):
+        # uitk ComboBox emits currentTextChanged on index change (user selection),
+        # not on programmatic setCurrentText — drive it via the index.
+        combo = self.browser._cmb_persistence
+        combo.setCurrentIndex(combo.findText(self._label(PERSISTENCE_STICKY)))
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(
+            self.browser._settings.value("opt_persistence"), PERSISTENCE_STICKY
+        )
+        self.assertEqual(self.browser._global_persistence(), PERSISTENCE_STICKY)
+        self.assertEqual(
+            self.browser.launch_options().persistence, PERSISTENCE_STICKY
+        )
+
+    def test_resolve_prefers_entry_override(self):
+        self.browser._settings.setValue("opt_persistence", PERSISTENCE_TRANSIENT)
+        self.browser._set_entry_persistence("alpha", PERSISTENCE_STICKY)
+        # alpha overridden; beta follows the global default.
+        self.assertEqual(self.browser._resolve_persistence("alpha"), PERSISTENCE_STICKY)
+        self.assertEqual(
+            self.browser._resolve_persistence("beta"), PERSISTENCE_TRANSIENT
+        )
+
+    def test_resolve_context_returns_none(self):
+        # Global "context" with no override -> None (keep context chrome).
+        self.assertEqual(self.browser._global_persistence(), PERSISTENCE_CONTEXT)
+        self.assertIsNone(self.browser._resolve_persistence("alpha"))
+        self.assertIsNone(self.browser._resolve_persistence(None))
+
+    def test_clear_override_follows_default(self):
+        self.browser._settings.setValue("opt_persistence", PERSISTENCE_STICKY)
+        self.browser._set_entry_persistence("alpha", PERSISTENCE_TRANSIENT)
+        self.assertEqual(
+            self.browser._entry_persistence_override("alpha"), PERSISTENCE_TRANSIENT
+        )
+        self.browser._set_entry_persistence("alpha", None)
+        self.assertIsNone(self.browser._entry_persistence_override("alpha"))
+        # Cleared -> follows the global default (sticky here).
+        self.assertEqual(
+            self.browser._resolve_persistence("alpha"), PERSISTENCE_STICKY
+        )
+
+    def test_persistence_key_is_host_namespaced(self):
+        key = self.browser._persistence_key("alpha")
+        self.assertTrue(key.startswith("persistence_override/"))
+        # Reuses the Switchboard host-namespacing SSoT so Maya/Blender sessions
+        # can't collide on a same-named entry via the shared (org, app) store.
+        self.assertTrue(key.endswith(self.sb._host_namespaced_branch("alpha")))
+
+    def test_launch_forwards_resolved_override(self):
+        from unittest import mock
+
+        self.browser._settings.setValue("opt_persistence", PERSISTENCE_CONTEXT)
+        self.browser._set_entry_persistence("alpha", PERSISTENCE_TRANSIENT)
+        entry = self.browser._model.entry_for_name("alpha")
+        with mock.patch.object(entry.handler, "launch") as launch:
+            self.browser._launch("alpha")
+        launch.assert_called_once()
+        self.assertEqual(
+            launch.call_args.kwargs.get("persistence"), PERSISTENCE_TRANSIENT
+        )
+
+    def test_launch_forwards_none_for_context_default(self):
+        from unittest import mock
+
+        # Global context, no override -> forward persistence=None so the
+        # handler keeps the launch context's chrome.
+        entry = self.browser._model.entry_for_name("beta")
+        with mock.patch.object(entry.handler, "launch") as launch:
+            self.browser._launch("beta")
+        launch.assert_called_once()
+        self.assertIsNone(launch.call_args.kwargs.get("persistence"))
+
+    def test_context_menu_open_as_builds_and_sets_override(self):
+        import uitk.widgets.editors.switchboard_browser as mod
+
+        view = self.browser._view
+        idx = view.model().index(0, 0)
+        name = idx.data(SwitchboardBrowserModel.NameRole)
+
+        # Capture the parent menu's action texts INSIDE exec_ (the parent is
+        # alive there). Child submenu objects are torn down aggressively under
+        # PySide6 + offscreen QPA, so we assert on the parent's texts only.
+        result = {}
+
+        class _RecordingMenu(QtWidgets.QMenu):
+            def exec_(self_inner, *a, **k):  # noqa: N805
+                result["texts"] = [x.text() for x in self_inner.actions()]
+                return None
+
+        orig_menu = mod.QtWidgets.QMenu
+        orig_index_at = view.indexAt
+        mod.QtWidgets.QMenu = _RecordingMenu
+        view.indexAt = lambda pos: idx
+        try:
+            # Construction must not raise, and the "Open as" submenu must appear.
+            self.browser._on_row_context_menu(QtCore.QPoint(1, 1))
+        finally:
+            mod.QtWidgets.QMenu = orig_menu
+            view.indexAt = orig_index_at
+
+        self.assertIn("Open as", result.get("texts", []))
+        # The action the submenu wires to writes the per-entry override.
+        self.browser._set_entry_persistence(name, PERSISTENCE_TRANSIENT)
+        self.assertEqual(
+            self.browser._entry_persistence_override(name), PERSISTENCE_TRANSIENT
+        )
+
+    def test_preset_roundtrip_persistence(self):
+        self.browser._settings.setValue("opt_persistence", PERSISTENCE_TRANSIENT)
+        self.browser._cmb_persistence.blockSignals(True)
+        self.browser._cmb_persistence.setCurrentText(self._label(PERSISTENCE_TRANSIENT))
+        self.browser._cmb_persistence.blockSignals(False)
+
+        data = self.browser._export_preset_data()
+        self.assertEqual(data["launch"]["persistence"], PERSISTENCE_TRANSIENT)
+
+        # Flip the live state, then import the captured preset back.
+        self.browser._settings.setValue("opt_persistence", PERSISTENCE_CONTEXT)
+        self.browser._import_preset_data(data)
+        self.assertEqual(
+            self.browser._settings.value("opt_persistence"), PERSISTENCE_TRANSIENT
+        )
+        self.assertEqual(
+            self.browser._cmb_persistence.currentText(),
+            self._label(PERSISTENCE_TRANSIENT),
+        )
 
 
 if __name__ == "__main__":

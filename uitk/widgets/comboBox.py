@@ -708,11 +708,31 @@ class ComboBox(
             # Fall back to currentText() so calling setEditable(False) on an
             # already-non-editable combo (e.g. from a .ui setting editable=False)
             # is a no-op rather than an AttributeError.
-            new_text = lineEdit.text() if lineEdit is not None else self.currentText()
+            was_editing = lineEdit is not None
+            new_text = lineEdit.text() if was_editing else self.currentText()
+            index = self.currentIndex()
             super().setEditable(False)
-            self.setCurrentText(new_text)
-            if emit_signal:
+            # Only a real editing session commits/emits. setEditable(False) on
+            # an already-non-editable combo has no edit to finish — that call
+            # comes from uic-generated setupUi, or from a handler re-entering
+            # from INSIDE the on_editing_finished emission (shader_templates'
+            # rename flow), which previously re-emitted and recursed to
+            # RecursionError.
+            if emit_signal and was_editing:
+                # Commit the typed text into the current item. setCurrentText
+                # can't do this — it re-selects by text, which no-ops when no
+                # item matches the NEW text, so the edit never reached the item
+                # and the combo kept displaying the old name. Display text
+                # only; item data stays the caller's to update via
+                # on_editing_finished. Empty text is a cancelled rename: still
+                # emitted (callers react to it) but never committed — a blank
+                # item row is never valid.
+                if new_text and index >= 0 and self.itemText(index) != new_text:
+                    self.setItemText(index, new_text)
                 self.on_editing_finished.emit(new_text)
+            # emit_signal=False (focus-out / programmatic exit) is a cancel:
+            # the combo reverts to displaying the current item's text on its
+            # own once the line edit is gone.
 
     def force_header_display(self):
         if self.header_text:

@@ -46,7 +46,7 @@ _TYPE_TO_KEY = {
 
 # Shared repolish primitive — see its docstring for the stale property-
 # selector mechanism this package measures around.
-from uitk.themes.style_sheet import repolish_tree as _repolish_tree
+from uitk.themes.style_sheet import StyleSheet
 
 
 class OptionBoxContainer(QtWidgets.QWidget):
@@ -719,7 +719,7 @@ class OptionBox:
             # above eagerly this is nearly free (already resolved); on hosts
             # that resolve lazily it is load-bearing (the Blender ~80px
             # CT_PushButton inflation).
-            _repolish_tree(container)
+            StyleSheet.repolish_tree(container)
 
             # Finalize
             h = wrapped_widget.height() or wrapped_widget.sizeHint().height()

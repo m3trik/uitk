@@ -7,16 +7,10 @@ import pythontk as ptk
 from ._options import ButtonOption
 
 # Canonical home for the storage/formatting logic is the widget-free
-# RecentValuesStore. Re-exported here for backward compatibility \u2014 earlier
-# code (and tests) import these names from this module.
-from uitk.managers.recent_values_store import (  # noqa: F401 -- re-export surface
-    RecentValuesStore,
-    RecentValueEntry,
-    normalize_value as _normalize_value,
-    _entry_data,
-    _is_filesystem_path,
-    _build_display_map_smart_path,
-)
+# RecentValuesStore; the value/display helpers are its staticmethods
+# (e.g. ``RecentValuesStore.normalize_value`` / ``._entry_data`` /
+# ``._is_filesystem_path`` / ``._build_display_map_smart_path``).
+from uitk.managers.recent_values_store import RecentValuesStore, RecentValueEntry
 
 
 class RecentValuesPopup(QtCore.QObject):
@@ -134,7 +128,7 @@ class RecentValuesPopup(QtCore.QObject):
     def _create_value_row(self, value, display_text=None):
         from uitk.managers.icon_manager import IconManager
 
-        full_text = str(_entry_data(value))
+        full_text = str(RecentValuesStore._entry_data(value))
         if display_text is None:
             display_text = ptk.truncate(
                 full_text, self._MAX_DISPLAY_LENGTH, mode="middle"
@@ -207,6 +201,14 @@ class RecentValuesOption(ButtonOption):
     value_selected = QtCore.Signal(object)
     """Emitted when the user clicks a recent value to restore it."""
 
+    # The clock glyph is constant; its *presence* is the affordance and its
+    # brightness is the state. While the history is empty the popup would only
+    # show "No recent values", so the button is dimmed to the muted grey (the
+    # "locked/inactive" tier) to read as nothing-to-open; a first record
+    # brightens it back to the theme color. An explicit color is *pinned* in
+    # IconManager, so theme sweeps and the OptionBox size re-fit preserve it.
+    _EMPTY_DIM: str = ptk.Palette.status()["locked"][0]  # "#888888"
+
     def __init__(
         self,
         wrapped_widget=None,
@@ -273,7 +275,7 @@ class RecentValuesOption(ButtonOption):
             max_recent=max_recent,
             display_format=display_format,
         )
-        self._store.subscribe(self._update_button_tooltip)
+        self._store.subscribe(self._update_button_visuals)
 
         if self._auto_record and wrapped_widget is not None:
             self._install_auto_record(wrapped_widget)
@@ -292,7 +294,13 @@ class RecentValuesOption(ButtonOption):
         if not button.objectName():
             button.setObjectName("recentButton")
         button.setProperty("class", "RecentButton")
-        QtCore.QTimer.singleShot(0, self._update_button_tooltip)
+        # Initial tooltip + tint SYNCHRONOUSLY, mirroring PinValuesOption: a
+        # deferred (singleShot) update lands on the tick after first paint and
+        # flickers the glyph. _widget must be assigned first — this runs
+        # inside BaseOption.widget's lazy create (which assigns _widget only
+        # on return), and _update_button_visuals no-ops while _widget is None.
+        self._widget = button
+        self._update_button_visuals()
         return button
 
     # ------------------------------------------------------------------
@@ -364,7 +372,9 @@ class RecentValuesOption(ButtonOption):
             handle = window.windowHandle()
             if handle is not None and handle.screen() is not None:
                 return handle.screen()
-            screen = QtGui.QGuiApplication.screenAt(window.mapToGlobal(window.rect().center()))
+            screen = QtGui.QGuiApplication.screenAt(
+                window.mapToGlobal(window.rect().center())
+            )
             if screen is not None:
                 return screen
         return QtGui.QGuiApplication.primaryScreen()
@@ -398,9 +408,13 @@ class RecentValuesOption(ButtonOption):
         # value is intentionally excluded — re-selecting the value you already
         # have is a no-op. Dedup against history by the restore-data, not by the
         # (possibly friendly) display string.
-        normalized_current = _normalize_value(self._current_widget_record())
+        normalized_current = RecentValuesStore.normalize_value(
+            self._current_widget_record()
+        )
         others = [
-            v for v in self._store.values if _normalize_value(v) != normalized_current
+            v
+            for v in self._store.values
+            if RecentValuesStore.normalize_value(v) != normalized_current
         ]
 
         display_map = self._store.display_map(others)
@@ -454,7 +468,9 @@ class RecentValuesOption(ButtonOption):
         """
         display = self._get_widget_value()
         data = self._get_widget_data()
-        if data is not None and _normalize_value(data) != _normalize_value(display):
+        if data is not None and RecentValuesStore.normalize_value(
+            data
+        ) != RecentValuesStore.normalize_value(display):
             return RecentValueEntry(data, display=display)
         return display
 
@@ -561,11 +577,19 @@ class RecentValuesOption(ButtonOption):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _update_button_tooltip(self, *_args):
+    def _update_button_visuals(self, *_args):
+        """Sync tooltip and icon tint to the store (subscribed to it).
+
+        Store notifications re-run this on every record/remove;
+        ``_swap_state_icon`` skips the rasterize when the tint is already
+        correct.
+        """
         if self._widget is None:
             return
         n = len(self._store.values)
         if n:
             self._widget.setToolTip(f"Recent values ({n})")
         else:
-            self._widget.setToolTip("Recent values")
+            self._widget.setToolTip("No recent values")
+        # Dimmed while empty (nothing to open), theme color once history exists.
+        self._swap_state_icon(self.icon, None if n else self._EMPTY_DIM)

@@ -25,7 +25,7 @@ import pythontk as ptk
 # (lazy-imported there) and in type annotations (TYPE_CHECKING block).
 # ``StyleSheet`` is reachable via ``sb.style`` at use sites — no direct
 # import needed.
-from uitk.compile import precompile_async
+from uitk.compile import UiCompiler
 from uitk.handlers.handler_entry import HandlerEntry
 from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.widgets.optionBox.options.filter import FilterOption, NEGATE_PREFIX
@@ -40,6 +40,24 @@ if TYPE_CHECKING:  # pragma: no cover
 # Defaults: frameless + dark theme so a browser-launched window matches
 # the rest of the toolset out of the box.
 
+# Window persistence modes — how a launched window behaves once open. "sticky"
+# and "transient" map to the UiHandler header button sets: "sticky" -> hide
+# button (stays open), "transient" -> pin button (auto-hides when you leave the
+# marking menu, user-pinnable). "context" is the browser's default: it passes
+# no override, so each launch context keeps its established behavior (a
+# marking-menu/canonical window -> pin, a standalone launch -> hide). The
+# resolved value handed to the handler is "sticky"/"transient" or None (context).
+PERSISTENCE_STICKY = "sticky"
+PERSISTENCE_TRANSIENT = "transient"
+PERSISTENCE_CONTEXT = "context"
+PERSISTENCE_DEFAULT = PERSISTENCE_CONTEXT
+# Ordered (value, label) for the global combo and the per-entry submenu.
+PERSISTENCE_CHOICES = (
+    (PERSISTENCE_CONTEXT, "Default (context)"),
+    (PERSISTENCE_STICKY, "Stay open (sticky)"),
+    (PERSISTENCE_TRANSIENT, "Auto-hide (transient)"),
+)
+
 
 @dataclass
 class LaunchOptions:
@@ -48,6 +66,9 @@ class LaunchOptions:
     restore_geometry: bool = True
     on_top: bool = True
     theme: str = "dark"
+    # Resolved value passed to the handler: "sticky"/"transient", or None to
+    # keep the launch context's default chrome.
+    persistence: Optional[str] = None
 
 
 # ── Data model ────────────────────────────────────────────────────────────────
@@ -236,7 +257,11 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
         if role == self.InheritedTagsRole:
             return sorted(entry.inherited_tags)
         if role == self.LoadedRole:
-            return entry.handler.is_visible(entry.name) if entry.kind == "ui_file" else False
+            return (
+                entry.handler.is_visible(entry.name)
+                if entry.kind == "ui_file"
+                else False
+            )
         if role == self.VisibleRole:
             return self._is_visible(entry)
 
@@ -416,8 +441,7 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
                 f'font-style:italic">{escape(name)}</span>'
             )
         return (
-            f'<span style="color:{_NAME_COLOR};font-weight:bold">'
-            f"{escape(name)}</span>"
+            f'<span style="color:{_NAME_COLOR};font-weight:bold">{escape(name)}</span>'
         )
 
     def _tags_html(self, index) -> str:
@@ -521,7 +545,7 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
         if inherited:
             inh_str = ", ".join(f"#{t}" for t in inherited)
             editor.setToolTip(
-                f"Editing file tags only.\n" f"Inherited (not editable here): {inh_str}"
+                f"Editing file tags only.\nInherited (not editable here): {inh_str}"
             )
         else:
             editor.setToolTip("Comma-separated tags stored in this .ui file.")
@@ -552,9 +576,7 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
             and event.key() == QtCore.Qt.Key_Escape
         ):
             # NoHint = cancel; commit path is via Enter/Return only.
-            self.closeEditor.emit(
-                editor, QtWidgets.QAbstractItemDelegate.NoHint
-            )
+            self.closeEditor.emit(editor, QtWidgets.QAbstractItemDelegate.NoHint)
             return True
         return super().eventFilter(editor, event)
 
@@ -751,9 +773,7 @@ class SwitchboardBrowser(EditorPanel):
         # accessed (every option is a button, so a dropdown would be empty).
         self._search = self.sb.registered_widgets.LineEdit()
         self._search.setObjectName("le_search")
-        self._search.setPlaceholderText(
-            "Search (exact; * for substring; ! excludes)"
-        )
+        self._search.setPlaceholderText("Search (exact; * for substring; ! excludes)")
         self._search.setToolTip(
             "Search the registered UI list.\n"
             "\n"
@@ -1116,6 +1136,34 @@ class SwitchboardBrowser(EditorPanel):
         self._cb_restore = self._launch_option_widgets["restore_geometry"]
         self._cb_on_top = self._launch_option_widgets["on_top"]
 
+        # Global default window persistence. "Default (context)" keeps each
+        # launch context's established chrome (marking-menu window -> pin/
+        # auto-hide, standalone launch -> hide/stays); "sticky" forces a hide
+        # button (stays open) and "transient" a pin button (auto-hides with the
+        # marking menu). Per-entry overrides (row context menu) win over this.
+        persistence_labels = [label for _v, label in PERSISTENCE_CHOICES]
+        self._cmb_persistence = menu.add(
+            "QComboBox",
+            setObjectName="cmb_persistence",
+            setToolTip=(
+                "Default for launched windows. 'Default' keeps each context's "
+                "usual behavior; 'Stay open' gives a hide button (persists "
+                "until closed); 'Auto-hide' gives a pin button (hides when you "
+                "leave the marking menu). Right-click a row to override a "
+                "single entry."
+            ),
+            addItems=persistence_labels,
+        )
+        self._cmb_persistence.setCurrentText(
+            self._persistence_label(self._global_persistence())
+        )
+        self._cmb_persistence.currentTextChanged.connect(
+            lambda label: self._settings.setValue(
+                "opt_persistence", self._persistence_value(label)
+            )
+        )
+        self.state.capture(self._cmb_persistence, persistence_labels[0])
+
         # Theme: pulled through the switchboard's ``style`` proxy so any
         # theme added to ``StyleSheet`` shows up here automatically.
         theme_names = list(self.sb.style.themes.keys()) or ["dark", "light"]
@@ -1172,6 +1220,7 @@ class SwitchboardBrowser(EditorPanel):
                 "restore_geometry": self._cb_restore.isChecked(),
                 "on_top": self._cb_on_top.isChecked(),
                 "theme": self._cmb_theme.currentText(),
+                "persistence": self._global_persistence(),
             },
         }
 
@@ -1254,6 +1303,23 @@ class SwitchboardBrowser(EditorPanel):
             if key in launch:
                 cb.setChecked(bool(launch[key]))
 
+        # Global persistence default. The combo's change->settings write is
+        # blocked, so persist explicitly (guarded on the preset carrying it).
+        persistence = launch.get("persistence")
+        if persistence in (
+            PERSISTENCE_CONTEXT,
+            PERSISTENCE_STICKY,
+            PERSISTENCE_TRANSIENT,
+        ):
+            self._cmb_persistence.blockSignals(True)
+            try:
+                self._cmb_persistence.setCurrentText(
+                    self._persistence_label(persistence)
+                )
+            finally:
+                self._cmb_persistence.blockSignals(False)
+            self._settings.setValue("opt_persistence", persistence)
+
         # Single consolidated refresh — chips, view filter.
         self._update_show_ui()
         self._refresh_chips()
@@ -1283,7 +1349,7 @@ class SwitchboardBrowser(EditorPanel):
             return
 
         force = self._compile_force
-        job = precompile_async(*ui_paths, force=force)
+        job = UiCompiler.precompile_async(*ui_paths, force=force)
         if not job:
             if job.reason == "running":
                 self.footer.setStatusText(
@@ -1306,9 +1372,7 @@ class SwitchboardBrowser(EditorPanel):
         if force:
             self.footer.setStatusText(f"{verb} {compile_count} UIs…")
         else:
-            self.footer.setStatusText(
-                f"{verb} {compile_count} of {len(ui_paths)} UIs…"
-            )
+            self.footer.setStatusText(f"{verb} {compile_count} of {len(ui_paths)} UIs…")
 
         # Poll the worker thread without blocking the Qt event loop.
         # QTimer is the idiomatic choice; it stays on the GUI thread so
@@ -1381,9 +1445,7 @@ class SwitchboardBrowser(EditorPanel):
             )
             shown = self._proxy.rowCount()
             text = (
-                f"{registered} registered · "
-                f"{visible_count} visible · "
-                f"showing {shown}"
+                f"{registered} registered · {visible_count} visible · showing {shown}"
             )
 
         footer.setStatusText(text)
@@ -1395,7 +1457,72 @@ class SwitchboardBrowser(EditorPanel):
             restore_geometry=self._cb_restore.isChecked(),
             on_top=self._cb_on_top.isChecked(),
             theme=self._cmb_theme.currentText(),
+            persistence=self._resolve_persistence(None),
         )
+
+    # ── Window persistence (context/sticky/transient) resolution ─────────────
+
+    @staticmethod
+    def _persistence_label(value: str) -> str:
+        """Combo label for a stored persistence value (falls back to Default)."""
+        return dict(PERSISTENCE_CHOICES).get(
+            value, PERSISTENCE_CHOICES[0][1]
+        )
+
+    @staticmethod
+    def _persistence_value(label: str) -> str:
+        """Stored persistence value for a combo label (falls back to context)."""
+        for value, lbl in PERSISTENCE_CHOICES:
+            if lbl == label:
+                return value
+        return PERSISTENCE_CONTEXT
+
+    def _global_persistence(self) -> str:
+        """The global default persistence mode ("context"/"sticky"/"transient")."""
+        value = self._settings.value("opt_persistence", PERSISTENCE_DEFAULT)
+        return (
+            value
+            if value in (PERSISTENCE_CONTEXT, PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT)
+            else PERSISTENCE_DEFAULT
+        )
+
+    def _persistence_key(self, name: str) -> str:
+        """Per-entry override settings key, host-namespaced.
+
+        The ``ui_browser`` branch is NOT host-namespaced and QSettings is shared
+        across processes by (org, app), so a bare entry name would let a Maya and
+        a Blender session collide on a same-named entry. Reuse the Switchboard's
+        host-namespacing SSoT (the same one behind per-UI ``ui.settings`` and the
+        shortcut overrides) so ``mirror`` -> ``mirror_maya`` / ``mirror_blender``.
+        """
+        ns = getattr(self.sb, "_host_namespaced_branch", None)
+        leaf = ns(name) if callable(ns) else name
+        return f"persistence_override/{leaf}"
+
+    def _entry_persistence_override(self, name: str) -> Optional[str]:
+        """The stored per-entry override, or None if the entry follows the default."""
+        value = self._settings.value(self._persistence_key(name), None)
+        return value if value in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT) else None
+
+    def _resolve_persistence(self, name: Optional[str]) -> Optional[str]:
+        """Effective persistence handed to the handler: per-entry override, else
+        the global default. Returns ``None`` for "Default (context)" so the launch
+        keeps its context chrome. ``name=None`` resolves the global only."""
+        if name is not None:
+            override = self._entry_persistence_override(name)
+            if override is not None:
+                return override
+        global_mode = self._global_persistence()
+        return global_mode if global_mode != PERSISTENCE_CONTEXT else None
+
+    def _set_entry_persistence(self, name: str, mode: Optional[str]) -> None:
+        """Set (``"sticky"``/``"transient"``) or clear (``None`` -> follow default)
+        a per-entry override."""
+        key = self._persistence_key(name)
+        if mode in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT):
+            self._settings.setValue(key, mode)
+        else:
+            self._settings.remove(key)
 
     # ── Slots ────────────────────────────────────────────────────────────────
 
@@ -1531,12 +1658,32 @@ class SwitchboardBrowser(EditorPanel):
         # pick this entry to open the same inline editor programmatically.
         # No modal popup: the QLineEdit delegate is the single edit path.
         tags_idx = self._proxy.index(idx.row(), SwitchboardBrowserModel.COL_TAGS)
-        if self._model.flags(self._proxy.mapToSource(tags_idx)) & QtCore.Qt.ItemIsEditable:
+        if (
+            self._model.flags(self._proxy.mapToSource(tags_idx))
+            & QtCore.Qt.ItemIsEditable
+        ):
             edit_act = menu.addAction("Edit tags")
-            edit_act.triggered.connect(
-                lambda _=False, i=tags_idx: self._view.edit(i)
-            )
+            edit_act.triggered.connect(lambda _=False, i=tags_idx: self._view.edit(i))
             menu.addSeparator()
+
+        # ── Open as (per-entry window persistence override) ──
+        current = self._entry_persistence_override(name)
+        # The stored values ("context"/"sticky"/"transient") double as the short
+        # names shown after "Default", so no separate mapping is needed.
+        open_as = menu.addMenu("Open as")
+        for label, mode in (
+            (f"Default ({self._global_persistence()})", None),
+            ("Sticky — stays open (hide button)", PERSISTENCE_STICKY),
+            ("Transient — hides on leave (pin button)", PERSISTENCE_TRANSIENT),
+        ):
+            act = open_as.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(current == mode)
+            act.triggered.connect(
+                lambda _=False, n=name, m=mode: self._set_entry_persistence(n, m)
+            )
+        menu.addSeparator()
+
         if name in self.hidden_uis:
             unh = menu.addAction("Unhide this UI")
             unh.triggered.connect(lambda: self._toggle_hide_ui(name, hide=False))
@@ -1674,6 +1821,8 @@ class SwitchboardBrowser(EditorPanel):
                 restore_geometry=opts.restore_geometry,
                 on_top=opts.on_top,
                 theme=opts.theme,
+                # Per-entry override wins over the global default in opts.
+                persistence=self._resolve_persistence(name),
             )
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Launch failed", f"{name}: {e}")

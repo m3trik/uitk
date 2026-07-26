@@ -2,59 +2,40 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-26_
+_Generated: 2026-07-25_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
-- `configure_high_dpi() -> bool`
+- `class Bootstrap`
+  - methods: configure_high_dpi
 
 ### `bridge/formatters.py` — Per-target-language value formatters for bridge parameter rendering.
-- `python_literal(spec, value: Any) -> str`
-- `lua_literal(spec, value: Any) -> str`
-- `js_literal(spec, value: Any) -> str`
-- `cli_raw(spec, value: Any) -> str`
+- `class Formatters(_FormattersInternal)`
+  - methods: python_literal, lua_literal, js_literal, cli_raw
 
 ### `bridge/parameters.py` — Registry helpers for bridge parameter dicts.
-- `referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]`
-- `defaults(params: Dict[str, AttributeSpec]) -> Dict[str, Any]`
-- `render_context(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = python_literal) -> Dict[str, str]`
+- `class Parameters(_ParametersInternal)`
+  - methods: referenced_keys, defaults, render_context
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
-- `register_log_link_handler(handler: Callable) -> None`
-- `ensure_bridge_temp_dir(tag: str) -> str`
-- `class BridgeSlotsBase`
-  - methods: params_module, template_dir, make_bridge, make_preset_store, list_template_modes, b000, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, bridge, resolved_output_dir, require_output_dir, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
+- `class BridgeSlotsBase(_BridgeSlotsInternal)`
+  - methods: params_module, template_dir, make_bridge, make_preset_store, list_template_modes, b000, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, resolved_output_dir, require_output_dir, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
-- `infer_kind(value: Any) -> str`
-- `register_kind(name: str, handler: KindHandler) -> None`
-- `get_handler(kind: str) -> KindHandler`
-- `make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget`
-- `read_value(widget: QtWidgets.QWidget) -> Any`
-- `set_value(widget: QtWidgets.QWidget, value: Any) -> None`
-- `connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None`
 - `class AttributeSpec`
   - methods: from_value, display_label
 - `class KindHandler`
+- `class KindFactory(_KindFactoryInternal)`
+  - methods: infer_kind, register_kind, get_handler, make_widget, read_value, set_value, connect_changed
 
 ### `bridge/tooltip.py` — Rich-text tooltip + template-description helpers for bridge panels.
-- `format_param_tooltip(spec: AttributeSpec) -> str`
-- `template_description(template_path: Path) -> Optional[str]`
+- `class Tooltip(_TooltipInternal)`
+  - methods: format_param_tooltip, template_description
 
 ### `compile.py` — Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.
-- `hash_ui_source(ui_path) -> str`
-- `compiled_path_for(ui_path) -> Path`
-- `read_embedded_hash(py_path) -> Optional[str]`
-- `read_embedded_tags(py_path) -> set`
-- `read_embedded_base_class(py_path) -> Optional[str]`
-- `read_embedded_form_class(py_path) -> Optional[str]`
-- `is_compiled_fresh(ui_path, py_path=None) -> bool`
-- `extract_metadata(ui_path) -> dict`
-- `compile_ui(ui_path, out_path=None, header_resolver=None) -> Path`
-- `ensure_compiled(ui_path, header_resolver=None) -> Path`
-- `precompile_async(*paths: Union[str, Path], jobs: Optional[int] = None, force: bool = False) -> PrecompileJob`
-- `main()`
 - `class PrecompileJob`
   - methods: is_alive
+- `class UiCompiler(_UiCompilerInternal)`
+  - methods: hash_ui_source, compiled_path_for, read_embedded_hash, read_embedded_tags, read_embedded_base_class, read_embedded_form_class, is_compiled_fresh, extract_metadata, compile_ui, ensure_compiled, precompile_async, main
 
 ### `events.py` — Event handling utilities for Qt applications.
 - `class EventFactoryFilter(QtCore.QObject)`
@@ -94,20 +75,16 @@ _Generated: 2026-07-26_
 
 ### `managers/icon_manager.py`
 - `class IconManager`
-  - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
+  - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, set_label_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
 
 ### `managers/preset_manager.py`
-- `QStandardPaths_writableLocation() -> str`
-- `QStandardPaths_genericConfigLocation() -> str`
-- `get_presets_root() -> Path`
 - `class PresetManager(ptk.LoggingMixin)`
-  - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo
+  - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo, QStandardPaths_writableLocation, QStandardPaths_genericConfigLocation, get_presets_root
 
 ### `managers/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
-- `normalize_value(value)`
 - `class RecentValueEntry`
 - `class RecentValuesStore`
-  - methods: subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
+  - methods: normalize_value, subscribe, unsubscribe, values, is_valid, valid_values, record, add, remove, clear, prune_invalid, display_map
 
 ### `managers/registry_manager.py` — Typed file registries backing Switchboard discovery.
 - `class FileRegistry(ptk.NamedTupleContainer)`
@@ -116,21 +93,14 @@ _Generated: 2026-07-26_
   - methods: get_base_dir, resolve_path, create, contains_location, get_container, list_containers, remove_container
 
 ### `managers/settings_manager.py`
-- `decode_stored_value(value: Any) -> Any`
-- `encode_stored_value(value: Any) -> Any`
 - `class SettingsManager`
-  - methods: branch, set_defaults, value, setValue, on_change, keys, setByteArray, getByteArray, remove, clear, sync
+  - methods: branch, set_defaults, value, decode_stored_value, encode_stored_value, setValue, on_change, keys, setByteArray, getByteArray, remove, clear, sync
 
 ### `managers/shortcut_manager.py` — Generic keyboard-shortcut primitives, usable by any Qt widget.
-- `context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str`
-- `scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext`
-- `host_namespace_suffix(context_tags) -> str`
-- `resolve_application_host(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]`
-- `find_duplicate_application_shortcuts(app=None) -> Dict[str, int]`
 - `class GlobalShortcut(QtCore.QObject)`
   - methods: eventFilter, setEnabled, setKey, setContext, dispose
 - `class ShortcutManager`
-  - methods: add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
+  - methods: context_to_scope_name, scope_name_to_context, host_namespace_suffix, resolve_application_host, find_duplicate_application_shortcuts, add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
 
 ### `managers/state_manager.py`
 - `class StateManager(ptk.LoggingMixin)`
@@ -174,19 +144,16 @@ _Generated: 2026-07-26_
   - methods: style
 
 ### `switchboard/utils.py`
-- `pop_override_cursor_stack(app)`
-- `push_override_cursor_stack(app, saved)`
 - `class SwitchboardUtilsMixin`
-  - methods: get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
   - methods: is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
 
 ### `themes/style_sheet.py`
-- `repolish_tree(root: QtWidgets.QWidget) -> None`
 - `class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`
-  - methods: theme_changed, get_icon_color, set_theme, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
+  - methods: repolish_tree, theme_changed, get_icon_color, set_theme, set_theme_overrides, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
 
 ### `widgets/attributeWindow/_attributeWindow.py`
 - `class AttributeWindow(Menu)`
@@ -213,15 +180,12 @@ _Generated: 2026-07-26_
   - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
 
 ### `widgets/delegates/centered_icon.py` — Centered icon painting for item-view cells.
-- `fill_cell_background(painter, rect, index)`
-- `paint_centered_icon(painter, icon, cell, decoration_size, hover=False, opacity=1.0)`
 - `class CenteredIconActionDelegate(RowSelectionBorderDelegate)`
-  - methods: paint
+  - methods: fill_cell_background, suppress_hover_if_noninteractive, paint_centered_icon, paint
 
 ### `widgets/delegates/choice_capture.py` — In-cell choice (dropdown) capture for item views.
-- `install_choice_capture(table: QtWidgets.QTableWidget, column: int, choices: Iterable[str], on_capture, *, editable: bool = True, bordered: bool = False) -> ChoiceCaptureDelegate`
 - `class ChoiceCaptureDelegate(QtWidgets.QStyledItemDelegate)`
-  - methods: set_choices, createEditor, setEditorData, setModelData
+  - methods: set_choices, createEditor, setEditorData, setModelData, install_choice_capture
 - `class BorderedChoiceCaptureDelegate(ChoiceCaptureDelegate, RowSelectionBorderDelegate)`
 
 ### `widgets/delegates/row_selection.py` — Opt-in delegate for views whose cells carry their own background.
@@ -229,11 +193,10 @@ _Generated: 2026-07-26_
   - methods: paint, paint_row_selection_border
 
 ### `widgets/delegates/shortcut_capture.py` — In-cell key-combination capture for item views.
-- `install_shortcut_capture(table: QtWidgets.QTableWidget, column: int, on_capture, *, bordered: bool = False) -> ShortcutCaptureDelegate`
 - `class ShortcutCaptureEdit(QtWidgets.QLineEdit)`
   - methods: sequence, event, keyPressEvent
 - `class ShortcutCaptureDelegate(QtWidgets.QStyledItemDelegate)`
-  - methods: createEditor, setEditorData, setModelData
+  - methods: createEditor, setEditorData, setModelData, install_shortcut_capture
 - `class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorderDelegate)`
 
 ### `widgets/doubleSpinBox.py`
@@ -310,15 +273,11 @@ _Generated: 2026-07-26_
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`
-  - methods: retire, instance, default_bindings, bindings, on_bindings_changed, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
+  - methods: retire, instance, default_bindings, bindings, on_bindings_changed, menu_theme, window_theme, resolve_hosted_theme, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
-- `normalize_key(parts) -> str`
-- `build_state_key(activation_key_str: Optional[str], buttons: int, modifiers: int, extra_key: Optional[str] = None) -> str`
-- `priority_button(buttons: int) -> int`
-- `count_buttons(buttons: int) -> int`
-- `resolve_target_menu(*, activation_held: bool, activation_key_str: Optional[str], buttons: int, modifiers: int, bindings: Mapping[str, str], extra_key: Optional[str] = None) -> Optional[str]`
-- `parse_binding_keys(raw_bindings: Mapping[str, str]) -> tuple`
+- `class MenuResolver`
+  - methods: normalize_key, build_state_key, priority_button, count_buttons, resolve_target_menu, parse_binding_keys
 
 ### `widgets/marking_menu/overlay.py`
 - `class OverlayFactoryFilter(QtCore.QObject)`
@@ -336,7 +295,7 @@ _Generated: 2026-07-26_
 - `class MenuPositioner`
   - methods: center_on_cursor, position_at_coordinate, position_relative_to_widget, apply_width_matching, position_and_match_width
 - `class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`
-  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, presets, hide_on_leave, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, ensure_chrome, adopt_transient, nearest_enclosing, owner_window, add_defaults_button, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
+  - methods: create_context_menu, create_dropdown_menu, from_config, run_modal, trigger_button, presets, hide_on_leave, set_hide_on_trigger, enable_persistent_mode, disable_persistent_mode, is_persistent_mode, setVisible, show, show_as_popup, setCentralWidget, centralWidget, init_layout, ensure_chrome, adopt_transient, nearest_enclosing, owner_window, add_defaults_button, add_presets, get_all_children, is_pinned, contains_items, title, setTitle, get_items, get_item, get_item_text, get_item_data, set_item_data, remove_widget, clear, add, add_row, sizeHint, showEvent, hide, hideEvent, eventFilter, trigger_from_widget
 
 ### `widgets/menuButton.py`
 - `class MenuButton(QtWidgets.QPushButton, AttributesMixin)`
@@ -382,9 +341,9 @@ _Generated: 2026-07-26_
 
 ### `widgets/mixins/size_grip.py` — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - `class CornerSizeGrip(QtWidgets.QSizeGrip)`
-  - methods: enterEvent, leaveEvent, getBaseColor, setBaseColor, getHoverColor, setHoverColor, paintEvent
+  - methods: enterEvent, mousePressEvent, leaveEvent, getBaseColor, setBaseColor, getHoverColor, setHoverColor, paintEvent
 - `class SizeGripMixin`
-  - methods: create_size_grip
+  - methods: content_max_size, sync_window_max_to_content, create_size_grip
 
 ### `widgets/mixins/spin_box_text_color.py` — Shared value-text coloring for spin-box widgets.
 - `class SpinBoxTextColorMixin`
@@ -401,11 +360,10 @@ _Generated: 2026-07-26_
   - methods: textOverlayLabel, setTextOverlay, setTextOverlayAlignment, setTextOverlayColor
 
 ### `widgets/mixins/tooltip_mixin.py`
-- `kbd(*keys: str) -> str`
-- `hl(text: str, color: str = _C_ACCENT) -> str`
-- `fmt(title: str = None, body: str = None, bullets: list = None, steps: list = None, rows: list = None, sections: list = None, notes: list = None) -> str`
 - `class TooltipProxy`
   - methods: bind
+- `class TooltipFormat`
+  - methods: kbd, hl, fmt, placeholder_preview
 - `class TooltipMixin`
 
 ### `widgets/mixins/wheel_step.py` — Shared modifier-driven wheel-step handling for spin-box widgets.
@@ -453,9 +411,8 @@ _Generated: 2026-07-26_
 - `class DisableOption(BinaryToggleOption)`
 
 ### `widgets/optionBox/options/filter.py` — Filter option for OptionBox — turns a text widget into a filter field.
-- `to_patterns(text: str, *, negate_prefix: str = NEGATE_PREFIX)`
 - `class FilterOption(BinaryToggleOption)`
-  - methods: is_compatible, patterns, scope_action, scope, set_scope, text_key, scope_key
+  - methods: is_compatible, to_patterns, patterns, scope_action, scope, set_scope, text_key, scope_key
 
 ### `widgets/optionBox/options/option_menu.py` — Option Menu - A dropdown menu option for OptionBox.
 - `class OptionMenuOption(ButtonOption, ptk.LoggingMixin)`
@@ -490,13 +447,8 @@ _Generated: 2026-07-26_
   - methods: create_widget, setup_widget, on_wrap, refresh, set_wrapped_widget
 
 ### `widgets/optionBox/utils.py` — Utilities and helper functions for OptionBox.
-- `add_option_box(widget, show_clear=False, options=None, **kwargs)`
-- `add_clear_option(widget, **kwargs)`
-- `add_menu_option(widget, menu, **kwargs)`
-- `patch_widget_class(widget_class)`
-- `patch_common_widgets()`
 - `class OptionBoxManager(ptk.LoggingMixin)`
-  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove
+  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove, add_option_box, add_clear_option, add_menu_option, patch_widget_class, patch_common_widgets
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
@@ -511,14 +463,11 @@ _Generated: 2026-07-26_
   - methods: visible_on_mouse_over, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
 
 ### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
-- `default_rules() -> List[ScriptHighlightRule]`
-- `default_block_rules() -> List[ScriptBlockRule]`
-- `default_level_formats() -> Dict[int, QtGui.QTextCharFormat]`
 - `class ScriptHighlightRule`
 - `class ScriptBlockRule`
   - methods: starts, continues
 - `class ScriptHighlighter(QtGui.QSyntaxHighlighter)`
-  - methods: highlightBlock, stamp_level
+  - methods: default_rules, default_block_rules, default_level_formats, highlightBlock, stamp_level
 - `class ScriptOutput(QtWidgets.QTextEdit)`
   - methods: set_clear_callback, set_context_menu_hook, set_rules, set_block_rules, append_text, enterEvent, keyPressEvent, event, eventFilter, build_context_menu
 
@@ -531,26 +480,25 @@ _Generated: 2026-07-26_
   - methods: clip_data, boundingRect, paint, hoverMoveEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent, mouseDoubleClickEvent
 
 ### `widgets/sequencer/_data.py` — Data models and shared constants for the sequencer widget.
-- `make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)`
-- `build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath`
-- `register_pattern(name: str, painter: PatternPainter) -> None`
-- `pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush`
-- `paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None`
 - `class PatternSpec`
   - methods: brush
 - `class ClipData`
   - methods: end
 - `class TrackData`
 - `class MarkerData`
+- `class MenuUtils`
+- `class CurveUtils`
+  - methods: make_value_mapper, build_curve_path
+- `class PatternRegistry`
+  - methods: register_pattern, pattern_brush, paint_pattern
 
 ### `widgets/sequencer/_drag_tooltip.py` — Floating scene-text that tracks the cursor during timeline drags.
 - `class FrameTooltip`
   - methods: format_frame, show, update, hide, is_visible
 
 ### `widgets/sequencer/_draggable.py` — Shared drag infrastructure for sequencer graphics items.
-- `snap_time(value: float, timeline) -> float`
 - `class DraggableItemMixin`
-  - methods: cancel_drag
+  - methods: snap_time, cancel_drag
 
 ### `widgets/sequencer/_keyframe.py` — KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
 - `class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`

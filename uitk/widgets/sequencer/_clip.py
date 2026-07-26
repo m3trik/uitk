@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """ClipItem — draggable, resizable clip rectangle on the timeline."""
+
 from __future__ import annotations
 
 from typing import Optional, TYPE_CHECKING
@@ -15,17 +16,14 @@ from uitk.widgets.sequencer._data import (
     _MIN_POINT_CLIP_WIDTH,
     _MIN_CLIP_DURATION,
     _HANDLE_WIDTH,
-    _styled_menu,
-    _menu_exec_pos,
-    build_curve_path,
-    make_value_mapper,
-    pattern_brush,
-    paint_pattern,
+    MenuUtils,
+    CurveUtils,
+    PatternRegistry,
     HATCH_DENSE,
 )
 from uitk.widgets.sequencer._keyframe import KeyframeItem
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
-from uitk.widgets.sequencer._draggable import DraggableItemMixin, snap_time
+from uitk.widgets.sequencer._draggable import DraggableItemMixin
 
 
 class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
@@ -65,7 +63,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._sync_geometry()
 
     def _snap(self, value: float) -> float:
-        return snap_time(value, self._timeline)
+        return DraggableItemMixin.snap_time(value, self._timeline)
 
     # -- data access --------------------------------------------------------
     @property
@@ -271,13 +269,15 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         painter.drawRect(rect)
 
         if self._data.pattern is not None:
-            paint_pattern(painter, rect, self._data.pattern)
+            PatternRegistry.paint_pattern(painter, rect, self._data.pattern)
 
         # Interpolated-motion overlay (no physical keys in this shot)
         if self._data.data.get("interpolated"):
             hc = QtGui.QColor(color.darker(180))
             hc.setAlpha(90)
-            painter.fillRect(rect, pattern_brush("diagonal", hc, HATCH_DENSE))
+            painter.fillRect(
+                rect, PatternRegistry.pattern_brush("diagonal", hc, HATCH_DENSE)
+            )
 
         # Status tint overlay (assessment severity from shot manifest)
         status_hex = self._data.data.get("status_color")
@@ -524,7 +524,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 frac = 0.5
             return rect.x() + frac * rect.width()
 
-        map_y, _is_flat = make_value_mapper(
+        map_y, _is_flat = CurveUtils.make_value_mapper(
             rect.top(), rect.height(), val_min, val_max
         )
 
@@ -538,7 +538,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         painter.setPen(QtGui.QPen(curve_color, 1.2))
         painter.setBrush(QtCore.Qt.NoBrush)
 
-        painter.drawPath(build_curve_path(segments, map_x, map_y))
+        painter.drawPath(CurveUtils.build_curve_path(segments, map_x, map_y))
 
         painter.restore()
         # Key dots are rendered by KeyframeItem children (un-cropped).
@@ -720,7 +720,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             selected_clips = [self]
         multi = len(selected_clips) > 1
 
-        menu = _styled_menu()
+        menu = MenuUtils._styled_menu()
 
         # Lock / Unlock — operates on all selected clips.
         all_locked = all(c._data.locked for c in selected_clips)
@@ -741,7 +741,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         # Extensibility hook — let consumers add domain-specific actions
         widget.clip_menu_requested.emit(menu, self._data.clip_id)
 
-        chosen = menu.exec_(_menu_exec_pos(event))
+        chosen = menu.exec_(MenuUtils._menu_exec_pos(event))
         if chosen == action_lock:
             new_locked = not all_locked
             # Apply visual lock state to every selected clip.
@@ -820,7 +820,8 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     def _show_clip_drag_tooltip(self, scene_pos):
         color = self._resolve_color().lighter(160).name()
         self._drag_tooltip.show(
-            self.scene(), scene_pos,
+            self.scene(),
+            scene_pos,
             label=FrameTooltip.format_frame(self._clip_drag_frame()),
             color=color,
         )

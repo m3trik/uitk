@@ -536,13 +536,20 @@ class TestMainWindowGeometry(QtBaseTestCase):
         window2.clear_saved_geometry()
 
     @staticmethod
-    def _short_content():
-        """Central widget whose natural height (~40px) is far below a resize."""
+    def _short_content(growable=True):
+        """Central widget whose natural height (~40px) is far below a resize.
+
+        ``growable=True`` (the Macro-Manager profile this contract protects)
+        leaves the child free to consume extra height; ``False`` fixes it, so
+        any extra height is dead space by definition.
+        """
         w = QtWidgets.QWidget()
         lyt = QtWidgets.QVBoxLayout(w)
         lyt.setContentsMargins(0, 0, 0, 0)
         label = QtWidgets.QLabel("content")
-        label.setFixedHeight(40)
+        label.setMinimumHeight(40)
+        if not growable:
+            label.setMaximumHeight(40)
         lyt.addWidget(label)
         return w
 
@@ -551,9 +558,12 @@ class TestMainWindowGeometry(QtBaseTestCase):
 
         The DRY contract: once a geometry is saved (the user resized the window),
         that size is authoritative on the next session and fit_to_content_on_show
-        does NOT trim it. This is what lets a growable list/table window keep a
-        hand-expanded height across sessions with NO per-window opt-out — the bug
-        the Macro Manager previously needed fit_to_content_on_show=False to dodge.
+        does NOT trim it — as long as the content can actually use the space.
+        This is what lets a growable list/table window keep a hand-expanded
+        height across sessions with NO per-window opt-out — the bug the Macro
+        Manager previously needed fit_to_content_on_show=False to dodge.
+        (For content that CANNOT use the space, see
+        ``test_restored_dead_space_is_trimmed_when_content_fixed``.)
         """
         from uitk.widgets.mainWindow import MainWindow
 
@@ -585,6 +595,53 @@ class TestMainWindowGeometry(QtBaseTestCase):
             window2.height(), 600,
             f"Restored height must survive fit: height={window2.height()} "
             f"(content min={window2.minimumSizeHint().height()})",
+        )
+
+        window2.clear_saved_geometry()
+
+    def test_restored_dead_space_is_trimmed_when_content_fixed(self):
+        """A restored oversize does NOT survive when every child is fixed.
+
+        The complement of the authoritative-restore contract: when the content
+        cannot use the extra height (all children height-fixed), the restored
+        stretch is dead space — the scene-exporter "phantom extra
+        header/footer" band — and the on-show fit's content-max sync must trim
+        it. Width (children are width-expanding) stays authoritative.
+        """
+        from uitk.widgets.mainWindow import MainWindow
+
+        name = "TestRestoredDeadSpaceTrimmed"
+
+        window1 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=self._short_content(False))
+        )
+        window1.clear_saved_geometry()
+        window1.show()
+        QtWidgets.QApplication.processEvents()
+        window1.resize(500, 600)  # 560px of dead space over the fixed 40px
+        QtWidgets.QApplication.processEvents()
+        window1.hide()  # saves 500x600
+        QtWidgets.QApplication.processEvents()
+
+        window2 = self.track_widget(
+            MainWindow(name, self.sb, central_widget=self._short_content(False))
+        )
+        window2.show()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertEqual(window2.width(), 500)
+        self.assertLessEqual(
+            window2.height(), 44,
+            f"Fixed-height content must not restore into dead space: "
+            f"height={window2.height()}",
+        )
+        # And the lock must be ACTIVE from the first show — not deferred to
+        # the first grip press. Offscreen can mask a missing explicit max
+        # (the platform may honor layout hints a live WM ignores), so assert
+        # the explicit constraint, which is what live Windows/DCCs obey.
+        self.assertLess(
+            window2.maximumHeight(), 16777215,
+            "content-max lock must be applied on first show, not on grip press",
         )
 
         window2.clear_saved_geometry()

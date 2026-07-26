@@ -2424,6 +2424,254 @@ class TestMenuClearEmptyPlaceholder(QtBaseTestCase):
         menu.hide()
 
 
+class TestMenuAddRow(QtBaseTestCase):
+    """add_row places several controls side-by-side without reflowing the menu.
+
+    The menu's grid is single-column by construction; adding raw multi-column cells
+    would grow columnCount() and squeeze every other row into column 0. add_row nests
+    the row's widgets in a container added as ONE full-width cell instead, so the rest
+    of the menu is untouched while each child stays individually addressable.
+    """
+
+    def test_returns_one_widget_per_item_in_order(self):
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": "chk_a", "setText": "a"}),
+                ("QCheckBox", {"setObjectName": "chk_b", "setText": "b"}),
+            ]
+        )
+        self.assertEqual([w.objectName() for w in widgets], ["chk_a", "chk_b"])
+
+    def test_children_are_exposed_as_menu_attributes(self):
+        menu = self.track_widget(Menu())
+        menu.add_row([("QCheckBox", {"setObjectName": "chk_ma"})])
+        self.assertIs(menu.chk_ma, menu.findChild(QtWidgets.QCheckBox, "chk_ma"))
+
+    def test_per_item_kwargs_apply_and_beat_shared_kwargs(self):
+        menu = self.track_widget(Menu())
+        a, b = menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": "chk_on", "setChecked": True}),
+                ("QCheckBox", {"setObjectName": "chk_off"}),
+            ],
+            setToolTip="shared",
+        )
+        self.assertTrue(a.isChecked())
+        self.assertFalse(b.isChecked())
+        self.assertEqual(a.toolTip(), "shared")
+        self.assertEqual(b.toolTip(), "shared")
+
+    def test_does_not_reflow_the_single_column_grid(self):
+        """The regression this design exists to prevent: sibling rows must keep their
+        full width, so the grid must stay one column wide."""
+        menu = self.track_widget(Menu())
+        menu.add("QCheckBox", setObjectName="chk_before")
+        columns_before = menu.gridLayout.columnCount()
+        menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": f"chk_{t}"})
+                for t in ("ma", "mb", "fbx", "blend")
+            ]
+        )
+        menu.add("QCheckBox", setObjectName="chk_after")
+        self.assertEqual(menu.gridLayout.columnCount(), columns_before)
+
+    def test_title_adds_a_separator_above_the_row(self):
+        menu = self.track_widget(Menu())
+        # Seed one real row first — an EMPTY QGridLayout already reports rowCount() == 1,
+        # so a fresh menu's before-count would be off by one.
+        menu.add("QCheckBox", setObjectName="chk_before")
+        rows_before = menu.gridLayout.rowCount()
+        menu.add_row([("QCheckBox", {"setObjectName": "chk_t"})], title="Include Types:")
+        # One separator row + one container row.
+        self.assertEqual(menu.gridLayout.rowCount(), rows_before + 2)
+
+    def test_accepts_a_bare_type_string_and_a_widget_instance(self):
+        menu = self.track_widget(Menu())
+        existing = QtWidgets.QCheckBox()
+        existing.setObjectName("chk_existing")
+        made, passed = menu.add_row(["QCheckBox", existing])
+        self.assertIsInstance(made, QtWidgets.QCheckBox)
+        self.assertIs(passed, existing)
+
+    def test_rejects_an_unsupported_item_spec(self):
+        menu = self.track_widget(Menu())
+        with self.assertRaises(TypeError):
+            menu.add_row([object()])
+
+    @staticmethod
+    def _row_item_kinds(widgets):
+        """The row layout's items as 's' (stretch/spacer) or 'w' (widget), in order."""
+        layout = widgets[0].parent().layout()
+        return [
+            "s" if layout.itemAt(i).spacerItem() is not None else "w"
+            for i in range(layout.count())
+        ]
+
+    def test_legacy_stretch_true_left_packs(self):
+        """The default (justify=None, stretch=True) keeps the legacy trailing stretch."""
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [("QCheckBox", {"setObjectName": f"chk_{t}"}) for t in ("a", "b")]
+        )
+        self.assertEqual(self._row_item_kinds(widgets), ["w", "w", "s"])
+
+    def test_justify_between_spreads_widgets_edge_to_edge(self):
+        """justify='between' interleaves stretches so the widgets span the full width,
+        first/last flush to the container edges (no leading/trailing stretch)."""
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": f"chk_{t}"})
+                for t in ("ma", "mb", "fbx", "blend")
+            ],
+            justify="between",
+        )
+        self.assertEqual(
+            self._row_item_kinds(widgets), ["w", "s", "w", "s", "w", "s", "w"]
+        )
+
+    def test_justify_expand_gives_each_widget_equal_stretch(self):
+        """justify='expand' gives every widget an equal layout stretch factor (equal slots),
+        with no spacer items."""
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [("QCheckBox", {"setObjectName": f"chk_{t}"}) for t in ("ma", "mb", "fbx")],
+            justify="expand",
+        )
+        layout = widgets[0].parent().layout()
+        self.assertEqual(self._row_item_kinds(widgets), ["w", "w", "w"])
+        self.assertEqual([layout.stretch(i) for i in range(layout.count())], [1, 1, 1])
+
+    def test_justify_center_stretches_both_ends(self):
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [("QCheckBox", {"setObjectName": "chk_a"})], justify="center"
+        )
+        self.assertEqual(self._row_item_kinds(widgets), ["s", "w", "s"])
+
+
+class TestHideOnTrigger(QtBaseTestCase):
+    """``hide_on_trigger``: optionally hide the menu after one of its items is
+    interacted with (off by default). A per-item override — set via
+    ``set_hide_on_trigger(widget, hide)`` — includes/excludes specific widgets
+    from the menu-level setting.
+    """
+
+    def _shown_menu(self, **menu_kwargs):
+        from qtpy import QtTest
+
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                **menu_kwargs,
+            )
+        )
+        item = menu.add("QPushButton", setText="Go", setObjectName="btn_go")
+        menu.show()
+        QtWidgets.QApplication.processEvents()
+        return menu, item
+
+    def _release_on(self, widget):
+        from qtpy import QtGui
+
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonRelease,
+            QtCore.QPointF(5, 5),
+            QtCore.QPointF(5, 5),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+        )
+        QtWidgets.QApplication.sendEvent(widget, event)
+
+    def _pump(self, ms=50):
+        from qtpy.QtTest import QTest
+
+        QTest.qWait(ms)
+
+    def test_off_by_default_menu_stays_visible(self):
+        menu, item = self._shown_menu()
+        self.assertFalse(menu.hide_on_trigger)
+        self._release_on(item)
+        self._pump()
+        self.assertTrue(menu.isVisible(), "default behavior must be unchanged")
+
+    def test_enabled_hides_menu_after_item_release(self):
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        self._release_on(item)
+        # Deferred by one tick so the release finishes delivery to the item
+        # (a synchronous hide would swallow the widget's own clicked signal).
+        self.assertTrue(menu.isVisible(), "hide must be deferred, not synchronous")
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_per_item_exclude_overrides_enabled_menu(self):
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        menu.set_hide_on_trigger(item, False)
+        self._release_on(item)
+        self._pump()
+        self.assertTrue(menu.isVisible(), "excluded item must not hide the menu")
+
+    def test_per_item_include_overrides_disabled_menu(self):
+        menu, item = self._shown_menu()  # hide_on_trigger off
+        menu.set_hide_on_trigger(item, True)
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible(), "included item must hide the menu")
+
+    def test_clearing_override_returns_item_to_menu_setting(self):
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        menu.set_hide_on_trigger(item, False)
+        menu.set_hide_on_trigger(item, None)  # back to the menu-level setting
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_menu_config_carries_hide_on_trigger(self):
+        config = MenuConfig(hide_on_trigger=True)
+        menu = self.track_widget(Menu.from_config(config))
+        self.assertTrue(menu.hide_on_trigger)
+        self.assertFalse(MenuConfig().hide_on_trigger, "must default off")
+
+    def test_toggling_at_runtime(self):
+        menu, item = self._shown_menu()
+        menu.hide_on_trigger = True
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_separator_release_does_not_hide(self):
+        """Separators are non-interactive — a release on a titled section row
+        must not dismiss an enabled menu (an explicit include still can)."""
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        sep = menu.add("Separator", setTitle="Edit")
+        self._release_on(sep)
+        self._pump()
+        self.assertTrue(menu.isVisible(), "separator release must not dismiss")
+        menu.set_hide_on_trigger(sep, True)  # explicit include wins
+        self._release_on(sep)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_wrapped_item_still_hides_menu(self):
+        """An option-box wrap replaces the item with a container in the grid
+        layout; the dismissal must resolve through the wrap (the event filter
+        installed at add() time still reports the original widget)."""
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        container = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(container)
+        lay.addWidget(item)  # reparent the item out of the grid, as wrap does
+        menu.add(container)
+        self.assertNotIn(item, menu.get_items())
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

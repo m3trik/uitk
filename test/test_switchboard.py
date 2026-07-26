@@ -24,7 +24,10 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.switchboard import Switchboard
-from uitk.switchboard.utils import _suspend_override_cursor, _drain_override_cursor
+from uitk.switchboard.utils import SwitchboardUtilsMixin
+
+_suspend_override_cursor = SwitchboardUtilsMixin._suspend_override_cursor
+_drain_override_cursor = SwitchboardUtilsMixin._drain_override_cursor
 from uitk.switchboard.slots import _ModalBusyCursorFilter
 from uitk.examples.example import ExampleSlots
 
@@ -108,9 +111,7 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
         self.assertIsNone(self.sb.get_slot(instance, "boom"))
 
         # Widget branch (needs widget.ui.objectName()): same contract.
-        self.assertIsNone(
-            self.sb.get_slot(instance, "boom", widget=self.ui.button_a)
-        )
+        self.assertIsNone(self.sb.get_slot(instance, "boom", widget=self.ui.button_a))
 
 
 class TestSlotWrapperSignatureCache(QtBaseTestCase):
@@ -904,13 +905,17 @@ class TestSwitchboardAddResetButtons(QtBaseTestCase):
 
     def test_skips_named_widget(self):
         """A widget whose objectName is in skip is left alone."""
-        wired = self.sb.add_reset_buttons(self.ui, [self.s000, self.s001], skip=("s000",))
+        wired = self.sb.add_reset_buttons(
+            self.ui, [self.s000, self.s001], skip=("s000",)
+        )
         self.assertEqual(wired, [self.s001])
         self.assertFalse(self._has_reset(self.s000))
 
     def test_skips_widget_instance(self):
         """A widget instance (not just its name) in skip is left alone."""
-        wired = self.sb.add_reset_buttons(self.ui, [self.s000, self.s001], skip=(self.s000,))
+        wired = self.sb.add_reset_buttons(
+            self.ui, [self.s000, self.s001], skip=(self.s000,)
+        )
         self.assertEqual(wired, [self.s001])
         self.assertFalse(self._has_reset(self.s000))
 
@@ -935,6 +940,114 @@ class TestSwitchboardAddResetButtons(QtBaseTestCase):
         """A container with no matching widgets returns an empty list, not an error."""
         empty = self.track_widget(QtWidgets.QWidget())
         self.assertEqual(self.sb.add_reset_buttons(empty), [])
+
+class TestSwitchboardLinkSpinboxes(QtBaseTestCase):
+    """Tests for SwitchboardUtilsMixin.link_spinboxes — per-field lock toggles
+    that link locked spin boxes by an equal delta (backs duplicate_grid's
+    per-axis Spacing lock)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+        layout = self.ui.centralWidget().layout()
+        self.boxes = []
+        for i in range(3):
+            b = DoubleSpinBox()
+            b.setObjectName(f"s{i:03d}")
+            b.setRange(-1000, 1000)
+            # These tests exercise the linking logic, not persistence — opt out
+            # of state restore so a value saved under the same objectName by a
+            # sibling test can't bleed in.
+            b.restore_state = False
+            b.setValue(0.0)
+            layout.addWidget(b)
+            self.ui.register_widget(b)
+            self.boxes.append(b)
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def _toggle(self, w):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        return w.option_box.find_option(ToggleOption)
+
+    def _lock(self, w, on=True):
+        self._toggle(w).set_on(on, emit=False)
+
+    def test_adds_lock_toggle_to_each(self):
+        wired = self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        self.assertEqual(wired, self.boxes)
+        for b in self.boxes:
+            self.assertIsNotNone(self._toggle(b))
+
+    def test_unlocked_fields_are_independent(self):
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        # all unlocked by default
+        self.boxes[0].setValue(5.0)
+        self.assertEqual([b.value() for b in self.boxes], [5.0, 0.0, 0.0])
+
+    def test_locked_fields_move_by_equal_delta(self):
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, c = self.boxes
+        self._lock(a)
+        self._lock(b)  # c stays unlocked
+        a.setValue(3.0)  # +3 delta
+        self.assertEqual(a.value(), 3.0)
+        self.assertEqual(b.value(), 3.0, "locked sibling shifts by the same delta")
+        self.assertEqual(c.value(), 0.0, "unlocked field is unaffected")
+
+    def test_delta_is_additive_not_absolute(self):
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, _ = self.boxes
+        b.setValue(10.0)  # b starts higher (unlocked change)
+        self._lock(a)
+        self._lock(b)
+        a.setValue(2.0)  # +2 from a's 0 -> b should become 12, not 2
+        self.assertEqual(b.value(), 12.0)
+
+    def test_no_feedback_loop(self):
+        """The equal-delta write to siblings must not recurse."""
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, c = self.boxes
+        for w in self.boxes:
+            self._lock(w)
+        a.setValue(1.0)
+        # one propagation round: all three land on 1.0, no runaway
+        self.assertEqual([w.value() for w in self.boxes], [1.0, 1.0, 1.0])
+
+    def test_no_propagation_during_state_restore(self):
+        """A locked field restored under suppress_save must re-baseline WITHOUT
+        propagating a delta (else restore corrupts siblings, order-dependent)."""
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, _ = self.boxes
+        self._lock(a)
+        self._lock(b)
+        # Simulate state restore: value applied programmatically, saves suppressed.
+        with self.ui.state.suppress_save():
+            a.setValue(5.0)
+        self.assertEqual(a.value(), 5.0)
+        self.assertEqual(
+            b.value(), 0.0, "restore must not fire the equal-delta link"
+        )
+        # A genuine user change afterwards propagates from the re-baselined value.
+        a.setValue(6.0)  # +1 from 5.0
+        self.assertEqual(b.value(), 1.0)
 
 
 class _DeadCppWrapper:
@@ -1702,7 +1815,9 @@ class TestSlotMismatchLogging(QtBaseTestCase):
             connect_errors, [], f"Should skip, not error on connect: {connect_errors}"
         )
         # Should warn (actionably) about the non-callable collision.
-        warns = [str(c) for c in mock_warning.call_args_list if "non-callable" in str(c)]
+        warns = [
+            str(c) for c in mock_warning.call_args_list if "non-callable" in str(c)
+        ]
         self.assertTrue(
             len(warns) > 0, "Expected a WARNING about the non-callable slot collision"
         )
@@ -2104,7 +2219,8 @@ class TestSwitchboardActiveUi(QtBaseTestCase):
 
         warnings = [r for r in records if r.levelno >= logging.WARNING]
         self.assertEqual(
-            warnings, [],
+            warnings,
+            [],
             f"active_ui must not emit log warnings; got {[r.getMessage() for r in warnings]}",
         )
 
@@ -2278,9 +2394,7 @@ class TestModalBusyCursorFilter(QtBaseTestCase):
         self._send(QtCore.QEvent.WindowBlocked)  # inner
         self.assertIsNone(self.app.overrideCursor())
         self._send(QtCore.QEvent.WindowUnblocked)  # inner closes — stay suspended
-        self.assertIsNone(
-            self.app.overrideCursor(), "inner unblock restored too early"
-        )
+        self.assertIsNone(self.app.overrideCursor(), "inner unblock restored too early")
         self._send(QtCore.QEvent.WindowUnblocked)  # outer closes — restore
         self.assertEqual(self.app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
 
@@ -2295,8 +2409,12 @@ class TestModalBusyCursorFilter(QtBaseTestCase):
         self.assertEqual(self.app.overrideCursor().shape(), QtCore.Qt.BusyCursor)
 
     def test_eventfilter_never_consumes(self):
-        self.assertFalse(self.filt.eventFilter(None, QtCore.QEvent(QtCore.QEvent.WindowBlocked)))
-        self.assertFalse(self.filt.eventFilter(None, QtCore.QEvent(QtCore.QEvent.WindowUnblocked)))
+        self.assertFalse(
+            self.filt.eventFilter(None, QtCore.QEvent(QtCore.QEvent.WindowBlocked))
+        )
+        self.assertFalse(
+            self.filt.eventFilter(None, QtCore.QEvent(QtCore.QEvent.WindowUnblocked))
+        )
         self.assertFalse(self.filt.eventFilter(None, QtCore.QEvent(QtCore.QEvent.Show)))
 
     def test_cleanup_rebalances_dangling_suspend(self):
@@ -2340,6 +2458,7 @@ class TestExplicitSlotBinding(QtBaseTestCase):
         """The single-class fallback must not leak into UI resolution: an
         unknown ``loaded_ui.<name>`` still raises ``AttributeError`` rather than
         creating a phantom UI bound to the sole slot class."""
+
         class SoloSlots:
             def __init__(self, switchboard, **kwargs):
                 self.sb = switchboard
@@ -2379,9 +2498,7 @@ class TestExplicitSlotBinding(QtBaseTestCase):
 
         sb = Switchboard(slot_source=[FooSlots, BarSlots])
         # More than one class: the fallback can't disambiguate even when allowed.
-        self.assertIsNone(
-            sb._find_slots_class("nomatch", allow_sole_fallback=True)
-        )
+        self.assertIsNone(sb._find_slots_class("nomatch", allow_sole_fallback=True))
 
 
 class TestNoDuplicateTopLevelDefinitions(unittest.TestCase):

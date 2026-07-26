@@ -21,6 +21,7 @@ go-to while playback is running:
                  direction from the new frame.
 - ``"none"``   — do the action without touching playback.
 """
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, Optional, Protocol
@@ -96,24 +97,6 @@ class ScrubPlayerPlayController:
             return float(self._sequencer._timeline._scene.playhead.time)
         except Exception:
             return 0.0
-
-
-def _remove_play_shortcuts(mgr, owned) -> None:
-    """Remove the Space / Alt+Space bindings in *owned* (``{seq: QShortcut}``)
-    from *mgr*, but only where the manager still holds that exact shortcut —
-    a newer transport may have replaced it.  Free function (not a bound
-    method) so a ``destroyed`` connection forms no reference cycle through
-    the transport widget.
-    """
-    if mgr is None:
-        return
-    for key, sc in owned.items():
-        try:
-            entry = mgr.shortcuts.get(key)
-            if entry is not None and entry.get("shortcut") is sc:
-                mgr.remove_shortcut(key)
-        except (RuntimeError, TypeError):
-            pass
 
 
 class TransportControls(QtWidgets.QWidget):
@@ -194,7 +177,9 @@ class TransportControls(QtWidgets.QWidget):
         # cycle through the widget.
         _mgr = getattr(self._sequencer, "_shortcut_mgr", None)
         _owned = dict(self._play_shortcuts)
-        self.destroyed.connect(lambda *_: _remove_play_shortcuts(_mgr, _owned))
+        self.destroyed.connect(
+            lambda *_: TransportControls._remove_play_shortcuts(_mgr, _owned)
+        )
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -214,7 +199,11 @@ class TransportControls(QtWidgets.QWidget):
         self._play_controller = pc
 
     def set_interrupt_mode(self, mode: str) -> None:
-        if mode not in (self.INTERRUPT_STOP, self.INTERRUPT_RESUME, self.INTERRUPT_NONE):
+        if mode not in (
+            self.INTERRUPT_STOP,
+            self.INTERRUPT_RESUME,
+            self.INTERRUPT_NONE,
+        ):
             raise ValueError(f"invalid interrupt_mode: {mode!r}")
         self._interrupt_mode = mode
 
@@ -228,14 +217,14 @@ class TransportControls(QtWidgets.QWidget):
     # --------------------------------------------------------------- build
 
     _SPECS = (
-        ("go_to_start",   "transport_start",        "Go to start of playback range"),
-        ("prev_key",      "transport_prev_key",     "Previous key"),
-        ("step_back",     "transport_step_back",    "Step back one frame"),
-        ("play_back",     "transport_play_back",    "Play backwards"),
-        ("play_forward",  "transport_play_forward", "Play forwards"),
-        ("step_forward",  "transport_step_forward", "Step forward one frame"),
-        ("next_key",      "transport_next_key",     "Next key"),
-        ("go_to_end",     "transport_end",          "Go to end of playback range"),
+        ("go_to_start", "transport_start", "Go to start of playback range"),
+        ("prev_key", "transport_prev_key", "Previous key"),
+        ("step_back", "transport_step_back", "Step back one frame"),
+        ("play_back", "transport_play_back", "Play backwards"),
+        ("play_forward", "transport_play_forward", "Play forwards"),
+        ("step_forward", "transport_step_forward", "Step forward one frame"),
+        ("next_key", "transport_next_key", "Next key"),
+        ("go_to_end", "transport_end", "Go to end of playback range"),
     )
 
     def _build(self, h: int) -> None:
@@ -248,14 +237,14 @@ class TransportControls(QtWidgets.QWidget):
         icon_size = max(8, int(h * 0.7))
         self._icon_size = (icon_size, icon_size)
         dispatch: dict[str, Callable[[], None]] = {
-            "go_to_start":  self._on_go_to_start,
-            "prev_key":     self._on_prev_key,
-            "step_back":    self._on_step_back,
-            "play_back":    self._on_play_back,
+            "go_to_start": self._on_go_to_start,
+            "prev_key": self._on_prev_key,
+            "step_back": self._on_step_back,
+            "play_back": self._on_play_back,
             "play_forward": self._on_play_forward,
             "step_forward": self._on_step_forward,
-            "next_key":     self._on_next_key,
-            "go_to_end":    self._on_go_to_end,
+            "next_key": self._on_next_key,
+            "go_to_end": self._on_go_to_end,
         }
 
         spec_by_key = {k: (icon_name, tip) for k, icon_name, tip in self._SPECS}
@@ -314,6 +303,7 @@ class TransportControls(QtWidgets.QWidget):
                 except Exception:
                     pass
             self._sequencer.go_to_start()
+
         self._with_interrupt(action)
 
     def _on_go_to_end(self) -> None:
@@ -326,6 +316,7 @@ class TransportControls(QtWidgets.QWidget):
                 except Exception:
                     pass
             self._sequencer.go_to_end()
+
         self._with_interrupt(action)
 
     def _on_step_back(self) -> None:
@@ -379,8 +370,11 @@ class TransportControls(QtWidgets.QWidget):
                 continue
             if key == active_key:
                 IconManager.set_icon(
-                    btn, icon_name, size=self._icon_size,
-                    color=self.ACTIVE_COLOR, auto_theme=False,
+                    btn,
+                    icon_name,
+                    size=self._icon_size,
+                    color=self.ACTIVE_COLOR,
+                    auto_theme=False,
                 )
             else:
                 # Re-resolve theme color
@@ -440,6 +434,24 @@ class TransportControls(QtWidgets.QWidget):
             try:
                 self._play_shortcuts[key] = mgr.add_shortcut(key, action, desc, ctx)
             except Exception:
+                pass
+
+    @staticmethod
+    def _remove_play_shortcuts(mgr, owned) -> None:
+        """Remove the Space / Alt+Space bindings in *owned* (``{seq: QShortcut}``)
+        from *mgr*, but only where the manager still holds that exact shortcut —
+        a newer transport may have replaced it.  Static (invoked via the class,
+        not a bound method) so the ``destroyed`` connection captures no ``self``
+        and forms no reference cycle through the transport widget.
+        """
+        if mgr is None:
+            return
+        for key, sc in owned.items():
+            try:
+                entry = mgr.shortcuts.get(key)
+                if entry is not None and entry.get("shortcut") is sc:
+                    mgr.remove_shortcut(key)
+            except (RuntimeError, TypeError):
                 pass
 
     # ----------------------------------------------------------- integration

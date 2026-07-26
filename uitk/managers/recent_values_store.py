@@ -15,50 +15,11 @@ store) and tentacle's main Workspace list (renders ``valid_values`` /
 This mirrors the ecosystem's ``PresetStore`` split (one Qt-free model, several
 front-ends) so "recent values" stops being a popup-only feature.
 """
+
 import os
 from typing import Callable, List, Optional
 
 import pythontk as ptk
-
-
-def _is_filesystem_path(value) -> bool:
-    """Return True if *value* looks like a filesystem path."""
-    s = str(value)
-    # Drive letter (C:/) or UNC (\\server) or absolute unix (/home)
-    if len(s) >= 2 and s[1] == ":":
-        return True
-    if s.startswith("//") or s.startswith("\\\\"):
-        return True
-    if s.startswith("/"):
-        return True
-    return False
-
-
-def _build_display_map_smart_path(values) -> Optional[dict]:
-    """Build a display map by stripping the common directory prefix.
-
-    Only engages when *all* values look like filesystem paths and there
-    are at least two of them.  Returns ``None`` (use default truncation)
-    otherwise.
-    """
-    str_values = [str(v) for v in values]
-    if len(str_values) < 2 or not all(_is_filesystem_path(v) for v in str_values):
-        return None
-
-    normalized = [ptk.format_path(v) for v in str_values]
-    try:
-        prefix = os.path.commonpath(normalized)
-    except ValueError:
-        return None
-
-    if not prefix:
-        return None
-
-    display_map = {}
-    for raw, norm in zip(values, normalized):
-        tail = norm[len(prefix) :].lstrip("/")
-        display_map[raw] = f"…/{tail}" if tail else str(raw)
-    return display_map
 
 
 class RecentValueEntry:
@@ -81,41 +42,19 @@ class RecentValueEntry:
 
     def __eq__(self, other):
         if isinstance(other, RecentValueEntry):
-            return normalize_value(self.data) == normalize_value(other.data)
-        return normalize_value(self.data) == normalize_value(other)
+            return RecentValuesStore.normalize_value(
+                self.data
+            ) == RecentValuesStore.normalize_value(other.data)
+        return RecentValuesStore.normalize_value(
+            self.data
+        ) == RecentValuesStore.normalize_value(other)
 
     def __hash__(self):
-        n = normalize_value(self.data)
+        n = RecentValuesStore.normalize_value(self.data)
         return hash(n if isinstance(n, str) else str(n))
 
     def __repr__(self):
         return f"RecentValueEntry(data={self.data!r}, display={self.display!r})"
-
-
-def _entry_data(value):
-    """The restore-data of *value* (its ``.data`` when an entry, else itself)."""
-    return value.data if isinstance(value, RecentValueEntry) else value
-
-
-def _entry_display(value):
-    """The explicit display of *value*, or ``None`` to derive one."""
-    return value.display if isinstance(value, RecentValueEntry) else None
-
-
-def normalize_value(value):
-    """Normalize a value for comparison.
-
-    Unwraps a :class:`RecentValueEntry` to its data, strips whitespace and,
-    for path-like strings, normalizes separators and case so that ``C:/Dir``
-    and ``c:\\dir`` compare equal.
-    """
-    if isinstance(value, RecentValueEntry):
-        value = value.data
-    if isinstance(value, str):
-        value = value.strip()
-        if "/" in value or "\\" in value:
-            value = ptk.format_path(value).lower()
-    return value
 
 
 class RecentValuesStore:
@@ -144,6 +83,74 @@ class RecentValuesStore:
     """
 
     MAX_DISPLAY_LENGTH = 120
+
+    @staticmethod
+    def _is_filesystem_path(value) -> bool:
+        """Return True if *value* looks like a filesystem path."""
+        s = str(value)
+        # Drive letter (C:/) or UNC (\\server) or absolute unix (/home)
+        if len(s) >= 2 and s[1] == ":":
+            return True
+        if s.startswith("//") or s.startswith("\\\\"):
+            return True
+        if s.startswith("/"):
+            return True
+        return False
+
+    @staticmethod
+    def _build_display_map_smart_path(values) -> Optional[dict]:
+        """Build a display map by stripping the common directory prefix.
+
+        Only engages when *all* values look like filesystem paths and there
+        are at least two of them.  Returns ``None`` (use default truncation)
+        otherwise.
+        """
+        str_values = [str(v) for v in values]
+        if len(str_values) < 2 or not all(
+            RecentValuesStore._is_filesystem_path(v) for v in str_values
+        ):
+            return None
+
+        normalized = [ptk.format_path(v) for v in str_values]
+        try:
+            prefix = os.path.commonpath(normalized)
+        except ValueError:
+            return None
+
+        if not prefix:
+            return None
+
+        display_map = {}
+        for raw, norm in zip(values, normalized):
+            tail = norm[len(prefix) :].lstrip("/")
+            display_map[raw] = f"…/{tail}" if tail else str(raw)
+        return display_map
+
+    @staticmethod
+    def _entry_data(value):
+        """The restore-data of *value* (its ``.data`` when an entry, else itself)."""
+        return value.data if isinstance(value, RecentValueEntry) else value
+
+    @staticmethod
+    def _entry_display(value):
+        """The explicit display of *value*, or ``None`` to derive one."""
+        return value.display if isinstance(value, RecentValueEntry) else None
+
+    @staticmethod
+    def normalize_value(value):
+        """Normalize a value for comparison.
+
+        Unwraps a :class:`RecentValueEntry` to its data, strips whitespace and,
+        for path-like strings, normalizes separators and case so that ``C:/Dir``
+        and ``c:\\dir`` compare equal.
+        """
+        if isinstance(value, RecentValueEntry):
+            value = value.data
+        if isinstance(value, str):
+            value = value.strip()
+            if "/" in value or "\\" in value:
+                value = ptk.format_path(value).lower()
+        return value
 
     def __init__(
         self,
@@ -181,7 +188,11 @@ class RecentValuesStore:
     def _serialize(value):
         """Plain values persist as-is; entries persist as a tagged dict."""
         if isinstance(value, RecentValueEntry):
-            return {"__recent_entry__": True, "data": value.data, "display": value.display}
+            return {
+                "__recent_entry__": True,
+                "data": value.data,
+                "display": value.display,
+            }
         return value
 
     @staticmethod
@@ -206,9 +217,9 @@ class RecentValuesStore:
         deduped = []
         for v in data:
             v = self._deserialize(v)
-            if _entry_data(v) is None:
+            if RecentValuesStore._entry_data(v) is None:
                 continue
-            n = normalize_value(v)
+            n = RecentValuesStore.normalize_value(v)
             if n not in seen:
                 seen.add(n)
                 deduped.append(v)
@@ -267,10 +278,15 @@ class RecentValuesStore:
 
     def record(self, value) -> None:
         """Insert *value* at the front (most-recent), dedup, trim, persist."""
-        if _entry_data(value) is None or not str(_entry_data(value)).strip():
+        if (
+            RecentValuesStore._entry_data(value) is None
+            or not str(RecentValuesStore._entry_data(value)).strip()
+        ):
             return
-        n = normalize_value(value)
-        self._values = [v for v in self._values if normalize_value(v) != n]
+        n = RecentValuesStore.normalize_value(value)
+        self._values = [
+            v for v in self._values if RecentValuesStore.normalize_value(v) != n
+        ]
         self._values.insert(0, value)
         self._values = self._values[: self._max_recent]
         self._save()
@@ -283,10 +299,13 @@ class RecentValuesStore:
         list). Unlike :meth:`record` it does not move an existing entry to
         the front.
         """
-        if _entry_data(value) is None or not str(_entry_data(value)).strip():
+        if (
+            RecentValuesStore._entry_data(value) is None
+            or not str(RecentValuesStore._entry_data(value)).strip()
+        ):
             return
-        n = normalize_value(value)
-        if any(normalize_value(v) == n for v in self._values):
+        n = RecentValuesStore.normalize_value(value)
+        if any(RecentValuesStore.normalize_value(v) == n for v in self._values):
             return
         self._values.append(value)
         if len(self._values) > self._max_recent:
@@ -300,9 +319,11 @@ class RecentValuesStore:
 
     def remove(self, value) -> None:
         """Remove *value* from the history (no-op if absent)."""
-        n = normalize_value(value)
+        n = RecentValuesStore.normalize_value(value)
         before = len(self._values)
-        self._values = [v for v in self._values if normalize_value(v) != n]
+        self._values = [
+            v for v in self._values if RecentValuesStore.normalize_value(v) != n
+        ]
         if len(self._values) != before:
             self._save()
             self._notify()
@@ -348,9 +369,13 @@ class RecentValuesStore:
 
         # Entries carrying an explicit display bypass formatting entirely;
         # the rest are formatted against their unwrapped data.
-        out = {v: _entry_display(v) for v in values if _entry_display(v) is not None}
+        out = {
+            v: RecentValuesStore._entry_display(v)
+            for v in values
+            if RecentValuesStore._entry_display(v) is not None
+        }
         plain = [v for v in values if v not in out]
-        data_of = {v: _entry_data(v) for v in plain}
+        data_of = {v: RecentValuesStore._entry_data(v) for v in plain}
 
         if callable(fmt):
             out.update({v: fmt(data_of[v]) for v in plain})
@@ -361,7 +386,9 @@ class RecentValuesStore:
             return out
 
         if fmt == "auto":
-            dm = _build_display_map_smart_path([data_of[v] for v in plain])
+            dm = RecentValuesStore._build_display_map_smart_path(
+                [data_of[v] for v in plain]
+            )
             if dm is not None:
                 out.update({v: dm[data_of[v]] for v in plain})
                 return out

@@ -7,25 +7,10 @@ for uitk's HTML/rich-text vocabulary) alongside the widget mixins that
 render it — :class:`RichText` and :class:`TextOverlay` — plus the
 :class:`TextTruncation` font-metrics helper.
 """
+
 from typing import Optional, Union
 
 from qtpy import QtWidgets, QtCore, QtGui
-
-
-def _load_log_colors() -> dict:
-    """Return pythontk's logging severity palette, or ``{}`` if unavailable.
-
-    Sourced from pythontk's logging colours so the message boxes, text
-    views, footers, and console logs all share one palette. Optional at
-    this layer — a minimal environment without pythontk falls back to the
-    per-token literal colours in :attr:`RichTextFormatter.PREFIX_SEVERITY`.
-    """
-    try:
-        from pythontk.core_utils.logging_mixin import LoggingMixin
-
-        return dict(LoggingMixin.LOG_COLORS)
-    except Exception:  # noqa: BLE001 -- pythontk logging optional at this layer.
-        return {}
 
 
 class RichTextFormatter:
@@ -49,9 +34,27 @@ class RichTextFormatter:
     at call time, so no method needs touching.
     """
 
+    @staticmethod
+    def _load_log_colors() -> dict:
+        """Return pythontk's logging severity palette, or ``{}`` if unavailable.
+
+        Sourced from pythontk's logging colours so the message boxes, text
+        views, footers, and console logs all share one palette. Optional at
+        this layer — a minimal environment without pythontk falls back to the
+        per-token literal colours in :attr:`PREFIX_SEVERITY`.
+        """
+        try:
+            from pythontk.core_utils.logging_mixin import LoggingMixin
+
+            return dict(LoggingMixin.LOG_COLORS)
+        except Exception:  # noqa: BLE001 -- pythontk logging optional at this layer.
+            return {}
+
     #: Severity -> colour. SSoT = pythontk's logging colours; ``{}`` falls
     #: back to the per-token literals in :attr:`PREFIX_SEVERITY`.
-    LOG_COLORS = _load_log_colors()
+    # ``.__func__`` unwraps the staticmethod: a bare ``staticmethod`` object is
+    # not directly callable before Python 3.10, and this runs at class-body time.
+    LOG_COLORS = _load_log_colors.__func__()
 
     #: Level-prefix token -> (``LOG_COLORS`` severity key, literal fallback).
     #: Resolved against ``LOG_COLORS`` at call time, so overriding the palette
@@ -158,26 +161,6 @@ class RichTextFormatter:
         if font_size is not None:
             s = cls.wrap_font_size(s, font_size)
         return s
-
-
-def _make_translucent_label(parent) -> QtWidgets.QLabel:
-    """Build a rich-text QLabel inside a zero-margin QHBoxLayout on *parent*.
-
-    Shared scaffold for :class:`RichText` and :class:`TextOverlay`: a
-    translucent, click-through QLabel that renders Qt rich text as an
-    overlay on the host widget. The layout is parented to (and owned by)
-    *parent*; the configured label is returned for the caller to style and
-    track.
-    """
-    layout = QtWidgets.QHBoxLayout(parent)
-    layout.setContentsMargins(0, 0, 0, 0)
-
-    label = QtWidgets.QLabel(parent)
-    label.setTextFormat(QtCore.Qt.RichText)
-    label.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-    label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-    layout.addWidget(label)
-    return label
 
 
 class TextTruncation:
@@ -635,6 +618,26 @@ class RichText:
 
     has_rich_text = False
 
+    @staticmethod
+    def _make_translucent_label(parent) -> QtWidgets.QLabel:
+        """Build a rich-text QLabel inside a zero-margin QHBoxLayout on *parent*.
+
+        Shared scaffold for :class:`RichText` and :class:`TextOverlay`: a
+        translucent, click-through QLabel that renders Qt rich text as an
+        overlay on the host widget. The layout is parented to (and owned by)
+        *parent*; the configured label is returned for the caller to style and
+        track.
+        """
+        layout = QtWidgets.QHBoxLayout(parent)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        label = QtWidgets.QLabel(parent)
+        label.setTextFormat(QtCore.Qt.RichText)
+        label.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        layout.addWidget(label)
+        return label
+
     @property
     def richTextLabelDict(self):
         """Returns a list containing any rich text labels that have been created.
@@ -681,13 +684,11 @@ class RichText:
             if size is not None:
                 return size
 
-        return self.__class__.__base__.sizeHint(
-            self
-        )  # return standard widget sizeHint
+        return self.__class__.__base__.sizeHint(self)  # return standard widget sizeHint
 
     def _createRichTextLabel(self, index):
         """Return a translucent rich-text QLabel inside a QHBoxLayout."""
-        label = _make_translucent_label(self)
+        label = RichText._make_translucent_label(self)
         self.richTextLabelDict[index] = label
 
         self.set_rich_text_style(index)
@@ -709,9 +710,7 @@ class RichText:
                 margin: 3px 0px 0px 0px; /* top, right, bottom, left */
                 padding: 0px 5px 0px 5px; /* top, right, bottom, left */
             }}
-        """.format(
-                textColor
-            )
+        """.format(textColor)
         )
 
     def getRichTextLabel(self, index=0):
@@ -824,7 +823,7 @@ class TextOverlay:
             return self._textOverlayLabel
 
         except AttributeError:
-            self._textOverlayLabel = _make_translucent_label(self)
+            self._textOverlayLabel = RichText._make_translucent_label(self)
             self._textOverlayLabel.setStyleSheet(
                 """
                     QLabel {
@@ -880,9 +879,7 @@ class TextOverlay:
                 QLabel {{
                     color: {0};
                 }}
-            """.format(
-                color
-            )
+            """.format(color)
         )
 
 

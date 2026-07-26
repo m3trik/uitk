@@ -14,14 +14,14 @@ Run standalone: python -m pytest test/test_spinbox.py -v
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from conftest import QtBaseTestCase, setup_qt_application
 
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtCore, QtGui
 
 
 # =============================================================================
@@ -368,7 +368,6 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         zero -- simulates the Alt-held axis transpose observed on some
         platforms / Qt6 builds.
         """
-        from qtpy import QtCore
 
         event = MagicMock()
         if axis == "x":
@@ -385,27 +384,20 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
     # ---- Ctrl ladder ---------------------------------------------------
 
     def test_ctrl_wheel_up_steps_by_10x(self):
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1)
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.ControlModifier
-        )
+        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.ControlModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 15.0, places=5)
 
     def test_ctrl_wheel_down_steps_by_10x(self):
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=50, step=1)
-        event = self._make_wheel_event(
-            delta=-120, modifiers=QtCore.Qt.ControlModifier
-        )
+        event = self._make_wheel_event(delta=-120, modifiers=QtCore.Qt.ControlModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 40.0, places=5)
 
     def test_ctrl_shift_wheel_steps_by_100x(self):
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1)
         sb.setRange(-1000, 1000)  # widen so 5 + 100 doesn't clamp
@@ -420,22 +412,16 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
 
     def test_alt_wheel_up_steps_by_singleStep_over_10(self):
         """Alt+wheel up: step the value by ``singleStep / 10``."""
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=3)
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.AltModifier
-        )
+        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 5.1, places=5)
 
     def test_alt_wheel_down_steps_by_singleStep_over_10(self):
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=3)
-        event = self._make_wheel_event(
-            delta=-120, modifiers=QtCore.Qt.AltModifier
-        )
+        event = self._make_wheel_event(delta=-120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 4.9, places=5)
 
@@ -443,13 +429,10 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         """Alt+wheel must step the *value*, not the widget's ``singleStep``
         setting (the original pre-symmetric-ladder behaviour).
         """
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=3)
         before_step = sb.singleStep()
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.AltModifier
-        )
+        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event)
         self.assertEqual(sb.singleStep(), before_step)
 
@@ -457,7 +440,6 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
 
     def test_ctrl_alt_wheel_up_steps_by_smallest(self):
         """Ctrl+Alt+wheel up: step by ``10**-decimals`` (smallest)."""
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=4)
         event = self._make_wheel_event(
@@ -467,7 +449,6 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         self.assertAlmostEqual(sb.value(), 5.0001, places=6)
 
     def test_ctrl_alt_wheel_down_steps_by_smallest(self):
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=4)
         event = self._make_wheel_event(
@@ -485,17 +466,15 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         integer while the display stays put, and the HUD lies about a
         step happening.
         """
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=0)
         # Drive the underlying QDoubleSpinBox directly so we can detect
         # any internal drift below the integer threshold.
         from qtpy.QtWidgets import QDoubleSpinBox
+
         QDoubleSpinBox.setValue(sb, 5.0)
 
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.AltModifier
-        )
+        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event)
 
         self.assertEqual(sb.value(), 5)
@@ -508,14 +487,11 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         *finer*, not the same as ``Ctrl`` alone (the regression we
         rolled the snap-to-integer back to fix).
         """
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=4)
         # Alt alone
         sb.setValue(5)
-        event_alt = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.AltModifier
-        )
+        event_alt = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event_alt)
         delta_alt = sb.value() - 5
         # Ctrl+Alt
@@ -534,7 +510,6 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         """Alt+wheel on the transposed axis must still step the value
         (mirror of the Ctrl+Alt axis-swap test).
         """
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=4)
         event = self._make_wheel_event(
@@ -550,7 +525,6 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         the regression we hit in real use even though the y-only test
         passed.
         """
-        from qtpy import QtCore
 
         sb = self._make_spinbox(value=5, step=1, decimals=4)
         event = self._make_wheel_event(
@@ -574,11 +548,11 @@ class TestAttributeWindowIntUsesUitkSpinBox(QtBaseTestCase):
     """
 
     def test_build_int_returns_uitk_spinbox(self):
-        from uitk.bridge.spec import AttributeSpec, make_widget
+        from uitk.bridge.spec import AttributeSpec, KindFactory
         from uitk.widgets.spinBox import SpinBox
 
         spec = AttributeSpec(key="count", kind="int", default=3)
-        widget = self.track_widget(make_widget(spec))
+        widget = self.track_widget(KindFactory.make_widget(spec))
         self.assertIsInstance(widget, SpinBox)
         # SpinBox returns int when decimals == 0
         self.assertEqual(widget.value(), 3)
@@ -591,19 +565,18 @@ class TestAttributeWindowIntUsesUitkSpinBox(QtBaseTestCase):
         dispatch on a real factory-built widget.
         """
         from unittest.mock import MagicMock
-        from qtpy import QtCore
-        from uitk.bridge.spec import AttributeSpec, make_widget
+        from uitk.bridge.spec import AttributeSpec, KindFactory
 
-        spec = AttributeSpec(key="count", kind="int", default=5, minimum=-100, maximum=100)
-        widget = self.track_widget(make_widget(spec))
+        spec = AttributeSpec(
+            key="count", kind="int", default=5, minimum=-100, maximum=100
+        )
+        widget = self.track_widget(KindFactory.make_widget(spec))
         widget.setSingleStep(1)
 
         event = MagicMock()
         event.angleDelta.return_value.x.return_value = 0
         event.angleDelta.return_value.y.return_value = 120
-        event.modifiers.return_value = (
-            QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
-        )
+        event.modifiers.return_value = QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
 
         widget.wheelEvent(event)
         self.assertEqual(widget.value(), 6)

@@ -11,6 +11,7 @@ Covers:
 - read_embedded_hash / read_embedded_tags / read_embedded_base_class round-trip
 - _ui.py without a __source_hash__ header is treated as STALE (uitk owns _ui.py end-to-end)
 """
+
 import os
 import shutil
 import tempfile
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from conftest import BaseTestCase
 
-from uitk import compile as compile_mod
+from uitk.compile import UiCompiler as compile_mod
 
 
 SAMPLE_UI = """<?xml version="1.0" encoding="UTF-8"?>
@@ -91,10 +92,13 @@ class ExtractMetadata(BaseTestCase):
 
     def test_no_tags_yields_empty_list(self):
         ui = self.ui.with_name("notags.ui")
-        ui.write_text(SAMPLE_UI.replace(
-            '<property name="uitk_tags" stdset="0">\n   <string>alpha,beta,gamma</string>\n  </property>\n  ',
-            "",
-        ), encoding="utf-8")
+        ui.write_text(
+            SAMPLE_UI.replace(
+                '<property name="uitk_tags" stdset="0">\n   <string>alpha,beta,gamma</string>\n  </property>\n  ',
+                "",
+            ),
+            encoding="utf-8",
+        )
         meta = compile_mod.extract_metadata(ui)
         self.assertEqual(meta["uitk_tags"], [])
 
@@ -286,9 +290,7 @@ class HeaderResolver(BaseTestCase):
         py = compile_mod.compile_ui(self.ui, header_resolver=resolver)
         text = py.read_text(encoding="utf-8")
         self.assertIn("from uitk.widgets.pushButton import PushButton", text)
-        self.assertNotIn(
-            "from widgets.pushbutton.h import PushButton", text
-        )
+        self.assertNotIn("from widgets.pushbutton.h import PushButton", text)
 
     def test_no_resolver_leaves_broken_import_intact(self):
         # Without a resolver, the malformed header propagates — surfaces as
@@ -298,9 +300,7 @@ class HeaderResolver(BaseTestCase):
         self.assertIn("widgets.pushbutton.h", text)
 
     def test_resolver_returning_none_leaves_intact(self):
-        py = compile_mod.compile_ui(
-            self.ui, header_resolver=lambda c, h: None
-        )
+        py = compile_mod.compile_ui(self.ui, header_resolver=lambda c, h: None)
         text = py.read_text(encoding="utf-8")
         self.assertIn("widgets.pushbutton.h", text)
 
@@ -472,9 +472,7 @@ class PrecompileAsync(BaseTestCase):
         self.tmp = tempfile.mkdtemp()
         self.tmp_path = Path(self.tmp)
         # Three .ui files so we can observe parallelism vs. serial.
-        self.uis = [
-            _write_sample(self.tmp_path, name=f"sample_{i}") for i in range(3)
-        ]
+        self.uis = [_write_sample(self.tmp_path, name=f"sample_{i}") for i in range(3)]
 
     def tearDown(self):
         # Wait for any leftover background thread before cleanup so file
@@ -501,9 +499,7 @@ class PrecompileAsync(BaseTestCase):
             py = compile_mod.compiled_path_for(ui)
             self.assertTrue(py.exists())
             self.assertIsNotNone(compile_mod.read_embedded_hash(py))
-            self.assertEqual(
-                compile_mod.read_embedded_base_class(py), "QMainWindow"
-            )
+            self.assertEqual(compile_mod.read_embedded_base_class(py), "QMainWindow")
 
     def test_returns_none_stale_when_all_fresh(self):
         # Compile once to make everything fresh.
@@ -531,8 +527,10 @@ class PrecompileAsync(BaseTestCase):
         for ui in self.uis:
             compile_mod.ensure_compiled(ui)
         self.assertTrue(
-            all(compile_mod.is_compiled_fresh(u, compile_mod.compiled_path_for(u))
-                for u in self.uis)
+            all(
+                compile_mod.is_compiled_fresh(u, compile_mod.compiled_path_for(u))
+                for u in self.uis
+            )
         )
 
         # Without force: nothing to do.

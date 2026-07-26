@@ -186,6 +186,17 @@ class ButtonOption(BaseOption):
         button.setDefault(False)
         button.setFocusPolicy(QtCore.Qt.NoFocus)
 
+        # Opt out of MainWindow state persistence BEFORE registration
+        # (register_widget only defaults restore_state=True when the attribute
+        # is absent). Option buttons are controls, not value fields: meaningful
+        # state is plugin-owned (Toggle/Pin/Recent persist through their own
+        # SettingsManager), and a checkable launcher's checked state only
+        # mirrors "my popup is open". Persisting that transient state was the
+        # pin/recent-buttons-initialize-checked bug: opening the popup saved
+        # clicked=True, the programmatic uncheck on close emits no clicked and
+        # never re-saved, and the next session restored the menu-open visuals.
+        button.restore_state = False
+
         # CRITICAL: Clear any default text to prevent artifacts
         # Using native Qt setText (not RichText's setRichText)
         button.setText("")
@@ -245,6 +256,35 @@ class ButtonOption(BaseOption):
         """Set the checked state of the button."""
         if self._widget and self._checkable:
             self._widget.setChecked(checked)
+
+    def _swap_state_icon(self, icon_name, color=None, fallback_size=(17, 17)):
+        """Idempotently swap this button's glyph/tint to a plugin-state visual.
+
+        Skips the rasterize+setIcon when the registered glyph AND pinned tint
+        already match — signal-driven re-runs (every valueChanged / store
+        notification) stay visually and computationally free. ``color`` None
+        renders auto-theme (and clears any previously pinned tint); an
+        explicit color is *pinned* in IconManager, so theme sweeps and the
+        parent OptionBox's size re-fits preserve it. ``registered_info``
+        validates ownership (id reuse on a dead widget's entry), and the size
+        set by the parent OptionBox is preserved so state swaps don't
+        oscillate the icon size. No-op until the button exists.
+        """
+        if self._widget is None:
+            return
+        from uitk.managers.icon_manager import IconManager
+
+        target = IconManager._normalize_color(color) if color else None
+        info = IconManager.registered_info(self._widget)
+        if info and info.get("name") == icon_name and info.get("color") == target:
+            return
+        IconManager.swap_icon(
+            self._widget,
+            icon_name,
+            color=color,
+            auto_theme=color is None,
+            fallback_size=fallback_size,
+        )
 
     # ------------------------------------------------------------------
     # Widget value helpers (shared by PinValuesOption, RecentValuesOption)

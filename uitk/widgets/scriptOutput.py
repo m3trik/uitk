@@ -23,6 +23,7 @@ Coloring is layered, weakest signal first, so each layer overrides the one below
    the text happens to contain. Authoritative where it's available; Maya mirrors a
    reporter and has none, which is why the word rules stay the base layer.
 """
+
 import re
 import logging
 from typing import Callable, Dict, List, Optional, Tuple
@@ -46,41 +47,6 @@ COLOR_RESULT = (115, 215, 150)
 COLOR_INFO = (130, 220, 210)  # pastel teal
 
 
-def _monospace_font(point_size: int = 9) -> QtGui.QFont:
-    """A monospace ``QFont`` that resolves across platforms (Consolas → Courier
-    New → generic Monospace), so the console reads the same on Windows (Maya)
-    and Linux (Blender)."""
-    for family in ("Consolas", "Courier New", "Monospace"):
-        font = QtGui.QFont(family, point_size)
-        font.setStyleHint(QtGui.QFont.Monospace)
-        if font.exactMatch() or family == "Monospace":
-            return font
-    fallback = QtGui.QFont()
-    fallback.setPointSize(point_size)
-    fallback.setStyleHint(QtGui.QFont.Monospace)
-    return fallback
-
-
-def _char_format(
-    color: Tuple[int, int, int],
-    bg_color: Optional[Tuple[int, int, int]] = None,
-    bold: bool = False,
-    italic: bool = False,
-    font: Optional[QtGui.QFont] = None,
-) -> QtGui.QTextCharFormat:
-    """Build a monospace ``QTextCharFormat`` — the one construction shared by the line
-    rules, the block rules and the level map, so all three stay visually consistent."""
-    fmt = QtGui.QTextCharFormat()
-    fmt.setForeground(QtGui.QColor(*color))
-    if bg_color:
-        fmt.setBackground(QtGui.QColor(*bg_color))
-    rule_font = QtGui.QFont(font) if font is not None else _monospace_font()
-    rule_font.setBold(bold)
-    rule_font.setItalic(italic)
-    fmt.setFont(rule_font)
-    return fmt
-
-
 class ScriptHighlightRule:
     """One regex → text-format rule for :class:`ScriptHighlighter`, scoped to a line."""
 
@@ -94,7 +60,9 @@ class ScriptHighlightRule:
         font: Optional[QtGui.QFont] = None,
     ):
         self.pattern = QtCore.QRegularExpression(pattern)
-        self.format = _char_format(color, bg_color, bold, italic, font)
+        self.format = ScriptHighlighter._char_format(
+            color, bg_color, bold, italic, font
+        )
 
 
 class ScriptBlockRule:
@@ -133,7 +101,9 @@ class ScriptBlockRule:
         allow_blank: bool = False,
     ):
         self.pattern = QtCore.QRegularExpression(start_pattern)
-        self.format = _char_format(color, bg_color, bold, italic, font)
+        self.format = ScriptHighlighter._char_format(
+            color, bg_color, bold, italic, font
+        )
         self.include_end = include_end
         self.allow_blank = allow_blank
 
@@ -165,16 +135,119 @@ class ScriptHighlighter(QtGui.QSyntaxHighlighter):
         level_formats: Optional[Dict[int, QtGui.QTextCharFormat]] = None,
     ):
         super().__init__(doc)
-        self.rules = rules if rules is not None else default_rules()
-        self.block_rules = block_rules if block_rules is not None else default_block_rules()
+        self.rules = rules if rules is not None else ScriptHighlighter.default_rules()
+        self.block_rules = (
+            block_rules
+            if block_rules is not None
+            else ScriptHighlighter.default_block_rules()
+        )
         self.level_formats = (
-            level_formats if level_formats is not None else default_level_formats()
+            level_formats
+            if level_formats is not None
+            else ScriptHighlighter.default_level_formats()
         )
         # The level being stamped onto a block right now — set only for the duration of
         # stamp_level's own rehighlightBlock call, never across an insert (see
         # stamp_level). Recorded as block user data on the way past, so it survives a
         # later rehighlight, when there is no stamp in flight.
         self.pending_level: Optional[int] = None
+
+    # -- static construction helpers & defaults ------------------------------
+    @staticmethod
+    def _monospace_font(point_size: int = 9) -> QtGui.QFont:
+        """A monospace ``QFont`` that resolves across platforms (Consolas → Courier
+        New → generic Monospace), so the console reads the same on Windows (Maya)
+        and Linux (Blender)."""
+        for family in ("Consolas", "Courier New", "Monospace"):
+            font = QtGui.QFont(family, point_size)
+            font.setStyleHint(QtGui.QFont.Monospace)
+            if font.exactMatch() or family == "Monospace":
+                return font
+        fallback = QtGui.QFont()
+        fallback.setPointSize(point_size)
+        fallback.setStyleHint(QtGui.QFont.Monospace)
+        return fallback
+
+    @staticmethod
+    def _char_format(
+        color: Tuple[int, int, int],
+        bg_color: Optional[Tuple[int, int, int]] = None,
+        bold: bool = False,
+        italic: bool = False,
+        font: Optional[QtGui.QFont] = None,
+    ) -> QtGui.QTextCharFormat:
+        """Build a monospace ``QTextCharFormat`` — the one construction shared by the line
+        rules, the block rules and the level map, so all three stay visually consistent."""
+        fmt = QtGui.QTextCharFormat()
+        fmt.setForeground(QtGui.QColor(*color))
+        if bg_color:
+            fmt.setBackground(QtGui.QColor(*bg_color))
+        rule_font = (
+            QtGui.QFont(font)
+            if font is not None
+            else ScriptHighlighter._monospace_font()
+        )
+        rule_font.setBold(bold)
+        rule_font.setItalic(italic)
+        fmt.setFont(rule_font)
+        return fmt
+
+    @staticmethod
+    def default_rules() -> List[ScriptHighlightRule]:
+        """The default single-line log-coloring rules (Maya-parity palette).
+
+        Kept as the canonical look so a Blender console is pixel-identical to the
+        Maya one. Override by passing ``rules=`` to :class:`ScriptOutput`.
+        """
+        # The word rules are case-insensitive ((?i)) so they color Maya's capitalized
+        # reporter text ("// Error:") AND Blender's uppercase logging levels ("ERROR:")
+        # identically — no regression to the Maya look, strictly wider coverage.
+        #
+        # \b\w*Error\b (not \bError\b) also catches the exception CLASS names Python
+        # actually raises — AttributeError, ValueError, RuntimeError. A bare \bError\b
+        # requires a word boundary before "Error", and "AttributeError" has none, so the
+        # line naming the exception was the one line a traceback never got colored on.
+        # The trailing \b still keeps it tight: "ErrorLogs" stays unmatched.
+        return [
+            ScriptHighlightRule(COLOR_COMMENT, r"(//|#).+"),  # comment
+            ScriptHighlightRule(COLOR_WARNING, r"(?i).*\b\w*Warning\b.*"),  # warning
+            ScriptHighlightRule(COLOR_ERROR, r"(?i).*\b\w*Error\b.*"),  # error
+            ScriptHighlightRule(COLOR_RESULT, r"(?i).*\bResult\b.*"),  # result
+            ScriptHighlightRule(COLOR_INFO, r"(?i).*\bInfo\b.*"),  # info
+        ]
+
+    @staticmethod
+    def default_block_rules() -> List[ScriptBlockRule]:
+        """The default multi-line region rules — Python tracebacks, header to exception.
+
+        Both chaining connectors are start patterns of their own: a chained traceback prints
+        ``… another exception occurred:`` outside any indented region, so without them the
+        connector line would read as plain text between two colored regions.
+        """
+        return [
+            ScriptBlockRule(
+                COLOR_ERROR,
+                r"^\s*(Traceback \(most recent call last\):"
+                r"|During handling of the above exception, another exception occurred:"
+                r"|The above exception was the direct cause of the following exception:)",
+            ),
+        ]
+
+    @staticmethod
+    def default_level_formats() -> Dict[int, QtGui.QTextCharFormat]:
+        """The default ``logging`` level → format map (same palette as the word rules).
+
+        Resolved by threshold, so ``CRITICAL`` picks up its own bold-red entry while any
+        custom level in between falls to the bucket below it. ``NOTSET`` (0) maps to nothing
+        — an unclassified record is left to the word/block rules rather than mis-colored.
+        """
+        return {
+            logging.DEBUG: ScriptHighlighter._char_format(COLOR_COMMENT),
+            logging.INFO: ScriptHighlighter._char_format(COLOR_INFO),
+            logging.WARNING: ScriptHighlighter._char_format(COLOR_WARNING),
+            logging.ERROR: ScriptHighlighter._char_format(COLOR_ERROR),
+            logging.CRITICAL: ScriptHighlighter._char_format(COLOR_ERROR, bold=True),
+        }
 
     def highlightBlock(self, text: str) -> None:
         for rule in self.rules:
@@ -212,7 +285,9 @@ class ScriptHighlighter(QtGui.QSyntaxHighlighter):
         """Continue, close, or open a block region on this line, tracking it in the
         block state so the next line knows where it stands."""
         index = self.previousBlockState()
-        open_rule = self.block_rules[index] if 0 <= index < len(self.block_rules) else None
+        open_rule = (
+            self.block_rules[index] if 0 <= index < len(self.block_rules) else None
+        )
         if open_rule is not None:
             if open_rule.continues(text):
                 self.setFormat(0, len(text), open_rule.format)
@@ -264,63 +339,6 @@ class _BlockLevel(QtGui.QTextBlockUserData):
     def __init__(self, level: int):
         super().__init__()
         self.level = level
-
-
-def default_rules() -> List[ScriptHighlightRule]:
-    """The default single-line log-coloring rules (Maya-parity palette).
-
-    Kept as the canonical look so a Blender console is pixel-identical to the
-    Maya one. Override by passing ``rules=`` to :class:`ScriptOutput`.
-    """
-    # The word rules are case-insensitive ((?i)) so they color Maya's capitalized
-    # reporter text ("// Error:") AND Blender's uppercase logging levels ("ERROR:")
-    # identically — no regression to the Maya look, strictly wider coverage.
-    #
-    # \b\w*Error\b (not \bError\b) also catches the exception CLASS names Python
-    # actually raises — AttributeError, ValueError, RuntimeError. A bare \bError\b
-    # requires a word boundary before "Error", and "AttributeError" has none, so the
-    # line naming the exception was the one line a traceback never got colored on.
-    # The trailing \b still keeps it tight: "ErrorLogs" stays unmatched.
-    return [
-        ScriptHighlightRule(COLOR_COMMENT, r"(//|#).+"),  # comment
-        ScriptHighlightRule(COLOR_WARNING, r"(?i).*\b\w*Warning\b.*"),  # warning
-        ScriptHighlightRule(COLOR_ERROR, r"(?i).*\b\w*Error\b.*"),  # error
-        ScriptHighlightRule(COLOR_RESULT, r"(?i).*\bResult\b.*"),  # result
-        ScriptHighlightRule(COLOR_INFO, r"(?i).*\bInfo\b.*"),  # info
-    ]
-
-
-def default_block_rules() -> List[ScriptBlockRule]:
-    """The default multi-line region rules — Python tracebacks, header to exception.
-
-    Both chaining connectors are start patterns of their own: a chained traceback prints
-    ``… another exception occurred:`` outside any indented region, so without them the
-    connector line would read as plain text between two colored regions.
-    """
-    return [
-        ScriptBlockRule(
-            COLOR_ERROR,
-            r"^\s*(Traceback \(most recent call last\):"
-            r"|During handling of the above exception, another exception occurred:"
-            r"|The above exception was the direct cause of the following exception:)",
-        ),
-    ]
-
-
-def default_level_formats() -> Dict[int, QtGui.QTextCharFormat]:
-    """The default ``logging`` level → format map (same palette as the word rules).
-
-    Resolved by threshold, so ``CRITICAL`` picks up its own bold-red entry while any
-    custom level in between falls to the bucket below it. ``NOTSET`` (0) maps to nothing
-    — an unclassified record is left to the word/block rules rather than mis-colored.
-    """
-    return {
-        logging.DEBUG: _char_format(COLOR_COMMENT),
-        logging.INFO: _char_format(COLOR_INFO),
-        logging.WARNING: _char_format(COLOR_WARNING),
-        logging.ERROR: _char_format(COLOR_ERROR),
-        logging.CRITICAL: _char_format(COLOR_ERROR, bold=True),
-    }
 
 
 class ScriptOutput(QtWidgets.QTextEdit):
@@ -389,7 +407,7 @@ class ScriptOutput(QtWidgets.QTextEdit):
         self.focus_on_hover = focus_on_hover
 
         self.setReadOnly(True)
-        self.setFont(_monospace_font(point_size))
+        self.setFont(ScriptHighlighter._monospace_font(point_size))
         if max_blocks:
             self.document().setMaximumBlockCount(int(max_blocks))
 
@@ -398,7 +416,8 @@ class ScriptOutput(QtWidgets.QTextEdit):
         # it can't hijack Ctrl+C elsewhere in the app when the console holds a selection.
         self._copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self)
         self._copy_shortcut.setContext(
-            QtCore.Qt.ApplicationShortcut if app_wide_copy
+            QtCore.Qt.ApplicationShortcut
+            if app_wide_copy
             else QtCore.Qt.WidgetWithChildrenShortcut
         )
         self._copy_shortcut.activated.connect(self._handle_copy_shortcut)

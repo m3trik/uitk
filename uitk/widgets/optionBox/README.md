@@ -242,19 +242,21 @@ option_box.wrap(line_edit)
 
 ## Usage Examples
 
-### Basic Usage - Convenience Functions
+### Basic Usage - Convenience Factories
 
 ```python
-from uitk import add_option_box, add_clear_option, ActionOption
+from uitk import OptionBoxManager, ActionOption
 
 # Add clear button only
 line_edit = QtWidgets.QLineEdit()
-container = add_clear_option(line_edit)
+container = OptionBoxManager.add_clear_option(line_edit)
 layout.addWidget(container)
 
 # Add action button
 button = QtWidgets.QPushButton()
-container = add_option_box(button, options=[ActionOption(callback=my_callback)])
+container = OptionBoxManager.add_option_box(
+    button, options=[ActionOption(callback=my_callback)]
+)
 layout.addWidget(container)
 ```
 
@@ -362,12 +364,15 @@ class AdvancedOption(BaseOption):
 
 If you have existing code using the old `optionBox.py` module:
 
-1. **No changes needed!** The new structure is fully backward compatible.
-2. Imports remain the same:
+1. The convenience factories are now class methods on `OptionBoxManager`
+   (`add_option_box`, `add_clear_option`, `add_menu_option`,
+   `patch_widget_class`, `patch_common_widgets`) — the flat module-level
+   functions were removed.
+2. Update imports:
    ```python
-   from uitk import OptionBox, add_option_box
+   from uitk import OptionBox, OptionBoxManager
    ```
-3. All existing APIs continue to work as before.
+3. The `widget.option_box` property interface is unchanged.
 
 To take advantage of the new modular system:
 

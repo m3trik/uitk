@@ -267,6 +267,8 @@ widget.menu.presets.preset_dir = "~/.myapp/presets"  # custom preset dir
 ```python
 menu.trigger_button = "right"       # "left"/"right"/"middle"/"any"/"none", Qt button, or tuple
 menu.hide_on_leave = True
+menu.hide_on_trigger = True         # dismiss after an item is triggered (off by default)
+menu.set_hide_on_trigger(item, False)  # per-item include/exclude (None clears the override)
 menu.position = "bottom"            # "bottom", "right", "cursorPos", a coord pair, or a widget
 menu.add("QPushButton", row=0, col=1)  # grid placement via add(row=…, col=…, rowSpan=…, colSpan=…)
 ```
@@ -487,8 +489,8 @@ See [uitk/widgets/optionBox/README.md](../uitk/widgets/optionBox/README.md) for 
 |:---|:---|
 | `RowSelectionBorderDelegate` | Paints a 1 px row-spanning selection border instead of the per-cell fill ([row_selection.py](../uitk/widgets/delegates/row_selection.py)) |
 | `CenteredIconActionDelegate` | Centers an icon-only "action cell" while preserving the row-selection border — Qt's default decoration placement is left-aligned and offset by `::item` padding ([centered_icon.py](../uitk/widgets/delegates/centered_icon.py)) |
-| `ChoiceCaptureDelegate` | Edits a cell via an in-cell dropdown; `install_choice_capture(table, column, choices, on_capture)` wires it in one call ([choice_capture.py](../uitk/widgets/delegates/choice_capture.py)) |
-| `ShortcutCaptureDelegate` | Edits a cell via in-cell key-chord capture; `install_shortcut_capture(table, column, on_capture)` wires it ([shortcut_capture.py](../uitk/widgets/delegates/shortcut_capture.py)) |
+| `ChoiceCaptureDelegate` | Edits a cell via an in-cell dropdown; `ChoiceCaptureDelegate.install_choice_capture(table, column, choices, on_capture)` wires it in one call ([choice_capture.py](../uitk/widgets/delegates/choice_capture.py)) |
+| `ShortcutCaptureDelegate` | Edits a cell via in-cell key-chord capture; `ShortcutCaptureDelegate.install_shortcut_capture(table, column, on_capture)` wires it ([shortcut_capture.py](../uitk/widgets/delegates/shortcut_capture.py)) |
 
 Both capture delegates emit `captured(int, int, str)` (row, column, value) and have `Bordered*` variants that mix in the row-selection border.
 

@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Data models and shared constants for the sequencer widget."""
+
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -30,7 +31,9 @@ class PatternSpec:
     def brush(self) -> QtGui.QBrush:
         c = QtGui.QColor(self.color)
         c.setAlpha(self.alpha)
-        return pattern_brush(self.style, c, self.spacing, self.line_width)
+        return PatternRegistry.pattern_brush(
+            self.style, c, self.spacing, self.line_width
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -119,94 +122,106 @@ _DISPLAY_COLORS = [
 ]
 
 _MENU_STYLESHEET = (
-    "QMenu { background:#333; color:#CCC; }" "QMenu::item:selected { background:#555; }"
+    "QMenu { background:#333; color:#CCC; }QMenu::item:selected { background:#555; }"
 )
 
 
-def _styled_menu(parent=None) -> QtWidgets.QMenu:
-    """Create a QMenu with the sequencer's standard dark stylesheet."""
-    menu = QtWidgets.QMenu(parent)
-    menu.setStyleSheet(_MENU_STYLESHEET)
-    return menu
+class MenuUtils:
+    """Construction/placement helpers for the sequencer's context menus."""
 
+    @staticmethod
+    def _styled_menu(parent=None) -> QtWidgets.QMenu:
+        """Create a QMenu with the sequencer's standard dark stylesheet."""
+        menu = QtWidgets.QMenu(parent)
+        menu.setStyleSheet(_MENU_STYLESHEET)
+        return menu
 
-def _menu_exec_pos(event) -> QtCore.QPoint:
-    """Return a screen position suitable for ``QMenu.exec_``."""
-    if hasattr(event, "screenPos"):
-        return event.screenPos()
-    return QtGui.QCursor.pos()
+    @staticmethod
+    def _menu_exec_pos(event) -> QtCore.QPoint:
+        """Return a screen position suitable for ``QMenu.exec_``."""
+        if hasattr(event, "screenPos"):
+            return event.screenPos()
+        return QtGui.QCursor.pos()
 
 
 # ---------------------------------------------------------------------------
 #  Curve rendering — shared value→pixel mapping + segment path builder
 # ---------------------------------------------------------------------------
+class CurveUtils:
+    """Shared value→pixel mapping + curve-segment path builder.
 
-
-def make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float):
-    """Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
-
-    Key dots (KeyframeItem), clip curve previews, and background curves
-    must agree pixel-for-pixel: same 15% vertical pad, inverted Y (high
-    values → top), and flat curves centered in the row.  This is the
-    single implementation; per-site copies drifted (a floored range let
-    flat background curves paint at the row bottom while their key dots
-    centered).
+    Key dots, clip curve previews, and background curves must agree
+    pixel-for-pixel; these are the single implementations both sides share.
     """
-    pad = rect_height * 0.15
-    y_top = rect_top + pad
-    y_bot = rect_top + rect_height - pad
-    y_span = y_bot - y_top
-    val_range = val_max - val_min
-    is_flat = val_range < 1e-9
 
-    def map_y(v: float) -> float:
-        if is_flat:
-            return y_top + y_span * 0.5
-        frac = (v - val_min) / val_range
-        return y_bot - frac * y_span
+    @staticmethod
+    def make_value_mapper(
+        rect_top: float, rect_height: float, val_min: float, val_max: float
+    ):
+        """Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
 
-    return map_y, is_flat
+        Key dots (KeyframeItem), clip curve previews, and background curves
+        must agree pixel-for-pixel: same 15% vertical pad, inverted Y (high
+        values → top), and flat curves centered in the row.  This is the
+        single implementation; per-site copies drifted (a floored range let
+        flat background curves paint at the row bottom while their key dots
+        centered).
+        """
+        pad = rect_height * 0.15
+        y_top = rect_top + pad
+        y_bot = rect_top + rect_height - pad
+        y_span = y_bot - y_top
+        val_range = val_max - val_min
+        is_flat = val_range < 1e-9
 
+        def map_y(v: float) -> float:
+            if is_flat:
+                return y_top + y_span * 0.5
+            frac = (v - val_min) / val_range
+            return y_bot - frac * y_span
 
-def build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath:
-    """Build a QPainterPath from curve *segments*.
+        return map_y, is_flat
 
-    One implementation of the out-type switch (``step`` /
-    ``stepnext`` / ``linear`` / cubic-Bézier via ``cp1``/``cp2``) shared
-    by the clip curve preview and the background curve painter, so a
-    tangent-rendering change can't silently diverge between them.
-    """
-    path = QtGui.QPainterPath()
-    if not segments:
+    @staticmethod
+    def build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath:
+        """Build a QPainterPath from curve *segments*.
+
+        One implementation of the out-type switch (``step`` /
+        ``stepnext`` / ``linear`` / cubic-Bézier via ``cp1``/``cp2``) shared
+        by the clip curve preview and the background curve painter, so a
+        tangent-rendering change can't silently diverge between them.
+        """
+        path = QtGui.QPainterPath()
+        if not segments:
+            return path
+        first_seg = segments[0]
+        path.moveTo(map_x(first_seg["t0"]), map_y(first_seg["v0"]))
+        for seg in segments:
+            x1 = map_x(seg["t1"])
+            y1 = map_y(seg["v1"])
+            ot = seg.get("out_type", "spline")
+            cp1 = seg.get("cp1")
+            cp2 = seg.get("cp2")
+            if ot == "step":
+                # Hold value, then jump at next key
+                path.lineTo(x1, map_y(seg["v0"]))
+                path.lineTo(x1, y1)
+            elif ot == "stepnext":
+                # Jump to next value immediately, then hold
+                path.lineTo(map_x(seg["t0"]), y1)
+                path.lineTo(x1, y1)
+            elif ot == "linear" or cp1 is None or cp2 is None:
+                path.lineTo(x1, y1)
+            else:
+                path.cubicTo(
+                    map_x(cp1[0]),
+                    map_y(cp1[1]),
+                    map_x(cp2[0]),
+                    map_y(cp2[1]),
+                    x1,
+                    y1,
+                )
         return path
-    first_seg = segments[0]
-    path.moveTo(map_x(first_seg["t0"]), map_y(first_seg["v0"]))
-    for seg in segments:
-        x1 = map_x(seg["t1"])
-        y1 = map_y(seg["v1"])
-        ot = seg.get("out_type", "spline")
-        cp1 = seg.get("cp1")
-        cp2 = seg.get("cp2")
-        if ot == "step":
-            # Hold value, then jump at next key
-            path.lineTo(x1, map_y(seg["v0"]))
-            path.lineTo(x1, y1)
-        elif ot == "stepnext":
-            # Jump to next value immediately, then hold
-            path.lineTo(map_x(seg["t0"]), y1)
-            path.lineTo(x1, y1)
-        elif ot == "linear" or cp1 is None or cp2 is None:
-            path.lineTo(x1, y1)
-        else:
-            path.cubicTo(
-                map_x(cp1[0]),
-                map_y(cp1[1]),
-                map_x(cp2[0]),
-                map_y(cp2[1]),
-                x1,
-                y1,
-            )
-    return path
 
 
 _DEFAULT_ATTRIBUTE_COLORS = {
@@ -233,112 +248,120 @@ _DEFAULT_ATTRIBUTE_COLORS = {
 # A pattern painter draws one tile of side ``size`` onto the given QPainter.
 PatternPainter = Callable[[QtGui.QPainter, int, QtGui.QColor, float], None]
 
-_pattern_painters: Dict[str, PatternPainter] = {}
-
-# Brush cache — declared before register_pattern so the built-in
-# registration loop below can run the override purge safely.
-_pattern_cache: Dict[tuple, QtGui.QBrush] = {}
 _PATTERN_CACHE_MAX = 128
 
 
-def register_pattern(name: str, painter: PatternPainter) -> None:
-    """Register (or override) a tile-painter for :func:`pattern_brush`."""
-    _pattern_painters[name] = painter
-    # Drop cached brushes rendered by the previous painter — the cache
-    # is keyed by (style, color, spacing, width) only, so an override
-    # would otherwise keep serving stale tiles for known arg combos.
-    for key in [k for k in _pattern_cache if k[0] == name]:
-        del _pattern_cache[key]
+class PatternRegistry:
+    """Registry of tile-painters + cached tiled brushes for background fills."""
 
+    # Registered tile-painters, keyed by style name.
+    _pattern_painters: Dict[str, PatternPainter] = {}
+    # Brush cache — keyed by (style, color, spacing, width) only, so an
+    # override purge (see register_pattern) drops stale tiles for known combos.
+    _pattern_cache: Dict[tuple, QtGui.QBrush] = {}
 
-def _paint_diagonal(p, size, color, lw):
-    p.setPen(QtGui.QPen(color, lw))
-    p.drawLine(0, size, size, 0)
+    @staticmethod
+    def register_pattern(name: str, painter: PatternPainter) -> None:
+        """Register (or override) a tile-painter for :meth:`pattern_brush`."""
+        PatternRegistry._pattern_painters[name] = painter
+        # Drop cached brushes rendered by the previous painter — the cache
+        # is keyed by (style, color, spacing, width) only, so an override
+        # would otherwise keep serving stale tiles for known arg combos.
+        for key in [k for k in PatternRegistry._pattern_cache if k[0] == name]:
+            del PatternRegistry._pattern_cache[key]
 
+    @staticmethod
+    def _paint_diagonal(p, size, color, lw):
+        p.setPen(QtGui.QPen(color, lw))
+        p.drawLine(0, size, size, 0)
 
-def _paint_crosshatch(p, size, color, lw):
-    pen = QtGui.QPen(color, lw)
-    p.setPen(pen)
-    p.drawLine(0, size, size, 0)
-    p.drawLine(0, 0, size, size)
+    @staticmethod
+    def _paint_crosshatch(p, size, color, lw):
+        pen = QtGui.QPen(color, lw)
+        p.setPen(pen)
+        p.drawLine(0, size, size, 0)
+        p.drawLine(0, 0, size, size)
 
+    @staticmethod
+    def _paint_vstripes(p, size, color, lw):
+        p.setPen(QtGui.QPen(color, lw))
+        p.drawLine(0, 0, 0, size)
 
-def _paint_vstripes(p, size, color, lw):
-    p.setPen(QtGui.QPen(color, lw))
-    p.drawLine(0, 0, 0, size)
+    @staticmethod
+    def _paint_hstripes(p, size, color, lw):
+        p.setPen(QtGui.QPen(color, lw))
+        p.drawLine(0, 0, size, 0)
 
+    @staticmethod
+    def _paint_dots(p, size, color, lw):
+        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        p.setPen(QtCore.Qt.NoPen)
+        p.setBrush(color)
+        radius = max(0.5, lw)
+        c = size / 2.0
+        p.drawEllipse(QtCore.QPointF(c, c), radius, radius)
 
-def _paint_hstripes(p, size, color, lw):
-    p.setPen(QtGui.QPen(color, lw))
-    p.drawLine(0, 0, size, 0)
+    @staticmethod
+    def _paint_grid(p, size, color, lw):
+        p.setPen(QtGui.QPen(color, lw))
+        p.drawLine(0, 0, size, 0)
+        p.drawLine(0, 0, 0, size)
 
-
-def _paint_dots(p, size, color, lw):
-    p.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    p.setPen(QtCore.Qt.NoPen)
-    p.setBrush(color)
-    radius = max(0.5, lw)
-    c = size / 2.0
-    p.drawEllipse(QtCore.QPointF(c, c), radius, radius)
-
-
-def _paint_grid(p, size, color, lw):
-    p.setPen(QtGui.QPen(color, lw))
-    p.drawLine(0, 0, size, 0)
-    p.drawLine(0, 0, 0, size)
-
-
-for _name, _fn in (
-    ("diagonal", _paint_diagonal),
-    ("crosshatch", _paint_crosshatch),
-    ("vstripes", _paint_vstripes),
-    ("hstripes", _paint_hstripes),
-    ("dots", _paint_dots),
-    ("grid", _paint_grid),
-):
-    register_pattern(_name, _fn)
-
-
-def pattern_brush(
-    style: str,
-    color: QtGui.QColor,
-    spacing: int = HATCH_MEDIUM,
-    line_width: float = 1.0,
-) -> QtGui.QBrush:
-    """Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for ``"dots"``)."""
-    key = (style, color.rgba(), spacing, line_width)
-    brush = _pattern_cache.get(key)
-    if brush is not None:
+    @staticmethod
+    def pattern_brush(
+        style: str,
+        color: QtGui.QColor,
+        spacing: int = HATCH_MEDIUM,
+        line_width: float = 1.0,
+    ) -> QtGui.QBrush:
+        """Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for ``"dots"``)."""
+        key = (style, color.rgba(), spacing, line_width)
+        brush = PatternRegistry._pattern_cache.get(key)
+        if brush is not None:
+            return brush
+        painter_fn = PatternRegistry._pattern_painters.get(style)
+        if painter_fn is None:
+            raise KeyError(
+                f"Unknown pattern style {style!r}. "
+                f"Registered: {sorted(PatternRegistry._pattern_painters)}"
+            )
+        tile = QtGui.QPixmap(spacing, spacing)
+        tile.fill(QtCore.Qt.transparent)
+        tp = QtGui.QPainter(tile)
+        try:
+            painter_fn(tp, spacing, color, line_width)
+        finally:
+            tp.end()
+        brush = QtGui.QBrush(tile)
+        if len(PatternRegistry._pattern_cache) >= _PATTERN_CACHE_MAX:
+            PatternRegistry._pattern_cache.pop(
+                next(iter(PatternRegistry._pattern_cache))
+            )
+        PatternRegistry._pattern_cache[key] = brush
         return brush
-    painter_fn = _pattern_painters.get(style)
-    if painter_fn is None:
-        raise KeyError(
-            f"Unknown pattern style {style!r}. "
-            f"Registered: {sorted(_pattern_painters)}"
-        )
-    tile = QtGui.QPixmap(spacing, spacing)
-    tile.fill(QtCore.Qt.transparent)
-    tp = QtGui.QPainter(tile)
-    try:
-        painter_fn(tp, spacing, color, line_width)
-    finally:
-        tp.end()
-    brush = QtGui.QBrush(tile)
-    if len(_pattern_cache) >= _PATTERN_CACHE_MAX:
-        _pattern_cache.pop(next(iter(_pattern_cache)))
-    _pattern_cache[key] = brush
-    return brush
+
+    @staticmethod
+    def paint_pattern(
+        painter: QtGui.QPainter,
+        rect: QtCore.QRectF,
+        spec: PatternSpec,
+    ) -> None:
+        """Fill ``rect`` with ``spec``; tile is anchored to ``rect.topLeft()``."""
+        prev_origin = painter.brushOrigin()
+        painter.setBrushOrigin(rect.topLeft().toPoint())
+        try:
+            painter.fillRect(rect, spec.brush())
+        finally:
+            painter.setBrushOrigin(prev_origin)
 
 
-def paint_pattern(
-    painter: QtGui.QPainter,
-    rect: QtCore.QRectF,
-    spec: PatternSpec,
-) -> None:
-    """Fill ``rect`` with ``spec``; tile is anchored to ``rect.topLeft()``."""
-    prev_origin = painter.brushOrigin()
-    painter.setBrushOrigin(rect.topLeft().toPoint())
-    try:
-        painter.fillRect(rect, spec.brush())
-    finally:
-        painter.setBrushOrigin(prev_origin)
+# Register the built-in tile-painters into the registry.
+for _name, _fn in (
+    ("diagonal", PatternRegistry._paint_diagonal),
+    ("crosshatch", PatternRegistry._paint_crosshatch),
+    ("vstripes", PatternRegistry._paint_vstripes),
+    ("hstripes", PatternRegistry._paint_hstripes),
+    ("dots", PatternRegistry._paint_dots),
+    ("grid", PatternRegistry._paint_grid),
+):
+    PatternRegistry.register_pattern(_name, _fn)

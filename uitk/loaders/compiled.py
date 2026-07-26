@@ -17,6 +17,7 @@ The .ui remains the canonical source-of-truth; this loader auto-compiles a
 fresh _ui.py whenever one is missing or its embedded hash diverges from the
 .ui contents.
 """
+
 import hashlib
 import importlib.util
 import os
@@ -27,72 +28,70 @@ from typing import Dict
 import pythontk as ptk
 from qtpy import QtWidgets
 
-from uitk import compile as compile_mod
-
-
-def _module_name_for(py_path: Path) -> str:
-    """Stable module name keyed on the file's resolved path."""
-    digest = hashlib.md5(str(py_path.resolve()).encode("utf-8")).hexdigest()[:16]
-    return f"_uitk_compiled_{digest}"
-
-
-def _import_compiled_module(py_path: Path):
-    """Import a _ui.py file as a uniquely-named module, returning the module.
-
-    Re-executes the module on every call so a regenerated _ui.py is picked up
-    immediately without an importlib.reload. On exec failure (e.g. a custom
-    widget header path that does not resolve), the half-broken module is
-    removed from sys.modules so the next attempt starts clean.
-    """
-    py_path = Path(py_path)
-    mod_name = _module_name_for(py_path)
-    spec = importlib.util.spec_from_file_location(mod_name, str(py_path))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot create module spec for {py_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[mod_name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        sys.modules.pop(mod_name, None)
-        raise
-    return module
-
-
-def _resolve_qt_class(name: str):
-    """Resolve a Qt class name like 'QMainWindow' to the QtWidgets class.
-
-    Raises AttributeError for unknown names so a corrupted ``__base_class__``
-    surfaces as a clear error rather than as a downstream call to a method
-    that ``QWidget`` does not have (e.g. ``setCentralWidget``).
-    """
-    cls = getattr(QtWidgets, name, None)
-    if cls is None:
-        raise AttributeError(
-            f"Unknown form base class '{name}' — not in QtWidgets"
-        )
-    return cls
-
-
-def _find_form_class(module):
-    """Find the Ui_<Name> class inside a compiled _ui.py module."""
-    target = getattr(module, "__form_class__", None)
-    if target:
-        cls = getattr(module, f"Ui_{target}", None)
-        if cls is not None:
-            return cls
-    for name in dir(module):
-        if name.startswith("Ui_"):
-            cls = getattr(module, name)
-            if isinstance(cls, type):
-                return cls
-    raise AttributeError(
-        f"No Ui_* class found in compiled module {getattr(module, '__file__', '?')}"
-    )
+from uitk.compile import UiCompiler
 
 
 class CompiledLoader:
     """Switchboard delegate that loads UIs via compiled _ui.py modules."""
+
+    @staticmethod
+    def _module_name_for(py_path: Path) -> str:
+        """Stable module name keyed on the file's resolved path."""
+        digest = hashlib.md5(str(py_path.resolve()).encode("utf-8")).hexdigest()[:16]
+        return f"_uitk_compiled_{digest}"
+
+    @staticmethod
+    def _import_compiled_module(py_path: Path):
+        """Import a _ui.py file as a uniquely-named module, returning the module.
+
+        Re-executes the module on every call so a regenerated _ui.py is picked up
+        immediately without an importlib.reload. On exec failure (e.g. a custom
+        widget header path that does not resolve), the half-broken module is
+        removed from sys.modules so the next attempt starts clean.
+        """
+        py_path = Path(py_path)
+        mod_name = CompiledLoader._module_name_for(py_path)
+        spec = importlib.util.spec_from_file_location(mod_name, str(py_path))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot create module spec for {py_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(mod_name, None)
+            raise
+        return module
+
+    @staticmethod
+    def _resolve_qt_class(name: str):
+        """Resolve a Qt class name like 'QMainWindow' to the QtWidgets class.
+
+        Raises AttributeError for unknown names so a corrupted ``__base_class__``
+        surfaces as a clear error rather than as a downstream call to a method
+        that ``QWidget`` does not have (e.g. ``setCentralWidget``).
+        """
+        cls = getattr(QtWidgets, name, None)
+        if cls is None:
+            raise AttributeError(f"Unknown form base class '{name}' — not in QtWidgets")
+        return cls
+
+    @staticmethod
+    def _find_form_class(module):
+        """Find the Ui_<Name> class inside a compiled _ui.py module."""
+        target = getattr(module, "__form_class__", None)
+        if target:
+            cls = getattr(module, f"Ui_{target}", None)
+            if cls is not None:
+                return cls
+        for name in dir(module):
+            if name.startswith("Ui_"):
+                cls = getattr(module, name)
+                if isinstance(cls, type):
+                    return cls
+        raise AttributeError(
+            f"No Ui_* class found in compiled module {getattr(module, '__file__', '?')}"
+        )
 
     def __init__(self, switchboard):
         self.sb = switchboard
@@ -137,7 +136,7 @@ class CompiledLoader:
         if not ui_path:
             return set()
         try:
-            return set(compile_mod.extract_metadata(ui_path)["uitk_tags"])
+            return set(UiCompiler.extract_metadata(ui_path)["uitk_tags"])
         except Exception:
             return set()
 
@@ -165,19 +164,19 @@ class CompiledLoader:
         if cached is not None and cached[0] == ui_mtime:
             _, py_path, module = cached
         else:
-            py_path = compile_mod.ensure_compiled(
+            py_path = UiCompiler.ensure_compiled(
                 ui_path, header_resolver=self._resolve_header
             )
             try:
-                module = _import_compiled_module(py_path)
+                module = CompiledLoader._import_compiled_module(py_path)
             except ImportError:
                 self.sb.logger.info(
                     f"[{py_path.name}] import failed; regenerating with resolver"
                 )
-                compile_mod.compile_ui(
+                UiCompiler.compile_ui(
                     ui_path, py_path, header_resolver=self._resolve_header
                 )
-                module = _import_compiled_module(py_path)
+                module = CompiledLoader._import_compiled_module(py_path)
             self._load_cache[cache_key] = (ui_mtime, py_path, module)
 
         for cls_name, _header in getattr(module, "__customwidgets__", []):
@@ -191,16 +190,16 @@ class CompiledLoader:
                     self.sb.register_widget(widget_class_info)
             self._registered_classes.add(cls_name)
 
-        base_cls = _resolve_qt_class(getattr(module, "__base_class__", "QWidget"))
+        base_cls = CompiledLoader._resolve_qt_class(
+            getattr(module, "__base_class__", "QWidget")
+        )
         form = base_cls()
 
-        ui_cls = _find_form_class(module)
+        ui_cls = CompiledLoader._find_form_class(module)
         ui_cls().setupUi(form)
 
         name = ptk.format_path(ui_file, "name")
-        self.sb.logger.debug(
-            f"[{name}] UI loaded via compiled module {py_path.name}"
-        )
+        self.sb.logger.debug(f"[{name}] UI loaded via compiled module {py_path.name}")
         return form
 
     def on_tags_written(self, ui_path: str) -> None:
@@ -209,5 +208,5 @@ class CompiledLoader:
         Invalidates the load cache so the next ``load(ui_path)`` re-imports
         the regenerated module instead of reusing the stale one.
         """
-        compile_mod.compile_ui(ui_path, header_resolver=self._resolve_header)
+        UiCompiler.compile_ui(ui_path, header_resolver=self._resolve_header)
         self._load_cache.pop(str(Path(ui_path).resolve()), None)

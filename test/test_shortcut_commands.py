@@ -12,6 +12,7 @@ Covers:
 
 Run standalone: python -m test.test_shortcut_commands
 """
+
 import unittest
 
 from conftest import QtBaseTestCase, setup_qt_application
@@ -34,9 +35,7 @@ class _SwitchboardFixture(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
         # Hermetic: the QSettings sandbox is shared across the run, so a command
         # override persisted by an earlier test (or test file, e.g. the shortcut
         # editor's) would otherwise leak in and break default-state assertions.
@@ -100,16 +99,12 @@ class TestCommandRegistry(_SwitchboardFixture):
 
     def test_set_unknown_command_is_noop(self):
         self.sb.set_command_shortcut("nope", "Ctrl+X")  # must not raise/create
-        self.assertNotIn(
-            "nope", {e["method"] for e in self.sb.get_command_registry()}
-        )
+        self.assertNotIn("nope", {e["method"] for e in self.sb.get_command_registry()})
 
     def test_unregister_removes_and_disposes(self):
         self.sb.register_command("temp", lambda: None, sequence="Ctrl+8")
         self.sb.unregister_command("temp")
-        self.assertNotIn(
-            "temp", {e["method"] for e in self.sb.get_command_registry()}
-        )
+        self.assertNotIn("temp", {e["method"] for e in self.sb.get_command_registry()})
         self.assertNotIn("temp", self.sb._command_shortcuts)
 
 
@@ -277,9 +272,7 @@ class TestCommandBinding(_SwitchboardFixture):
 
         self._show_host()
         fired = []
-        self.sb.register_command(
-            "probe_repeat", lambda: fired.append(1), sequence="F8"
-        )
+        self.sb.register_command("probe_repeat", lambda: fired.append(1), sequence="F8")
         sc = self.sb._command_shortcuts["probe_repeat"]
         self.assertIsInstance(sc, QtWidgets.QShortcut)
         self.assertNotIsInstance(sc, GlobalShortcut)  # no _is_down latch
@@ -463,13 +456,9 @@ class TestCommandNamespaceSelfHeal(_SwitchboardFixture):
         over from a pre-namespacing session."""
         cs = self.sb._command_settings()
         cs.setValue("shortcuts_maya.Commands.repeat_last_command", "M")
-        cs.setValue(
-            "shortcuts_maya.Commands.repeat_last_command.scope", "application"
-        )
+        cs.setValue("shortcuts_maya.Commands.repeat_last_command.scope", "application")
         cs.setValue("shortcuts.Commands.repeat_last_command", "Ctrl+Shift+R")
-        cs.setValue(
-            "shortcuts.Commands.repeat_last_command.scope", "application"
-        )
+        cs.setValue("shortcuts.Commands.repeat_last_command.scope", "application")
 
     def test_stale_binding_rebinds_when_namespace_settles(self):
         self._seed_user_split()
@@ -511,9 +500,7 @@ class TestCommandNamespaceSelfHeal(_SwitchboardFixture):
         cs.setValue("shortcuts.Commands.repeat_last_command", "M")
         cs.setValue("shortcuts.Commands.repeat_last_command.scope", "window")
         cs.setValue("shortcuts_maya.Commands.repeat_last_command", "M")
-        cs.setValue(
-            "shortcuts_maya.Commands.repeat_last_command.scope", "application"
-        )
+        cs.setValue("shortcuts_maya.Commands.repeat_last_command.scope", "application")
         self._maya_host()
 
         # Eager bind under empty tags -> window-scoped 'M' from the legacy key.
@@ -562,7 +549,10 @@ class TestEditorCommands(_SwitchboardFixture):
             if self.editor.table.columnSpan(r, 0) > 1:
                 continue  # spanning message row
             rows.append(
-                (self.editor.table.item(r, 0).text(), self.editor.table.item(r, 1).text())
+                (
+                    self.editor.table.item(r, 0).text(),
+                    self.editor.table.item(r, 1).text(),
+                )
             )
         return rows
 
@@ -598,8 +588,7 @@ class TestEditorCommands(_SwitchboardFixture):
 
     def test_commands_pseudo_ui_listed_at_top(self):
         items = [
-            self.editor.cmb_ui.itemText(i)
-            for i in range(self.editor.cmb_ui.count())
+            self.editor.cmb_ui.itemText(i) for i in range(self.editor.cmb_ui.count())
         ]
         # Special views sort to the top (Assigned, then Commands)...
         self.assertEqual(items[0], self.editor._ASSIGNED_LABEL)
@@ -612,8 +601,7 @@ class TestEditorCommands(_SwitchboardFixture):
 
     def test_assigned_special_entry_is_first_and_accent_colored(self):
         items = [
-            self.editor.cmb_ui.itemText(i)
-            for i in range(self.editor.cmb_ui.count())
+            self.editor.cmb_ui.itemText(i) for i in range(self.editor.cmb_ui.count())
         ]
         self.assertEqual(items[0], self.editor._ASSIGNED_LABEL)
         # Special entries are accent-coloured to set them apart from UI names.
@@ -624,9 +612,7 @@ class TestEditorCommands(_SwitchboardFixture):
         )
         # A plain UI entry (last item) carries no such accent.
         last = self.editor.cmb_ui.count() - 1
-        self.assertIsNone(
-            self.editor.cmb_ui.itemData(last, QtCore.Qt.ForegroundRole)
-        )
+        self.assertIsNone(self.editor.cmb_ui.itemData(last, QtCore.Qt.ForegroundRole))
 
     def test_assigned_view_lists_only_bound_actions(self):
         # Bind one command; explicitly clear another so it's unassigned.
@@ -672,9 +658,7 @@ class TestEditorCommands(_SwitchboardFixture):
         from uitk.widgets.separator import Separator
 
         titles = [
-            s.title
-            for s in self.editor.header.menu.findChildren(Separator)
-            if s.title
+            s.title for s in self.editor.header.menu.findChildren(Separator) if s.title
         ]
         self.assertEqual(titles, ["View", "Presets"])  # Presets pinned last
 
@@ -689,9 +673,7 @@ class TestEditorCommands(_SwitchboardFixture):
         # Regression: moving the Reset column before Description left the filter's
         # _row_haystack reading the old (now Reset) column index, so filtering by
         # description text silently matched nothing.
-        self.sb.register_command(
-            "findme_cmd", lambda: None, doc="zzdistinctivedoc"
-        )
+        self.sb.register_command("findme_cmd", lambda: None, doc="zzdistinctivedoc")
         self._select_commands()
         for r in range(self.editor.table.rowCount()):
             item = self.editor.table.item(r, self.editor.COL_ACTION)
@@ -732,12 +714,14 @@ class TestEditorCommands(_SwitchboardFixture):
         self.sb.set_command_shortcut("reopen_last_ui", "F6", "application")
         data = self.editor.export_shortcuts()
         self.assertIn(self.editor._COMMAND_UI, data)
-        self.assertEqual(
-            data[self.editor._COMMAND_UI]["reopen_last_ui"]["seq"], "F6"
-        )
+        self.assertEqual(data[self.editor._COMMAND_UI]["reopen_last_ui"]["seq"], "F6")
         # Import a different binding back through the command path.
         self.editor.import_shortcuts(
-            {self.editor._COMMAND_UI: {"reopen_last_ui": {"seq": "F7", "scope": "application"}}}
+            {
+                self.editor._COMMAND_UI: {
+                    "reopen_last_ui": {"seq": "F7", "scope": "application"}
+                }
+            }
         )
         entry = {e["method"]: e for e in self.sb.get_command_registry()}[
             "reopen_last_ui"
@@ -843,15 +827,15 @@ class TestHostNamespacedPersistence(_SwitchboardFixture):
         sb_m.set_command_shortcut("reopen_last_ui", "F8", "application")
         sb_b = self._make_sb({"blender"})
         self.assertEqual(  # blender does not see maya's binding
-            {e["method"]: e for e in sb_b.get_command_registry()}[
-                "reopen_last_ui"
-            ]["current"],
+            {e["method"]: e for e in sb_b.get_command_registry()}["reopen_last_ui"][
+                "current"
+            ],
             "",
         )
         self.assertEqual(
-            {e["method"]: e for e in sb_m.get_command_registry()}[
-                "reopen_last_ui"
-            ]["current"],
+            {e["method"]: e for e in sb_m.get_command_registry()}["reopen_last_ui"][
+                "current"
+            ],
             "F8",
         )
 
@@ -869,9 +853,9 @@ class TestHostNamespacedPersistence(_SwitchboardFixture):
         std.set_command_shortcut("reopen_last_ui", "F9", "application")
         sb_m = self._make_sb({"maya"})  # migrates the shared set on construction
         self.assertEqual(
-            {e["method"]: e for e in sb_m.get_command_registry()}[
-                "reopen_last_ui"
-            ]["current"],
+            {e["method"]: e for e in sb_m.get_command_registry()}["reopen_last_ui"][
+                "current"
+            ],
             "F9",
         )
 
@@ -881,8 +865,7 @@ class TestHostNamespacedPersistence(_SwitchboardFixture):
         std.set_user_shortcut(ui, "txt_input", "Ctrl+J", "window")
         sb_m = self._make_sb({"maya"})  # migrates the shared set on construction
         reg = {
-            e["method"]: e
-            for e in sb_m.get_shortcut_registry(sb_m.loaded_ui.example)
+            e["method"]: e for e in sb_m.get_shortcut_registry(sb_m.loaded_ui.example)
         }
         self.assertEqual(reg["txt_input"]["current"], "Ctrl+J")
 
@@ -894,9 +877,9 @@ class TestHostNamespacedPersistence(_SwitchboardFixture):
         )  # migrate F9, then the user re-binds to F10
         sb_m2 = self._make_sb({"maya"})  # marker present -> no re-migration
         self.assertEqual(
-            {e["method"]: e for e in sb_m2.get_command_registry()}[
-                "reopen_last_ui"
-            ]["current"],
+            {e["method"]: e for e in sb_m2.get_command_registry()}["reopen_last_ui"][
+                "current"
+            ],
             "F10",
         )
 
@@ -921,39 +904,35 @@ class TestDuplicateShortcutGuard(QtBaseTestCase):
         return sc
 
     def test_flags_two_enabled_app_shortcuts_on_one_key(self):
-        from uitk.managers.shortcut_manager import (
-            find_duplicate_application_shortcuts,
-        )
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         host = self._host()
         seq = "Ctrl+Alt+Shift+F9"  # unique — won't collide with other tests
         self._app_shortcut(host, seq)
         self._app_shortcut(host, seq)
-        self.assertEqual(find_duplicate_application_shortcuts().get(seq), 2)
+        self.assertEqual(
+            ShortcutManager.find_duplicate_application_shortcuts().get(seq), 2
+        )
 
     def test_disabled_duplicate_not_flagged(self):
-        from uitk.managers.shortcut_manager import (
-            find_duplicate_application_shortcuts,
-        )
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         host = self._host()
         seq = "Ctrl+Alt+Shift+F11"
         self._app_shortcut(host, seq)
         second = self._app_shortcut(host, seq)
         second.setEnabled(False)  # only one enabled -> not ambiguous
-        self.assertNotIn(seq, find_duplicate_application_shortcuts())
+        self.assertNotIn(seq, ShortcutManager.find_duplicate_application_shortcuts())
 
     def test_window_scoped_duplicates_not_flagged(self):
-        from uitk.managers.shortcut_manager import (
-            find_duplicate_application_shortcuts,
-        )
+        from uitk.managers.shortcut_manager import ShortcutManager
 
         host = self._host()
         seq = "Ctrl+Alt+Shift+F12"
         for _ in range(2):  # window scope is disambiguated by focus -> reusable
             sc = QtWidgets.QShortcut(QtGui.QKeySequence(seq), host)
             sc.setContext(QtCore.Qt.WindowShortcut)
-        self.assertNotIn(seq, find_duplicate_application_shortcuts())
+        self.assertNotIn(seq, ShortcutManager.find_duplicate_application_shortcuts())
 
 
 # ---------------------------------------------------------------------------
@@ -972,9 +951,7 @@ class TestBindingVisibilityRegistry(_SwitchboardFixture):
         self.assertTrue(e["editable"])
 
     def test_register_hidden_and_non_editable_kwargs(self):
-        self.sb.register_command(
-            "fixed_cmd", lambda: None, hidden=True, editable=False
-        )
+        self.sb.register_command("fixed_cmd", lambda: None, hidden=True, editable=False)
         e = self._entry("fixed_cmd")
         self.assertTrue(e["hidden"])
         self.assertFalse(e["editable"])

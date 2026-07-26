@@ -279,6 +279,15 @@ class AttributesMixin:
         minimum = float(limits[0]) if value_len > 0 else -2147483647
         maximum = float(limits[1]) if value_len > 1 else 2147483647
         step = limits[2] if value_len > 2 else 1.0
+        if not step or step <= 0:
+            # A zero/negative step freezes the spinbox: Qt's default wheel
+            # stepping and every WheelStepMixin modifier branch scale off
+            # singleStep, and set_limits also hides the up/down buttons.
+            logger.warning(
+                f"set_limits: step {step!r} on {spinbox.objectName() or type(spinbox).__name__} "
+                "would disable stepping; falling back to 1."
+            )
+            step = 1.0
 
         if isinstance(spinbox, QtWidgets.QDoubleSpinBox):
             if value_len > 3:

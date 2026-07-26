@@ -83,17 +83,11 @@ def _sandbox_qsettings() -> str:
         """
 
         def __init__(self, *args, **kwargs):
-            if (
-                len(args) >= 2
-                and isinstance(args[0], str)
-                and isinstance(args[1], str)
-            ):
+            if len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
                 # (org, app[, parent]) -> (Ini, UserScope, org, app[, parent])
                 super().__init__(ini, user, *args, **kwargs)
             elif (
-                len(args) >= 3
-                and isinstance(args[1], str)
-                and isinstance(args[2], str)
+                len(args) >= 3 and isinstance(args[1], str) and isinstance(args[2], str)
             ):
                 # (scope, org, app[, parent]) -> (Ini, scope, org, app[, parent])
                 super().__init__(ini, *args, **kwargs)
@@ -115,7 +109,7 @@ def _sandbox_presets_root() -> str:
 
     Presets live outside QSettings — JSON files under
     ``<GenericConfigLocation>/uitk/<pkg>/<dir>/`` (see
-    ``preset_manager.get_presets_root``) — so the QSettings sandbox above
+    ``preset_manager.PresetManager.get_presets_root``) — so the QSettings sandbox above
     doesn't cover them. Merely *constructing* a preset-enabled editor touches
     that store (legacy migration, dir creation, and the style editor's
     first-run activation writes an ``.active`` sidecar), so without isolation
@@ -254,9 +248,7 @@ class QtBaseTestCase(BaseTestCase):
         # the runner (observed: Sequencer.event AV at exit, 0xC0000005).
         from qtpy import QtCore
 
-        QtCore.QCoreApplication.sendPostedEvents(
-            None, QtCore.QEvent.DeferredDelete
-        )
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
 
     def track_widget(self, widget):
         """Register a widget for automatic cleanup.

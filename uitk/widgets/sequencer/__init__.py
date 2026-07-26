@@ -7,6 +7,7 @@ top-level registration via ``DEFAULT_INCLUDE``.
 >>> from uitk.widgets.sequencer import SequencerWidget
 >>> w = SequencerWidget()
 """
+
 from uitk.widgets.sequencer._data import (  # noqa: F401
     ClipData,
     TrackData,
@@ -23,17 +24,16 @@ from uitk.widgets.sequencer._data import (  # noqa: F401
     _DISPLAY_COLORS,
     _MENU_STYLESHEET,
     _DEFAULT_ATTRIBUTE_COLORS,
-    _styled_menu,
-    _menu_exec_pos,
+    MenuUtils,
+    CurveUtils,
     HATCH_DENSE,
     HATCH_MEDIUM,
     HATCH_SPARSE,
     PatternSpec,
     PatternPainter,
-    register_pattern,
-    pattern_brush,
-    paint_pattern,
+    PatternRegistry,
 )
+
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip  # noqa: F401
 from uitk.widgets.sequencer._clip import ClipItem  # noqa: F401
 from uitk.widgets.sequencer._keyframe import KeyframeItem  # noqa: F401

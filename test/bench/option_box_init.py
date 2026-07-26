@@ -130,9 +130,9 @@ class OptionBoxInitBench:
         _ck("01 begin imports")
         with timer.measure("01_imports"):
             from uitk import Switchboard  # noqa: F401
-            from uitk.widgets.optionBox.utils import patch_common_widgets
+            from uitk.widgets.optionBox.utils import OptionBoxManager
 
-            patch_common_widgets()
+            OptionBoxManager.patch_common_widgets()
 
         _ck("02 begin switchboard ctor")
         with timer.measure("02_switchboard_construct"):
@@ -265,9 +265,10 @@ class OptionBoxInitBench:
         for k, ms in (result.get("phases_ms_best") or {}).items():
             lines.append(f"{k:<48} {ms:>10.2f}")
         lines.append("-" * 60)
-        lines.append(f"{'init total (04+05)':<48} {result.get('init_total_ms_best', 0):>10.2f}")
         lines.append(
-            f"{'first show (06)':<48} "
-            f"{(result.get('first_show_ms_best') or 0):>10.2f}"
+            f"{'init total (04+05)':<48} {result.get('init_total_ms_best', 0):>10.2f}"
+        )
+        lines.append(
+            f"{'first show (06)':<48} {(result.get('first_show_ms_best') or 0):>10.2f}"
         )
         return "\n".join(lines)

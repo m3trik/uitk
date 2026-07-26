@@ -181,6 +181,37 @@ class TestStyleSheetExportImport(QtBaseTestCase):
         with self.assertRaises(ValueError):
             StyleSheet.apply_theme("no_such_theme")
 
+    # set_theme_overrides (scoped counterpart) ---------------------------
+
+    def test_set_theme_overrides_does_not_switch_widget_themes(self):
+        """The scoped primitive edits a theme without re-theming anything."""
+        w = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(w, theme="light")
+        StyleSheet.set_theme_overrides("dark", {"BUTTON_HOVER": "#abcdef"})
+        self.assertEqual(StyleSheet._widget_configs[w]["theme"], "light")
+        self.assertEqual(
+            StyleSheet.get_variable("BUTTON_HOVER", theme="dark"), "#abcdef"
+        )
+
+    def test_set_theme_overrides_replaces_and_filters(self):
+        """Overrides are replaced wholesale; unknown/derived tokens dropped."""
+        StyleSheet.set_variable("TEXT_COLOR", "#111111", theme="dark")
+        StyleSheet.set_theme_overrides(
+            "dark",
+            {
+                "NOT_A_REAL_TOKEN": "#123",
+                "BUTTON_HOVER_TINT": "#456",  # derived — auto-computed
+                "BUTTON_HOVER": "#789",
+            },
+        )
+        self.assertEqual(
+            StyleSheet.export_overrides()["dark"], {"BUTTON_HOVER": "#789"}
+        )
+
+    def test_set_theme_overrides_unknown_theme_raises(self):
+        with self.assertRaises(ValueError):
+            StyleSheet.set_theme_overrides("no_such_theme", {})
+
     # Theme definitions -------------------------------------------------
 
     def test_all_themes_share_the_same_token_set(self):
@@ -265,8 +296,8 @@ class TestStyleEditorPresets(_PresetRootSandboxCase):
         )
 
     def test_load_builtin_switches_theme(self):
-        """Loading a built-in theme preset switches the editor's base theme
-        globally and clears that theme's overrides."""
+        """Loading a built-in theme preset switches the *editor's* base theme
+        (preview) and clears that theme's overrides."""
         StyleSheet.set_variable("TEXT_COLOR", "#123", theme="light")
         self.editor.load_preset("light")
         self.assertEqual(self.editor.theme, "light")
@@ -277,6 +308,17 @@ class TestStyleEditorPresets(_PresetRootSandboxCase):
         )
         # The editor itself re-themed
         self.assertEqual(StyleSheet._widget_configs[self.editor]["theme"], "light")
+
+    def test_selecting_theme_does_not_retheme_other_windows(self):
+        """The Theme selector edits a theme; it must not drag unrelated
+        registered windows onto it (the 'marking menu goes dark' leak)."""
+        other = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(other, theme="dark")
+        self.assertEqual(StyleSheet._widget_configs[other]["theme"], "dark")
+
+        self.editor.load_preset("light")  # editor default edits 'dark'
+        self.assertEqual(self.editor.theme, "light")
+        self.assertEqual(StyleSheet._widget_configs[other]["theme"], "dark")
 
     def test_load_legacy_format_still_applies(self):
         """Old presets ({theme: {var: value}} dumps) import via overrides."""

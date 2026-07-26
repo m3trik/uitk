@@ -626,5 +626,229 @@ class TestFitRespectsTrueContentMin(QtBaseTestCase):
         )
 
 
+class TestContentMaxLock(QtBaseTestCase):
+    """Dead-space prevention: when every visible child is fixed in height, the
+    window's height must lock to the content's maximum — resizing past it only
+    creates dead space (the scene-exporter "phantom extra header/footer" band
+    reported with the output group collapsed). When any child can grow, the
+    lock must clear.
+    """
+
+    def _flush(self):
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+    @staticmethod
+    def _fixed_label(h):
+        w = QtWidgets.QLabel("x")
+        w.setMinimumSize(QtCore.QSize(0, h))
+        w.setMaximumSize(QtCore.QSize(16777215, h))
+        return w
+
+    def _fixed_central(self):
+        central = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(central)
+        lay.setContentsMargins(2, 2, 2, 2)
+        lay.setSpacing(0)
+        for h in (19, 100, 19):
+            lay.addWidget(self._fixed_label(h))
+        return central
+
+    def test_adjust_cannot_grow_fully_fixed_content(self):
+        win = self.track_widget(_build_window(self._fixed_central()))
+        win.show()
+        self._flush()
+        tight = win.height()
+        win.adjust_height_by(100)
+        self._flush()
+        self.assertLessEqual(
+            win.height(), tight + 2,
+            "adjust_height_by must not grow past a fully-fixed content max",
+        )
+
+    def test_adjust_grows_when_content_expandable(self):
+        central = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(central)
+        lay.addWidget(QtWidgets.QTextEdit())
+        win = self.track_widget(_build_window(central))
+        win.show()
+        self._flush()
+        h = win.height()
+        win.adjust_height_by(80)
+        self._flush()
+        self.assertEqual(win.height(), h + 80)
+
+    def test_collapse_trims_dead_space_when_remaining_content_fixed(self):
+        """Scene-exporter profile: fixed group + collapsible growable group +
+        fixed footer. Stretch the window while expanded (the growable child
+        absorbs it), then collapse — the freed and stretched pixels have no
+        consumer left, so the window must land content-tight, not preserve the
+        stretch as a dead band."""
+        central = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(central)
+        lay.setContentsMargins(2, 2, 2, 2)
+        lay.setSpacing(2)
+        lay.addWidget(self._fixed_label(167))
+        group = CollapsableGroup("out", restore_state=False)
+        group.restore_state = False
+        g_lay = QtWidgets.QVBoxLayout(group)
+        g_lay.setContentsMargins(0, 0, 0, 0)
+        g_lay.addWidget(QtWidgets.QTextEdit())
+        lay.addWidget(group)
+        lay.addWidget(self._fixed_label(19))
+        win = self.track_widget(_build_window(central))
+        win.show()
+        self._flush()
+
+        win.resize(win.width(), win.height() + 150)  # user-stretched
+        self._flush()
+
+        group.toggle_expand(False)
+        self._flush()
+
+        self.assertLessEqual(
+            abs(win.height() - win.minimumSizeHint().height()), 4,
+            f"Collapse must leave the window content-tight, got "
+            f"height={win.height()} vs minHint={win.minimumSizeHint().height()}",
+        )
+
+
+class TestFirstShowLocksRestoredCollapsedGroup(QtBaseTestCase):
+    """The live scene-exporter flow: a CollapsableGroup restored COLLAPSED on
+    first show (settled via ``_enforce_state(suppress_resize=True)``, so no
+    ``adjust_height_by`` fires) plus a restored oversized geometry. The window
+    must come up content-tight and height-locked immediately — not show dead
+    bands until the first grip press.
+    """
+
+    def _flush(self):
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+    def _build_central(self, group_name):
+        central = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(central)
+        lay.setContentsMargins(2, 2, 2, 2)
+        lay.setSpacing(2)
+        fixed = QtWidgets.QLabel("x")
+        fixed.setMinimumSize(QtCore.QSize(0, 167))
+        fixed.setMaximumSize(QtCore.QSize(16777215, 167))
+        lay.addWidget(fixed)
+        group = CollapsableGroup("out")
+        group.setObjectName(group_name)  # restore_state stays ON — the real flow
+        g_lay = QtWidgets.QVBoxLayout(group)
+        g_lay.setContentsMargins(0, 0, 0, 0)
+        g_lay.addWidget(QtWidgets.QTextEdit())
+        lay.addWidget(group)
+        footer = QtWidgets.QLabel("f")
+        footer.setMinimumSize(QtCore.QSize(0, 19))
+        footer.setMaximumSize(QtCore.QSize(16777215, 19))
+        lay.addWidget(footer)
+        return central, group
+
+    def test_first_show_tight_and_locked(self):
+        name = f"test_first_show_lock_t{next(_group_name_counter)}"
+        group_name = f"{name}_grp"
+
+        # Session 1: expanded + stretched; hide saves the big geometry.
+        central1, group1 = self._build_central(group_name)
+        # Pre-seed EXPANDED: the group-name counter restarts each process, so
+        # a persisted checked=False from a prior run would collapse session 1
+        # at show (locking + clamping the stretch) and silently weaken the
+        # oversize precondition this test exists to exercise.
+        group1.settings.setValue(f"CollapsableGroup/{group_name}/checked", True)
+        win1 = self.track_widget(
+            MainWindow(
+                name,
+                _BareSwitchboard(),
+                central_widget=central1,
+                restore_window_size=True,
+                ensure_on_screen=False,
+            )
+        )
+        win1.clear_saved_geometry()
+        win1.show()
+        self._flush()
+        win1.resize(500, 600)
+        self._flush()
+        win1.hide()  # persists 500x600
+        self._flush()
+
+        # Simulate the group having been left collapsed (e.g. a prior session,
+        # or pre-fix stale state): persist checked=False for session 2's group.
+        central2, group2 = self._build_central(group_name)
+        group2.settings.setValue(
+            f"CollapsableGroup/{group_name}/checked", False
+        )
+        win2 = self.track_widget(
+            MainWindow(
+                name,
+                _BareSwitchboard(),
+                central_widget=central2,
+                restore_window_size=True,
+                ensure_on_screen=False,
+            )
+        )
+        win2.show()
+        self._flush()
+
+        self.assertFalse(group2.isChecked(), "precondition: group restored collapsed")
+        self.assertEqual(win2.width(), 500, "restored width stays authoritative")
+        self.assertLess(
+            win2.maximumHeight(), 16777215,
+            "height must be locked on first show (content all fixed)",
+        )
+        self.assertLessEqual(
+            abs(win2.height() - win2.minimumSizeHint().height()), 4,
+            f"first show must be content-tight, got height={win2.height()} "
+            f"vs minHint={win2.minimumSizeHint().height()}",
+        )
+
+        win2.clear_saved_geometry()
+
+
+class TestGeometrySaveSuppressedWhileCollapsed(QtBaseTestCase):
+    """``save_window_geometry`` must not persist header-collapsed geometry.
+
+    Bug: header *minimize* suppressed geometry saves (``_header_minimized``)
+    but plain header *collapse* did not — the move/resize save debounce
+    persisted the collapsed strip's geometry (e.g. 200x20), and the next
+    session's first show restored it onto a fully expanded window, cramming
+    all content into a header-high strip ("shows in a corrupted state").
+    Fixed: 2026-07-25
+    """
+
+    def _saving_window(self):
+        from unittest.mock import MagicMock
+
+        central = QtWidgets.QWidget()
+        win = self.track_widget(
+            MainWindow(
+                name="test_geo_suppress",
+                switchboard_instance=_BareSwitchboard(),
+                central_widget=central,
+                ensure_on_screen=False,
+            )
+        )
+        win.resize(300, 200)
+        win.is_initialized = True  # save path requires an initialized window
+        win.settings = MagicMock()
+        return win
+
+    def test_collapsed_property_suppresses_save(self):
+        win = self._saving_window()
+        win.setProperty("_header_collapsed", True)
+        win.save_window_geometry()
+        win.settings.setByteArray.assert_not_called()
+
+    def test_save_resumes_after_expand(self):
+        win = self._saving_window()
+        win.setProperty("_header_collapsed", True)
+        win.save_window_geometry()
+        win.setProperty("_header_collapsed", False)
+        win.save_window_geometry()
+        win.settings.setByteArray.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

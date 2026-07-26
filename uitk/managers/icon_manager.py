@@ -56,7 +56,7 @@ class IconManager:
         # Already hex format - normalize to 6-digit
         if color.startswith("#"):
             if len(color) == 4:  # #rgb -> #rrggbb
-                return f"#{color[1]*2}{color[2]*2}{color[3]*2}"
+                return f"#{color[1] * 2}{color[2] * 2}{color[3] * 2}"
             return color[:7]  # Strip alpha if present (#rrggbbaa -> #rrggbb)
 
         # Convert rgb(r,g,b) or rgba(r,g,b,a) to hex
@@ -445,6 +445,31 @@ class IconManager:
         cls.set_icon(widget, name, size=size, color=color, auto_theme=auto_theme)
 
     @classmethod
+    def _resolve_icon_color(cls, widget, color, auto_theme):
+        """Resolve ``(effective_color, pinned)`` for an icon render.
+
+        An explicitly-passed *color* is a *pin*: the caller owns this icon's
+        color (e.g. a state-cycling toggle's active/off tint), so theme
+        sweeps and size re-fits must preserve it — the returned ``pinned`` is
+        what :meth:`set_icon` records so a later theme-managed call
+        (``color=None``, ``auto_theme=True``) clears it. With nothing pinned
+        and *auto_theme* on, the color is resolved from *widget*'s theme
+        hierarchy, falling back to the class default for widgets built before
+        being parented to a themed window. Shared by :meth:`set_icon`
+        (buttons) and :meth:`set_label_icon` (labels) so both tint alike.
+        """
+        pinned = cls._normalize_color(color) if color else None
+        if pinned is None and auto_theme:
+            from uitk.themes.style_sheet import StyleSheet
+
+            effective = cls._normalize_color(StyleSheet.get_icon_color(widget))
+            if effective == "#888888" and cls._default_color:
+                effective = cls._default_color
+        else:
+            effective = pinned
+        return effective, pinned
+
+    @classmethod
     def set_icon(
         cls,
         widget,
@@ -468,25 +493,7 @@ class IconManager:
         elif hasattr(size, "width"):  # QSize
             size = (size.width(), size.height())
 
-        # An explicitly-passed color is a *pin*: the caller owns this icon's
-        # color (e.g. a state-cycling toggle's active/off tint), so theme
-        # sweeps and size re-fits must preserve it. A later theme-managed
-        # call (color=None, auto_theme=True) clears the pin.
-        pinned = cls._normalize_color(color) if color else None
-
-        if pinned is None and auto_theme:
-            # Get color from widget's theme (walks up hierarchy)
-            from uitk.themes.style_sheet import StyleSheet
-
-            color = StyleSheet.get_icon_color(widget)
-
-            # If we got the fallback color but have a default set, use the default
-            # This handles widgets created before being parented to a themed window
-            color = cls._normalize_color(color)
-            if color == "#888888" and cls._default_color:
-                color = cls._default_color
-        else:
-            color = pinned
+        color, pinned = cls._resolve_icon_color(widget, color, auto_theme)
 
         icon = cls.get(name, size, color)
         widget.setIcon(icon)
@@ -510,6 +517,78 @@ class IconManager:
                 # Widget doesn't support weak references — leave it
                 # untracked (it won't receive theme sweeps or re-fits).
                 pass
+
+    @classmethod
+    def set_label_icon(
+        cls,
+        label,
+        name: str,
+        size=(14, 14),
+        color: str = None,
+        auto_theme: bool = True,
+    ):
+        """Prefix a text-bearing widget (e.g. QLabel) with a themed icon.
+
+        QLabel has no ``setIcon`` — this composites the icon into the label's
+        rich text so the row reads ``[icon] text``. The glyph is rasterized
+        through the same colorized-SVG pipeline as :meth:`set_icon` and tinted
+        by the same :meth:`_resolve_icon_color` path, so labels and buttons
+        match. The plain text is stashed on the ``iconLabelText`` property, so
+        a repeat call is idempotent (markup never nests) and callers can read
+        the un-marked-up text back without parsing HTML.
+
+        Unlike :meth:`set_icon`, the label is *not* registered for live theme
+        sweeps (the color is baked into the embedded PNG) — re-call after a
+        theme change; menus that ``refresh_on_show`` get this for free.
+
+        Args:
+            label: Widget with ``text``/``setText`` and no ``setIcon`` (use
+                :meth:`set_icon` for buttons).
+            name: Icon name (without ``.svg``).
+            size: Icon size ``(w, h)`` or a single int for square.
+            color: Optional hex pin. If None and *auto_theme*, uses the theme.
+            auto_theme: Resolve the theme color when *color* is None.
+        """
+        # Normalize size (mirror set_icon).
+        if isinstance(size, (int, float)):
+            size = (int(size), int(size))
+        elif hasattr(size, "width"):  # QSize
+            size = (size.width(), size.height())
+
+        color, _ = cls._resolve_icon_color(label, color, auto_theme)
+
+        # Preserve the original plain text on first application; reuse it on
+        # re-application so repeated calls don't nest markup.
+        text = label.property("iconLabelText")
+        if text is None:
+            text = label.text() or ""
+            label.setProperty("iconLabelText", text)
+
+        pixmap = cls.get(name, size, color).pixmap(QtCore.QSize(*size))
+        if pixmap.isNull():
+            # No glyph resolved — leave the plain text intact.
+            label.setText(text)
+            return
+
+        buffer = QtCore.QBuffer()
+        buffer.open(QtCore.QIODevice.WriteOnly)
+        pixmap.save(buffer, "PNG")
+        b64 = bytes(buffer.data().toBase64()).decode("ascii")
+        buffer.close()
+
+        safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        label.setTextFormat(QtCore.Qt.RichText)
+        label.setText(
+            f'<img src="data:image/png;base64,{b64}" width="{size[0]}" '
+            f'height="{size[1]}" style="vertical-align:middle">&nbsp;&nbsp;{safe}'
+        )
+        # Rich text makes QLabel auto-enable mouse tracking (to hover-detect
+        # links) — that floods any hover tracker (e.g. uitk's MouseTracking,
+        # which drives ExpandableList/marking-menu flyouts) with button-less
+        # MouseMove events and collapses hover on the first micro-move. Force
+        # the plain-label baseline: no link interaction, no mouse tracking.
+        label.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+        label.setMouseTracking(False)
 
     @classmethod
     def registered_info(cls, widget) -> "dict | None":

@@ -40,6 +40,7 @@ Trade-offs vs. CompiledLoader:
 
 Switchboard chooses between the two delegates via its ``loader`` kwarg.
 """
+
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -48,7 +49,7 @@ from typing import Dict
 from qtpy import QtUiTools, QtWidgets
 import pythontk as ptk
 
-from uitk import compile as compile_mod
+from uitk.compile import UiCompiler
 
 
 class RuntimeLoader:
@@ -111,7 +112,7 @@ class RuntimeLoader:
     def on_tags_written(self, ui_path: str) -> None:
         """Invalidate cached metadata after .ui content has changed.
 
-        ``compile_mod.extract_metadata`` runs again on the next access.
+        ``UiCompiler.extract_metadata`` runs again on the next access.
         QUiLoader reads the .ui fresh from disk on every ``load`` call
         anyway, so widget-tree construction needs no special invalidation.
         """
@@ -156,7 +157,7 @@ class RuntimeLoader:
         if cached is not None and cached[0] == mtime:
             return cached[1]
         try:
-            metadata = compile_mod.extract_metadata(ui_path)
+            metadata = UiCompiler.extract_metadata(ui_path)
         except (ET.ParseError, OSError):
             # Tolerant of partial/corrupt reads (e.g. cloud-sync mid-write).
             metadata = {

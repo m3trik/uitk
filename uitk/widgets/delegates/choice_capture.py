@@ -24,6 +24,7 @@ Two delegate flavours, matching the shortcut-capture module:
   :class:`uitk.widgets.delegates.row_selection.RowSelectionBorderDelegate`,
   for tables that install that delegate elsewhere.
 """
+
 from __future__ import annotations
 
 from typing import Iterable, List
@@ -51,7 +52,9 @@ class ChoiceCaptureDelegate(QtWidgets.QStyledItemDelegate):
 
     captured = QtCore.Signal(int, int, str)
 
-    def __init__(self, parent=None, *, choices: Iterable[str] = (), editable: bool = True):
+    def __init__(
+        self, parent=None, *, choices: Iterable[str] = (), editable: bool = True
+    ):
         super().__init__(parent)
         self._choices: List[str] = [str(c) for c in choices]
         self._editable = bool(editable)
@@ -99,6 +102,66 @@ class ChoiceCaptureDelegate(QtWidgets.QStyledItemDelegate):
         row, col = index.row(), index.column()
         QtCore.QTimer.singleShot(0, lambda: self.captured.emit(row, col, value))
 
+    @staticmethod
+    def install_choice_capture(
+        table: QtWidgets.QTableWidget,
+        column: int,
+        choices: Iterable[str],
+        on_capture,
+        *,
+        editable: bool = True,
+        bordered: bool = False,
+    ) -> ChoiceCaptureDelegate:
+        """Wire in-cell dropdown capture onto a table column.
+
+        Installs the capture delegate on ``column`` and opens it on a
+        double-click of that column — independent of the table's
+        ``editTriggers``, so tables set to ``NoEditTriggers`` work too. The
+        target cell's item must carry ``Qt.ItemIsEditable`` (the default for
+        ``QTableWidgetItem``) for the editor to open. Programmatic opens via
+        ``table.editItem(item)`` (e.g. a context-menu action) route through the
+        same delegate and fire ``on_capture`` identically.
+
+        Mirrors :meth:`ShortcutCaptureDelegate.install_shortcut_capture`
+        so a table can give its enum/category columns the same double-click-to-
+        edit feel as its shortcut column, instead of a persistent combo cell widget.
+
+        Recommended: set the table to ``NoEditTriggers``. The default triggers
+        include ``AnyKeyPressed``/``EditKeyPressed``, so a stray keystroke on a
+        selected editable cell would open the editor; the double-click wired
+        here works regardless of triggers.
+
+        Args:
+            table: Target table (``QTableWidget`` or compatible view).
+            column: Column index to make choice-editable.
+            choices: The fixed set of dropdown options.
+            on_capture: Callable ``(row, col, value) -> None`` invoked once a
+                value is committed (``value`` is the chosen / typed string).
+            editable: When ``True`` (default) the combo also accepts a typed
+                value not present in ``choices``.
+            bordered: Use :class:`BorderedChoiceCaptureDelegate` for tables that
+                paint the row-spanning selection border elsewhere.
+
+        Returns:
+            The installed delegate (already connected to ``on_capture``).
+        """
+        delegate_cls = (
+            BorderedChoiceCaptureDelegate if bordered else ChoiceCaptureDelegate
+        )
+        delegate = delegate_cls(table, choices=choices, editable=editable)
+        delegate.captured.connect(on_capture)
+        table.setItemDelegateForColumn(column, delegate)
+
+        def _open(row, col):
+            if col != column:
+                return
+            item = table.item(row, col)
+            if item is not None and (item.flags() & QtCore.Qt.ItemIsEditable):
+                table.editItem(item)
+
+        table.cellDoubleClicked.connect(_open)
+        return delegate
+
 
 class BorderedChoiceCaptureDelegate(ChoiceCaptureDelegate, RowSelectionBorderDelegate):
     """:class:`ChoiceCaptureDelegate` that paints the row-spanning
@@ -112,61 +175,3 @@ class BorderedChoiceCaptureDelegate(ChoiceCaptureDelegate, RowSelectionBorderDel
     :class:`RowSelectionBorderDelegate` (both share the single
     ``QStyledItemDelegate`` Qt base, so the MRO is unambiguous).
     """
-
-
-def install_choice_capture(
-    table: QtWidgets.QTableWidget,
-    column: int,
-    choices: Iterable[str],
-    on_capture,
-    *,
-    editable: bool = True,
-    bordered: bool = False,
-) -> ChoiceCaptureDelegate:
-    """Wire in-cell dropdown capture onto a table column.
-
-    Installs the capture delegate on ``column`` and opens it on a
-    double-click of that column — independent of the table's
-    ``editTriggers``, so tables set to ``NoEditTriggers`` work too. The
-    target cell's item must carry ``Qt.ItemIsEditable`` (the default for
-    ``QTableWidgetItem``) for the editor to open. Programmatic opens via
-    ``table.editItem(item)`` (e.g. a context-menu action) route through the
-    same delegate and fire ``on_capture`` identically.
-
-    Mirrors :func:`uitk.widgets.delegates.shortcut_capture.install_shortcut_capture`
-    so a table can give its enum/category columns the same double-click-to-
-    edit feel as its shortcut column, instead of a persistent combo cell widget.
-
-    Recommended: set the table to ``NoEditTriggers``. The default triggers
-    include ``AnyKeyPressed``/``EditKeyPressed``, so a stray keystroke on a
-    selected editable cell would open the editor; the double-click wired
-    here works regardless of triggers.
-
-    Args:
-        table: Target table (``QTableWidget`` or compatible view).
-        column: Column index to make choice-editable.
-        choices: The fixed set of dropdown options.
-        on_capture: Callable ``(row, col, value) -> None`` invoked once a
-            value is committed (``value`` is the chosen / typed string).
-        editable: When ``True`` (default) the combo also accepts a typed
-            value not present in ``choices``.
-        bordered: Use :class:`BorderedChoiceCaptureDelegate` for tables that
-            paint the row-spanning selection border elsewhere.
-
-    Returns:
-        The installed delegate (already connected to ``on_capture``).
-    """
-    delegate_cls = BorderedChoiceCaptureDelegate if bordered else ChoiceCaptureDelegate
-    delegate = delegate_cls(table, choices=choices, editable=editable)
-    delegate.captured.connect(on_capture)
-    table.setItemDelegateForColumn(column, delegate)
-
-    def _open(row, col):
-        if col != column:
-            return
-        item = table.item(row, col)
-        if item is not None and (item.flags() & QtCore.Qt.ItemIsEditable):
-            table.editItem(item)
-
-    table.cellDoubleClicked.connect(_open)
-    return delegate

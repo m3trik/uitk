@@ -8,6 +8,7 @@ import pythontk as ptk
 
 # From this package
 from uitk.widgets.footer import Footer
+from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.managers.state_manager import StateManager
 from uitk.managers.settings_manager import SettingsManager
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -15,7 +16,9 @@ from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.mixins.tooltip_mixin import TooltipMixin, TooltipProxy
 
 
-class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin):
+class MainWindow(
+    QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin
+):
     """Application main window with state persistence and child widget management."""
 
     on_show = QtCore.Signal()
@@ -68,8 +71,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 the bottom of a footerless window). Skipped once a geometry is
                 restored: that size is the user's own and stays authoritative, so
                 a deliberately-expanded height persists across sessions with no
-                per-window opt-out needed (e.g. a growable list / table). Defaults
-                to True.
+                per-window opt-out needed (e.g. a growable list / table) — as
+                long as the content can use the space. When every visible child
+                is height-fixed, the fit's content-max sync still trims the
+                restored stretch: it would render as dead space. Defaults to
+                True.
             default_slot_timeout: Default timeout in seconds for slots in this window. None disables monitoring.
             settings: Optional SettingsManager to use. Defaults to a new instance.
             **kwargs: Additional keyword arguments
@@ -384,8 +390,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             w, *args, **kwargs
         )
         widget.connect_slot = lambda w=widget, s=None: self.sb.connect_slot(w, s)
-        widget.perform_restore_state = (
-            lambda w=widget, force=False: self.perform_restore_state(w, force=force)
+        widget.perform_restore_state = lambda w=widget, force=False: (
+            self.perform_restore_state(w, force=force)
         )
         widget.register_children = lambda w=widget: self.register_children(w)
 
@@ -669,8 +675,8 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
                 if self.sb.loaded_ui.has(relative_name)
                 else None
             )
-            relative_state = (
-                getattr(relative, "state", None) or self._relative_state(relative_name)
+            relative_state = getattr(relative, "state", None) or self._relative_state(
+                relative_name
             )
 
             # 1) Persist into the sibling surface's own store, even when its
@@ -788,9 +794,13 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
 
         Use when a widget knows the before/after change in pixels and
         wants the window to follow gracefully -- preserving any extra
-        height the user previously expanded into. Width is preserved.
-        Result is clamped to the true content minimum
-        (``_content_min_height()``), so it can't shrink into overlap.
+        height the user previously expanded into, as long as the content
+        can still use it. Width is preserved. Result is clamped to the
+        true content minimum (``_content_min_height()``), so it can't
+        shrink into overlap, and to the content maximum (via
+        ``sync_window_max_to_content``) so it can't preserve or create
+        dead space once every visible child is height-fixed (e.g. a
+        CollapsableGroup hiding the only growable widget).
 
         Parameters:
             delta: Signed pixel delta. Positive grows, negative shrinks.
@@ -799,9 +809,12 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             return
         self._activate_descendant_layouts()
         min_h = self._content_min_height()
+        # Height BEFORE the max-sync: syncing may itself shrink the window
+        # (snapping off dead space), and the delta applies to the old height.
         new_height = max(self.height() + delta, min_h)
         self._sync_min_height_to_hint(min_h)
-        self.resize(self.width(), new_height)
+        SizeGripMixin.sync_window_max_to_content(self)
+        self.resize(self.width(), new_height)  # Qt clamps to the synced max
 
     def fit_height_to_content(self) -> None:
         """Snap the window's height to its layout's natural content size.
@@ -833,6 +846,10 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         floor = self._content_min_height()
         target = max(target, floor)
         self._sync_min_height_to_hint(floor)
+        # Lock/free the window max to match the content so a fully-fixed
+        # layout can't be stretched into dead space afterwards (and a stale
+        # lock clears once the content is growable again).
+        SizeGripMixin.sync_window_max_to_content(self)
         self.resize(self.width(), target)
 
     def save_window_geometry(self) -> None:
@@ -844,8 +861,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         if self.width() <= 0 or self.height() <= 0:
             return
 
-        # Don't persist geometry while the header has minimized the window
-        if self.property("_header_minimized"):
+        # Don't persist geometry while the header has minimized or collapsed
+        # the window — a persisted strip geometry would be restored onto a
+        # fully expanded window next session, cramming all content into a
+        # header-high window.
+        if self.property("_header_minimized") or self.property("_header_collapsed"):
             return
 
         geometry = self.saveGeometry()
@@ -1024,6 +1044,20 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
             # accounts for the final height.
             if self.fit_to_content_on_show and not restored:
                 self.fit_height_to_content()
+            else:
+                # A restored geometry (or a fit opt-out) must still respect
+                # the content's real maximum: when every visible child is
+                # height-fixed (e.g. a CollapsableGroup restored collapsed —
+                # its settle above runs with suppress_resize, so no
+                # adjust_height_by fired), a stale oversize is pure dead
+                # space. The same sync the fit/adjust/grip paths use locks
+                # the window to the content cap AND snaps off the surplus in
+                # one step; growable content makes it a no-op, so a
+                # hand-expanded height still survives. Without this, the
+                # window showed with dead bands until the first grip press
+                # (whose press-time sync was the only remaining trigger).
+                self._activate_descendant_layouts()
+                SizeGripMixin.sync_window_max_to_content(self)
 
             if self.ensure_on_screen:
                 self._ensure_on_screen()
@@ -1071,11 +1105,11 @@ class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.Loggi
         # the deferral's own contract; the timers later no-op on empty queues.
         # Guarded: a flushed init_slot may itself call register_children.
         if not getattr(self, "_flushing_menu_registrations", False):
-            from uitk.widgets.menu import _flush_pending_registrations
+            from uitk.widgets.menu import Menu
 
             self._flushing_menu_registrations = True
             try:
-                _flush_pending_registrations(self)
+                Menu._flush_pending_registrations(self)
             finally:
                 self._flushing_menu_registrations = False
 

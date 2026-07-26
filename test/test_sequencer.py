@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Tests for the SequencerWidget."""
+
 import sys
 import unittest
 from pathlib import Path
@@ -17,21 +18,18 @@ from uitk.widgets.sequencer import (
     SequencerWidget,
     ClipData,
     TrackData,
-    ClipItem,
     KeyframeItem,
     MarkerData,
     RangeHighlightItem,
     AttributeColorDialog,
     _GapOverlayItem,
     _StaticRangeOverlay,
-    _TRACK_HEIGHT,
     _RULER_HEIGHT,
     _SUB_ROW_HEIGHT,
     _MIN_CLIP_DURATION,
     _DEFAULT_ATTRIBUTE_COLORS,
     _COMMON_ATTRIBUTES,
-    register_pattern,
-    pattern_brush,
+    PatternRegistry,
 )
 
 
@@ -300,7 +298,7 @@ class TestSequencerWidget(BaseTestCase):
 
     def test_clear_removes_overlays(self):
         """widget.clear() also clears range overlays."""
-        tid = self.w.add_track("T")
+        self.w.add_track("T")
         self.w.add_range_overlay(0, 50)
         self.w.clear()
         self.assertEqual(len(self.w._range_overlays), 0)
@@ -330,14 +328,14 @@ class TestSequencerWidget(BaseTestCase):
 
     def test_add_track_dimmed(self):
         """add_track(dimmed=True) sets the header label to the dimmed style."""
-        tid = self.w.add_track("Active")
-        tid2 = self.w.add_track("Inactive", dimmed=True)
+        self.w.add_track("Active")
+        self.w.add_track("Inactive", dimmed=True)
         header = self.w._header
         self.assertFalse(header._dimmed[0])
         self.assertTrue(header._dimmed[1])
 
     def test_add_track_dimmed_default_false(self):
-        tid = self.w.add_track("T")
+        self.w.add_track("T")
         self.assertFalse(self.w._header._dimmed[0])
 
 
@@ -380,9 +378,7 @@ class TestTrackData(BaseTestCase):
             pix.fill(QtCore.Qt.transparent)
             p = QtGui.QPainter(pix)
             try:
-                w._timeline._scene.drawBackground(
-                    p, QtCore.QRectF(0, 0, 400, 200)
-                )
+                w._timeline._scene.drawBackground(p, QtCore.QRectF(0, 0, 400, 200))
             finally:
                 p.end()
         finally:
@@ -396,25 +392,23 @@ class TestPatternRegistry(BaseTestCase):
     def setUp(self):
         from qtpy import QtGui
         from uitk.widgets.sequencer import (
-            pattern_brush,
-            register_pattern,
             PatternSpec,
             HATCH_DENSE,
             HATCH_MEDIUM,
             HATCH_SPARSE,
         )
-        from uitk.widgets.sequencer._data import _pattern_cache, _pattern_painters
+        from uitk.widgets.sequencer._data import PatternRegistry
 
         self.QtGui = QtGui
-        self.pattern_brush = pattern_brush
-        self.register_pattern = register_pattern
+        self.pattern_brush = PatternRegistry.pattern_brush
+        self.register_pattern = PatternRegistry.register_pattern
         self.PatternSpec = PatternSpec
         self.HATCH_DENSE = HATCH_DENSE
         self.HATCH_MEDIUM = HATCH_MEDIUM
         self.HATCH_SPARSE = HATCH_SPARSE
-        self._cache = _pattern_cache
-        self._painters = _pattern_painters
-        self._builtin_painters = dict(_pattern_painters)
+        self._cache = PatternRegistry._pattern_cache
+        self._painters = PatternRegistry._pattern_painters
+        self._builtin_painters = dict(PatternRegistry._pattern_painters)
         self._cache.clear()
 
     def tearDown(self):
@@ -2119,7 +2113,7 @@ class TestWindowShortcutDispatch(BaseTestCase):
     """
 
     def setUp(self):
-        from qtpy import QtCore, QtGui, QtWidgets
+        from qtpy import QtCore
 
         self.w = SequencerWidget()
         self.w.window_shortcuts = True
@@ -3688,9 +3682,7 @@ class TestZeroDurationClipHitZone(BaseTestCase):
         item = self.w._clip_items[cid]
         rect = item.rect()
         for frac in (0.05, 0.5, 0.95):
-            pos = QtCore.QPointF(
-                rect.x() + rect.width() * frac, rect.center().y()
-            )
+            pos = QtCore.QPointF(rect.x() + rect.width() * frac, rect.center().y())
             self.assertEqual(item._hit_zone(pos), "move")
 
 
@@ -3845,26 +3837,24 @@ class TestRegisterPatternOverridePurge(BaseTestCase):
 
     def tearDown(self):
         # Restore the built-in painter for other tests.
-        from uitk.widgets.sequencer._data import _paint_diagonal
+        from uitk.widgets.sequencer._data import PatternRegistry
 
-        register_pattern("diagonal", _paint_diagonal)
+        PatternRegistry.register_pattern("diagonal", PatternRegistry._paint_diagonal)
 
     def test_override_purges_cached_brushes(self):
         from qtpy import QtGui
 
         color = QtGui.QColor("#123456")
-        pattern_brush("diagonal", color, 8, 1.0)  # populate the cache
+        PatternRegistry.pattern_brush("diagonal", color, 8, 1.0)  # populate the cache
 
         calls = []
 
         def custom(p, size, c, lw):
             calls.append(size)
 
-        register_pattern("diagonal", custom)
-        pattern_brush("diagonal", color, 8, 1.0)
-        self.assertTrue(
-            calls, "override painter must run — stale brush was served"
-        )
+        PatternRegistry.register_pattern("diagonal", custom)
+        PatternRegistry.pattern_brush("diagonal", color, 8, 1.0)
+        self.assertTrue(calls, "override painter must run — stale brush was served")
 
 
 class TestBulkUpdates(BaseTestCase):

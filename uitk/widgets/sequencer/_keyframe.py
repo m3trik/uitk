@@ -1,13 +1,14 @@
 # !/usr/bin/python
 # coding=utf-8
 """KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Tuple
 
 from qtpy import QtWidgets, QtGui, QtCore
 
-from uitk.widgets.sequencer._data import make_value_mapper
+from uitk.widgets.sequencer._data import CurveUtils
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
 from uitk.widgets.sequencer._draggable import DraggableItemMixin
 
@@ -267,7 +268,8 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
     def _show_drag_tooltip(self, scene_pos):
         color = self._parent_clip._resolve_color().lighter(160).name()
         self._drag_tooltip.show(
-            self.scene(), scene_pos,
+            self.scene(),
+            scene_pos,
             label=FrameTooltip.format_frame(self._time),
             color=color,
         )
@@ -301,7 +303,7 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
 
         # Y mapping — the shared mapper keeps dots pixel-aligned with
         # the clip curve preview and the background curve rendering.
-        map_y, _is_flat = make_value_mapper(
+        map_y, _is_flat = CurveUtils.make_value_mapper(
             rect.top(),
             rect.height(),
             preview.get("val_min", 0.0),
