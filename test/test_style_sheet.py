@@ -232,6 +232,66 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
                 f"{selector} padding must use {{TEXT_INSET}} (got {pad.group(1)!r})",
             )
 
+    def test_chrome_background_drives_header_and_footer_only(self):
+        """Header/Footer paint with ``{CHROME_BACKGROUND}``, and thinning it
+        leaves the ``{PANEL_BACKGROUND}`` surfaces (scrollbar/toolbox/menubar)
+        alone — the whole point of splitting the token."""
+        import re
+
+        parts = StyleSheet._get_template()
+        theme_vars = {
+            **StyleSheet.themes["light"],
+            "CHROME_BACKGROUND": "rgba(1,2,3,4)",
+        }
+        StyleSheet._derive_internal_vars(theme_vars)
+        qss = StyleSheet._apply_template(parts, theme_vars)
+
+        for selector in ("Header", "Header:hover", "Footer", "Footer:hover"):
+            m = re.search(rf"(?:^|\n){re.escape(selector)}\s*\{{([^}}]*)\}}", qss)
+            self.assertIsNotNone(m, f"{selector} rule must exist")
+            self.assertIn(
+                "rgba(1,2,3,4)",
+                m.group(1),
+                f"{selector} must paint with {{CHROME_BACKGROUND}}",
+            )
+
+        for selector in ("QToolBox", "QStackedWidget", "QToolTip"):
+            m = re.search(rf"(?:^|\n){re.escape(selector)}\s*\{{([^}}]*)\}}", qss)
+            self.assertIsNotNone(m, f"{selector} rule must exist")
+            self.assertNotIn(
+                "rgba(1,2,3,4)",
+                m.group(1),
+                f"{selector} must keep {{PANEL_BACKGROUND}}, not the chrome token",
+            )
+
+    def test_chrome_background_is_translucent_except_high_contrast(self):
+        """The shipped chrome is semi-transparent in the standard themes;
+        high-contrast stays opaque (translucency hurts legibility there)."""
+        def alpha(color_str):
+            # Parse with the engine's own color pattern so hex-format themes
+            # read the same as rgb()/rgba() ones.
+            m = StyleSheet._color_pat.fullmatch(color_str.strip())
+            self.assertIsNotNone(m, f"unparsable color {color_str!r}")
+            if m.group(1) is not None:  # rgb() / rgba()
+                return float(m.group(4)) if m.group(4) else 255.0
+            return float(int(m.group(6), 16)) if m.group(6) else 255.0  # #hex(a)
+
+        for theme_name, theme_vars in StyleSheet.themes.items():
+            chrome = theme_vars["CHROME_BACKGROUND"]
+            if theme_name == "high-contrast":
+                self.assertEqual(alpha(chrome), 255.0, "high-contrast must stay opaque")
+            else:
+                self.assertLess(
+                    alpha(chrome),
+                    255.0,
+                    f"[{theme_name}] chrome must be semi-transparent",
+                )
+                self.assertLess(
+                    alpha(chrome),
+                    alpha(theme_vars["PANEL_BACKGROUND"]),
+                    f"[{theme_name}] chrome must read glassier than the panel surface",
+                )
+
     def test_qss_has_no_unresolved_tokens(self):
         """Every ``{TOKEN}`` in style.qss resolves against the themes dict
         (plus any internally-derived tokens injected at assembly time)."""

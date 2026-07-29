@@ -18,9 +18,10 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from uitk.widgets.windowPanel import WindowPanel
 from uitk.widgets.mixins.text import RichTextFormatter
+from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
 
 
-class _ViewerTextEdit(QtWidgets.QTextBrowser):
+class _ViewerTextEdit(ShortcutGuardMixin, QtWidgets.QTextBrowser):
     """Read-only browser that survives host-app shortcut interception.
 
     QTextBrowser (not plain QTextEdit) so callers get ``setOpenExternalLinks``
@@ -28,31 +29,10 @@ class _ViewerTextEdit(QtWidgets.QTextBrowser):
     through ``QDesktopServices`` instead of QTextBrowser's internal
     document loader, which can't render binary textures.
 
-    Hosts like Maya install application-level ``ShortcutOverride`` handlers
-    that swallow ``Ctrl+C`` before the widget can run its built-in copy
-    action — leaving the user with only the context-menu Copy. Mirroring
-    the pattern from :class:`uitk.widgets.scriptOutput.ScriptOutput`,
-    we accept the ``ShortcutOverride`` event ourselves whenever a selection
-    exists, which tells Qt to dispatch the subsequent KeyPress to *us*
-    rather than treating it as a host shortcut.
+    ``ShortcutGuardMixin`` (first in the MRO) is what keeps ``Ctrl+C`` working
+    inside hosts like Maya that bind it application-wide; without it the user
+    is left with only the context-menu Copy.
     """
-
-    def event(self, event: QtCore.QEvent):
-        if event.type() == QtCore.QEvent.ShortcutOverride and isinstance(
-            event, QtGui.QKeyEvent
-        ):
-            if event.matches(QtGui.QKeySequence.Copy) and self.textCursor().hasSelection():
-                event.accept()
-                return True
-        return super().event(event)
-
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        if event.matches(QtGui.QKeySequence.Copy):
-            if self.textCursor().hasSelection():
-                self.copy()
-                event.accept()
-                return
-        super().keyPressEvent(event)
 
 
 class TextViewBox(WindowPanel):

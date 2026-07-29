@@ -18,6 +18,8 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         self._expanded_height = None  # Saved height before collapse
         self._state_enforced = False  # Guards against double _enforce_state
         self._suppress_window_resize = False  # Skip window resize during restore
+        # How much the window ACTUALLY shrank on collapse (see toggle_expand).
+        self._collapse_shrink = None
 
         # Connect the toggle signal
         self.toggled.connect(self.toggle_expand)
@@ -115,6 +117,20 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             self.parent().updateGeometry()
 
         delta = new_group_height - old_group_height
+        if checked and self._collapse_shrink is not None:
+            # Grow back by exactly what the collapse REMOVED, not by the
+            # group's own delta. A collapse can be clamped short by the
+            # window minimum (a growable panel whose remaining content still
+            # needs the height), and adding the unclamped group delta back
+            # then leaves the window taller than it started — every
+            # collapse/expand cycle drifting further open (live:
+            # substance_workflow gained 43px per cycle). When the collapse
+            # was NOT clamped the two are identical, so this is a no-op for
+            # the common case; any height the user added while collapsed is
+            # still preserved, since this is applied as a delta. Tested
+            # against None, not truthiness: a recorded shrink of ZERO (the
+            # collapse was blocked outright) must still suppress the grow.
+            delta = self._collapse_shrink
         if window and delta != 0 and not self._suppress_window_resize:
             adjust = getattr(window, "adjust_height_by", None)
             if callable(adjust):
@@ -125,6 +141,13 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
                 adjust(delta, baseline=old_window_height)
             else:
                 self._fallback_window_resize(window, old_window_height, delta)
+        # Record what the collapse ACTUALLY applied (expand consumes it), or
+        # clear it on expand. Outside the resize block so a no-op delta can't
+        # strand a stale value from an earlier cycle.
+        if window and not self._suppress_window_resize:
+            self._collapse_shrink = (
+                None if checked else max(0, old_window_height - window.height())
+            )
 
     @staticmethod
     def _fallback_window_resize(window, old_window_height, delta):

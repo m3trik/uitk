@@ -76,6 +76,7 @@ _Generated: 2026-07-29_
 - [`widgets/mixins/icon_states.py`](#widgets--mixins--icon_states) — Shared multi-state icon behavior for state-cycling buttons.
 - [`widgets/mixins/menu_mixin.py`](#widgets--mixins--menu_mixin) — MenuMixin - provides automatic Menu integration for widgets.
 - [`widgets/mixins/option_box_mixin.py`](#widgets--mixins--option_box_mixin) — OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
+- [`widgets/mixins/shortcut_guard.py`](#widgets--mixins--shortcut_guard) — Keep an editing chord with the widget the user is actually typing in.
 - [`widgets/mixins/size_grip.py`](#widgets--mixins--size_grip) — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - [`widgets/mixins/spin_box_text_color.py`](#widgets--mixins--spin_box_text_color) — Shared value-text coloring for spin-box widgets.
 - [`widgets/mixins/text.py`](#widgets--mixins--text) — Text rendering for uitk widgets.
@@ -167,6 +168,7 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
+  - `BridgeSlotsBase.optional_package_available(spec: str, import_name: str = None) -> bool` *(static)* — Is an optional package importable in THIS interpreter? Silent.
   - `BridgeSlotsBase.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make an optional package importable, offering to install it on demand.
   - `BridgeSlotsBase.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
   - `BridgeSlotsBase.list_template_modes(self) -> List[Tuple[str, str]]`
@@ -178,6 +180,8 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.register_log_link_handler(handler: Callable) -> None` *(static)* — Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
   - `BridgeSlotsBase.ensure_bridge_temp_dir(tag: str) -> str` *(static)* — Create (once per host process) and return a temp Output Dir for *tag*.
   - `BridgeSlotsBase.bridge(self)` *(property)* — Lazy-instantiated bridge (caches a single instance per slot).
+  - `BridgeSlotsBase.peek_bridge(self)` — The bridge if it can be built, else ``None`` — never raises.
+  - `BridgeSlotsBase.panel_log(self, message: str, level: str = 'info') -> None` — Log to the panel, working whether or not the engine exists.
   - `BridgeSlotsBase.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
   - `BridgeSlotsBase.require_output_dir(self) -> Optional[str]` — Return the Output Dir or log an error on empty.
   - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
@@ -320,6 +324,14 @@ Unified launchable-entry data class shared by all Switchboard handlers.
   - `UiHandler.get(self, name: str, **kwargs)` — Retrieve a standalone UI by name and apply default styling.
   - `UiHandler.show(self, ui, pos: Union[str, Tuple[int, int], QtCore.QPoint, None] = None, force: bool = False, **kwargs)` — Show a UI by name or widget reference.
   - `UiHandler.setup_lifecycle(self, ui, hide_signal=None)` — Connect a window to a hide signal, respecting its pin state.
+  - `UiHandler.pin_click_hides(self) -> bool` *(property)* — Whether a pin-button click dismisses the window (see the class constants).
+  - `UiHandler.default_persistence(self, ui) -> str` — The per-window default for *ui* — what it does with no user override.
+  - `UiHandler.window_persistence(self) -> str` *(property)* — Global default persistence: a mode, or ``"context"`` for per-window.
+  - `UiHandler.persistence_override(self, name: str) -> Optional[str]` — The stored per-window override, or ``None`` if it follows the default.
+  - `UiHandler.set_persistence_override(self, name: str, mode: Optional[str]) -> None` — Set (a mode) or clear (``None``) a per-window override, and re-chrome
+  - `UiHandler.resolve_persistence(self, ui, name: Optional[str] = None, context_default: Optional[str] = None) -> str` — The effective persistence mode for *ui*: a concrete member of
+  - `UiHandler.is_persistence_explicit(self, ui, name: Optional[str] = None) -> bool` — Whether a *user* choice (per-window override or a non-context global)
+  - `UiHandler.reapply_persistence(self, name: Optional[str] = None) -> None` — Re-chrome loaded windows after a persistence preference change.
   - `UiHandler.apply_styles(self, ui, style: Dict = None, theme: str = None)` — Apply default styles to the UI instance.
   - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
   - `UiHandler.hosting_handler(self, name: str)` — Return the registered handler that claims windowing ownership of *name*.
@@ -919,7 +931,7 @@ Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 <a id="widgets--editors--style_editor"></a>
 ### `widgets/editors/style_editor.py`
 
-- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L62)** — UI for editing global stylesheet variables, with themes as presets.
+- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L63)** — UI for editing global stylesheet variables, with themes as presets.
   - `StyleEditor.theme(self) -> str` *(property)* — The base theme currently shown/edited (set by loading a preset).
   - `StyleEditor.set_tier(self, tier: str)` — Programmatic Basic/All switch (mirrors a user pick in the header
   - `StyleEditor.export_preset_data(self)`
@@ -936,8 +948,8 @@ Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 
 Searchable, tag-filtered launcher for any handler-exposed entry.
 
-- **[`class LaunchOptions`](uitk/uitk/widgets/editors/switchboard_browser.py#L63)**
-- **[`class SwitchboardBrowserModel(QtCore.QAbstractTableModel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L77)** — Table model over a Switchboard's UI registry.
+- **[`class LaunchOptions`](uitk/uitk/widgets/editors/switchboard_browser.py#L64)**
+- **[`class SwitchboardBrowserModel(QtCore.QAbstractTableModel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L78)** — Table model over a Switchboard's UI registry.
   - `SwitchboardBrowserModel.refresh_after_launch(self, name: str) -> None` — Public hook: caller invokes this after launching to refresh the row.
   - `SwitchboardBrowserModel.rowCount(self, parent=QtCore.QModelIndex()) -> int`
   - `SwitchboardBrowserModel.columnCount(self, parent=QtCore.QModelIndex()) -> int`
@@ -948,7 +960,7 @@ Searchable, tag-filtered launcher for any handler-exposed entry.
   - `SwitchboardBrowserModel.set_entry_filter(self, inc: Union[str, List[str], None] = None, exc: Union[str, List[str], None] = None) -> None` — Replace the structural inc/exc entry filter and re-pull the registry.
   - `SwitchboardBrowserModel.entry_for_name(self, name: str) -> Optional[HandlerEntry]`
   - `SwitchboardBrowserModel.all_unique_tags(self) -> List[str]`
-- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L674)** — Searchable launcher for every UI registered with a Switchboard.
+- **[`class SwitchboardBrowser(EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser.py#L686)** — Searchable launcher for every UI registered with a Switchboard.
   - `SwitchboardBrowser.hidden_uis(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.hidden_tags(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.set_search_scope(self, value: str) -> None` — Public helper: set the search-line-edit scope to ``value``.
@@ -1031,6 +1043,8 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 ### `widgets/header.py`
 
 - **[`class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`](uitk/uitk/widgets/header.py#L12)** — Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.
+  - `Header.pin_on_drag_only(self) -> bool` *(property)* — Whether a pin-button click dismisses the window instead of pinning it.
+  - `Header.set_default_pin_on_drag_only(cls, value: bool) -> None` *(class)* — Set the process-wide pin-click mode for default-following headers.
   - `Header.menu(self)` *(property)*
   - `Header.get_icon_path(self, icon_filename)` — Get the full path to an icon file in the uitk/icons directory.
   - `Header.create_svg_icon(self, icon_filename, size=16)` — Create a QIcon from an SVG file.
@@ -1062,6 +1076,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `Header.expand_window(self)` — Expand the window back to its original size.
   - `Header.toggle_pin(self, from_drag=False)` — Toggle pinning of the window.
   - `Header.reset_pin_state(self)` — Force the header into an unpinned state without hiding the window.
+  - `Header.eventFilter(self, watched, event)` — Track hover on the pin button to drive its click-to-hide visuals.
   - `Header.mousePressEvent(self, event)` — Handle the mouse press event.
   - `Header.mouseMoveEvent(self, event)` — Handle the mouse move event.
   - `Header.mouseReleaseEvent(self, event)`
@@ -1390,6 +1405,16 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
   - `OptionBoxMixin.option_box(self) -> Optional['OptionBoxManager']` *(property)*
   - `OptionBoxMixin.container(self)` *(property)* — Return the OptionBox container for this widget if available.
   - `OptionBoxMixin.options(self) -> 'OptionBoxMixin._OptionsWrapper'` *(property)*
+
+<a id="widgets--mixins--shortcut_guard"></a>
+### `widgets/mixins/shortcut_guard.py`
+
+Keep an editing chord with the widget the user is actually typing in.
+
+- **[`class ShortcutGuardMixin`](uitk/uitk/widgets/mixins/shortcut_guard.py#L27)** — Mixin: claim the standard editing shortcuts for the focused widget.
+  - `ShortcutGuardMixin.event(self, event: QtCore.QEvent)`
+  - `ShortcutGuardMixin.claims_shortcut(self, event: QtGui.QKeyEvent) -> bool` — Whether *event* is an editing chord this widget should handle itself.
+  - `ShortcutGuardMixin.is_read_only(self) -> bool` — ``isReadOnly`` when the base class provides it, else False.
 
 <a id="widgets--mixins--size_grip"></a>
 ### `widgets/mixins/size_grip.py`
@@ -1780,17 +1805,17 @@ Utilities and helper functions for OptionBox.
 
 Host-agnostic script-output console widget.
 
-- **[`class ScriptHighlightRule`](uitk/uitk/widgets/scriptOutput.py#L50)** — One regex → text-format rule for :class:`ScriptHighlighter`, scoped to a line.
-- **[`class ScriptBlockRule`](uitk/uitk/widgets/scriptOutput.py#L68)** — One format spanning a multi-line *region* — the altitude a line rule can't reach.
+- **[`class ScriptHighlightRule`](uitk/uitk/widgets/scriptOutput.py#L52)** — One regex → text-format rule for :class:`ScriptHighlighter`, scoped to a line.
+- **[`class ScriptBlockRule`](uitk/uitk/widgets/scriptOutput.py#L70)** — One format spanning a multi-line *region* — the altitude a line rule can't reach.
   - `ScriptBlockRule.starts(self, text: str) -> bool` — True when ``text`` opens a region.
   - `ScriptBlockRule.continues(self, text: str) -> bool` — True when ``text`` belongs to an already-open region — i.e.
-- **[`class ScriptHighlighter(QtGui.QSyntaxHighlighter)`](uitk/uitk/widgets/scriptOutput.py#L122)** — Apply line rules, block rules and per-block log levels to a text document.
+- **[`class ScriptHighlighter(QtGui.QSyntaxHighlighter)`](uitk/uitk/widgets/scriptOutput.py#L124)** — Apply line rules, block rules and per-block log levels to a text document.
   - `ScriptHighlighter.default_rules() -> List[ScriptHighlightRule]` *(static)* — The default single-line log-coloring rules (Maya-parity palette).
   - `ScriptHighlighter.default_block_rules() -> List[ScriptBlockRule]` *(static)* — The default multi-line region rules — Python tracebacks, header to exception.
   - `ScriptHighlighter.default_level_formats() -> Dict[int, QtGui.QTextCharFormat]` *(static)* — The default ``logging`` level → format map (same palette as the word rules).
   - `ScriptHighlighter.highlightBlock(self, text: str) -> None`
   - `ScriptHighlighter.stamp_level(self, block: QtGui.QTextBlock, level: int) -> None` — Record ``level`` on one ``block`` and recolor it.
-- **[`class ScriptOutput(QtWidgets.QTextEdit)`](uitk/uitk/widgets/scriptOutput.py#L344)** — Read-only, syntax-highlighted console view — host-agnostic.
+- **[`class ScriptOutput(ShortcutGuardMixin, QtWidgets.QTextEdit)`](uitk/uitk/widgets/scriptOutput.py#L346)** — Read-only, syntax-highlighted console view — host-agnostic.
   - `ScriptOutput.set_clear_callback(self, callback: Optional[Callable[[], None]]) -> None` — Set the callback the **Clear** context-menu action invokes.
   - `ScriptOutput.set_context_menu_hook(self, hook: Optional[Callable[[QtWidgets.QMenu], None]]) -> None` — Set a ``callable(menu)`` hook that appends host-specific actions.
   - `ScriptOutput.set_rules(self, rules: List[ScriptHighlightRule]) -> None` — Replace the single-line highlight rules and re-highlight the document.
@@ -1798,8 +1823,6 @@ Host-agnostic script-output console widget.
   - `ScriptOutput.append_text(self, text: str, level: Optional[int] = None) -> None` — Append raw ``text`` at the end without disturbing the user's selection/caret.
   - `ScriptOutput.enterEvent(self, event: QtCore.QEvent)` — Focus on hover (see ``focus_on_hover``) so the console's shortcuts reach it
   - `ScriptOutput.keyPressEvent(self, event: QtGui.QKeyEvent)` — Ensure copy works reliably in the output widget.
-  - `ScriptOutput.event(self, event: QtCore.QEvent)` — Intercept ShortcutOverride so the host doesn't steal Ctrl+C.
-  - `ScriptOutput.eventFilter(self, obj, event: QtCore.QEvent)`
   - `ScriptOutput.build_context_menu(self) -> QtWidgets.QMenu` — The context menu, built but not shown (``_context_menu`` execs it).
 
 <a id="widgets--separator"></a>
@@ -2215,7 +2238,7 @@ Reusable action-column management for :class:`TableWidget`.
 
 Scrollable rich-text viewer window.
 
-- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L58)** — Read-only rich-text viewer with optional standard buttons.
+- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L38)** — Read-only rich-text viewer with optional standard buttons.
   - `TextViewBox.setStandardButtons(self, *buttons) -> None` — Configure the visible buttons by name.
   - `TextViewBox.setText(self, string: str, fontColor: str = 'white', background=False, fontSize=None) -> None` — Set the body text, replacing any existing content.
   - `TextViewBox.append_text(self, string: str, fontColor: str = 'white', fontSize=None) -> None` — Append a paragraph without clearing existing content.

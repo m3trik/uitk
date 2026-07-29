@@ -314,6 +314,7 @@ Handlers extend UITK without subclassing `Switchboard`. Three touchpoints:
 - `apply_styles(ui)` — merges DEFAULT_STYLE with tag overrides (stacked menus get `translucentBgNoBorder`), applies to widget.
 - `show(ui, pos, force)` — positions window (`cursor`/`screen`/QPoint/tuple) with layout activation for accurate sizing.
 - `setup_lifecycle(ui, hide_signal)` — wires a hide signal (typically `marking_menu.key_show_release`) to `ui.request_hide()` for pin-aware auto-hide.
+- **Window persistence** — sole owner of pin-vs-hide chrome, for every init path (marking menu, launcher, already-open). `default_persistence(ui)` is the subclass hook for a per-window default (mayatk / blendertk declare their tool panels sticky there); `window_persistence` + `persistence_override(name)` are the persisted user choices the UI Browser edits. See [API_REFERENCE.md](API_REFERENCE.md#window-persistence).
 
 `MarkingMenu` registers itself as `sb.handlers.marking_menu`. See [MARKING_MENU.md](MARKING_MENU.md).
 
@@ -360,7 +361,7 @@ themes = {
 }
 ```
 
-`ui.style.set(theme=..., style_class=...)` substitutes `%(KEY)s` placeholders in the theme's QSS template (`themes/style.qss`) and applies it to the window. Emits `theme_changed(widget, name, vars)` for downstream consumers (icon recoloring, custom overlays).
+`ui.style.set(theme=..., style_class=...)` substitutes `{TOKEN}` placeholders in the theme's QSS template (`themes/style.qss`) and applies it to the window. Emits `theme_changed(widget, name, vars)` for downstream consumers (icon recoloring, custom overlays).
 
 Action colors on `LineEdit`, `TableWidget`, `TreeWidget` read directly from the palette — `ACTION_VALID_FG/BG`, `ACTION_INVALID_FG/BG`, `ACTION_WARNING_FG/BG`, `ACTION_INFO_FG/BG`, `ACTION_INACTIVE_FG`.
 

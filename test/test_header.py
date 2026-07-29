@@ -23,7 +23,19 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore, QtGui
 
+from uitk.managers.icon_manager import IconManager
 from uitk.widgets.header import Header
+
+
+def _enter_event():
+    """A real hover event, valid on both bindings.
+
+    Qt6 types ``enterEvent`` as taking a ``QEnterEvent`` (a bare
+    ``QEvent(Enter)`` is a TypeError there); Qt5 types it as ``QEvent``, which
+    ``QEnterEvent`` satisfies by inheritance.
+    """
+    pos = QtCore.QPointF(1, 1)
+    return QtGui.QEnterEvent(pos, pos, pos)
 
 
 class TestHeaderCreation(QtBaseTestCase):
@@ -196,6 +208,218 @@ class TestHeaderPinning(QtBaseTestCase):
         header.toggled.connect(lambda state: signal_received.append(state))
         header.reset_pin_state()
         self.assertIn(False, signal_received)
+
+
+class TestHeaderPinClickHides(QtBaseTestCase):
+    """``pin_on_drag_only``: the pin button acts as a one-click hide.
+
+    Feature: a click dismisses the window in either pin state (pinning is
+    reached by dragging the header instead), and hover advertises that — the
+    ``pinHides`` property drives the red QSS background, and while unpinned
+    the icon swaps to the close glyph so the button reads as what it does.
+    Added: 2026-07-29
+    """
+
+    def _window(self, **kwargs):
+        """A shown frameless window whose header carries a pin button."""
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window, config_buttons=["pin"], **kwargs)
+        layout.addWidget(header)
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        return window, header
+
+    @staticmethod
+    def _icon_name(button):
+        info = IconManager.registered_info(button)
+        return info["name"] if info else None
+
+    # ── Click behavior ────────────────────────────────────────────────────
+
+    def test_click_hides_window_without_pinning(self):
+        """The whole point: one click dismisses, instead of pin-then-unpin."""
+        window, header = self._window(pin_on_drag_only=True)
+        header.buttons["pin"].click()
+        self.assertFalse(header.pinned)
+        self.assertFalse(window.isVisible())
+
+    def test_pinned_click_unpins_and_hides(self):
+        """Clicking a pinned button also dismisses (what the red hover means)."""
+        window, header = self._window(pin_on_drag_only=True)
+        header._set_pin_state(True)
+        header.buttons["pin"].click()
+        self.assertFalse(header.pinned)
+        self.assertFalse(window.isVisible())
+
+    def test_click_pins_in_classic_mode(self):
+        """Classic mode is untouched: click pins, window stays up.
+
+        Explicit ``False`` — the class-level default may have been flipped
+        by a Switchboard-creating test earlier in the process.
+        """
+        window, header = self._window(pin_on_drag_only=False)
+        header.buttons["pin"].click()
+        self.assertTrue(header.pinned)
+        self.assertTrue(window.isVisible())
+
+    def test_drag_still_pins(self):
+        """Dragging the header is the way to pin in click-to-hide mode."""
+        window, header = self._window(pin_on_drag_only=True)
+        # The 6-arg form (local + global/screen point) is the one both
+        # bindings accept AND the only one that carries a global position —
+        # the header's drag math reads globalPos(). Build and deliver one
+        # event at a time: Qt6 pools mouse-event allocations, so holding two
+        # at once aliases them onto the same underlying object.
+        def _mouse(kind, x, y, button):
+            return QtGui.QMouseEvent(
+                kind,
+                QtCore.QPointF(x, y),
+                QtCore.QPointF(x, y),
+                button,
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+            )
+
+        header.mousePressEvent(
+            _mouse(QtCore.QEvent.MouseButtonPress, 0, 0, QtCore.Qt.LeftButton)
+        )
+        header.mouseMoveEvent(
+            _mouse(QtCore.QEvent.MouseMove, 20, 20, QtCore.Qt.NoButton)
+        )
+        self.assertTrue(header.pinned)
+        self.assertTrue(window.isVisible())
+
+    # ── Hover affordance ──────────────────────────────────────────────────
+
+    def test_hover_shows_close_icon_while_unpinned(self):
+        window, header = self._window(pin_on_drag_only=True)
+        button = header.buttons["pin"]
+        QtWidgets.QApplication.sendEvent(button, _enter_event())
+        self.assertEqual(self._icon_name(button), "close")
+        QtWidgets.QApplication.sendEvent(button, QtCore.QEvent(QtCore.QEvent.Leave))
+        self.assertEqual(self._icon_name(button), "radio_empty")
+
+    def test_hover_keeps_pin_icon_while_pinned(self):
+        """Pinned state stays readable — only the background turns red."""
+        window, header = self._window(pin_on_drag_only=True)
+        header._set_pin_state(True)
+        button = header.buttons["pin"]
+        QtWidgets.QApplication.sendEvent(button, _enter_event())
+        self.assertEqual(self._icon_name(button), "radio")
+
+    def test_hover_does_not_swap_icon_in_classic_mode(self):
+        window, header = self._window(pin_on_drag_only=False)
+        button = header.buttons["pin"]
+        QtWidgets.QApplication.sendEvent(button, _enter_event())
+        self.assertEqual(self._icon_name(button), "radio_empty")
+
+    # ── QSS hook / mode plumbing ──────────────────────────────────────────
+
+    def test_qss_property_tracks_mode(self):
+        """The stylesheet's red-hover rule keys on this property."""
+        window, header = self._window(pin_on_drag_only=True)
+        button = header.buttons["pin"]
+        self.assertEqual(button.property("pinHides"), True)
+        header.pin_on_drag_only = False
+        self.assertEqual(button.property("pinHides"), False)
+
+    def test_mode_flip_restores_icon(self):
+        """Leaving the mode while hovered must not strand the close icon."""
+        window, header = self._window(pin_on_drag_only=True)
+        button = header.buttons["pin"]
+        QtWidgets.QApplication.sendEvent(button, _enter_event())
+        header.pin_on_drag_only = False
+        self.assertEqual(self._icon_name(button), "radio_empty")
+
+    def test_mode_survives_config_buttons_rebuild(self):
+        """A rebuilt pin button is a new QPushButton — it must re-adopt the mode."""
+        window, header = self._window(pin_on_drag_only=True)
+        header.config_buttons("menu", "collapse", "pin")
+        button = header.buttons["pin"]
+        self.assertEqual(button.property("pinHides"), True)
+        QtWidgets.QApplication.sendEvent(button, _enter_event())
+        self.assertEqual(self._icon_name(button), "close")
+
+
+class TestHeaderPinClickDefault(QtBaseTestCase):
+    """Headers left unconfigured follow the process-wide pin-click default.
+
+    This is the channel that carries ``UiHandler.pin_click_hides`` to headers
+    the handler never styles — Menu chrome (option-box menus, persistent
+    mode) and .ui-embedded headers are all built without the kwarg.
+    Added: 2026-07-29
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._saved_default = Header._pin_on_drag_only_default
+
+    def tearDown(self):
+        Header.set_default_pin_on_drag_only(self._saved_default)
+        super().tearDown()
+
+    def _pin_header(self, **kwargs):
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window, config_buttons=["pin"], **kwargs)
+        layout.addWidget(header)
+        return window, header
+
+    def test_unconfigured_header_follows_class_default(self):
+        Header.set_default_pin_on_drag_only(True)
+        _, header = self._pin_header()
+        self.assertTrue(header.pin_on_drag_only)
+        Header.set_default_pin_on_drag_only(False)
+        self.assertFalse(header.pin_on_drag_only)
+
+    def test_explicit_mode_wins_over_default(self):
+        Header.set_default_pin_on_drag_only(True)
+        _, header = self._pin_header(pin_on_drag_only=False)
+        self.assertFalse(header.pin_on_drag_only)
+
+    def test_assigning_none_refollows_default(self):
+        Header.set_default_pin_on_drag_only(True)
+        _, header = self._pin_header(pin_on_drag_only=False)
+        header.pin_on_drag_only = None
+        self.assertTrue(header.pin_on_drag_only)
+
+    def test_default_flip_lands_visually_on_next_show(self):
+        """A default-following header re-syncs its QSS hook when re-shown —
+        the path an already-built option-box menu header takes."""
+        Header.set_default_pin_on_drag_only(False)
+        window, header = self._pin_header()
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        button = header.buttons["pin"]
+        self.assertEqual(button.property("pinHides"), False)
+        window.hide()
+        Header.set_default_pin_on_drag_only(True)
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(button.property("pinHides"), True)
+
+    def test_menu_chrome_header_follows_default(self):
+        """The user-facing case: an option-box/persistent Menu builds its
+        header with no mode kwarg — one click must dismiss it when the
+        default is on."""
+        from uitk.widgets.menu import Menu
+
+        Header.set_default_pin_on_drag_only(True)
+        menu = self.track_widget(Menu(add_header=True, add_footer=False))
+        menu.add("QLabel", setText="item")
+        menu.ensure_chrome()
+        header = menu.header
+        self.assertIsNotNone(header)
+        self.assertTrue(header.pin_on_drag_only)
+        menu.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(menu.isVisible())
+        header.buttons["pin"].click()
+        self.assertFalse(header.pinned)
+        self.assertFalse(menu.isVisible())
 
 
 class TestHeaderTitle(QtBaseTestCase):
@@ -864,6 +1088,57 @@ class TestHeaderWindowActions(QtBaseTestCase):
         header.expand_window()
         app.processEvents()
         self.assertFalse(bool(window.property("_header_collapsed")))
+
+    def test_toggle_collapse_auto_pins_when_pin_button_present(self):
+        """Collapsing via the collapse button must pin an unpinned window.
+
+        A collapsed strip is header-only, so an unpinned one that dismisses
+        itself on focus loss leaves nothing to interact with.
+        Added: 2026-07-29
+        """
+        _, header, _ = self._make_header_window(
+            buttons=("collapse", "minimize", "pin", "hide")
+        )
+        self.assertFalse(header.pinned)
+        header.toggle_collapse()
+        app.processEvents()
+        self.assertTrue(header._collapsed)
+        self.assertTrue(header.pinned)
+
+    def test_toggle_collapse_auto_pins_in_pin_on_drag_only_mode(self):
+        """Auto-pin must bypass the click-to-hide pin mode.
+
+        In pin_on_drag_only mode a pin *click* hides instead of pinning; the
+        collapse auto-pin is a programmatic state change and must still pin.
+        Added: 2026-07-29
+        """
+        _, header, _ = self._make_header_window(
+            buttons=("collapse", "minimize", "pin", "hide")
+        )
+        header.pin_on_drag_only = True
+        header.toggle_collapse()
+        app.processEvents()
+        self.assertTrue(header.pinned)
+
+    def test_toggle_collapse_without_pin_button_leaves_state(self):
+        """No pin button → no auto-pin (nothing advertises the pin state)."""
+        _, header, _ = self._make_header_window()  # no 'pin' button
+        header.toggle_collapse()
+        app.processEvents()
+        self.assertTrue(header._collapsed)
+        self.assertFalse(header.pinned)
+
+    def test_toggle_collapse_expand_leaves_pin_state(self):
+        """Expanding must not unpin — the user may have pinned deliberately."""
+        _, header, _ = self._make_header_window(
+            buttons=("collapse", "minimize", "pin", "hide")
+        )
+        header.toggle_collapse()
+        app.processEvents()
+        header.toggle_collapse()
+        app.processEvents()
+        self.assertFalse(header._collapsed)
+        self.assertTrue(header.pinned)
 
     def test_collapse_with_fixed_width_below_minimum(self):
         """Should collapse below the window's minimum width.

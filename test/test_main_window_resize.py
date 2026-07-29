@@ -198,7 +198,20 @@ class TestCollapsableGroupDelegatesToMainWindow(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
 
         calls = []
-        win.adjust_height_by = lambda d, baseline=None: calls.append((d, baseline))
+
+        def _record_and_apply(d, baseline=None):
+            # Apply the resize too: CollapsableGroup reads back how much the
+            # window ACTUALLY changed (to pair a clamped collapse with an
+            # equal expand), so a record-only stub would model a window that
+            # never moves and suppress the expand.
+            calls.append((d, baseline))
+            base = win.height() if baseline is None else baseline
+            # The real adjust_height_by re-syncs the minimum down before
+            # resizing; without that the stub's shrink would be clamped away.
+            win.setMinimumHeight(0)
+            win.resize(win.width(), max(base + d, 1))
+
+        win.adjust_height_by = _record_and_apply
 
         group.toggle_expand(False)  # collapse
         self.assertTrue(

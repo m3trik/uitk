@@ -257,7 +257,7 @@ siblings  = sb.get_ui_relatives(ui, exact=True)
 
 ## 8. Theming
 
-Two built-in themes, both palette dicts keyed by well-known variables (`WIDGET_BACKGROUND`, `BUTTON_HOVER`, `TEXT_COLOR`, `ACTION_VALID_FG`, …).
+Three built-in themes (`light`, `dark`, `high-contrast`), each a palette dict keyed by well-known variables (`WIDGET_BACKGROUND`, `BUTTON_HOVER`, `TEXT_COLOR`, `ACTION_VALID_FG`, …).
 
 ```python
 ui.style.set(theme="dark", style_class="translucentBgWithBorder")

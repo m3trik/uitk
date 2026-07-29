@@ -281,30 +281,144 @@ class TestLaunchCanonicalWindowInit(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_launch_routes_window_init_through_marking_menu(self):
-        from unittest import mock
-
         mm = _CanonicalInitStub(self.sb)
         self.sb.handlers.marking_menu = mm
         handler = self.sb.handlers.ui
-        with mock.patch.object(handler, "_configure_launched_header") as chrome:
-            ui = handler.launch("tool")
+        ui = handler.launch("tool")
         try:
             self.assertEqual(mm.got, ["tool"])
-            chrome.assert_not_called()
             self.assertTrue(ui.isVisible())
         finally:
             ui.deleteLater()
 
     def test_launch_without_marking_menu_keeps_launcher_chrome(self):
-        from unittest import mock
-
+        """No marking menu -> nothing auto-hides the window out here, so the
+        launcher's standalone default (hide chrome) still applies."""
         handler = self.sb.handlers.ui
-        with mock.patch.object(handler, "_configure_launched_header") as chrome:
-            ui = handler.launch("tool")
+        self.sb.loaded_ui.tool.header = _RecordingHeader()
+        ui = handler.launch("tool")
         try:
-            chrome.assert_called_once()
+            self.assertEqual(tuple(ui.header.buttons), UiHandler.STICKY_HEADER)
         finally:
             ui.deleteLater()
+
+
+class TestPinClickMode(unittest.TestCase):
+    """The pin-click affordance is a handler-owned *preference*.
+
+    The handler persists it (config branch, seeded from
+    ``PIN_CLICK_HIDES_DEFAULT``) and publishes it as ``Header``'s process-wide
+    default — the single channel through which it reaches every
+    default-following header: tool windows, Menu chrome the handler never
+    styles, .ui-embedded headers. Flipping it applies immediately to open
+    windows (mode resolves at click time), and a header given an explicit
+    ``pin_on_drag_only`` keeps its own choice — the preference must not
+    clobber a slot's deliberate per-tool override.
+    Added: 2026-07-29
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        _write_ui(os.path.join(self.tmp.name, "tool.ui"), "tool")
+        from uitk.switchboard import Switchboard
+
+        self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
+        self.handler = self.sb.handlers.ui
+
+    def tearDown(self):
+        from qtpy import QtCore, QtWidgets
+
+        # QSettings is process-wide (sandboxed, but shared across tests) —
+        # put the preference back so a flip here can't leak sideways.
+        self.handler.pin_click_hides = UiHandler.PIN_CLICK_HIDES_DEFAULT
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.tmp.cleanup()
+
+    def _ui_with_header(self, buttons=("menu", "collapse", "pin")):
+        """Load ``tool`` and give it a header carrying *buttons*.
+
+        Bound as ``ui.header`` (the attribute ``register_children`` would set
+        on a real .ui) rather than via ``attach_to`` — these minimal test UIs
+        have no box layout for the header to insert itself into.
+        """
+        from uitk.widgets.header import Header
+
+        ui = self.sb.loaded_ui.tool
+        header = Header(parent=ui, config_buttons=list(buttons))
+        ui.header = header
+        return ui, header
+
+    def test_default_is_one_click_hide(self):
+        """Windows this handler styles get the affordance out of the box."""
+        self.assertTrue(self.handler.pin_click_hides)
+
+    def test_setter_persists_to_config(self):
+        self.handler.pin_click_hides = False
+        self.assertFalse(self.handler.pin_click_hides)
+        self.assertEqual(
+            self.sb.configurable.branch("ui").value(UiHandler.PIN_CLICK_HIDES_KEY),
+            False,
+        )
+
+    def test_styled_header_follows_preference(self):
+        """A header built without an explicit mode (the styled-window case)
+        resolves the preference through the class default."""
+        ui, header = self._ui_with_header()
+        self.handler.apply_styles(ui)
+        self.assertTrue(header.pin_on_drag_only)
+
+    def test_follows_even_when_header_keeps_its_own_buttons(self):
+        """A slot's ``header_init`` may own the button set; the preference
+        still applies (apply_styles leaves such a header's chrome alone)."""
+        ui, header = self._ui_with_header(buttons=("pin",))
+        self.handler.apply_styles(ui)
+        self.assertEqual(tuple(header.buttons), ("pin",))
+        self.assertTrue(header.pin_on_drag_only)
+
+    def test_explicit_header_choice_wins_over_preference(self):
+        """A deliberate per-tool ``pin_on_drag_only`` assignment must survive
+        both styling and a preference flip — the preference is a default,
+        not a mandate."""
+        ui, header = self._ui_with_header()
+        header.pin_on_drag_only = False
+        self.handler.apply_styles(ui)
+        self.assertFalse(header.pin_on_drag_only)
+        self.handler.pin_click_hides = True
+        self.assertFalse(header.pin_on_drag_only)
+
+    def test_flip_reaches_already_open_windows(self):
+        """The UI Browser checkbox's path: no relaunch needed — the mode
+        resolves through the class default at click time."""
+        ui, header = self._ui_with_header()
+        self.handler.apply_styles(ui)
+        self.handler.pin_click_hides = False
+        self.assertFalse(header.pin_on_drag_only)
+        self.handler.pin_click_hides = True
+        self.assertTrue(header.pin_on_drag_only)
+
+    def test_preference_seeds_header_class_default(self):
+        """The preference must reach headers the handler never styles — Menu
+        chrome (option-box menus) and .ui-embedded headers follow Header's
+        process-wide default, seeded at handler init and updated on flip."""
+        from uitk.widgets.header import Header
+
+        # Handler init (in setUp) seeded from the persisted preference.
+        self.assertEqual(
+            Header._pin_on_drag_only_default, self.handler.pin_click_hides
+        )
+        self.handler.pin_click_hides = False
+        self.assertFalse(Header._pin_on_drag_only_default)
+        self.handler.pin_click_hides = True
+        self.assertTrue(Header._pin_on_drag_only_default)
 
 
 class TestSetupLifecycleIdempotent(unittest.TestCase):
@@ -664,42 +778,294 @@ class TestUiHandlerPersistenceHeader(unittest.TestCase):
         self.assertIn("pin", UiHandler.TRANSIENT_HEADER)
         self.assertIn("hide", UiHandler.STICKY_HEADER)
 
-    def test_configure_launched_header_none_is_hide(self):
-        ui = _UiWithHeader(_RecordingHeader())
-        UiHandler._configure_launched_header(ui)
-        self.assertEqual(tuple(ui.header.buttons), UiHandler.STICKY_HEADER)
+    def test_persistence_buttons_swaps_only_the_dismissal_button(self):
+        """A panel's own chrome keeps every other button — replacing the whole
+        set to honor a pin/hide choice would silently drop 'refresh'."""
+        panel = ("refresh", "menu", "collapse", "hide")
+        self.assertEqual(
+            UiHandler._persistence_buttons(panel, "transient"),
+            ("refresh", "menu", "collapse", "pin"),
+        )
+        self.assertEqual(UiHandler._persistence_buttons(panel, "sticky"), panel)
 
-    def test_configure_launched_header_transient_is_pin(self):
-        ui = _UiWithHeader(_RecordingHeader())
-        UiHandler._configure_launched_header(ui, persistence="transient")
-        self.assertEqual(tuple(ui.header.buttons), UiHandler.TRANSIENT_HEADER)
-        self.assertIn("pin", ui.header.buttons)
-        self.assertNotIn("hide", ui.header.buttons)
+    def test_persistence_buttons_keeps_position(self):
+        """The dismissal button stays where the panel put it, not appended."""
+        self.assertEqual(
+            UiHandler._persistence_buttons(("menu", "pin", "minimize"), "sticky"),
+            ("menu", "hide", "minimize"),
+        )
 
-    def test_configure_launched_header_preserves_custom_set(self):
-        """A header that already has buttons is a deliberate custom set — skip."""
-        ui = _UiWithHeader(_RecordingHeader(buttons=("menu", "maximize")))
-        UiHandler._configure_launched_header(ui, persistence="sticky")
-        self.assertEqual(tuple(ui.header.buttons), ("menu", "maximize"))
+    def test_persistence_buttons_collapses_a_set_carrying_both(self):
+        self.assertEqual(
+            UiHandler._persistence_buttons(("menu", "pin", "hide"), "sticky"),
+            ("menu", "hide"),
+        )
 
-    def test_apply_persistence_chrome_overrides_existing_set(self):
-        """The canonical override forces the set even over existing pin chrome,
-        so a sticky choice drops the pin button (request_hide then refuses)."""
-        ui = _UiWithHeader(_RecordingHeader(buttons=UiHandler.TRANSIENT_HEADER))
-        UiHandler._apply_persistence_chrome(ui, "sticky")
-        self.assertEqual(tuple(ui.header.buttons), UiHandler.STICKY_HEADER)
-        self.assertNotIn("pin", ui.header.buttons)
+    def test_persistence_buttons_adds_when_neither_is_present(self):
+        self.assertEqual(
+            UiHandler._persistence_buttons(("menu", "collapse"), "transient"),
+            ("menu", "collapse", "pin"),
+        )
+
+    def test_matching_chrome_is_not_rebuilt(self):
+        """``apply_styles`` runs on every ``get``, and ``config_buttons``
+        replaces the button widgets — re-writing an already-correct set would
+        churn the header for no visible change."""
+
+        class _CountingHeader(_RecordingHeader):
+            calls = 0
+
+            def config_buttons(self, *names):
+                type(self).calls += 1
+                super().config_buttons(*names)
+
+        header = _CountingHeader(UiHandler.TRANSIENT_HEADER)
+        UiHandler._write_header_buttons(header, UiHandler.TRANSIENT_HEADER)
+        self.assertEqual(_CountingHeader.calls, 0)
+        # A help button doesn't make the set look different, either.
+        header.buttons.append("help")
+        UiHandler._write_header_buttons(header, UiHandler.TRANSIENT_HEADER)
+        self.assertEqual(_CountingHeader.calls, 0)
+        # ...but the same names in a different ORDER is a real layout change.
+        UiHandler._write_header_buttons(
+            header, tuple(reversed(UiHandler.TRANSIENT_HEADER))
+        )
+        self.assertEqual(_CountingHeader.calls, 1)
 
     def test_ui_header_none_when_absent(self):
         self.assertIsNone(UiHandler._ui_header(types.SimpleNamespace()))
 
 
-class TestLaunchPersistenceWiring(unittest.TestCase):
-    """``launch`` forwards the resolved persistence to the right chrome path.
+class _FakeConfig(dict):
+    """Minimal stand-in for a ``sb.configurable`` branch."""
 
-    Standalone (no marking menu) -> ``_configure_launched_header``; canonical
-    (marking menu present) with an explicit choice -> ``_apply_persistence_chrome``
-    overriding the pin chrome; canonical with no choice -> neither override runs.
+    def value(self, key, default=None):
+        return self.get(key, default)
+
+    def setValue(self, key, value):
+        self[key] = value
+
+    def remove(self, key):
+        self.pop(key, None)
+
+
+class _LoadedUi(dict):
+    """``sb.loaded_ui`` stand-in — the container exposes ``peek`` for a
+    non-loading lookup."""
+
+    def peek(self, name):
+        return self.get(name)
+
+
+class _TaggedUi(_UiWithHeader):
+    """A UI double carrying tags + an objectName, the two inputs persistence
+    resolution reads."""
+
+    def __init__(self, name, tags=(), header=None):
+        super().__init__(header if header is not None else _RecordingHeader())
+        self._name = name
+        self._tags = set(tags)
+
+    def objectName(self):
+        return self._name
+
+    def has_tags(self, tags):
+        return bool(self._tags.intersection(tags))
+
+
+class _StickyForTaggedHandler(UiHandler):
+    """Stand-in for MayaUiHandler / BlenderUiHandler: a per-window default
+    declared through the hook rather than by swapping header buttons."""
+
+    def default_persistence(self, ui) -> str:
+        try:
+            if ui.has_tags(["dcc"]):
+                return self.PERSISTENCE_STICKY
+        except AttributeError:
+            pass
+        return super().default_persistence(ui)
+
+
+class TestPersistenceResolution(unittest.TestCase):
+    """Precedence: per-window override > global default > context default >
+    the window's own ``default_persistence``.
+
+    The whole point of routing every path through this is that a UI Browser
+    choice reaches marking-menu windows too — before, a DCC handler swapped
+    ``header_buttons`` in ``apply_styles`` and the browser's setting only
+    reached windows it launched itself.
+    """
+
+    def setUp(self):
+        self.store = _FakeConfig()
+        self.loaded = _LoadedUi()
+        self.handler = object.__new__(_StickyForTaggedHandler)
+        # ``BaseHandler.config`` resolves through sb.configurable.branch, so
+        # feeding it a fake branch exercises the real property.
+        self.handler.sb = types.SimpleNamespace(
+            configurable=types.SimpleNamespace(branch=lambda _n: self.store),
+            loaded_ui=self.loaded,
+        )
+
+    def test_default_hook_drives_context_mode(self):
+        self.assertEqual(
+            self.handler.resolve_persistence(_TaggedUi("tool", tags=["dcc"])),
+            UiHandler.PERSISTENCE_STICKY,
+        )
+        self.assertEqual(
+            self.handler.resolve_persistence(_TaggedUi("tool")),
+            UiHandler.PERSISTENCE_TRANSIENT,
+        )
+
+    def test_global_default_outranks_the_window_default(self):
+        self.handler.window_persistence = UiHandler.PERSISTENCE_TRANSIENT
+        self.assertEqual(
+            self.handler.resolve_persistence(_TaggedUi("tool", tags=["dcc"])),
+            UiHandler.PERSISTENCE_TRANSIENT,
+        )
+
+    def test_override_outranks_the_global_default(self):
+        self.handler.window_persistence = UiHandler.PERSISTENCE_TRANSIENT
+        self.handler.set_persistence_override("tool", UiHandler.PERSISTENCE_STICKY)
+        self.assertEqual(
+            self.handler.resolve_persistence(_TaggedUi("tool")),
+            UiHandler.PERSISTENCE_STICKY,
+        )
+
+    def test_clearing_an_override_falls_back(self):
+        self.handler.set_persistence_override("tool", UiHandler.PERSISTENCE_TRANSIENT)
+        self.handler.set_persistence_override("tool", None)
+        self.assertIsNone(self.handler.persistence_override("tool"))
+        self.assertEqual(
+            self.handler.resolve_persistence(_TaggedUi("tool", tags=["dcc"])),
+            UiHandler.PERSISTENCE_STICKY,
+        )
+
+    def test_context_default_sits_below_the_stored_preference(self):
+        """The standalone-launch default applies only when nothing is stored."""
+        ui = _TaggedUi("tool", tags=["dcc"])
+        self.assertEqual(
+            self.handler.resolve_persistence(
+                ui, context_default=UiHandler.PERSISTENCE_STICKY
+            ),
+            UiHandler.PERSISTENCE_STICKY,
+        )
+        self.handler.window_persistence = UiHandler.PERSISTENCE_TRANSIENT
+        self.assertEqual(
+            self.handler.resolve_persistence(
+                ui, context_default=UiHandler.PERSISTENCE_STICKY
+            ),
+            UiHandler.PERSISTENCE_TRANSIENT,
+        )
+
+    def test_only_a_user_choice_counts_as_explicit(self):
+        ui = _TaggedUi("tool", tags=["dcc"])
+        self.assertFalse(self.handler.is_persistence_explicit(ui))
+        self.handler.set_persistence_override("tool", UiHandler.PERSISTENCE_STICKY)
+        self.assertTrue(self.handler.is_persistence_explicit(ui))
+
+    def test_bogus_stored_global_falls_back_to_context(self):
+        self.store[UiHandler.WINDOW_PERSISTENCE_KEY] = "nonsense"
+        self.assertEqual(
+            self.handler.window_persistence, UiHandler.WINDOW_PERSISTENCE_DEFAULT
+        )
+
+    def test_setting_the_global_rechromes_loaded_windows(self):
+        ui = _TaggedUi("tool", tags=["dcc"])
+        ui.header.config_buttons(*UiHandler.STICKY_HEADER)
+        self.loaded["tool"] = ui
+        self.handler.window_persistence = UiHandler.PERSISTENCE_TRANSIENT
+        self.assertEqual(tuple(ui.header.buttons), UiHandler.TRANSIENT_HEADER)
+
+    def test_setting_an_override_rechromes_only_that_window(self):
+        a = _TaggedUi("a", tags=["dcc"])
+        b = _TaggedUi("b", tags=["dcc"])
+        for ui in (a, b):
+            ui.header.config_buttons(*UiHandler.STICKY_HEADER)
+        self.loaded.update({"a": a, "b": b})
+        self.handler.set_persistence_override("a", UiHandler.PERSISTENCE_TRANSIENT)
+        self.assertEqual(tuple(a.header.buttons), UiHandler.TRANSIENT_HEADER)
+        self.assertEqual(tuple(b.header.buttons), UiHandler.STICKY_HEADER)
+
+    def test_override_swaps_the_button_in_a_panels_own_chrome(self):
+        """An explicit choice outranks the panel's ``header_init`` call — but
+        only for the dismissal button; the rest of its chrome survives."""
+        panel = ("refresh", "menu", "collapse", "hide")
+        ui = _TaggedUi("tool", header=_RecordingHeader(panel))
+        self.loaded["tool"] = ui
+        self.handler.set_persistence_override("tool", UiHandler.PERSISTENCE_TRANSIENT)
+        self.assertEqual(
+            tuple(ui.header.buttons), ("refresh", "menu", "collapse", "pin")
+        )
+
+    def test_clearing_an_override_restores_the_panels_own_chrome(self):
+        """Clearing a choice must put the window back, not wait for a reload.
+
+        Otherwise the row menu says "Default" while the window still shows the
+        override. The baseline can't be recomputed — this panel declares a pin
+        button of its own while its handler default is sticky, so resolution
+        would restore the wrong button.
+        """
+        panel = ("refresh", "menu", "collapse", "pin")
+        ui = _TaggedUi("tool", tags=["dcc"], header=_RecordingHeader(panel))
+        self.loaded["tool"] = ui
+        self.handler.set_persistence_override("tool", UiHandler.PERSISTENCE_STICKY)
+        self.assertEqual(
+            tuple(ui.header.buttons), ("refresh", "menu", "collapse", "hide")
+        )
+        self.handler.set_persistence_override("tool", None)
+        self.assertEqual(tuple(ui.header.buttons), panel)
+
+    def test_clearing_the_global_restores_the_panels_own_chrome(self):
+        panel = ("refresh", "menu", "collapse", "pin")
+        ui = _TaggedUi("tool", tags=["dcc"], header=_RecordingHeader(panel))
+        self.loaded["tool"] = ui
+        self.handler.window_persistence = UiHandler.PERSISTENCE_STICKY
+        self.assertNotIn("pin", ui.header.buttons)
+        self.handler.window_persistence = UiHandler.PERSISTENCE_CONTEXT
+        self.assertEqual(tuple(ui.header.buttons), panel)
+
+    def test_a_rerun_header_init_re_establishes_the_baseline(self):
+        """A panel that reconfigures its own chrome sets the new baseline —
+        a stale one would resurrect chrome the panel had moved on from."""
+        ui = _TaggedUi("tool", tags=["dcc"], header=_RecordingHeader(("menu", "pin")))
+        self.loaded["tool"] = ui
+        self.handler.window_persistence = UiHandler.PERSISTENCE_STICKY
+        self.assertEqual(tuple(ui.header.buttons), ("menu", "hide"))
+        # The panel rebuilds its header with a different set.
+        ui.header.config_buttons("refresh", "menu", "collapse", "pin")
+        self.handler.reapply_persistence("tool")
+        self.assertEqual(
+            tuple(ui.header.buttons), ("refresh", "menu", "collapse", "hide")
+        )
+        self.handler.window_persistence = UiHandler.PERSISTENCE_CONTEXT
+        self.assertEqual(
+            tuple(ui.header.buttons), ("refresh", "menu", "collapse", "pin")
+        )
+
+    def test_a_default_never_disturbs_a_panels_own_chrome(self):
+        """No user choice -> the panel's ``header_init`` set IS the default."""
+        panel = ("refresh", "menu", "collapse", "hide")
+        ui = _TaggedUi("tool", header=_RecordingHeader(panel))
+        self.loaded["tool"] = ui
+        self.handler.reapply_persistence("tool")
+        self.assertEqual(tuple(ui.header.buttons), panel)
+
+    def test_unconfigured_header_gets_the_modes_full_default_set(self):
+        ui = _TaggedUi("tool", tags=["dcc"])
+        self.loaded["tool"] = ui
+        self.handler.reapply_persistence("tool")
+        self.assertEqual(tuple(ui.header.buttons), UiHandler.STICKY_HEADER)
+
+
+class TestLaunchPersistenceWiring(unittest.TestCase):
+    """``launch`` resolves chrome through the handler's persistence preference.
+
+    A per-launch ``persistence`` argument wins; otherwise the stored preference
+    is resolved exactly as ``apply_styles`` does, so a window's pin/hide
+    behavior is the same however it was opened. The only launch-path-specific
+    input is the standalone default (no marking menu -> nothing auto-hides the
+    window, so it gets hide chrome).
     """
 
     @classmethod
@@ -714,6 +1080,18 @@ class TestLaunchPersistenceWiring(unittest.TestCase):
         from uitk.switchboard import Switchboard
 
         self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
+        # The persistence preference is PERSISTED (handler config -> QSettings),
+        # which outlives the per-test Switchboard, so a test that stores a
+        # choice would otherwise dictate every later test's baseline.
+        self._reset_persistence()
+        self.addCleanup(self._reset_persistence)
+
+    def _reset_persistence(self):
+        handler = self.sb.handlers.ui
+        handler.config.setValue(
+            UiHandler.WINDOW_PERSISTENCE_KEY, UiHandler.PERSISTENCE_CONTEXT
+        )
+        handler.config.remove(handler._persistence_key("tool"))
 
     def tearDown(self):
         from qtpy import QtCore, QtWidgets
@@ -724,68 +1102,63 @@ class TestLaunchPersistenceWiring(unittest.TestCase):
         QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
         self.tmp.cleanup()
 
+    def _launched_mode(self, **kwargs) -> str:
+        """The persistence mode ``launch`` resolved, read off the real chrome.
+
+        The fixture .ui has no header, so one is attached first — an
+        unconfigured header takes the mode's full default button set.
+        """
+        self.sb.loaded_ui.tool.header = _RecordingHeader()
+        ui = self.sb.handlers.ui.launch("tool", **kwargs)
+        try:
+            buttons = tuple(ui.header.buttons)
+            self.assertTrue(
+                {"pin", "hide"} & set(buttons), f"no dismissal button in {buttons}"
+            )
+            return (
+                UiHandler.PERSISTENCE_TRANSIENT
+                if "pin" in buttons
+                else UiHandler.PERSISTENCE_STICKY
+            )
+        finally:
+            ui.deleteLater()
+
     def test_standalone_forwards_persistence(self):
-        from unittest import mock
+        self.assertEqual(self._launched_mode(persistence="transient"), "transient")
 
-        handler = self.sb.handlers.ui
-        with mock.patch.object(handler, "_configure_launched_header") as chrome:
-            ui = handler.launch("tool", persistence="transient")
-        try:
-            chrome.assert_called_once()
-            self.assertEqual(chrome.call_args.kwargs.get("persistence"), "transient")
-        finally:
-            ui.deleteLater()
+    def test_standalone_default_is_sticky(self):
+        """No stored choice + no marking menu -> the standalone hide default."""
+        self.assertEqual(self._launched_mode(), UiHandler.PERSISTENCE_STICKY)
 
-    def test_standalone_default_persistence_is_none(self):
-        from unittest import mock
-
-        handler = self.sb.handlers.ui
-        with mock.patch.object(handler, "_configure_launched_header") as chrome:
-            ui = handler.launch("tool")
-        try:
-            chrome.assert_called_once()
-            self.assertIsNone(chrome.call_args.kwargs.get("persistence"))
-        finally:
-            ui.deleteLater()
-
-    def test_canonical_explicit_choice_overrides_chrome(self):
-        from unittest import mock
-
+    def test_canonical_explicit_choice_wins(self):
         self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
-        handler = self.sb.handlers.ui
-        with mock.patch.object(handler, "_apply_persistence_chrome") as override:
-            ui = handler.launch("tool", persistence="sticky")
-        try:
-            override.assert_called_once()
-            self.assertEqual(override.call_args.args[1], "sticky")
-        finally:
-            ui.deleteLater()
+        self.assertEqual(self._launched_mode(persistence="sticky"), "sticky")
 
-    def test_canonical_without_choice_skips_override(self):
-        from unittest import mock
-
+    def test_canonical_without_choice_uses_the_ui_default(self):
+        """The canonical path has no launch-path default of its own — it falls
+        through to the window's own ``default_persistence`` (base: transient)."""
         self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
-        handler = self.sb.handlers.ui
-        with mock.patch.object(handler, "_apply_persistence_chrome") as override:
-            ui = handler.launch("tool")
-        try:
-            override.assert_not_called()
-        finally:
-            ui.deleteLater()
+        self.assertEqual(self._launched_mode(), UiHandler.PERSISTENCE_TRANSIENT)
 
-    def test_canonical_ignores_unrecognized_persistence(self):
-        """Only "transient"/"sticky" override canonical pin chrome — an unknown
-        value (e.g. the browser's "context" sentinel) must leave it untouched."""
-        from unittest import mock
-
+    def test_unrecognized_persistence_falls_back_to_resolution(self):
+        """The browser's "context" sentinel is not a mode — it means "resolve",
+        so it must not reach the chrome call verbatim."""
         self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
-        handler = self.sb.handlers.ui
-        with mock.patch.object(handler, "_apply_persistence_chrome") as override:
-            ui = handler.launch("tool", persistence="context")
-        try:
-            override.assert_not_called()
-        finally:
-            ui.deleteLater()
+        self.assertEqual(
+            self._launched_mode(persistence="context"), UiHandler.PERSISTENCE_TRANSIENT
+        )
+
+    def test_stored_override_reaches_a_canonical_launch(self):
+        """The regression this feature exists for: a UI Browser override must
+        reach a marking-menu window, not just a browser-launched one."""
+        self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
+        self.sb.handlers.ui.set_persistence_override("tool", "sticky")
+        self.assertEqual(self._launched_mode(), UiHandler.PERSISTENCE_STICKY)
+
+    def test_global_default_reaches_a_canonical_launch(self):
+        self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
+        self.sb.handlers.ui.window_persistence = "sticky"
+        self.assertEqual(self._launched_mode(), UiHandler.PERSISTENCE_STICKY)
 
 
 if __name__ == "__main__":

@@ -525,35 +525,55 @@ class TestEnsureOptionalPackage(unittest.TestCase):
                 Path(exe).name.lower(), ("maya.exe", "blender.exe", "3dsmax.exe")
             )
 
-    def test_declined_package_is_asked_about_only_once(self):
-        """``bridge`` re-invokes ``make_bridge`` on every access while the
-        engine is missing, and ~12 call sites reach for it — without a memo one
-        declined install would fire a fresh modal dialog on each of them.
-        """
-        sb, slots = self._make("No")
-        for _ in range(5):
-            self.assertFalse(
-                slots.ensure_optional_package("uitk-not-a-real-pkg", feature="Panel")
+    def test_silent_probe_true_for_a_real_package(self):
+        """``optional_package_available`` is the implicit-path probe: no
+        dialogs, no installs — it is what ``make_bridge`` implementations use
+        (they run from ``__init__`` via the log wiring, where a modal would be
+        parented to a window that does not exist yet)."""
+        self.assertTrue(BridgeSlotsBase.optional_package_available("pythontk"))
+
+    def test_silent_probe_false_for_a_missing_package(self):
+        self.assertFalse(
+            BridgeSlotsBase.optional_package_available("uitk-not-a-real-pkg")
+        )
+
+    def test_silent_probe_rejects_a_namespace_shadow(self):
+        """A bare repo/workspace folder on ``sys.path`` imports as an EMPTY
+        namespace package (``__file__`` is None) — the live-Maya failure where
+        ``_scripts/`` shadowed the real unitytk one level down. The probe must
+        read that as unavailable, not available-then-exploding in the bridge
+        constructor."""
+        import shutil
+        import sys as _sys
+        import tempfile
+
+        tmp = tempfile.mkdtemp(prefix="uitk_nsp_probe_")
+        try:
+            # A folder with a nested real package, like a repo checkout:
+            # tmp/uitk_fake_nsp_pkg/uitk_fake_nsp_pkg/__init__.py
+            (Path(tmp) / "uitk_fake_nsp_pkg" / "uitk_fake_nsp_pkg").mkdir(
+                parents=True
             )
-        self.assertEqual(len(sb.prompts), 1, "must not re-prompt after a decline")
+            _sys.path.insert(0, tmp)
+            try:
+                self.assertFalse(
+                    BridgeSlotsBase.optional_package_available("uitk_fake_nsp_pkg")
+                )
+            finally:
+                _sys.path.remove(tmp)
+                _sys.modules.pop("uitk_fake_nsp_pkg", None)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
-    def test_failed_install_is_not_retried_on_every_access(self):
-        """Same for an install that ran but left the package unimportable —
-        otherwise each access repeats the whole prompt-install-fail cycle."""
-        sb, slots = self._make("Yes")
-        for _ in range(4):
-            self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
-        self.assertEqual(slots.installed, ["uitk-not-a-real-pkg"], "installed once")
-        # One "install?" + one "could not install" box, then silence.
-        self.assertEqual(len(sb.prompts), 2)
-
-    def test_memo_does_not_suppress_a_package_that_becomes_available(self):
-        """The importability probe short-circuits before the memo is consulted,
-        so installing by hand mid-session takes effect without reopening."""
+    def test_explicit_ensure_prompts_on_every_call(self):
+        """``ensure_optional_package`` is for EXPLICIT user actions only (the
+        panels' Manage Unity Scripts install), so each invocation re-asks —
+        there is no decline memo, because no implicit path calls this anymore
+        and an install action that silently no-ops is a dead click."""
         sb, slots = self._make("No")
         self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
-        # A different, present package must still resolve normally.
-        self.assertTrue(slots.ensure_optional_package("pythontk"))
+        self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+        self.assertEqual(len(sb.prompts), 2, "explicit action must re-ask")
 
     def test_logs_through_the_switchboard_not_a_slots_logger(self):
         """The base has no ``self.logger`` — a slots class gets one from its
@@ -571,6 +591,51 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         self.assertFalse(hasattr(slots, "logger"))
         # Must not raise.
         self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+
+    def test_peek_bridge_absorbs_a_missing_engine(self):
+        """``peek_bridge`` is the init-safe accessor: a panel whose optional
+        engine is missing must still CONSTRUCT (log wiring and startup info run
+        from ``__init__``), so absence comes back as None — never a raise, and
+        never a dialog. Letting the raising ``bridge`` property reach the
+        constructor took the panel down and stranded the modal it had opened."""
+
+        class _NoEngineSlots(BridgeSlotsBase):
+            def __init__(self):
+                self._bridge = None
+
+            def make_bridge(self):
+                return None
+
+        self.assertIsNone(_NoEngineSlots().peek_bridge())
+
+    def test_panel_log_reports_without_an_engine(self):
+        """``panel_log`` must deliver a message while the bridge is missing —
+        the Manage Unity Scripts status/install paths report from exactly that
+        state. Falls back to the log widget + the Switchboard logger."""
+
+        class _Txt:
+            def __init__(self):
+                self.lines = []
+
+            def append(self, text):
+                self.lines.append(text)
+
+        class _Ui:
+            def __init__(self):
+                self.txt000 = _Txt()
+
+        class _NoEngineSlots(BridgeSlotsBase):
+            def __init__(self, sb):
+                self.sb = sb
+                self.ui = _Ui()
+                self._bridge = None
+
+            def make_bridge(self):
+                return None
+
+        slots = _NoEngineSlots(self._Sb("No"))
+        slots.panel_log("engine missing", "error")
+        self.assertEqual(slots.ui.txt000.lines, ["engine missing"])
 
     def test_declined_engine_raises_an_actionable_error_not_nonetype(self):
         """A declined optional install makes ``make_bridge`` return None.

@@ -40,13 +40,14 @@ if TYPE_CHECKING:  # pragma: no cover
 # Defaults: frameless + dark theme so a browser-launched window matches
 # the rest of the toolset out of the box.
 
-# Window persistence modes — how a launched window behaves once open. "sticky"
-# and "transient" map to the UiHandler header button sets: "sticky" -> hide
-# button (stays open), "transient" -> pin button (auto-hides when you leave the
-# marking menu, user-pinnable). "context" is the browser's default: it passes
-# no override, so each launch context keeps its established behavior (a
-# marking-menu/canonical window -> pin, a standalone launch -> hide). The
-# resolved value handed to the handler is "sticky"/"transient" or None (context).
+# Window persistence modes — how a window behaves once open. "sticky" and
+# "transient" map to the UiHandler header button sets: "sticky" -> hide button
+# (stays open), "transient" -> pin button (auto-hides when you leave the marking
+# menu, user-pinnable). "context" is the default: no user choice, so each window
+# keeps its own default (``UiHandler.default_persistence``). The vocabulary is
+# the handler's — it owns resolution and persistence; the browser is its front
+# end. The resolved value handed to launch() is "sticky"/"transient", or None
+# for "context" (let the handler resolve).
 PERSISTENCE_STICKY = "sticky"
 PERSISTENCE_TRANSIENT = "transient"
 PERSISTENCE_CONTEXT = "context"
@@ -644,9 +645,16 @@ class _BrowserState:
     ``QAbstractButton`` — gets its visible label clobbered with ``"True"``
     / ``"False"`` instead of toggling its checked state.
 
-    Calling the semantic setter (``setChecked`` / ``setCurrentText`` /
+    Calling the semantic setter (``setChecked`` / ``setCurrentIndex`` /
     ``setText``) also fires the widget's normal change signals, which is what
     wires the reset back into our settings + filter pipeline.
+
+    Combos are reset **by index**, not by text: uitk's ``ComboBox.setCurrentText``
+    is ``@Signals.blockSignals``-decorated, so a text reset moved the display
+    without ever firing ``currentTextChanged`` — the handler that persists the
+    choice (theme, window persistence) never ran, and *Restore Defaults*
+    silently left the stored value behind. Text is the fallback for a value
+    that isn't one of the items.
     """
 
     def __init__(self):
@@ -662,7 +670,11 @@ class _BrowserState:
         if isinstance(widget, QtWidgets.QCheckBox):
             widget.setChecked(bool(value))
         elif isinstance(widget, QtWidgets.QComboBox):
-            widget.setCurrentText(str(value))
+            index = widget.findText(str(value))
+            if index >= 0:
+                widget.setCurrentIndex(index)
+            else:
+                widget.setCurrentText(str(value))
         elif isinstance(widget, QtWidgets.QLineEdit):
             widget.setText("" if value is None else str(value))
         else:
@@ -1136,20 +1148,25 @@ class SwitchboardBrowser(EditorPanel):
         self._cb_restore = self._launch_option_widgets["restore_geometry"]
         self._cb_on_top = self._launch_option_widgets["on_top"]
 
-        # Global default window persistence. "Default (context)" keeps each
-        # launch context's established chrome (marking-menu window -> pin/
-        # auto-hide, standalone launch -> hide/stays); "sticky" forces a hide
-        # button (stays open) and "transient" a pin button (auto-hides with the
-        # marking menu). Per-entry overrides (row context menu) win over this.
+        # Global default window persistence, owned by the UI handler so it
+        # governs EVERY window (marking-menu popped, browser launched, already
+        # open) rather than the next browser launch. "Default (context)" defers
+        # to each window's own default (``UiHandler.default_persistence`` —
+        # mayatk/blendertk tool panels declare themselves sticky there);
+        # "sticky" forces a hide button (stays open) and "transient" a pin
+        # button (auto-hides with the marking menu). Per-entry overrides (row
+        # context menu) win over this.
+        self._migrate_browser_persistence()
         persistence_labels = [label for _v, label in PERSISTENCE_CHOICES]
         self._cmb_persistence = menu.add(
             "QComboBox",
             setObjectName="cmb_persistence",
             setToolTip=(
-                "Default for launched windows. 'Default' keeps each context's "
-                "usual behavior; 'Stay open' gives a hide button (persists "
-                "until closed); 'Auto-hide' gives a pin button (hides when you "
-                "leave the marking menu). Right-click a row to override a "
+                "Pin/hide behavior for every window, however it was opened. "
+                "'Default' keeps each window's own default; 'Stay open' gives "
+                "a hide button (persists until closed); 'Auto-hide' gives a "
+                "pin button (hides when you leave the marking menu). Applies "
+                "to open windows immediately. Right-click a row to override a "
                 "single entry."
             ),
             addItems=persistence_labels,
@@ -1158,11 +1175,32 @@ class SwitchboardBrowser(EditorPanel):
             self._persistence_label(self._global_persistence())
         )
         self._cmb_persistence.currentTextChanged.connect(
-            lambda label: self._settings.setValue(
-                "opt_persistence", self._persistence_value(label)
-            )
+            lambda label: self._set_global_persistence(self._persistence_value(label))
         )
         self.state.capture(self._cmb_persistence, persistence_labels[0])
+
+        # Pin-button click behavior. Owned by the UI handler (it styles every
+        # marking-menu / launched window), so the checkbox reads and writes
+        # through it rather than the browser's own settings branch — that way
+        # the change reaches already-open windows, not just the next launch.
+        self._cb_pin_click_hides = menu.add(
+            "QCheckBox",
+            setObjectName="cb_pin_click_hides",
+            setText="Pin button hides (1-click)",
+            setToolTip=(
+                "One-click dismiss: clicking the pin button hides the window "
+                "in either state, so hovering it turns the button red (and "
+                "shows the close icon while unpinned). Pin a window open by "
+                "dragging its header.\n\n"
+                "Off: click to pin, click again to unpin and hide."
+            ),
+            setChecked=self._pin_click_hides(),
+        )
+        self._cb_pin_click_hides.toggled.connect(self._on_pin_click_hides_toggled)
+        self.state.capture(
+            self._cb_pin_click_hides,
+            bool(getattr(self._ui_handler(), "PIN_CLICK_HIDES_DEFAULT", True)),
+        )
 
         # Theme: pulled through the switchboard's ``style`` proxy so any
         # theme added to ``StyleSheet`` shows up here automatically.
@@ -1221,6 +1259,7 @@ class SwitchboardBrowser(EditorPanel):
                 "on_top": self._cb_on_top.isChecked(),
                 "theme": self._cmb_theme.currentText(),
                 "persistence": self._global_persistence(),
+                "pin_click_hides": self._pin_click_hides(),
             },
         }
 
@@ -1292,13 +1331,16 @@ class SwitchboardBrowser(EditorPanel):
         if "hidden_tags" in data:
             self.hidden_tags = data["hidden_tags"]
 
-        # Launch checkboxes
+        # Launch checkboxes. ``pin_click_hides`` rides along here: its toggled
+        # handler persists through the UI handler (not this browser's settings
+        # branch), so a plain setChecked is the whole restore.
         launch = data.get("launch") or {}
         for key, cb in [
             ("frameless", self._cb_frameless),
             ("translucent", self._cb_translucent),
             ("restore_geometry", self._cb_restore),
             ("on_top", self._cb_on_top),
+            ("pin_click_hides", self._cb_pin_click_hides),
         ]:
             if key in launch:
                 cb.setChecked(bool(launch[key]))
@@ -1318,7 +1360,7 @@ class SwitchboardBrowser(EditorPanel):
                 )
             finally:
                 self._cmb_persistence.blockSignals(False)
-            self._settings.setValue("opt_persistence", persistence)
+            self._set_global_persistence(persistence)
 
         # Single consolidated refresh — chips, view filter.
         self._update_show_ui()
@@ -1460,6 +1502,32 @@ class SwitchboardBrowser(EditorPanel):
             persistence=self._resolve_persistence(None),
         )
 
+    # ── Pin-button click mode (handler-owned preference) ─────────────────────
+
+    def _ui_handler(self):
+        """The Switchboard's UI handler (the ``"ui"`` slot), or None.
+
+        Every app registers its UiHandler subclass under that name (tentacle
+        passes ``handlers={"ui": MayaUiHandler}``; a bare Switchboard
+        auto-registers the base class), so it's the stable way to reach the
+        owner of window chrome without a handler-typed import.
+        """
+        return getattr(getattr(self.sb, "handlers", None), "ui", None)
+
+    def _pin_click_hides(self) -> bool:
+        """Whether a pin-button click currently dismisses the window."""
+        return bool(getattr(self._ui_handler(), "pin_click_hides", True))
+
+    def _on_pin_click_hides_toggled(self, checked: bool) -> None:
+        """Persist + live-apply the pin-click mode via the UI handler."""
+        handler = self._ui_handler()
+        if handler is None:
+            return
+        try:
+            handler.pin_click_hides = bool(checked)
+        except AttributeError:  # handler predates the preference
+            pass
+
     # ── Window persistence (context/sticky/transient) resolution ─────────────
 
     @staticmethod
@@ -1478,31 +1546,55 @@ class SwitchboardBrowser(EditorPanel):
         return PERSISTENCE_CONTEXT
 
     def _global_persistence(self) -> str:
-        """The global default persistence mode ("context"/"sticky"/"transient")."""
-        value = self._settings.value("opt_persistence", PERSISTENCE_DEFAULT)
+        """The global default persistence mode ("context"/"sticky"/"transient").
+
+        Handler-owned, like ``pin_click_hides`` — the handler styles every
+        window whatever opened it, so a browser-local copy would (and did)
+        reach browser-launched windows only.
+        """
+        value = getattr(self._ui_handler(), "window_persistence", PERSISTENCE_DEFAULT)
         return (
             value
             if value in (PERSISTENCE_CONTEXT, PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT)
             else PERSISTENCE_DEFAULT
         )
 
-    def _persistence_key(self, name: str) -> str:
-        """Per-entry override settings key, host-namespaced.
-
-        The ``ui_browser`` branch is NOT host-namespaced and QSettings is shared
-        across processes by (org, app), so a bare entry name would let a Maya and
-        a Blender session collide on a same-named entry. Reuse the Switchboard's
-        host-namespacing SSoT (the same one behind per-UI ``ui.settings`` and the
-        shortcut overrides) so ``mirror`` -> ``mirror_maya`` / ``mirror_blender``.
-        """
-        ns = getattr(self.sb, "_host_namespaced_branch", None)
-        leaf = ns(name) if callable(ns) else name
-        return f"persistence_override/{leaf}"
+    def _set_global_persistence(self, mode: str) -> None:
+        """Persist + live-apply the global default via the UI handler."""
+        handler = self._ui_handler()
+        if handler is None:
+            return
+        try:
+            handler.window_persistence = mode
+        except AttributeError:  # handler predates the preference
+            pass
 
     def _entry_persistence_override(self, name: str) -> Optional[str]:
         """The stored per-entry override, or None if the entry follows the default."""
-        value = self._settings.value(self._persistence_key(name), None)
-        return value if value in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT) else None
+        handler = self._ui_handler()
+        getter = getattr(handler, "persistence_override", None)
+        return getter(name) if callable(getter) else None
+
+    def _effective_default(self, name: str) -> str:
+        """What "Default" currently resolves to for *name* — so the row menu can
+        say ``Default (sticky)`` instead of the opaque ``Default (context)``.
+
+        The global default when one is set; otherwise the window's OWN default
+        (``UiHandler.default_persistence``), which needs the loaded widget to
+        read its tags — an unlisted/unloaded entry honestly reports "context".
+        """
+        global_mode = self._global_persistence()
+        if global_mode != PERSISTENCE_CONTEXT:
+            return global_mode
+        hook = getattr(self._ui_handler(), "default_persistence", None)
+        loaded = getattr(self.sb, "loaded_ui", None)
+        ui = loaded.peek(name) if loaded is not None else None
+        if ui is not None and callable(hook):
+            try:
+                return hook(ui)
+            except Exception:
+                pass
+        return global_mode
 
     def _resolve_persistence(self, name: Optional[str]) -> Optional[str]:
         """Effective persistence handed to the handler: per-entry override, else
@@ -1517,11 +1609,39 @@ class SwitchboardBrowser(EditorPanel):
 
     def _set_entry_persistence(self, name: str, mode: Optional[str]) -> None:
         """Set (``"sticky"``/``"transient"``) or clear (``None`` -> follow default)
-        a per-entry override."""
-        key = self._persistence_key(name)
-        if mode in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT):
-            self._settings.setValue(key, mode)
-        else:
+        a per-entry override. The handler re-chromes the window if it's open."""
+        handler = self._ui_handler()
+        setter = getattr(handler, "set_persistence_override", None)
+        if callable(setter):
+            setter(name, mode)
+
+    def _migrate_browser_persistence(self) -> None:
+        """One-shot: hand pre-existing browser-local persistence keys to the handler.
+
+        These keys used to live in the ``ui_browser`` settings branch, where
+        they only ever reached browser-launched windows. Copy them once (never
+        clobbering a value the handler already has) and drop the originals, so
+        a user's stored choices survive the move to handler ownership.
+        """
+        handler = self._ui_handler()
+        if handler is None or not hasattr(handler, "set_persistence_override"):
+            return
+        legacy_global = self._settings.value("opt_persistence", None)
+        if legacy_global in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT):
+            if handler.window_persistence == PERSISTENCE_CONTEXT:
+                handler.window_persistence = legacy_global
+        self._settings.remove("opt_persistence")
+
+        prefix = "persistence_override/"
+        for key in [k for k in self._settings.keys() if k.startswith(prefix)]:
+            mode = self._settings.value(key, None)
+            # The legacy keys were host-namespaced with the same SSoT the
+            # handler uses, so the stored leaf IS the handler's leaf: write the
+            # raw key through rather than re-namespacing an already-namespaced
+            # name (``mirror_maya`` -> ``mirror_maya_maya``).
+            if mode in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT):
+                if handler.config.value(key, None) is None:
+                    handler.config.setValue(key, mode)
             self._settings.remove(key)
 
     # ── Slots ────────────────────────────────────────────────────────────────
@@ -1672,7 +1792,7 @@ class SwitchboardBrowser(EditorPanel):
         # names shown after "Default", so no separate mapping is needed.
         open_as = menu.addMenu("Open as")
         for label, mode in (
-            (f"Default ({self._global_persistence()})", None),
+            (f"Default ({self._effective_default(name)})", None),
             ("Sticky — stays open (hide button)", PERSISTENCE_STICKY),
             ("Transient — hides on leave (pin button)", PERSISTENCE_TRANSIENT),
         ):

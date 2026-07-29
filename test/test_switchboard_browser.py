@@ -22,6 +22,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 app = setup_qt_application()
 
 from qtpy import QtCore, QtWidgets
+from uitk.handlers.ui_handler import UiHandler
 from uitk.switchboard import Switchboard
 from uitk.widgets.editors.switchboard_browser import (
     SwitchboardBrowser,
@@ -459,38 +460,33 @@ class InlineTagEdit(BrowserBase):
 
 
 class ConfigureLaunchedHeader(QtBaseTestCase):
-    """Verify _configure_launched_header behavior in isolation.
+    """Header resolution + the chrome write, against real ``Header`` widgets.
 
-    Pure unit-style tests against the static helper — no Switchboard or
-    full launch flow needed.
+    Policy (which mode a window gets, and when a choice may overwrite a
+    panel's own chrome) lives in ``test_ui_handler``; these cover the two
+    mechanical halves the handler leans on.
     """
 
-    def test_skips_when_no_header_attr(self):
+    def test_no_header_resolves_to_none(self):
         from uitk.handlers.ui_handler import UiHandler
 
         ui = QtWidgets.QWidget()  # no `header` attr, no `findChild` match
-        # Should not raise even though there's nothing to configure
-        UiHandler._configure_launched_header(ui)
+        self.assertIsNone(UiHandler._ui_header(ui))
 
-    def test_skips_when_header_has_existing_buttons(self):
+    def test_header_without_config_buttons_resolves_to_none(self):
         from uitk.handlers.ui_handler import UiHandler
-        from uitk.widgets.header import Header
 
         ui = QtWidgets.QWidget()
-        ui.header = Header(parent=ui, config_buttons=["pin"])  # already configured
-        existing = tuple(ui.header.buttons.keys())
-        UiHandler._configure_launched_header(ui)
-        # Existing config preserved, not replaced
-        self.assertEqual(tuple(ui.header.buttons.keys()), existing)
+        ui.header = QtWidgets.QLabel(parent=ui)  # not a uitk Header
+        self.assertIsNone(UiHandler._ui_header(ui))
 
-    def test_configures_when_header_buttons_empty(self):
+    def test_writes_the_requested_button_set(self):
         from uitk.handlers.ui_handler import UiHandler
         from uitk.widgets.header import Header
 
         ui = QtWidgets.QWidget()
         ui.header = Header(parent=ui, config_buttons=[])  # empty
-        UiHandler._configure_launched_header(ui)
-        # The three browser-launched defaults: hide / collapse / menu
+        UiHandler._write_header_buttons(ui.header, UiHandler.STICKY_HEADER)
         self.assertEqual(
             set(ui.header.buttons.keys()), {"menu", "collapse", "hide"}
         )
@@ -503,7 +499,10 @@ class ConfigureLaunchedHeader(QtBaseTestCase):
         # No `.header` attribute, but findChild("header") will match
         h = Header(parent=ui, config_buttons=[])
         h.setObjectName("header")
-        UiHandler._configure_launched_header(ui)
+        self.assertIs(UiHandler._ui_header(ui), h)
+        UiHandler._write_header_buttons(
+            UiHandler._ui_header(ui), UiHandler.STICKY_HEADER
+        )
         self.assertEqual(
             set(h.buttons.keys()), {"menu", "collapse", "hide"}
         )
@@ -769,8 +768,8 @@ class CloseButtonRoutesThroughHeader(BrowserBase):
         QtWidgets.QApplication.processEvents()
         ui = self.sb.loaded_ui.alpha
 
-        # Inject a header. _configure_launched_header normally does this
-        # for us, but our test fixtures have no header in the .ui XML.
+        # Inject a header. The handler's chrome pass normally does this for
+        # us, but our test fixtures have no header in the .ui XML.
         ui.header = Header(parent=ui, config_buttons=["hide"])
 
         called = {"count": 0}
@@ -1428,14 +1427,34 @@ class ContextMenusFreedOnClose(BrowserBase):
 
 
 class PersistenceOverride(BrowserBase):
-    """Global default + per-entry override for launched-window persistence.
+    """Global default + per-entry override for window persistence.
 
     "sticky" -> hide button (stays open); "transient" -> pin button (auto-hides
-    with the marking menu); "context" (the default) passes no override so each
-    launch keeps its context chrome. The browser resolves an effective value
-    (override beats global) and forwards it — None for context — to
-    ``handler.launch``.
+    with the marking menu); "context" (the default) means "no user choice", so
+    each window keeps its own default. Both values live on the UI *handler* —
+    the browser is only the front end — which is what makes a choice reach
+    marking-menu windows and already-open ones rather than the next browser
+    launch alone.
     """
+
+    def setUp(self):
+        super().setUp()
+        # Handler config is persisted (QSettings) and outlives the per-test
+        # Switchboard, so clear the two keys this class writes.
+        self._reset_persistence()
+        self.addCleanup(self._reset_persistence)
+
+    @property
+    def handler(self):
+        return self.sb.handlers.ui
+
+    def _reset_persistence(self):
+        handler = self.handler
+        handler.config.setValue(
+            UiHandler.WINDOW_PERSISTENCE_KEY, UiHandler.PERSISTENCE_CONTEXT
+        )
+        for name in ("alpha", "beta", "gamma"):
+            handler.config.remove(handler._persistence_key(name))
 
     def _label(self, value):
         return self.browser._persistence_label(value)
@@ -1460,16 +1479,16 @@ class PersistenceOverride(BrowserBase):
         combo = self.browser._cmb_persistence
         combo.setCurrentIndex(combo.findText(self._label(PERSISTENCE_STICKY)))
         QtWidgets.QApplication.processEvents()
-        self.assertEqual(
-            self.browser._settings.value("opt_persistence"), PERSISTENCE_STICKY
-        )
+        # Stored on the HANDLER, not the browser's own branch — that's what
+        # makes it govern marking-menu windows too.
+        self.assertEqual(self.handler.window_persistence, PERSISTENCE_STICKY)
         self.assertEqual(self.browser._global_persistence(), PERSISTENCE_STICKY)
         self.assertEqual(
             self.browser.launch_options().persistence, PERSISTENCE_STICKY
         )
 
     def test_resolve_prefers_entry_override(self):
-        self.browser._settings.setValue("opt_persistence", PERSISTENCE_TRANSIENT)
+        self.handler.window_persistence = PERSISTENCE_TRANSIENT
         self.browser._set_entry_persistence("alpha", PERSISTENCE_STICKY)
         # alpha overridden; beta follows the global default.
         self.assertEqual(self.browser._resolve_persistence("alpha"), PERSISTENCE_STICKY)
@@ -1484,7 +1503,7 @@ class PersistenceOverride(BrowserBase):
         self.assertIsNone(self.browser._resolve_persistence(None))
 
     def test_clear_override_follows_default(self):
-        self.browser._settings.setValue("opt_persistence", PERSISTENCE_STICKY)
+        self.handler.window_persistence = PERSISTENCE_STICKY
         self.browser._set_entry_persistence("alpha", PERSISTENCE_TRANSIENT)
         self.assertEqual(
             self.browser._entry_persistence_override("alpha"), PERSISTENCE_TRANSIENT
@@ -1497,16 +1516,70 @@ class PersistenceOverride(BrowserBase):
         )
 
     def test_persistence_key_is_host_namespaced(self):
-        key = self.browser._persistence_key("alpha")
+        key = self.handler._persistence_key("alpha")
         self.assertTrue(key.startswith("persistence_override/"))
         # Reuses the Switchboard host-namespacing SSoT so Maya/Blender sessions
         # can't collide on a same-named entry via the shared (org, app) store.
         self.assertTrue(key.endswith(self.sb._host_namespaced_branch("alpha")))
 
+    def test_effective_default_reports_the_window_default(self):
+        """The row menu's "Default (…)" must name what Default actually does,
+        not echo the opaque "context" sentinel."""
+        handler = self.handler
+        ui = self.sb.loaded_ui.alpha  # load it so the hook can read its tags
+        self.assertIsNotNone(ui)
+        handler.default_persistence = lambda _ui: PERSISTENCE_STICKY
+        self.addCleanup(lambda: handler.__dict__.pop("default_persistence", None))
+        self.assertEqual(self.browser._effective_default("alpha"), PERSISTENCE_STICKY)
+        # A global choice outranks the per-window default and is what shows.
+        handler.window_persistence = PERSISTENCE_TRANSIENT
+        self.assertEqual(
+            self.browser._effective_default("alpha"), PERSISTENCE_TRANSIENT
+        )
+
+    def test_restore_defaults_persists_the_combo_reset(self):
+        """*Restore Defaults* must write through, not just move the display.
+
+        Bug: ``_BrowserState.reset`` used ``setCurrentText``, and uitk's
+        ComboBox blocks that setter's signals — so the combo showed the default
+        while the stored value kept the old choice until the next restart.
+        Same gap hit the theme combo.
+        """
+        combo = self.browser._cmb_persistence
+        combo.setCurrentIndex(combo.findText(self._label(PERSISTENCE_STICKY)))
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(self.handler.window_persistence, PERSISTENCE_STICKY)
+
+        self.browser.state.reset(combo)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(combo.currentText(), self._label(PERSISTENCE_CONTEXT))
+        self.assertEqual(self.handler.window_persistence, PERSISTENCE_CONTEXT)
+
+    def test_effective_default_falls_back_for_an_unloaded_entry(self):
+        """No widget -> no tags to read, so it honestly reports "context"."""
+        self.assertEqual(self.browser._effective_default("gamma"), PERSISTENCE_CONTEXT)
+
+    def test_legacy_browser_keys_migrate_to_the_handler(self):
+        """Choices stored while the browser owned the keys must survive the
+        move to handler ownership rather than silently resetting."""
+        legacy_key = f"persistence_override/{self.sb._host_namespaced_branch('alpha')}"
+        self.browser._settings.setValue("opt_persistence", PERSISTENCE_TRANSIENT)
+        self.browser._settings.setValue(legacy_key, PERSISTENCE_STICKY)
+
+        self.browser._migrate_browser_persistence()
+
+        self.assertEqual(self.handler.window_persistence, PERSISTENCE_TRANSIENT)
+        self.assertEqual(
+            self.handler.persistence_override("alpha"), PERSISTENCE_STICKY
+        )
+        # Originals dropped so the migration is one-shot.
+        self.assertIsNone(self.browser._settings.value("opt_persistence", None))
+        self.assertIsNone(self.browser._settings.value(legacy_key, None))
+
     def test_launch_forwards_resolved_override(self):
         from unittest import mock
 
-        self.browser._settings.setValue("opt_persistence", PERSISTENCE_CONTEXT)
+        self.handler.window_persistence = PERSISTENCE_CONTEXT
         self.browser._set_entry_persistence("alpha", PERSISTENCE_TRANSIENT)
         entry = self.browser._model.entry_for_name("alpha")
         with mock.patch.object(entry.handler, "launch") as launch:
@@ -1563,7 +1636,7 @@ class PersistenceOverride(BrowserBase):
         )
 
     def test_preset_roundtrip_persistence(self):
-        self.browser._settings.setValue("opt_persistence", PERSISTENCE_TRANSIENT)
+        self.handler.window_persistence = PERSISTENCE_TRANSIENT
         self.browser._cmb_persistence.blockSignals(True)
         self.browser._cmb_persistence.setCurrentText(self._label(PERSISTENCE_TRANSIENT))
         self.browser._cmb_persistence.blockSignals(False)
@@ -1572,11 +1645,9 @@ class PersistenceOverride(BrowserBase):
         self.assertEqual(data["launch"]["persistence"], PERSISTENCE_TRANSIENT)
 
         # Flip the live state, then import the captured preset back.
-        self.browser._settings.setValue("opt_persistence", PERSISTENCE_CONTEXT)
+        self.handler.window_persistence = PERSISTENCE_CONTEXT
         self.browser._import_preset_data(data)
-        self.assertEqual(
-            self.browser._settings.value("opt_persistence"), PERSISTENCE_TRANSIENT
-        )
+        self.assertEqual(self.handler.window_persistence, PERSISTENCE_TRANSIENT)
         self.assertEqual(
             self.browser._cmb_persistence.currentText(),
             self._label(PERSISTENCE_TRANSIENT),
