@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-07-25",
+  "generated_at": "2026-07-29",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -773,7 +773,7 @@
         {
           "name": "ExampleSlots",
           "summary": "Slots for the UITK Example — method names match widget objectNames.",
-          "line": 52,
+          "line": 49,
           "bases": [
             "ptk.LoggingMixin"
           ],
@@ -784,7 +784,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "",
-              "line": 142,
+              "line": 166,
               "deprecated": false
             },
             {
@@ -793,7 +793,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Wire the full option_box plugin stack onto the path field.",
-              "line": 236,
+              "line": 273,
               "deprecated": false
             },
             {
@@ -802,7 +802,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "Default signal = textChanged (debounced 300 ms via ``widget.debounce``).",
-              "line": 269,
+              "line": 334,
               "deprecated": false
             },
             {
@@ -811,7 +811,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Populate the package combo with every importable UITK subpackage.",
-              "line": 290,
+              "line": 354,
               "deprecated": false
             },
             {
@@ -820,7 +820,7 @@
               "kind": "method",
               "signature": "(self, index)",
               "summary": "Default signal = currentIndexChanged.",
-              "line": 307,
+              "line": 379,
               "deprecated": false
             },
             {
@@ -829,7 +829,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Inline checkbox panel for tree view options.",
-              "line": 319,
+              "line": 388,
               "deprecated": false
             },
             {
@@ -838,7 +838,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "",
-              "line": 366,
+              "line": 448,
               "deprecated": false
             },
             {
@@ -847,7 +847,7 @@
               "kind": "method",
               "signature": "(self, item, column, widget=None)",
               "summary": "Default signal = itemClicked.",
-              "line": 397,
+              "line": 493,
               "deprecated": false
             }
           ]
@@ -2482,7 +2482,7 @@
         {
           "name": "Switchboard",
           "summary": "Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.",
-          "line": 30,
+          "line": 31,
           "bases": [
             "QtCore.QObject",
             "ptk.HelpMixin",
@@ -2502,7 +2502,7 @@
               "kind": "method",
               "signature": "(self, name: str, instance, defaults: dict = None)",
               "summary": "Register a handler instance and apply defaults to its config.",
-              "line": 378,
+              "line": 388,
               "deprecated": false
             },
             {
@@ -2511,7 +2511,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Yield every :class:`HandlerEntry` from every launchable handler.",
-              "line": 409,
+              "line": 419,
               "deprecated": false
             },
             {
@@ -2520,7 +2520,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Return the currently set UI, or None — no auto-load, no warning.",
-              "line": 474,
+              "line": 484,
               "deprecated": false
             },
             {
@@ -2529,7 +2529,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QWidget",
               "summary": "Get or load the current UI if not already set.",
-              "line": 485,
+              "line": 495,
               "deprecated": false
             },
             {
@@ -2538,7 +2538,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Get the previous UI from history — the one before the current UI.",
-              "line": 532,
+              "line": 542,
               "deprecated": false
             },
             {
@@ -2547,7 +2547,7 @@
               "kind": "property",
               "signature": "(self) -> object",
               "summary": "Get the last called slot.",
-              "line": 547,
+              "line": 557,
               "deprecated": false
             },
             {
@@ -2556,7 +2556,7 @@
               "kind": "property",
               "signature": "(self) -> set",
               "summary": "Return all currently visible MainWindow instances.",
-              "line": 560,
+              "line": 570,
               "deprecated": false
             },
             {
@@ -2565,7 +2565,7 @@
               "kind": "method",
               "signature": "(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=0, tags=None)",
               "summary": "Add new locations to the Switchboard registries.",
-              "line": 639,
+              "line": 649,
               "deprecated": false
             },
             {
@@ -2574,7 +2574,7 @@
               "kind": "method",
               "signature": "(self) -> list",
               "summary": "Extends the 'load_ui' method to load all UI from a given path.",
-              "line": 746,
+              "line": 756,
               "deprecated": false
             },
             {
@@ -2583,7 +2583,7 @@
               "kind": "method",
               "signature": "(self, file: str) -> QtWidgets.QMainWindow",
               "summary": "Load a UI from the given .ui path via the configured loader delegate.",
-              "line": 755,
+              "line": 765,
               "deprecated": false
             },
             {
@@ -2592,7 +2592,7 @@
               "kind": "method",
               "signature": "(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow",
               "summary": "",
-              "line": 784,
+              "line": 794,
               "deprecated": false
             },
             {
@@ -2601,7 +2601,7 @@
               "kind": "method",
               "signature": "(self, ui=None) -> QtWidgets.QWidget",
               "summary": "Get a dynamic UI using its string name, or if no argument is given, return the current UI.",
-              "line": 858,
+              "line": 868,
               "deprecated": false
             },
             {
@@ -2610,7 +2610,7 @@
               "kind": "method",
               "signature": "(self, ui, upstream=False, exact=False, downstream=False, reverse=False)",
               "summary": "Get UIs related to the given UI via shared base name.",
-              "line": 885,
+              "line": 895,
               "deprecated": false
             },
             {
@@ -2619,7 +2619,7 @@
               "kind": "method",
               "signature": "(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]",
               "summary": "Convert the given legal name to its original name(s) by searching the UI files.",
-              "line": 951,
+              "line": 961,
               "deprecated": false
             },
             {
@@ -2628,7 +2628,7 @@
               "kind": "method",
               "signature": "(self, path: str, tags: Iterable[str]) -> None",
               "summary": "Persist tags into a .ui file as a Designer-safe dynamic property.",
-              "line": 1033,
+              "line": 1043,
               "deprecated": false
             },
             {
@@ -2637,7 +2637,7 @@
               "kind": "method",
               "signature": "(self, index=None, allow_duplicates=False, inc=None, exc=None)",
               "summary": "Get the UI history.",
-              "line": 1138,
+              "line": 1148,
               "deprecated": false
             },
             {
@@ -2646,7 +2646,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Re-show the most-recent non-transient UI that isn't already on screen.",
-              "line": 1149,
+              "line": 1159,
               "deprecated": false
             },
             {
@@ -2655,7 +2655,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Re-invoke the last slot with the exact args it last ran with.",
-              "line": 1180,
+              "line": 1190,
               "deprecated": false
             }
           ]
@@ -3065,7 +3065,7 @@
               "kind": "method",
               "signature": "(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]",
               "summary": "",
-              "line": 1058,
+              "line": 1083,
               "deprecated": false
             },
             {
@@ -3074,7 +3074,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]",
               "summary": "",
-              "line": 1093,
+              "line": 1118,
               "deprecated": false
             },
             {
@@ -3083,7 +3083,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.",
-              "line": 1103,
+              "line": 1128,
               "deprecated": false
             },
             {
@@ -3092,7 +3092,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.",
-              "line": 1117,
+              "line": 1142,
               "deprecated": false
             },
             {
@@ -3101,7 +3101,7 @@
               "kind": "method",
               "signature": "(self, widget, slot=None)",
               "summary": "Connect a widget's signals to its slot.",
-              "line": 1138,
+              "line": 1163,
               "deprecated": false
             },
             {
@@ -3110,7 +3110,7 @@
               "kind": "method",
               "signature": "(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)",
               "summary": "Get the slot history.",
-              "line": 1220,
+              "line": 1245,
               "deprecated": false
             }
           ]
@@ -3985,7 +3985,7 @@
               "kind": "method",
               "signature": "(self, layout)",
               "summary": "Override setLayout.",
-              "line": 187,
+              "line": 194,
               "deprecated": false
             },
             {
@@ -3994,7 +3994,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Add a widget to the collapsible content area",
-              "line": 193,
+              "line": 200,
               "deprecated": false
             },
             {
@@ -4003,7 +4003,7 @@
               "kind": "method",
               "signature": "(self, layout)",
               "summary": "Add a layout to the collapsible content area",
-              "line": 205,
+              "line": 212,
               "deprecated": false
             },
             {
@@ -4012,7 +4012,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return appropriate size hint based on current state.",
-              "line": 212,
+              "line": 219,
               "deprecated": false
             },
             {
@@ -4021,7 +4021,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Paint the group box without its checkable indicator.",
-              "line": 237,
+              "line": 244,
               "deprecated": false
             }
           ]
@@ -6030,7 +6030,7 @@
         {
           "name": "Header",
           "summary": "Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.",
-          "line": 11,
+          "line": 12,
           "bases": [
             "QtWidgets.QLabel",
             "AttributesMixin",
@@ -6045,7 +6045,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 124,
+              "line": 125,
               "deprecated": false
             },
             {
@@ -6054,7 +6054,7 @@
               "kind": "method",
               "signature": "(self, icon_filename)",
               "summary": "Get the full path to an icon file in the uitk/icons directory.",
-              "line": 143,
+              "line": 144,
               "deprecated": false
             },
             {
@@ -6063,7 +6063,7 @@
               "kind": "method",
               "signature": "(self, icon_filename, size=16)",
               "summary": "Create a QIcon from an SVG file.",
-              "line": 151,
+              "line": 152,
               "deprecated": false
             },
             {
@@ -6072,7 +6072,7 @@
               "kind": "method",
               "signature": "(self, icon_filename, callback, button_type=None)",
               "summary": "Create a button with the given icon and callback.",
-              "line": 171,
+              "line": 172,
               "deprecated": false
             },
             {
@@ -6081,7 +6081,7 @@
               "kind": "method",
               "signature": "(self, button_type=None)",
               "summary": "Check if the header has a specific button type or any button.",
-              "line": 200,
+              "line": 201,
               "deprecated": false
             },
             {
@@ -6090,7 +6090,7 @@
               "kind": "method",
               "signature": "(self, *button_list)",
               "summary": "Configure header buttons from a list and align them to the right.",
-              "line": 221,
+              "line": 222,
               "deprecated": false
             },
             {
@@ -6099,7 +6099,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 277,
+              "line": 278,
               "deprecated": false
             },
             {
@@ -6108,7 +6108,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 282,
+              "line": 283,
               "deprecated": false
             },
             {
@@ -6117,7 +6117,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 288,
+              "line": 289,
               "deprecated": false
             },
             {
@@ -6126,7 +6126,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 294,
+              "line": 295,
               "deprecated": false
             },
             {
@@ -6135,7 +6135,7 @@
               "kind": "method",
               "signature": "(self, title)",
               "summary": "Set the title of the header.",
-              "line": 312,
+              "line": 313,
               "deprecated": false
             },
             {
@@ -6144,7 +6144,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get the title of the header (without any version suffix).",
-              "line": 320,
+              "line": 321,
               "deprecated": false
             },
             {
@@ -6153,7 +6153,7 @@
               "kind": "method",
               "signature": "(self, version)",
               "summary": "Set an optional version string appended to the title.",
-              "line": 328,
+              "line": 329,
               "deprecated": false
             },
             {
@@ -6162,7 +6162,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the current version suffix (without the ``v`` prefix).",
-              "line": 340,
+              "line": 341,
               "deprecated": false
             },
             {
@@ -6171,7 +6171,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "Override to remember the untruncated title for elision.",
-              "line": 358,
+              "line": 359,
               "deprecated": false
             },
             {
@@ -6180,7 +6180,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Minimize the window: collapse to header-only, narrow to a fixed width,",
-              "line": 412,
+              "line": 413,
               "deprecated": false
             },
             {
@@ -6189,7 +6189,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Restore a minimized window to its original size and position.",
-              "line": 468,
+              "line": 469,
               "deprecated": false
             },
             {
@@ -6198,7 +6198,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Toggle between maximized and normal window state.",
-              "line": 564,
+              "line": 565,
               "deprecated": false
             },
             {
@@ -6207,7 +6207,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Toggle between fullscreen and normal window state.",
-              "line": 578,
+              "line": 579,
               "deprecated": false
             },
             {
@@ -6216,7 +6216,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hide the parent window.",
-              "line": 590,
+              "line": 591,
               "deprecated": false
             },
             {
@@ -6225,7 +6225,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Unhide the parent window.",
-              "line": 603,
+              "line": 604,
               "deprecated": false
             },
             {
@@ -6234,7 +6234,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Emit the refresh_requested signal.",
-              "line": 609,
+              "line": 610,
               "deprecated": false
             },
             {
@@ -6243,7 +6243,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "Set the tool's help/instruction text and ensure the help button is shown.",
-              "line": 618,
+              "line": 619,
               "deprecated": false
             },
             {
@@ -6252,7 +6252,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the current help text, or ``\"\"``.",
-              "line": 652,
+              "line": 653,
               "deprecated": false
             },
             {
@@ -6261,7 +6261,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Pop the help tooltip up at the help button.",
-              "line": 656,
+              "line": 657,
               "deprecated": false
             },
             {
@@ -6270,7 +6270,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Show the menu.",
-              "line": 672,
+              "line": 673,
               "deprecated": false
             },
             {
@@ -6279,7 +6279,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Toggle between collapsed (header only) and expanded window states.",
-              "line": 676,
+              "line": 677,
               "deprecated": false
             },
             {
@@ -6288,7 +6288,7 @@
               "kind": "method",
               "signature": "(self, fixed_width=None)",
               "summary": "Collapse the parent window to show only the header.",
-              "line": 710,
+              "line": 711,
               "deprecated": false
             },
             {
@@ -6297,7 +6297,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Expand the window back to its original size.",
-              "line": 777,
+              "line": 778,
               "deprecated": false
             },
             {
@@ -6306,7 +6306,7 @@
               "kind": "method",
               "signature": "(self, from_drag=False)",
               "summary": "Toggle pinning of the window.",
-              "line": 849,
+              "line": 850,
               "deprecated": false
             },
             {
@@ -6315,7 +6315,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Force the header into an unpinned state without hiding the window.",
-              "line": 889,
+              "line": 890,
               "deprecated": false
             },
             {
@@ -6324,7 +6324,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the mouse press event.",
-              "line": 899,
+              "line": 900,
               "deprecated": false
             },
             {
@@ -6333,7 +6333,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the mouse move event.",
-              "line": 909,
+              "line": 910,
               "deprecated": false
             },
             {
@@ -6342,7 +6342,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 920,
+              "line": 921,
               "deprecated": false
             },
             {
@@ -6351,7 +6351,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 925,
+              "line": 926,
               "deprecated": false
             },
             {
@@ -6360,7 +6360,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Attach this header to the top of a QWidget or QMainWindow's centralWidget if appropriate.",
-              "line": 978,
+              "line": 989,
               "deprecated": false
             },
             {
@@ -6369,7 +6369,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Reset minimize/collapse state when header (and window) is hidden.",
-              "line": 1020,
+              "line": 1031,
               "deprecated": false
             }
           ]
@@ -6751,9 +6751,9 @@
               "name": "adjust_height_by",
               "qualname": "MainWindow.adjust_height_by",
               "kind": "method",
-              "signature": "(self, delta: int) -> None",
+              "signature": "(self, delta: int, baseline: Optional[int] = None) -> None",
               "summary": "Apply a signed pixel delta to the window's height.",
-              "line": 792,
+              "line": 778,
               "deprecated": false
             },
             {
@@ -6825,7 +6825,7 @@
               "kind": "method",
               "signature": "(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None",
               "summary": "Registers all child widgets starting from the given widget (or central widget if None).",
-              "line": 1081,
+              "line": 1089,
               "deprecated": false
             },
             {
@@ -6834,7 +6834,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the focus event to set the current UI when this window gains focus.",
-              "line": 1116,
+              "line": 1124,
               "deprecated": false
             },
             {
@@ -6843,7 +6843,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1122,
+              "line": 1130,
               "deprecated": false
             },
             {
@@ -6852,7 +6852,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on resize so pinned/non-hidden windows persist size.",
-              "line": 1126,
+              "line": 1134,
               "deprecated": false
             },
             {
@@ -6861,7 +6861,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on move so pinned/non-hidden windows persist position.",
-              "line": 1132,
+              "line": 1140,
               "deprecated": false
             },
             {
@@ -6870,7 +6870,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement hideEvent to emit custom signal when window is hidden.",
-              "line": 1138,
+              "line": 1146,
               "deprecated": false
             },
             {
@@ -6879,7 +6879,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement closeEvent to save window geometry and emit custom signal.",
-              "line": 1162,
+              "line": 1170,
               "deprecated": false
             },
             {
@@ -6888,7 +6888,7 @@
               "kind": "method",
               "signature": "(self, style: str) -> None",
               "summary": "Overrides the setStyleSheet method to respect locking.",
-              "line": 1170,
+              "line": 1178,
               "deprecated": false
             },
             {
@@ -6897,7 +6897,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Resets the window's stylesheet to its original state.",
-              "line": 1184,
+              "line": 1192,
               "deprecated": false
             }
           ]
@@ -8243,7 +8243,7 @@
               "kind": "method",
               "signature": "(self, location) -> None",
               "summary": "",
-              "line": 135,
+              "line": 144,
               "deprecated": false
             },
             {
@@ -8252,7 +8252,7 @@
               "kind": "method",
               "signature": "(self, string, fontColor='white', background=None, fontSize=5) -> None",
               "summary": "Set the text to be displayed with the specified alignment unless overridden by HTML.",
-              "line": 177,
+              "line": 186,
               "deprecated": false
             },
             {
@@ -8261,7 +8261,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 221,
+              "line": 230,
               "deprecated": false
             },
             {
@@ -8270,7 +8270,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 226,
+              "line": 235,
               "deprecated": false
             },
             {
@@ -8279,7 +8279,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 235,
+              "line": 244,
               "deprecated": false
             },
             {
@@ -8288,7 +8288,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 240,
+              "line": 249,
               "deprecated": false
             }
           ]
@@ -8757,7 +8757,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent) -> None",
               "summary": "",
-              "line": 38,
+              "line": 41,
               "deprecated": false
             },
             {
@@ -8766,7 +8766,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QMouseEvent) -> None",
               "summary": "Sync the window's max size to its content before the drag starts.",
-              "line": 44,
+              "line": 47,
               "deprecated": false
             },
             {
@@ -8775,7 +8775,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent) -> None",
               "summary": "",
-              "line": 77,
+              "line": 80,
               "deprecated": false
             },
             {
@@ -8784,7 +8784,7 @@
               "kind": "method",
               "signature": "(self) -> QtGui.QColor",
               "summary": "",
-              "line": 92,
+              "line": 95,
               "deprecated": false
             },
             {
@@ -8793,7 +8793,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "",
-              "line": 95,
+              "line": 98,
               "deprecated": false
             },
             {
@@ -8802,7 +8802,7 @@
               "kind": "method",
               "signature": "(self) -> QtGui.QColor",
               "summary": "",
-              "line": 104,
+              "line": 107,
               "deprecated": false
             },
             {
@@ -8811,7 +8811,7 @@
               "kind": "method",
               "signature": "(self, value) -> None",
               "summary": "",
-              "line": 107,
+              "line": 110,
               "deprecated": false
             },
             {
@@ -8820,7 +8820,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QPaintEvent) -> None",
               "summary": "",
-              "line": 119,
+              "line": 122,
               "deprecated": false
             }
           ]
@@ -8828,7 +8828,7 @@
         {
           "name": "SizeGripMixin",
           "summary": "Mixin that provides a consistent QSizeGrip attachment helper.",
-          "line": 146,
+          "line": 149,
           "bases": [],
           "members": [
             {
@@ -8837,7 +8837,16 @@
               "kind": "staticmethod",
               "signature": "(window: QtWidgets.QWidget) -> Tuple[int, int]",
               "summary": "Return ``(max_w, max_h)`` the window's content can actually use.",
-              "line": 153,
+              "line": 156,
+              "deprecated": false
+            },
+            {
+              "name": "content_min_height",
+              "qualname": "SizeGripMixin.content_min_height",
+              "kind": "staticmethod",
+              "signature": "(window: QtWidgets.QWidget) -> int",
+              "summary": "Return the true minimum height the window's content needs.",
+              "line": 208,
               "deprecated": false
             },
             {
@@ -8846,7 +8855,7 @@
               "kind": "staticmethod",
               "signature": "(window: QtWidgets.QWidget) -> None",
               "summary": "Sync the window's maximum size to its content's real maximum.",
-              "line": 306,
+              "line": 366,
               "deprecated": false
             },
             {
@@ -8855,7 +8864,7 @@
               "kind": "method",
               "signature": "(self, container: Optional[QtWidgets.QWidget] = None, layout: Optional[QtWidgets.QLayout] = None, *, alignment: Optional[QtCore.Qt.Alignment] = None) -> Optional[QtWidgets.QSizeGrip]",
               "summary": "Create or reuse a size grip and ensure it is inserted in *layout*.",
-              "line": 325,
+              "line": 436,
               "deprecated": false
             }
           ]
@@ -9183,26 +9192,9 @@
       "functions": [],
       "classes": [
         {
-          "name": "TooltipProxy",
-          "summary": "Per-widget tooltip namespace stamped on each registered MainWindow widget.",
-          "line": 22,
-          "bases": [],
-          "members": [
-            {
-              "name": "bind",
-              "qualname": "TooltipProxy.bind",
-              "kind": "method",
-              "signature": "(self, provider) -> None",
-              "summary": "Register a callable() -> str called lazily on QEvent.ToolTip hover.",
-              "line": 60,
-              "deprecated": false
-            }
-          ]
-        },
-        {
           "name": "TooltipFormat",
           "summary": "Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt``.",
-          "line": 90,
+          "line": 75,
           "bases": [],
           "members": [
             {
@@ -9211,7 +9203,7 @@
               "kind": "staticmethod",
               "signature": "(*keys: str) -> str",
               "summary": "Render keyboard key(s) as styled ``<kbd>``-like chips.",
-              "line": 101,
+              "line": 86,
               "deprecated": false
             },
             {
@@ -9220,7 +9212,7 @@
               "kind": "staticmethod",
               "signature": "(text: str, color: str = _C_ACCENT) -> str",
               "summary": "Highlight ``text`` in ``color`` (defaults to the accent color).",
-              "line": 120,
+              "line": 105,
               "deprecated": false
             },
             {
@@ -9229,7 +9221,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = None, body: str = None, bullets: list = None, steps: list = None, rows: list = None, sections: list = None, notes: list = None) -> str",
               "summary": "Build a rich-text HTML tooltip string.",
-              "line": 134,
+              "line": 119,
               "deprecated": false
             },
             {
@@ -9238,7 +9230,47 @@
               "kind": "staticmethod",
               "signature": "(template: str, context: dict, *, title: str = None, body: str = None, descriptions: dict = None, final: str = None, final_label: str = '→', empty_text: str = None, notes: list = None) -> str",
               "summary": "Build a live, self-documenting tooltip for a pattern/template field.",
-              "line": 235,
+              "line": 220,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "TooltipProxy",
+          "summary": "Per-widget tooltip namespace stamped on each registered MainWindow widget.",
+          "line": 381,
+          "bases": [
+            "TooltipFormat",
+            "_TooltipBindInternal"
+          ],
+          "members": [
+            {
+              "name": "bind",
+              "qualname": "TooltipProxy.bind",
+              "kind": "method",
+              "signature": "(self, provider) -> None",
+              "summary": "Register a callable() -> str called lazily on QEvent.ToolTip hover.",
+              "line": 409,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "TooltipNamespace",
+          "summary": "The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.",
+          "line": 428,
+          "bases": [
+            "TooltipFormat",
+            "_TooltipBindInternal"
+          ],
+          "members": [
+            {
+              "name": "bind",
+              "qualname": "TooltipNamespace.bind",
+              "kind": "method",
+              "signature": "(self, widgets, provider, ui=None) -> list",
+              "summary": "Bind a lazy tooltip *provider* to one widget, several, or a name range.",
+              "line": 450,
               "deprecated": false
             }
           ]
@@ -9246,7 +9278,7 @@
         {
           "name": "TooltipMixin",
           "summary": "Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.",
-          "line": 396,
+          "line": 487,
           "bases": [],
           "members": []
         }

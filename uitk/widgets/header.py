@@ -4,6 +4,7 @@ import os
 import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.managers.icon_manager import IconManager
 
@@ -957,6 +958,16 @@ class Header(
         is_frameless = bool(flags & QtCore.Qt.FramelessWindowHint)
         if not is_frameless:
             self.hide()
+            # The hide is a content-visibility change: on a fully-fixed
+            # window the header's row is now pure dead space. End with the
+            # same content-max sync the CollapsableGroup toggles use — it
+            # snaps the window to the new cap and no-ops when the content is
+            # growable. Without it, a geometry-restored window (whose
+            # show-time sync ran while the header was still visible) kept a
+            # header-high dead band until the next grip press.
+            if window.layout() is not None:
+                window.layout().activate()  # hints reflect the hidden header
+            SizeGripMixin.sync_window_max_to_content(window)
 
     def _sync_menu_button_visibility(self, *_):
         """Show the header's menu button only when its menu has real content.

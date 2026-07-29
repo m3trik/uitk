@@ -26,6 +26,7 @@ app = setup_qt_application()
 from qtpy import QtWidgets, QtGui  # noqa: E402
 
 from uitk.widgets.collapsableGroup import CollapsableGroup  # noqa: E402
+from uitk.widgets.mixins.size_grip import SizeGripMixin  # noqa: E402
 
 
 class TestCollapsableGroupIndicatorHidden(QtBaseTestCase):
@@ -98,6 +99,89 @@ class TestCollapsableGroupIndicatorHidden(QtBaseTestCase):
         self.assertTrue(child.isHidden())
         g.setChecked(True)  # expand
         self.assertFalse(child.isHidden())
+
+
+class TestFallbackWindowResizeFloor(QtBaseTestCase):
+    """``_fallback_window_resize`` (non-``MainWindow`` hosts) clamps to the
+    content's REAL minimum, using the same rule ``MainWindow`` does.
+
+    Qt's ``qSmartMinSize`` replaces a container's layout-computed minimum with
+    any explicit ``setMinimumSize`` — even one SMALLER than the content needs —
+    so a stale ``minimumSize`` drags the *window's* hint below the real content
+    height, and a resize to that value packs fixed-height rows into overlap.
+    ``MainWindow`` has always guarded this; the fallback used the bare window
+    hint, so the two floors could diverge. Both now call
+    ``SizeGripMixin.content_min_height``.
+    """
+
+    def _host(self):
+        """Plain QMainWindow (no ``adjust_height_by``) with an under-reporting
+        central: rows need 200px of content, the explicit minimum claims 10."""
+        win = self.track_widget(QtWidgets.QMainWindow())
+        central = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        for _ in range(5):
+            row = QtWidgets.QLabel("row")
+            row.setFixedHeight(40)  # 5 * 40 = 200px of incompressible content
+            layout.addWidget(row)
+        group = CollapsableGroup("Collapsible", restore_state=False)
+        group.restore_state = False
+        g_layout = QtWidgets.QVBoxLayout(group)
+        g_layout.setContentsMargins(0, 0, 0, 0)
+        body = QtWidgets.QLabel("body")
+        body.setFixedHeight(300)
+        g_layout.addWidget(body)
+        layout.addWidget(group)
+        central.setMinimumHeight(10)  # the stale/under-reporting explicit min
+        win.setCentralWidget(central)
+        win.show()
+        QtWidgets.QApplication.processEvents()
+        return win, central, group
+
+    def test_host_under_reports_its_minimum(self):
+        """Precondition: the explicit min really does drag the window hint below
+        the central's own (layout-computed) minimum — else the test is vacuous."""
+        win, central, _group = self._host()
+        self.assertLess(
+            win.minimumSizeHint().height(),
+            central.minimumSizeHint().height(),
+            "fixture no longer reproduces the under-reporting minimum",
+        )
+        self.assertFalse(
+            hasattr(win, "adjust_height_by"),
+            "fixture must exercise the fallback, not the MainWindow path",
+        )
+
+    def test_content_min_height_sees_past_the_explicit_minimum(self):
+        """The shared rule reports the container's real layout minimum."""
+        win, central, _group = self._host()
+        self.assertEqual(
+            SizeGripMixin.content_min_height(win),
+            max(
+                win.minimumSizeHint().height(),
+                central.minimumSizeHint().height(),
+            ),
+        )
+
+    def test_fallback_clamps_an_oversized_shrink_to_that_floor(self):
+        """A shrink larger than the content can absorb stops at the real
+        minimum, not at the under-reported window hint."""
+        win, central, _group = self._host()
+        floor = SizeGripMixin.content_min_height(win)
+        self.assertGreater(floor, win.minimumSizeHint().height())
+
+        CollapsableGroup._fallback_window_resize(win, win.height(), -10_000)
+        QtWidgets.QApplication.processEvents()
+
+        self.assertGreaterEqual(
+            win.height(),
+            floor,
+            "fallback resized below the content's real minimum — the fixed rows "
+            "are packed into overlap",
+        )
+        self.assertGreaterEqual(win.height(), central.minimumSizeHint().height())
 
 
 if __name__ == "__main__":

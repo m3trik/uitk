@@ -19,29 +19,21 @@ class _ProviderFilter(QtCore.QObject):
         return False  # always propagate so Qt still shows the tooltip
 
 
-class TooltipProxy:
-    """Per-widget tooltip namespace stamped on each registered MainWindow widget.
+class _TooltipBindInternal:
+    """Internal base carrying the one lazy-provider installer behind ``bind``.
 
-    Accessed as ``widget.tooltip`` after registration.
-
-    Example::
-
-        # Lazy dynamic content — always current on hover
-        self.ui.some_widget.tooltip.bind(lambda: f"Current value: {self._state}")
-
-        # Rich static content built at init time
-        widget.menu.add(
-            "QComboBox",
-            setToolTip=fmt(
-                title="Export Mode",
-                bullets=["<b>Composite</b> — mixed WAV", "<b>Keyed Tracks</b> — per source"],
-            ),
-        )
+    Shared by both bind-capable namespaces (:class:`TooltipProxy`, the per-widget
+    form, and :class:`TooltipNamespace`, the switchboard-level owner) so the two
+    entry points install identically — and so the module keeps its no-top-level-
+    functions rule (see :class:`TooltipFormat`).
     """
 
-    def __init__(self, widget: QtWidgets.QWidget):
-        self._ref = weakref.ref(widget)
-        self._filter: QtCore.QObject = None
+    #: Dynamic property holding a widget's live provider filter. Kept on the
+    #: WIDGET rather than on whichever namespace installed it, so the
+    #: switchboard-level and per-widget entry points dedupe against each other
+    #: instead of stacking filters (Qt runs filters newest-first, so a stacked
+    #: older provider would run *last* and win — silently reviving stale text).
+    _FILTER_PROP = "_uitk_tooltip_filter"
 
     @staticmethod
     def _safe_provider(fn):
@@ -57,24 +49,17 @@ class TooltipProxy:
             return _wrapped
         return fn
 
-    def bind(self, provider) -> None:
-        """Register a callable() -> str called lazily on QEvent.ToolTip hover.
-
-        The tooltip content is computed only when the user actually hovers,
-        so it is always fresh without any manual refresh calls.  Bound-method
-        providers are captured via weakref so the proxy does not keep the
-        slot instance alive after the UI is rebuilt.
-
-        Parameters:
-            provider: A zero-argument callable returning the tooltip string.
-        """
-        widget = self._ref()
+    @classmethod
+    def _install_provider(cls, widget, provider) -> None:
+        """Install (or replace) *widget*'s lazy tooltip provider."""
         if widget is None:
             return
-        if self._filter is not None:
-            widget.removeEventFilter(self._filter)
-        self._filter = _ProviderFilter(TooltipProxy._safe_provider(provider), widget)
-        widget.installEventFilter(self._filter)
+        previous = widget.property(cls._FILTER_PROP)
+        if previous is not None:
+            widget.removeEventFilter(previous)
+        filt = _ProviderFilter(cls._safe_provider(provider), widget)
+        widget.installEventFilter(filt)
+        widget.setProperty(cls._FILTER_PROP, filt)
 
 
 # --- Color palette ---------------------------------------------------------
@@ -391,6 +376,112 @@ class TooltipFormat:
             + final_html
             + (TooltipFormat.fmt(notes=note_list) if note_list else "")
         )
+
+
+class TooltipProxy(TooltipFormat, _TooltipBindInternal):
+    """Per-widget tooltip namespace stamped on each registered MainWindow widget.
+
+    Accessed as ``widget.tooltip`` after registration. Inherits the whole
+    :class:`TooltipFormat` DSL (``fmt`` / ``kbd`` / ``hl`` /
+    ``placeholder_preview``) and adds :meth:`bind`, so a slot never has to
+    import anything to build a rich tooltip — the namespace is reachable from
+    any registered widget (``widget.tooltip.fmt(...)``) and, for code that has
+    no widget in hand yet, from the Switchboard (``self.sb.tooltip.fmt(...)``).
+
+    Example::
+
+        # Lazy dynamic content — always current on hover
+        self.ui.some_widget.tooltip.bind(lambda: f"Current value: {self._state}")
+
+        # Rich static content built at init time
+        widget.menu.add(
+            "QComboBox",
+            setToolTip=self.sb.tooltip.fmt(
+                title="Export Mode",
+                bullets=["<b>Composite</b> — mixed WAV", "<b>Keyed Tracks</b> — per source"],
+            ),
+        )
+    """
+
+    def __init__(self, widget: QtWidgets.QWidget):
+        self._ref = weakref.ref(widget)
+
+    def bind(self, provider) -> None:
+        """Register a callable() -> str called lazily on QEvent.ToolTip hover.
+
+        The single-widget convenience form of :meth:`TooltipNamespace.bind` —
+        the same relationship ``widget.call_slot`` has to ``sb.call_slot``.
+        Both funnel into one installer, so binding a widget twice (by either
+        route) replaces its provider instead of stacking event filters.
+
+        The content is computed only when the user actually hovers, so it is
+        always fresh without any manual refresh. Bound-method providers are
+        captured via weakref so the binding does not keep the slot instance
+        alive after the UI is rebuilt.
+
+        Parameters:
+            provider: A zero-argument callable returning the tooltip string.
+        """
+        self._install_provider(self._ref(), provider)
+
+
+class TooltipNamespace(TooltipFormat, _TooltipBindInternal):
+    """The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
+
+    Carries the whole :class:`TooltipFormat` DSL (``fmt`` / ``kbd`` / ``hl`` /
+    ``placeholder_preview``) plus :meth:`bind`, whose *batch* form only the
+    Switchboard can serve: resolving a shorthand widget range like ``"chk000-2"``
+    against a UI needs ``get_widgets_by_string_pattern``, which lives here.
+
+    This is the same ownership split the rest of the Switchboard uses — the
+    implementation lives on ``sb``, and ``MainWindow.register_widget`` stamps a
+    per-widget convenience (``widget.tooltip``) that delegates back to it, exactly
+    as ``widget.call_slot`` delegates to ``sb.call_slot``.
+
+    Example::
+
+        self.sb.tooltip.bind(self.ui.txt000, self._preview)        # one widget
+        self.sb.tooltip.bind("chk000-2", self._state, ui=self.ui)  # a range
+    """
+
+    def __init__(self, switchboard):
+        self._sb = weakref.ref(switchboard)
+
+    def bind(self, widgets, provider, ui=None) -> list:
+        """Bind a lazy tooltip *provider* to one widget, several, or a name range.
+
+        Parameters:
+            widgets: A widget, an iterable of widgets, or a shorthand name string
+                     (``"chk000-2"``) resolved against *ui*.
+            provider: A zero-argument callable returning the tooltip string. It is
+                     shared by every resolved widget — pass a closure over the
+                     widget if each needs its own text.
+            ui: The UI to resolve a name string against. Defaults to the
+                switchboard's current UI.
+
+        Returns:
+            (list) The widgets actually bound.
+        """
+        if isinstance(widgets, str):
+            sb = self._sb()
+            if sb is None:
+                return []
+            target = ui if ui is not None else sb.current_ui
+            if target is None:
+                raise ValueError(
+                    f"Cannot resolve {widgets!r}: no UI to resolve it against. "
+                    f"Pass ui=<your ui>, or bind the widget objects directly."
+                )
+            widgets = sb.get_widgets_by_string_pattern(target, widgets)
+        elif isinstance(widgets, QtCore.QObject):
+            # A lone widget/action — every install target is a QObject, since
+            # that is what carries installEventFilter + dynamic properties.
+            widgets = [widgets]
+
+        bound = [w for w in (widgets or []) if w is not None]
+        for widget in bound:
+            self._install_provider(widget, provider)
+        return bound
 
 
 class TooltipMixin:

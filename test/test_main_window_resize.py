@@ -14,7 +14,7 @@ Covers:
 import itertools
 import unittest
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore, QtTest, QtWidgets
 
 from conftest import QtBaseTestCase
 
@@ -39,6 +39,27 @@ class _BareSwitchboard:
 
     def center_widget(self, *_a, **_k):
         return None
+
+
+def _show_and_settle(win, passes=10):
+    """Show ``win`` and drain the show cascade until its geometry is committed.
+
+    Under the offscreen QPA the geometry queued by ``show()`` can be delivered
+    *after* an early ``resize()`` and silently revert it — the window then sits
+    one collapse-delta too tall for the rest of the test, which reads as random
+    drift. ``processEvents`` alone does not drain it (the platform commit needs
+    a real event-loop slice); ``QTest.qWait`` does. Settles as soon as the
+    height repeats, so the common case costs one extra pass.
+    """
+    win.show()
+    QtTest.QTest.qWaitForWindowExposed(win)
+    last = None
+    for _ in range(passes):
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        QtTest.QTest.qWait(5)
+        if win.height() == last:
+            return
+        last = win.height()
 
 
 def _build_window(content_widget):
@@ -177,18 +198,48 @@ class TestCollapsableGroupDelegatesToMainWindow(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
 
         calls = []
-        win.adjust_height_by = lambda d: calls.append(d)
+        win.adjust_height_by = lambda d, baseline=None: calls.append((d, baseline))
 
         group.toggle_expand(False)  # collapse
         self.assertTrue(
-            calls and calls[-1] < 0,
+            calls and calls[-1][0] < 0,
             f"Expected negative delta on collapse, got {calls!r}",
         )
 
         group.toggle_expand(True)  # expand
         self.assertTrue(
-            calls and calls[-1] > 0,
+            calls and calls[-1][0] > 0,
             f"Expected positive delta on expand, got {calls!r}",
+        )
+
+    def test_baseline_is_the_pre_change_window_height(self):
+        """The delta must be handed over with the height it was measured against.
+
+        Reading ``height()`` inside ``adjust_height_by`` races Qt's auto-grow
+        to the new layout minimum, which double-counts the delta.
+        """
+        central = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(central)
+        group = CollapsableGroup("Baseline", restore_state=False)
+        group.restore_state = False
+        group.setLayout(QtWidgets.QVBoxLayout())
+        body = QtWidgets.QTextEdit()
+        body.setMinimumSize(QtCore.QSize(0, 140))
+        group.addWidget(body)
+        layout.addWidget(group)
+        win = self.track_widget(_build_window(central))
+        win.show()
+        QtWidgets.QApplication.processEvents()
+
+        calls = []
+        win.adjust_height_by = lambda d, baseline=None: calls.append((d, baseline))
+
+        h_before = win.height()
+        group.toggle_expand(False)
+        self.assertEqual(
+            calls[-1][1], h_before,
+            f"Baseline must be the pre-change window height {h_before}, "
+            f"got {calls[-1][1]}",
         )
 
 
@@ -303,8 +354,7 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
             ("constraints", [19, 19]),
         ])
         win = self.track_widget(_build_window(central))
-        win.show()
-        self._flush()
+        _show_and_settle(win)
 
         target = groups[0]
         h_before = win.height()
@@ -339,8 +389,7 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
             ("constraints", [19, 19]),
         ])
         win = self.track_widget(_build_window(central))
-        win.show()
-        self._flush()
+        _show_and_settle(win)
 
         target = groups[0]
         h_initial = win.height()
@@ -367,8 +416,7 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
             ("g1", [19] * 3),
         ])
         win = self.track_widget(_build_window(central))
-        win.show()
-        self._flush()
+        _show_and_settle(win)
 
         target = groups[0]
         baseline = win.height()
@@ -399,8 +447,7 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
             ("align", [19]),
         ])
         win = self.track_widget(_build_window(central))
-        win.show()
-        self._flush()
+        _show_and_settle(win)
 
         # Stretch beyond natural — the Expanding spacer will absorb it.
         win.resize(300, max(win.height() + 200, 600))
@@ -436,8 +483,7 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
             ("align", [19, 19, 19]),
         ])
         win = self.track_widget(_build_window(central))
-        win.show()
-        self._flush()
+        _show_and_settle(win)
 
         other_before = groups[1].height()
         groups[0].toggle_expand(False)
@@ -449,6 +495,132 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
 
         self.assertEqual(other_before, other_mid)
         self.assertEqual(other_before, other_after)
+
+
+def _build_growable_group_central():
+    """Central mirroring ``smart_bake.ui``'s tail: fixed rows, then a
+    CollapsableGroup whose only child is a *growable* widget (Expanding with a
+    minimumHeight), then an Expanding spacer, then a footer.
+
+    The growable child is what distinguishes this from
+    ``_build_tentacle_like_central``: expanding the group raises the layout's
+    minimum well above the collapsed window height, so activating the layouts
+    makes Qt auto-grow the QMainWindow *before* the delta is applied.
+    """
+    central = QtWidgets.QWidget()
+    lay = QtWidgets.QVBoxLayout(central)
+    lay.setSpacing(2)
+    lay.setContentsMargins(2, 2, 2, 2)
+
+    for i in range(3):
+        row = QtWidgets.QPushButton(f"row{i}")
+        row.setMinimumSize(QtCore.QSize(0, 19))
+        row.setMaximumSize(QtCore.QSize(16777215, 19))
+        lay.addWidget(row)
+
+    group = CollapsableGroup("output", restore_state=False)
+    group.setObjectName("output_grp")
+    group.restore_state = False
+    g_lay = QtWidgets.QVBoxLayout(group)
+    g_lay.setSpacing(1)
+    g_lay.setContentsMargins(0, 0, 0, 0)
+    body = QtWidgets.QTextEdit()
+    body.setMinimumSize(QtCore.QSize(0, 140))  # growable: hint > min
+    g_lay.addWidget(body)
+    lay.addWidget(group)
+
+    lay.addSpacerItem(
+        QtWidgets.QSpacerItem(
+            0, 10,
+            QtWidgets.QSizePolicy.Minimum,
+            QtWidgets.QSizePolicy.Expanding,
+        )
+    )
+
+    footer = QtWidgets.QLabel("footer")
+    footer.setObjectName("footer")
+    footer.setMinimumSize(QtCore.QSize(0, 19))
+    footer.setMaximumSize(QtCore.QSize(16777215, 19))
+    lay.addWidget(footer)
+    return central, group, footer
+
+
+class TestCollapseWithGrowableContent(QtBaseTestCase):
+    """No dead band above the footer when a growable group collapses.
+
+    Regression: ``adjust_height_by`` read ``height()`` *after*
+    ``_activate_descendant_layouts()``. Activation propagates the fresh content
+    minimum to the window, and Qt auto-grows a QMainWindow sitting below its new
+    minimum — i.e. it has already applied (part of) the caller's delta. Adding
+    the delta again doubled the growth, and the surplus went straight into the
+    trailing Expanding spacer: visible dead space between the collapsed group
+    and the footer (reported on the Smart Bake panel).
+    """
+
+    def _flush(self):
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+    def _gap(self, win, group, footer):
+        """Pixels between the group's bottom edge and the footer's top edge."""
+        grp_bottom = group.mapTo(win, QtCore.QPoint(0, group.height())).y()
+        footer_top = footer.mapTo(win, QtCore.QPoint(0, 0)).y()
+        return footer_top - grp_bottom
+
+    def test_expand_does_not_double_apply_the_delta(self):
+        central, group, _footer = _build_growable_group_central()
+        win = self.track_widget(_build_window(central))
+        _show_and_settle(win)
+
+        h_initial = win.height()
+        group.toggle_expand(False)
+        self._flush()
+        group.toggle_expand(True)
+        self._flush()
+
+        self.assertEqual(
+            win.height(), h_initial,
+            f"Expand must not double-count the delta: initial={h_initial}, "
+            f"after-cycle={win.height()}",
+        )
+
+    def test_collapse_leaves_no_dead_band_above_footer(self):
+        central, group, footer = _build_growable_group_central()
+        win = self.track_widget(_build_window(central))
+        _show_and_settle(win)
+
+        gap_expanded = self._gap(win, group, footer)
+        group.toggle_expand(False)
+        self._flush()
+        group.toggle_expand(True)
+        self._flush()
+        group.toggle_expand(False)
+        self._flush()
+
+        self.assertLessEqual(
+            self._gap(win, group, footer), gap_expanded + 2,
+            "Collapsing must not leave dead space between the group and the "
+            f"footer: gap={self._gap(win, group, footer)} "
+            f"(expanded baseline {gap_expanded})",
+        )
+
+    def test_repeated_cycles_do_not_drift(self):
+        central, group, _footer = _build_growable_group_central()
+        win = self.track_widget(_build_window(central))
+        _show_and_settle(win)
+
+        baseline = win.height()
+        for _ in range(4):
+            group.toggle_expand(False)
+            self._flush()
+            group.toggle_expand(True)
+            self._flush()
+
+        self.assertEqual(
+            win.height(), baseline,
+            f"Repeated cycles must not drift: baseline={baseline}, "
+            f"final={win.height()}",
+        )
 
 
 class TestFitToContentOnShow(QtBaseTestCase):
@@ -671,8 +843,7 @@ class TestContentMaxLock(QtBaseTestCase):
         lay = QtWidgets.QVBoxLayout(central)
         lay.addWidget(QtWidgets.QTextEdit())
         win = self.track_widget(_build_window(central))
-        win.show()
-        self._flush()
+        _show_and_settle(win)
         h = win.height()
         win.adjust_height_by(80)
         self._flush()
@@ -697,8 +868,7 @@ class TestContentMaxLock(QtBaseTestCase):
         lay.addWidget(group)
         lay.addWidget(self._fixed_label(19))
         win = self.track_widget(_build_window(central))
-        win.show()
-        self._flush()
+        _show_and_settle(win)
 
         win.resize(win.width(), win.height() + 150)  # user-stretched
         self._flush()

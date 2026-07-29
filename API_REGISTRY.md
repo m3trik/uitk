@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-07-25_
+_Generated: 2026-07-29_
 
 ## Index
 
@@ -260,7 +260,7 @@ Event handling utilities for Qt applications.
 
 UITK Example — a polished tour of the framework.
 
-- **[`class ExampleSlots(ptk.LoggingMixin)`](uitk/uitk/examples/example.py#L52)** — Slots for the UITK Example — method names match widget objectNames.
+- **[`class ExampleSlots(ptk.LoggingMixin)`](uitk/uitk/examples/example.py#L49)** — Slots for the UITK Example — method names match widget objectNames.
   - `ExampleSlots.header_init(self, widget)`
   - `ExampleSlots.txt_input_init(self, widget)` — Wire the full option_box plugin stack onto the path field.
   - `ExampleSlots.txt_input(self, text)` — Default signal = textChanged (debounced 300 ms via ``widget.debounce``).
@@ -514,7 +514,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
 <a id="switchboard--_core"></a>
 ### `switchboard/_core.py`
 
-- **[`class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin)`](uitk/uitk/switchboard/_core.py#L30)** — Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
+- **[`class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin)`](uitk/uitk/switchboard/_core.py#L31)** — Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
   - `Switchboard.register_handler(self, name: str, instance, defaults: dict = None)` — Register a handler instance and apply defaults to its config.
   - `Switchboard.iter_handler_entries(self)` — Yield every :class:`HandlerEntry` from every launchable handler.
   - `Switchboard.active_ui(self) -> Optional[QtWidgets.QWidget]` *(property)* — Return the currently set UI, or None — no auto-load, no warning.
@@ -1029,7 +1029,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 <a id="widgets--header"></a>
 ### `widgets/header.py`
 
-- **[`class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`](uitk/uitk/widgets/header.py#L11)** — Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.
+- **[`class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`](uitk/uitk/widgets/header.py#L12)** — Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.
   - `Header.menu(self)` *(property)*
   - `Header.get_icon_path(self, icon_filename)` — Get the full path to an icon file in the uitk/icons directory.
   - `Header.create_svg_icon(self, icon_filename, size=16)` — Create a QIcon from an SVG file.
@@ -1117,7 +1117,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `MainWindow.perform_restore_state(self, widget: QtWidgets.QWidget, force=False) -> None` — Restores the state of a given widget if it has a restore_state attribute.
   - `MainWindow.sync_widget_values(self, widget: QtWidgets.QWidget, value: Any) -> None` — Persist a widget's value and mirror it across related surfaces.
   - `MainWindow.eventFilter(self, watched, event) -> bool` — Override the event filter to register widgets when they are polished.
-  - `MainWindow.adjust_height_by(self, delta: int) -> None` — Apply a signed pixel delta to the window's height.
+  - `MainWindow.adjust_height_by(self, delta: int, baseline: Optional[int] = None) -> None` — Apply a signed pixel delta to the window's height.
   - `MainWindow.fit_height_to_content(self) -> None` — Snap the window's height to its layout's natural content size.
   - `MainWindow.save_window_geometry(self) -> None` — Save the current window geometry (size and position) to settings.
   - `MainWindow.restore_window_geometry(self) -> bool` — Restore the window geometry (size and position) from settings.
@@ -1404,8 +1404,9 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
   - `CornerSizeGrip.getHoverColor(self) -> QtGui.QColor`
   - `CornerSizeGrip.setHoverColor(self, value) -> None`
   - `CornerSizeGrip.paintEvent(self, event: QtGui.QPaintEvent) -> None`
-- **[`class SizeGripMixin`](uitk/uitk/widgets/mixins/size_grip.py#L146)** — Mixin that provides a consistent QSizeGrip attachment helper.
+- **[`class SizeGripMixin`](uitk/uitk/widgets/mixins/size_grip.py#L149)** — Mixin that provides a consistent QSizeGrip attachment helper.
   - `SizeGripMixin.content_max_size(window: QtWidgets.QWidget) -> Tuple[int, int]` *(static)* — Return ``(max_w, max_h)`` the window's content can actually use.
+  - `SizeGripMixin.content_min_height(window: QtWidgets.QWidget) -> int` *(static)* — Return the true minimum height the window's content needs.
   - `SizeGripMixin.sync_window_max_to_content(window: QtWidgets.QWidget) -> None` *(static)* — Sync the window's maximum size to its content's real maximum.
   - `SizeGripMixin.create_size_grip(self, container: Optional[QtWidgets.QWidget] = None, layout: Optional[QtWidgets.QLayout] = None, *, alignment: Optional[QtCore.Qt.Alignment] = None) -> Optional[QtWidgets.QSizeGrip]` — Create or reuse a size grip and ensure it is inserted in *layout*.
 
@@ -1458,14 +1459,16 @@ Text rendering for uitk widgets.
 <a id="widgets--mixins--tooltip_mixin"></a>
 ### `widgets/mixins/tooltip_mixin.py`
 
-- **[`class TooltipProxy`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L22)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
-  - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
-- **[`class TooltipFormat`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L90)** — Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt``.
+- **[`class TooltipFormat`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L75)** — Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt``.
   - `TooltipFormat.kbd(*keys: str) -> str` *(static)* — Render keyboard key(s) as styled ``<kbd>``-like chips.
   - `TooltipFormat.hl(text: str, color: str = _C_ACCENT) -> str` *(static)* — Highlight ``text`` in ``color`` (defaults to the accent color).
   - `TooltipFormat.fmt(title: str = None, body: str = None, bullets: list = None, steps: list = None, rows: list = None, sections: list = None, notes: list = None) -> str` *(static)* — Build a rich-text HTML tooltip string.
   - `TooltipFormat.placeholder_preview(template: str, context: dict, *, title: str = None, body: str = None, descriptions: dict = None, final: str = None, final_label: str = '→', empty_text: str = None, notes: list = None) -> str` *(static)* — Build a live, self-documenting tooltip for a pattern/template field.
-- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L396)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
+- **[`class TooltipProxy(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L381)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
+  - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
+- **[`class TooltipNamespace(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L428)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
+  - `TooltipNamespace.bind(self, widgets, provider, ui=None) -> list` — Bind a lazy tooltip *provider* to one widget, several, or a name range.
+- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L487)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
 
 <a id="widgets--mixins--wheel_step"></a>
 ### `widgets/mixins/wheel_step.py`

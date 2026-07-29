@@ -91,10 +91,23 @@ class TestMessageBoxStandardButtons(QtBaseTestCase):
         self.assertTrue(_has_button(flags, QtWidgets.QMessageBox.NoToAll))
 
     def test_unknown_name_resolves_to_no_button(self):
-        """An unrecognized name contributes nothing (NoButton)."""
+        """An unrecognized name contributes nothing (NoButton) — but loudly.
+
+        The drop used to be silent, which cosmetically broke callers: a
+        confirmation asking for ("Fix", "Cancel") rendered a Cancel-only box
+        with no affirmative action (live-caught in the tentacle scene panel).
+        The console warning is the tell that turns that into a 5-second fix.
+        """
+        import contextlib
+        import io
+
         w = self._make()
-        w.setStandardButtons("NotARealButton")
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            w.setStandardButtons("NotARealButton")
         self.assertEqual(w.standardButtons(), QtWidgets.QMessageBox.NoButton)
+        self.assertIn("NotARealButton", captured.getvalue())
+        self.assertIn("Valid:", captured.getvalue())
 
     def test_accepts_enum_value(self):
         """A real StandardButton enum still passes through."""

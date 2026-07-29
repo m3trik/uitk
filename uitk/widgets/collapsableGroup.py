@@ -118,7 +118,11 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         if window and delta != 0 and not self._suppress_window_resize:
             adjust = getattr(window, "adjust_height_by", None)
             if callable(adjust):
-                adjust(delta)
+                # Hand over the height captured BEFORE the content change.
+                # Qt may already have auto-grown the window to meet the new
+                # layout minimum by now, and that growth is this same delta --
+                # re-reading it inside adjust_height_by would double-count.
+                adjust(delta, baseline=old_window_height)
             else:
                 self._fallback_window_resize(window, old_window_height, delta)
 
@@ -142,7 +146,10 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
                 wl = None
             if wl:
                 wl.activate()
-        min_h = window.minimumSizeHint().height()
+        # Same floor rule MainWindow._content_min_height uses -- a bare
+        # minimumSizeHint under-reports whenever an explicit setMinimumSize
+        # overrides the layout's computed minimum.
+        min_h = SizeGripMixin.content_min_height(window)
         new_height = max(old_window_height + delta, min_h)
         # Mirror MainWindow._sync_min_height_to_hint: track the layout hint
         # explicitly so a stale-high cached minimum can't clamp the resize.
