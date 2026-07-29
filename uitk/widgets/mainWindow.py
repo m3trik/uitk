@@ -748,25 +748,11 @@ class MainWindow(
     def _content_min_height(self) -> int:
         """Return the true minimum height the content needs.
 
-        ``minimumSizeHint().height()`` alone is an unreliable floor for a
-        resize. Qt's ``qSmartMinSize`` REPLACES a child's layout-computed
-        minimum with any explicit ``setMinimumSize`` value — even when that
-        explicit value is SMALLER than the content requires. A central widget
-        carrying such an under-reporting minimum (e.g. a stale ``minimumSize``
-        baked into a ``.ui``) drags this window's ``minimumSizeHint`` below the
-        real content size; a subsequent ``resize()`` to that value then packs
-        fixed-height children into too little space and they overlap.
-
-        The central widget's own ``minimumSizeHint()`` reflects its layout's
-        real minimum (it is not subject to the explicit-min override), so the
-        max of the two is a floor that always covers the content while still
-        allowing dead space above a footer / spacer to be trimmed.
+        Thin alias for :meth:`SizeGripMixin.content_min_height`, which owns the
+        rule (and explains why the bare ``minimumSizeHint`` is not a safe
+        floor) so the ``CollapsableGroup`` fallback path can't drift from it.
         """
-        floor = self.minimumSizeHint().height()
-        central = self.centralWidget()
-        if central is not None:
-            floor = max(floor, central.minimumSizeHint().height())
-        return floor
+        return SizeGripMixin.content_min_height(self)
 
     def _sync_min_height_to_hint(self, hint: int) -> None:
         """Align ``minimumHeight`` with the freshly-computed layout hint.
@@ -789,7 +775,7 @@ class MainWindow(
         if self.minimumHeight() != hint:
             self.setMinimumHeight(hint)
 
-    def adjust_height_by(self, delta: int) -> None:
+    def adjust_height_by(self, delta: int, baseline: Optional[int] = None) -> None:
         """Apply a signed pixel delta to the window's height.
 
         Use when a widget knows the before/after change in pixels and
@@ -804,14 +790,28 @@ class MainWindow(
 
         Parameters:
             delta: Signed pixel delta. Positive grows, negative shrinks.
+            baseline: The window height measured BEFORE the caller changed
+                its content. Pass it whenever it is known -- reading
+                ``height()`` here instead races Qt's automatic minimum
+                tracking: revealing content raises the layout minimum, and a
+                QMainWindow sitting below its fresh minimum is grown to meet
+                it, sometimes before this call is even reached. That growth
+                *is* the caller's delta already applied, so adding delta to
+                the grown height double-counts it. The surplus then lands in
+                whatever absorbs slack (a trailing Expanding spacer) and reads
+                as dead space above the footer once the content collapses
+                again. Whether the auto-grow lands before or after entry is
+                timing-dependent, so the caller's own baseline is the only
+                stable reference.
         """
         if delta == 0:
             return
+        old_height = self.height() if baseline is None else baseline
         self._activate_descendant_layouts()
         min_h = self._content_min_height()
-        # Height BEFORE the max-sync: syncing may itself shrink the window
+        # Also BEFORE the max-sync: syncing may itself shrink the window
         # (snapping off dead space), and the delta applies to the old height.
-        new_height = max(self.height() + delta, min_h)
+        new_height = max(old_height + delta, min_h)
         self._sync_min_height_to_hint(min_h)
         SizeGripMixin.sync_window_max_to_content(self)
         self.resize(self.width(), new_height)  # Qt clamps to the synced max
@@ -1057,6 +1057,14 @@ class MainWindow(
                 # window showed with dead bands until the first grip press
                 # (whose press-time sync was the only remaining trigger).
                 self._activate_descendant_layouts()
+                # Re-track the min from FRESH hints before the sync, exactly
+                # like the fit/adjust paths do. Qt's auto-min from the
+                # pre-show layout pass can still include a child that hid
+                # during the show cascade (the header's OS-frame auto-hide),
+                # and the sync's never-below-min guard would then carry that
+                # stale-high min into the max — pinning the restored window
+                # to its dead-band height instead of snapping it off.
+                self._sync_min_height_to_hint(self._content_min_height())
                 SizeGripMixin.sync_window_max_to_content(self)
 
             if self.ensure_on_screen:

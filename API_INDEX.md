@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-26_
+_Generated: 2026-07-29_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -343,7 +343,7 @@ _Generated: 2026-07-26_
 - `class CornerSizeGrip(QtWidgets.QSizeGrip)`
   - methods: enterEvent, mousePressEvent, leaveEvent, getBaseColor, setBaseColor, getHoverColor, setHoverColor, paintEvent
 - `class SizeGripMixin`
-  - methods: content_max_size, sync_window_max_to_content, create_size_grip
+  - methods: content_max_size, content_min_height, sync_window_max_to_content, create_size_grip
 
 ### `widgets/mixins/spin_box_text_color.py` — Shared value-text coloring for spin-box widgets.
 - `class SpinBoxTextColorMixin`
@@ -360,10 +360,12 @@ _Generated: 2026-07-26_
   - methods: textOverlayLabel, setTextOverlay, setTextOverlayAlignment, setTextOverlayColor
 
 ### `widgets/mixins/tooltip_mixin.py`
-- `class TooltipProxy`
-  - methods: bind
 - `class TooltipFormat`
   - methods: kbd, hl, fmt, placeholder_preview
+- `class TooltipProxy(TooltipFormat, _TooltipBindInternal)`
+  - methods: bind
+- `class TooltipNamespace(TooltipFormat, _TooltipBindInternal)`
+  - methods: bind
 - `class TooltipMixin`
 
 ### `widgets/mixins/wheel_step.py` — Shared modifier-driven wheel-step handling for spin-box widgets.

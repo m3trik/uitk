@@ -23,6 +23,7 @@ from uitk.switchboard.style import SwitchboardStyleMixin
 from uitk.switchboard.history import History
 from uitk.managers.registry_manager import RegistryManager
 from uitk.widgets.mixins.convert import ConvertMixin
+from uitk.widgets.mixins.tooltip_mixin import TooltipNamespace
 from uitk.managers.settings_manager import SettingsManager
 from uitk.loaders import CompiledLoader, RuntimeLoader
 
@@ -72,6 +73,7 @@ class Switchboard(
     QtCore = QtCore
     QtGui = QtGui
     QtWidgets = QtWidgets
+
 
     # Lazy QApplication accessor. Previously this ran in the class body,
     # which constructed a QApplication as a side effect of merely importing
@@ -268,6 +270,14 @@ class Switchboard(
 
         self.settings = SettingsManager(namespace="switchboard")
         self.configurable = self.settings.branch("configurable")  # Persistent config
+
+        # Rich-text tooltip surface: the DSL (fmt/kbd/hl/placeholder_preview) plus
+        # bind(), including the batch form that resolves a "chk000-2" range — which
+        # only the Switchboard can do. ``MainWindow.register_widget`` stamps the
+        # per-widget convenience (``widget.tooltip``) that delegates back here, the
+        # same split as call_slot/init_slot. Also spares consumers an import of a
+        # uitk mixin module, like the Qt passthroughs above.
+        self.tooltip = TooltipNamespace(self)
 
         self._current_ui = None
         # Ordered UI history. Weak refs so a closed UI is freed (the prior list

@@ -126,6 +126,15 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
                     ),
                     QtWidgets.QMessageBox.NoButton,
                 )
+                if resolved == QtWidgets.QMessageBox.NoButton:
+                    # A dropped button leaves a dialog missing its affirmative
+                    # action (live-caught: "Fix" produced a Cancel-only box) —
+                    # make the mistake loud instead of cosmetic.
+                    print(
+                        f"[MessageBox] Unknown standard button {button!r} "
+                        f"dropped. Valid: "
+                        f"{sorted(k for k in self.buttonMapping if isinstance(k, str))}"
+                    )
                 standardButtons |= resolved
             elif isinstance(button, QtWidgets.QMessageBox.StandardButton):
                 standardButtons |= button

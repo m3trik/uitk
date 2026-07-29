@@ -1087,6 +1087,53 @@ class TestHeaderMinimizedRegistryPruning(QtBaseTestCase):
         self.assertNotIn(dead_header, Header._minimized_headers)
 
 
+class TestAutoHideReclaimsHeight(QtBaseTestCase):
+    """When the header auto-hides under a native OS frame, the 19px it
+    occupied is pure dead space on a fully-fixed window — the hide must end
+    with the same content-max sync the CollapsableGroup toggles use, so the
+    window snaps to its new cap instead of keeping a dead band until the
+    next grip press (live: restored tentacle panels showed 19px tall)."""
+
+    @staticmethod
+    def _fixed_row(h=19):
+        w = QtWidgets.QLabel("row")
+        w.setMaximumHeight(h)
+        return w
+
+    def _window_with_header(self):
+        win = QtWidgets.QWidget()  # non-frameless: header will auto-hide
+        lay = QtWidgets.QVBoxLayout(win)
+        lay.setContentsMargins(2, 2, 2, 2)
+        lay.setSpacing(0)
+        header = Header(auto_hide_with_os_frame=True)
+        lay.addWidget(header)
+        lay.addWidget(self._fixed_row())
+        lay.addWidget(self._fixed_row())
+        return win, header
+
+    def test_auto_hide_snaps_off_freed_height(self):
+        win, header = self._window_with_header()
+        self.track_widget(win)
+        win.show()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        # Simulate the restored-geometry ordering: the window still carries
+        # the height it had while the header was visible.
+        header.show()
+        tall = win.sizeHint().height()
+        win.resize(win.width(), tall)
+        header._auto_hide_checked = False
+        header._apply_auto_hide_with_os_frame()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        self.assertFalse(header.isVisible())
+        self.assertLess(
+            win.height(),
+            tall,
+            "auto-hiding the header must reclaim its row, not leave a dead band",
+        )
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

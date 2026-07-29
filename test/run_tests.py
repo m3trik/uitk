@@ -15,7 +15,6 @@ Usage:
 
 import sys
 import os
-import re
 import unittest
 import logging
 import argparse
@@ -44,7 +43,9 @@ for _stream in (sys.stdout, sys.stderr):
 PACKAGE_ROOT = Path(__file__).parent.parent.absolute()
 TEST_DIR = Path(__file__).parent
 LOG_DIR = TEST_DIR / "logs"
-README_PATH = PACKAGE_ROOT / "docs" / "README.md"
+# uitk keeps two front doors (the repo landing page and the packaged docs one);
+# both carry the badge row, so both get stamped.
+README_PATHS = (PACKAGE_ROOT / "README.md", PACKAGE_ROOT / "docs" / "README.md")
 
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
@@ -275,73 +276,36 @@ class TestSuiteRunner:
             self.logger.info(f"Log file: {self.log_file_path}")
 
     def _update_readme_badge(self, result: unittest.TestResult):
-        """Update the test badge in the README file."""
-        if not README_PATH.exists():
-            self.logger.warning(
-                f"README not found at {README_PATH}, skipping badge update"
-            )
-            return
+        """Update the test badge in the README file.
+
+        Delegates to the ecosystem-wide SSoT (``ptk.StatusBadge``) so the count
+        means the same thing here as in every sibling package: individual test
+        cases, skips excluded. See m3trik/docs/TEST_BADGE_STANDARD.md.
+        """
+        from pythontk.core_utils.status_badge import StatusBadge
 
         total = result.testsRun
         passed = total - len(result.failures) - len(result.errors) - len(result.skipped)
         failed = len(result.failures) + len(result.errors)
 
-        # Determine badge color and status text
-        if result.wasSuccessful():
-            color = "brightgreen"
-            status = f"{passed}%20passed"
-        elif failed > 0:
-            color = "red"
-            status = f"{passed}%20passed%2C%20{failed}%20failed"
-        else:
-            color = "yellow"
-            status = f"{passed}%20passed%2C%20{len(result.skipped)}%20skipped"
-
-        # Create badge URL (shields.io format)
-        badge_url = f"https://img.shields.io/badge/tests-{status}-{color}.svg"
-        # Link target computed relative to the README's location
-        # (docs/README.md -> ../test/), so a regenerate can't break the link.
-        link_target = (
-            Path(os.path.relpath(PACKAGE_ROOT / "test", README_PATH.parent)).as_posix()
-            + "/"
-        )
-        badge_markdown = f"[![Tests]({badge_url})]({link_target})"
-
         try:
-            content = README_PATH.read_text(encoding="utf-8")
-
-            # Pattern to match existing test badge or the position after version badge
-            test_badge_pattern = r"\[!\[Tests\]\([^\)]+\)\]\([^\)]*\)\n?"
-
-            if re.search(test_badge_pattern, content):
-                # Replace existing test badge
-                new_content = re.sub(test_badge_pattern, badge_markdown + "\n", content)
-            else:
-                # Insert after the Version badge line (or License badge if Version not found)
-                version_pattern = r"(\[!\[Version\]\([^\)]+\)\]\([^\)]+\))\n"
-                license_pattern = r"(\[!\[License[^\]]*\]\([^\)]+\)\]\([^\)]+\))\n"
-
-                if re.search(version_pattern, content):
-                    new_content = re.sub(
-                        version_pattern,
-                        r"\1\n" + badge_markdown + "\n",
-                        content,
-                    )
-                elif re.search(license_pattern, content):
-                    new_content = re.sub(
-                        license_pattern,
-                        r"\1\n" + badge_markdown + "\n",
-                        content,
-                    )
-                else:
-                    # Add at the very beginning
-                    new_content = badge_markdown + "\n" + content
-
-            README_PATH.write_text(new_content, encoding="utf-8")
+            stamped = [
+                p
+                for p in README_PATHS
+                if StatusBadge.update_test_badge(
+                    p, passed, failed, test_dir=PACKAGE_ROOT / "test"
+                )
+            ]
+            if not stamped:
+                paths = ", ".join(str(p) for p in README_PATHS)
+                self.logger.warning(
+                    f"README badge not updated (missing or unwritable): {paths}"
+                )
+                return
             self.logger.info(
-                f"Updated test badge in README: {passed}/{total} tests passed"
+                f"Updated test badge in {len(stamped)} README(s): "
+                f"{passed}/{total} tests passed"
             )
-
         except Exception as e:
             self.logger.warning(f"Failed to update README badge: {e}")
 
@@ -475,7 +439,20 @@ def _hard_exit(code: int) -> None:
     if os.name == "nt":
         import ctypes
 
-        kernel32 = ctypes.windll.kernel32
+        # HANDLE must be typed: ctypes' default c_int restype truncates
+        # GetCurrentProcess()'s 64-bit pseudo-handle (-1) to 32 bits, and the
+        # untyped round-trip handed TerminateProcess 0x00000000FFFFFFFF — an
+        # invalid handle, so the kill failed DETERMINISTICALLY (returned 0 on
+        # every probe run) and every run fell through to os._exit's
+        # DLL_PROCESS_DETACH, the exact segfault surface this function exists
+        # to skip. That's why green runs kept exiting 5 (0xC0000005's low
+        # byte) despite both earlier parking fixes: the park was unreachable.
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = (ctypes.c_void_p, ctypes.c_uint)
+        kernel32.TerminateProcess.restype = ctypes.c_int
+        kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint)
+        kernel32.WaitForSingleObject.restype = ctypes.c_uint
         if kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code):
             # TerminateProcess is asynchronous — it can return to this
             # thread while the kill is still in flight. Falling through to
@@ -494,6 +471,15 @@ def _hard_exit(code: int) -> None:
                 # falling through to os._exit would re-enter the detach
                 # callbacks this function exists to skip.
                 kernel32.WaitForSingleObject(kernel32.GetCurrentProcess(), INFINITE)
+        # Only reachable when TerminateProcess reported failure (the park
+        # never returns). Announce it — the untyped-handle bug hid behind
+        # this silent fallback for two fix cycles.
+        print(
+            f"_hard_exit: TerminateProcess failed "
+            f"(WinError {ctypes.get_last_error()}); falling back to os._exit — "
+            "the exit code may be clobbered by DLL_PROCESS_DETACH teardown.",
+            flush=True,
+        )
     os._exit(code)
 
 

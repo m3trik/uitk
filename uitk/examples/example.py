@@ -10,7 +10,7 @@ This single-window demo exercises the major UITK features:
   • Header popup menu — theme picker, log-level selector, timestamp
     toggle, logger-name toggle, clear, about.
   • LineEdit option_box plugin stack — stateful action, browse,
-    recent, pin, clear — wired with a single fluent chain.
+    recent, pin, clear — wired through the fluent option_box API.
   • Tree right-click context menu via ``widget.menu`` with
     ``trigger_button = "right"``.
   • CollapsableGroup + QSplitter for the resizable tree/console split.
@@ -19,6 +19,9 @@ This single-window demo exercises the major UITK features:
     ``log_divider``, and clickable ``action://`` links routed through
     ``QTextBrowser.anchorClicked``.
   • Footer default status, live status, and progress context manager.
+  • Rich tooltips via the TooltipFormat DSL — static ``fmt`` / ``kbd`` /
+    ``hl`` markup on widgets and menu items (``sb.tooltip``), plus lazy
+    ``widget.tooltip.bind`` providers that render live state on hover.
   • Slot-level controls — ``widget.debounce`` and
     ``ui.default_slot_timeout``.
 
@@ -37,16 +40,10 @@ from qtpy import QtWidgets, QtCore, QtGui
 from qtpy.QtCore import Qt
 
 import pythontk as ptk
-from pythontk.core_utils.logging_mixin import LevelAwareFormatter, LoggerExt
+from pythontk.core_utils.logging_mixin import LoggerExt
 
 from uitk import Switchboard
 from uitk.widgets.textEditLogHandler import TextEditLogHandler
-
-
-# Wire pythontk's LoggingMixin to use UITK's Qt-aware handler so that
-# ``logger.add_text_widget_handler(...)`` (and any downstream helpers)
-# emit through TextEditLogHandler by default.
-LoggerExt._set_text_handler(TextEditLogHandler)
 
 
 class ExampleSlots(ptk.LoggingMixin):
@@ -63,6 +60,10 @@ class ExampleSlots(ptk.LoggingMixin):
         self._selected_name = None
         self._include_inherited = False
 
+        # Give the tree the larger share of the splitter by default.
+        self.ui.main_splitter.setStretchFactor(0, 3)
+        self.ui.main_splitter.setStretchFactor(1, 2)
+
         self._setup_console()
         self._welcome()
 
@@ -74,25 +75,49 @@ class ExampleSlots(ptk.LoggingMixin):
         logger = self.logger
         logger.setLevel(logging.DEBUG)
 
-        # Hot-reload safety — drop any stale handlers from prior sessions.
+        # The class logger outlives this instance (hot reload, repeated
+        # test setUp) — drop handlers still bound to dead widgets.
         for h in list(logger.handlers):
             logger.removeHandler(h)
 
-        handler = TextEditLogHandler(self.ui.txt_output, monospace=True)
-        handler.setLevel(logging.DEBUG)
-        handler.setFormatter(LevelAwareFormatter(logger=logger, strip_html=False))
-        logger.addHandler(handler)
+        # Route text-widget handlers through UITK's Qt-aware handler, then
+        # attach the console via the public LoggingMixin API — it builds the
+        # handler and its level-aware formatter for us.
+        logger.set_text_handler(TextEditLogHandler)
+        logger.add_text_widget_handler(self.ui.txt_output, level=logging.DEBUG)
 
         logger.hide_logger_name(True)
         logger.log_timestamp = "%H:%M:%S"
 
-        # Footer default status replaces the current example's "sticky" setText.
+        # Lazy tooltip provider — rebuilt on every hover, so it always
+        # reflects the live log level / timestamp state.
+        self.ui.txt_output.tooltip.bind(self._console_tooltip)
+
+        # Shown whenever no transient status or progress is active.
         self.ui.footer.setDefaultStatusText("Ready  •  Select an item to inspect")
 
         # action:// link routing from QTextBrowser (log_link clicks).
         out = self.ui.txt_output
         if hasattr(out, "anchorClicked"):
             out.anchorClicked.connect(self._on_anchor_clicked)
+
+    def _console_tooltip(self) -> str:
+        """Live console tooltip — built lazily on each hover."""
+        tt = self.sb.tooltip
+        return tt.fmt(
+            title="Console",
+            body="Every message here is rendered by pythontk's LoggingMixin "
+            "through a Qt text-widget handler.",
+            rows=[
+                ("level", tt.hl(logging.getLevelName(self.logger.level))),
+                ("timestamps", "on" if self.logger.log_timestamp else "off"),
+                ("links", "click a link — it dispatches an <code>action://</code> verb"),
+            ],
+            notes=[
+                "this tooltip is a lazy <code>widget.tooltip.bind</code> "
+                "provider — hover again after changing the log level."
+            ],
+        )
 
     def _welcome(self):
         """Splash banner printed once at startup."""
@@ -103,7 +128,7 @@ class ExampleSlots(ptk.LoggingMixin):
                 "• click any tree item — its docs render here",
                 "• try the buttons attached to the path field  (option_box plugins)",
                 "• right-click the tree for a context menu",
-                "• open the gear menu in the header for themes / log level / more",
+                "• open the header's menu button for themes / log level / more",
             ],
             level="NOTICE",
             align="left",
@@ -132,9 +157,8 @@ class ExampleSlots(ptk.LoggingMixin):
             self.logger.success(f"Copied: <code>{html.escape(preview)}</code>")
         else:
             self.logger.notice(f"Unhandled link action: <code>{html.escape(action)}</code>")
-
-        # Prevent QTextBrowser from navigating away and clearing the document.
-        self.ui.txt_output.setSource(QtCore.QUrl())
+        # No navigation guard needed: the .ui sets openLinks=False, so
+        # QTextBrowser only emits anchorClicked and never follows the URL.
 
     # =========================================================================
     # Header — popup menu
@@ -142,6 +166,7 @@ class ExampleSlots(ptk.LoggingMixin):
     def header_init(self, widget):
         widget.config_buttons("menu", "minimize", "maximize", "hide")
 
+        tt = self.sb.tooltip  # TooltipFormat DSL, reachable without an import
         m = widget.menu
         m.add("QLabel", setText="<b>Preferences</b>")
         m.add("QSeparator")
@@ -149,23 +174,37 @@ class ExampleSlots(ptk.LoggingMixin):
             "QComboBox",
             setObjectName="cmb_theme",
             addItems=["Dark", "Light"],
+            setToolTip=tt.fmt(
+                title="Theme",
+                body="Restyles the window live via <code>ui.style.set</code>.",
+            ),
         )
         m.add(
             "QComboBox",
             setObjectName="cmb_level",
             addItems=["Debug", "Info", "Progress", "Success", "Result", "Notice", "Warning"],
+            setToolTip=tt.fmt(
+                title="Log Level",
+                body="Messages below the chosen level are hidden.",
+                notes=[
+                    f"{tt.hl('Progress')} / {tt.hl('Success')} / {tt.hl('Result')} / "
+                    f"{tt.hl('Notice')} are pythontk's custom levels."
+                ],
+            ),
         )
         m.add(
             "QCheckBox",
             setObjectName="chk_timestamps",
             setText="Show timestamps",
             setChecked=True,
+            setToolTip=tt.fmt(body="Prefix each message with <code>HH:MM:SS</code>."),
         )
         m.add(
             "QCheckBox",
             setObjectName="chk_hide_name",
             setText="Hide logger name",
             setChecked=True,
+            setToolTip=tt.fmt(body="Omit the logger's name for cleaner output."),
         )
         m.add("QSeparator")
         m.add("QPushButton", setText="Clear console", setObjectName="btn_clear")
@@ -195,9 +234,8 @@ class ExampleSlots(ptk.LoggingMixin):
             "Warning":  logging.WARNING,
         }
         level = level_map.get(level_name, logging.INFO)
+        # The patched setLevel also syncs every (unpinned) handler level.
         self.logger.setLevel(level)
-        for h in self.logger.handlers:
-            h.setLevel(level)
         self.logger.result(
             f"Log level: <b>{level_name}</b> "
             f"<i>(messages below this threshold are hidden)</i>"
@@ -209,7 +247,6 @@ class ExampleSlots(ptk.LoggingMixin):
 
     def _on_hide_name_toggled(self, checked: bool):
         self.logger.hide_logger_name(checked)
-        LoggerExt._update_handler_formatters(self.logger)
         self.logger.notice(f"Hide logger name: {'on' if checked else 'off'}")
 
     def _clear_console(self):
@@ -259,12 +296,40 @@ class ExampleSlots(ptk.LoggingMixin):
         widget.option_box.pin()
         widget.option_box.enable_clear()
 
+        # Lazy tooltip — reflects the live inherited-members state on hover.
+        widget.tooltip.bind(self._txt_input_tooltip)
+
+    def _txt_input_tooltip(self) -> str:
+        """Live path-field tooltip listing its option_box plugin stack."""
+        tt = self.ui.txt_input.tooltip  # per-widget namespace, same DSL
+        state = "visible" if self._include_inherited else "hidden"
+        return tt.fmt(
+            title="Package Path",
+            body="Type or paste a folder inside uitk to jump the browser there. "
+            "The attached buttons are <code>option_box</code> plugins:",
+            rows=[
+                ("eye", f"inherited members: {tt.hl(state)}"),
+                ("folder", "browse for a package folder"),
+                ("recent", "recall one of the last 8 paths"),
+                ("pin", "pin the current path for one-click restore"),
+                ("clear", "clear the field"),
+            ],
+            notes=[
+                f"edits coalesce for 300 ms via {tt.hl('widget.debounce')}",
+            ],
+        )
+
     def _toggle_inherited(self):
         self._include_inherited = not self._include_inherited
         state = "visible" if self._include_inherited else "hidden"
         self.logger.success(f"Inherited members: <b>{state}</b>")
         if self._selected_obj is not None:
             self._log_help(self._selected_obj, self._selected_name)
+
+    def _set_path_display(self, text: str):
+        """Reflect *text* in the path field without retriggering its slot."""
+        with QtCore.QSignalBlocker(self.ui.txt_input):
+            self.ui.txt_input.setText(text)
 
     def txt_input(self, text):
         """Default signal = textChanged (debounced 300 ms via ``widget.debounce``)."""
@@ -280,8 +345,7 @@ class ExampleSlots(ptk.LoggingMixin):
             return
         if p != uitk_root and uitk_root not in p.parents:
             return
-        rel = p.relative_to(uitk_root.parent) if p != uitk_root else Path("uitk")
-        dot = str(rel).replace(os.sep, ".").replace("/", ".")
+        dot = str(p.relative_to(uitk_root.parent)).replace(os.sep, ".")
         idx = self.ui.cmb_options.findText(dot)
         if idx >= 0 and self.ui.cmb_options.currentIndex() != idx:
             self.ui.cmb_options.setCurrentIndex(idx)
@@ -300,9 +364,17 @@ class ExampleSlots(ptk.LoggingMixin):
         for d in sorted(subdirs):
             rel = Path(d).relative_to(uitk_path)
             if (Path(d) / "__init__.py").exists():
-                packages.append("uitk." + str(rel).replace(os.sep, ".").replace("/", "."))
+                packages.append("uitk." + str(rel).replace(os.sep, "."))
         widget.add(packages)
         widget.setCurrentIndex(0)
+
+        widget.setToolTip(
+            widget.tooltip.fmt(
+                title="Subpackage",
+                body="Pick a uitk subpackage to introspect.",
+                notes=["kept in sync with the path field above"],
+            )
+        )
 
     def cmb_options(self, index):
         """Default signal = currentIndexChanged."""
@@ -311,10 +383,7 @@ class ExampleSlots(ptk.LoggingMixin):
 
         uitk_path = Path(__file__).parent.parent
         target = uitk_path if package == "uitk" else uitk_path / package.replace("uitk.", "").replace(".", os.sep)
-        # Update the path field *without* retriggering our debounced handler.
-        blocker = QtCore.QSignalBlocker(self.ui.txt_input)
-        self.ui.txt_input.setText(str(target))
-        del blocker
+        self._set_path_display(str(target))
 
     def cmb_view_init(self, widget):
         """Inline checkbox panel for tree view options."""
@@ -357,6 +426,19 @@ class ExampleSlots(ptk.LoggingMixin):
             header="VIEW OPTIONS",
         )
 
+        widget.setToolTip(
+            widget.tooltip.fmt(
+                title="View Options",
+                bullets=[
+                    "<b>Types</b> — show / hide the Type column.",
+                    "<b>Classes</b> — list each module's classes.",
+                    "<b>Members</b> — expand classes into methods / properties.",
+                    "<b>Expand</b> — auto-expand freshly-built trees.",
+                    "<b>Recursive</b> — include nested subpackages.",
+                ],
+            )
+        )
+
     def _refresh_current(self):
         self._populate_tree(self.ui.cmb_options.currentText())
 
@@ -369,7 +451,8 @@ class ExampleSlots(ptk.LoggingMixin):
         widget.setColumnWidth(0, 200)
         widget.setColumnWidth(1, 80)
         widget.setExpandsOnDoubleClick(False)
-        widget.mouseDoubleClickEvent = lambda event: None
+        # create_item marks items editable — keep this browser read-only.
+        widget.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         # Coalesce rapid clicks so the console isn't flooded.
         widget.debounce = 120
 
@@ -394,6 +477,19 @@ class ExampleSlots(ptk.LoggingMixin):
         m.btn_reveal.clicked.connect(self._reveal_selected_source)
         m.btn_refresh.clicked.connect(self._refresh_current)
 
+        tt = widget.tooltip
+        widget.setToolTip(
+            tt.fmt(
+                title="Package Browser",
+                bullets=[
+                    "<b>Click</b> an item — its documentation renders in the console.",
+                    f"{tt.kbd('Right-Click')} — expand / collapse, log signature, "
+                    "reveal source.",
+                ],
+                notes=[f"rapid clicks coalesce via {tt.hl('widget.debounce')} (120 ms)"],
+            )
+        )
+
     def tree_demo(self, item, column, widget=None):
         """Default signal = itemClicked. Shows rich help in the console."""
         data = item.data(0, Qt.UserRole)
@@ -410,12 +506,9 @@ class ExampleSlots(ptk.LoggingMixin):
             self.logger.warning(f"No live object for <b>{html.escape(name)}</b>")
             return
 
-        # Reflect file path in the text field (blocked to avoid triggering nav).
         src = getattr(obj, "__file__", None) or self._module_file(obj)
         if src:
-            blocker = QtCore.QSignalBlocker(self.ui.txt_input)  # noqa: F841 -- RAII guard
-            self.ui.txt_input.setText(src)
-            del blocker
+            self._set_path_display(src)
 
         self._log_help(obj, name)
 
@@ -500,26 +593,13 @@ class ExampleSlots(ptk.LoggingMixin):
 
     def _log_class_members(self, cls: type):
         """Render defined and (optionally) inherited members as grouped lists."""
-        inherited_names = set()
-        for base in cls.__mro__[1:]:
-            inherited_names.update(dir(base))
-
         defined, inherited = [], []
-        for attr_name in sorted(dir(cls)):
-            if attr_name.startswith("_"):
-                continue
-            try:
-                attr = getattr(cls, attr_name)
-            except Exception:
-                continue
+        for attr_name, attr, is_inherited in self._iter_public_members(cls):
             kind = self._member_kind(attr)
             if kind is None:
                 continue
             entry = (attr_name, kind, self._first_line(inspect.getdoc(attr)))
-            if attr_name in inherited_names:
-                inherited.append(entry)
-            else:
-                defined.append(entry)
+            (inherited if is_inherited else defined).append(entry)
 
         if defined:
             self.logger.log_divider(width=72, char="─")
@@ -551,6 +631,22 @@ class ExampleSlots(ptk.LoggingMixin):
         self.logger.log_raw(f"  {name_html} {kind_html} {desc_html}")
 
     # ---- introspection helpers ------------------------------------------------
+    @staticmethod
+    def _iter_public_members(cls: type):
+        """Yield ``(name, attr, is_inherited)`` for each public attribute of
+        *cls*, skipping attributes whose access raises."""
+        inherited_names = set()
+        for base in cls.__mro__[1:]:
+            inherited_names.update(dir(base))
+        for name in sorted(dir(cls)):
+            if name.startswith("_"):
+                continue
+            try:
+                attr = getattr(cls, name)
+            except Exception:
+                continue
+            yield name, attr, name in inherited_names
+
     @staticmethod
     def _signature_of(obj) -> str:
         if not callable(obj):
@@ -723,17 +819,9 @@ class ExampleSlots(ptk.LoggingMixin):
         )
 
     def _add_class_members(self, tree, parent_item, cls):
-        inherited = set()
-        for base in cls.__mro__[1:]:
-            inherited.update(dir(base))
-
         rows = []
-        for name in sorted(dir(cls)):
-            if name.startswith("_") or name in inherited:
-                continue
-            try:
-                attr = getattr(cls, name)
-            except Exception:
+        for name, attr, is_inherited in self._iter_public_members(cls):
+            if is_inherited:
                 continue
             if isinstance(attr, property):
                 rows.append((name, "property", self._first_line(inspect.getdoc(attr.fget)), attr, "tag"))

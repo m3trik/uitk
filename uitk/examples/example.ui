@@ -89,9 +89,6 @@
          <property name="placeholderText">
           <string>Browse, pin, or recall a package path</string>
          </property>
-         <property name="toolTip">
-          <string>Current package path. The buttons on the right are option_box plugins: toggle inherited members, browse, recent, pin, clear.</string>
-         </property>
         </widget>
        </item>
        <item>
@@ -106,9 +103,6 @@
              <width>0</width>
              <height>22</height>
             </size>
-           </property>
-           <property name="toolTip">
-            <string>Pick a UITK subpackage to introspect</string>
            </property>
           </widget>
          </item>
@@ -125,9 +119,6 @@
              <width>160</width>
              <height>22</height>
             </size>
-           </property>
-           <property name="toolTip">
-            <string>Tree view options</string>
            </property>
           </widget>
          </item>

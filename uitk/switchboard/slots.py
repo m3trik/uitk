@@ -1042,18 +1042,43 @@ class SwitchboardSlotsMixin:
         widget_name = widget.objectName()
         self.logger.debug(f"[call_slot] [{ui_name}.{widget_name}] Calling slot")
 
-        slot = self.get_slot(
-            self.get_slots_instance(widget.ui),
-            widget_name,
-            wrap=True,
-            widget=widget,
-        )
+        slot = self._persistent_slot_wrapper(widget)
         if slot:
             slot(*args, **kwargs)
         else:
             self.logger.debug(
                 f"[call_slot] [{ui_name}.{widget_name}] No callable slot found"
             )
+
+    def _persistent_slot_wrapper(self, widget: QtWidgets.QWidget):
+        """Return a SlotWrapper for *widget* that outlives the dispatch call.
+
+        A debounced slot defers itself onto a QTimer wired to the wrapper's
+        bound method, so a wrapper that dies when the caller returns takes
+        the pending call with it. Prefer the wrapper already connected to
+        the widget's signal (programmatic and GUI dispatch then share one
+        debounce window); otherwise cache one per widget.
+        """
+        ui = getattr(widget, "ui", None)
+        connected = getattr(ui, "connected_slots", {}).get(widget)
+        if connected:
+            return next(iter(connected.values()))
+
+        try:
+            cache = self._call_slot_wrappers
+        except AttributeError:
+            cache = self._call_slot_wrappers = weakref.WeakKeyDictionary()
+        wrapper = cache.get(widget)
+        if wrapper is None:
+            wrapper = self.get_slot(
+                self.get_slots_instance(ui),
+                widget.objectName(),
+                wrap=True,
+                widget=widget,
+            )
+            if isinstance(wrapper, SlotWrapper):
+                cache[widget] = wrapper
+        return wrapper
 
     def get_slot(
         self,

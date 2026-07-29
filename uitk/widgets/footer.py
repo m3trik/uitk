@@ -606,7 +606,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         fm = QtGui.QFontMetrics(self._status_label.font())
         indent = self._status_label.indent()
         margin = (indent if indent > 0 else 8) * 2
-        if self._size_grip:
+        if self._size_grip and not self._size_grip.isHidden():
             margin += self._size_grip.width()
         available = self._stacked_widget.width() - margin
 

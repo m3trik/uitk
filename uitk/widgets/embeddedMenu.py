@@ -200,3 +200,8 @@ class EmbeddedMenuWidget(QtWidgets.QWidget):
         window.setMinimumSize(target)
         window.setMaximumSize(target)
         window.resize(target)
+        # Stamp the rigid lock so the size-grip content sync never frees it
+        # (menus must not be resizable; content hints say otherwise).
+        from uitk.widgets.mixins.size_grip import SizeGripMixin
+
+        window.setProperty(SizeGripMixin.FIXED_LOCK_PROP, True)

@@ -93,6 +93,28 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
         result = self.ui.txt_input.call_slot()
         self.assertIsNone(result)
 
+    def test_call_slot_debounced_executes_after_window(self):
+        """A ``widget.debounce`` slot dispatched via ``call_slot`` must still
+        run once the debounce window elapses. Regression: ``call_slot`` built
+        a transient SlotWrapper — the debounce QTimer's connection died with
+        the collected wrapper, so the deferred call was silently dropped.
+        """
+        calls = []
+        instance = self.sb.get_slots_instance(self.ui)
+        # button_a has no real slot, so call_slot resolves this instance attr.
+        instance.button_a = lambda widget=None: calls.append(1)
+        self.ui.button_a.debounce = 50
+        try:
+            self.ui.button_a.call_slot()
+            self.assertEqual(calls, [], "debounced call must be deferred")
+            loop = QtCore.QEventLoop()
+            QtCore.QTimer.singleShot(400, loop.quit)
+            getattr(loop, "exec_", loop.exec)()
+            self.assertEqual(calls, [1], "debounced call was dropped")
+        finally:
+            self.ui.button_a.debounce = 0
+            del instance.button_a
+
     def test_get_slot_error_branch_uses_instance_class_name(self):
         """get_slot's ``except Exception`` branch must log the raised error
         and return None -- not raise AttributeError from ``slot_class.__name__``

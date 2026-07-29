@@ -1,13 +1,17 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for the tooltip mixin helpers (fmt / kbd / hl).
+"""Unit tests for the tooltip mixin helpers (fmt / kbd / hl) and the bind surface.
 
-These are pure HTML-building helpers — no Qt widgets needed — so the tests
-stay fast and don't require setup_qt_application().
+The formatting helpers are pure HTML builders — no Qt widgets needed — so most of
+this file stays fast. Only the ``bind`` tests, which install a real event filter,
+need a QApplication.
 """
 
 import unittest
 
+from qtpy import QtWidgets
+
+from conftest import setup_qt_application
 from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
 
 
@@ -281,6 +285,158 @@ class TestPlaceholderPreview(unittest.TestCase):
         # since "unresolved" also appears in the missing token's table cell).
         self.assertLess(html.index("shot"), html.index("X_FINAL_X"))
         self.assertLess(html.index("X_FINAL_X"), html.index("note:"))
+
+
+class TestReachability(unittest.TestCase):
+    """The DSL must be reachable without importing uitk internals — consumers
+    (tentacle slots, DCC panels) build tooltips off the objects they already
+    hold: a registered widget, or the Switchboard."""
+
+    def test_proxy_carries_the_format_dsl(self):
+        from uitk.widgets.mixins.tooltip_mixin import TooltipProxy
+
+        # widget.tooltip.fmt(...) alongside widget.tooltip.bind(...)
+        self.assertTrue(issubclass(TooltipProxy, TooltipFormat))
+        for name in ("fmt", "kbd", "hl", "placeholder_preview", "bind"):
+            self.assertTrue(hasattr(TooltipProxy, name), name)
+
+    def test_switchboard_namespace_is_the_superset(self):
+        """sb owns the surface; the per-widget proxy is the convenience form.
+
+        The switchboard namespace must carry everything the widget proxy does
+        (so `sb.tooltip.<x>` never surprises), plus the batch `bind` only it can
+        serve — resolving a "chk000-2" range needs the switchboard's resolver.
+        """
+        from uitk.switchboard import Switchboard
+        from uitk.widgets.mixins.tooltip_mixin import TooltipNamespace, TooltipProxy
+
+        self.assertTrue(issubclass(TooltipNamespace, TooltipFormat))
+        proxy_surface = {n for n in dir(TooltipProxy) if not n.startswith("_")}
+        ns_surface = {n for n in dir(TooltipNamespace) if not n.startswith("_")}
+        self.assertTrue(
+            proxy_surface <= ns_surface,
+            f"widget.tooltip exposes what sb.tooltip lacks: {proxy_surface - ns_surface}",
+        )
+        sb = Switchboard()
+        self.assertIsInstance(sb.tooltip, TooltipNamespace)
+        self.assertIn("<b>Title</b>", sb.tooltip.fmt(title="Title"))
+
+
+class TestModuleInvariant(unittest.TestCase):
+    """The module states it carries no top-level function definitions (helpers live
+    on classes, per the package standard). Pin it — it was broken once already."""
+
+    def test_no_top_level_functions(self):
+        import ast
+        import inspect
+
+        from uitk.widgets.mixins import tooltip_mixin
+
+        tree = ast.parse(inspect.getsource(tooltip_mixin))
+        offenders = [
+            n.name
+            for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        self.assertEqual(offenders, [], f"module-level def(s): {offenders}")
+
+
+class TestBind(unittest.TestCase):
+    """`bind` installs a lazy provider; both entry points share one installer."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = setup_qt_application()
+
+    def _widget(self):
+        from uitk.widgets.mixins.tooltip_mixin import TooltipProxy
+
+        w = QtWidgets.QWidget()
+        w.tooltip = TooltipProxy(w)
+        return w
+
+    @staticmethod
+    def _filter_of(widget):
+        from uitk.widgets.mixins.tooltip_mixin import TooltipProxy
+
+        return widget.property(TooltipProxy._FILTER_PROP)
+
+    @staticmethod
+    def _hover(widget):
+        """Deliver a real QEvent.ToolTip so the installed provider(s) actually run."""
+        from qtpy import QtCore, QtGui
+
+        pos = QtCore.QPoint(0, 0)
+        QtWidgets.QApplication.sendEvent(
+            widget, QtGui.QHelpEvent(QtCore.QEvent.ToolTip, pos, pos)
+        )
+
+    def test_widget_bind_installs_a_provider(self):
+        w = self._widget()
+        w.tooltip.bind(lambda: "live")
+        self.assertIsNotNone(self._filter_of(w))
+        self._hover(w)
+        self.assertEqual(w.toolTip(), "live")
+
+    def test_provider_is_re_evaluated_on_every_hover(self):
+        w = self._widget()
+        state = {"n": 0}
+
+        def provider():
+            state["n"] += 1
+            return f"call {state['n']}"
+
+        w.tooltip.bind(provider)
+        self._hover(w)
+        self.assertEqual(w.toolTip(), "call 1")
+        self._hover(w)
+        self.assertEqual(w.toolTip(), "call 2")
+
+    def test_rebinding_replaces_rather_than_stacks(self):
+        """Regression: the filter is tracked on the WIDGET, so binding twice — by
+        either route — swaps the provider instead of layering event filters.
+
+        Asserted through behavior, not identity: Qt runs event filters
+        newest-first, so a *stacked* older provider would run LAST and win,
+        leaving the stale "first" text. Seeing "second" proves replacement.
+        """
+        from uitk.switchboard import Switchboard
+
+        w = self._widget()
+        w.tooltip.bind(lambda: "first")
+        first = self._filter_of(w)
+        Switchboard().tooltip.bind(w, lambda: "second")
+        self.assertIsNot(first, self._filter_of(w))
+        self._hover(w)
+        self.assertEqual(w.toolTip(), "second")
+
+    def test_switchboard_bind_accepts_one_widget_or_many(self):
+        from uitk.switchboard import Switchboard
+
+        sb = Switchboard()
+        a, b = self._widget(), self._widget()
+        self.assertEqual(sb.tooltip.bind(a, lambda: "x"), [a])
+        self.assertEqual(sb.tooltip.bind([a, b], lambda: "x"), [a, b])
+        self.assertIsNotNone(self._filter_of(b))
+
+    def test_unresolvable_name_pattern_says_what_to_do(self):
+        """A range needs a UI to resolve against; the failure must name the fix
+        rather than surface the resolver's bare 'expected QWidget, got NoneType'."""
+        from uitk.switchboard import Switchboard
+
+        sb = Switchboard()  # no ui_source, so current_ui resolves to None
+        self.assertIsNone(sb.current_ui)
+        with self.assertRaises(ValueError) as ctx:
+            sb.tooltip.bind("chk000-2", lambda: "x")
+        self.assertIn("ui=", str(ctx.exception))
+
+    def test_bind_tolerates_a_dead_widget(self):
+        from uitk.widgets.mixins.tooltip_mixin import TooltipProxy
+
+        w = QtWidgets.QWidget()
+        proxy = TooltipProxy(w)
+        del w
+        proxy.bind(lambda: "x")  # must not raise
 
 
 if __name__ == "__main__":
