@@ -522,6 +522,15 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         try:
             return self.bridge
         except Exception:  # noqa: BLE001 - absence is the expected outcome here
+            # Debug, not error: a missing optional engine is routine, but a
+            # REAL construction bug must stay diagnosable — the old path
+            # printed it; swallowing with no trace would hide regressions.
+            try:
+                self.sb.logger.debug(
+                    f"{type(self).__name__}: engine unavailable", exc_info=True
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return None
 
     def panel_log(self, message: str, level: str = "info") -> None:
