@@ -221,6 +221,122 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         """Return a fresh bridge instance. Called once, lazily."""
         raise NotImplementedError
 
+    # ------------------ Optional-package provisioning ------------------
+    def ensure_optional_package(
+        self, spec: str, import_name: str = None, *, feature: str = None
+    ) -> bool:
+        """Make an optional package importable, offering to install it on demand.
+
+        A panel whose engine lives in an optional distribution (the Unity bridge
+        needs ``unitytk``; the external-app panels need ``extapps``) calls this
+        BEFORE touching that engine. When the package is missing the user is
+        asked once and, on accept, it is pip-installed into the interpreter this
+        session actually imports from — so the panel works immediately rather
+        than after a restart.
+
+        This is the in-process counterpart of
+        :class:`uitk.handlers.ExternalAppHandler`'s install-on-demand, which
+        provisions *subprocess* apps; the same idea, but the result has to be
+        importable HERE.
+
+        Parameters:
+            spec: pip requirement to install (e.g. ``"unitytk"``).
+            import_name: Module to probe. Defaults to *spec* (with ``-`` → ``_``).
+            feature: Human name of the thing that needs it, used in the prompt.
+
+        Returns:
+            bool: True when the package is importable (already, or after install).
+        """
+        import importlib
+        import importlib.util
+
+        module = import_name or spec.replace("-", "_")
+
+        def _importable() -> bool:
+            try:
+                return importlib.util.find_spec(module) is not None
+            except (ImportError, ValueError):
+                return False
+
+        if _importable():
+            return True
+
+        label = feature or "This panel"
+        answer = self.sb.message_box(
+            f"<b>{label} needs the optional <i>{spec}</i> package.</b><br><br>"
+            f"Install it now?",
+            "Yes",
+            "No",
+        )
+        # NOTE: log through the Switchboard, not ``self.logger`` — a slots class
+        # gets its logger from its BRIDGE (``self.bridge.logger``), and the whole
+        # point of this method is that the bridge does not exist yet; touching
+        # ``self.bridge`` here would recurse straight back into ``make_bridge``.
+        if answer != "Yes":
+            self.sb.logger.info(f"{spec} install declined; {label} is unavailable.")
+            return False
+
+        try:
+            self._install_optional_package(spec)
+        except Exception as error:  # noqa: BLE001 - reported, never raised at the UI
+            self.sb.logger.error(f"Failed to install {spec}: {error}")
+
+        # Trust the import, not pip's exit code: a --target/--user install can
+        # report a non-zero dependency-resolver error for an UNRELATED conflict
+        # in the base environment while the requested wheel installed fine.
+        importlib.invalidate_caches()
+        if _importable():
+            self.sb.logger.info(f"Installed {spec}.")
+            return True
+
+        self.sb.message_box(
+            f"<b>Could not install {spec}.</b><br><br>"
+            f"Install it manually, then reopen {label}.",
+            "Ok",
+        )
+        return False
+
+    def _install_optional_package(self, spec: str) -> None:
+        """Install *spec* so it is importable in THIS interpreter.
+
+        Default policy: ``pip install --user`` against the running interpreter
+        (substituting the sibling python when the host executable is a DCC that
+        does not take ``-c``, e.g. ``maya.exe`` → ``mayapy.exe``). A host whose
+        user-site is not on ``sys.path`` overrides this — see ``blendertk``'s
+        :class:`BlenderBridgeSlotsBase`, which installs into Blender's
+        user-modules dir instead.
+
+        Raises:
+            RuntimeError: when the running interpreter is a DCC host with no
+                sibling python. Driving pip through the host binary itself
+                routes the install into its ``-c`` handler (MEL / a blocked Qt
+                loop) and HANGS it, so refusing is the only safe answer.
+        """
+        import pythontk as ptk
+
+        python = self._optional_package_python()
+        if not python:
+            raise RuntimeError(
+                f"Cannot install {spec!r}: this session's interpreter "
+                f"({sys.executable!r}) is a DCC host with no sibling python to "
+                f"install through. Provision it into the host environment."
+            )
+        ptk.PackageManager(python_path=python).pip(f"install --user {spec}")
+
+    @staticmethod
+    def _optional_package_python() -> Optional[str]:
+        """Interpreter to drive pip with, for an install this session must import.
+
+        Single-sources the DCC-host substitution from
+        :meth:`uitk.handlers.ExternalAppHandler._pip_capable_python` so the
+        in-process and subprocess install paths can't drift — and, critically,
+        inherits its ``None`` for a host with no sibling rather than handing
+        back the host binary, which would hang on the first pip call.
+        """
+        from uitk.handlers.external_app_handler import ExternalAppHandler
+
+        return ExternalAppHandler._pip_capable_python(sys.executable)
+
     def make_preset_store(self):
         """Hook: return a :class:`pythontk.PresetStore` to switch presets into
         **semantic mode**, or ``None`` (default) for **widget-state mode**.
@@ -349,9 +465,24 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
     @property
     def bridge(self):
-        """Lazy-instantiated bridge (caches a single instance per slot)."""
+        """Lazy-instantiated bridge (caches a single instance per slot).
+
+        :meth:`make_bridge` may return ``None`` when the panel's engine lives in
+        an optional package the user declined to install (see
+        :meth:`ensure_optional_package`). That is a supported outcome, but the
+        panel is then unusable — and every consumer here reaches straight for
+        ``self.bridge.logger``, so letting ``None`` through would surface as
+        ``AttributeError: 'NoneType' object has no attribute 'logger'``. Raise
+        one actionable error instead, in the single place that can.
+        """
         if self._bridge is None:
             self._bridge = self.make_bridge()
+        if self._bridge is None:
+            raise RuntimeError(
+                f"{type(self).__name__}: this panel's engine is unavailable — "
+                f"its optional package is not installed. Reopen the panel to be "
+                f"prompted again, or install it manually."
+            )
         return self._bridge
 
     # ------------------ Output Dir row --------------------------------

@@ -590,13 +590,17 @@ class TestExternalAppHandlerLaunch(unittest.TestCase):
         pm_instance.install.assert_called_once_with("anymod")
         spawn.assert_called_once()
 
-    def test_dcc_host_interpreter_refuses_install(self):
-        """Installing into a live DCC host interpreter must raise, not hang.
+    def test_dcc_host_without_sibling_refuses_install(self):
+        """A DCC host with no sibling python must raise, not hang.
 
         Regression: launch()'s direct install path had no host check (unlike
         _bootstrap_providers), so a launch needing a pip install would run it
         against maya.exe / blender.exe (the interpreter of an in-process launch
         inside a DCC) and HANG the host.
+
+        Uses a path that does NOT exist on purpose: the sibling lookup is a
+        filesystem probe, so pointing at a real install would make the result
+        depend on whether the test machine has Maya (see the sibling test).
         """
         pm_instance = MagicMock()
         with (
@@ -608,11 +612,49 @@ class TestExternalAppHandlerLaunch(unittest.TestCase):
                     module="somemod",
                     entry="UI",
                     install_spec="somemod",
-                    python="C:/Program Files/Autodesk/Maya2025/bin/maya.exe",
+                    python="C:/nonexistent-dcc/bin/maya.exe",
                     mode="subprocess",
                 )
         pm_instance.install.assert_not_called()
         self.assertIn("host", str(ctx.exception).lower())
+
+    def test_dcc_host_installs_through_its_sibling_python(self):
+        """With a sibling present, install through IT rather than refusing.
+
+        ``mayapy.exe`` shares Maya's site-packages, so a package installed
+        there is importable by the running host — which is what the old
+        refusal told the user to go do by hand. The host binary itself is
+        still never pip'd (that is what would hang).
+        """
+        import os
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp()
+        bin_dir = os.path.join(tmp, "bin")
+        os.makedirs(bin_dir)
+        host = os.path.join(bin_dir, "maya.exe")
+        sibling = os.path.join(bin_dir, "mayapy.exe")
+        for f in (host, sibling):
+            Path(f).write_text("")
+
+        pm_instance = MagicMock()
+        with (
+            patch.object(ExternalAppHandler, "_is_importable", return_value=False),
+            patch("pythontk.PackageManager", return_value=pm_instance) as pm_cls,
+        ):
+            with self.assertRaises(RuntimeError):
+                # Still raises: _is_importable is stubbed False, so the
+                # post-install check fails. The point is WHICH python was used.
+                self.handler.launch(
+                    module="somemod",
+                    entry="UI",
+                    install_spec="somemod",
+                    python=host,
+                    mode="subprocess",
+                )
+        pm_instance.install.assert_called_once_with("somemod")
+        self.assertEqual(pm_cls.call_args.kwargs["python_path"], sibling)
 
     def test_non_dcc_interpreter_still_installs(self):
         """The guard must not block a normal standalone interpreter."""

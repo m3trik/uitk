@@ -340,7 +340,35 @@ class TestScriptOutput(QtBaseTestCase):
         w.show(); QtWidgets.QApplication.processEvents()
         self.assertEqual(w.toPlainText(), "persist across hide")
 
+    def _require_clipboard(self):
+        """Skip when this environment cannot round-trip the clipboard at all.
+
+        The offscreen QPA carries an in-memory clipboard and always works, so
+        CI (which runs offscreen) is unaffected. Under a REAL platform the
+        clipboard is a machine-global resource any other process can hold open;
+        the set then fails silently and ``text()`` comes back empty — a false
+        failure that says nothing about the copy code under test.
+
+        Deliberately probes rather than keying off the platform name: it skips
+        only when the clipboard is provably broken, so a genuine regression in
+        ``_handle_copy_shortcut`` still fails the assertion below.
+
+        The probe does not restore the previous contents: these tests overwrite
+        the clipboard themselves, so "preserving" it would be false precision —
+        and a ``setText`` restore would DESTROY non-text content (an image the
+        developer had copied), which ``text()`` cannot capture to begin with.
+        """
+        cb = QtWidgets.QApplication.clipboard()
+        sentinel = "uitk-clipboard-probe"
+        cb.setText(sentinel)
+        if cb.text() != sentinel:
+            self.skipTest(
+                "OS clipboard is unavailable in this environment (another "
+                "process holds it); run with QT_QPA_PLATFORM=offscreen."
+            )
+
     def test_copy_joins_with_newlines(self):
+        self._require_clipboard()
         w = self.track_widget(ScriptOutput())
         w.setPlainText("line1\nline2")
         w.selectAll()
@@ -420,6 +448,7 @@ class TestScriptOutput(QtBaseTestCase):
 
     def test_hover_focus_makes_ctrl_c_copy_without_clicking(self):
         """The user-facing behavior: hover + Ctrl+C copies, no click-to-focus first."""
+        self._require_clipboard()
         w = self.track_widget(ScriptOutput(app_wide_copy=False))
         w.setPlainText("copy me")
         w.show()
