@@ -293,6 +293,9 @@ class SizeGripMixin:
         MinimumExpanding / Minimum) unbounds the axis — it is the layout's
         designated surplus absorber; a Fixed spacer contributes its sizeHint.
         Spacers never constrain across the axis. Hidden items are skipped.
+        Spacing mirrors Qt's own rule — a gap counts only where the
+        PRECEDING item is non-empty, so gaps next to hidden widgets and
+        spacers are suppressed exactly as ``QBoxLayout`` suppresses them.
         Non-box layouts (grid/form/stacked — rare in this ecosystem's .ui
         files) fall back to Qt's ``maximumSize()``.
         """
@@ -306,11 +309,18 @@ class SizeGripMixin:
             QtWidgets.QBoxLayout.LeftToRight,
             QtWidgets.QBoxLayout.RightToLeft,
         )
-        along, across, visible = 0, QWIDGETSIZE_MAX, 0
+        along, across, gaps = 0, QWIDGETSIZE_MAX, 0
+        # Qt adds a gap BEFORE an item only when the item before it is
+        # non-empty (qboxlayout's setupGeom). Hidden widgets and spacers
+        # both report isEmpty(), so their adjacent spacing is suppressed —
+        # a flat (visible - 1) * spacing over-counts every such gap, and the
+        # surplus becomes dead space the window can be stretched into.
+        prev_empty = True  # nothing precedes the first item
         for i in range(layout.count()):
             item = layout.itemAt(i)
             if item is None:
                 continue
+            item_empty = item.isEmpty()
             spacer = item.spacerItem()
             if spacer is not None:
                 sp = spacer.sizePolicy()
@@ -325,13 +335,17 @@ class SizeGripMixin:
                 iw, ih = SizeGripMixin._layout_content_max(item.layout())
                 a, b = (iw, ih) if horiz else (ih, iw)
             elif item.widget() is not None:
-                if item.isEmpty():  # hidden (and not retaining size)
+                if item_empty:  # hidden (and not retaining size)
+                    prev_empty = True
                     continue
                 iw, ih = SizeGripMixin._widget_content_max(item.widget())
                 a, b = (iw, ih) if horiz else (ih, iw)
             else:
+                prev_empty = item_empty
                 continue
-            visible += 1
+            if not prev_empty:
+                gaps += 1
+            prev_empty = item_empty
             if a >= QWIDGETSIZE_MAX or along >= QWIDGETSIZE_MAX:
                 along = QWIDGETSIZE_MAX
             else:
@@ -348,7 +362,7 @@ class SizeGripMixin:
             if horiz
             else margins.left() + margins.right()
         )
-        spacing = max(layout.spacing(), 0) * max(visible - 1, 0)
+        spacing = max(layout.spacing(), 0) * gaps
         if along < QWIDGETSIZE_MAX:
             along = min(along + spacing + along_margin, QWIDGETSIZE_MAX)
         if across < QWIDGETSIZE_MAX:

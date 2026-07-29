@@ -31,6 +31,31 @@ class UiHandler(BaseHandler):
     TRANSIENT_HEADER = ("menu", "collapse", "pin")
     STICKY_HEADER = ("menu", "collapse", "hide")
 
+    # Window persistence — the user-facing name for the chrome choice above.
+    # ``"transient"`` -> pin chrome, ``"sticky"`` -> hide chrome. ``"context"``
+    # is not a chrome: it means "no user choice, use :meth:`default_persistence`"
+    # (the per-window default a subclass declares — e.g. mayatk's tool panels
+    # are sticky). This handler is the SOLE owner of the resolution; the UI
+    # Browser is only its front end (a global default plus per-window
+    # overrides, both persisted in this handler's config branch).
+    PERSISTENCE_TRANSIENT = "transient"
+    PERSISTENCE_STICKY = "sticky"
+    PERSISTENCE_CONTEXT = "context"
+    PERSISTENCE_MODES = (PERSISTENCE_TRANSIENT, PERSISTENCE_STICKY)
+    WINDOW_PERSISTENCE_KEY = "window_persistence"
+    WINDOW_PERSISTENCE_DEFAULT = PERSISTENCE_CONTEXT
+    PERSISTENCE_OVERRIDE_PREFIX = "persistence_override"
+
+    # Pin-button click behavior for every window this handler styles:
+    #   True  → one-click dismiss (``Header.pin_on_drag_only``): clicking the
+    #           pin button hides the window and hovering it shows the red hide
+    #           affordance; the window is pinned by dragging its header.
+    #   False → classic toggle: click to pin, click again to unpin and hide.
+    # Persisted under the handler's config branch; the UI Browser's "Pin
+    # button hides (1-click)" checkbox is the user-facing switch.
+    PIN_CLICK_HIDES_KEY = "pin_click_hides"
+    PIN_CLICK_HIDES_DEFAULT = True
+
     # Default styling configuration
     DEFAULT_STYLE: Dict[str, Any] = {
         "attributes": {"WA_TranslucentBackground": True},
@@ -46,6 +71,8 @@ class UiHandler(BaseHandler):
         "remember_position": True,
         "remember_size": True,
         "style": DEFAULT_STYLE,
+        PIN_CLICK_HIDES_KEY: PIN_CLICK_HIDES_DEFAULT,
+        WINDOW_PERSISTENCE_KEY: WINDOW_PERSISTENCE_DEFAULT,
     }
 
     def __init__(
@@ -75,6 +102,12 @@ class UiHandler(BaseHandler):
         """
         super().__init__(switchboard=switchboard, log_level=log_level)
         self.recursive = recursive
+
+        # Seed the process-wide pin-click default from the persisted
+        # preference. This is what carries the preference to headers this
+        # handler never styles — Menu chrome (option-box menus, persistent
+        # mode) and .ui-embedded headers all follow Header's class default.
+        self._seed_pin_click_default()
 
         # 1. Register properties from the manual registry (Overrides)
         self._register_manual_overrides()
@@ -316,6 +349,255 @@ class UiHandler(BaseHandler):
                 f"[{ui.objectName()}] Connected hide_signal -> request_hide"
             )
 
+    # ── Pin-button click mode ─────────────────────────────────────────────
+
+    @property
+    def pin_click_hides(self) -> bool:
+        """Whether a pin-button click dismisses the window (see the class constants).
+
+        Persisted preference; takes effect through ``Header``'s process-wide
+        default (:meth:`_seed_pin_click_default`), which every header built
+        without an explicit ``pin_on_drag_only`` follows — including Menu
+        chrome this handler never styles.
+        """
+        return bool(
+            self.config.value(self.PIN_CLICK_HIDES_KEY, self.PIN_CLICK_HIDES_DEFAULT)
+        )
+
+    @pin_click_hides.setter
+    def pin_click_hides(self, value) -> None:
+        value = bool(value)
+        self.config.setValue(self.PIN_CLICK_HIDES_KEY, value)
+        # Publishing the class default IS the live-apply: headers resolve
+        # their mode through it at click/hover/show time, so open windows and
+        # menu chrome adopt the flip immediately. A header with an explicitly
+        # assigned ``pin_on_drag_only`` (a slot's deliberate per-tool choice)
+        # keeps it — the preference must not clobber intent.
+        self._seed_pin_click_default(value)
+
+    def _seed_pin_click_default(self, value: Optional[bool] = None) -> None:
+        """Publish the preference as ``Header``'s process-wide default.
+
+        Lazy import keeps handler import free of widget modules.
+        """
+        from uitk.widgets.header import Header
+
+        Header.set_default_pin_on_drag_only(
+            self.pin_click_hides if value is None else value
+        )
+
+    # ── Window persistence (pin vs hide chrome) ──────────────────────────
+
+    def default_persistence(self, ui) -> str:
+        """The per-window default for *ui* — what it does with no user override.
+
+        This is the "context" in the UI Browser's ``Default (context)``: the
+        behavior a window has always had, expressed as a persistence mode
+        instead of hardcoded header buttons. Subclasses override it to declare
+        their own defaults (mayatk / blendertk make their tool panels sticky);
+        overriding ``apply_styles`` to swap ``header_buttons`` is the wrong
+        home, because a user override then has nothing to override.
+
+        Returns one of :attr:`PERSISTENCE_MODES` (never ``"context"``).
+        """
+        return self.PERSISTENCE_TRANSIENT
+
+    @property
+    def window_persistence(self) -> str:
+        """Global default persistence: a mode, or ``"context"`` for per-window.
+
+        Persisted preference; the UI Browser's "Window persistence" combo is
+        the user-facing switch. ``"context"`` (the default) defers to
+        :meth:`default_persistence` per window.
+        """
+        value = self.config.value(
+            self.WINDOW_PERSISTENCE_KEY, self.WINDOW_PERSISTENCE_DEFAULT
+        )
+        return (
+            value
+            if value in self.PERSISTENCE_MODES or value == self.PERSISTENCE_CONTEXT
+            else self.WINDOW_PERSISTENCE_DEFAULT
+        )
+
+    @window_persistence.setter
+    def window_persistence(self, value) -> None:
+        if value not in self.PERSISTENCE_MODES:
+            value = self.PERSISTENCE_CONTEXT
+        self.config.setValue(self.WINDOW_PERSISTENCE_KEY, value)
+        self.reapply_persistence()
+
+    def _persistence_key(self, name: str) -> str:
+        """Per-window override key, host-namespaced.
+
+        QSettings is shared across processes by (org, app), so a bare UI name
+        would let a Maya and a Blender session collide on a same-named entry.
+        Reuse the Switchboard's host-namespacing SSoT (the same one behind
+        per-UI ``ui.settings``) so ``mirror`` -> ``mirror_maya`` /
+        ``mirror_blender``.
+        """
+        ns = getattr(self.sb, "_host_namespaced_branch", None)
+        leaf = ns(name) if callable(ns) else name
+        return f"{self.PERSISTENCE_OVERRIDE_PREFIX}/{leaf}"
+
+    def persistence_override(self, name: str) -> Optional[str]:
+        """The stored per-window override, or ``None`` if it follows the default."""
+        if not name:
+            return None
+        value = self.config.value(self._persistence_key(name), None)
+        return value if value in self.PERSISTENCE_MODES else None
+
+    def set_persistence_override(self, name: str, mode: Optional[str]) -> None:
+        """Set (a mode) or clear (``None``) a per-window override, and re-chrome
+        the window if it is already loaded."""
+        if not name:
+            return
+        key = self._persistence_key(name)
+        if mode in self.PERSISTENCE_MODES:
+            self.config.setValue(key, mode)
+        else:
+            self.config.remove(key)
+        self.reapply_persistence(name)
+
+    @staticmethod
+    def _ui_name(ui, name: Optional[str] = None) -> str:
+        """The registry name for *ui* — the ``loaded_ui`` key, which
+        ``Switchboard.add_ui`` also stamps as the window's objectName."""
+        if name:
+            return name
+        try:
+            return ui.objectName() or ""
+        except AttributeError:
+            return ""
+
+    def resolve_persistence(
+        self, ui, name: Optional[str] = None, context_default: Optional[str] = None
+    ) -> str:
+        """The effective persistence mode for *ui*: a concrete member of
+        :attr:`PERSISTENCE_MODES`, never ``"context"``.
+
+        Precedence: per-window override -> global default (when not
+        ``"context"``) -> *context_default* (a caller's launch-path default)
+        -> :meth:`default_persistence`.
+        """
+        override = self.persistence_override(self._ui_name(ui, name))
+        if override is not None:
+            return override
+        global_mode = self.window_persistence
+        if global_mode in self.PERSISTENCE_MODES:
+            return global_mode
+        return self._default_mode(ui, context_default)
+
+    def _default_mode(self, ui, context_default: Optional[str] = None) -> str:
+        """The mode for *ui* with no user choice in play — the tail of
+        :meth:`resolve_persistence`, and what clearing a choice falls back to."""
+        if context_default in self.PERSISTENCE_MODES:
+            return context_default
+        return self.default_persistence(ui)
+
+    def is_persistence_explicit(self, ui, name: Optional[str] = None) -> bool:
+        """Whether a *user* choice (per-window override or a non-context global)
+        drives *ui*'s chrome — as opposed to a per-window default.
+
+        An explicit choice outranks even a header a ``.ui`` file configured by
+        hand; a default must not.
+        """
+        if self.persistence_override(self._ui_name(ui, name)) is not None:
+            return True
+        return self.window_persistence in self.PERSISTENCE_MODES
+
+    def reapply_persistence(self, name: Optional[str] = None) -> None:
+        """Re-chrome loaded windows after a persistence preference change.
+
+        Live-apply is what makes the preference a *setting* rather than a
+        launch argument — the same contract ``pin_click_hides`` has. Limited to
+        *name* when given, otherwise every loaded UI.
+        """
+        loaded = getattr(self.sb, "loaded_ui", None)
+        if loaded is None:
+            return
+        if name:
+            items = [(name, loaded.peek(name))]
+        else:
+            try:
+                items = list(loaded.items())
+            except AttributeError:
+                return
+        for ui_name, ui in items:
+            if ui is None:
+                continue
+            try:
+                self._sync_persistence(ui, ui_name)
+            except RuntimeError:  # window deleted since it was loaded
+                continue
+
+    def _sync_persistence(
+        self,
+        ui,
+        name: Optional[str] = None,
+        override: Optional[str] = None,
+        context_default: Optional[str] = None,
+        header=None,
+    ) -> None:
+        """Bring *ui*'s header in line with its persistence mode.
+
+        A *default* and a *choice* have different rights over the header:
+
+        * **Unconfigured header** — install the mode's whole default set
+          (:meth:`_persistence_header`). This is the first-load path.
+        * **Already configured + an explicit user choice** — swap only the
+          dismissal button (:meth:`_persistence_buttons`). Panels configure
+          their own chrome in ``header_init`` (``"refresh", "menu", "collapse",
+          "hide"``); replacing that wholesale to honor a pin/hide choice would
+          silently delete the refresh button.
+        * **Already configured, no explicit choice** — restore the baseline
+          (below), which is a no-op unless a choice had previously swapped it.
+          The panel's own call IS its default.
+
+        The **baseline** is what makes *clearing* a choice work: it's the chrome
+        as the panel last configured it, remembered on the header before the
+        first forced swap. Without it, clearing an override left the swapped
+        button in place until the next load — the row menu would say ``Default``
+        while the window still showed the override. It can't be recomputed
+        instead, because a panel that declares a pin button in ``header_init``
+        (the gesture-scoped exception) has a default the handler's own
+        resolution would get wrong. It is refreshed whenever the panel's chrome
+        differs from what this method last wrote, so a re-run ``header_init``
+        re-establishes it.
+
+        *override* is a per-call mode (the browser's per-launch value), treated
+        as an explicit choice.
+        """
+        header = header if header is not None else self._ui_header(ui)
+        if header is None:
+            return
+        explicit = override in self.PERSISTENCE_MODES or self.is_persistence_explicit(
+            ui, name
+        )
+        mode = (
+            override
+            if override in self.PERSISTENCE_MODES
+            else self.resolve_persistence(ui, name, context_default)
+        )
+        current = self._header_chrome(header)
+        if not current:
+            buttons = self._persistence_header(mode)
+            # Baseline for a handler-installed header is the same set built
+            # from the mode it would have had with no user choice in play.
+            baseline = self._persistence_header(self._default_mode(ui, context_default))
+        else:
+            baseline = getattr(header, self._BASELINE_ATTR, None)
+            if baseline is None or current != getattr(header, self._WRITTEN_ATTR, None):
+                baseline = current  # the panel (re)configured its own chrome
+            buttons = self._persistence_buttons(current, mode) if explicit else baseline
+        if override in self.PERSISTENCE_MODES:
+            # A per-launch override lives only in this call — nothing persisted
+            # it, so it has to BE the baseline or the on-show pass would read
+            # the stored preference and immediately undo it.
+            baseline = buttons
+        setattr(header, self._BASELINE_ATTR, tuple(baseline))
+        self._write_header_buttons(header, buttons)
+        setattr(header, self._WRITTEN_ATTR, tuple(buttons))
+
     def _resolve_hosted_theme(self, ui) -> Optional[str]:
         """The configured theme for *ui*'s hosted style, or ``None``.
 
@@ -394,18 +676,23 @@ class UiHandler(BaseHandler):
         except AttributeError:
             pass
 
-        if "header_buttons" in style:
-            header = self._ui_header(ui)
-            if header is not None:
-                current = tuple(getattr(header, "buttons", {}).keys())
-                # The help button is auto-installed by ``Header.set_help_text``
-                # (typically from a slot's ``header_init``). It is additive, not
-                # a user-explicit button configuration, so don't let its presence
-                # suppress the default-button setup. ``config_buttons`` preserves
-                # the help button across rebuilds when help text is set.
-                non_help_current = tuple(b for b in current if b != "help")
-                if not non_help_current:
-                    header.config_buttons(*style["header_buttons"])
+        # Header chrome. A style still carrying ``DEFAULT_STYLE``'s buttons is
+        # "no deliberate choice" (same rule as the theme above), so the chrome
+        # is resolved from the window's persistence mode — the single place pin
+        # vs hide is decided, for EVERY init path. Without this the marking
+        # menu's canonical path baked in its own chrome and the UI Browser's
+        # setting reached browser-launched windows only.
+        buttons = style.get("header_buttons")
+        header = self._ui_header(ui) if buttons else None
+        if header is not None:
+            if tuple(buttons) == tuple(self.DEFAULT_STYLE["header_buttons"]):
+                self._sync_persistence(ui, header=header)
+            elif not self._header_chrome(header):
+                # A caller-named set is still only a DEFAULT: it fills an
+                # unconfigured header but never overwrites chrome a slot's
+                # ``header_init`` already chose. Only an explicit user choice
+                # outranks that — see :meth:`_sync_persistence`.
+                self._write_header_buttons(header, buttons)
 
     # ── Launchable contract ──────────────────────────────────────────────
 
@@ -559,19 +846,18 @@ class UiHandler(BaseHandler):
             except Exception:
                 pass
 
-        if not canonical:
-            # Launcher-only chrome — the canonical marking-menu init owns the
-            # header set otherwise. ``persistence`` picks pin (transient) vs
-            # hide (sticky); None -> hide, preserving the standalone default.
-            self._configure_launched_header(ui, persistence=persistence)
-        elif persistence in ("transient", "sticky"):
-            # An EXPLICIT persistence choice (e.g. from the UI Browser) on a
-            # marking-menu window: apply_styles already installed the pin
-            # chrome, so override it. "sticky" drops the pin button, and
-            # MainWindow.request_hide then refuses -> the window survives
-            # key_show_release; "transient" re-asserts the pin chrome. Any other
-            # value (None, or an unrecognized mode) leaves the canonical chrome.
-            self._apply_persistence_chrome(ui, persistence)
+        # Chrome. A caller-supplied ``persistence`` is a per-launch override;
+        # otherwise resolve the stored preference exactly as apply_styles does,
+        # so a window's pin/hide behavior is identical however it was opened.
+        # A launcher-opened window with no stored choice keeps the standalone
+        # default (hide chrome — nothing auto-hides it out here); the canonical
+        # marking-menu path defers to the UI's own default instead.
+        self._sync_persistence(
+            ui,
+            name,
+            override=persistence,
+            context_default=None if canonical else self.PERSISTENCE_STICKY,
+        )
 
         if not restore_geometry and hasattr(ui, "clear_saved_geometry"):
             ui.clear_saved_geometry()
@@ -618,38 +904,63 @@ class UiHandler(BaseHandler):
         return None
 
     @classmethod
-    def _set_header_chrome(cls, ui, persistence, force: bool) -> None:
-        """Apply the persistence button set to a UI's header (single source).
+    def _persistence_buttons(cls, buttons, persistence) -> tuple:
+        """*buttons* with its dismissal button swapped to match *persistence*.
 
-        ``force=False`` preserves a header that already carries a deliberate
-        custom button set; ``force=True`` replaces it regardless.
+        Order and every other button are preserved — the mode owns pin-vs-hide,
+        not the rest of a panel's chrome. A set carrying neither button gains
+        the wanted one at the end.
         """
-        header = cls._ui_header(ui)
-        if header is None:
-            return
-        if not force and getattr(header, "buttons", None):
+        want = "pin" if persistence == cls.PERSISTENCE_TRANSIENT else "hide"
+        drop = "hide" if want == "pin" else "pin"
+        out, placed = [], False
+        for name in buttons:
+            if name in (want, drop):
+                if not placed:
+                    out.append(want)
+                    placed = True
+            else:
+                out.append(name)
+        if not placed:
+            out.append(want)
+        return tuple(out)
+
+    # Per-header bookkeeping for _sync_persistence: the chrome it last wrote,
+    # and the pre-swap baseline to put back when a user choice is cleared.
+    _WRITTEN_ATTR = "_uitk_persistence_written"
+    _BASELINE_ATTR = "_uitk_persistence_baseline"
+
+    @staticmethod
+    def _header_chrome(header) -> tuple:
+        """*header*'s configured buttons in layout order, help excluded.
+
+        The help button never counts as configuration: ``Header.set_help_text``
+        installs it additively (typically from a slot's ``header_init``) and
+        ``config_buttons`` re-appends it across rebuilds. Empty means the header
+        has made no chrome choice — a help-only header once suppressed the
+        default menu / collapse / dismiss buttons, which is the bug this
+        exclusion exists for.
+        """
+        return tuple(b for b in (getattr(header, "buttons", None) or ()) if b != "help")
+
+    @classmethod
+    def _write_header_buttons(cls, header, buttons) -> None:
+        """Install *buttons* on *header* — the single chrome write path.
+
+        A no-op when the chrome is already correct: ``apply_styles`` runs on
+        every ``get`` and ``config_buttons`` replaces the button widgets, so an
+        unguarded write would churn the chrome for no visible change. Compared
+        in ORDER — ``Header.buttons`` is insertion-ordered and that order is the
+        layout order, so the same names in a different arrangement is a real
+        change. The help button is excluded: ``Header.set_help_text`` adds it
+        additively and ``config_buttons`` re-appends it across rebuilds.
+        """
+        if cls._header_chrome(header) == tuple(buttons):
             return
         try:
-            header.config_buttons(*cls._persistence_header(persistence))
+            header.config_buttons(*buttons)
         except Exception:
             pass
-
-    @classmethod
-    def _configure_launched_header(cls, ui, persistence=None) -> None:
-        """Add menu/collapse plus a pin (transient) or hide (sticky) button to
-        a launched UI's header, unless it already has a deliberate custom set.
-
-        Lifted from SwitchboardBrowser so launch styling lives on the handler.
-        ``persistence`` selects the button set; ``None`` -> hide.
-        """
-        cls._set_header_chrome(ui, persistence, force=False)
-
-    @classmethod
-    def _apply_persistence_chrome(cls, ui, persistence) -> None:
-        """Force the header button set for *persistence*, replacing any existing
-        set. Honors an explicit persistence choice on the canonical marking-menu
-        path, where apply_styles already installed pin chrome."""
-        cls._set_header_chrome(ui, persistence, force=True)
 
     def close(self, name: str) -> None:
         """Hide the named UI via its header (matches the in-window hide button).
@@ -694,7 +1005,15 @@ class UiHandler(BaseHandler):
     # ── Visibility hookup ────────────────────────────────────────────────
 
     def _wire_visibility(self, name: str, ui) -> None:
-        """Connect ``ui.on_show``/``on_hide`` so row visibility refreshes.
+        """Connect ``ui.on_show``/``on_hide`` so row visibility refreshes, and
+        re-assert the window's persistence chrome on every show.
+
+        The chrome half is an ordering fix: ``register_children`` (which runs a
+        slot's ``header_init``, where panels call ``config_buttons``) happens
+        earlier in ``showEvent`` than ``on_show``, so a panel's own chrome would
+        otherwise be the last word and a user's UI Browser override would never
+        stick. ``_sync_persistence`` leaves the panel's set alone unless the
+        user made an explicit choice, so this is inert by default.
 
         Idempotent — uses a per-UI flag attribute so re-launching the
         same UI doesn't stack connections.
@@ -708,6 +1027,11 @@ class UiHandler(BaseHandler):
         try:
             on_show.connect(lambda _n=name: self._notify_entries_changed(_n))
             on_hide.connect(lambda _n=name: self._notify_entries_changed(_n))
+            # By NAME, not by captured widget: this connection is owned by the
+            # window it fires on, so capturing the widget would make it hold a
+            # reference to itself. ``reapply_persistence`` already does the
+            # by-name lookup (and tolerates an evicted / deleted window).
+            on_show.connect(lambda _n=name: self.reapply_persistence(_n))
             ui._uitk_handler_visibility_wired = True
         except Exception:
             pass

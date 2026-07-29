@@ -253,11 +253,16 @@ DEFAULT_STYLE = {
     "header_buttons": ("menu", "collapse", "pin"),
 }
 
+TRANSIENT_HEADER = ("menu", "collapse", "pin")    # auto-hides with the marking menu
+STICKY_HEADER    = ("menu", "collapse", "hide")   # stays open until dismissed
+
 DEFAULTS = {
     "default_position":   None,    # "cursor" | "screen" | "last" | (x, y)
     "remember_position":  True,
     "remember_size":      True,
     "style":              DEFAULT_STYLE,
+    "pin_click_hides":    True,       # pin-button click dismisses
+    "window_persistence": "context",  # "context" | "sticky" | "transient"
 }
 
 UI_REGISTRY: dict = {}   # subclass override for manual ui-name → path maps
@@ -272,7 +277,26 @@ UI_REGISTRY: dict = {}   # subclass override for manual ui-name → path maps
 | `apply_styles(ui, style=None)` | Apply `DEFAULT_STYLE` (or override) with tag-based adjustments |
 | `setup_lifecycle(ui, hide_signal=None)` | Connect a signal to `ui.request_hide()` |
 
-Subclass for DCC integration — override `show`, `apply_styles`, or provide a `UI_REGISTRY`.
+### Window persistence
+
+Pin vs hide chrome for **every** window, whatever opened it. Resolution order:
+per-window override → global default → the window's own default.
+
+| Member | Purpose |
+|:---|:---|
+| `default_persistence(ui) -> str` | **Subclass hook** — the per-window default (base: `"transient"`) |
+| `window_persistence` (property) | Global default: `"context"` (per-window) / `"sticky"` / `"transient"` |
+| `persistence_override(name) -> str \| None` | Stored per-window override |
+| `set_persistence_override(name, mode)` | Set (mode) or clear (`None`); live-applies |
+| `resolve_persistence(ui, name=None, context_default=None) -> str` | Effective mode, never `"context"` |
+| `reapply_persistence(name=None)` | Re-chrome loaded windows after a change |
+
+An unconfigured header takes the mode's whole button set; a header a panel
+configured itself (`header_init` → `config_buttons`) is left alone unless the
+user set an explicit choice, and then only its dismissal button is swapped — so
+a panel keeps its `refresh` button either way.
+
+Subclass for DCC integration — override `show`, `default_persistence`, or provide a `UI_REGISTRY`.
 
 ---
 

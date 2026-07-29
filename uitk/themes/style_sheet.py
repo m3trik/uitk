@@ -78,6 +78,15 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         "light": {
             # Surfaces
             "PANEL_BACKGROUND": "rgb(70,70,70)",
+            # Window chrome (Header / Footer bands). Its own token rather than
+            # PANEL_BACKGROUND because that one also paints scrollbars,
+            # toolboxes, menubars and group titles — thinning it to make the
+            # chrome glassy would wash all of those out. Note the alpha
+            # composites over the window body fill (WINDOW_BACKGROUND, painted
+            # across the full central-widget rect), not the desktop: it blends
+            # the band toward the body tone and can never read as more
+            # see-through than the window itself.
+            "CHROME_BACKGROUND": "rgba(70,70,70,150)",
             "WINDOW_BACKGROUND": "rgba(80,80,80,170)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",
             "WIDGET_BACKGROUND_HOVER": "rgb(140,140,140)",
@@ -122,7 +131,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         "dark": {
             # Surfaces
             "PANEL_BACKGROUND": "rgba(105,105,105,100)",
-            "WINDOW_BACKGROUND": "rgba(100,100,100,200)",
+            "CHROME_BACKGROUND": "rgba(105,105,105,60)",
+            "WINDOW_BACKGROUND": "rgba(100,100,100,125)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
             "WIDGET_BACKGROUND_HOVER": "rgb(78,78,78)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
@@ -171,6 +181,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         "high-contrast": {
             # Surfaces
             "PANEL_BACKGROUND": "rgb(0,0,0)",
+            # Opaque by design — translucency is dropped here for the same
+            # reason every other surface in this theme drops it (legibility
+            # over busy viewports); the chrome reads via its bold title and
+            # outlined buttons, not a tinted band.
+            "CHROME_BACKGROUND": "rgb(0,0,0)",
             "WINDOW_BACKGROUND": "rgb(0,0,0)",
             "WIDGET_BACKGROUND": "rgb(16,16,16)",
             "WIDGET_BACKGROUND_HOVER": "rgb(48,48,48)",

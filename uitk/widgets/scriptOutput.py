@@ -30,6 +30,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from qtpy import QtWidgets, QtGui, QtCore
 import pythontk as ptk
 
+from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
+
 # What QTextCursor.insertText turns into a new paragraph — i.e. what actually splits a
 # chunk into document blocks. Counting only "\n" undercounts a stream carrying bare
 # carriage returns, which leaves the lines before one unstamped (see
@@ -341,8 +343,12 @@ class _BlockLevel(QtGui.QTextBlockUserData):
         self.level = level
 
 
-class ScriptOutput(QtWidgets.QTextEdit):
+class ScriptOutput(ShortcutGuardMixin, QtWidgets.QTextEdit):
     """Read-only, syntax-highlighted console view — host-agnostic.
+
+    ``ShortcutGuardMixin`` comes first in the MRO so its ``event`` override wins:
+    a read-only ``QTextEdit`` claims *nothing* from Qt on its own, not even Copy,
+    so without it any app-wide Ctrl+C binding outranks the console.
 
     Injectable collaborators (DIP — no ``maya.cmds`` / ``bpy`` here):
 
@@ -361,13 +367,13 @@ class ScriptOutput(QtWidgets.QTextEdit):
         context_menu_hook: ``callable(menu)`` invoked while building the context
             menu, so a host can append DCC-specific actions (e.g. Maya's
             "Echo All Commands" toggle) without subclassing.
-        app_wide_copy: When True (Maya), capture Ctrl+C **application-wide** — an
-            ``ApplicationShortcut`` plus an app-level event filter — so a selection
-            copies even when the host intercepts the shortcut or the widget lacks
-            focus. When False (Blender / standalone, where the widget receives its
-            own key events), scope copy to this widget so it never hijacks Ctrl+C
-            from other widgets in the same QApplication while the console holds a
-            stale selection.
+        app_wide_copy: When True (Maya), scope the copy shortcut
+            ``ApplicationShortcut`` so a selection copies even when the console
+            lacks focus. When False (Blender / standalone, where the widget
+            receives its own key events), scope it to this widget. Either way the
+            reach is a ``QShortcut``, never an application event filter, so a
+            focused editor keeps its own Ctrl+C: Qt offers the chord to the focus
+            widget first and only falls through to this shortcut if it declines.
         focus_on_hover: Take keyboard focus when the mouse enters (default True), so
             the console's shortcuts — Ctrl+C copy, Ctrl+A select-all, and PgUp/PgDn/
             Home/End/arrow scrollback navigation — work on hover without clicking in
@@ -411,9 +417,12 @@ class ScriptOutput(QtWidgets.QTextEdit):
         if max_blocks:
             self.document().setMaximumBlockCount(int(max_blocks))
 
-        # Ctrl+C copy. app_wide_copy=True (Maya) reaches over host shortcut interception
-        # via an ApplicationShortcut + app event filter; False scopes it to this widget so
-        # it can't hijack Ctrl+C elsewhere in the app when the console holds a selection.
+        # Ctrl+C copy, as a shortcut only — never an application-level event filter.
+        # A filter on the QApplication sees key presses BEFORE their target widget,
+        # which outranks every focused field in the process; a shortcut goes through
+        # Qt's own resolution, where the focus widget is offered the chord first and
+        # can keep it (QEvent.ShortcutOverride). That is the deference this console
+        # owes the rest of the app, and Qt already implements it.
         self._copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self)
         self._copy_shortcut.setContext(
             QtCore.Qt.ApplicationShortcut
@@ -421,10 +430,6 @@ class ScriptOutput(QtWidgets.QTextEdit):
             else QtCore.Qt.WidgetWithChildrenShortcut
         )
         self._copy_shortcut.activated.connect(self._handle_copy_shortcut)
-        if app_wide_copy:
-            app = QtWidgets.QApplication.instance()
-            if app:
-                app.installEventFilter(self)
 
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.setTextInteractionFlags(
@@ -536,28 +541,6 @@ class ScriptOutput(QtWidgets.QTextEdit):
             event.accept()
             return
         super().keyPressEvent(event)
-
-    def event(self, event: QtCore.QEvent):
-        """Intercept ShortcutOverride so the host doesn't steal Ctrl+C."""
-        if event.type() == QtCore.QEvent.ShortcutOverride:
-            if isinstance(event, QtGui.QKeyEvent) and event.matches(
-                QtGui.QKeySequence.Copy
-            ):
-                if self.textCursor().hasSelection():
-                    event.accept()
-                    return True
-        return super().event(event)
-
-    def eventFilter(self, obj, event: QtCore.QEvent):
-        if event.type() in (QtCore.QEvent.KeyPress, QtCore.QEvent.ShortcutOverride):
-            if isinstance(event, QtGui.QKeyEvent) and event.matches(
-                QtGui.QKeySequence.Copy
-            ):
-                if self.textCursor().hasSelection():
-                    self._handle_copy_shortcut()
-                    event.accept()
-                    return True
-        return super().eventFilter(obj, event)
 
     # -- internals -----------------------------------------------------------
     def _handle_copy_shortcut(self):

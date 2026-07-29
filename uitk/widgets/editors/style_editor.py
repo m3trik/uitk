@@ -22,6 +22,7 @@ BASIC_TOKENS = frozenset(
     {
         # Main surfaces
         "PANEL_BACKGROUND",
+        "CHROME_BACKGROUND",
         "WINDOW_BACKGROUND",
         "WIDGET_BACKGROUND",
         "DISABLED_BACKGROUND",

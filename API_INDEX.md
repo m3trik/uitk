@@ -18,7 +18,7 @@ _Generated: 2026-07-29_
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, ensure_optional_package, make_preset_store, list_template_modes, b000, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, resolved_output_dir, require_output_dir, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
+  - methods: params_module, template_dir, make_bridge, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
 - `class AttributeSpec`
@@ -63,7 +63,7 @@ _Generated: 2026-07-29_
 
 ### `handlers/ui_handler.py`
 - `class UiHandler(BaseHandler)`
-  - methods: editors, can_resolve, get, show, setup_lifecycle, apply_styles, entries, hosting_handler, launch, close, is_visible, save_tags
+  - methods: editors, can_resolve, get, show, setup_lifecycle, pin_click_hides, default_persistence, window_persistence, persistence_override, set_persistence_override, resolve_persistence, is_persistence_explicit, reapply_persistence, apply_styles, entries, hosting_handler, launch, close, is_visible, save_tags
 
 ### `loaders/compiled.py` — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - `class CompiledLoader`
@@ -255,7 +255,7 @@ _Generated: 2026-07-29_
 
 ### `widgets/header.py`
 - `class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`
-  - methods: menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent
+  - methods: pin_on_drag_only, set_default_pin_on_drag_only, menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, eventFilter, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent
 
 ### `widgets/label.py`
 - `class Label(QtWidgets.QLabel, MenuMixin, OptionBoxMixin, AttributesMixin)`
@@ -338,6 +338,10 @@ _Generated: 2026-07-29_
 ### `widgets/mixins/option_box_mixin.py` — OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 - `class OptionBoxMixin`
   - methods: option_box, container, options
+
+### `widgets/mixins/shortcut_guard.py` — Keep an editing chord with the widget the user is actually typing in.
+- `class ShortcutGuardMixin`
+  - methods: event, claims_shortcut, is_read_only
 
 ### `widgets/mixins/size_grip.py` — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - `class CornerSizeGrip(QtWidgets.QSizeGrip)`
@@ -470,8 +474,8 @@ _Generated: 2026-07-29_
   - methods: starts, continues
 - `class ScriptHighlighter(QtGui.QSyntaxHighlighter)`
   - methods: default_rules, default_block_rules, default_level_formats, highlightBlock, stamp_level
-- `class ScriptOutput(QtWidgets.QTextEdit)`
-  - methods: set_clear_callback, set_context_menu_hook, set_rules, set_block_rules, append_text, enterEvent, keyPressEvent, event, eventFilter, build_context_menu
+- `class ScriptOutput(ShortcutGuardMixin, QtWidgets.QTextEdit)`
+  - methods: set_clear_callback, set_context_menu_hook, set_rules, set_block_rules, append_text, enterEvent, keyPressEvent, build_context_menu
 
 ### `widgets/separator.py`
 - `class Separator(QtWidgets.QFrame, AttributesMixin)`

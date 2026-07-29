@@ -309,6 +309,51 @@ keyboard chips, `hl(text, color)` for inline color highlights.
 
 `UiHandler.DEFAULT_STYLE["header_buttons"]` = `("menu", "collapse", "pin")` — applied if no buttons configured manually.
 
+**Pin vs hide is a handler decision, not a per-panel one.** Which dismissal
+button a window carries is its *window persistence* mode, owned by `UiHandler`
+and editable per window in the UI Browser (see
+[API_REFERENCE.md § Window persistence](API_REFERENCE.md#window-persistence)).
+A panel's own `config_buttons(...)` in `header_init` still sets its **default**
+— the handler only swaps `pin`/`hide` on it when the user made an explicit
+choice, leaving `refresh` and everything else intact.
+
+### Pin button: click-to-hide vs classic toggle
+
+`Header(pin_on_drag_only=...)` selects what a pin-button *click* does:
+
+| Mode | Click | Pin how? | Hover |
+|:---|:---|:---|:---|
+| `False` (widget default) | pin / unpin (unpin hides) | click the button | standard |
+| `True` | hides the window, in either pin state | drag the header | red background; close icon while unpinned |
+
+The `True` mode turns the pin into a one-click dismiss and advertises it: the
+button paints red on hover (QSS keys the `pinHides` dynamic property) and, while
+unpinned, swaps to the close glyph — so it reads as the hide button it acts as.
+Assignable on a live header (`header.pin_on_drag_only = True`, `None` to
+re-follow the default); the visuals re-sync, including across `config_buttons`
+rebuilds.
+
+The constructor default is `None` = *follow the process-wide default*
+(`Header.set_default_pin_on_drag_only`, initially `False`). That default is
+owned by the **`UiHandler.pin_click_hides`** preference (default `True`,
+persisted in the handler's config branch): seeded at handler init and updated
+on flip, so it reaches every header built without an explicit mode — tool
+windows, **Menu chrome (option-box menus, persistent mode)**, and .ui-embedded
+headers alike. Because headers resolve the mode at click/hover/show time, a
+flip applies to open windows immediately — no relaunch, no per-header push.
+An explicitly assigned `pin_on_drag_only` is a deliberate per-tool override
+and always wins over the preference. The user-facing switch is the **UI
+Browser → Browser Options → "Pin button hides (1-click)"** checkbox.
+
+### Collapse auto-pins
+
+`toggle_collapse` (the `collapse` button) pins the window on the way *down*
+when a `pin` button is present and the window is unpinned — a collapsed window
+is a header-only strip, so an unpinned one that dismisses itself on focus loss
+takes the whole UI with it. Same reasoning as `minimize_window`, which has
+always pinned. Expanding does not unpin (a deliberate pin survives the round
+trip). With no `pin` button configured, the pin state is left untouched.
+
 ## Footer
 
 Status bar with integrated size grip. Opt-in on `MainWindow`: pass `add_footer=True` (default `False`) to lazily construct one when no `Footer` is embedded in the `.ui` file.

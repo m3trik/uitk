@@ -15,6 +15,17 @@ class Header(
     """Header is a QLabel that can be dragged around the screen and can be pinned/unpinned. It provides a customizable
     header bar with buttons for common window actions such as minimizing, hiding, and pinning.
 
+    The pin button has two click behaviors, selected by :attr:`pin_on_drag_only`
+    (headers that don't choose explicitly follow the process-wide default —
+    :meth:`set_default_pin_on_drag_only`, driven by ``UiHandler.pin_click_hides``):
+
+    * ``False`` — classic toggle: click to pin, click again to
+      unpin (which hides the window).
+    * ``True`` — one-click dismiss: the button always hides the window, and
+      pinning is reached by dragging the header. Hovering it advertises that:
+      the background turns red, and while unpinned the icon swaps to the close
+      glyph, so the button reads as the hide button it acts as.
+
     Signals:
         toggled(bool): Emitted when the pin state is toggled.
         refresh_requested(): Emitted when the refresh button is clicked.
@@ -31,6 +42,15 @@ class Header(
     MINIMIZE_STACK = "horizontal"  # "horizontal" or "vertical"
     MINIMIZE_MARGIN = 8  # Margin from screen edges and between stacked windows
     _minimized_headers = []  # Class-level registry for stacking
+
+    # Process-wide default for headers that don't choose a pin-click mode
+    # explicitly (constructor kwarg / property left at None) — which is every
+    # header built by generic chrome: .ui-embedded headers, Menu's option-box
+    # chrome, persistent-mode menus. ``UiHandler`` seeds and updates it from
+    # its ``pin_click_hides`` preference, so ONE user switch reaches headers
+    # the handler never styles. Live default-following headers re-sync their
+    # visuals on next show (see ``showEvent``).
+    _pin_on_drag_only_default = False
 
     # Define button properties with icon paths and callbacks
     button_definitions = {
@@ -49,7 +69,7 @@ class Header(
         self,
         parent=None,
         config_buttons=None,
-        pin_on_drag_only=True,
+        pin_on_drag_only=None,
         auto_hide_with_os_frame=True,
         **kwargs,
     ):
@@ -61,10 +81,14 @@ class Header(
                 Example: ['refresh', 'menu', 'pin']
                 Available buttons: 'refresh', 'menu', 'help', 'collapse',
                 'minimize', 'maximize', 'hide', 'pin'
-            pin_on_drag_only (bool, optional): If True (default), clicking the pin button hides
-                the window, and only dragging the header pins it. If False, clicking the pin
-                button toggles traditional pin/unpin behavior.
-                Defaults to True.
+            pin_on_drag_only (bool, optional): If True, clicking the pin button hides
+                the window outright (and hovering it shows the red hide affordance);
+                the window is pinned by dragging the header. If False,
+                clicking the pin button toggles traditional pin/unpin behavior.
+                If None (default), the header follows the process-wide default
+                (:meth:`set_default_pin_on_drag_only` — driven by
+                ``UiHandler.pin_click_hides``). Settable after construction —
+                see :attr:`pin_on_drag_only`.
             auto_hide_with_os_frame (bool, optional): If True (default), the
                 header hides itself when its top-level window has a native
                 OS title bar (i.e. is not frameless), so the two title bars
@@ -73,7 +97,11 @@ class Header(
         """
         super().__init__(parent)
         self.pinned = False  # unpinned, pinned
-        self.pin_on_drag_only = pin_on_drag_only
+        # None = follow the class-level default (see _pin_on_drag_only_default)
+        self._pin_on_drag_only = (
+            None if pin_on_drag_only is None else bool(pin_on_drag_only)
+        )
+        self._pin_hovered = False
         self._auto_hide_with_os_frame = auto_hide_with_os_frame
         self._auto_hide_checked = False
         self._collapsed = False
@@ -120,6 +148,40 @@ class Header(
                 self.config_buttons(config_buttons)
 
         self.set_attributes(**kwargs)
+
+    @property
+    def pin_on_drag_only(self) -> bool:
+        """Whether a pin-button click dismisses the window instead of pinning it.
+
+        See the class docstring for the two behaviors. Resolves to the
+        process-wide default while unset (the common case — generic chrome
+        never sets it), so ``UiHandler.pin_click_hides`` governs every such
+        header through :meth:`set_default_pin_on_drag_only`. Assigning a bool
+        pins THIS header to a mode and re-syncs the pin button's visuals;
+        assigning ``None`` re-follows the default.
+        """
+        if self._pin_on_drag_only is None:
+            return type(self)._pin_on_drag_only_default
+        return self._pin_on_drag_only
+
+    @pin_on_drag_only.setter
+    def pin_on_drag_only(self, value) -> None:
+        before = self.pin_on_drag_only
+        self._pin_on_drag_only = None if value is None else bool(value)
+        if self.pin_on_drag_only != before:
+            self._sync_pin_affordance()
+
+    @classmethod
+    def set_default_pin_on_drag_only(cls, value: bool) -> None:
+        """Set the process-wide pin-click mode for default-following headers.
+
+        Owned by ``UiHandler.pin_click_hides`` (seeded at handler init,
+        updated when the preference flips). No live registry of headers is
+        needed: click behavior resolves the default at click time, and the
+        visuals re-sync on the next Enter/show — before hover styling or a
+        tooltip could show stale state.
+        """
+        cls._pin_on_drag_only_default = bool(value)
 
     @property
     def menu(self):
@@ -270,6 +332,12 @@ class Header(
 
         self.container_layout.invalidate()
         self.trigger_resize_event()
+
+        # A rebuilt pin button is a fresh QPushButton that has received no
+        # Enter yet — drop stale hover state, then re-apply the mode's icon /
+        # QSS hook / hover wiring to it.
+        self._pin_hovered = False
+        self._sync_pin_affordance()
 
         # A freshly created menu button defaults to visible; reconcile it with
         # the menu's actual content so an empty menu's button stays hidden.
@@ -675,11 +743,19 @@ class Header(
         self.menu.show_as_popup(position="cursorPos")
 
     def toggle_collapse(self):
-        """Toggle between collapsed (header only) and expanded window states."""
+        """Toggle between collapsed (header only) and expanded window states.
+
+        Collapsing auto-pins the window when a pin button is present and the
+        window is unpinned — a collapsed strip that still dismisses itself on
+        focus loss (or a hide request) is unusable, since nothing but the
+        header is left to interact with.
+        """
         if self._collapsed:
             self.expand_window()
         else:
             self.collapse_window(fixed_width=self.MINIMIZE_WIDTH)
+            if "pin" in self.buttons and not self.pinned:
+                self._set_pin_state(True)
 
     def _set_siblings_visibility(self, visible):
         """Recursively toggle visibility of all siblings in the parent layout."""
@@ -851,8 +927,17 @@ class Header(
         """Toggle pinning of the window.
 
         Parameters:
-            from_drag (bool): If True, this was triggered by dragging the header.
+            from_drag (bool): True when the call is internal (a header drag, or
+                another programmatic pin change) rather than a pin-button click.
+                In :attr:`pin_on_drag_only` mode only these calls toggle the pin
+                state; a click hides the window outright.
         """
+        if self.pin_on_drag_only and not from_drag:
+            # One-click dismissal — the button acts as the hide button its
+            # hover visuals advertise. Pinning is reached by dragging.
+            self.hide_window()
+            return
+
         new_state = not self.pinned
         self._set_pin_state(new_state)
 
@@ -879,11 +964,8 @@ class Header(
             if hasattr(window, "pinned") and window.pinned != pinned:
                 window.set_pinned(pinned)
 
-        # Update button icon
-        icon_name = "radio" if pinned else "radio_empty"
-        pin_button = self.buttons.get("pin")
-        if pin_button:
-            self._set_button_icon(pin_button, icon_name)
+        # Icon (and, in click-to-hide mode, tooltip) follow the new state.
+        self._sync_pin_affordance()
 
         self.toggled.emit(pinned)
 
@@ -894,8 +976,78 @@ class Header(
         self._set_pin_state(False)
 
     def _refresh_button_style(self, button):
-        """Force a button to refresh its stylesheet after property changes."""
+        """Force a button to refresh its stylesheet after property changes.
+
+        A dynamic property stamped after the widget's first polish doesn't
+        re-run the QSS selectors on its own — only an unpolish/polish cycle
+        does (same contract as ``StyleSheet``'s property sweep).
+        """
+        style = button.style()
+        style.unpolish(button)
+        style.polish(button)
         button.update()
+
+    # Dynamic property the QSS keys the red hover background on. Stamped on
+    # the pin button whenever ``pin_on_drag_only`` is active.
+    _PIN_HIDES_PROPERTY = "pinHides"
+
+    def _sync_pin_affordance(self):
+        """Sync the pin button's visuals with the current mode and pin state.
+
+        Single home for everything mode-dependent about the pin button:
+
+        * the ``pinHides`` dynamic property the stylesheet keys the red hover
+          background on,
+        * the icon — hovering an *unpinned* pin button in click-to-hide mode
+          shows the close glyph, because that's what the click does,
+        * the tooltip,
+        * the hover wiring (this header filters the button's enter/leave
+          events rather than subclassing QPushButton).
+
+        No-ops when the header has no pin button.
+        """
+        button = self.buttons.get("pin")
+        if button is None:
+            return
+
+        hides_on_click = self.pin_on_drag_only  # resolves the class default
+        # ``installEventFilter`` de-dupes (Qt removes any existing instance
+        # first), so re-syncing a live header can't stack filters.
+        button.installEventFilter(self)
+
+        if button.property(self._PIN_HIDES_PROPERTY) != hides_on_click:
+            button.setProperty(self._PIN_HIDES_PROPERTY, hides_on_click)
+            self._refresh_button_style(button)
+
+        # Hover only reads as "will hide" while the affordance is active.
+        if hides_on_click and self._pin_hovered and not self.pinned:
+            icon_name = "close"
+        else:
+            icon_name = "radio" if self.pinned else "radio_empty"
+        # Sync runs on every Enter/Leave/show — skip the SVG re-raster when
+        # the glyph is already current (IconManager tracks the name).
+        info = IconManager.registered_info(button)
+        if info is None or info.get("name") != icon_name:
+            self._set_button_icon(button, icon_name)
+
+        if self.pinned:
+            button.setToolTip("Unpin and hide the window.")
+        elif hides_on_click:
+            button.setToolTip("Hide the window.\nDrag the header to pin it open.")
+        else:
+            button.setToolTip("Pin the window open.")
+
+    def eventFilter(self, watched, event):
+        """Track hover on the pin button to drive its click-to-hide visuals."""
+        if watched is self.buttons.get("pin"):
+            event_type = event.type()
+            if event_type == QtCore.QEvent.Enter:
+                self._pin_hovered = True
+                self._sync_pin_affordance()
+            elif event_type == QtCore.QEvent.Leave:
+                self._pin_hovered = False
+                self._sync_pin_affordance()
+        return super().eventFilter(watched, event)
 
     def mousePressEvent(self, event):
         """Handle the mouse press event. If the left button is pressed, store the global position of the mouse cursor.
@@ -938,6 +1090,11 @@ class Header(
         # (register_children) still re-shows the button via the on_item_added
         # wiring, also pre-paint.
         self._sync_menu_button_visibility()
+        # Re-adopt the (possibly flipped) process-wide pin-click default —
+        # this is how a default change reaches an already-built menu header:
+        # menus rebuild their visuals on every open.
+        self._pin_hovered = False  # fresh show → no Enter delivered yet
+        self._sync_pin_affordance()
         if self._auto_hide_with_os_frame and not self._auto_hide_checked:
             self._auto_hide_checked = True
             self._apply_auto_hide_with_os_frame()

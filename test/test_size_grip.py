@@ -258,6 +258,41 @@ class TestContentMaxSpacersAndContainers(QtBaseTestCase):
             "sync-pinned lock failed to heal once the content could grow",
         )
 
+    def test_spacing_matches_qt_for_empty_neighbours(self):
+        """Qt adds a box-layout gap before an item ONLY when the preceding
+        item is non-empty — hidden widgets and QSpacerItems are "empty", so
+        the spacing next to them is suppressed. A flat ``(visible-1) *
+        spacing`` therefore over-reports the cap by one gap per
+        empty-preceded item, and that surplus is dead space the window can
+        be stretched into (live: mesh_convert's collapse cycle drifted 6px
+        taller each expand because the cap sat one spacing above the
+        content's real height)."""
+        win = self.track_widget(QtWidgets.QWidget())
+        lay = QtWidgets.QVBoxLayout(win)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        hidden = _fixed_label(19)
+        lay.addWidget(hidden)
+        lay.addWidget(_fixed_label(53))
+        lay.addSpacerItem(
+            QtWidgets.QSpacerItem(
+                0, 10, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
+            )
+        )
+        lay.addWidget(_fixed_label(19))
+        hidden.hide()
+        win.show()
+        _flush()
+        _max_w, max_h = SizeGripMixin.content_max_size(win)
+        # Every item is fixed, so the cap must be EXACTLY what Qt lays out —
+        # anything more is dead space the content cannot use.
+        self.assertEqual(
+            max_h,
+            win.sizeHint().height(),
+            "content cap must match Qt's own laid-out height; surplus here is "
+            "mis-counted spacing next to the hidden widget / spacer",
+        )
+
     def test_growable_leaf_inside_container_unlocks(self):
         win = self.track_widget(self._panel_window(growable_row=True))
         win.show()
