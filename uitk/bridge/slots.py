@@ -222,24 +222,53 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         raise NotImplementedError
 
     # ------------------ Optional-package provisioning ------------------
+    @staticmethod
+    def optional_package_available(spec: str, import_name: str = None) -> bool:
+        """Is an optional package importable in THIS interpreter? Silent.
+
+        Never prompts, never installs, never raises — the probe implicit code
+        paths use. ``make_bridge`` implementations call this: a panel whose
+        engine lives in an optional distribution must be able to *open* (and
+        say so in its log) without a dialog, because ``make_bridge`` runs from
+        ``__init__`` via the log wiring.
+
+        Prefers a real import over :func:`importlib.util.find_spec`: find_spec
+        answers "is there a module file", not "does it import", and it raises
+        ValueError for an already-imported module whose ``__spec__`` is None.
+        Importing is what the caller is about to do anyway, and a package that
+        is present but broken must read as unavailable, not as available-then-
+        exploding inside the bridge constructor.
+
+        A bare repo/workspace folder on ``sys.path`` masquerades as an empty
+        *namespace* package — ``import unitytk`` "succeeds" against
+        ``_scripts/unitytk/`` (the repo dir, which holds the real package one
+        level down) and then every attribute access fails. A module with no
+        ``__file__`` is exactly that case and reads as unavailable.
+        """
+        import importlib
+
+        module = import_name or spec.replace("-", "_")
+        try:
+            mod = importlib.import_module(module)
+        except Exception:  # noqa: BLE001 - any failure means "not usable here"
+            return False
+        return getattr(mod, "__file__", None) is not None
+
     def ensure_optional_package(
-        self,
-        spec: str,
-        import_name: str = None,
-        *,
-        feature: str = None,
-        reask: bool = False,
+        self, spec: str, import_name: str = None, *, feature: str = None
     ) -> bool:
         """Make an optional package importable, offering to install it on demand.
 
-        A panel whose engine lives in an optional distribution (the Unity bridge
-        needs ``unitytk``; the external-app panels need ``extapps``) calls this
-        BEFORE touching that engine. When the package is missing the user is
-        asked once and, on accept, it is pip-installed into the interpreter this
-        session actually imports from — so the panel works immediately rather
-        than after a restart.
+        **Explicit user actions only.** This shows a modal dialog, so it must
+        never run from ``__init__``, ``make_bridge``, or anything reached by
+        the ``bridge`` property: a modal raised from a panel's constructor is
+        parented to a window that does not exist yet, and if construction then
+        fails the box is orphaned with no way to dismiss it. Implicit paths use
+        :meth:`optional_package_available` and report through the log instead.
 
-        This is the in-process counterpart of
+        On accept the package is pip-installed into the interpreter this
+        session actually imports from, so the panel works immediately rather
+        than after a restart. This is the in-process counterpart of
         :class:`uitk.handlers.ExternalAppHandler`'s install-on-demand, which
         provisions *subprocess* apps; the same idea, but the result has to be
         importable HERE.
@@ -248,44 +277,14 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             spec: pip requirement to install (e.g. ``"unitytk"``).
             import_name: Module to probe. Defaults to *spec* (with ``-`` → ``_``).
             feature: Human name of the thing that needs it, used in the prompt.
-            reask: Clear a prior settled outcome (decline / failed install) and
-                prompt again. Pass True from EXPLICIT user actions — a button
-                whose whole point is installing (e.g. 'Install/Update Unity
-                Scripts') must not be silenced by the memo that exists only to
-                stop implicit ``bridge`` accesses from spamming dialogs.
 
         Returns:
             bool: True when the package is importable (already, or after install).
         """
         import importlib
-        import importlib.util
 
-        module = import_name or spec.replace("-", "_")
-
-        def _importable() -> bool:
-            try:
-                return importlib.util.find_spec(module) is not None
-            except (ImportError, ValueError):
-                return False
-
-        if _importable():
+        if self.optional_package_available(spec, import_name):
             return True
-
-        # Ask ONCE per panel. ``bridge`` re-invokes ``make_bridge`` on every
-        # access while the engine is missing, and ~12 call sites reach for it —
-        # without this memo a single declined install would fire a fresh modal
-        # dialog on each of them. Mirrors ExternalAppHandler's ``_bootstrapped``
-        # ("so a launch miss doesn't reinstall a provider on every click").
-        # Instance-scoped on purpose: rebuilding the panel asks again, which is
-        # what the "reopen the panel" wording in ``bridge`` promises. Lazily
-        # created — subclasses are not required to call ``super().__init__``.
-        settled = getattr(self, "_optional_pkg_settled", None)
-        if settled is None:
-            settled = self._optional_pkg_settled = set()
-        if spec in settled:
-            if not reask:
-                return False
-            settled.discard(spec)
 
         label = feature or "This panel"
         answer = self.sb.message_box(
@@ -299,7 +298,6 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         # point of this method is that the bridge does not exist yet; touching
         # ``self.bridge`` here would recurse straight back into ``make_bridge``.
         if answer != "Yes":
-            settled.add(spec)
             self.sb.logger.info(f"{spec} install declined; {label} is unavailable.")
             return False
 
@@ -312,13 +310,10 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         # report a non-zero dependency-resolver error for an UNRELATED conflict
         # in the base environment while the requested wheel installed fine.
         importlib.invalidate_caches()
-        if _importable():
+        if self.optional_package_available(spec, import_name):
             self.sb.logger.info(f"Installed {spec}.")
             return True
 
-        # A failed install is settled too — otherwise the next ``self.bridge``
-        # access repeats the whole prompt-install-fail cycle.
-        settled.add(spec)
         self.sb.message_box(
             f"<b>Could not install {spec}.</b><br><br>"
             f"Install it manually, then reopen {label}.",
@@ -510,10 +505,46 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         if self._bridge is None:
             raise RuntimeError(
                 f"{type(self).__name__}: this panel's engine is unavailable — "
-                f"its optional package is not installed. Reopen the panel to be "
-                f"prompted again, or install it manually."
+                f"its optional package is not installed. Install it from the "
+                f"panel's own controls, or install it manually and reopen."
             )
         return self._bridge
+
+    def peek_bridge(self):
+        """The bridge if it can be built, else ``None`` — never raises.
+
+        For consumers that run during ``__init__`` (log wiring, startup info)
+        or that merely *decorate* the panel: a panel whose optional engine is
+        missing must still open, so its own controls can install it. Letting
+        the raising :attr:`bridge` reach a constructor took the whole panel
+        down with it and stranded the install dialog it had just opened.
+        """
+        try:
+            return self.bridge
+        except Exception:  # noqa: BLE001 - absence is the expected outcome here
+            return None
+
+    def panel_log(self, message: str, level: str = "info") -> None:
+        """Log to the panel, working whether or not the engine exists.
+
+        Routes through the bridge logger (the panel's normal sink) when the
+        bridge is buildable; otherwise appends straight to the log text widget
+        and echoes to the Switchboard logger. Panel actions that must report
+        while the optional engine is MISSING — install/status flows above all —
+        use this instead of ``self.bridge.logger``, which would raise.
+        """
+        bridge = self.peek_bridge()
+        if bridge is not None:
+            try:
+                getattr(bridge.logger, level, bridge.logger.info)(message)
+                return
+            except Exception:  # noqa: BLE001 - fall through to the raw sinks
+                pass
+        try:
+            self.ui.txt000.append(message)
+        except Exception:  # noqa: BLE001 - some panels have no log widget
+            pass
+        getattr(self.sb.logger, level, self.sb.logger.info)(message)
 
     # ------------------ Output Dir row --------------------------------
 
@@ -1047,8 +1078,11 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             handler_cls = self.sb.registered_widgets.TextEditLogHandler
         except AttributeError:
             return
+        bridge = self.peek_bridge()
+        if bridge is None:  # optional engine missing — the panel still opens
+            return
         try:
-            logger = self.bridge.logger
+            logger = bridge.logger
             logger.hide_logger_name(True)
             logger.set_text_handler(handler_cls)
             logger.setup_logging_redirect(self.ui.txt000)
@@ -1098,11 +1132,14 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         and leave this empty). Preserved as an opt-in hook for future
         bridges that want a panel-level intro.
         """
-        info = getattr(self.bridge, "STARTUP_INFO", "")
+        bridge = self.peek_bridge()
+        if bridge is None:  # optional engine missing — the panel still opens
+            return
+        info = getattr(bridge, "STARTUP_INFO", "")
         if not info:
             return
         try:
-            self.bridge.logger.info(info)
+            bridge.logger.info(info)
         except Exception:  # noqa: BLE001
             try:
                 self.ui.txt000.append(info)
