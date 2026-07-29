@@ -223,7 +223,12 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
     # ------------------ Optional-package provisioning ------------------
     def ensure_optional_package(
-        self, spec: str, import_name: str = None, *, feature: str = None
+        self,
+        spec: str,
+        import_name: str = None,
+        *,
+        feature: str = None,
+        reask: bool = False,
     ) -> bool:
         """Make an optional package importable, offering to install it on demand.
 
@@ -243,6 +248,11 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             spec: pip requirement to install (e.g. ``"unitytk"``).
             import_name: Module to probe. Defaults to *spec* (with ``-`` → ``_``).
             feature: Human name of the thing that needs it, used in the prompt.
+            reask: Clear a prior settled outcome (decline / failed install) and
+                prompt again. Pass True from EXPLICIT user actions — a button
+                whose whole point is installing (e.g. 'Install/Update Unity
+                Scripts') must not be silenced by the memo that exists only to
+                stop implicit ``bridge`` accesses from spamming dialogs.
 
         Returns:
             bool: True when the package is importable (already, or after install).
@@ -273,7 +283,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         if settled is None:
             settled = self._optional_pkg_settled = set()
         if spec in settled:
-            return False
+            if not reask:
+                return False
+            settled.discard(spec)
 
         label = feature or "This panel"
         answer = self.sb.message_box(

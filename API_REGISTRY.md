@@ -167,7 +167,7 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
-  - `BridgeSlotsBase.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make an optional package importable, offering to install it on demand.
+  - `BridgeSlotsBase.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None, reask: bool = False) -> bool` — Make an optional package importable, offering to install it on demand.
   - `BridgeSlotsBase.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
   - `BridgeSlotsBase.list_template_modes(self) -> List[Tuple[str, str]]`
   - `BridgeSlotsBase.b000(self)` — Implement the per-bridge send action.

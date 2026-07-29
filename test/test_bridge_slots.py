@@ -547,6 +547,24 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         # One "install?" + one "could not install" box, then silence.
         self.assertEqual(len(sb.prompts), 2)
 
+    def test_reask_reprompts_after_a_decline(self):
+        """``reask=True`` (explicit user actions, e.g. the panels'
+        'Install/Update Unity Scripts' button) clears the settled memo and
+        prompts again — the memo exists only to stop implicit ``bridge``
+        accesses from spamming dialogs, and must not turn an install button
+        into a dead click after one decline."""
+        sb, slots = self._make("No")
+        self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+        self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+        self.assertEqual(len(sb.prompts), 1, "implicit path stays memoized")
+        self.assertFalse(
+            slots.ensure_optional_package("uitk-not-a-real-pkg", reask=True)
+        )
+        self.assertEqual(len(sb.prompts), 2, "explicit reask must re-prompt")
+        # A declined reask settles again: the next implicit access stays quiet.
+        self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+        self.assertEqual(len(sb.prompts), 2)
+
     def test_memo_does_not_suppress_a_package_that_becomes_available(self):
         """The importability probe short-circuits before the memo is consulted,
         so installing by hand mid-session takes effect without reopening."""
