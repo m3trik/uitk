@@ -261,6 +261,20 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         if _importable():
             return True
 
+        # Ask ONCE per panel. ``bridge`` re-invokes ``make_bridge`` on every
+        # access while the engine is missing, and ~12 call sites reach for it —
+        # without this memo a single declined install would fire a fresh modal
+        # dialog on each of them. Mirrors ExternalAppHandler's ``_bootstrapped``
+        # ("so a launch miss doesn't reinstall a provider on every click").
+        # Instance-scoped on purpose: rebuilding the panel asks again, which is
+        # what the "reopen the panel" wording in ``bridge`` promises. Lazily
+        # created — subclasses are not required to call ``super().__init__``.
+        settled = getattr(self, "_optional_pkg_settled", None)
+        if settled is None:
+            settled = self._optional_pkg_settled = set()
+        if spec in settled:
+            return False
+
         label = feature or "This panel"
         answer = self.sb.message_box(
             f"<b>{label} needs the optional <i>{spec}</i> package.</b><br><br>"
@@ -273,6 +287,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         # point of this method is that the bridge does not exist yet; touching
         # ``self.bridge`` here would recurse straight back into ``make_bridge``.
         if answer != "Yes":
+            settled.add(spec)
             self.sb.logger.info(f"{spec} install declined; {label} is unavailable.")
             return False
 
@@ -289,6 +304,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             self.sb.logger.info(f"Installed {spec}.")
             return True
 
+        # A failed install is settled too — otherwise the next ``self.bridge``
+        # access repeats the whole prompt-install-fail cycle.
+        settled.add(spec)
         self.sb.message_box(
             f"<b>Could not install {spec}.</b><br><br>"
             f"Install it manually, then reopen {label}.",
