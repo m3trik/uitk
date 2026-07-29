@@ -525,6 +525,36 @@ class TestEnsureOptionalPackage(unittest.TestCase):
                 Path(exe).name.lower(), ("maya.exe", "blender.exe", "3dsmax.exe")
             )
 
+    def test_declined_package_is_asked_about_only_once(self):
+        """``bridge`` re-invokes ``make_bridge`` on every access while the
+        engine is missing, and ~12 call sites reach for it — without a memo one
+        declined install would fire a fresh modal dialog on each of them.
+        """
+        sb, slots = self._make("No")
+        for _ in range(5):
+            self.assertFalse(
+                slots.ensure_optional_package("uitk-not-a-real-pkg", feature="Panel")
+            )
+        self.assertEqual(len(sb.prompts), 1, "must not re-prompt after a decline")
+
+    def test_failed_install_is_not_retried_on_every_access(self):
+        """Same for an install that ran but left the package unimportable —
+        otherwise each access repeats the whole prompt-install-fail cycle."""
+        sb, slots = self._make("Yes")
+        for _ in range(4):
+            self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+        self.assertEqual(slots.installed, ["uitk-not-a-real-pkg"], "installed once")
+        # One "install?" + one "could not install" box, then silence.
+        self.assertEqual(len(sb.prompts), 2)
+
+    def test_memo_does_not_suppress_a_package_that_becomes_available(self):
+        """The importability probe short-circuits before the memo is consulted,
+        so installing by hand mid-session takes effect without reopening."""
+        sb, slots = self._make("No")
+        self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+        # A different, present package must still resolve normally.
+        self.assertTrue(slots.ensure_optional_package("pythontk"))
+
     def test_logs_through_the_switchboard_not_a_slots_logger(self):
         """The base has no ``self.logger`` — a slots class gets one from its
         BRIDGE, which by definition does not exist yet here. Logging must go
