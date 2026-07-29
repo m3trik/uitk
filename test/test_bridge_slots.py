@@ -429,5 +429,161 @@ class TestPathWidgetPresetPersistence(BaseTestCase):
         self.assertEqual(KindFactory.read_value(container), "C:/renders/hero.png")
 
 
+class TestEnsureOptionalPackage(unittest.TestCase):
+    """`ensure_optional_package` — prompt-and-install for optional engines.
+
+    A panel whose engine lives in an optional distribution (unitytk behind the
+    Unity bridge) must offer to install it rather than dead-end. pip is never
+    invoked here: the install hook is overridden, so these pin the decision
+    logic, not the network.
+    """
+
+    class _Sb:
+        """Stand-in for the Switchboard: prompts, and carries a logger.
+
+        The real Switchboard has ``.logger`` — modelled here because
+        ``ensure_optional_package`` logs through ``self.sb``, the slots class
+        having no logger of its own until its bridge exists.
+        """
+
+        def __init__(self, answer):
+            import logging
+
+            self.answer = answer
+            self.prompts = []
+            self.logger = logging.getLogger("test_bridge_slots_sb")
+
+        def message_box(self, text, *buttons, **kwargs):
+            self.prompts.append((text, buttons))
+            return self.answer
+
+    class _Slots(BridgeSlotsBase):
+        def __init__(self, sb):
+            import logging
+
+            self.sb = sb
+            self.installed = []
+            self.logger = logging.getLogger("test_ensure_optional_package")
+
+        def _install_optional_package(self, spec):
+            self.installed.append(spec)
+
+    def _make(self, answer):
+        sb = self._Sb(answer)
+        return sb, self._Slots(sb)
+
+    def test_present_package_neither_prompts_nor_installs(self):
+        sb, slots = self._make("Yes")
+        self.assertTrue(slots.ensure_optional_package("pythontk"))
+        self.assertEqual(sb.prompts, [])
+        self.assertEqual(slots.installed, [])
+
+    def test_declined_install_returns_false_and_installs_nothing(self):
+        sb, slots = self._make("No")
+        self.assertFalse(
+            slots.ensure_optional_package("uitk-not-a-real-pkg", feature="Unity Bridge")
+        )
+        self.assertEqual(slots.installed, [])
+        self.assertEqual(len(sb.prompts), 1)
+
+    def test_prompt_names_the_feature_and_uses_standard_buttons(self):
+        sb, slots = self._make("No")
+        slots.ensure_optional_package("uitk-not-a-real-pkg", feature="Unity Bridge")
+        text, buttons = sb.prompts[0]
+        self.assertIn("Unity Bridge", text)
+        self.assertIn("uitk-not-a-real-pkg", text)
+        # MessageBox only accepts Qt standard button names.
+        self.assertEqual(buttons, ("Yes", "No"))
+
+    def test_accepted_install_runs_then_reports_when_still_missing(self):
+        sb, slots = self._make("Yes")
+        self.assertFalse(
+            slots.ensure_optional_package("uitk-not-a-real-pkg", feature="Unity Bridge")
+        )
+        self.assertEqual(slots.installed, ["uitk-not-a-real-pkg"])
+        # A second box tells the user it failed rather than failing silently.
+        self.assertEqual(len(sb.prompts), 2)
+
+    def test_import_name_may_differ_from_the_pip_spec(self):
+        sb, slots = self._make("No")
+        # Probes the module, not the spec: a present module short-circuits.
+        self.assertTrue(
+            slots.ensure_optional_package("Pillow-not-real", import_name="pythontk")
+        )
+        self.assertEqual(sb.prompts, [])
+
+    def test_install_interpreter_is_never_a_dcc_host_binary(self):
+        """pip must be driven by a real python, not maya.exe/blender.exe.
+
+        The resolver returns None rather than the host when there is no sibling
+        — driving pip through the host binary would hang it, so "no answer" is
+        the correct answer.
+        """
+        exe = BridgeSlotsBase._optional_package_python()
+        if exe is not None:
+            self.assertNotIn(
+                Path(exe).name.lower(), ("maya.exe", "blender.exe", "3dsmax.exe")
+            )
+
+    def test_logs_through_the_switchboard_not_a_slots_logger(self):
+        """The base has no ``self.logger`` — a slots class gets one from its
+        BRIDGE, which by definition does not exist yet here. Logging must go
+        through ``self.sb`` or this raises AttributeError on the decline path.
+        """
+        class _NoLoggerSlots(BridgeSlotsBase):
+            def __init__(self, sb):
+                self.sb = sb  # deliberately NO self.logger
+
+            def _install_optional_package(self, spec):
+                pass
+
+        slots = _NoLoggerSlots(self._Sb("No"))
+        self.assertFalse(hasattr(slots, "logger"))
+        # Must not raise.
+        self.assertFalse(slots.ensure_optional_package("uitk-not-a-real-pkg"))
+
+    def test_declined_engine_raises_an_actionable_error_not_nonetype(self):
+        """A declined optional install makes ``make_bridge`` return None.
+
+        Every consumer reaches for ``self.bridge.logger``, so the property must
+        convert that into one clear error rather than letting NoneType leak.
+        """
+
+        class _NoEngineSlots(BridgeSlotsBase):
+            def __init__(self):
+                self._bridge = None
+
+            def make_bridge(self):
+                return None
+
+        with self.assertRaises(RuntimeError) as ctx:
+            _NoEngineSlots().bridge
+        self.assertIn("unavailable", str(ctx.exception).lower())
+        self.assertNotIn("nonetype", str(ctx.exception).lower())
+
+    def test_install_refuses_rather_than_pipping_a_dcc_host(self):
+        """A host with no sibling python must raise, never invoke pip.
+
+        Regression guard: an earlier cut fell back to ``sys.executable``, which
+        inside Maya IS ``maya.exe`` — the exact call the DCC-host guard exists
+        to prevent, and it would hang the session.
+        """
+        import sys as _sys
+        import tempfile
+        from unittest.mock import patch
+
+        tmp = tempfile.mkdtemp()
+        lone_host = str(Path(tmp) / "maya.exe")
+        Path(lone_host).write_text("")
+
+        _, slots = self._make("Yes")
+        # Call the BASE implementation unbound, so the harness override that
+        # stands in for pip elsewhere in this class is bypassed.
+        with patch.object(_sys, "executable", lone_host):
+            with self.assertRaises(RuntimeError) as ctx:
+                BridgeSlotsBase._install_optional_package(slots, "anything")
+        self.assertIn("sibling", str(ctx.exception).lower())
+
+
 if __name__ == "__main__":
     unittest.main()

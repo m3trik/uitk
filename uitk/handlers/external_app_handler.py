@@ -305,6 +305,41 @@ class ExternalAppHandler(BaseHandler):
         return os.path.basename(python or "").lower() in _DCC_HOST_SIBLINGS
 
     @staticmethod
+    def _pip_capable_python(python: Optional[str]) -> Optional[str]:
+        """Return an interpreter that can run ``-m pip`` for *python*'s environment.
+
+        A DCC host binary can't be pip'd directly (its ``-c`` runs MEL/MaxScript,
+        or a blocked Qt loop, and the install HANGS) — but the python it ships
+        alongside *shares the same site-packages*, so installing there lands
+        exactly where the host imports from. ``maya.exe`` → ``mayapy.exe``,
+        ``blender.exe`` → the bundled ``python.exe``.
+
+        Returns None when *python* is a DCC host with no usable sibling, which
+        is the only case a caller must still refuse to install into.
+        """
+        if not ExternalAppHandler._is_dcc_host_interpreter(python):
+            return python
+        sibling = _DCC_HOST_SIBLINGS.get(os.path.basename(python or "").lower())
+        if not sibling:
+            return None
+
+        candidates = [os.path.join(os.path.dirname(python or ""), sibling)]
+        # Blender ships its python under <prefix>/bin rather than beside the
+        # binary. ``sys.prefix`` describes THIS process, so it may only be
+        # consulted when *python* is this process's host — otherwise a query
+        # about some other install would hand back the running one's python and
+        # the package would land in the wrong environment.
+        if python and os.path.normcase(python) == os.path.normcase(
+            sys.executable or ""
+        ):
+            candidates.append(os.path.join(sys.prefix, "bin", sibling))
+
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    @staticmethod
     def _base_pkg_name(install_spec: str) -> str:
         """Best-effort import name for a pip *install_spec*.
 
@@ -405,18 +440,21 @@ class ExternalAppHandler(BaseHandler):
             )
             if self._is_importable(prov["probe_module"], py):
                 continue  # already present — re-discovery below surfaces it
-            if self._is_dcc_host_interpreter(py):
-                # Can't pip into a live DCC interpreter (maya.exe / blender.exe)
-                # — the install would hang. Rely on the package being present in
-                # the host's env; the launch raises a clean error if it isn't.
+            # A DCC host binary can't be pip'd directly (the install would hang),
+            # but the python it ships alongside shares its site-packages — so an
+            # install there IS importable by the host. Only give up when there's
+            # no such sibling.
+            pip_py = self._pip_capable_python(py)
+            if not pip_py:
                 self.logger.warning(
                     f"[provider] {spec!r} not importable but {py!r} is a DCC "
-                    f"host — skipping install (provision it into the host env)."
+                    f"host with no sibling python — skipping install "
+                    f"(provision it into the host env)."
                 )
                 continue
-            self.logger.info(f"[provider] installing {spec!r} into {py}")
+            self.logger.info(f"[provider] installing {spec!r} into {pip_py}")
             try:
-                ptk.PackageManager(python_path=py).install(spec)
+                ptk.PackageManager(python_path=pip_py).install(spec)
             except Exception:
                 self.logger.warning(
                     f"[provider] install of {spec!r} failed", exc_info=True
@@ -774,19 +812,21 @@ class ExternalAppHandler(BaseHandler):
                 # which IS the host binary inside Maya/Blender/Max) — the
                 # install would hang the host. Fail clean and tell the user to
                 # provision the package into the host env instead.
-                if self._is_dcc_host_interpreter(py):
+                pip_py = self._pip_capable_python(py)
+                if not pip_py:
                     raise RuntimeError(
                         f"Refusing to install {spec!r} into DCC host interpreter "
-                        f"{py!r} — a pip install would hang the host. Provision "
-                        f"the package into the host environment (e.g. via its "
-                        f"bundled standalone python) before launching {name or cfg['module']!r}."
+                        f"{py!r} — a pip install would hang the host, and no "
+                        f"sibling python was found to install through. Provision "
+                        f"the package into the host environment before launching "
+                        f"{name or cfg['module']!r}."
                     )
-                self.logger.info(f"Installing {spec!r} into {py}")
+                self.logger.info(f"Installing {spec!r} into {pip_py}")
                 try:
-                    ptk.PackageManager(python_path=py).install(spec)
+                    ptk.PackageManager(python_path=pip_py).install(spec)
                 except Exception as e:
                     raise RuntimeError(
-                        f"Failed to install {spec!r} into {py}: {e}"
+                        f"Failed to install {spec!r} into {pip_py}: {e}"
                     ) from e
                 if not self._is_importable(cfg["module"], py):
                     raise RuntimeError(

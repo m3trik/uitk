@@ -165,12 +165,21 @@
               "deprecated": false
             },
             {
+              "name": "ensure_optional_package",
+              "qualname": "BridgeSlotsBase.ensure_optional_package",
+              "kind": "method",
+              "signature": "(self, spec: str, import_name: str = None, *, feature: str = None) -> bool",
+              "summary": "Make an optional package importable, offering to install it on demand.",
+              "line": 225,
+              "deprecated": false
+            },
+            {
               "name": "make_preset_store",
               "qualname": "BridgeSlotsBase.make_preset_store",
               "kind": "method",
               "signature": "(self)",
               "summary": "Hook: return a :class:`pythontk.PresetStore` to switch presets into",
-              "line": 224,
+              "line": 340,
               "deprecated": false
             },
             {
@@ -179,7 +188,7 @@
               "kind": "method",
               "signature": "(self) -> List[Tuple[str, str]]",
               "summary": "",
-              "line": 242,
+              "line": 358,
               "deprecated": false
             },
             {
@@ -188,7 +197,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Implement the per-bridge send action.",
-              "line": 245,
+              "line": 361,
               "deprecated": false
             },
             {
@@ -197,7 +206,7 @@
               "kind": "method",
               "signature": "(self, pairs: List[Tuple[str, str]]) -> int",
               "summary": "Return the index of the preferred initial entry in *pairs*.",
-              "line": 249,
+              "line": 365,
               "deprecated": false
             },
             {
@@ -206,7 +215,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: fallback path when the user leaves Output Dir blank.",
-              "line": 257,
+              "line": 373,
               "deprecated": false
             },
             {
@@ -215,7 +224,7 @@
               "kind": "method",
               "signature": "(self, template_path: Path) -> Optional[str]",
               "summary": "Hook: extract a brief description from a template file.",
-              "line": 266,
+              "line": 382,
               "deprecated": false
             },
             {
@@ -224,7 +233,7 @@
               "kind": "method",
               "signature": "(self, spec: AttributeSpec) -> str",
               "summary": "Hook: build the rich-text tooltip for one parameter spec.",
-              "line": 270,
+              "line": 386,
               "deprecated": false
             },
             {
@@ -233,7 +242,7 @@
               "kind": "staticmethod",
               "signature": "(handler: Callable) -> None",
               "summary": "Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel",
-              "line": 277,
+              "line": 393,
               "deprecated": false
             },
             {
@@ -242,7 +251,7 @@
               "kind": "staticmethod",
               "signature": "(tag: str) -> str",
               "summary": "Create (once per host process) and return a temp Output Dir for *tag*.",
-              "line": 290,
+              "line": 406,
               "deprecated": false
             },
             {
@@ -251,7 +260,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-instantiated bridge (caches a single instance per slot).",
-              "line": 351,
+              "line": 467,
               "deprecated": false
             },
             {
@@ -260,7 +269,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Return the current Output Dir text trimmed of whitespace.",
-              "line": 475,
+              "line": 606,
               "deprecated": false
             },
             {
@@ -269,7 +278,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[str]",
               "summary": "Return the Output Dir or log an error on empty.",
-              "line": 485,
+              "line": 616,
               "deprecated": false
             },
             {
@@ -278,7 +287,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Any]",
               "summary": "Snapshot every widget's current value, regardless of visibility.",
-              "line": 612,
+              "line": 743,
               "deprecated": false
             },
             {
@@ -287,7 +296,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Switchboard hook: populate the template combobox + wire change handler.",
-              "line": 809,
+              "line": 940,
               "deprecated": false
             },
             {
@@ -296,7 +305,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-scan disk and rebuild the template combo + parameter UI.",
-              "line": 830,
+              "line": 961,
               "deprecated": false
             },
             {
@@ -305,7 +314,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, str, str, str], ...]",
               "summary": "Hook: the header-menu items.",
-              "line": 953,
+              "line": 1084,
               "deprecated": false
             },
             {
@@ -314,7 +323,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[Dict[str, Any]]",
               "summary": "Hook: the ``fmt()`` keyword dict for the header help, or ``None``.",
-              "line": 957,
+              "line": 1088,
               "deprecated": false
             },
             {
@@ -323,7 +332,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Default header menu: a \"Utilities\" separator, the declared",
-              "line": 964,
+              "line": 1095,
               "deprecated": false
             },
             {
@@ -332,7 +341,7 @@
               "kind": "method",
               "signature": "(self, path) -> bool",
               "summary": "Open *path* in the OS file manager (logs + returns False if missing).",
-              "line": 992,
+              "line": 1123,
               "deprecated": false
             },
             {
@@ -341,7 +350,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Reveal :attr:`template_dir` in the OS file manager.",
-              "line": 1008,
+              "line": 1139,
               "deprecated": false
             },
             {
@@ -350,7 +359,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear the log panel (wired by subclass header menus).",
-              "line": 1012,
+              "line": 1143,
               "deprecated": false
             }
           ]
@@ -964,7 +973,7 @@
               "kind": "method",
               "signature": "(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None",
               "summary": "Register a provider package that ships discoverable apps.",
-              "line": 321,
+              "line": 356,
               "deprecated": false
             },
             {
@@ -973,7 +982,7 @@
               "kind": "method",
               "signature": "(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None) -> None",
               "summary": "Pre-register an app so it can be launched by name.",
-              "line": 432,
+              "line": 470,
               "deprecated": false
             },
             {
@@ -982,7 +991,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 498,
+              "line": 536,
               "deprecated": false
             },
             {
@@ -991,7 +1000,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Remove an app.",
-              "line": 501,
+              "line": 539,
               "deprecated": false
             },
             {
@@ -1000,7 +1009,7 @@
               "kind": "method",
               "signature": "(self) -> Iterable[HandlerEntry]",
               "summary": "Yield one :class:`HandlerEntry` per registered app.",
-              "line": 510,
+              "line": 548,
               "deprecated": false
             },
             {
@@ -1009,7 +1018,7 @@
               "kind": "method",
               "signature": "(self, name: str, tags: Iterable[str]) -> None",
               "summary": "Persist *tags* for *name* in the handler's config branch.",
-              "line": 587,
+              "line": 625,
               "deprecated": false
             },
             {
@@ -1018,7 +1027,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Hide an in-process widget;",
-              "line": 611,
+              "line": 649,
               "deprecated": false
             },
             {
@@ -1027,7 +1036,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 637,
+              "line": 675,
               "deprecated": false
             },
             {
@@ -1036,7 +1045,7 @@
               "kind": "method",
               "signature": "(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, show: bool = True, **_options)",
               "summary": "Launch a registered app, or an ad-hoc app from kwargs.",
-              "line": 654,
+              "line": 692,
               "deprecated": false
             }
           ]
