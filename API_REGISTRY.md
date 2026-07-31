@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-07-29_
+_Generated: 2026-07-30_
 
 ## Index
 
@@ -1113,7 +1113,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 <a id="widgets--mainWindow"></a>
 ### `widgets/mainWindow.py`
 
-- **[`class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/mainWindow.py#L19)** — Application main window with state persistence and child widget management.
+- **[`class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/mainWindow.py#L20)** — Application main window with state persistence and child widget management.
   - `MainWindow.setCentralWidget(self, widget: QtWidgets.QWidget) -> None` — Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or…
   - `MainWindow.initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None` — Initializes the window flags based on the central widget.
   - `MainWindow.edit_tags(self, target: Union[str, QtWidgets.QWidget] = None, add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]` — Edit tags on a widget or a tag string.
@@ -1411,10 +1411,15 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 
 Keep an editing chord with the widget the user is actually typing in.
 
-- **[`class ShortcutGuardMixin`](uitk/uitk/widgets/mixins/shortcut_guard.py#L27)** — Mixin: claim the standard editing shortcuts for the focused widget.
+- **[`class ShortcutGuardMixin`](uitk/uitk/widgets/mixins/shortcut_guard.py#L41)** — Mixin: claim the standard editing shortcuts for the focused widget.
+  - `ShortcutGuardMixin.claim_override(cls, widget, event: QtCore.QEvent) -> bool` *(class)* — Accept *event* on *widget*'s behalf when it's a chord *widget* should own.
+  - `ShortcutGuardMixin.claims(cls, widget, event: QtGui.QKeyEvent) -> bool` *(class)* — Whether *widget* should handle *event*'s chord itself.
+  - `ShortcutGuardMixin.is_read_only(widget) -> bool` *(static)* — ``widget.isReadOnly()`` when it has one, else False.
+  - `ShortcutGuardMixin.has_selection(widget) -> bool` *(static)* — Whether *widget* holds a text selection.
   - `ShortcutGuardMixin.event(self, event: QtCore.QEvent)`
   - `ShortcutGuardMixin.claims_shortcut(self, event: QtGui.QKeyEvent) -> bool` — Whether *event* is an editing chord this widget should handle itself.
-  - `ShortcutGuardMixin.is_read_only(self) -> bool` — ``isReadOnly`` when the base class provides it, else False.
+- **[`class ShortcutGuardFilter(QtCore.QObject)`](uitk/uitk/widgets/mixins/shortcut_guard.py#L156)** — Event-filter form of :class:`ShortcutGuardMixin`, for widgets uitk can't subclass.
+  - `ShortcutGuardFilter.eventFilter(self, obj, event: QtCore.QEvent) -> bool`
 
 <a id="widgets--mixins--size_grip"></a>
 ### `widgets/mixins/size_grip.py`
@@ -2220,7 +2225,7 @@ Reusable action-column management for :class:`TableWidget`.
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`
 
-- **[`class TextEdit(QtWidgets.QTextEdit, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/textEdit.py#L8)** — Rich text editor with context menu and visibility signals.
+- **[`class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/textEdit.py#L9)** — Rich text editor with context menu and visibility signals.
   - `TextEdit.insertText(self, text, color='LightGray', backround_color='rgb(50, 50, 50)')` — Append a new paragraph to the textEdit.
   - `TextEdit.showEvent(self, event)` — Parameters:
   - `TextEdit.hideEvent(self, event)` — Parameters:

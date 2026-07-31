@@ -15,6 +15,15 @@ reach *through* that protocol. These tests pin both halves: a focused editor (an
 a focused read-only view, which needs the mixin to speak up at all) keeps its own
 Ctrl+C, while the console still copies when nothing else claims the chord.
 
+Second regression, same saga and the commoner symptom: that shortcut was always
+enabled, so it consumed Ctrl+C from every read-only pane (they decline the
+override) and then copied **nothing** — the clipboard was left untouched and the
+pane could only be copied from via its context menu. Pinned here by
+``TestConsoleShortcutIsGatedOnSelection`` (the shortcut is inert without a
+selection) and ``TestRegisteredPaneKeepsCopy`` (a ``.ui``-declared plain
+``QTextBrowser`` claims Copy once ``MainWindow`` registration installs the filter
+form of the guard, so even a *stale* console selection can't take it).
+
 Run standalone: python -m test.test_shortcut_guard
 """
 
@@ -27,8 +36,38 @@ app = setup_qt_application()
 from qtpy import QtCore, QtWidgets, QtGui, QtTest  # noqa: E402
 
 from uitk.widgets.lineEdit import LineEdit  # noqa: E402
+from uitk.widgets.mainWindow import MainWindow  # noqa: E402
 from uitk.widgets.scriptOutput import ScriptOutput  # noqa: E402
+from uitk.widgets.textEdit import TextEdit  # noqa: E402
 from uitk.widgets.textViewBox import _ViewerTextEdit  # noqa: E402
+from uitk.widgets.mixins.shortcut_guard import ShortcutGuardFilter  # noqa: E402
+
+
+class _BareSwitchboard:
+    """Minimal stand-in so MainWindow can register a widget without uitk.Switchboard."""
+
+    default_signals = {}
+
+    def convert_to_legal_name(self, name):
+        return name
+
+    def get_base_name(self, name):
+        return name
+
+    def has_tags(self, *_a, **_k):
+        return False
+
+    def get_slots_instance(self, *_a, **_k):
+        return None
+
+    def center_widget(self, *_a, **_k):
+        return None
+
+    def init_slot(self, *_a, **_k):
+        return None
+
+    def connect_slot(self, *_a, **_k):
+        return None
 
 SEQUENCE_KEYS = {
     QtGui.QKeySequence.Copy: QtCore.Qt.Key_C,
@@ -39,6 +78,16 @@ SEQUENCE_KEYS = {
 }
 
 
+def _override_event(sequence):
+    event = QtGui.QKeyEvent(
+        QtCore.QEvent.ShortcutOverride,
+        SEQUENCE_KEYS[sequence],
+        QtCore.Qt.ControlModifier,
+    )
+    event.ignore()
+    return event
+
+
 def _claims(widget, sequence):
     """Whether *widget* takes *sequence* for itself instead of letting it resolve.
 
@@ -47,13 +96,20 @@ def _claims(widget, sequence):
     its bound command from ``event``), so asking is safe to do about a known
     widget under test and not safe to do about an arbitrary focus widget.
     """
-    event = QtGui.QKeyEvent(
-        QtCore.QEvent.ShortcutOverride,
-        SEQUENCE_KEYS[sequence],
-        QtCore.Qt.ControlModifier,
-    )
-    event.ignore()
+    event = _override_event(sequence)
     widget.event(event)
+    return event.isAccepted()
+
+
+def _claims_through_filters(widget, sequence):
+    """Like :func:`_claims`, but routed so installed event filters get their say.
+
+    ``widget.event`` is called directly and so skips them — which is the whole
+    mechanism behind :class:`ShortcutGuardFilter`, the form used for widgets uitk
+    doesn't define.
+    """
+    event = _override_event(sequence)
+    QtWidgets.QApplication.sendEvent(widget, event)
     return event.isAccepted()
 
 
@@ -106,6 +162,7 @@ class TestWidgetClaims(QtBaseTestCase):
     def test_guarded_viewer_claims_copy(self):
         viewer = self.track_widget(_ViewerTextEdit())
         viewer.setPlainText("abc")
+        viewer.selectAll()  # Copy is only claimed when there is something to copy
         self.assertTrue(_claims(viewer, QtGui.QKeySequence.Copy))
         self.assertTrue(_claims(viewer, QtGui.QKeySequence.SelectAll))
 
@@ -121,6 +178,45 @@ class TestWidgetClaims(QtBaseTestCase):
             QtCore.QEvent.ShortcutOverride, QtCore.Qt.Key_B, QtCore.Qt.ControlModifier
         )
         self.assertFalse(viewer.claims_shortcut(event))
+
+    def test_copy_with_nothing_selected_is_left_to_others(self):
+        """A view with no selection has nothing to put on the clipboard, so it must
+        not swallow the chord from an app-wide copy that does."""
+        viewer = self.track_widget(_ViewerTextEdit())
+        viewer.setPlainText("abc")
+        self.assertFalse(_claims(viewer, QtGui.QKeySequence.Copy))
+        viewer.selectAll()
+        self.assertTrue(_claims(viewer, QtGui.QKeySequence.Copy))
+
+    def test_read_only_uitk_text_edit_keeps_copy(self):
+        """uitk's own TextEdit in read-only mode — bare Qt claims nothing there."""
+        te = self.track_widget(TextEdit())
+        te.setPlainText("abc")
+        te.setReadOnly(True)
+        te.selectAll()
+        self.assertTrue(_claims(te, QtGui.QKeySequence.Copy))
+        self.assertTrue(_claims(te, QtGui.QKeySequence.SelectAll))
+        self.assertFalse(_claims(te, QtGui.QKeySequence.Paste))
+
+    def test_subclass_can_narrow_the_claimed_set(self):
+        """``guarded_shortcuts`` is documented as overridable, and both entry points
+        must read the *widget's* class — a shared helper that hard-bound the base
+        class would silently ignore the override (and the filter, which runs first,
+        would mask the widget's own answer)."""
+
+        class CopyOnlyViewer(_ViewerTextEdit):
+            guarded_shortcuts = (QtGui.QKeySequence.Copy,)
+
+        viewer = self.track_widget(CopyOnlyViewer())
+        viewer.setPlainText("abc")
+        viewer.selectAll()
+        self.assertTrue(_claims(viewer, QtGui.QKeySequence.Copy))
+        self.assertFalse(_claims(viewer, QtGui.QKeySequence.SelectAll))
+
+        # Same answer once the filter form is also installed on it.
+        viewer.installEventFilter(ShortcutGuardFilter(viewer))
+        self.assertTrue(_claims_through_filters(viewer, QtGui.QKeySequence.Copy))
+        self.assertFalse(_claims_through_filters(viewer, QtGui.QKeySequence.SelectAll))
 
     def test_probe_leaves_the_widget_untouched(self):
         """``widget_claims`` is a query — it must not edit, select, or clear."""
@@ -238,6 +334,128 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
         button.setFocus()
         QtWidgets.QApplication.processEvents()
         self.assertEqual(self._copy_from(button), "")
+
+
+class TestRegisteredPaneKeepsCopy(QtBaseTestCase):
+    """Panels declare log panes as plain ``QTextBrowser`` in their ``.ui`` (mayatk /
+    blendertk scene_exporter ``txt003`` and ~20 siblings), so the mixin can't reach
+    them — MainWindow registration installs the filter form instead."""
+
+    def _window_with_pane(self, pane):
+        pane.setObjectName("txt003")
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central).addWidget(pane)
+        window = self.track_widget(
+            MainWindow(
+                name="test_shortcut_guard_window",
+                switchboard_instance=_BareSwitchboard(),
+                central_widget=central,
+                restore_window_size=False,
+                ensure_on_screen=False,
+            )
+        )
+        window.register_widget(pane)
+        return window
+
+    def test_bare_browser_claims_copy_once_registered(self):
+        pane = QtWidgets.QTextBrowser()
+        pane.setPlainText("PANE TEXT")
+        self._window_with_pane(pane)
+        pane.selectAll()
+        self.assertTrue(_claims_through_filters(pane, QtGui.QKeySequence.Copy))
+
+    def test_registration_does_not_grant_writes_to_a_read_only_pane(self):
+        pane = QtWidgets.QTextBrowser()
+        pane.setPlainText("PANE TEXT")
+        self._window_with_pane(pane)
+        pane.selectAll()
+        self.assertFalse(_claims_through_filters(pane, QtGui.QKeySequence.Paste))
+
+    def test_guard_tracks_read_only_flipped_after_registration(self):
+        """Installation is unconditional precisely so a later ``setReadOnly`` can't
+        strip the guard — the filter re-reads state per event."""
+        pane = QtWidgets.QTextEdit()
+        pane.setPlainText("PANE TEXT")
+        self._window_with_pane(pane)
+        pane.selectAll()
+        self.assertTrue(_claims_through_filters(pane, QtGui.QKeySequence.Paste))
+        pane.setReadOnly(True)
+        self.assertFalse(_claims_through_filters(pane, QtGui.QKeySequence.Paste))
+        self.assertTrue(_claims_through_filters(pane, QtGui.QKeySequence.Copy))
+
+    def test_non_text_widgets_are_left_alone(self):
+        button = QtWidgets.QPushButton("x")
+        window = self._window_with_pane(QtWidgets.QTextBrowser())
+        button.setObjectName("b000")
+        window.register_widget(button)
+        self.assertFalse(_claims_through_filters(button, QtGui.QKeySequence.Copy))
+
+    def test_one_filter_serves_every_pane(self):
+        """Re-registration must not stack duplicate filters."""
+        pane = QtWidgets.QTextBrowser()
+        window = self._window_with_pane(pane)
+        first = window._shortcut_guard
+        other = QtWidgets.QTextBrowser()
+        other.setObjectName("txt004")
+        window.register_widget(other)
+        self.assertIs(window._shortcut_guard, first)
+
+
+class TestConsoleShortcutIsGatedOnSelection(QtBaseTestCase):
+    """The reported bug: with NO console selection, its app-scope shortcut still
+    consumed Ctrl+C from a read-only pane and then copied nothing — so the pane
+    could only be copied from via its context menu (live-Maya measured)."""
+
+    def _console(self, text="CONSOLE TEXT"):
+        console = self.track_widget(ScriptOutput(app_wide_copy=True))
+        console.setPlainText(text)
+        console.show()
+        QtWidgets.QApplication.processEvents()
+        return console
+
+    def test_shortcut_is_inert_without_a_selection(self):
+        console = self._console()
+        self.assertFalse(console._copy_shortcut.isEnabled())
+
+    def test_shortcut_arms_and_disarms_with_the_selection(self):
+        console = self._console()
+        console.selectAll()
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(console._copy_shortcut.isEnabled())
+
+        cursor = console.textCursor()
+        cursor.clearSelection()
+        console.setTextCursor(cursor)
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(console._copy_shortcut.isEnabled())
+
+    def test_unselected_console_leaves_a_bare_pane_its_own_copy(self):
+        """End-to-end, and the exact user-visible symptom: the clipboard must get the
+        pane's text, not stay untouched."""
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText("sentinel")
+        if clipboard.text() != "sentinel":
+            self.skipTest("environment cannot round-trip the clipboard")
+
+        console = self._console()  # no selection — the everyday state
+        pane = QtWidgets.QTextBrowser()  # deliberately unguarded: shortcut gating alone
+        pane.setPlainText("PANE TEXT")
+        window = self.track_widget(QtWidgets.QWidget())
+        QtWidgets.QVBoxLayout(window).addWidget(pane)
+        window.show()
+        window.activateWindow()
+        QtWidgets.QApplication.processEvents()
+
+        pane.selectAll()
+        pane.setFocus(QtCore.Qt.MouseFocusReason)
+        QtWidgets.QApplication.processEvents()
+        self.assertIs(QtWidgets.QApplication.focusWidget(), pane)
+
+        clipboard.clear()
+        _key_click(pane, QtCore.Qt.Key_C, QtCore.Qt.ControlModifier)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(clipboard.text(), "PANE TEXT")
+        self.assertFalse(console._copy_shortcut.isEnabled())  # it never armed
 
 
 if __name__ == "__main__":
