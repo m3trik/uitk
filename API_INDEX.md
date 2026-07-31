@@ -341,7 +341,9 @@ _Generated: 2026-07-30_
 
 ### `widgets/mixins/shortcut_guard.py` — Keep an editing chord with the widget the user is actually typing in.
 - `class ShortcutGuardMixin`
-  - methods: event, claims_shortcut, is_read_only
+  - methods: claim_override, claims, is_read_only, has_selection, event, claims_shortcut
+- `class ShortcutGuardFilter(QtCore.QObject)`
+  - methods: eventFilter
 
 ### `widgets/mixins/size_grip.py` — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - `class CornerSizeGrip(QtWidgets.QSizeGrip)`
@@ -574,7 +576,7 @@ _Generated: 2026-07-30_
   - methods: add, set, get, update_for_row_height
 
 ### `widgets/textEdit.py`
-- `class TextEdit(QtWidgets.QTextEdit, MenuMixin, AttributesMixin)`
+- `class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin)`
   - methods: insertText, showEvent, hideEvent
 
 ### `widgets/textEditLogHandler.py`

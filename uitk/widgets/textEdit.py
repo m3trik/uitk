@@ -3,10 +3,18 @@
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
 
 
-class TextEdit(QtWidgets.QTextEdit, MenuMixin, AttributesMixin):
-    """Rich text editor with context menu and visibility signals."""
+class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin):
+    """Rich text editor with context menu and visibility signals.
+
+    ``ShortcutGuardMixin`` precedes ``QTextEdit`` in the MRO so its ``event``
+    override wins. It matters only in **read-only** mode: bare Qt then claims no
+    editing chord at all, so an app-wide Copy binding (uitk's own script console,
+    a DCC hotkey) consumes Ctrl+C and the pane can only be copied from via its
+    context menu. Editable instances behave exactly as Qt already did.
+    """
 
     shown = QtCore.Signal()
     hidden = QtCore.Signal()

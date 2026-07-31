@@ -374,6 +374,9 @@ class ScriptOutput(ShortcutGuardMixin, QtWidgets.QTextEdit):
             reach is a ``QShortcut``, never an application event filter, so a
             focused editor keeps its own Ctrl+C: Qt offers the chord to the focus
             widget first and only falls through to this shortcut if it declines.
+            The shortcut is also **enabled only while this console holds a
+            selection**, so it can't consume Ctrl+C from a read-only pane (which
+            declines the override) and then copy nothing.
         focus_on_hover: Take keyboard focus when the mouse enters (default True), so
             the console's shortcuts — Ctrl+C copy, Ctrl+A select-all, and PgUp/PgDn/
             Home/End/arrow scrollback navigation — work on hover without clicking in
@@ -430,6 +433,16 @@ class ScriptOutput(ShortcutGuardMixin, QtWidgets.QTextEdit):
             else QtCore.Qt.WidgetWithChildrenShortcut
         )
         self._copy_shortcut.activated.connect(self._handle_copy_shortcut)
+        # Live ONLY while there is a selection to copy. An always-enabled
+        # application-scope shortcut consumes Ctrl+C from every widget that declines
+        # the ShortcutOverride — i.e. every read-only text pane in the host — and then
+        # copies nothing, because ``_handle_copy_shortcut`` no-ops without a selection.
+        # Live-Maya measured: Ctrl+C in a focused QTextBrowser left the clipboard
+        # untouched, so the pane could only be copied from via its context menu.
+        # ``copyAvailable`` is Qt's own "there is a selection" signal and fires for a
+        # read-only edit too, so this tracks the document without extra bookkeeping.
+        self._copy_shortcut.setEnabled(False)
+        self.copyAvailable.connect(self._copy_shortcut.setEnabled)
 
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.setTextInteractionFlags(

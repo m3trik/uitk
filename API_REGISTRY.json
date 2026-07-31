@@ -6703,7 +6703,7 @@
         {
           "name": "MainWindow",
           "summary": "Application main window with state persistence and child widget management.",
-          "line": 19,
+          "line": 20,
           "bases": [
             "QtWidgets.QMainWindow",
             "AttributesMixin",
@@ -6717,7 +6717,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or…",
-              "line": 192,
+              "line": 193,
               "deprecated": false
             },
             {
@@ -6726,7 +6726,7 @@
               "kind": "method",
               "signature": "(self, central_widget: QtWidgets.QWidget) -> None",
               "summary": "Initializes the window flags based on the central widget.",
-              "line": 203,
+              "line": 204,
               "deprecated": false
             },
             {
@@ -6735,7 +6735,7 @@
               "kind": "method",
               "signature": "(self, target: Union[str, QtWidgets.QWidget] = None, add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
               "summary": "Edit tags on a widget or a tag string.",
-              "line": 211,
+              "line": 212,
               "deprecated": false
             },
             {
@@ -6744,7 +6744,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the window is pinned (resists hide requests).",
-              "line": 268,
+              "line": 269,
               "deprecated": false
             },
             {
@@ -6753,7 +6753,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set pin state (method form for signal connections).",
-              "line": 277,
+              "line": 278,
               "deprecated": false
             },
             {
@@ -6762,7 +6762,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Alias for pinned property.",
-              "line": 282,
+              "line": 283,
               "deprecated": false
             },
             {
@@ -6771,7 +6771,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Request to hide, respecting pin state.",
-              "line": 294,
+              "line": 295,
               "deprecated": false
             },
             {
@@ -6780,7 +6780,7 @@
               "kind": "property",
               "signature": "(self) -> list",
               "summary": "Returns a list of the slots connected to the widget's signals.",
-              "line": 312,
+              "line": 313,
               "deprecated": false
             },
             {
@@ -6789,7 +6789,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-initialized PresetManager for saving/loading named presets.",
-              "line": 321,
+              "line": 322,
               "deprecated": false
             },
             {
@@ -6798,7 +6798,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Checks if the parent of the widget is a QStackedWidget.",
-              "line": 339,
+              "line": 340,
               "deprecated": false
             },
             {
@@ -6807,7 +6807,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Returns True if the widget is the currently active UI, False otherwise.",
-              "line": 344,
+              "line": 345,
               "deprecated": false
             },
             {
@@ -6816,7 +6816,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None",
               "summary": "Registers a widget with the main window, initializing it and connecting its signals.",
-              "line": 362,
+              "line": 363,
               "deprecated": false
             },
             {
@@ -6825,7 +6825,7 @@
               "kind": "method",
               "signature": "(self, menu: QtWidgets.QWidget) -> None",
               "summary": "Track a child Menu under this window.",
-              "line": 439,
+              "line": 465,
               "deprecated": false
             },
             {
@@ -6834,7 +6834,7 @@
               "kind": "method",
               "signature": "(self, *, visible: Optional[bool] = None, pinned: Optional[bool] = None, persistent: Optional[bool] = None) -> List[QtWidgets.QWidget]",
               "summary": "Return this window's tracked child menus, filtered by status.",
-              "line": 450,
+              "line": 476,
               "deprecated": false
             },
             {
@@ -6843,7 +6843,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Executes all deferred methods, in priority order.",
-              "line": 553,
+              "line": 579,
               "deprecated": false
             },
             {
@@ -6852,7 +6852,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[], Any]) -> None",
               "summary": "Run *callback* once this window's child widgets are registered.",
-              "line": 565,
+              "line": 591,
               "deprecated": false
             },
             {
@@ -6861,7 +6861,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, force=False) -> None",
               "summary": "Restores the state of a given widget if it has a restore_state attribute.",
-              "line": 583,
+              "line": 609,
               "deprecated": false
             },
             {
@@ -6870,7 +6870,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Persist a widget's value and mirror it across related surfaces.",
-              "line": 613,
+              "line": 639,
               "deprecated": false
             },
             {
@@ -6879,7 +6879,7 @@
               "kind": "method",
               "signature": "(self, watched, event) -> bool",
               "summary": "Override the event filter to register widgets when they are polished.",
-              "line": 702,
+              "line": 728,
               "deprecated": false
             },
             {
@@ -6888,7 +6888,7 @@
               "kind": "method",
               "signature": "(self, delta: int, baseline: Optional[int] = None) -> None",
               "summary": "Apply a signed pixel delta to the window's height.",
-              "line": 778,
+              "line": 804,
               "deprecated": false
             },
             {
@@ -6897,7 +6897,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Snap the window's height to its layout's natural content size.",
-              "line": 819,
+              "line": 845,
               "deprecated": false
             },
             {
@@ -6906,7 +6906,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Save the current window geometry (size and position) to settings.",
-              "line": 855,
+              "line": 881,
               "deprecated": false
             },
             {
@@ -6915,7 +6915,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Restore the window geometry (size and position) from settings.",
-              "line": 878,
+              "line": 904,
               "deprecated": false
             },
             {
@@ -6924,7 +6924,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear any saved window geometry from settings.",
-              "line": 925,
+              "line": 951,
               "deprecated": false
             },
             {
@@ -6933,7 +6933,7 @@
               "kind": "method",
               "signature": "(self, visible: bool) -> None",
               "summary": "Override setVisible to respect pin state when hiding.",
-              "line": 983,
+              "line": 1009,
               "deprecated": false
             },
             {
@@ -6942,7 +6942,7 @@
               "kind": "method",
               "signature": "(self, pos=None, app_exec=False) -> None",
               "summary": "Show the MainWindow.",
-              "line": 989,
+              "line": 1015,
               "deprecated": false
             },
             {
@@ -6951,7 +6951,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the show event to initialize untracked widgets and restore their states.",
-              "line": 1010,
+              "line": 1036,
               "deprecated": false
             },
             {
@@ -6960,7 +6960,7 @@
               "kind": "method",
               "signature": "(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None",
               "summary": "Registers all child widgets starting from the given widget (or central widget if None).",
-              "line": 1089,
+              "line": 1115,
               "deprecated": false
             },
             {
@@ -6969,7 +6969,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the focus event to set the current UI when this window gains focus.",
-              "line": 1124,
+              "line": 1150,
               "deprecated": false
             },
             {
@@ -6978,7 +6978,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1130,
+              "line": 1156,
               "deprecated": false
             },
             {
@@ -6987,7 +6987,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on resize so pinned/non-hidden windows persist size.",
-              "line": 1134,
+              "line": 1160,
               "deprecated": false
             },
             {
@@ -6996,7 +6996,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on move so pinned/non-hidden windows persist position.",
-              "line": 1140,
+              "line": 1166,
               "deprecated": false
             },
             {
@@ -7005,7 +7005,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement hideEvent to emit custom signal when window is hidden.",
-              "line": 1146,
+              "line": 1172,
               "deprecated": false
             },
             {
@@ -7014,7 +7014,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement closeEvent to save window geometry and emit custom signal.",
-              "line": 1170,
+              "line": 1196,
               "deprecated": false
             },
             {
@@ -7023,7 +7023,7 @@
               "kind": "method",
               "signature": "(self, style: str) -> None",
               "summary": "Overrides the setStyleSheet method to respect locking.",
-              "line": 1178,
+              "line": 1204,
               "deprecated": false
             },
             {
@@ -7032,7 +7032,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Resets the window's stylesheet to its original state.",
-              "line": 1192,
+              "line": 1218,
               "deprecated": false
             }
           ]
@@ -8881,16 +8881,52 @@
         {
           "name": "ShortcutGuardMixin",
           "summary": "Mixin: claim the standard editing shortcuts for the focused widget.",
-          "line": 27,
+          "line": 41,
           "bases": [],
           "members": [
+            {
+              "name": "claim_override",
+              "qualname": "ShortcutGuardMixin.claim_override",
+              "kind": "classmethod",
+              "signature": "(cls, widget, event: QtCore.QEvent) -> bool",
+              "summary": "Accept *event* on *widget*'s behalf when it's a chord *widget* should own.",
+              "line": 83,
+              "deprecated": false
+            },
+            {
+              "name": "claims",
+              "qualname": "ShortcutGuardMixin.claims",
+              "kind": "classmethod",
+              "signature": "(cls, widget, event: QtGui.QKeyEvent) -> bool",
+              "summary": "Whether *widget* should handle *event*'s chord itself.",
+              "line": 100,
+              "deprecated": false
+            },
+            {
+              "name": "is_read_only",
+              "qualname": "ShortcutGuardMixin.is_read_only",
+              "kind": "staticmethod",
+              "signature": "(widget) -> bool",
+              "summary": "``widget.isReadOnly()`` when it has one, else False.",
+              "line": 122,
+              "deprecated": false
+            },
+            {
+              "name": "has_selection",
+              "qualname": "ShortcutGuardMixin.has_selection",
+              "kind": "staticmethod",
+              "signature": "(widget) -> bool",
+              "summary": "Whether *widget* holds a text selection.",
+              "line": 128,
+              "deprecated": false
+            },
             {
               "name": "event",
               "qualname": "ShortcutGuardMixin.event",
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent)",
               "summary": "",
-              "line": 62,
+              "line": 144,
               "deprecated": false
             },
             {
@@ -8899,16 +8935,26 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QKeyEvent) -> bool",
               "summary": "Whether *event* is an editing chord this widget should handle itself.",
-              "line": 71,
+              "line": 151,
               "deprecated": false
-            },
+            }
+          ]
+        },
+        {
+          "name": "ShortcutGuardFilter",
+          "summary": "Event-filter form of :class:`ShortcutGuardMixin`, for widgets uitk can't subclass.",
+          "line": 156,
+          "bases": [
+            "QtCore.QObject"
+          ],
+          "members": [
             {
-              "name": "is_read_only",
-              "qualname": "ShortcutGuardMixin.is_read_only",
+              "name": "eventFilter",
+              "qualname": "ShortcutGuardFilter.eventFilter",
               "kind": "method",
-              "signature": "(self) -> bool",
-              "summary": "``isReadOnly`` when the base class provides it, else False.",
-              "line": 83,
+              "signature": "(self, obj, event: QtCore.QEvent) -> bool",
+              "summary": "",
+              "line": 172,
               "deprecated": false
             }
           ]
@@ -11462,7 +11508,7 @@
               "kind": "method",
               "signature": "(self, callback: Optional[Callable[[], None]]) -> None",
               "summary": "Set the callback the **Clear** context-menu action invokes.",
-              "line": 446,
+              "line": 459,
               "deprecated": false
             },
             {
@@ -11471,7 +11517,7 @@
               "kind": "method",
               "signature": "(self, hook: Optional[Callable[[QtWidgets.QMenu], None]]) -> None",
               "summary": "Set a ``callable(menu)`` hook that appends host-specific actions.",
-              "line": 450,
+              "line": 463,
               "deprecated": false
             },
             {
@@ -11480,7 +11526,7 @@
               "kind": "method",
               "signature": "(self, rules: List[ScriptHighlightRule]) -> None",
               "summary": "Replace the single-line highlight rules and re-highlight the document.",
-              "line": 456,
+              "line": 469,
               "deprecated": false
             },
             {
@@ -11489,7 +11535,7 @@
               "kind": "method",
               "signature": "(self, block_rules: List[ScriptBlockRule]) -> None",
               "summary": "Replace the multi-line region rules and re-highlight the document.",
-              "line": 461,
+              "line": 474,
               "deprecated": false
             },
             {
@@ -11498,7 +11544,7 @@
               "kind": "method",
               "signature": "(self, text: str, level: Optional[int] = None) -> None",
               "summary": "Append raw ``text`` at the end without disturbing the user's selection/caret.",
-              "line": 466,
+              "line": 479,
               "deprecated": false
             },
             {
@@ -11507,7 +11553,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent)",
               "summary": "Focus on hover (see ``focus_on_hover``) so the console's shortcuts reach it",
-              "line": 523,
+              "line": 536,
               "deprecated": false
             },
             {
@@ -11516,7 +11562,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QKeyEvent)",
               "summary": "Ensure copy works reliably in the output widget.",
-              "line": 537,
+              "line": 550,
               "deprecated": false
             },
             {
@@ -11525,7 +11571,7 @@
               "kind": "method",
               "signature": "(self) -> QtWidgets.QMenu",
               "summary": "The context menu, built but not shown (``_context_menu`` execs it).",
-              "line": 559,
+              "line": 572,
               "deprecated": false
             }
           ]
@@ -14315,8 +14361,9 @@
         {
           "name": "TextEdit",
           "summary": "Rich text editor with context menu and visibility signals.",
-          "line": 8,
+          "line": 9,
           "bases": [
+            "ShortcutGuardMixin",
             "QtWidgets.QTextEdit",
             "MenuMixin",
             "AttributesMixin"
@@ -14328,7 +14375,7 @@
               "kind": "method",
               "signature": "(self, text, color='LightGray', backround_color='rgb(50, 50, 50)')",
               "summary": "Append a new paragraph to the textEdit.",
-              "line": 25,
+              "line": 33,
               "deprecated": false
             },
             {
@@ -14337,7 +14384,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Parameters:",
-              "line": 36,
+              "line": 44,
               "deprecated": false
             },
             {
@@ -14346,7 +14393,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Parameters:",
-              "line": 44,
+              "line": 52,
               "deprecated": false
             }
           ]

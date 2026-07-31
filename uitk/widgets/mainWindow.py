@@ -14,6 +14,7 @@ from uitk.managers.settings_manager import SettingsManager
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.mixins.tooltip_mixin import TooltipMixin, TooltipProxy
+from uitk.widgets.mixins.shortcut_guard import ShortcutGuardFilter
 
 
 class MainWindow(
@@ -417,6 +418,7 @@ class MainWindow(
             setattr(self, obj_name, widget)
 
         widget.tooltip = TooltipProxy(widget)
+        self._guard_editing_shortcuts(widget)
 
         self._add_child_changed_signal(widget)
         self._add_child_destroyed_signal(widget)
@@ -435,6 +437,30 @@ class MainWindow(
 
         # self.logger.debug(f"[register_widget]: {widget.objectName()} ({widget.type})")
         # self.register_children(widget)
+
+    def _guard_editing_shortcuts(self, widget: QtWidgets.QWidget) -> None:
+        """Let a registered text view keep its own Ctrl+C.
+
+        A **read-only** ``QTextEdit`` / ``QTextBrowser`` / ``QPlainTextEdit`` claims no
+        editing chord from Qt at all, so an app-wide Copy binding — uitk's own script
+        console, a DCC hotkey — consumes Ctrl+C and the pane can only be copied from
+        via its context menu (live-Maya measured on scene_exporter's log pane). Panels
+        declare those panes as plain Qt classes in their ``.ui``, so
+        :class:`ShortcutGuardMixin` can't reach them by inheritance;
+        :class:`ShortcutGuardFilter` does the same job by installation.
+
+        Installed on every text view rather than only the read-only ones, because
+        ``setReadOnly`` may flip later — the filter re-reads the widget's state per
+        event, and on an editable pane it merely agrees with what Qt already does.
+        The window owns one filter for all of them (``installEventFilter`` de-dupes,
+        so re-registering a widget can't stack duplicates).
+        """
+        # QTextBrowser is a QTextEdit, so both text families are covered by these two.
+        if not isinstance(widget, (QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
+            return
+        if getattr(self, "_shortcut_guard", None) is None:
+            self._shortcut_guard = ShortcutGuardFilter(self)
+        widget.installEventFilter(self._shortcut_guard)
 
     def register_menu(self, menu: QtWidgets.QWidget) -> None:
         """Track a child Menu under this window.
