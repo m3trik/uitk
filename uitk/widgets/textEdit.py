@@ -16,6 +16,14 @@ class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMix
     context menu. Editable instances behave exactly as Qt already did.
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {
+        "icon": "document",
+        "object_name": "txt",
+        "size": (240, 120),
+        "string_properties": {"html": "richtext"},
+    }
+
     shown = QtCore.Signal()
     hidden = QtCore.Signal()
 

@@ -24,6 +24,9 @@ class Slider(
     (``Slider(setMinimum=0, setMaximum=360)``) through ``AttributesMixin``.
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "move", "object_name": "slider"}
+
     # Class-level menu defaults (mirrors SpinBox / ComboBox).
     _menu_defaults = {"hide_on_leave": True}
 

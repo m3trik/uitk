@@ -10,6 +10,16 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
     Emits an on_enter signal when the mouse cursor enters the region.
     """
 
+    # Qt Designer widget-box entry. Marked a container: a Region exists to
+    # hold the children it reveals on mouse-over, so Designer must accept
+    # drops onto it (its QWidget base gives no such hint).
+    designer_spec = {
+        "icon": "crosshair",
+        "object_name": "region",
+        "container": True,
+        "size": (45, 45),
+    }
+
     on_enter = QtCore.Signal()
     on_leave = QtCore.Signal()
 
@@ -101,8 +111,32 @@ class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin):
             self._mouse_over_connected = False
         self._visible_on_mouse_over = value
 
+    def setVisibleOnMouseOver(self, value: bool) -> None:
+        """Set reveal-on-hover (Qt-property setter for the attribute above).
+
+        Named for the ``visibleOnMouseOver`` property: ``pyside6-uic`` compiles
+        a ``.ui`` property into a ``set<Name>`` call, so the pair has to exist.
+        """
+        self.visible_on_mouse_over = value
+
+    #: Qt-property mirror of :attr:`visible_on_mouse_over`, so the behaviour is
+    #: a checkbox in Designer's property editor and round-trips through a
+    #: ``.ui`` file. The snake_case property above stays the Python-facing API.
+    visibleOnMouseOver = QtCore.Property(
+        bool,
+        fget=lambda self: self.visible_on_mouse_over,
+        fset=setVisibleOnMouseOver,
+    )
+
     def hide_top_level_children(self):
-        """Hide all top-level child widgets of the Region instance."""
+        """Hide all top-level child widgets of the Region instance.
+
+        No-op while authoring a form: a Region whose children vanish the moment
+        they are dropped into it can't be laid out. The reveal-on-hover
+        behaviour is a runtime one.
+        """
+        if self.is_design_time():
+            return
         for child in self.children():
             if isinstance(child, QtWidgets.QWidget):
                 child.hide()

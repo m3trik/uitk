@@ -58,6 +58,9 @@ class TextViewBox(WindowPanel):
         ``True``.
     """
 
+    # Not a Designer widget-box entry: a standalone window, not a form element.
+    designer_spec = {"visible": False}
+
     # Case-insensitive map from MessageBox-style button names to
     # ``(label, role, canonical_name)`` for :class:`QDialogButtonBox`.
     # Keys are lowercase so lookup is ``name.lower()``; the canonical

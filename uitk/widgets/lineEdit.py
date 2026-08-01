@@ -245,6 +245,9 @@ class LineEdit(
         line_edit.validated.connect(lambda ok, text: ...)
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "edit", "object_name": "txt"}
+
     shown = QtCore.Signal()
     hidden = QtCore.Signal()
     validated = QtCore.Signal(bool, str)

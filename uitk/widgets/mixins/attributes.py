@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import logging
+import os
 
 from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
@@ -45,6 +46,49 @@ class AttributesMixin:
             self.set_attributes(self, setWindowTitle="My Application", set_size=(200, 100))
     ```
     """
+
+    #: Environment variable marking the process as a Qt Designer session.
+    #: Set by ``uitk.designer`` — both when it launches Designer and when
+    #: Designer imports the plugin entry file — so a widget constructed by
+    #: Designer can tell it is being *authored* rather than run.
+    DESIGN_TIME_ENV = "UITK_DESIGNER"
+
+    @staticmethod
+    def is_design_time() -> bool:
+        """Whether this widget is being built by Qt Designer rather than an app.
+
+        Widgets that adapt to their runtime environment must not do so while a
+        form is being authored — a ``Header`` hides itself beside a native title
+        bar, a ``CollapsableGroup`` restores a saved collapsed state — which in
+        Designer reads as the widget vanishing or collapsing the moment it is
+        dropped. Guarding that behaviour on this keeps the form showing what was
+        authored, with no effect on any normal run.
+
+        Read from the environment rather than a module global so it survives the
+        import isolation of Designer's plugin loader.
+
+        Returns:
+            bool: True while running under Qt Designer.
+        """
+        return os.environ.get(AttributesMixin.DESIGN_TIME_ENV, "").lower() not in (
+            "",
+            "0",
+            "false",
+            "no",
+        )
+
+    @staticmethod
+    def set_design_time(value: bool) -> None:
+        """Mark (or unmark) this process as a Qt Designer session.
+
+        Called by :meth:`uitk.designer.DesignerPlugin.register`; tests use it to
+        exercise both paths. Writes the environment variable so child processes
+        and re-imported plugin modules agree.
+        """
+        if value:
+            os.environ[AttributesMixin.DESIGN_TIME_ENV] = "1"
+        else:
+            os.environ.pop(AttributesMixin.DESIGN_TIME_ENV, None)
 
     def set_flags(self, **flags):
         """Sets or unsets given window flags, safely ignoring unsupported cases.

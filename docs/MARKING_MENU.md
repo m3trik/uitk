@@ -183,11 +183,11 @@ Instantiate once: `main = TclMaya(); main.show()`. The activation `GlobalShortcu
 | Hover over a nav `MenuButton` | `child_enterEvent` → `_set_submenu` — transition to the button's `submenu_name()`, overlay path grows |
 | Mouse released over an owned item | `mouseReleaseEvent` / `child_mouseButtonReleaseEvent` → `_handle_menu_item_release` — the click dispatches **immediately on the first release** of a chord; the per-gesture `_action_dispatched` latch swallows the trailing release so it fires exactly once |
 | Mouse released over empty overlay | Chord **navigation** — `_defer_partial_or_settle` + `_sync_menu_to_state` switch to the menu the remaining state resolves to |
-| Activation key released | `_on_activation_release` — hide menu, restore dimmed windows, `request_hide()` visible standalone windows |
+| Activation key released | `_on_activation_release` — `request_hide()` visible standalone windows, hide menu (the hide restores the dim) |
 
 Chord-release tolerance (`CHORD_RELEASE_TOLERANCE_MS = 75`) governs **navigation only, never item selection**: when a release over empty overlay leaves another button still held (a "partial" — real both-button releases lift a few ms apart), the decision is deferred by the tolerance window. If the other button also releases within it, the gesture settles on the final all-up state; if it's still held at expiry, the user meant to switch, and the menu navigates to the remaining-button menu.
 
-Dimming (`dim_other_windows`) is a once-per-hold snapshot: windows and open menus visible at key-press fade to near-transparent and become mouse-transparent; anything opened *during* the hold stays bright. `restore_other_windows` undoes it on release.
+Dimming (`dim_other_windows`) is a once-per-hold snapshot: windows and open menus visible at key-press fade to near-transparent and become mouse-transparent; anything opened *during* the hold stays bright. The fade lives exactly as long as the overlay — `hideEvent` is the single owner of `restore_other_windows`, so **any** hide un-dims (key release, leaf-click launch, standalone handoff, a bypassed hide). Keying it to the key release alone left the fade stuck whenever the key-up never reached Qt.
 
 ---
 

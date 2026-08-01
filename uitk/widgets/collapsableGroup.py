@@ -9,6 +9,10 @@ from uitk.managers.settings_manager import SettingsManager
 class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
     """Expandable/collapsible group box that shows or hides its contents."""
 
+    # Qt Designer widget-box entry. A container -- children are dropped into
+    # the group and hide/show with it.
+    designer_spec = {"icon": "layout", "object_name": "grp", "size": (200, 120)}
+
     def __init__(self, title, parent=None, **kwargs):
         super().__init__(title, parent)
         self.setCheckable(True)
@@ -42,6 +46,13 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             return
         self._state_enforced = True
 
+        # A form being authored must show the state it was authored with. In
+        # Designer, restoring a collapsed state from settings (or collapsing at
+        # all) hides the children the moment the group is dropped, leaving
+        # nothing to lay out.
+        if self.is_design_time():
+            return
+
         target_checked = self.isChecked()
 
         if self.restore_state and self.objectName():
@@ -65,6 +76,19 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
                 self.toggle_expand(False)
             finally:
                 self._suppress_window_resize = False
+
+    def getRestoreState(self) -> bool:
+        """Whether the collapsed/expanded state persists across sessions."""
+        return self.restore_state
+
+    def setRestoreState(self, value: bool) -> None:
+        """Enable or disable persistence of the collapsed/expanded state."""
+        self.restore_state = bool(value)
+
+    #: Exposed as a Qt property so a form author can opt a group out of state
+    #: persistence in Designer (a group that must always open expanded), and
+    #: have the choice round-trip through the ``.ui`` file.
+    restoreState = QtCore.Property(bool, fget=getRestoreState, fset=setRestoreState)
 
     def _collapsed_height(self):
         """Return the height to use when collapsed (title bar only)."""

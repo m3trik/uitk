@@ -1,8 +1,68 @@
 # !/usr/bin/python
 # coding=utf-8
 import inspect
+import logging
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
+
+logger = logging.getLogger(__name__)
+
+
+class _ClickDismissFilter(QtCore.QObject):
+    """App-level dismiss watcher for a click-mode flyout chain.
+
+    Installed on the QApplication only while a chain is open (see
+    ``_begin_click_chain``) and removed the moment it collapses, so its
+    per-event cost exists only during an open menu session.
+
+    A dedicated QObject rather than app-installing the owning list's own
+    ``eventFilter``: while installed app-wide, the filter receives events for
+    *every* widget in the application, and the list's Enter/Leave/Release
+    branches would misfire on foreign widgets (e.g. a stray Enter driving
+    ``_close_sibling_sublists``).
+
+    Only Qt events are visible here — clicks on a DCC's native (non-Qt)
+    surfaces never arrive. Those are covered by the WindowDeactivate watch in
+    ``ExpandableList.eventFilter`` instead.
+    """
+
+    def __init__(self, root_list):
+        # No QObject parent: lifetime is managed explicitly by
+        # _begin/_end_click_chain, and the root list must stay free to be
+        # deleted (clear()/deleteLater) without dragging this filter with it
+        # mid-dispatch.
+        super().__init__()
+        self._root = root_list
+
+    def eventFilter(self, obj, event):
+        event_type = event.type()
+        if event_type == QtCore.QEvent.MouseButtonPress:
+            # QCursor.pos() rather than the event's global position: dodges
+            # the PySide2 globalPos() / PySide6 globalPosition() API split.
+            try:
+                root = self._root
+                if not root._is_cursor_in_hierarchy(QtGui.QCursor.pos()):
+                    # Collapse, but do NOT consume — the outside click should
+                    # still land on whatever the user pressed (standard menu
+                    # dismissal semantics).
+                    root._force_hide_all()
+            except RuntimeError:
+                # Root's C++ object died (clear()/window teardown mid-session);
+                # nothing left to dismiss — detach quietly.
+                self._detach()
+            return False
+        if event_type == QtCore.QEvent.KeyPress and event.key() == QtCore.Qt.Key_Escape:
+            try:
+                self._root._force_hide_all()
+            except RuntimeError:
+                self._detach()
+            return True  # Escape is spent on dismissing the menu.
+        return False
+
+    def _detach(self):
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
 
 
 class ExpandableList(QtWidgets.QWidget, AttributesMixin):
@@ -19,7 +79,21 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         on_item_interacted: Emitted when an item in the list or any sublist is clicked. The interacted widget is passed as the argument.
 
     Attributes:
-        position (str): The relative position of the ExpandableList. Can be 'right', 'left', 'top', 'bottom', or 'center'.
+        position (str): The relative position of the ExpandableList. Can be 'right', 'left', 'top', 'bottom', 'center', or one of the
+            overlay anchors ('overlay', 'overlay_right', 'overlay_bottom_right') that open the first sublist on top of the starting list.
+        activation (str): How sublists open — 'hover' (default: expand on Enter,
+            collapse on a delayed Leave) or 'click' (expand/collapse on item
+            click, persist until dismissed by an outside click, Escape, leaf
+            activation, or the host window hiding). Meaningful on the root list
+            only — sublists always consult the root, so there is no per-sublist
+            copy to drift. Set via ``apply_preset`` rather than directly.
+        embedded (bool): True when the root is embedded in a normal
+            layout-managed host (a window row or a popup menu) rather than the
+            fullscreen marking-menu overlay: the root hugs its content height
+            and flyouts are shown as frameless focusless Tool windows (with a
+            screen clamp) so the host's bounds can't clip them. Root-list
+            authoritative, set via ``apply_preset`` (``header_menu`` = embedded
+            hover, ``click_menu`` = embedded click).
         min_item_height (int): The minimum height for items in the list. If None, the minimum height is not set.
         max_item_height (int): The maximum height for items in the list. If None, the maximum height is not set.
         fixed_item_height (int): The fixed height for items in the list. If None, the height is not fixed.
@@ -40,6 +114,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         expandable_list.on_item_interacted.connect(my_item_interacted_func)
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "list", "object_name": "list", "size": (160, 120)}
+
     # Class constants
     VALID_POSITIONS = {
         "right",
@@ -49,7 +126,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         "center",
         "overlay",
         "overlay_right",
+        "overlay_bottom_right",
     }
+    VALID_ACTIVATIONS = ("hover", "click")
     DEFAULT_LAYOUT_SPACING = 0.5
 
     # Grace period after the cursor leaves a sublist's trigger item or
@@ -68,6 +147,13 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     #   child_offset:       (x, y) offset for deeper sublists.
     #   use_item_height:    If True, auto-calculates root y-offset from fixed_item_height
     #                       so the first sublist covers the root button.
+    #   activation:         Optional. "hover" (default) or "click" — how sublists open.
+    #   embedded:           Optional. True when the root is embedded in a normal
+    #                       layout-managed host (a window row or a popup menu) rather
+    #                       than the fullscreen marking-menu overlay: the root hugs its
+    #                       content height, and flyouts are shown as frameless Tool
+    #                       windows (with a screen clamp) so the host's bounds can't
+    #                       clip them.
     PRESETS = {
         "expand_right": {
             "root_position": "right",
@@ -112,6 +198,44 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             "child_position": "left",
             "child_offset": (1, 0),
         },
+        # Overlay anchored at the trigger's BOTTOM-right corner, so the first
+        # sublist covers the starting list and grows UPWARD; deeper sublists
+        # fan out to the LEFT. For a list sitting in the upper-left of the
+        # marking-menu overlay, where a downward/rightward fan would run into
+        # the radial center.
+        "expand_overlay_up_left": {
+            "root_position": "overlay_bottom_right",
+            "root_offset": (0, 0),
+            "child_position": "left",
+            "child_offset": (1, 0),
+        },
+        # Standard click-driven menu: the first sublist drops below the root
+        # row, deeper sublists fan out to the right. activation="click" —
+        # sublists open on item click (not hover), persist until dismissed,
+        # and are shown as frameless Tool windows so they escape a small host
+        # window's bounds (the other presets serve the fullscreen marking-menu
+        # overlay, where clipping was never possible). For embedded menu-bar
+        # rows in a standalone window.
+        "click_menu": {
+            "root_position": "bottom",
+            "root_offset": (0, 0),
+            "child_position": "right",
+            "child_offset": (-1, 0),
+            "activation": "click",
+            "embedded": True,
+        },
+        # Hover-driven menu entry for a list embedded in a normal window or a
+        # popup menu (e.g. a panel's header menu): sublists open on mouse-over
+        # and fan out to the right, shown as frameless Tool windows so the
+        # host's bounds can't clip them. Same feel as expand_right in the
+        # marking-menu overlay, adapted to a small embedded host.
+        "header_menu": {
+            "root_position": "right",
+            "root_offset": (0, 0),
+            "child_position": "right",
+            "child_offset": (-1, 0),
+            "embedded": True,
+        },
     }
 
     on_item_added = QtCore.Signal(object)
@@ -143,6 +267,17 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.sublist_y_offset = sublist_y_offset
         self.kwargs = kwargs
 
+        # Sublist activation mode ("hover" | "click"); authoritative on the
+        # root list only — see the class docstring. Set via apply_preset.
+        self.activation = "hover"
+        # Whether this root is embedded in a normal layout-managed host (see
+        # the PRESETS key docs); authoritative on the root list only.
+        self.embedded = False
+        # Click-mode session state (root list only): True while a click-opened
+        # flyout chain is up and the app-level dismiss filter is installed.
+        self._click_chain_open = False
+        self._dismiss_filter = None
+
         self.widget_data = {}
         # Hide watches installed by the root list's showEvent: the top-level
         # window (see _watch_window_hide) and the containing uitk MainWindow's
@@ -168,6 +303,71 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.installEventFilter(self)
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**self.kwargs)
+
+    # -- Qt Designer properties ----------------------------------------------
+    # The construction options above, restated as Qt properties so the list can
+    # be configured in Designer's property editor instead of only in a slot.
+    # Named apart from the plain attributes they wrap (``expandPosition`` for
+    # ``position``): a Qt property sharing an attribute's name would intercept
+    # the very assignment its setter makes.
+    #
+    # The three item heights are ``None`` when unset, which a Qt ``int``
+    # property can't carry — 0 stands in for "unset" on this side of the fence
+    # and is translated back on the way in.
+
+    def getExpandPosition(self) -> str:
+        """Direction sublists expand toward — see :attr:`VALID_POSITIONS`."""
+        return self.position
+
+    def setExpandPosition(self, value: str) -> None:
+        """Set the sublist expansion direction, ignoring unknown values."""
+        if value in self.VALID_POSITIONS:
+            self.position = value
+        else:
+            logger.warning(
+                "Ignoring invalid ExpandableList position %r; expected one of %s",
+                value,
+                ", ".join(self.VALID_POSITIONS),
+            )
+
+    def setMinItemHeight(self, value: int) -> None:
+        """Set the per-item minimum height; 0 clears it."""
+        self.min_item_height = int(value) or None
+
+    def setMaxItemHeight(self, value: int) -> None:
+        """Set the per-item maximum height; 0 clears it."""
+        self.max_item_height = int(value) or None
+
+    def setFixedItemHeight(self, value: int) -> None:
+        """Set the per-item fixed height; 0 clears it."""
+        self.fixed_item_height = int(value) or None
+
+    def setSublistXOffset(self, value: int) -> None:
+        """Set the horizontal offset applied to sublists."""
+        self.sublist_x_offset = int(value)
+
+    def setSublistYOffset(self, value: int) -> None:
+        """Set the vertical offset applied to sublists."""
+        self.sublist_y_offset = int(value)
+
+    expandPosition = QtCore.Property(
+        str, fget=getExpandPosition, fset=setExpandPosition
+    )
+    minItemHeight = QtCore.Property(
+        int, fget=lambda self: self.min_item_height or 0, fset=setMinItemHeight
+    )
+    maxItemHeight = QtCore.Property(
+        int, fget=lambda self: self.max_item_height or 0, fset=setMaxItemHeight
+    )
+    fixedItemHeight = QtCore.Property(
+        int, fget=lambda self: self.fixed_item_height or 0, fset=setFixedItemHeight
+    )
+    sublistXOffset = QtCore.Property(
+        int, fget=lambda self: self.sublist_x_offset, fset=setSublistXOffset
+    )
+    sublistYOffset = QtCore.Property(
+        int, fget=lambda self: self.sublist_y_offset, fset=setSublistYOffset
+    )
 
     def apply_preset(self, preset_name):
         """Apply a named preset to configure expansion behavior.
@@ -222,6 +422,27 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # to sublists created by root items.
         self._preset_child_position = preset["child_position"]
         self._preset_child_offset = preset["child_offset"]
+
+        # Activation mode. Only meaningful on the root list (sublists consult
+        # the root via _click_mode), and apply_preset is documented as a
+        # root-list, before-populate call, so setting it here is authoritative.
+        activation = preset.get("activation", "hover")
+        if activation not in self.VALID_ACTIVATIONS:
+            raise ValueError(
+                f"Invalid activation '{activation}'. Must be one of: "
+                f"{', '.join(self.VALID_ACTIVATIONS)}"
+            )
+        self.activation = activation
+
+        self.embedded = bool(preset.get("embedded", False))
+        if self.embedded:
+            # An embedded root is a menu row inside a normal layout (window
+            # strip or popup menu): it must hug its content height (one row
+            # per root item) instead of soaking up surplus vertical space
+            # through the Expanding policy set at construction.
+            self.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
 
     def get_items(self):
         """Get all items in the list and its sublists.
@@ -340,6 +561,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         widget down explicitly: hide it (drop any open flyout), then detach and
         delete it alongside its parent item.
         """
+        # Collapse first: the per-item hides below drop the flyouts anyway,
+        # but routing through _force_hide_all also retires a click-mode
+        # session (chain flag + app-level dismiss filter) when a slot
+        # rebuilds the list while a menu is open.
+        self._force_hide_all()
+
         # Process widgets in reverse order to avoid index errors
         for i in reversed(range(self._layout.count())):
             widget = self._layout.itemAt(i).widget()
@@ -620,6 +847,213 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         """Return the topmost list in this hierarchy (self if already root)."""
         return getattr(self, "root_list", self)
 
+    def _click_mode(self):
+        """Whether this hierarchy uses click activation.
+
+        The root list's ``activation`` is the single source of truth —
+        sublists never carry their own copy, so a preset re-applied on the
+        root (e.g. across a ``refresh_on_show`` rebuild) can't leave stale
+        per-sublist state behind.
+        """
+        return getattr(self._get_root_list(), "activation", "hover") == "click"
+
+    def _is_embedded(self):
+        """Whether this hierarchy's root is embedded in a normal layout host.
+
+        Root-authoritative for the same drift-free reason as ``_click_mode``.
+        Embedded roots get popup flyouts + the screen clamp regardless of
+        activation mode — clipping is a property of where the root lives, not
+        of how its sublists open.
+        """
+        return bool(getattr(self._get_root_list(), "embedded", False))
+
+    def _ensure_popup_flags(self, sublist):
+        """Idempotently promote an embedded-mode sublist to a frameless Tool window.
+
+        Mirrors ``Menu._setup_as_popup``: a single ``setParent(parent, flags)``
+        call (setWindowFlags alone would recreate the native handle, then
+        setParent again — two recreations), applied lazily on first open while
+        the sublist is still hidden (a flag-change hide is then a no-op, and no
+        OS-level window exists before it's needed — avoids a WM-visible flash
+        on Windows at construction time).
+
+        Why a window at all: hover-mode sublists are plain children of
+        ``self.window()``, which is fine under the fullscreen marking-menu
+        overlay but clips flyouts at the border of a small standalone window.
+
+        ``WindowDoesNotAcceptFocus`` is load-bearing: without it, clicking a
+        flyout activates the Tool window, deactivating the host — which the
+        click-mode WindowDeactivate watch in ``eventFilter`` would read as
+        "user left" and dismiss the menu mid-interaction. Flyout rows are pure
+        click targets (no focus-needing editors), so refusing focus is safe
+        and also keeps a DCC host's focus untouched.
+        """
+        if getattr(sublist, "_popup_configured", False):
+            return
+        sublist._popup_configured = True
+        flags = (
+            QtCore.Qt.Tool
+            | QtCore.Qt.FramelessWindowHint
+            | QtCore.Qt.WindowDoesNotAcceptFocus
+        )
+        parent = sublist.parentWidget()
+        if parent is not None:
+            sublist.setParent(parent, flags)
+        else:
+            sublist.setWindowFlags(flags)
+        # After reparenting so it survives the native-handle recreation.
+        sublist.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+
+    def _is_layout_managed(self):
+        """Whether a parent layout owns this widget's geometry.
+
+        True for an embedded list (a row in a popup ``Menu`` or a window
+        layout); False for the marking-menu overlay's absolutely-positioned
+        roots and for every reparented sublist, which own their own geometry.
+
+        Searches the parent's whole layout tree, not just its top-level
+        layout: ``QLayout.indexOf`` only sees its own direct items, and hosts
+        nest layouts (a ``Menu`` puts its items in a QGridLayout nested inside
+        the central widget's QVBoxLayout), which a top-level-only check reads
+        as "unmanaged".
+        """
+        parent = self.parentWidget()
+        layout = parent.layout() if parent is not None else None
+        if layout is None:
+            return False
+        pending = [layout]
+        while pending:
+            lay = pending.pop()
+            if lay.indexOf(self) != -1:
+                return True
+            for i in range(lay.count()):
+                item = lay.itemAt(i)
+                nested = item.layout() if item is not None else None
+                if nested is not None:
+                    pending.append(nested)
+        return False
+
+    def _find_host_with(self, attr, start=None):
+        """Nearest ancestor of *start* (default ``self``) exposing *attr*.
+
+        The host-integration lookup this widget uses instead of importing its
+        hosts: a uitk ``MainWindow`` by ``on_hide``, a popup ``Menu`` by
+        ``adopt_transient``. Stops at the first top-level ancestor — checked
+        AFTER the attribute, so a top-level host still matches — because
+        anything beyond it is a different window, not this list's host.
+
+        Returns:
+            QtWidgets.QWidget or None: The matching ancestor, else None.
+        """
+        w = (start if start is not None else self).parentWidget()
+        while w is not None:
+            if hasattr(w, attr):
+                return w
+            if w.isWindow():
+                return None
+            w = w.parentWidget()
+        return None
+
+    def _adopt_into_host_menu(self, sublist):
+        """Register an embedded flyout with the popup menu hosting this list.
+
+        A flyout is a separate top-level window, and it is created at populate
+        time — when a host ``Menu`` is typically not yet a window itself, so
+        ``self.window()`` resolved to the panel behind it and the flyout's
+        QObject chain never reaches the menu. A ``hide_on_leave`` menu then
+        reads the pointer entering the flyout as having left the menu and
+        dismisses itself (taking the flyout with it), and conversely a menu
+        that hides on its own leaves the flyout stranded on screen.
+
+        ``Menu.adopt_transient`` is the designed answer for child popups
+        parented outside a menu's subtree: while adopted, the pointer over the
+        flyout counts as inside the menu's transient family, and the menu
+        hiding cascades into the flyout. Duck-typed like this widget's other
+        host hooks (``mouse_tracking``, ``on_hide``) so it stays menu-agnostic;
+        idempotent on the menu side, so opening a flyout repeatedly is free.
+
+        Resolved from the ROOT list — only the root lives inside the menu's
+        widget subtree; deeper sublists are reparented top-levels like this one.
+        """
+        host = self._find_host_with("adopt_transient", start=self._get_root_list())
+        if host is None:
+            return  # not menu-hosted (e.g. a plain window); nothing to adopt into
+        try:
+            host.adopt_transient(sublist)
+        except RuntimeError:
+            pass  # host died mid-open
+
+    def _ensure_sublist_on_screen(self, sublist):
+        """Clamp a top-level flyout fully into its screen's available area.
+
+        Trimmed port of ``Menu._ensure_on_screen``. Hover-mode sublists never
+        need this (the fullscreen overlay is the screen); embedded click-mode
+        roots can sit anywhere, so a flyout near a screen edge would otherwise
+        open partially off-screen. Clamps (slides) rather than flips direction;
+        near an edge the flyout may cover its parent row — accepted trade-off.
+        """
+        frame_geo = sublist.frameGeometry()
+        screen = None
+        if hasattr(QtWidgets.QApplication, "screenAt"):
+            screen = QtWidgets.QApplication.screenAt(frame_geo.center())
+        if screen is None:
+            screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        x = min(frame_geo.x(), available.right() - frame_geo.width())
+        x = max(x, available.left())
+        y = min(frame_geo.y(), available.bottom() - frame_geo.height())
+        y = max(y, available.top())
+        if x != frame_geo.x() or y != frame_geo.y():
+            sublist.move(x, y)
+
+    def _begin_click_chain(self):
+        """Root list only: mark a click-opened chain live and arm dismissal.
+
+        Installs the app-level outside-press/Escape watcher. Idempotent —
+        opening a second flyout while the chain is already up is a no-op here.
+        """
+        root = self._get_root_list()
+        if root._click_chain_open:
+            return
+        root._click_chain_open = True
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            root._dismiss_filter = _ClickDismissFilter(root)
+            app.installEventFilter(root._dismiss_filter)
+
+    def _end_click_chain(self):
+        """Root list only: retire the chain state and the app-level filter.
+
+        Deliberately performs no hides — it is called *from* ``_force_hide_all``
+        (every dismiss path funnels there), so hiding here would recurse.
+        """
+        root = self._get_root_list()
+        if not root._click_chain_open:
+            return
+        root._click_chain_open = False
+        filt = root._dismiss_filter
+        root._dismiss_filter = None
+        if filt is not None:
+            try:
+                filt._detach()
+            except RuntimeError:
+                pass  # app or filter already torn down
+
+    def _any_sublist_visible(self):
+        """Whether any direct item's sublist is currently visible.
+
+        Direct check only: descendants of a hidden sublist are always
+        force-hidden with it, so a hidden first level implies a fully
+        collapsed chain.
+        """
+        for i in range(self._layout.count()):
+            w = self._layout.itemAt(i).widget()
+            if w and hasattr(w, "sublist") and w.sublist.isVisible():
+                return True
+        return False
+
     def _auto_open_suppressed(self):
         """Whether a sublist auto-open should be ignored right now.
 
@@ -665,9 +1099,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         register every sublist with the window's MouseTracking.
 
         Per-add resize was removed for O(N) populate; the consolidated
-        resize happens here so standalone (non-layout-managed) usage
-        still sizes correctly. For layout-managed parents this is a
-        no-op, since the layout's setGeometry overrides on the next pass.
+        resize happens here so standalone (non-layout-managed) usage still
+        sizes correctly. It is skipped when a parent layout manages this
+        list — the layout has ALREADY allocated the correct width by the time
+        showEvent runs, and resizing to our own sizeHint clobbers it until the
+        next layout pass. That transient wrong width was visible (an embedded
+        header-menu list rendering narrower/wider than the menu, "correcting
+        itself" after any later interaction) and, worse, mispositioned the
+        first flyout: its placement is measured from the trigger row's edge,
+        which inherits the list's bogus width.
 
         Sublists created before the list was parented into a window with
         ``mouse_tracking`` (typical when populated during slot init) will
@@ -704,7 +1144,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # auto-open stays latched off until the cursor actually moves.
         self._suppress_open_pos = QtGui.QCursor.pos()
 
-        self.resize(self.sizeHint())
+        if not self._is_layout_managed():
+            self.resize(self.sizeHint())
 
         win = self.window()
         mt = getattr(win, "mouse_tracking", None)
@@ -779,15 +1220,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         Idempotent; re-targets if the chain changes between shows.
         """
-        source = None
-        w = self.parentWidget()
-        while w is not None:
-            if hasattr(w, "on_hide"):  # a uitk MainWindow (the UI container)
-                source = w
-                break
-            if w.isWindow():
-                break  # reached the top-level; no MainWindow in between
-            w = w.parentWidget()
+        source = self._find_host_with("on_hide")  # a uitk MainWindow (UI container)
         if source is self._hide_signal_source:
             return
         if self._hide_signal_source is not None:
@@ -840,6 +1273,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 # second ExpandableList class whose identity differs from this
                 # module's name binding.
                 QtWidgets.QWidget.hide(w.sublist)
+
+        # Click mode: a full collapse ends the menu session. Funneling the
+        # teardown through here means every dismiss path — outside press,
+        # Escape, leaf activation, watched-window Hide/WindowBlocked/
+        # WindowDeactivate, on_hide, hideEvent, showEvent's defensive reset,
+        # clear() — retires the app-level filter without its own wiring.
+        # Root-only: sublist recursion above must not touch session state.
+        if not hasattr(self, "parent_list") and self.activation == "click":
+            self._end_click_chain()
 
     def _schedule_sublist_hide(self, item):
         """Start (or restart) a deferred hide of ``item.sublist``.
@@ -1002,6 +1444,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 child_widget_width - new_list_width + self.sublist_x_offset,
                 self.sublist_y_offset,
             ),
+            # Sublist bottom-right = trigger bottom-right. The popup covers the
+            # starting list and grows upward from the trigger's lower edge;
+            # pair with a "left" child position so deeper sublists stay flush
+            # against the stable right edge.
+            "overlay_bottom_right": (
+                child_widget_width - new_list_width + self.sublist_x_offset,
+                child_widget_height - new_list_height + self.sublist_y_offset,
+            ),
         }
 
         return position_configs[self.position]
@@ -1062,6 +1512,22 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # (left over from a previous Leave on the same item).
         self._cancel_sublist_hide(widget)
 
+        # Embedded roots show flyouts as frameless Tool windows (they must
+        # escape the host's bounds — a small window or a popup menu, unlike
+        # the fullscreen overlay). Applied here — the single choke point for
+        # every open path (hover-open, click-toggle, hover-navigation) — while
+        # the sublist is still hidden, so the flag-change hide is a no-op.
+        # Populate-before-open invariant: every sublist (any depth) was created
+        # while still a plain child widget, so its parent — and therefore
+        # self.window() during nested _add_sublist calls — is the host window,
+        # never another flyout. refresh_on_show re-populates while everything
+        # is closed, preserving the invariant.
+        if self._is_embedded():
+            self._ensure_popup_flags(widget.sublist)
+            # Keep a hover-dismissing host menu open while the pointer is on
+            # the flyout, and let the menu's hide cascade collapse it.
+            self._adopt_into_host_menu(widget.sublist)
+
         # Ensure correct size before positioning. Every layout sizes the sublist
         # to its own contents (its sizeHint), except the presets whose first
         # sublist sits directly on top of the starting list (explicit overlay
@@ -1099,11 +1565,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             new_list_height,
         )
 
-        # Compute base position using widget's top-left, then apply offsets
+        # Compute base position using widget's top-left, then apply offsets.
+        # A click-mode flyout is a top-level window (isWindow) — its move()
+        # takes GLOBAL coordinates, so the parent-origin subtraction must be
+        # skipped. Hover-mode sublists are window children and keep the
+        # parent-relative math.
         parent = widget.sublist.parent()
         base_point = widget.mapToGlobal(QtCore.QPoint(0, 0))
 
-        if parent:
+        if parent and not widget.sublist.isWindow():
             parent_origin = parent.mapToGlobal(QtCore.QPoint(0, 0))
             base_point -= parent_origin
 
@@ -1113,6 +1583,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # Show AFTER positioning to prevent a flash at the wrong location
         widget.sublist.show()
         widget.sublist.raise_()
+
+        # Top-level flyouts can land partially off-screen (the embedded root
+        # can sit anywhere, unlike the fullscreen overlay) — clamp into the
+        # screen's available area.
+        if widget.sublist.isWindow():
+            self._ensure_sublist_on_screen(widget.sublist)
 
     def eventFilter(self, widget, event):
         """Filter events for the ExpandableList.
@@ -1132,10 +1608,18 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # _watch_window_hide. Handled first so the window is never mistaken for a
         # list item by the branches below (its Enter/Leave/Release must not drive
         # the sublist hover machinery). WindowDeactivate is deliberately NOT
-        # watched: DCC overlays (Blender) spuriously lose activation during
-        # normal chord navigation, which would collapse the menu mid-use.
+        # watched in hover mode: DCC overlays (Blender) spuriously lose
+        # activation during normal chord navigation, which would collapse the
+        # menu mid-use. Click mode (never hosted on an overlay) DOES watch it —
+        # it is the only dismissal that fires when the user clicks a DCC's
+        # native, non-Qt surface, which the app-level dismiss filter can't see.
+        # Safe only because click-mode flyouts carry WindowDoesNotAcceptFocus:
+        # clicking a flyout then never deactivates the host window, so a
+        # deactivation genuinely means the user left.
         if widget is self._watched_window:
             if event_type in (QtCore.QEvent.Hide, QtCore.QEvent.WindowBlocked):
+                self._force_hide_all()
+            elif event_type == QtCore.QEvent.WindowDeactivate and self._click_mode():
                 self._force_hide_all()
             return False
 
@@ -1144,18 +1628,25 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             # stationary cursor — it would reopen the sublist that was open
             # before the hide. Direct/programmatic calls to
             # _handle_widget_enter_event bypass this gate intentionally.
+            # Click mode: hover only *navigates* an already-open chain
+            # (menubar behavior — sibling switch, nested fan-out); it never
+            # opens one from idle. The chain flag lives on the root.
             if not self._auto_open_suppressed():
-                self._handle_widget_enter_event(widget)
+                if not self._click_mode() or self._get_root_list()._click_chain_open:
+                    self._handle_widget_enter_event(widget)
 
         elif event_type == QtCore.QEvent.Leave:
             # Schedule a deferred hide of this item's sublist (if any),
             # plus the sublist that owns this item (if we're inside one).
             # The engagement re-check at fire time prevents the close
             # when the cursor returns into the hierarchy.
-            if hasattr(widget, "sublist") and widget.sublist.isVisible():
-                self._schedule_sublist_hide(widget)
-            if hasattr(self, "parent_item"):
-                self._schedule_sublist_hide(self.parent_item)
+            # Click mode: menus persist until dismissed — no leave-driven
+            # hides at all.
+            if not self._click_mode():
+                if hasattr(widget, "sublist") and widget.sublist.isVisible():
+                    self._schedule_sublist_hide(widget)
+                if hasattr(self, "parent_item"):
+                    self._schedule_sublist_hide(self.parent_item)
 
         elif event_type == QtCore.QEvent.MouseButtonRelease:
             # Check if widget is a child of this ExpandableList
@@ -1168,6 +1659,36 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 # emitting. Harmless no-op on non-button items (QLabel rows).
                 if hasattr(widget, "setDown"):
                     widget.setDown(False)
+
+                # Click mode: a release drives open/close instead of hover.
+                # Items are filtered by their OWNING list (installEventFilter
+                # in _finalize_widget_setup), so ``self`` here is the list
+                # whose layout holds ``widget`` — _handle_widget_enter_event's
+                # geometry math runs on the right instance at any depth.
+                if self._click_mode():
+                    sub = getattr(widget, "sublist", None)
+                    if sub is not None and sub.get_items():
+                        if sub.isVisible():
+                            # Toggle closed; if that emptied the chain, end
+                            # the session (filter removal).
+                            sub._force_hide_all()
+                            QtWidgets.QWidget.hide(sub)
+                            root = self._get_root_list()
+                            if not root._any_sublist_visible():
+                                root._end_click_chain()
+                        else:
+                            self._begin_click_chain()
+                            self._handle_widget_enter_event(widget)
+                        return True
+                    # Leaf: close the menu FIRST, then activate exactly like
+                    # hover mode. Hide-then-dispatch matches the marking
+                    # menu's _handle_widget_action order — the slot may open
+                    # a modal dialog, and emitting first would leave the
+                    # flyout chain hanging over it until the slot returns.
+                    self._get_root_list()._force_hide_all()
+                    self.on_item_interacted.emit(widget)
+                    return True
+
                 self.on_item_interacted.emit(widget)
                 return True  # Consume event to prevent double-firing
 
@@ -1179,7 +1700,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         If this list is itself a sublist (has ``parent_item``), schedule
         a deferred hide of itself.  The engagement check at fire time
         keeps it open if the cursor returned into the hierarchy.
+
+        Click mode: menus persist until explicitly dismissed — never
+        leave-driven.
         """
+        if self._click_mode():
+            return
         if hasattr(self, "parent_item"):
             self._get_root_list()._schedule_sublist_hide(self.parent_item)
         super().leaveEvent(event)

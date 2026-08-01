@@ -259,14 +259,18 @@ class TestCommandBinding(_SwitchboardFixture):
     def test_command_uses_plain_qshortcut_not_latching_global_shortcut(self):
         """Regression: 'the global commands stop working / don't persist.'
 
-        Commands were bound with a GlobalShortcut, whose ``pressed`` only
-        re-fires after its app-level event filter sees a matching KeyRelease
-        reset an internal ``_is_down`` latch. Verified live in Maya: when that
-        release is missed (native viewport focus, focus shifting mid-action) the
-        latch sticks and every press after the first is silently swallowed — the
-        command fires once, then is dead for the session. A fire-on-press command
-        must own a plain QShortcut (fires on every press, no latch), exactly like
-        the ordinary slot shortcuts that already persist reliably.
+        Commands were bound with a GlobalShortcut, whose ``pressed`` is gated on
+        an ``_is_down`` latch that only its app-level event filter clears, on
+        seeing a matching KeyRelease. Verified live in Maya: when that release is
+        missed (native viewport focus, focus shifting mid-action) the latch stuck
+        and every press after the first was silently swallowed — the command
+        fired once, then was dead for the session. ``GlobalShortcut._on_press``
+        now self-heals a stale latch (see
+        ``test_shortcuts.py::TestGlobalShortcutMissedRelease``), so that deadness
+        is gone — but a fire-on-press command still has no use for press/release
+        pairing and must own a plain QShortcut: no app-wide event filter, no
+        latch, no synthetic ``released`` to ignore. Exactly like the ordinary
+        slot shortcuts that already persist reliably.
         """
         from uitk.managers.shortcut_manager import GlobalShortcut
 

@@ -31,6 +31,13 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         status_label (QLabel): The status text label
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {
+        "icon": "inbox",
+        "object_name": "footer",
+        "string_properties": {"status": "richtext"},
+    }
+
     # Pixel height of the slim progress indicator at the bottom edge.
     PROGRESS_BAR_HEIGHT = 3
 
@@ -424,6 +431,45 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """
         return self._status_text
 
+    def getDefaultStatusText(self) -> str:
+        """Get the fallback text shown when no explicit status is set."""
+        return self._default_status_text
+
+    def getSizeGripEnabled(self) -> bool:
+        """Whether the footer currently shows a resize grip."""
+        return self._size_grip is not None and not self._size_grip.isHidden()
+
+    def setSizeGripEnabled(self, value: bool) -> None:
+        """Show or hide the resize grip, creating it on first enable.
+
+        The grip is otherwise a construction-time choice (``add_size_grip``),
+        which a form author can't reach; this makes it a checkbox in Designer.
+        """
+        if value and self._size_grip is None:
+            self._setup_size_grip()
+        if self._size_grip is not None:
+            self._size_grip.setVisible(bool(value))
+
+    def setStatus(self, value: str) -> None:
+        """Set the status text (Qt-property setter for :meth:`setStatusText`).
+
+        Named to match the ``status`` property: ``pyside6-uic`` compiles a
+        ``.ui`` property into a ``set<Name>`` call, so the pair has to exist.
+        """
+        self.setStatusText(value)
+
+    # -- Qt Designer properties ----------------------------------------------
+    # ``status`` rather than ``statusText``: the getter of that name is an
+    # established method (``footer.statusText()``) and a Qt property would
+    # shadow it. Both write the same state.
+    status = QtCore.Property(str, fget=statusText, fset=setStatus)
+    defaultStatusText = QtCore.Property(
+        str, fget=getDefaultStatusText, fset=setDefaultStatusText
+    )
+    sizeGripEnabled = QtCore.Property(
+        bool, fget=getSizeGripEnabled, fset=setSizeGripEnabled
+    )
+
     def start_progress(
         self,
         total: Optional[int] = None,
@@ -644,6 +690,26 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         )
         self._status_label.setStyleSheet("background: transparent; border: none;")
         self._progress_bar.setStyleSheet(bar_style)
+
+    def status_controller(
+        self,
+        resolver: Optional[Callable[[], str]] = None,
+        default_text: str | None = "",
+        truncate_kwargs: Optional[Mapping[str, Any]] = None,
+    ) -> "FooterStatusController":
+        """Bind a :class:`FooterStatusController` to this footer and return it.
+
+        The factory form is the one consumers should use: a slot reaches its footer
+        through the Switchboard (``self.ui.footer``) and gets its status controller
+        from the widget it already has, instead of importing the controller class
+        out of ``uitk.widgets.footer``. Same arguments as the class, minus ``footer``.
+        """
+        return FooterStatusController(
+            footer=self,
+            resolver=resolver,
+            default_text=default_text,
+            truncate_kwargs=truncate_kwargs,
+        )
 
     def attach_to(self, widget: QtWidgets.QWidget) -> None:
         """Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget."""

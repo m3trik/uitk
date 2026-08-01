@@ -25,6 +25,13 @@ class CheckBox(QtWidgets.QCheckBox, MenuMixin, AttributesMixin, RichText, TextOv
         checkbox.setCheckState(1)  # Partially checked
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {
+        "icon": "checkbox",
+        "object_name": "chk",
+        "string_properties": {"text": "richtext"},
+    }
+
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
 

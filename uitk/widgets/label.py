@@ -28,6 +28,14 @@ class Label(QtWidgets.QLabel, MenuMixin, OptionBoxMixin, AttributesMixin):
         label.menu.add("Copy")
     """
 
+    # Qt Designer widget-box entry. Rich text is on by default here, so
+    # Designer should offer its HTML editor for ``text``.
+    designer_spec = {
+        "icon": "text",
+        "object_name": "lbl",
+        "string_properties": {"text": "richtext"},
+    }
+
     clicked = QtCore.Signal()
     released = QtCore.Signal()
 

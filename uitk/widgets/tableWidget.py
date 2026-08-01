@@ -479,6 +479,9 @@ class TableWidget(
 ):
     """Enhanced QTableWidget with cell formatting, sorting, and context menu support."""
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "table", "object_name": "tbl", "size": (280, 160)}
+
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
 
@@ -1147,6 +1150,22 @@ class TableWidget(
     def set_left_click_select_only(self, enabled: bool):
         """Toggle whether non-left clicks can change selection."""
         self._left_click_select_only = bool(enabled)
+
+    def setLeftClickSelectOnly(self, enabled: bool) -> None:
+        """Qt-property setter for :meth:`set_left_click_select_only`.
+
+        ``pyside6-uic`` compiles a ``.ui`` property into a ``set<Name>`` call,
+        so the camelCase spelling has to exist alongside the snake_case one.
+        """
+        self.set_left_click_select_only(enabled)
+
+    #: Qt-property mirror of :meth:`set_left_click_select_only`, so the option
+    #: is a checkbox in Designer and round-trips through the ``.ui`` file.
+    leftClickSelectOnly = QtCore.Property(
+        bool,
+        fget=lambda self: self._left_click_select_only,
+        fset=setLeftClickSelectOnly,
+    )
 
     def _set_selection_mode(self, mode_str):
         """Set the selection mode from a string."""

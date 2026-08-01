@@ -40,6 +40,11 @@ class MenuButton(QtWidgets.QPushButton, AttributesMixin):
         b = MenuButton(setText="Polygons", target="polygons#submenu", filterTags="face")
     """
 
+    # Qt Designer widget-box entry. ``target`` / ``filterTags`` are Qt
+    # properties (below), so they appear in the property editor directly —
+    # no dynamic-property workaround as promotion required.
+    designer_spec = {"icon": "menu", "object_name": "menuButton"}
+
     # Qt properties the marking menu's breadcrumb clones must carry across so a
     # cloned MenuButton still navigates (overlay copies these generically).
     clone_properties = ("target", "filterTags")

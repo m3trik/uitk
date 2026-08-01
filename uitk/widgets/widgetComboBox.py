@@ -126,6 +126,9 @@ class WidgetComboBox(ComboBox):
     to support setIndexWidget() for embedded widgets.
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "list", "object_name": "cmb"}
+
     def __init__(
         self, parent: Optional[QtWidgets.QWidget] = None, editable=False, **kwargs
     ):

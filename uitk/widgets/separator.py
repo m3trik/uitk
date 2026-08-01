@@ -10,6 +10,9 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 class Separator(QtWidgets.QFrame, AttributesMixin):
     """A simple horizontal separator with optional title and styling."""
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "tree_horizontal", "object_name": "separator"}
+
     def __init__(
         self, parent: Optional[QtWidgets.QWidget] = None, title: str = "", **kwargs
     ):
@@ -35,19 +38,17 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
 
         self.set_attributes(self, **kwargs)
 
-    @property
-    def title(self) -> str:
+    # Horizontal margin around the title label (left + right). Used by both
+    # ``resizeEvent`` (positioning) and ``sizeHint`` (advertised width).
+    _TITLE_MARGIN_X = 4
+
+    def getTitle(self) -> str:
         """Get the separator title."""
         if self._title_label:
             return self._title_label.text()
         return ""
 
-    # Horizontal margin around the title label (left + right). Used by both
-    # ``resizeEvent`` (positioning) and ``sizeHint`` (advertised width).
-    _TITLE_MARGIN_X = 4
-
-    @title.setter
-    def title(self, value: str) -> None:
+    def setTitle(self, value: str) -> None:
         """Set the separator title. Empty string hides the title."""
         if value:
             if not self._title_label:
@@ -72,9 +73,10 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
         # re-query sizeHint so the title can't be cropped by a too-narrow host.
         self.updateGeometry()
 
-    def setTitle(self, value: str) -> None:
-        """Set the separator title (alias for title property)."""
-        self.title = value
+    #: A Qt property rather than a Python one, so the title is editable in Qt
+    #: Designer and round-trips through a ``.ui`` file. ``separator.title``
+    #: reads and assigns exactly as it did before.
+    title = QtCore.Property(str, fget=getTitle, fset=setTitle)
 
     def _create_title_label(self) -> None:
         """Create the title label widget."""

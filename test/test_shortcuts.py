@@ -798,6 +798,64 @@ class TestApplicationScopeOwner(QtBaseTestCase):
         self.assertTrue(sc.parent().isVisible())
 
 
+class TestGlobalShortcutMissedRelease(QtBaseTestCase):
+    """A missed KeyRelease must not deaden the shortcut for the session.
+
+    `GlobalShortcut` latches `_is_down` on press and clears it from an
+    app-level event filter watching for the matching KeyRelease. In a DCC host
+    that release is routinely never seen by Qt (the native viewport takes
+    focus, or focus shifts while the launched action runs), so the latch stuck
+    True and every later press was swallowed — the marking menu's symptom:
+    the first tap of key_show does nothing but end the stale hold.
+
+    `QShortcut.setAutoRepeat(False)` means a second `activated` can only be a
+    genuine new physical press, so it is proof the release was missed: heal by
+    emitting the missing `released` first, then the new `pressed`.
+    """
+
+    def _shortcut(self):
+        from uitk.managers.shortcut_manager import GlobalShortcut
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        sc = GlobalShortcut("Ctrl+Alt+Shift+F9", host)
+        # Drop the static strong ref without touching the C++ side — the host
+        # widget's own teardown deletes the child QShortcut first.
+        self.addCleanup(GlobalShortcut._instances.discard, sc)
+        return sc
+
+    def test_press_with_stale_latch_heals_and_fires(self):
+        sc = self._shortcut()
+        events = []
+        sc.pressed.connect(lambda: events.append("press"))
+        sc.released.connect(lambda: events.append("release"))
+
+        sc._on_press()  # first activation
+        self.assertEqual(events, ["press"])
+
+        # The release is never seen (native focus ate it); the user presses again.
+        sc._on_press()
+        self.assertEqual(
+            events,
+            ["press", "release", "press"],
+            "a re-press with a stale latch must end the stale hold AND fire the "
+            "new press, not be silently swallowed",
+        )
+        self.assertTrue(sc._is_down)
+
+    def test_normal_press_release_pairs_unchanged(self):
+        sc = self._shortcut()
+        events = []
+        sc.pressed.connect(lambda: events.append("press"))
+        sc.released.connect(lambda: events.append("release"))
+
+        sc._on_press()
+        sc._on_release()
+        sc._on_release()  # spurious extra release stays a no-op
+        sc._on_press()
+        self.assertEqual(events, ["press", "release", "press"])
+
+
 class TestGlobalShortcutDispose(QtBaseTestCase):
     """`GlobalShortcut.dispose()` must drop the static `_instances` ref.
 
@@ -816,6 +874,37 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
         self.assertIn(sc, GlobalShortcut._instances)
         sc.dispose()
         self.assertNotIn(sc, GlobalShortcut._instances)
+
+    def test_dispose_survives_an_already_deleted_qshortcut(self):
+        """The QShortcut is a CHILD of the host widget, so it dies with that
+        widget — a manager cleaning up after its window was destroyed
+        (`remove_shortcut` / `clear_all`, neither guarded) then raised on the
+        disable, aborting dispose and STRANDING the static ref it exists to
+        drop. Surfaced by a test teardown during the marking-menu dim fix.
+        """
+        from uitk.managers.shortcut_manager import GlobalShortcut
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        sc = GlobalShortcut("Ctrl+Alt+Shift+F7", host)
+
+        class _Deleted:
+            """The C++-object-already-deleted surface (house pattern: simulate
+            the RuntimeError rather than depend on shiboken/sip deletion)."""
+
+            def setEnabled(self, *_a):
+                raise RuntimeError("Internal C++ object (QShortcut) already deleted.")
+
+            def deleteLater(self):
+                raise RuntimeError("Internal C++ object (QShortcut) already deleted.")
+
+        sc._shortcut = _Deleted()
+        sc.dispose()  # must not raise
+        self.assertNotIn(
+            sc,
+            GlobalShortcut._instances,
+            "dispose must drop the static ref even when the Qt side is gone",
+        )
 
     def test_manager_remove_and_clear_dispose_global(self):
         from uitk.managers.shortcut_manager import ShortcutManager, GlobalShortcut

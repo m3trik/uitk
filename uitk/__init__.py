@@ -55,14 +55,24 @@ DEFAULT_INCLUDE = {
     # (rather than the package facade) to preserve per-symbol lazy loading.
     # `from uitk import Signals` should not drag in the Switchboard machinery.
     "switchboard._core": "Switchboard",
-    "switchboard.slots": ["Signals", "SlotWrapper"],
+    "switchboard.slots": ["Signals", "SlotWrapper", "Cancelable"],
     "switchboard.shortcuts": "Shortcut",
     "events": ["EventFactoryFilter", "MouseTracking"],
+    # Launchable-entry handlers. ``UiHandler`` / ``ExternalAppHandler`` are what a
+    # DCC host composes its handler set from (the DCC-specific ones subclass
+    # ``UiHandler`` downstream), so they belong on the package namespace like every
+    # other public class — consumers must not reach into ``uitk.handlers.*``.
+    "handlers.base_handler": "BaseHandler",
+    "handlers.handler_entry": "HandlerEntry",
+    "handlers.ui_handler": "UiHandler",
+    "handlers.external_app_handler": "ExternalAppHandler",
     # Deprecated aliases for the registry classes (moved to
     # uitk.managers.registry_manager); resolving them warns via the shim.
     "file_manager": ["FileContainer", "FileManager"],
     "compile": ["UiCompiler", "PrecompileJob"],
     "loaders": ["CompiledLoader", "RuntimeLoader"],
+    # Qt Designer widget-box registrar (`python -m uitk.designer`).
+    "designer._designer": ["DesignerPlugin", "DesignerWidget"],
     "widgets.marking_menu._marking_menu": "MarkingMenu",
     # Widgets
     "widgets.attributeWindow._attributeWindow": "AttributeWindow",
@@ -87,7 +97,7 @@ DEFAULT_INCLUDE = {
     "widgets.embeddedMenu": ["EmbeddedMenuWidget", "PersistentMenu"],
     "widgets.expandableList": "ExpandableList",
     "widgets.header": "Header",
-    "widgets.footer": "Footer",
+    "widgets.footer": ["Footer", "FooterStatusController"],
     "widgets.label": "Label",
     "widgets.lineEdit": "LineEdit",
     "widgets.mainWindow": "MainWindow",

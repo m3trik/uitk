@@ -33,6 +33,7 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 | `_bootstrap.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | package-bootstrap section |
 | `bridge/` | [BRIDGE.md](BRIDGE.md) | dedicated subsystem doc |
 | `compile.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
+| `designer/` | [WIDGETS.md](WIDGETS.md) | § Using the widgets in Qt Designer — the widget-box plugin, `designer_spec`, design-time flag |
 | `events.py` | [API_REFERENCE.md](API_REFERENCE.md) | `uitk.events` section |
 | `examples/` | — | demo code; run `python -m uitk.examples.example`, don't document it |
 | `managers/registry_manager.py` | [API_REFERENCE.md](API_REFERENCE.md) | FileRegistry / RegistryManager section; `file_manager.py` is its deprecated alias shim |

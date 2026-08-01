@@ -285,6 +285,48 @@ class TestFooterStatusController(QtBaseTestCase):
         self.assertEqual(footer._default_status_text, "Default")
 
 
+class TestFooterStatusControllerFactory(QtBaseTestCase):
+    """``Footer.status_controller`` — the form consumers should use.
+
+    A slot reaches its footer through the Switchboard (``self.ui.footer``), so it
+    builds the controller off the widget it already has instead of importing
+    ``FooterStatusController``. The factory must bind to the footer it was called
+    on and forward every argument the constructor takes.
+    """
+
+    def test_returns_controller_bound_to_this_footer(self):
+        footer = self.track_widget(Footer())
+        controller = footer.status_controller(resolver=lambda: "Bound")
+        self.assertIsInstance(controller, FooterStatusController)
+        self.assertEqual(footer.statusText(), "Bound")
+
+    def test_binds_the_calling_footer_not_another(self):
+        """Two footers must not share state — the factory passes ``self``."""
+        a = self.track_widget(Footer())
+        b = self.track_widget(Footer())
+        a.status_controller(resolver=lambda: "A")
+        b.status_controller(resolver=lambda: "B")
+        self.assertEqual(a.statusText(), "A")
+        self.assertEqual(b.statusText(), "B")
+
+    def test_forwards_default_text_and_truncation(self):
+        footer = self.track_widget(Footer())
+        controller = footer.status_controller(
+            resolver=lambda: "This is a very long status text",
+            default_text="Default",
+            truncate_kwargs={"length": 10, "mode": "end"},
+        )
+        self.assertEqual(footer._default_status_text, "Default")
+        self.assertLessEqual(len(footer.statusText()), 15)  # length + insert
+        controller.set_resolver(lambda: "Short")
+        self.assertEqual(footer.statusText(), "Short")
+
+    def test_no_resolver_is_valid(self):
+        """Matches the constructor's default — an empty resolver, not a crash."""
+        footer = self.track_widget(Footer())
+        self.assertIsInstance(footer.status_controller(), FooterStatusController)
+
+
 class TestFooterStatusControllerTruncation(QtBaseTestCase):
     """Tests for FooterStatusController truncation functionality."""
 

@@ -31,6 +31,10 @@ class SpinBox(
     - Lazy float/int behavior (using decimals)
     """
 
+    # Qt Designer widget-box entry. ``s`` matches the ecosystem's spin-box
+    # naming (s000, s001 ...) so a dropped box needs no rename.
+    designer_spec = {"icon": "font_size", "object_name": "s"}
+
     # Class-level menu defaults
     _menu_defaults = {"hide_on_leave": True}
 

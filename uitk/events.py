@@ -261,8 +261,9 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         """Register widgets that should receive synthesized Enter/Leave events
         even though they are not children of the tracked parent.
 
-        This is used for top-level ToolTip windows (e.g. ExpandableList sublists)
-        that need to participate in mouse-grab drag tracking.
+        This is used for widgets reparented outside the tracked subtree (e.g.
+        ExpandableList sublists, which are reparented to the window to avoid
+        clipping) that need to participate in mouse-grab drag tracking.
 
         Parameters:
             widgets: Iterable of QWidget instances to register.

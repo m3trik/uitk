@@ -242,7 +242,12 @@ class TestExpandableList(QtBaseTestCase):
         # production. ``resize()`` alone can't force it: the list re-fits to its
         # content on add/show, so a resize to 220 collapses back to the item width.
         wide = "A deliberately wide starting-list parent item"
-        for preset in ("expand_overlay", "expand_overlay_left", "expand_up"):
+        for preset in (
+            "expand_overlay",
+            "expand_overlay_left",
+            "expand_overlay_up_left",
+            "expand_up",
+        ):
             with self.subTest(preset=preset):
                 win = QtWidgets.QMainWindow()
                 self.track_widget(win)
@@ -263,6 +268,36 @@ class TestExpandableList(QtBaseTestCase):
                     lw.width(),
                     f"{preset}: overlay first sublist must cover the starting list",
                 )
+
+    def test_overlay_up_left_anchors_sublist_bottom_right(self):
+        """``expand_overlay_up_left`` anchors the first sublist's BOTTOM-right
+        corner to the trigger's bottom-right, so it covers the starting list and
+        grows upward; deeper sublists fan LEFT off that stable right edge."""
+        self.window.resize(500, 400)
+        self.window.show()
+        lw = ExpandableList(self.window, fixed_item_height=21)
+        self.track_widget(lw)
+        lw.apply_preset("expand_overlay_up_left")
+        lw.show()
+        root = lw.add("Tools")
+        for label in ("A", "B", "C", "D"):  # tall enough to prove upward growth
+            root.sublist.add(label)
+
+        lw._handle_widget_enter_event(root)
+        sub = root.sublist
+        trigger_bottom_right = root.mapToGlobal(
+            QtCore.QPoint(root.width(), root.height())
+        )
+        self.assertEqual(
+            sub.mapToGlobal(QtCore.QPoint(sub.width(), sub.height())),
+            trigger_bottom_right,
+        )
+        # Growing upward: the flyout's top sits above the trigger's top.
+        self.assertLess(
+            sub.mapToGlobal(QtCore.QPoint(0, 0)).y(),
+            root.mapToGlobal(QtCore.QPoint(0, 0)).y(),
+        )
+        self.assertEqual(lw._preset_child_position, "left")
 
     def test_nonoverlay_sublist_stays_content_width_under_wide_root(self):
         """A fan-out (non-overlay) preset keeps content-sized sublists even when
@@ -924,6 +959,500 @@ class TestClearCancelsPendingHide(QtBaseTestCase):
             item.hasMouseTracking(),
             "iconified row must keep mouse tracking off (hover-collapse regression)",
         )
+
+
+class TestClickActivation(QtBaseTestCase):
+    """Tests for the click activation mode (``click_menu`` preset).
+
+    Click mode serves ExpandableLists embedded in standalone windows (e.g.
+    tentacle main-menu panels): flyouts open on item click instead of hover,
+    persist until dismissed, and are shown as frameless focusless Tool windows
+    so they escape the host window's bounds.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.window = QtWidgets.QMainWindow()
+        self.track_widget(self.window)
+
+    def _release_event(self):
+        return QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonRelease,
+            QtCore.QPointF(2, 2),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+    def _make_click_list(self, items=("Menu",), shown=True):
+        """Build a click_menu list with one populated sublist per root item."""
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset("click_menu")
+        roots = []
+        for text in items:
+            root_item = lw.add(text)
+            root_item.sublist.add([f"{text} A", f"{text} B"])
+            roots.append(root_item)
+        # A failing assertion mid-session must not leave the app-level
+        # dismiss filter installed for later tests.
+        self.addCleanup(lw._end_click_chain)
+        if shown:
+            self.window.show()
+        return lw, roots
+
+    def test_default_activation_is_hover(self):
+        """Backward-compat lock: construction and every pre-existing preset
+        must resolve to hover activation — click is strictly opt-in."""
+        lw = ExpandableList(self.window)
+        self.track_widget(lw)
+        self.assertEqual(lw.activation, "hover")
+        for name in (
+            "expand_right",
+            "expand_left",
+            "expand_up",
+            "expand_down",
+            "expand_overlay",
+            "expand_overlay_left",
+            "expand_overlay_up_left",
+        ):
+            fresh = ExpandableList(self.window, fixed_item_height=18)
+            self.track_widget(fresh)
+            fresh.apply_preset(name)
+            self.assertEqual(fresh.activation, "hover", name)
+
+    def test_click_menu_preset_configuration(self):
+        """click_menu = click activation, embedded root (popup flyouts +
+        content-hugging Fixed vertical policy), drop-below root, fan-right
+        children."""
+        lw, _ = self._make_click_list(shown=False)
+        self.assertEqual(lw.activation, "click")
+        self.assertTrue(lw.embedded)
+        self.assertEqual(lw.position, "bottom")
+        self.assertEqual(lw._preset_child_position, "right")
+        self.assertEqual(
+            lw.sizePolicy().verticalPolicy(), QtWidgets.QSizePolicy.Fixed
+        )
+
+    def test_header_menu_preset_configuration(self):
+        """header_menu = embedded root with HOVER activation, expanding right —
+        the panel header-menu style: same feel as expand_right in the overlay,
+        but flyouts must escape the small embedded host."""
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset("header_menu")
+        self.assertEqual(lw.activation, "hover")
+        self.assertTrue(lw.embedded)
+        self.assertEqual(lw.position, "right")
+        self.assertEqual(lw._preset_child_position, "right")
+        self.assertEqual(
+            lw.sizePolicy().verticalPolicy(), QtWidgets.QSizePolicy.Fixed
+        )
+
+    def test_embedded_hover_flyout_is_popup_window(self):
+        """An embedded HOVER list's flyouts get the same popup-window
+        promotion as click mode — clipping is a property of where the root
+        lives, not of how its sublists open."""
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset("header_menu")
+        root_item = lw.add("Menu")
+        root_item.sublist.add("Child")
+        self.window.show()
+        lw._handle_widget_enter_event(root_item)
+        sub = root_item.sublist
+        self.assertTrue(sub.isWindow())
+        self.assertTrue(sub.windowFlags() & QtCore.Qt.WindowDoesNotAcceptFocus)
+        self.assertTrue(sub.isVisible())
+
+    def test_embedded_hover_keeps_leave_driven_hides(self):
+        """Embedded affects WHERE flyouts render, not hover semantics — the
+        Leave grace-period collapse must still be scheduled."""
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset("header_menu")
+        root_item = lw.add("Menu")
+        root_item.sublist.add("Child")
+        self.window.show()
+        lw._handle_widget_enter_event(root_item)
+        lw.eventFilter(root_item, QtCore.QEvent(QtCore.QEvent.Leave))
+        timer = getattr(root_item, "_pending_hide_timer", None)
+        self.assertIsNotNone(timer)
+        self.assertTrue(timer.isActive())
+
+    def test_invalid_activation_raises(self):
+        """An unknown activation value in a preset must fail loudly."""
+        lw = ExpandableList(self.window)
+        self.track_widget(lw)
+        lw.PRESETS = {
+            **ExpandableList.PRESETS,
+            "bad": {
+                "root_position": "bottom",
+                "root_offset": (0, 0),
+                "child_position": "right",
+                "child_offset": (0, 0),
+                "activation": "tap",
+            },
+        }
+        with self.assertRaises(ValueError):
+            lw.apply_preset("bad")
+
+    def test_enter_does_not_open_when_chain_closed(self):
+        """Click mode must not hover-open from idle — that is the whole point.
+
+        Hover only navigates an already-open chain (menubar behavior)."""
+        lw, (root_item,) = self._make_click_list()
+        lw._suppress_open_pos = None  # disarm the synthetic-Enter latch
+        lw.eventFilter(root_item, QtCore.QEvent(QtCore.QEvent.Enter))
+        self.assertFalse(root_item.sublist.isVisible())
+        self.assertFalse(lw._click_chain_open)
+
+    def test_release_on_parent_item_opens_and_consumes(self):
+        """A click (release) on an item with a populated sublist opens it,
+        starts the session, and installs the app-level dismiss filter."""
+        lw, (root_item,) = self._make_click_list()
+        consumed = lw.eventFilter(root_item, self._release_event())
+        self.assertTrue(consumed)
+        self.assertTrue(root_item.sublist.isVisible())
+        self.assertTrue(lw._click_chain_open)
+        self.assertIsNotNone(lw._dismiss_filter)
+
+    def test_second_release_toggles_closed_and_ends_session(self):
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        lw.eventFilter(root_item, self._release_event())
+        self.assertTrue(root_item.sublist.isHidden())
+        self.assertFalse(lw._click_chain_open)
+        self.assertIsNone(lw._dismiss_filter)
+
+    def test_leaf_release_emits_and_collapses_chain(self):
+        """A leaf click activates exactly like hover mode (on_item_interacted,
+        same signal contract slots rely on), then closes the whole menu."""
+        lw, (root_item,) = self._make_click_list()
+        emitted = []
+        lw.on_item_interacted.connect(emitted.append)
+        lw.eventFilter(root_item, self._release_event())
+        leaf = root_item.sublist.get_items()[0]
+        consumed = root_item.sublist.eventFilter(leaf, self._release_event())
+        self.assertTrue(consumed)
+        self.assertEqual(emitted, [leaf])
+        self.assertTrue(root_item.sublist.isHidden())
+        self.assertFalse(lw._click_chain_open)
+
+    def test_hover_navigates_between_siblings_while_open(self):
+        """Menubar behavior: once a chain is open, hovering a sibling root
+        item switches the open flyout without another click."""
+        lw, (item_a, item_b) = self._make_click_list(items=("One", "Two"))
+        lw._suppress_open_pos = None
+        lw.eventFilter(item_a, self._release_event())
+        self.assertTrue(item_a.sublist.isVisible())
+        lw.eventFilter(item_b, QtCore.QEvent(QtCore.QEvent.Enter))
+        self.assertTrue(item_b.sublist.isVisible())
+        self.assertTrue(item_a.sublist.isHidden())
+
+    def test_click_flyout_is_focusless_frameless_tool_window(self):
+        """Flyouts must escape the host window's bounds (top-level Tool) and
+        must never take focus: a focus-accepting flyout would deactivate the
+        host on click, which the click-mode WindowDeactivate watch reads as
+        dismissal — the menu would close itself on first use. Also keeps a DCC
+        host's focus untouched."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        sub = root_item.sublist
+        self.assertTrue(sub.isWindow())
+        flags = sub.windowFlags()
+        self.assertTrue(flags & QtCore.Qt.Tool)
+        self.assertTrue(flags & QtCore.Qt.FramelessWindowHint)
+        self.assertTrue(flags & QtCore.Qt.WindowDoesNotAcceptFocus)
+        self.assertTrue(sub.testAttribute(QtCore.Qt.WA_ShowWithoutActivating))
+
+    def test_hover_flyout_stays_child_widget(self):
+        """Hover mode keeps window-child sublists — the popup promotion is
+        strictly a click-mode behavior."""
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset("expand_right")
+        root_item = lw.add("Menu")
+        root_item.sublist.add("Child")
+        self.window.show()
+        lw._handle_widget_enter_event(root_item)
+        self.assertFalse(root_item.sublist.isWindow())
+
+    def test_click_flyout_positioned_below_trigger_in_global_coords(self):
+        """A top-level flyout moves in GLOBAL coordinates; the parent-origin
+        subtraction (correct for window-child sublists) must be skipped or the
+        flyout lands offset by the window position."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        expected = root_item.mapToGlobal(QtCore.QPoint(0, root_item.height()))
+        self.assertEqual(root_item.sublist.pos(), expected)
+
+    def test_outside_press_collapses_without_consuming(self):
+        """Standard menu dismissal: the outside click closes the menu AND
+        still lands on whatever the user pressed."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        filt = lw._dismiss_filter
+        lw._is_cursor_in_hierarchy = lambda *_: False  # cursor is elsewhere
+        press = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonPress,
+            QtCore.QPointF(1, 1),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+        consumed = filt.eventFilter(self.window, press)
+        self.assertFalse(consumed, "the outside press must proceed to its target")
+        self.assertTrue(root_item.sublist.isHidden())
+        self.assertFalse(lw._click_chain_open)
+
+    def test_escape_collapses_and_consumes(self):
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        filt = lw._dismiss_filter
+        esc = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_Escape, QtCore.Qt.NoModifier
+        )
+        consumed = filt.eventFilter(self.window, esc)
+        self.assertTrue(consumed, "Escape is spent on dismissing the menu")
+        self.assertTrue(root_item.sublist.isHidden())
+        self.assertFalse(lw._click_chain_open)
+
+    def test_window_hide_ends_session_and_removes_filter(self):
+        """Hiding the host window must retire the session through the existing
+        watched-window collapse path — no dangling app-level filter."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        self.window.hide()
+        self.assertTrue(root_item.sublist.isHidden())
+        self.assertFalse(lw._click_chain_open)
+        self.assertIsNone(lw._dismiss_filter)
+
+    def test_window_deactivate_dismisses_click_mode_only(self):
+        """Deactivation = the user left for another window (or a DCC's native
+        surface the app filter can't see) → dismiss. Hover mode must keep
+        ignoring it (Blender overlays deactivate spuriously mid-chord)."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        deactivate = QtCore.QEvent(QtCore.QEvent.WindowDeactivate)
+        lw.eventFilter(lw._watched_window, deactivate)
+        self.assertTrue(root_item.sublist.isHidden())
+        self.assertFalse(lw._click_chain_open)
+
+        hover = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(hover)
+        hover_item = hover.add("Menu")
+        hover_item.sublist.add("Child")
+        self.window.show()
+        hover._handle_widget_enter_event(hover_item)
+        self.assertTrue(hover_item.sublist.isVisible())
+        hover.eventFilter(hover._watched_window, deactivate)
+        self.assertTrue(
+            hover_item.sublist.isVisible(),
+            "hover mode must not collapse on WindowDeactivate",
+        )
+
+    def test_leave_schedules_no_hide_in_click_mode(self):
+        """Click-opened menus persist until dismissed — never leave-driven."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        lw.eventFilter(root_item, QtCore.QEvent(QtCore.QEvent.Leave))
+        timer = getattr(root_item, "_pending_hide_timer", None)
+        self.assertTrue(timer is None or not timer.isActive())
+        self.assertTrue(root_item.sublist.isVisible())
+
+    def test_clear_ends_click_session(self):
+        """A slot rebuilding the list mid-session (refresh_on_show pattern)
+        must not strand the chain flag or the app-level filter."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        lw.clear()
+        self.assertFalse(lw._click_chain_open)
+        self.assertIsNone(lw._dismiss_filter)
+
+    def test_ensure_sublist_on_screen_clamps_into_available_geometry(self):
+        """A flyout pushed past the screen edge must be slid fully back into
+        the screen's available area."""
+        lw, (root_item,) = self._make_click_list()
+        lw.eventFilter(root_item, self._release_event())
+        sub = root_item.sublist
+        screen = QtWidgets.QApplication.primaryScreen()
+        available = screen.availableGeometry()
+        sub.move(available.right() + 500, available.bottom() + 500)
+        lw._ensure_sublist_on_screen(sub)
+        self.assertTrue(
+            available.contains(sub.frameGeometry()),
+            f"flyout {sub.frameGeometry()} must be clamped into {available}",
+        )
+
+
+class TestEmbeddedHostMenuAdoption(QtBaseTestCase):
+    """An embedded list hosted inside a hide-on-leave popup Menu.
+
+    Bug: entering the flyout dismissed the header menu. Sublists are created
+    at populate time, when the host Menu is not yet a top-level window, so
+    ``self.window()`` resolved to the panel behind it — the flyout's QObject
+    chain never reached the Menu, its family test missed the flyout, and the
+    pointer entering it read as "left the menu". The converse also stranded
+    an open flyout when the menu hid on its own. Fixed by adopting each
+    flyout into the host menu's transient family as it opens.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.window = QtWidgets.QMainWindow()
+        self.track_widget(self.window)
+
+    def _menu_hosted_list(self):
+        from uitk.widgets.menu import Menu
+
+        host = QtWidgets.QPushButton(self.window)
+        menu = self.track_widget(
+            Menu(host, hide_on_leave=True, add_header=False, add_footer=False)
+        )
+        lw = menu.add(ExpandableList, setObjectName="list000")
+        lw.fixed_item_height = 18
+        lw.apply_preset("header_menu")
+        root_item = lw.add("Menu")
+        root_item.sublist.add(["Leaf A", "Leaf B"])
+        self.window.show()
+        menu.show()
+        QtWidgets.QApplication.processEvents()
+        lw._handle_widget_enter_event(root_item)
+        # Park the flyout clearly outside the menu's own rect — the real
+        # geometry (it fans right), and the condition the rect test fails on.
+        root_item.sublist.move(
+            menu.mapToGlobal(QtCore.QPoint(menu.width() + 40, 0))
+        )
+        QtWidgets.QApplication.processEvents()
+        return menu, lw, root_item
+
+    def test_pointer_over_flyout_keeps_host_menu_open(self):
+        menu, lw, root_item = self._menu_hosted_list()
+        sub = root_item.sublist
+        point = sub.mapToGlobal(sub.rect().center())
+        self.assertFalse(
+            menu.rect().contains(menu.mapFromGlobal(point)),
+            "precondition: the flyout must sit outside the menu's own rect",
+        )
+        self.assertTrue(
+            menu._pointer_in_family(point),
+            "the pointer on the flyout must count as inside the menu family",
+        )
+
+    def test_host_menu_hide_collapses_flyout(self):
+        """The menu's transient cascade must take the flyout down with it —
+        a top-level flyout is not a child widget and would otherwise be
+        stranded on screen."""
+        menu, lw, root_item = self._menu_hosted_list()
+        menu.hide()
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(root_item.sublist.isHidden())
+
+    def test_adoption_is_idempotent(self):
+        menu, lw, root_item = self._menu_hosted_list()
+        for _ in range(3):
+            lw._handle_widget_enter_event(root_item)
+        adopted = [c for c in menu._living_transients() if c is root_item.sublist]
+        self.assertEqual(len(adopted), 1)
+
+    def test_no_host_menu_is_harmless(self):
+        """A list embedded in a plain window has nothing to adopt into; the
+        walk must terminate at the top-level host, not raise or hang."""
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset("header_menu")
+        root_item = lw.add("Menu")
+        root_item.sublist.add("Child")
+        self.window.show()
+        lw._handle_widget_enter_event(root_item)
+        self.assertTrue(root_item.sublist.isVisible())
+
+
+class TestEmbeddedSizing(QtBaseTestCase):
+    """Geometry ownership for an embedded (layout-managed) list.
+
+    Bug: on first interaction an embedded list rendered at its own sizeHint
+    instead of the width its parent layout had allocated, "correcting itself"
+    on the next layout pass — and the first flyout was mispositioned, because
+    its placement is measured from the trigger row's edge, which inherits the
+    list's width. Cause: ``showEvent`` unconditionally ran
+    ``resize(sizeHint())``, clobbering an allocation the layout had already
+    made. That resize now only runs when no parent layout owns the geometry.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.window = QtWidgets.QMainWindow()
+        self.track_widget(self.window)
+
+    def _menu_hosted_list(self):
+        from uitk.widgets.menu import Menu
+
+        host = QtWidgets.QPushButton(self.window)
+        menu = self.track_widget(
+            Menu(host, hide_on_leave=True, add_header=False, add_footer=False)
+        )
+        lw = menu.add(ExpandableList, setObjectName="list000")
+        lw.fixed_item_height = 18
+        lw.apply_preset("header_menu")
+        root_item = lw.add("Assign: someLongMaterialName")
+        root_item.sublist.add(["Leaf A", "Leaf B"])
+        # A much wider sibling entry, so the menu's allocation and the list's
+        # own sizeHint genuinely differ (otherwise the test proves nothing).
+        menu.add(
+            "QPushButton",
+            setText="Reload Scene Textures ................",
+            setObjectName="b013",
+        )
+        self.window.show()
+        menu.show()
+        return menu, lw, root_item
+
+    def test_embedded_list_is_layout_managed(self):
+        """The host nests its item layout (Menu: a QGridLayout inside the
+        central widget's QVBoxLayout), so the check must search the layout
+        tree — a top-level-only indexOf reads it as unmanaged."""
+        _menu, lw, _root = self._menu_hosted_list()
+        self.assertTrue(lw._is_layout_managed())
+
+    def test_embedded_list_keeps_allocated_width_on_show(self):
+        _menu, lw, root_item = self._menu_hosted_list()
+        width_at_first_interaction = lw.width()
+        row_at_first_interaction = root_item.width()
+        QtWidgets.QApplication.processEvents()  # the settling layout pass
+        self.assertEqual(
+            width_at_first_interaction,
+            lw.width(),
+            "the list must not change width after the first layout pass",
+        )
+        self.assertEqual(row_at_first_interaction, root_item.width())
+
+    def test_first_flyout_opens_at_settled_row_edge(self):
+        """The mispositioning this bug produced: the flyout is placed from the
+        trigger row's right edge, so a transient wrong row width moved it."""
+        _menu, lw, root_item = self._menu_hosted_list()
+        lw._handle_widget_enter_event(root_item)
+        flyout_x = root_item.sublist.x()
+        QtWidgets.QApplication.processEvents()
+        expected = root_item.mapToGlobal(
+            QtCore.QPoint(root_item.width(), 0)
+        ).x()
+        self.assertEqual(flyout_x, expected)
+
+    def test_standalone_list_still_self_sizes_on_show(self):
+        """Regression guard: the marking-menu overlay's roots are absolutely
+        positioned in a layout-less central widget and DEPEND on the show-time
+        self-resize."""
+        central = QtWidgets.QWidget()
+        self.window.setCentralWidget(central)
+        lw = ExpandableList(central, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset("expand_up")
+        lw.add("Recent Files").sublist.add(["a" * 40])
+        self.window.show()
+        self.assertFalse(lw._is_layout_managed())
+        self.assertEqual(lw.width(), lw.sizeHint().width())
 
 
 if __name__ == "__main__":

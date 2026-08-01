@@ -33,6 +33,15 @@ class PushButton(
         button.option_box.add_pin()  # Add pin functionality
     """
 
+    # Qt Designer widget-box entry. ``text`` is flagged rich text because this
+    # button renders HTML (see RichText) — Designer then offers its HTML editor
+    # instead of a one-line text field.
+    designer_spec = {
+        "icon": "select",
+        "object_name": "tb",
+        "string_properties": {"text": "richtext"},
+    }
+
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True, "add_apply_button": True}
 

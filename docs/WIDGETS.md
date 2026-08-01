@@ -6,18 +6,66 @@ UITK ships enhanced versions of every common Qt widget. Each inherits from its Q
 
 ---
 
-## Promoting in Qt Designer
+## Using the widgets in Qt Designer
 
-In Designer, right-click a widget → **Promote to…**:
+Launch Designer through uitk and the widgets are in the widget box, under a **uitk** group, ready to drag onto a form:
 
-| Base Class | Promoted Class | Header File |
-|:---|:---|:---|
-| `QPushButton` | `PushButton` | `uitk.widgets.pushButton.h` |
-| `QLineEdit` | `LineEdit` | `uitk.widgets.lineEdit.h` |
-| `QComboBox` | `ComboBox` | `uitk.widgets.comboBox.h` |
-| `QWidget` | `Header`, `Footer`, `Region` | `uitk.widgets.header.h`, … |
+```bash
+python -m uitk.designer                 # empty Designer
+python -m uitk.designer my_form.ui      # open a form
+python -m uitk.designer --list          # print the catalog, don't launch
+```
 
-UITK's custom widgets are registered automatically during `Switchboard.__init__` via `registry.widget_registry.extend("widgets", base_dir=<uitk package dir>, recursive=True)` — anchored on the `uitk/` package root so subpackages like `sequencer/` are picked up too. No manual registration needed.
+No promotion step. Designer instantiates the real class, so the form renders the actual widget — themed, with its own painting — and the property editor shows uitk's properties alongside the inherited Qt ones. Dropped widgets arrive with the ecosystem's naming convention already applied (`tb` for a `PushButton`, `cmb` for a `ComboBox`, `chk` for a `CheckBox`, …), containers accept child widgets, and rich-text fields open Designer's HTML editor.
+
+Saving writes an ordinary `.ui` with the right `<header>`, so both load paths — `pyside6-uic` and the runtime `QUiLoader` — resolve the class with no extra wiring.
+
+### If you launch Designer yourself
+
+Point `PYSIDE_DESIGNER_PLUGINS` at the directory holding uitk's `register_uitk_widgets.py`, and make sure `uitk` is importable from Designer's interpreter:
+
+```python
+from uitk import DesignerPlugin
+env = DesignerPlugin.environment()   # PYSIDE_DESIGNER_PLUGINS + PYTHONPATH + UITK_DESIGNER
+```
+
+Needs **PySide6** — PySide2 ships no Designer Python bindings. Existing values in both variables are preserved, so several packages can publish widgets into one Designer session.
+
+### Publishing a downstream package's widgets
+
+`register()` takes a scan location, so any package registers its own the same way:
+
+```python
+# mypkg/designer/register_mypkg_widgets.py  — the name must match register*.py
+from uitk import DesignerPlugin
+DesignerPlugin.register("widgets", base_dir=MYPKG_DIR, group="mypkg")
+```
+
+Then `python -m uitk.designer --plugin-dir <that dir> --python-path <mypkg import root>`.
+
+### What lands in the widget box
+
+Membership is derived, so a new widget module needs no registration: classes directly under the scanned directory are catalog entries; leading-underscore names, classes in subpackages (`optionBox/`, `editors/`, `sequencer/`, …), and window/dialog/popup classes are excluded. Override per class with `designer_spec`:
+
+```python
+class Region(QtWidgets.QWidget, ...):
+    designer_spec = {"container": True, "object_name": "region", "size": (45, 45)}
+
+class AlignedComboBox(QtWidgets.QComboBox):
+    designer_spec = {"visible": False}        # internal helper, not a catalog entry
+```
+
+Keys: `visible`, `container`, `object_name`, `size`, `icon`, `tooltip`, `group`, and `string_properties` (`{"text": "richtext"}` to upgrade a string field's editor). Read per class, never inherited — a subclass doesn't adopt its parent's entry.
+
+`icon` is an `IconManager` name (`"select"`, `"table"`, …), so a directory registered with `IconManager.register_icon_dir()` resolves too; an absolute path to an image file also works. Designer's widget-box API ignores SVG, so the resolved icon is written out as a PNG at registration — that happens in `register()`, which is why `collect()` stays a pure metadata query needing no `QApplication`.
+
+### Promotion still works
+
+For a form authored without the plugin, right-click → **Promote to…** with the module path as the header (`uitk.widgets.pushButton.h`). uitk's widgets are registered with the Switchboard regardless — `Switchboard.__init__` calls `registry.widget_registry.extend("widgets", base_dir=<uitk package dir>, recursive=True)`, anchored on the `uitk/` package root so subpackages like `sequencer/` are picked up too. Promotion just means Designer shows you a stock Qt widget while you author.
+
+### Design time vs run time
+
+A few widgets adapt to their environment in ways that would break a form being authored — `Header` hides itself beside a native title bar, `CollapsableGroup` restores a saved collapsed state, `Region` hides the children it reveals on hover. Each checks `self.is_design_time()` (`AttributesMixin`, backed by the `UITK_DESIGNER` environment variable) and stays inert in Designer. `Header` also skips title elision there, so a round-trip can't bake an ellipsis into the saved title.
 
 ---
 

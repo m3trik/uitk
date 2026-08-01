@@ -501,8 +501,9 @@ class MarkingMenu(
                 if hasattr(win, "request_hide"):
                     win.request_hide()
 
+        # Un-dims on the way down — hideEvent owns the restore (single owner:
+        # the fade exists only while the overlay is up).
         self.hide()
-        QtCore.QTimer.singleShot(0, self.restore_other_windows)
 
     def _setup_registry(self):
         """Initialize and register the application's handlers."""
@@ -1783,7 +1784,8 @@ class MarkingMenu(
     def _is_logical_descendant(self, ancestor_widget, widget) -> bool:
         """Check if *widget* is a logical descendant of *ancestor_widget*.
 
-        Top-level ToolTip windows (e.g. ExpandableList sublists) set a
+        Widgets reparented outside the UI subtree (e.g. ExpandableList
+        sublists, window-children to avoid clipping) set a
         ``_logical_ancestor`` attribute pointing to the root widget that
         lives inside the normal widget hierarchy.  This method walks up
         the widget's parent chain looking for that marker.
@@ -2630,10 +2632,10 @@ class MarkingMenu(
         self._activation_key_held = False
         self._standalone_suppress = True
         self._transitioning_to_window = True
+        # hideEvent restores the dim here, before the target window is shown —
+        # so the window being launched is never one of the faded ones.
         self.hide()
         self._transitioning_to_window = False
-
-        self.restore_other_windows()
 
         self.ui_handler.apply_styles(widget)
         self.ui_handler.show(widget, pos=pos or "cursor", force=force)
@@ -2780,6 +2782,11 @@ class MarkingMenu(
         # stay "live" with a dangling grab — releasing the grab alone left
         # _activation_key_held set, so a re-grab guard could still re-acquire.
         self._relinquish_input_control()
+        # The dim only ever runs while this window is visible, so hiding is its
+        # symmetric end — whatever the reason for the hide. Keyed to the
+        # key_show *release* instead, the fade stuck whenever that release never
+        # arrived (see restore_other_windows).
+        self.restore_other_windows()
         # Same safety net for shown-state page ghosts: a bypassed hide skips
         # hide()'s sweep, and a pinned page left in shown-state re-shows with
         # the overlay on the next present. isHidden-based, so it works here
@@ -2986,12 +2993,29 @@ class MarkingMenu(
             self.logger.debug(f"Dimming other windows: {self._windows_to_restore}")
 
     def restore_other_windows(self) -> None:
-        """Restore everything dimmed by the last :meth:`dim_other_windows`."""
-        for win in self._windows_to_restore:
-            self._set_dimmed(win, False)
-        self._windows_to_restore.clear()
+        """Restore everything dimmed by the last :meth:`dim_other_windows`.
+
+        Called from :meth:`hideEvent` — the single owner of the un-dim, so the
+        fade can't outlive the overlay no matter how the gesture ended (key
+        release, leaf-click launch, standalone-window handoff, a bypassed hide).
+        Idempotent: the set is empty after the first pass.
+
+        Why not the key_show release (the bug this replaced): a leaf that
+        launches a task hides the menu with the key still held, and in a DCC
+        host that key-up is routinely never seen by Qt — the native viewport
+        takes focus (see :meth:`GlobalShortcut._on_press`). Every other window
+        then stayed at 0.15 opacity AND ``WA_TransparentForMouseEvents`` until
+        the user tapped key_show again.
+        """
+        # Guarded rather than an unconditional sweep: this now runs on EVERY
+        # hide, and the no-op case must stay free of both work and log noise
+        # (an unconditional line would bury the input-handoff traces).
+        if self._windows_to_restore:
+            for win in self._windows_to_restore:
+                self._set_dimmed(win, False)
+            self._windows_to_restore.clear()
+            self.logger.debug("Restored previously dimmed windows.")
         self._dim_snapshot_taken = False
-        self.logger.debug("Restored previously dimmed windows.")
 
     # ---------------------------------------------------------------------------------------------
 

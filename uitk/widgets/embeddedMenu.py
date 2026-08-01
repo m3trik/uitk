@@ -28,6 +28,10 @@ class EmbeddedMenuWidget(QtWidgets.QWidget):
     (no resize handle, no dead space).
     """
 
+    # Not a Designer widget-box entry: wraps a live QMenu at runtime; there is no
+    # menu to embed at design time.
+    designer_spec = {"visible": False}
+
     # Per-row pixel estimate for action / separator rows when QMenu's own
     # geometry is unavailable (e.g. before first show, in offscreen tests).
     _ACTION_ROW_PX = 26
