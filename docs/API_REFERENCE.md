@@ -337,9 +337,9 @@ HANDLERS = {"ui": UiHandler}   # merged with any `handlers` arg at construction
 | `ui_handler` *(property)* | Shortcut to `sb.handlers.ui` |
 | `show(ui=None, pos=None, force=False, **kw)` | Central dispatcher — stacked or standalone based on tags |
 | `get(name, **kw) -> QWidget \| None` | Resolve a UI, apply styles, init if needed |
-| `hide()` | Reset state, release mouse grab, emit parent raise |
-| `dim_other_windows()` | Set opacity 0.15 on sibling windows |
-| `restore_other_windows()` | Restore opacity |
+| `hide()` | Reset state, release mouse grab, un-dim, emit parent raise |
+| `dim_other_windows()` | Set opacity 0.15 on sibling windows + their open menus (once per hold, only while visible) |
+| `restore_other_windows()` | Restore opacity — called by `hideEvent`, so any hide un-dims; callers rarely need it |
 | `setCurrentWidget(widget)` | Stacked-widget-style current-widget swap |
 | `add_child_event_filter(widgets)` | Install the internal child event filter on widgets |
 

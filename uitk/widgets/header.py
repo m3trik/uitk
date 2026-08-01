@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 import os
+import re
 import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -34,6 +35,13 @@ class Header(
         button_definitions (dict): Defines the properties of the buttons available in the header.
         state (str): Represents the current state of the header ("unpinned", "pinned").
     """
+
+    # Qt Designer widget-box entry.
+    designer_spec = {
+        "icon": "window",
+        "object_name": "header",
+        "string_properties": {"text": "richtext", "helpText": "richtext"},
+    }
 
     toggled = QtCore.Signal(bool)
     refresh_requested = QtCore.Signal()
@@ -442,7 +450,18 @@ class Header(
         full = self._composed_title()
         # Pre-layout (width unknown) or RichText mixin in play: show the raw
         # composed string so tags survive and sizeHint reflects real content.
-        if not full or self.width() <= 0 or getattr(self, "has_rich_text", False):
+        #
+        # Design time is the third case, for a different reason: Qt Designer
+        # reads the title back through the ``text`` property, which resolves to
+        # QLabel's C++ getter and so returns whatever is *painted*. Eliding
+        # there would write the ellipsis into the .ui file as the real title —
+        # the form would lose a character of its name on every save.
+        if (
+            not full
+            or self.width() <= 0
+            or getattr(self, "has_rich_text", False)
+            or self.is_design_time()
+        ):
             if super().text() != full:
                 super().setText(full)
             return
@@ -1105,8 +1124,12 @@ class Header(
         Two title bars stacked is almost never what callers want; this keeps
         the header useful as a fallback when the window is frameless and
         invisible otherwise.
+
+        Never fires while a form is being authored: a Designer form is an
+        ordinary framed window, so the rule would hide the header the instant
+        it is dropped — the widget would look broken rather than configurable.
         """
-        if not self._auto_hide_with_os_frame:
+        if not self._auto_hide_with_os_frame or self.is_design_time():
             return
         window = self.window()
         if window is None:
@@ -1192,6 +1215,65 @@ class Header(
         elif self._collapsed:
             self.expand_window()
         super().hideEvent(event)
+
+    # -- Qt Designer properties ----------------------------------------------
+    # Everything a header is configured with at construction, restated as Qt
+    # properties so it is editable in Designer's property editor and stored in
+    # the ``.ui`` file. The Python-facing API (``config_buttons()``,
+    # ``set_help_text()``, ``pin_on_drag_only``) is unchanged; these delegate to
+    # it, so a value set in Designer and one set in a slot take the same path.
+    #
+    # Each property has a matching ``set<Name>`` method because that is what
+    # ``pyside6-uic`` emits for it — a property with only an fset lambda loads
+    # fine through QUiLoader and raises AttributeError in a compiled form.
+
+    def setHelpText(self, value: str) -> None:
+        """Set the help text (Qt-property setter for :meth:`set_help_text`)."""
+        self.set_help_text(value)
+
+    def setPinOnDragOnly(self, value: bool) -> None:
+        """Set the pin-click mode (Qt-property setter for the attribute)."""
+        self.pin_on_drag_only = value
+
+    def getConfigButtons(self) -> str:
+        """Return the configured header buttons as a space-separated string."""
+        return " ".join(self.buttons)
+
+    def setConfigButtons(self, value: str) -> None:
+        """Configure header buttons from a comma- or space-separated string.
+
+        The list form (:meth:`config_buttons`) can't be typed into a property
+        editor, so Designer edits the same thing as text — ``"menu help pin"``.
+        """
+        names = [name for name in re.split(r"[,\s]+", value or "") if name]
+        self.config_buttons(*names)
+
+    def getAutoHideWithOsFrame(self) -> bool:
+        """Whether the header hides itself beside a native OS title bar."""
+        return self._auto_hide_with_os_frame
+
+    def setAutoHideWithOsFrame(self, value: bool) -> None:
+        """Set whether the header hides itself beside a native OS title bar."""
+        self._auto_hide_with_os_frame = bool(value)
+
+    # Two deliberate omissions:
+    #
+    # ``title`` — ``title()`` is an established method, and the inherited
+    # ``text`` property already carries the title into the .ui file.
+    #
+    # ``version`` — a runtime value (every call site is
+    # ``header.setVersion(__version__)``), and exposing it would poison that
+    # ``text`` round-trip: the version is composed into the painted label, and
+    # Designer reads ``text`` through QLabel's C++ getter, so it would save
+    # "My Tool <span…>v1.2</span>" back as the title.
+    helpText = QtCore.Property(str, fget=help_text, fset=setHelpText)
+    configButtons = QtCore.Property(str, fget=getConfigButtons, fset=setConfigButtons)
+    pinOnDragOnly = QtCore.Property(
+        bool, fget=lambda self: self.pin_on_drag_only, fset=setPinOnDragOnly
+    )
+    autoHideWithOsFrame = QtCore.Property(
+        bool, fget=getAutoHideWithOsFrame, fset=setAutoHideWithOsFrame
+    )
 
 
 # -----------------------------------------------------------------------------

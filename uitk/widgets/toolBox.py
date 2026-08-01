@@ -88,6 +88,9 @@ class ToolBox(QtWidgets.QToolBox, AttributesMixin):
         switch_on_hover (bool): If True, tabs will switch when the mouse hovers over them.
     """
 
+    # Qt Designer widget-box entry. A container: pages are dropped into it.
+    designer_spec = {"icon": "stack", "object_name": "toolBox", "size": (220, 160)}
+
     def __init__(self, parent=None, switch_on_hover=False, checkable=False, **kwargs):
         super().__init__(parent)
         self.switch_on_hover = switch_on_hover

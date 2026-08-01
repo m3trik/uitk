@@ -36,6 +36,9 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         progress_bar.finish_task()
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "activity", "object_name": "progressBar"}
+
     # Signals
     cancelled = QtCore.Signal()
     started = QtCore.Signal()
@@ -108,6 +111,28 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     def auto_hide(self, value: bool):
         """Set auto-hide behavior."""
         self._auto_hide = value
+
+    def getCancelHoldMs(self) -> int:
+        """Milliseconds Escape must be held to cancel (0 disables hold-to-cancel)."""
+        return self._cancel_hold_ms
+
+    def setCancelHoldMs(self, value: int) -> None:
+        """Set the hold-to-cancel duration. Negative values clamp to 0."""
+        self._cancel_hold_ms = max(0, int(value))
+
+    def setAutoHide(self, value: bool) -> None:
+        """Set auto-hide (Qt-property setter for :attr:`auto_hide`).
+
+        Named for the ``autoHide`` property: ``pyside6-uic`` compiles a ``.ui``
+        property into a ``set<Name>`` call, so the pair has to exist.
+        """
+        self.auto_hide = bool(value)
+
+    # Qt-property mirrors of the two construction options, so both are editable
+    # in Designer and round-trip through a ``.ui`` file. ``auto_hide`` above
+    # stays the Python-facing name.
+    autoHide = QtCore.Property(bool, fget=lambda self: self.auto_hide, fset=setAutoHide)
+    cancelHoldMs = QtCore.Property(int, fget=getCancelHoldMs, fset=setCancelHoldMs)
 
     def cancel(self):
         """Cancel the current operation."""

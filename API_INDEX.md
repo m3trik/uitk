@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-07-30_
+_Generated: 2026-08-01_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -36,6 +36,12 @@ _Generated: 2026-07-30_
   - methods: is_alive
 - `class UiCompiler(_UiCompilerInternal)`
   - methods: hash_ui_source, compiled_path_for, read_embedded_hash, read_embedded_tags, read_embedded_base_class, read_embedded_form_class, is_compiled_fresh, extract_metadata, compile_ui, ensure_compiled, precompile_async, main
+
+### `designer/_designer.py` — Publish uitk widgets to Qt Designer's widget box.
+- `class DesignerWidget(NamedTuple)`
+  - methods: xml
+- `class DesignerPlugin(_DesignerPluginInternal)`
+  - methods: is_design_time, set_design_time, collect, register, plugin_dirs, environment, launch
 
 ### `events.py` — Event handling utilities for Qt applications.
 - `class EventFactoryFilter(QtCore.QObject)`
@@ -111,7 +117,7 @@ _Generated: 2026-07-30_
   - methods: get_value, set_value, get_widget_type_info, is_supported_widget, get_value_by_signal, set_value_by_signal
 
 ### `switchboard/_core.py`
-- `class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin)`
+- `class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin, SwitchboardNamespaceMixin)`
   - methods: register_handler, iter_handler_entries, active_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last
 
 ### `switchboard/editors.py` — Mixin that exposes the bundled editor windows on the Switchboard.
@@ -125,6 +131,9 @@ _Generated: 2026-07-30_
 ### `switchboard/names.py`
 - `class SwitchboardNameMixin`
   - methods: convert_to_legal_name, get_slot_class_names, get_slot_file_names, get_base_name, get_tags_from_name, has_tags, edit_tags, filter_tags, get_unknown_tags
+
+### `switchboard/namespace.py` — Mixin that falls back to the uitk package namespace for unknown attributes.
+- `class SwitchboardNamespaceMixin`
 
 ### `switchboard/shortcuts.py` — Switchboard-side keyboard shortcut machinery.
 - `class Shortcut`
@@ -145,7 +154,7 @@ _Generated: 2026-07-30_
 
 ### `switchboard/utils.py`
 - `class SwitchboardUtilsMixin`
-  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -165,11 +174,11 @@ _Generated: 2026-07-30_
 
 ### `widgets/collapsableGroup.py`
 - `class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin)`
-  - methods: toggle_expand, setLayout, addWidget, addLayout, sizeHint, paintEvent
+  - methods: getRestoreState, setRestoreState, toggle_expand, setLayout, addWidget, addLayout, sizeHint, paintEvent
 
 ### `widgets/colorSwatch.py`
 - `class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin)`
-  - methods: color, keep_square, resizeEvent, settings, saveColor, loadColor, canSaveLoadColor, initializeColor, updateBackgroundColor, mouseDoubleClickEvent
+  - methods: color, keep_square, setSwatchColor, setKeepSquare, resizeEvent, settings, saveColor, loadColor, canSaveLoadColor, initializeColor, updateBackgroundColor, mouseDoubleClickEvent
 
 ### `widgets/comboBox.py`
 - `class CustomStyle(QtWidgets.QProxyStyle)`
@@ -177,7 +186,7 @@ _Generated: 2026-07-30_
 - `class AlignedComboBox(QtWidgets.QComboBox)`
   - methods: setHeaderText, setHeaderAlignment, get_stylesheet_property, format_current_display_text, paintEvent
 - `class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`
-  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
+  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, setCurrentTextPrefix, setCurrentTextSuffix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
 
 ### `widgets/delegates/centered_icon.py` — Centered icon painting for item-view cells.
 - `class CenteredIconActionDelegate(RowSelectionBorderDelegate)`
@@ -244,18 +253,18 @@ _Generated: 2026-07-30_
 
 ### `widgets/expandableList.py`
 - `class ExpandableList(QtWidgets.QWidget, AttributesMixin)`
-  - methods: apply_preset, get_items, get_item_text, get_parent_item_text, get_item_data, get_parent_item_data, set_item_data, clear, add, hide, showEvent, hideEvent, get_padding, sizeHint, eventFilter, leaveEvent
+  - methods: getExpandPosition, setExpandPosition, setMinItemHeight, setMaxItemHeight, setFixedItemHeight, setSublistXOffset, setSublistYOffset, apply_preset, get_items, get_item_text, get_parent_item_text, get_item_data, get_parent_item_data, set_item_data, clear, add, hide, showEvent, hideEvent, get_padding, sizeHint, eventFilter, leaveEvent
 
 ### `widgets/footer.py`
 - `class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`
-  - methods: container_layout, alignment, update_font_size, font, add_widget, add_action_button, progress_bar, status_label, size_grip, setText, text, setStatusText, setDefaultStatusText, statusText, start_progress, update_progress, finish_progress, cancel_progress, set_progress_total, progress, resizeEvent, showEvent, attach_to
+  - methods: container_layout, alignment, update_font_size, font, add_widget, add_action_button, progress_bar, status_label, size_grip, setText, text, setStatusText, setDefaultStatusText, statusText, getDefaultStatusText, getSizeGripEnabled, setSizeGripEnabled, setStatus, start_progress, update_progress, finish_progress, cancel_progress, set_progress_total, progress, resizeEvent, showEvent, status_controller, attach_to
 - `class FooterProgressContext`
 - `class FooterStatusController`
   - methods: set_resolver, set_truncation, update
 
 ### `widgets/header.py`
 - `class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`
-  - methods: pin_on_drag_only, set_default_pin_on_drag_only, menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, eventFilter, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent
+  - methods: pin_on_drag_only, set_default_pin_on_drag_only, menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, eventFilter, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent, setHelpText, setPinOnDragOnly, getConfigButtons, setConfigButtons, getAutoHideWithOsFrame, setAutoHideWithOsFrame
 
 ### `widgets/label.py`
 - `class Label(QtWidgets.QLabel, MenuMixin, OptionBoxMixin, AttributesMixin)`
@@ -307,7 +316,7 @@ _Generated: 2026-07-30_
 
 ### `widgets/mixins/attributes.py`
 - `class AttributesMixin`
-  - methods: set_flags, set_legal_attribute, set_attributes
+  - methods: is_design_time, set_design_time, set_flags, set_legal_attribute, set_attributes
 
 ### `widgets/mixins/convert.py`
 - `class ConvertMixin`
@@ -460,7 +469,7 @@ _Generated: 2026-07-30_
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
-  - methods: is_cancelled, auto_hide, cancel, reset, set_total, start_task, update_progress, finish_task, step, task, showEvent
+  - methods: is_cancelled, auto_hide, getCancelHoldMs, setCancelHoldMs, setAutoHide, cancel, reset, set_total, start_task, update_progress, finish_task, step, task, showEvent
 - `class ProgressTaskContext`
 
 ### `widgets/pushButton.py`
@@ -468,7 +477,7 @@ _Generated: 2026-07-30_
 
 ### `widgets/region.py`
 - `class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin)`
-  - methods: visible_on_mouse_over, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
+  - methods: visible_on_mouse_over, setVisibleOnMouseOver, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
 
 ### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
 - `class ScriptHighlightRule`
@@ -481,7 +490,7 @@ _Generated: 2026-07-30_
 
 ### `widgets/separator.py`
 - `class Separator(QtWidgets.QFrame, AttributesMixin)`
-  - methods: title, setTitle, sizeHint, minimumSizeHint, resizeEvent
+  - methods: getTitle, setTitle, sizeHint, minimumSizeHint, resizeEvent
 
 ### `widgets/sequencer/_clip.py` — ClipItem — draggable, resizable clip rectangle on the timeline.
 - `class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
@@ -569,7 +578,7 @@ _Generated: 2026-07-30_
 - `class TableSelection`
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`
-  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, get_selected_data, get_selection, register_menu_action, unregister_menu_action
+  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, get_selected_data, get_selection, register_menu_action, unregister_menu_action
 
 ### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
 - `class TableActions`
@@ -599,7 +608,7 @@ _Generated: 2026-07-30_
 - `class TreeFormatMixin(ConvertMixin)`
   - methods: set_item_formatter, set_column_formatter, clear_formatters, apply_formatting, ensure_valid_color, set_action_color, action_color_formatter, make_color_map_formatter
 - `class TreeWidget(QtWidgets.QTreeWidget, MenuMixin, AttributesMixin, TreeFormatMixin, HierarchyIconMixin)`
-  - methods: selection_style, header_actions, set_column_tint, clear_column_tints, set_selection_mode, ctrl_toggle, mousePressEvent, mouseReleaseEvent, create_item, item_data, set_item_data, find_item_by_text, find_item_by_data, add, selected_item, selected_items, selected_data, selected_data_list, selected_text, selected_text_list, select_items_by_data, select_items_by_text, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, showEvent, stretch_column_to_fill, expand_all_items, collapse_all_items, get_all_items, remove_item, set_item_icon, set_item_type_icon, refresh_item_icons
+  - methods: selection_style, header_actions, setChildRowColor, setParentRowColor, getSelectionStyle, setSelectionStyle, getCtrlToggle, setCtrlToggle, set_column_tint, clear_column_tints, set_selection_mode, ctrl_toggle, mousePressEvent, mouseReleaseEvent, create_item, item_data, set_item_data, find_item_by_text, find_item_by_data, add, selected_item, selected_items, selected_data, selected_data_list, selected_text, selected_text_list, select_items_by_data, select_items_by_text, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, showEvent, stretch_column_to_fill, expand_all_items, collapse_all_items, get_all_items, remove_item, set_item_icon, set_item_type_icon, refresh_item_icons
 
 ### `widgets/widgetComboBox.py`
 - `class WidgetComboBox(ComboBox)`

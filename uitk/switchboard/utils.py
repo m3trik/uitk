@@ -1324,6 +1324,81 @@ class SwitchboardUtilsMixin:
         return None
 
     @staticmethod
+    def list_input_dialog(
+        items,
+        title: str = "Select",
+        label: str = "Select item(s):",
+        parent: QtWidgets.QWidget = None,
+        multi: bool = True,
+        selected=None,
+    ) -> list:
+        """Show a modal list picker and return the chosen entries.
+
+        The list twin of :meth:`input_dialog` — same parenting, host-theme
+        inheritance, and busy-cursor suspension, so a panel needing "pick some
+        of these" doesn't hand-roll a ``QDialog`` that misses all three.
+
+        Parameters:
+            items: Iterable of entries. Non-strings are rendered with ``str``;
+                the returned values are the rendered strings.
+            title: Window title.
+            label: Descriptive label above the list.
+            parent: Optional parent widget for correct modality and position.
+            multi: Allow selecting several entries (default). False restricts
+                to one.
+            selected: Optional iterable of entries to pre-select.
+
+        Returns:
+            list[str]: The selected entries, or ``[]`` if the dialog was
+                cancelled or nothing was picked.
+        """
+        entries = [str(i) for i in (items or [])]
+        preselect = {str(s) for s in (selected or [])}
+
+        dlg = QtWidgets.QDialog(parent)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumWidth(280)
+
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setContentsMargins(12, 12, 12, 8)
+        layout.setSpacing(6)
+        layout.addWidget(QtWidgets.QLabel(label))
+
+        listing = QtWidgets.QListWidget()
+        listing.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection
+            if multi
+            else QtWidgets.QAbstractItemView.SingleSelection
+        )
+        listing.addItems(entries)
+        for row in range(listing.count()):
+            if listing.item(row).text() in preselect:
+                listing.item(row).setSelected(True)
+        # Double-click is the expected commit gesture in a picker list.
+        listing.itemDoubleClicked.connect(dlg.accept)
+        layout.addWidget(listing)
+
+        btn_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+
+        # Inherit parent stylesheet so the dialog matches the host theme.
+        if parent is not None:
+            ss = parent.styleSheet()
+            if ss:
+                dlg.setStyleSheet(ss)
+
+        # Modal: suspend any slot busy-cursor so the list shows a normal
+        # pointer instead of the busy hourglass.
+        with SwitchboardUtilsMixin._suspend_override_cursor():
+            accepted = dlg.exec_() == QtWidgets.QDialog.Accepted
+
+        return [i.text() for i in listing.selectedItems()] if accepted else []
+
+    @staticmethod
     def simulate_key_press(
         ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False
     ):

@@ -1061,17 +1061,21 @@ class SwitchboardShortcutMixin:
         :class:`GlobalShortcut`.
 
         Why this matters — a real bug, found live in Maya: ``GlobalShortcut``
-        only re-emits ``pressed`` after its application-level event filter sees a
-        matching ``KeyRelease`` reset an internal ``_is_down`` latch. In a DCC
-        host that release is routinely *missed* — the native viewport has focus,
-        or focus shifts while the action runs — so the latch sticks ``True`` and
-        every subsequent press is silently swallowed: the command fires once,
-        then goes dead for the session (reported as "the global commands don't
-        persist / stop working"). A plain ``QShortcut.activated`` fires on every
-        press with no such latch, and is exactly what
-        :meth:`register_slots_shortcuts` uses for ordinary (non-robust) slot
-        shortcuts — so commands and cold-start slot standins now behave identically
-        to the slot shortcuts that already persist reliably.
+        gates ``pressed`` on an internal ``_is_down`` latch that only its
+        application-level event filter clears, on seeing the matching
+        ``KeyRelease``. In a DCC host that release is routinely *missed* — the
+        native viewport has focus, or focus shifts while the action runs — and
+        the stuck latch used to swallow every subsequent press: the command
+        fired once, then went dead for the session (reported as "the global
+        commands don't persist / stop working"). ``GlobalShortcut._on_press``
+        now self-heals that latch, so the *deadness* is gone — but a
+        fire-on-press action still has no use for the machinery: it would pay
+        for an app-wide event filter and receive a synthetic ``released`` it
+        must ignore. A plain ``QShortcut.activated`` fires on every press with
+        no latch at all, and is exactly what :meth:`register_slots_shortcuts`
+        uses for ordinary (non-robust) slot shortcuts — so commands and
+        cold-start slot standins behave identically to the slot shortcuts that
+        already persist reliably.
 
         Application scope must be owned by an always-visible window (a
         ``QShortcut`` whose owner is hidden is inert even at

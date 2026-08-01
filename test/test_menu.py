@@ -2672,6 +2672,80 @@ class TestHideOnTrigger(QtBaseTestCase):
         self.assertFalse(menu.isVisible())
 
 
+class TestMenuNestedContainerTrigger(QtBaseTestCase):
+    """hide_on_trigger for interactions nested inside a container item.
+
+    A container item (e.g. an ExpandableList menu row) drives its own
+    interaction and consumes its internal mouse releases, so the menu's
+    release-based hide-on-trigger never fires for it. ``add()`` bridges the
+    container's ``on_item_interacted`` instead: a LEAF activation dismisses
+    the menu; a row that merely opens a deeper level is navigation.
+    """
+
+    def _release_event(self):
+        from qtpy import QtGui
+
+        return QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonRelease,
+            QtCore.QPointF(5, 5),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+    def _shown_menu_with_list(self, hide_on_trigger=True):
+        from uitk.widgets.expandableList import ExpandableList
+
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                hide_on_trigger=hide_on_trigger,
+            )
+        )
+        lw = menu.add(ExpandableList, setObjectName="list000")
+        lw.fixed_item_height = 18
+        lw.apply_preset("header_menu")
+        root_item = lw.add("Menu")
+        root_item.sublist.add(["Leaf A", "Leaf B"])
+        menu.show()
+        QtWidgets.QApplication.processEvents()
+        return menu, lw, root_item
+
+    def _pump(self, ms=50):
+        from qtpy.QtTest import QTest
+
+        QTest.qWait(ms)
+
+    def test_leaf_interaction_hides_menu(self):
+        menu, lw, root_item = self._shown_menu_with_list(hide_on_trigger=True)
+        leaf = root_item.sublist.get_items()[0]
+        consumed = root_item.sublist.eventFilter(leaf, self._release_event())
+        self.assertTrue(consumed, "the list must consume the leaf release")
+        self._pump()
+        self.assertFalse(
+            menu.isVisible(),
+            "a leaf activation inside the container must dismiss the menu",
+        )
+
+    def test_category_interaction_keeps_menu_open(self):
+        menu, lw, root_item = self._shown_menu_with_list(hide_on_trigger=True)
+        lw.eventFilter(root_item, self._release_event())
+        self._pump()
+        self.assertTrue(
+            menu.isVisible(),
+            "a row with a populated sublist is navigation, not a trigger",
+        )
+
+    def test_disabled_hide_on_trigger_keeps_menu_open(self):
+        menu, lw, root_item = self._shown_menu_with_list(hide_on_trigger=False)
+        leaf = root_item.sublist.get_items()[0]
+        root_item.sublist.eventFilter(leaf, self._release_event())
+        self._pump()
+        self.assertTrue(menu.isVisible())
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

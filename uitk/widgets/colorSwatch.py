@@ -9,6 +9,10 @@ from uitk.widgets.mixins.convert import ConvertMixin
 class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
     """Color picker button that displays and stores a selectable color value."""
 
+    # Qt Designer widget-box entry. Declared here rather than inherited from
+    # PushButton -- ``designer_spec`` is read per class, not through the MRO.
+    designer_spec = {"icon": "theme", "object_name": "swatch", "size": (40, 20)}
+
     initializeRequested = QtCore.Signal()
     colorChanged = QtCore.Signal(QtGui.QColor)
 
@@ -84,6 +88,30 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
         self._keep_square = bool(value)
         if self._keep_square:
             self._apply_square()
+
+    def setSwatchColor(self, value) -> None:
+        """Set the swatch colour (Qt-property setter for :attr:`color`)."""
+        self.color = value
+
+    def setKeepSquare(self, value: bool) -> None:
+        """Set aspect locking (Qt-property setter for :attr:`keep_square`)."""
+        self.keep_square = value
+
+    # Qt-property mirrors so both are editable in Designer — ``swatchColor``
+    # gets Designer's colour picker — and round-trip through a ``.ui`` file.
+    # The snake_case properties above stay the Python-facing API; the
+    # ``set<Name>`` methods exist because ``pyside6-uic`` compiles a ``.ui``
+    # property into a call to one.
+    #
+    # Named ``swatchColor``, not ``color``: ``ColorSwatch`` extends
+    # ``QPushButton``, and a Qt property named ``color`` on a widget is read by
+    # the QSS engine as a style hint, which would fight the stylesheet.
+    swatchColor = QtCore.Property(
+        QtGui.QColor, fget=lambda self: self.color, fset=setSwatchColor
+    )
+    keepSquare = QtCore.Property(
+        bool, fget=lambda self: self.keep_square, fset=setKeepSquare
+    )
 
     def _apply_square(self):
         w = self.width()

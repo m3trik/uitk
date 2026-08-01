@@ -18,6 +18,7 @@ from uitk.switchboard.utils import SwitchboardUtilsMixin
 from uitk.switchboard.names import SwitchboardNameMixin
 from uitk.switchboard.editors import SwitchboardEditorsMixin
 from uitk.switchboard.style import SwitchboardStyleMixin
+from uitk.switchboard.namespace import SwitchboardNamespaceMixin
 
 # Generic infrastructure (shared with non-Switchboard widgets):
 from uitk.switchboard.history import History
@@ -39,6 +40,9 @@ class Switchboard(
     SwitchboardNameMixin,
     SwitchboardEditorsMixin,
     SwitchboardStyleMixin,
+    # LAST by design: its ``__getattr__`` is the fallback for names nothing else
+    # in the MRO defines, so it must never pre-empt a real attribute.
+    SwitchboardNamespaceMixin,
 ):
     """Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
     It facilitates the loading of UI files, dynamic assignment of properties, and

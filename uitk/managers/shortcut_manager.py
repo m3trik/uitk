@@ -164,7 +164,17 @@ class GlobalShortcut(QtCore.QObject):
 
     def _on_press(self):
         if self._is_down:
-            return
+            # A stale latch: the KeyRelease that should have cleared it never
+            # reached Qt — routine in a DCC host, where the native viewport
+            # takes focus, or focus shifts while the action launched by the
+            # press runs. `return` here used to deaden the shortcut for the
+            # SESSION (every later press swallowed; the marking menu needed a
+            # throwaway key_show tap before it would open again). The QShortcut
+            # has autoRepeat off, so a second `activated` can only be a genuine
+            # new physical press — proof the release was missed. Emit the pair
+            # in order so a hold-state consumer ends its stale hold first, then
+            # fall through and fire the new press.
+            self._on_release()
         self._is_down = True
         self.pressed.emit()
 
@@ -205,14 +215,27 @@ class GlobalShortcut(QtCore.QObject):
         so ``deleteLater`` alone can never collect it — every caller that drops
         a ``GlobalShortcut`` must drop the static ref too. Centralised here so
         the lifecycle stays in one place (forgetting the discard was a real
-        leak). Disabling first makes the shortcut inert immediately, before the
-        deferred deletion is processed.
+        leak).
+
+        The discard runs FIRST and unconditionally, and the Qt teardown is
+        guarded: the underlying ``QShortcut`` is a CHILD of the host widget, so
+        it dies with that widget — and a manager cleaning up after its window
+        was destroyed (``ShortcutManager.remove_shortcut`` / ``clear_all``,
+        neither of which try/excepts) then hit ``RuntimeError: Internal C++
+        object already deleted`` on the disable, aborting dispose midway and
+        stranding the very static reference it was called to release. Disabling
+        makes a live shortcut inert immediately, before the deferred deletion is
+        processed; a dead one is already inert, so skipping it costs nothing.
         """
-        self.setEnabled(False)
         GlobalShortcut._instances.discard(self)
-        if self._shortcut is not None:
-            self._shortcut.deleteLater()
-        self.deleteLater()
+        try:
+            self.setEnabled(False)
+            if self._shortcut is not None:
+                self._shortcut.deleteLater()
+            self.deleteLater()
+        except RuntimeError:
+            # Qt side already gone — nothing left to disable or schedule.
+            pass
 
 
 class ShortcutManager:

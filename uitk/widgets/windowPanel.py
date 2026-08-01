@@ -49,6 +49,10 @@ class WindowPanel(QtWidgets.QWidget):
         surfaces that must float above their host.
     """
 
+    # Not a Designer widget-box entry: a top-level window shell; forms are authored
+    # as their own MainWindow.
+    designer_spec = {"visible": False}
+
     def __init__(
         self,
         title="",

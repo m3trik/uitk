@@ -24,6 +24,9 @@ class DoubleSpinBox(
     HUD popup that surfaces the step amount.
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "font_size", "object_name": "s"}
+
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
 

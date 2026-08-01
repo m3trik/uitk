@@ -2,7 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-3096%20passed-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/Tests-3207%20passed-brightgreen.svg)](test/)
 
 # uitk
 
@@ -79,7 +79,7 @@ No `.connect()` calls. No `findChild()`. No manual state restore.
 |:---|:---|
 | [User Guide](docs/USER_GUIDE.md) | Building your first real app — project layout, conventions, patterns |
 | [Slots Contract](docs/SLOTS.md) | The slot method spec — naming, signals, `@Signals`, parameter injection, debounce, timeout |
-| [Widgets](docs/WIDGETS.md) | Every enhanced widget — `.menu`, `.option_box`, sequencer, editors, marking menu |
+| [Widgets](docs/WIDGETS.md) | Every enhanced widget — `.menu`, `.option_box`, sequencer, editors, marking menu; and [using them in Qt Designer](docs/WIDGETS.md#using-the-widgets-in-qt-designer) (`python -m uitk.designer`) |
 | [Marking Menu](docs/MARKING_MENU.md) | Radial gesture menus — bindings, chords, DCC integration |
 | [Architecture](docs/ARCHITECTURE.md) | Internals — Switchboard mixins, registries, MainWindow lifecycle, handler ecosystem |
 | [Cookbook](docs/COOKBOOK.md) | Recipes from real consumers — hosted-vs-standalone launch, per-domain slots, presets, cross-UI sync |

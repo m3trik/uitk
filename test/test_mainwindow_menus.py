@@ -181,6 +181,10 @@ class _FakeSb:
     def __init__(self, windows):
         self._windows = list(windows)
 
+    # MarkingMenu.hide() consults this to unpin the current page; the dim pass
+    # itself never reads it.
+    active_ui = None
+
     @property
     def loaded_ui(self):
         return _LoadedUi(self._windows)
@@ -322,6 +326,84 @@ class TestMarkingMenuDim(QtBaseTestCase):
         # Must not raise.
         h.restore_other_windows()
         self.assertEqual(h._windows_to_restore, set())
+
+
+class _DimMM(MarkingMenu):
+    """Real ``hide`` / ``hideEvent`` / dim / restore on a real QWidget, without
+    the Switchboard / overlay / GlobalShortcut boot (``__init__`` bypassed, the
+    established fixture pattern in this package)."""
+
+    class _Overlay:
+        """The only overlay call `hide()` makes while the menu is visible."""
+
+        def clear_paint_events(self):
+            pass
+
+    def __init__(self, sb, parent=None):
+        QtWidgets.QWidget.__init__(self, parent=parent)
+        self.logger = logging.getLogger("dimtest")
+        self.logger.setLevel(logging.WARNING)
+        self.sb = sb
+        self.overlay = self._Overlay()
+        self._windows_to_restore = set()
+        self._dim_snapshot_taken = False
+
+
+class TestMarkingMenuDimLifecycle(QtBaseTestCase):
+    """The dim lives exactly as long as the overlay is visible.
+
+    Regression ("the dimmed menus stay dimmed"): restore used to hang off the
+    key_show *release* only. A leaf click that launches a task hides the menu
+    while the key is still held, and in a DCC host that release is routinely
+    never seen by Qt (native focus steals it) — so nothing ever un-dimmed and
+    the only recovery was tapping key_show again.
+    """
+
+    def _menu(self, windows):
+        mm = _DimMM(_FakeSb(windows))
+        self.track_widget(mm)
+        QtWidgets.QWidget.show(mm)
+        app.processEvents()
+        return mm
+
+    def test_hide_restores_dim_without_a_key_release(self):
+        """Through the production entry point — `MarkingMenu.hide()`, what every
+        launch path calls."""
+        menu_open = FakeMenu(visible=True)
+        win = FakeWindow(menus=[menu_open])
+        mm = self._menu([win])
+
+        mm.dim_other_windows()
+        self.assertEqual(win.opacity, 0.15)
+        self.assertEqual(menu_open.opacity, 0.15)
+
+        # The launch path: the menu goes down with the key still held and no
+        # release ever arrives.
+        mm.hide()
+        app.processEvents()
+
+        self.assertEqual(win.opacity, 1.0, "hiding the overlay must un-dim")
+        self.assertEqual(menu_open.opacity, 1.0)
+        self.assertFalse(menu_open.mouse_transparent)
+        self.assertEqual(mm._windows_to_restore, set())
+        self.assertFalse(mm._dim_snapshot_taken, "the next hold must re-snapshot")
+
+    def test_next_hold_dims_again_after_a_bypassed_hide(self):
+        """A hide that bypasses `hide()` (a parent hide / `setVisible(False)`)
+        still un-dims, and leaves the snapshot latch armed — otherwise the
+        following gesture silently dims nothing."""
+        win = FakeWindow(menus=[])
+        mm = self._menu([win])
+        mm.dim_other_windows()
+
+        QtWidgets.QWidget.hide(mm)  # deliberately not MarkingMenu.hide()
+        app.processEvents()
+        self.assertEqual(win.opacity, 1.0)
+
+        QtWidgets.QWidget.show(mm)
+        app.processEvents()
+        mm.dim_other_windows()
+        self.assertEqual(win.opacity, 0.15)
 
 
 if __name__ == "__main__":

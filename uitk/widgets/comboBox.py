@@ -106,6 +106,10 @@ class AlignedComboBox(QtWidgets.QComboBox):
             :meth:`ComboBox.add_header`) rather than painted placeholder text.
     """
 
+    # Not a Designer widget-box entry: an internal painting helper for ComboBox's
+    # popup, not a standalone widget.
+    designer_spec = {"visible": False}
+
     # Only ``ComboBox`` ever inserts a header row, but ``CustomStyle.drawControl``
     # reads this off any AlignedComboBox it paints — so the base has to carry the
     # default or a bare instance dies on first draw.
@@ -426,6 +430,9 @@ class ComboBox(
     on_editing_finished = QtCore.Signal(str)
     on_item_deleted = QtCore.Signal(str)
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "list", "object_name": "cmb"}
+
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
 
@@ -538,6 +545,26 @@ class ComboBox(
         if value != self._current_text_prefix:
             self._current_text_prefix = value
             self.update()
+
+    def setCurrentTextPrefix(self, value: str) -> None:
+        """Qt-property setter for :attr:`current_text_prefix`."""
+        self.current_text_prefix = value
+
+    def setCurrentTextSuffix(self, value: str) -> None:
+        """Qt-property setter for :attr:`current_text_suffix`."""
+        self.current_text_suffix = value
+
+    # Qt-property mirrors of the two display affixes. Declared so the pair is
+    # editable in Qt Designer and round-trips through a ``.ui`` file; the
+    # snake_case properties above stay the Python-facing API. The ``set<Name>``
+    # methods exist because ``pyside6-uic`` compiles a ``.ui`` property into a
+    # call to one.
+    currentTextPrefix = QtCore.Property(
+        str, fget=lambda self: self.current_text_prefix, fset=setCurrentTextPrefix
+    )
+    currentTextSuffix = QtCore.Property(
+        str, fget=lambda self: self.current_text_suffix, fset=setCurrentTextSuffix
+    )
 
     @property
     def items(self):

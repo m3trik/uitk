@@ -585,6 +585,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         on_hidden (QtCore.Signal): Signal emitted when the menu is hidden.
     """
 
+    # Not a Designer widget-box entry: a popup owned by its host widget
+    # (`widget.menu`), never placed on a form.
+    designer_spec = {"visible": False}
+
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
     on_hidden = QtCore.Signal()
@@ -1311,6 +1315,22 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 return True
             parent = parent.parentWidget()
         return False
+
+    def _handle_nested_trigger(self, container, item) -> None:
+        """Hide-on-trigger for interactions nested inside a container item.
+
+        Connected at ``add()`` time to a container's ``on_item_interacted``
+        (e.g. an ``ExpandableList`` menu row, whose internal releases the menu's
+        own release filter never sees). Only a LEAF interaction is a trigger —
+        an item with a populated sublist is navigation. The hide resolves
+        against the *container* row, so ``set_hide_on_trigger`` overrides apply
+        to it like any other item.
+        """
+        sub = getattr(item, "sublist", None)
+        if sub is not None and sub.get_items():
+            return
+        if self._resolve_hide_on_trigger(container):
+            self._schedule_hide_on_trigger()
 
     def _schedule_hide_on_trigger(self) -> None:
         """Hide on the next event-loop tick.
@@ -3254,6 +3274,20 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.set_attributes(widget, **kwargs)
             widget.installEventFilter(self)
             self._expose_as_attribute(widget)
+
+            # Container items (e.g. ExpandableList) drive their own
+            # interaction and consume their internal mouse releases, so the
+            # release-based hide-on-trigger in eventFilter never fires for
+            # them. Bridge their interaction signal instead: a leaf activation
+            # counts as a trigger; a row that merely opens a deeper level is
+            # navigation and must not dismiss the menu.
+            nested_signal = getattr(widget, "on_item_interacted", None)
+            if nested_signal is not None and callable(
+                getattr(nested_signal, "connect", None)
+            ):
+                nested_signal.connect(
+                    lambda item, w=widget: self._handle_nested_trigger(w, item)
+                )
 
             # Defer registration to the next event-loop tick so it happens
             # AFTER add() finishes (updates re-enabled, signals unblocked).

@@ -582,6 +582,9 @@ class TreeWidget(
 ):
     """Enhanced QTreeWidget with flexible data handling, formatting capabilities, and custom hierarchy icons."""
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "branch", "object_name": "tree", "size": (240, 180)}
+
     # Signals
     item_selected = QtCore.Signal(QtWidgets.QTreeWidgetItem)
     item_data_changed = QtCore.Signal(QtWidgets.QTreeWidgetItem, int)
@@ -700,8 +703,17 @@ class TreeWidget(
         )
         self.viewport().update()
 
+    def setChildRowColor(self, color) -> None:
+        """Set the child-row background (Qt-property setter).
+
+        ``pyside6-uic`` compiles a ``.ui`` property into a ``set<Name>`` call,
+        so a property Designer can write needs this public spelling — the
+        underscore-prefixed setter alone would fail at form load.
+        """
+        self._set_child_row_color(color)
+
     childRowColor = QtCore.Property(
-        QtGui.QColor, _get_child_row_color, _set_child_row_color
+        QtGui.QColor, _get_child_row_color, setChildRowColor
     )
 
     # -- parent-row background (styleable via qproperty-parentRowColor) --
@@ -715,9 +727,36 @@ class TreeWidget(
         )
         self.viewport().update()
 
+    def setParentRowColor(self, color) -> None:
+        """Set the parent-row background (Qt-property setter)."""
+        self._set_parent_row_color(color)
+
     parentRowColor = QtCore.Property(
-        QtGui.QColor, _get_parent_row_color, _set_parent_row_color
+        QtGui.QColor, _get_parent_row_color, setParentRowColor
     )
+
+    # -- construction options, restated as Designer-editable properties ----
+
+    def getSelectionStyle(self) -> str:
+        """Visual style for selected rows: ``"border"`` or ``"tint"``."""
+        return self._selection_style
+
+    def setSelectionStyle(self, value: str) -> None:
+        """Set the selected-row style; delegates to :attr:`selection_style`."""
+        self.selection_style = value
+
+    def getCtrlToggle(self) -> bool:
+        """Whether Ctrl+click deselects an already-selected item."""
+        return self._ctrl_toggle
+
+    def setCtrlToggle(self, value: bool) -> None:
+        """Enable or disable Ctrl+click deselection."""
+        self._ctrl_toggle = bool(value)
+
+    selectionStyle = QtCore.Property(
+        str, fget=getSelectionStyle, fset=setSelectionStyle
+    )
+    ctrlToggle = QtCore.Property(bool, fget=getCtrlToggle, fset=setCtrlToggle)
 
     # -- column tinting ---------------------------------------------------
 

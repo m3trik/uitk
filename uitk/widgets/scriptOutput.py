@@ -395,6 +395,9 @@ class ScriptOutput(ShortcutGuardMixin, QtWidgets.QTextEdit):
         point_size: Monospace font size.
     """
 
+    # Qt Designer widget-box entry.
+    designer_spec = {"icon": "code", "object_name": "output", "size": (320, 180)}
+
     def __init__(
         self,
         parent: Optional[QtWidgets.QWidget] = None,
