@@ -12,7 +12,11 @@ Per-kind contract: a :class:`KindHandler` bundles four callables --
 * ``build(spec, parent)`` -- construct the Qt widget,
 * ``read(widget)`` -- extract its current value,
 * ``write(widget, value)`` -- push a value into it,
-* ``signal`` (or ``connect``) -- emit when the value changes.
+* ``signal`` (or ``connect``) -- emit when the value changes,
+* ``set_choices(widget, choices)`` -- optional; repopulate the entries of a
+  choice-driven kind (``choice`` / ``check_list``) after build, so a panel can
+  discover them at runtime (installed app versions, deployable scripts, scene
+  contents) instead of hard-coding them in the registry.
 
 New kinds are registered via :meth:`KindFactory.register_kind`.
 :meth:`KindFactory.make_widget` stamps the resolved kind on the widget
@@ -26,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-from qtpy import QtWidgets
+from qtpy import QtCore, QtWidgets
 
 from uitk.widgets.checkBox import CheckBox
 from uitk.widgets.doubleSpinBox import DoubleSpinBox
@@ -42,6 +46,9 @@ FLOAT_MIN = -1e100
 FLOAT_MAX = 1e100
 
 _KIND_PROP = "_attr_kind"
+
+#: Marker for a bare ``choices`` entry (label == value, no explicit data).
+_NO_VALUE = object()
 
 
 @dataclass(frozen=True)
@@ -64,9 +71,13 @@ class AttributeSpec:
         default: Initial widget value.
         minimum / maximum / step: Numeric range and step (int/float kinds).
         decimals: Float precision (float kind only).
-        choices: For ``"choice"`` -- either a sequence of values
-            (``["Low", "Medium"]``) or a sequence of ``(label, value)``
-            pairs. The value is what :meth:`KindFactory.read_value` returns.
+        choices: For the choice-driven kinds (``"choice"``, ``"check_list"``)
+            -- a sequence of values (``["Low", "Medium"]``), of
+            ``(label, value)`` pairs, or of ``(label, value, tooltip)``
+            triples. The value is what :meth:`KindFactory.read_value` returns
+            (``check_list`` returns the list of checked ones). Leave empty and
+            call :meth:`KindFactory.set_choices` when the entries are only
+            known at runtime.
         tooltip: Tooltip text. The DCC-bridge slots feed this through
             :meth:`uitk.bridge.tooltip.Tooltip.format_param_tooltip` to build
             a rich-text version with type/range/default rows.
@@ -119,6 +130,10 @@ class KindHandler:
     ``connect`` (a custom ``(widget, callback) -> None`` wirer) must be
     provided. ``connect`` wins when both are set; use it for composite
     widgets whose change signal lives on an inner child (e.g. ``path``).
+
+    ``set_choices`` is optional and only meaningful for kinds that render a
+    fixed entry set; kinds without one reject
+    :meth:`KindFactory.set_choices` rather than silently no-op'ing.
     """
 
     build: Callable[[AttributeSpec, Optional[QtWidgets.QWidget]], QtWidgets.QWidget]
@@ -126,6 +141,7 @@ class KindHandler:
     write: Callable[[QtWidgets.QWidget, Any], None]
     signal: Optional[str] = None
     connect: Optional[Callable[[QtWidgets.QWidget, Callable[[Any], None]], None]] = None
+    set_choices: Optional[Callable[[QtWidgets.QWidget, ChoicesSeq], None]] = None
 
     def __post_init__(self):
         # Surface malformed handlers at construction, not at registration time.
@@ -262,23 +278,50 @@ class _KindFactoryInternal(object):
 
     # ---- choice: QComboBox ------------------------------------------------
     #
-    # Accepts ``choices`` as either ``["a", "b"]`` (label==value) or
-    # ``[("a", 1), ("b", 2)]`` (explicit label/value). ``read_value`` returns
+    # Accepts ``choices`` as ``["a", "b"]`` (label==value),
+    # ``[("a", 1), ("b", 2)]`` (explicit label/value) or
+    # ``[("a", 1, "tip")]`` (with a per-entry tooltip). ``read_value`` returns
     # the value (itemData when present, else text). ``write_value`` matches
     # by itemData first, then text.
 
     @staticmethod
+    def _split_choice(entry) -> Tuple[Any, Any, str]:
+        """Normalize one ``choices`` entry to ``(label, value, tooltip)``.
+
+        A bare entry yields ``_NO_VALUE`` so the combo keeps its historical
+        "itemData stays None" behaviour (``read`` then falls back to the text)
+        rather than round-tripping ``str(entry)`` as the value.
+        """
+        if isinstance(entry, tuple):
+            if len(entry) == 3:
+                return entry[0], entry[1], str(entry[2] or "")
+            if len(entry) == 2:
+                return entry[0], entry[1], ""
+        return entry, _NO_VALUE, ""
+
+    @staticmethod
     def _build_choice(spec, parent):
         w = QtWidgets.QComboBox(parent)
-        for entry in spec.choices or []:
-            if isinstance(entry, tuple) and len(entry) == 2:
-                label, value = entry
-                w.addItem(str(label), value)
-            else:
-                w.addItem(str(entry))  # itemData defaults to None
+        _KindFactoryInternal._set_choices_choice(w, spec.choices or [])
         if spec.default is not None:
             _KindFactoryInternal._write_choice(w, spec.default)
         return w
+
+    @staticmethod
+    def _set_choices_choice(widget, choices) -> None:
+        """(Re)fill the combo, keeping the current value when it survives."""
+        current = _KindFactoryInternal._read_choice(widget) if widget.count() else None
+        widget.clear()
+        for entry in choices or []:
+            label, value, tip = _KindFactoryInternal._split_choice(entry)
+            if value is _NO_VALUE:
+                widget.addItem(str(label))  # itemData defaults to None
+            else:
+                widget.addItem(str(label), value)
+            if tip:
+                widget.setItemData(widget.count() - 1, tip, QtCore.Qt.ToolTipRole)
+        if current is not None:
+            _KindFactoryInternal._write_choice(widget, current)
 
     @staticmethod
     def _read_choice(widget):
@@ -440,6 +483,141 @@ class _KindFactoryInternal(object):
             lambda *_: callback(_KindFactoryInternal._read_file_list(widget))
         )
 
+    # ---- check_list: QListWidget of checkable rows -------------------------
+    #
+    # Multi-pick over a fixed entry set -- the plural counterpart to
+    # ``choice`` -- reading back the ``list`` of checked values. Entries come
+    # from ``choices`` (same shape as ``choice``, per-entry tooltips included)
+    # and ``default`` is the list of values checked on build. A panel whose
+    # entries are only known at runtime builds the row with empty ``choices``
+    # and fills it via :meth:`KindFactory.set_choices`.
+
+    @staticmethod
+    def _build_check_list(spec, parent):
+        w = QtWidgets.QListWidget(parent)
+        # Checking is the interaction; a selection highlight on top of it just
+        # reads as a second, meaningless state.
+        w.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        w.setUniformItemSizes(True)
+        w.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        w.customContextMenuRequested.connect(
+            lambda pos, lw=w: _KindFactoryInternal._check_list_menu(lw, pos)
+        )
+        _KindFactoryInternal._set_choices_check_list(w, spec.choices or [])
+        _KindFactoryInternal._write_check_list(w, spec.default)
+        return w
+
+    #: Height bounds (px) of a check_list row -- tall enough to read as a list
+    #: when nearly empty, capped so a long set scrolls instead of eating the panel.
+    CHECK_LIST_MIN_H = 48
+    CHECK_LIST_MAX_H = 140
+
+    @staticmethod
+    def _fit_check_list_height(widget) -> None:
+        """Size the list to its rows, within the height bounds.
+
+        A fixed height would either scroll a 3-entry list or leave dead space
+        under a 10-entry one; the entries arrive at runtime, so the row height
+        follows them.
+        """
+        row_h = widget.sizeHintForRow(0) if widget.count() else 0
+        wanted = widget.count() * (row_h or 18) + 2 * widget.frameWidth() + 4
+        height = min(
+            max(wanted, _KindFactoryInternal.CHECK_LIST_MIN_H),
+            _KindFactoryInternal.CHECK_LIST_MAX_H,
+        )
+        widget.setMinimumHeight(height)
+        widget.setMaximumHeight(height)
+
+    @staticmethod
+    def _check_list_menu(widget, pos) -> None:
+        """Right-click bulk toggles -- a long checklist is tedious without them
+        and the parameter row has no space for buttons.
+
+        Shown with ``popup`` rather than ``exec``: the latter spins a nested
+        event loop, which is the last thing to start inside a DCC host's loop
+        for a two-item convenience menu. Parented (kept alive) and
+        delete-on-close (not accumulated on the widget).
+        """
+        menu = QtWidgets.QMenu(widget)
+        menu.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        menu.addAction(
+            "Check All",
+            lambda: _KindFactoryInternal._set_all_checked(widget, True),
+        )
+        menu.addAction(
+            "Uncheck All",
+            lambda: _KindFactoryInternal._set_all_checked(widget, False),
+        )
+        menu.popup(widget.mapToGlobal(pos))
+
+    @staticmethod
+    def _set_all_checked(widget, checked: bool) -> None:
+        state = QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked
+        for i in range(widget.count()):
+            widget.item(i).setCheckState(state)
+
+    @staticmethod
+    def _check_list_value(item) -> Any:
+        """The item's value -- its stored data, else its label."""
+        data = item.data(QtCore.Qt.UserRole)
+        return item.text() if data is None else data
+
+    @staticmethod
+    def _as_value_list(value) -> List[Any]:
+        """Normalize a written ``check_list`` value to a list of wanted values.
+
+        A bare string is ONE value, not an iterable of characters -- a preset
+        or CLI overlay carrying a scalar (``"audio_event"``) would otherwise
+        check nothing at all, silently. A list (rather than a set) also keeps
+        unhashable values working; these lists are a handful of entries long.
+        """
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return list(value)
+        return [value]
+
+    @staticmethod
+    def _set_choices_check_list(widget, choices) -> None:
+        """(Re)fill the rows, preserving the checked values that survive."""
+        checked = _KindFactoryInternal._read_check_list(widget)
+        widget.clear()
+        for entry in choices or []:
+            label, value, tip = _KindFactoryInternal._split_choice(entry)
+            item = QtWidgets.QListWidgetItem(str(label), widget)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            if value is not _NO_VALUE:
+                item.setData(QtCore.Qt.UserRole, value)
+            if tip:
+                item.setToolTip(tip)
+            item.setCheckState(
+                QtCore.Qt.Checked
+                if _KindFactoryInternal._check_list_value(item) in checked
+                else QtCore.Qt.Unchecked
+            )
+        _KindFactoryInternal._fit_check_list_height(widget)
+
+    @staticmethod
+    def _read_check_list(widget) -> List[Any]:
+        items = (widget.item(i) for i in range(widget.count()))
+        return [
+            _KindFactoryInternal._check_list_value(item)
+            for item in items
+            if item.checkState() == QtCore.Qt.Checked
+        ]
+
+    @staticmethod
+    def _write_check_list(widget, value) -> None:
+        wanted = _KindFactoryInternal._as_value_list(value)
+        for i in range(widget.count()):
+            item = widget.item(i)
+            item.setCheckState(
+                QtCore.Qt.Checked
+                if _KindFactoryInternal._check_list_value(item) in wanted
+                else QtCore.Qt.Unchecked
+            )
+
 
 class KindFactory(_KindFactoryInternal):
     """Build / read / write Qt widgets by ``kind``, backed by the registry.
@@ -526,6 +704,26 @@ class KindFactory(_KindFactoryInternal):
         )
 
     @staticmethod
+    def set_choices(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None:
+        """Repopulate a choice-driven widget's entries after it was built.
+
+        The runtime half of the registry: a spec declares the kind and the
+        static entries, and a panel that only learns the real set at runtime
+        (installed app versions, deployable scripts, scene contents) pushes
+        them in here without knowing which widget class backs the kind. Values
+        still checked / selected survive the refill when they reappear.
+
+        Raises:
+            KeyError: *widget* was not built by :meth:`make_widget`.
+            TypeError: its kind has no ``set_choices`` (e.g. ``str``, ``int``).
+        """
+        kind = _KindFactoryInternal._widget_kind(widget)
+        handler = KindFactory.get_handler(kind)
+        if handler.set_choices is None:
+            raise TypeError(f"The {kind!r} kind has no choices to set.")
+        handler.set_choices(widget, choices)
+
+    @staticmethod
     def connect_changed(
         widget: QtWidgets.QWidget, callback: Callable[[Any], None]
     ) -> None:
@@ -586,6 +784,17 @@ KindFactory.register_kind(
         _KindFactoryInternal._read_choice,
         _KindFactoryInternal._write_choice,
         signal="currentIndexChanged",
+        set_choices=_KindFactoryInternal._set_choices_choice,
+    ),
+)
+KindFactory.register_kind(
+    "check_list",
+    KindHandler(
+        _KindFactoryInternal._build_check_list,
+        _KindFactoryInternal._read_check_list,
+        _KindFactoryInternal._write_check_list,
+        signal="itemChanged",
+        set_choices=_KindFactoryInternal._set_choices_check_list,
     ),
 )
 KindFactory.register_kind(

@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-01_
+_Generated: 2026-08-02_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -25,7 +25,7 @@ _Generated: 2026-08-01_
   - methods: from_value, display_label
 - `class KindHandler`
 - `class KindFactory(_KindFactoryInternal)`
-  - methods: infer_kind, register_kind, get_handler, make_widget, read_value, set_value, connect_changed
+  - methods: infer_kind, register_kind, get_handler, make_widget, read_value, set_value, set_choices, connect_changed
 
 ### `bridge/tooltip.py` — Rich-text tooltip + template-description helpers for bridge panels.
 - `class Tooltip(_TooltipInternal)`

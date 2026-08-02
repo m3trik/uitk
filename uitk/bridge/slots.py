@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -96,6 +97,43 @@ class _BridgeSlotsInternal(object):
         path = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.pop(key, None)
         if path:
             shutil.rmtree(path, ignore_errors=True)
+
+    # --- Optional-package requirement parsing ------------------------------
+    #: Where a PEP 508 requirement stops being the distribution name.
+    _REQ_BOUNDARY = re.compile(r"[<>=!~;\[\s]")
+
+    @staticmethod
+    def _version_tuple(text: str) -> Tuple[int, ...]:
+        """``"0.0.8"`` -> ``(0, 0, 8)``; stops at the first non-numeric segment.
+
+        Deliberately not a full PEP 440 parser: the ecosystem versions are plain
+        ``X.Y.Z``, and truncating at a suffix (``1.2.0rc1`` -> ``(1, 2)``) errs
+        toward "older", which is the safe direction for a floor check.
+        """
+        parts: List[int] = []
+        for chunk in str(text).split("."):
+            digits = ""
+            for ch in chunk:
+                if not ch.isdigit():
+                    break
+                digits += ch
+            if not digits:
+                break
+            parts.append(int(digits))
+        return tuple(parts)
+
+    @staticmethod
+    def _split_requirement(spec: str) -> Tuple[str, Optional[Tuple[int, ...]]]:
+        """``"unitytk>=0.0.8"`` -> ``("unitytk", (0, 0, 8))``; a bare name -> floor None.
+
+        One string carries both the pip requirement and the runtime floor, so a
+        caller can never let the two drift apart. Only ``>=`` is read — that is
+        the constraint an optional-package floor is ever expressed with here.
+        """
+        name = _BridgeSlotsInternal._REQ_BOUNDARY.split(spec, 1)[0].strip()
+        match = re.search(r">=\s*([0-9][0-9A-Za-z.]*)", spec)
+        floor = _BridgeSlotsInternal._version_tuple(match.group(1)) if match else None
+        return name, floor
 
 
 class BridgeSlotsBase(_BridgeSlotsInternal):
@@ -168,11 +206,11 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         "scene hasn't been saved)."
     )
 
-    # ------------------ Widget kind -- composite types ----------------
+    # ------------------ Widget kind -- multi-line types ---------------
     # Kinds whose widgets are composite (line edit + button, list +
-    # buttons, ...) and must NOT have their parent row clamped to 19px
-    # because the embedded layout is taller than one input line.
-    PATH_LIKE_KINDS: Tuple[str, ...] = ("path", "file_list")
+    # buttons, ...) or list-shaped, and must NOT have their parent row
+    # clamped to 19px because they are taller than one input line.
+    TALL_KINDS: Tuple[str, ...] = ("path", "file_list", "check_list")
 
     # ------------------ Header menu (declarative) ---------------------
     # The default :meth:`header_init` builds a "Utilities" separator, the
@@ -244,15 +282,32 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         ``_scripts/unitytk/`` (the repo dir, which holds the real package one
         level down) and then every attribute access fails. A module with no
         ``__file__`` is exactly that case and reads as unavailable.
+
+        *spec* may carry a version floor (``"unitytk>=0.0.8"``), in which case an
+        installed-but-TOO-OLD package also reads as unavailable. That case is not
+        hypothetical: a pyproject ``[unity]`` extra only constrains a fresh
+        install, so a session already carrying the older release imports fine and
+        then raises ``AttributeError`` on the API the caller came for. A package
+        that declares no ``__version__`` cannot clear a floor, and refusing is the
+        safe direction — the same rule as "present but broken reads as
+        unavailable".
         """
         import importlib
 
-        module = import_name or spec.replace("-", "_")
+        name, floor = _BridgeSlotsInternal._split_requirement(spec)
+        module = import_name or name.replace("-", "_")
         try:
             mod = importlib.import_module(module)
         except Exception:  # noqa: BLE001 - any failure means "not usable here"
             return False
-        return getattr(mod, "__file__", None) is not None
+        if getattr(mod, "__file__", None) is None:
+            return False
+        if floor is None:
+            return True
+        return (
+            _BridgeSlotsInternal._version_tuple(getattr(mod, "__version__", ""))
+            >= floor
+        )
 
     def ensure_optional_package(
         self, spec: str, import_name: str = None, *, feature: str = None
@@ -273,23 +328,39 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         provisions *subprocess* apps; the same idea, but the result has to be
         importable HERE.
 
+        A *spec* carrying a version floor (``"unitytk>=0.0.8"``) also catches an
+        installed-but-too-old package, which mere importability let through —
+        leaving the caller to raise ``AttributeError`` on the API it came for.
+        That case offers an *update* (pip resolves the constraint) and then
+        returns **False with a restart notice**: a package already in
+        ``sys.modules`` cannot be swapped in place, so the freshly written files
+        are not what this session would call.
+
         Parameters:
-            spec: pip requirement to install (e.g. ``"unitytk"``).
-            import_name: Module to probe. Defaults to *spec* (with ``-`` → ``_``).
+            spec: pip requirement to install (e.g. ``"unitytk"``, ``"unitytk>=0.0.8"``).
+            import_name: Module to probe. Defaults to the requirement's
+                distribution name (with ``-`` → ``_``).
             feature: Human name of the thing that needs it, used in the prompt.
 
         Returns:
-            bool: True when the package is importable (already, or after install).
+            bool: True only when the package is usable **in this session** at or
+            above any floor — an upgrade written to disk returns False.
         """
         import importlib
 
         if self.optional_package_available(spec, import_name):
             return True
 
+        name, floor = self._split_requirement(spec)
+        # Present-but-too-old is a different sentence from absent — and the only
+        # one of the two the user can't act on by reading "install it".
+        stale = floor is not None and self.optional_package_available(name, import_name)
         label = feature or "This panel"
+        verb = "update" if stale else "install"
         answer = self.sb.message_box(
-            f"<b>{label} needs the optional <i>{spec}</i> package.</b><br><br>"
-            f"Install it now?",
+            f"<b>{label} needs the optional <i>{spec}</i> package"
+            f"{' (the installed one is older)' if stale else ''}.</b><br><br>"
+            f"{verb.capitalize()} it now?",
             "Yes",
             "No",
         )
@@ -298,18 +369,35 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         # point of this method is that the bridge does not exist yet; touching
         # ``self.bridge`` here would recurse straight back into ``make_bridge``.
         if answer != "Yes":
-            self.sb.logger.info(f"{spec} install declined; {label} is unavailable.")
+            self.sb.logger.info(f"{spec} {verb} declined; {label} is unavailable.")
             return False
 
         try:
             self._install_optional_package(spec)
         except Exception as error:  # noqa: BLE001 - reported, never raised at the UI
-            self.sb.logger.error(f"Failed to install {spec}: {error}")
+            self.sb.logger.error(f"Failed to {verb} {spec}: {error}")
 
         # Trust the import, not pip's exit code: a --target/--user install can
         # report a non-zero dependency-resolver error for an UNRELATED conflict
         # in the base environment while the requested wheel installed fine.
         importlib.invalidate_caches()
+
+        if stale:
+            # An UPGRADE cannot take effect in this process: the old package is
+            # already in ``sys.modules``, and reloading it does NOT refresh the
+            # submodules its ``__init__`` re-imports from cache — the caller
+            # would still get the old class. Report the on-disk result and stop;
+            # the probe below would read the cached ``__version__`` anyway and
+            # mis-report the upgrade as a failed install.
+            self.sb.message_box(
+                f"<b>Updated {name} on disk.</b><br><br>"
+                f"Restart this session to pick it up — a package already "
+                f"imported cannot be swapped in place.",
+                "Ok",
+            )
+            self.sb.logger.info(f"Updated {spec}; restart required.")
+            return False
+
         if self.optional_package_available(spec, import_name):
             self.sb.logger.info(f"Installed {spec}.")
             return True
@@ -785,7 +873,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             # Prefix the registry key so two panels in the same window
             # can host the same AttributeSpec without objectName clashes.
             widget.setObjectName(f"param_{key.lower()}")
-            if spec.kind not in self.PATH_LIKE_KINDS:
+            if spec.kind not in self.TALL_KINDS:
                 widget.setMinimumHeight(19)
                 widget.setMaximumHeight(19)
             widget.setToolTip(tooltip_html)
@@ -809,6 +897,17 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     def _write_param(self, key: str, value: Any) -> None:
         """Push *value* into the widget for *key* via the KindHandler."""
         KindFactory.set_value(self._param_widgets[key], value)
+
+    def _set_param_choices(self, key: str, choices) -> None:
+        """Repopulate the entries of a choice-driven param (``choice`` /
+        ``check_list``) at runtime.
+
+        The hook for parameters whose real entry set is only knowable in the
+        live session -- installed app versions, deployable scripts, scene
+        contents. The registry declares the kind and any static entries; the
+        panel pushes the discovered ones in here from its ``__init__``.
+        """
+        KindFactory.set_choices(self._param_widgets[key], choices)
 
     def collect_param_values(self) -> Dict[str, Any]:
         """Snapshot every widget's current value, regardless of visibility."""

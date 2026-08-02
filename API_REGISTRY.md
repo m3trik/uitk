@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-01_
+_Generated: 2026-08-02_
 
 ## Index
 
@@ -166,7 +166,7 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L101)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L139)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -201,17 +201,18 @@ Generic DCC-bridge slot base class.
 
 Attribute spec + kind-handler registry for parameterised forms.
 
-- **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L48)** — Description of one editable attribute / bridge parameter.
+- **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L55)** — Description of one editable attribute / bridge parameter.
   - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
   - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L115)** — Bundle of callables that build / read / write a widget kind.
-- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L444)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L126)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L622)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
   - `KindFactory.infer_kind(value: Any) -> str` *(static)* — Map a Python value to one of the built-in kinds.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
   - `KindFactory.make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget` *(static)* — Build a Qt widget for *spec*.
   - `KindFactory.read_value(widget: QtWidgets.QWidget) -> Any` *(static)* — Return the current value of a factory-built widget.
   - `KindFactory.set_value(widget: QtWidgets.QWidget, value: Any) -> None` *(static)* — Set the value of a factory-built widget.
+  - `KindFactory.set_choices(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None` *(static)* — Repopulate a choice-driven widget's entries after it was built.
   - `KindFactory.connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None` *(static)* — Wire the widget's value-change signal to ``callback(new_value)``.
 
 <a id="bridge--tooltip"></a>
@@ -1615,7 +1616,7 @@ Action option for OptionBox - provides customizable action buttons.
   - `ActionOption.set_action_handler(self, handler)` — Set or update the action handler.
   - `ActionOption.current_state(self)` *(property)* — The current state index (0-based).
   - `ActionOption.set_states(self, states)` — Set multiple cycling states.
-- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L224)** — A menu action option specifically for showing menus.
+- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L226)** — A menu action option specifically for showing menus.
   - `MenuOption.set_menu(self, menu)` — Set or update the menu.
   - `MenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
 
@@ -1788,8 +1789,8 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.option_order(self)` *(property)* — Get/set option ordering: ['clear', 'action'] or ['action', 'clear']
   - `OptionBoxManager.pin(self, settings_key: Optional[str] = None, *, double_click_to_edit: bool = False, single_click_restore: bool = False)` — Enable pin values option (fluent interface).
   - `OptionBoxManager.recent(self, settings_key: Optional[str] = None, *, max_recent: int = 10, **kwargs)` — Enable recent values option (fluent interface).
-  - `OptionBoxManager.set_action(self, callback=None, icon='option_box', tooltip='Options', text=None, replace=True, states=None, settings_key=None)` — Set the action handler (fluent interface).
-  - `OptionBoxManager.add_action(self, callback=None, icon='option_box', tooltip='Options', text=None, states=None, settings_key=None)` — Add an action button without replacing existing ones.
+  - `OptionBoxManager.set_action(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None)` — Set the action handler (fluent interface).
+  - `OptionBoxManager.add_action(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None)` — Add an action button without replacing existing ones.
   - `OptionBoxManager.set_toggle(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, gated_widgets=(), gate_wrapped: bool = False, keep_enabled_when_wrapped_disabled: bool = True, settings_key=None, replace: bool = True, on_toggled=None)` — Add a persisted binary toggle button (fluent interface).
   - `OptionBoxManager.add_toggle(self, **kwargs)` — Add a toggle without replacing existing ones.
   - `OptionBoxManager.set_filter(self, *, settings, text_key: str, on_changed, enabled_key: Optional[str] = None, initial_enabled: bool = True, on_toggled=None, tooltip_on: str = 'Filter enabled. Click to disable.', tooltip_off: str = 'Filter disabled. Click to enable.', scopes=None, scope_key: Optional[str] = None, default_scope: Optional[str] = None, on_scope_changed=None, replace: bool = True)` — Turn the wrapped text widget into a filter field (fluent interface).
