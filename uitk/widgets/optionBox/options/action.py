@@ -24,7 +24,7 @@ class ActionOption(ButtonOption):
         self,
         wrapped_widget=None,
         callback=None,
-        icon="option_box",
+        icon="menu",
         tooltip="Options",
         text=None,
         states=None,
@@ -36,7 +36,9 @@ class ActionOption(ButtonOption):
         Args:
             wrapped_widget: The widget this option is attached to
             callback: Function or object to call/trigger when clicked
-            icon: Icon name for the button (default: "option_box")
+            icon: Icon name for the button (default: "menu" — the three-line
+                glyph used for every menu/options affordance codebase-wide;
+                pass "option_box" explicitly for a Maya-style option box)
             tooltip: Tooltip text (default: "Options")
             text: Optional text to display instead of icon
             states: Optional list of state dicts for multi-state cycling.
@@ -240,14 +242,15 @@ class MenuOption(ActionOption):
     """
 
     def __init__(
-        self, wrapped_widget=None, menu=None, icon="option_box", tooltip="Show menu"
+        self, wrapped_widget=None, menu=None, icon="menu", tooltip="Show menu"
     ):
         """Initialize the menu option.
 
         Args:
             wrapped_widget: The widget this option is attached to
             menu: Menu object to show when clicked
-            icon: Icon name for the button (default: "option_box")
+            icon: Icon name for the button (default: "menu", matching the
+                header's hamburger — menu affordances share one glyph)
             tooltip: Tooltip text (default: "Show menu")
         """
         super().__init__(

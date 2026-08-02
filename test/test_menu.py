@@ -1074,6 +1074,17 @@ class TestMenuPersistentMode(QtBaseTestCase):
         menu = self.track_widget(Menu())
         self.assertFalse(menu.is_persistent_mode)
 
+    def test_persistent_hide_button_has_a_real_glyph(self):
+        """Regression: the hide button was created from the literal
+        "hide.svg" — a name with no file in the icon set — so IconManager
+        resolved an empty QIcon and the button rendered glyph-less, silently.
+        It must resolve to a shipped icon (the header's own "hide" button key
+        maps to close.svg)."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.enable_persistent_mode()
+        btn = menu.header.buttons["persistent_hide_button"]
+        self.assertFalse(btn.icon().isNull())
+
     def test_persistent_mode_on_deferred_header_menu_keeps_header(self):
         """Regression (chrome deferral): an add_header=True menu that enters
         persistent mode BEFORE its first show must build its permanent header

@@ -161,7 +161,7 @@ class OptionBoxManager(ptk.LoggingMixin):
     def set_action(
         self,
         callback=None,
-        icon="option_box",
+        icon="menu",
         tooltip="Options",
         text=None,
         replace=True,
@@ -172,7 +172,8 @@ class OptionBoxManager(ptk.LoggingMixin):
 
         Args:
             callback: Function or object to call/trigger when clicked
-            icon: Icon name for the button (default: "option_box")
+            icon: Icon name for the button (default: "menu"; pass
+                "option_box" explicitly for a Maya-style option box)
             tooltip: Tooltip text (default: "Options")
             text: Optional text to display instead of icon
             replace: If True, removes any existing ActionOptions first
@@ -217,7 +218,7 @@ class OptionBoxManager(ptk.LoggingMixin):
     def add_action(
         self,
         callback=None,
-        icon="option_box",
+        icon="menu",
         tooltip="Options",
         text=None,
         states=None,
@@ -230,7 +231,8 @@ class OptionBoxManager(ptk.LoggingMixin):
 
         Args:
             callback: Function or object to call/trigger when clicked
-            icon: Icon name for the button (default: "option_box")
+            icon: Icon name for the button (default: "menu"; pass
+                "option_box" explicitly for a Maya-style option box)
             tooltip: Tooltip text (default: "Options")
             text: Optional text to display instead of icon
             states: Optional list of state dicts for multi-state cycling.

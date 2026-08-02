@@ -88,10 +88,13 @@ class Tooltip(_TooltipInternal):
         rows.append(("Default", repr(spec.default)))
 
         bullets = None
-        if spec.kind == "choice" and spec.choices:
+        if spec.kind in ("choice", "check_list") and spec.choices:
             normalised: List[Tuple[str, object]] = []
             for entry in spec.choices:
-                if isinstance(entry, tuple) and len(entry) == 2:
+                # (label, value) / (label, value, tooltip) / bare value. A
+                # runtime-populated spec has no static choices -- it renders
+                # its entries as per-row tooltips instead.
+                if isinstance(entry, tuple) and len(entry) in (2, 3):
                     normalised.append((str(entry[0]), entry[1]))
                 else:
                     normalised.append((str(entry), entry))

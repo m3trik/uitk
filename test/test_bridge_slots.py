@@ -429,6 +429,119 @@ class TestPathWidgetPresetPersistence(BaseTestCase):
         self.assertEqual(KindFactory.read_value(container), "C:/renders/hero.png")
 
 
+class TestCheckListKind(BaseTestCase):
+    """The ``check_list`` kind -- multi-pick over a fixed entry set.
+
+    The plural counterpart to ``choice``: a checkable row per entry, reading
+    back the list of checked VALUES. Entries can arrive at build time or be
+    pushed in later via ``set_choices`` (the dynamic-parameter path a panel
+    uses for runtime-discovered sets, e.g. unitytk's deployable scripts).
+    """
+
+    CHOICES = [("Audio Event", "audio_event"), ("Shot Metadata", "shot_metadata")]
+
+    def _widget(self, **kwargs):
+        return KindFactory.make_widget(AttributeSpec(key="scripts", kind="check_list", **kwargs))
+
+    def test_default_checks_the_listed_values(self):
+        w = self._widget(choices=self.CHOICES, default=["shot_metadata"])
+        self.assertEqual([w.item(i).text() for i in range(w.count())],
+                         ["Audio Event", "Shot Metadata"])
+        self.assertEqual(KindFactory.read_value(w), ["shot_metadata"])
+
+    def test_read_write_round_trip(self):
+        w = self._widget(choices=self.CHOICES, default=[])
+        self.assertEqual(KindFactory.read_value(w), [])
+        KindFactory.set_value(w, ["audio_event", "shot_metadata"])
+        self.assertEqual(KindFactory.read_value(w), ["audio_event", "shot_metadata"])
+        # Writing a value that isn't listed leaves nothing checked (rather
+        # than inventing a row for it).
+        KindFactory.set_value(w, ["nope"])
+        self.assertEqual(KindFactory.read_value(w), [])
+
+    def test_a_scalar_value_is_one_entry_not_its_characters(self):
+        """A preset / CLI overlay carrying a bare string must check that entry
+        -- iterating the string would check nothing and never say why."""
+        w = self._widget(choices=self.CHOICES, default=[])
+        KindFactory.set_value(w, "shot_metadata")
+        self.assertEqual(KindFactory.read_value(w), ["shot_metadata"])
+        KindFactory.set_value(w, None)
+        self.assertEqual(KindFactory.read_value(w), [])
+
+    def test_set_choices_fills_a_runtime_populated_row(self):
+        # The registry spec declares the kind with NO entries; the panel pushes
+        # the discovered set in at init.
+        w = self._widget(choices=[], default=[])
+        self.assertEqual(w.count(), 0)
+        KindFactory.set_choices(w, self.CHOICES)
+        self.assertEqual(w.count(), 2)
+        KindFactory.set_value(w, ["audio_event"])
+        self.assertEqual(KindFactory.read_value(w), ["audio_event"])
+
+    def test_set_choices_preserves_surviving_checks(self):
+        """A refill must not silently re-check (or drop) what the user chose --
+        entries that come back keep their state, ones that don't are gone."""
+        w = self._widget(choices=self.CHOICES, default=["audio_event"])
+        KindFactory.set_choices(
+            w, [("Audio Event", "audio_event"), ("Shadow Plane", "shadow_plane")]
+        )
+        self.assertEqual(KindFactory.read_value(w), ["audio_event"])
+
+    def test_bulk_toggles_are_wired_to_a_context_menu(self):
+        """Check All / Uncheck All -- the row has no space for buttons, so the
+        bulk toggles live on the right-click menu."""
+        from qtpy import QtCore
+
+        from uitk.bridge.spec import _KindFactoryInternal as internal
+
+        w = self._widget(choices=self.CHOICES, default=[])
+        self.assertEqual(w.contextMenuPolicy(), QtCore.Qt.CustomContextMenu)
+        internal._set_all_checked(w, True)
+        self.assertEqual(KindFactory.read_value(w), ["audio_event", "shot_metadata"])
+        internal._set_all_checked(w, False)
+        self.assertEqual(KindFactory.read_value(w), [])
+
+    def test_row_height_follows_the_entry_count(self):
+        """Entries arrive at runtime, so a fixed height would either scroll a
+        short list or leave dead space under a long one."""
+        few = self._widget(choices=self.CHOICES[:1])
+        many = self._widget(choices=[(f"Item {i}", i) for i in range(12)])
+        self.assertEqual(few.minimumHeight(), few.maximumHeight())
+        self.assertLess(few.height(), many.height())
+        self.assertLessEqual(many.maximumHeight(), 140)  # capped, then scrolls
+
+    def test_per_entry_tooltip_from_a_triple(self):
+        w = self._widget(choices=[("Audio Event", "audio_event", "Plays clips.")])
+        self.assertEqual(w.item(0).toolTip(), "Plays clips.")
+
+    def test_bare_entries_read_back_as_their_label(self):
+        w = self._widget(choices=["alpha", "beta"], default=["beta"])
+        self.assertEqual(KindFactory.read_value(w), ["beta"])
+
+    def test_set_choices_rejects_a_kind_without_entries(self):
+        w = KindFactory.make_widget(AttributeSpec(key="name", kind="str"))
+        with self.assertRaises(TypeError):
+            KindFactory.set_choices(w, ["a", "b"])
+
+    def test_choice_kind_repopulates_and_keeps_its_value(self):
+        """Same runtime path for the singular kind (the Unity panels' version
+        combo): refilling keeps the current selection when it survives."""
+        w = KindFactory.make_widget(
+            AttributeSpec(key="version", kind="choice", choices=[("Auto", "")], default="")
+        )
+        KindFactory.set_choices(w, [("Auto", ""), ("6000.0.5f1", "6000.0.5f1")])
+        KindFactory.set_value(w, "6000.0.5f1")
+        KindFactory.set_choices(
+            w, [("Auto", ""), ("6000.0.5f1", "6000.0.5f1"), ("2021.3.1f1", "2021.3.1f1")]
+        )
+        self.assertEqual(KindFactory.read_value(w), "6000.0.5f1")
+
+    def test_tall_kinds_escape_the_one_line_row_clamp(self):
+        """A list-shaped row must not be squashed to the 19px input height the
+        scalar params use."""
+        self.assertIn("check_list", BridgeSlotsBase.TALL_KINDS)
+
+
 class TestEnsureOptionalPackage(unittest.TestCase):
     """`ensure_optional_package` — prompt-and-install for optional engines.
 
@@ -511,6 +624,101 @@ class TestEnsureOptionalPackage(unittest.TestCase):
             slots.ensure_optional_package("Pillow-not-real", import_name="pythontk")
         )
         self.assertEqual(sb.prompts, [])
+
+    # ------------------------------------------------------------ version floor
+    #
+    # A pyproject extra (``unity = ["unitytk>=0.0.8"]``) only constrains a FRESH
+    # install, so a session already carrying the older release imported fine and
+    # then raised AttributeError on the API the caller came for. The floor rides
+    # on the requirement string so the probe, the prompt and pip read one value.
+
+    def test_requirement_splits_into_name_and_floor(self):
+        split = BridgeSlotsBase._split_requirement
+        self.assertEqual(split("unitytk>=0.0.8"), ("unitytk", (0, 0, 8)))
+        self.assertEqual(split("unitytk >= 0.0.8"), ("unitytk", (0, 0, 8)))
+        # A bare name keeps the historical "any version will do" behaviour.
+        self.assertEqual(split("unitytk"), ("unitytk", None))
+        # Extras / other markers are not part of the distribution name.
+        self.assertEqual(split("mayatk[unity]"), ("mayatk", None))
+
+    def test_version_tuple_orders_and_truncates_at_a_suffix(self):
+        vt = BridgeSlotsBase._version_tuple
+        self.assertEqual(vt("0.0.8"), (0, 0, 8))
+        self.assertLess(vt("0.0.7"), vt("0.0.8"))
+        self.assertLess(vt("0.9.9"), vt("1.0.0"))
+        # Truncating a pre-release errs toward "older" — the safe direction.
+        self.assertEqual(vt("1.2.0rc1"), (1, 2, 0))
+        # No version at all can never clear a floor.
+        self.assertEqual(vt(""), ())
+        self.assertLess(vt(""), (0, 0, 1))
+
+    def test_probe_rejects_an_installed_but_too_old_package(self):
+        """The whole point: importable is not the same as usable."""
+        import pythontk as ptk
+
+        real = ptk.__version__
+        try:
+            ptk.__version__ = "0.0.7"
+            self.assertFalse(
+                BridgeSlotsBase.optional_package_available("pythontk>=0.0.8")
+            )
+            ptk.__version__ = "0.0.8"
+            self.assertTrue(
+                BridgeSlotsBase.optional_package_available("pythontk>=0.0.8")
+            )
+            # Equal meets the floor; a bare spec ignores version entirely.
+            ptk.__version__ = "0.0.9"
+            self.assertTrue(
+                BridgeSlotsBase.optional_package_available("pythontk>=0.0.8")
+            )
+            ptk.__version__ = "0.0.1"
+            self.assertTrue(BridgeSlotsBase.optional_package_available("pythontk"))
+        finally:
+            ptk.__version__ = real
+
+    def test_probe_rejects_a_package_declaring_no_version(self):
+        """Unknowable is refused, matching "present but broken reads as
+        unavailable" — a floor the caller asked for must be provable."""
+        import pythontk as ptk
+
+        real = ptk.__version__
+        try:
+            del ptk.__version__
+            self.assertFalse(
+                BridgeSlotsBase.optional_package_available("pythontk>=0.0.1")
+            )
+            # ... but with no floor asked for, it is still available.
+            self.assertTrue(BridgeSlotsBase.optional_package_available("pythontk"))
+        finally:
+            ptk.__version__ = real
+
+    def test_stale_package_offers_an_update_then_requires_a_restart(self):
+        """An upgrade cannot take effect in-process: the old package is already
+        in ``sys.modules`` and reloading it does not refresh the submodules its
+        ``__init__`` re-imports from cache. So the method installs, says so, and
+        returns False — the caller must not go on to use the new API."""
+        import pythontk as ptk
+
+        real = ptk.__version__
+        sb, slots = self._make("Yes")
+        try:
+            ptk.__version__ = "0.0.7"
+            self.assertFalse(slots.ensure_optional_package("pythontk>=0.0.8"))
+            # pip got the full constraint, so it can actually resolve the upgrade.
+            self.assertEqual(slots.installed, ["pythontk>=0.0.8"])
+            # Prompt says "update", not "install" — the user has it already.
+            self.assertIn("update", sb.prompts[0][0].lower())
+            # ... and the second box is the restart notice, not "could not install".
+            self.assertIn("restart", sb.prompts[1][0].lower())
+            self.assertNotIn("could not", sb.prompts[1][0].lower())
+        finally:
+            ptk.__version__ = real
+
+    def test_absent_package_still_says_install_not_update(self):
+        sb, slots = self._make("No")
+        slots.ensure_optional_package("uitk-not-a-real-pkg>=1.0", feature="Unity Bridge")
+        self.assertIn("install", sb.prompts[0][0].lower())
+        self.assertNotIn("older", sb.prompts[0][0].lower())
 
     def test_install_interpreter_is_never_a_dcc_host_binary(self):
         """pip must be driven by a real python, not maya.exe/blender.exe.

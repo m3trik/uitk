@@ -108,10 +108,13 @@ Registering a custom kind is one call — exactly how the built-ins register the
 | `float` | uitk `DoubleSpinBox`, `spec.decimals` or 4 decimals | `float` | `valueChanged` |
 | `str` | `QLineEdit` | `str` | `textChanged` |
 | `choice` | `QComboBox` from `spec.choices` | the entry's *value* (`currentData` when present, else text) | `currentIndexChanged` |
+| `check_list` | checkable `QListWidget` from `spec.choices` (right-click → Check All / Uncheck All) | `list` of the checked entries' *values* | `itemChanged` |
 | `path` | composite: `QLineEdit` + `...` directory-browse button | `str` | custom `connect` on the inner edit's `textChanged` |
 | `file_list` | composite: `QListWidget` + Add… / Remove buttons | `list[str]` | custom `connect` on the model's `rowsInserted` / `rowsRemoved` |
 
-Unset `minimum` / `maximum` default to the full 32-bit int range (`int`) or ±1e100 (`float`). `choice` writing matches by `itemData` first, then by text. The `path` and `file_list` containers expose their inner widget as `_line_edit` / `_list_widget`; `BridgeSlotsBase.PATH_LIKE_KINDS` lists these composite kinds so they escape the 19 px height clamp applied to single-line input widgets.
+Unset `minimum` / `maximum` default to the full 32-bit int range (`int`) or ±1e100 (`float`). `choice` writing matches by `itemData` first, then by text. The `path` and `file_list` containers expose their inner widget as `_line_edit` / `_list_widget`; `BridgeSlotsBase.TALL_KINDS` lists the kinds taller than one input line (`path`, `file_list`, `check_list`) so they escape the 19 px height clamp applied to single-line input widgets.
+
+The choice-driven kinds (`choice`, `check_list`) take `choices` as bare values, `(label, value)` pairs, or `(label, value, tooltip)` triples. When the real entry set is only knowable in the live session (installed app versions, deployable scripts, scene contents), declare the spec with empty `choices` and fill it at runtime: `KindFactory.set_choices(widget, choices)`, or slot-side `BridgeSlotsBase._set_param_choices(key, choices)` from the panel's `__init__`. Values still selected/checked survive the refill when they reappear. A kind with no entry set (`str`, `int`, …) raises `TypeError` rather than silently no-op'ing.
 
 ## Value formatters and the PARAMS module
 

@@ -1429,8 +1429,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # Remove any previous custom hide button before creating a new one
         self._remove_persistent_hide_button()
 
+        # "close.svg" matches Header.button_definitions' own "hide" key; there
+        # is no hide.svg in the icon set, and a bad name resolves to an empty
+        # QIcon with no error anywhere (the button renders glyph-less).
         hide_button = self.header.create_button(
-            "hide.svg",
+            "close.svg",
             self._on_persistent_hide_clicked,
             button_type="persistent_hide_button",
         )
