@@ -438,29 +438,49 @@ class MainWindow(
         # self.logger.debug(f"[register_widget]: {widget.objectName()} ({widget.type})")
         # self.register_children(widget)
 
+    # QTextBrowser is a QTextEdit, so these three cover both text families and
+    # ordinary fields. Combo/spin boxes are handled separately — their editor is a
+    # private child that registration never sees.
+    _TEXT_INPUT_TYPES = (
+        QtWidgets.QTextEdit,
+        QtWidgets.QPlainTextEdit,
+        QtWidgets.QLineEdit,
+    )
+
     def _guard_editing_shortcuts(self, widget: QtWidgets.QWidget) -> None:
-        """Let a registered text view keep its own Ctrl+C.
+        """Let a registered text widget keep its own editing chords.
 
         A **read-only** ``QTextEdit`` / ``QTextBrowser`` / ``QPlainTextEdit`` claims no
         editing chord from Qt at all, so an app-wide Copy binding — uitk's own script
         console, a DCC hotkey — consumes Ctrl+C and the pane can only be copied from
-        via its context menu (live-Maya measured on scene_exporter's log pane). Panels
-        declare those panes as plain Qt classes in their ``.ui``, so
-        :class:`ShortcutGuardMixin` can't reach them by inheritance;
-        :class:`ShortcutGuardFilter` does the same job by installation.
+        via its context menu (live-Maya measured on scene_exporter's log pane). A
+        **field** fares better but not perfectly: Qt claims Ctrl+A and the copy/paste
+        family for it, yet leaves the word-delete chords (``Ctrl+Backspace`` /
+        ``Ctrl+Del``) unclaimed even though the field performs them, so a host binding
+        on those wins and word-delete goes dead. Panels declare both kinds as plain Qt
+        classes in their ``.ui``, so :class:`ShortcutGuardMixin` can't reach them by
+        inheritance; :class:`ShortcutGuardFilter` does the same job by installation.
 
-        Installed on every text view rather than only the read-only ones, because
+        Installed on every text widget rather than only the read-only ones, because
         ``setReadOnly`` may flip later — the filter re-reads the widget's state per
-        event, and on an editable pane it merely agrees with what Qt already does.
+        event, and where Qt already answers for the widget the filter merely agrees.
         The window owns one filter for all of them (``installEventFilter`` de-dupes,
         so re-registering a widget can't stack duplicates).
         """
-        # QTextBrowser is a QTextEdit, so both text families are covered by these two.
-        if not isinstance(widget, (QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
+        if isinstance(widget, self._TEXT_INPUT_TYPES):
+            target = widget
+        elif isinstance(widget, (QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox)):
+            # None on a non-editable combo box, and a combo made editable *after*
+            # registration builds a fresh editor this never saw — that one keeps
+            # whatever Qt gives it, which is the full family minus word-delete.
+            target = widget.lineEdit()
+        else:
+            return
+        if target is None:
             return
         if getattr(self, "_shortcut_guard", None) is None:
             self._shortcut_guard = ShortcutGuardFilter(self)
-        widget.installEventFilter(self._shortcut_guard)
+        target.installEventFilter(self._shortcut_guard)
 
     def register_menu(self, menu: QtWidgets.QWidget) -> None:
         """Track a child Menu under this window.

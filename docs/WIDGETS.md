@@ -216,6 +216,8 @@ Available keys: `valid`, `invalid`, `warning`, `info`, `inactive`. Colors come f
 
 Combine with `option_box.enable_clear()` for a clear-on-right button.
 
+**Editing shortcuts are the field's own.** `Ctrl+A`, the copy/paste family and word-delete stay with the focused field even when the host binds the same sequence — `LineEdit` inherits `ShortcutGuardMixin`, and `MainWindow` registration installs the filter form on plain `.ui`-declared `QLineEdit`s (and on a combo/spin box's editor), so nothing needs promoting. A read-only field keeps Copy and Select All and releases the writes. Never claim a chord back with a `QApplication`-level event filter: that sits upstream of the protocol this relies on and outranks every focused field in the process — use an `ApplicationShortcut`-scoped `QShortcut` instead.
+
 ## TextEdit
 
 Enhanced `QTextEdit`. Pair with `TextEditLogHandler` to make it a live log viewer:

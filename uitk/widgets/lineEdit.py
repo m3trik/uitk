@@ -6,6 +6,7 @@ from qtpy import QtCore, QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
+from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
 
 
 class LineEditFormatMixin:
@@ -212,15 +213,25 @@ class LineEditFormatMixin:
 
 
 class LineEdit(
-    QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin
+    ShortcutGuardMixin,
+    QtWidgets.QLineEdit,
+    MenuMixin,
+    OptionBoxMixin,
+    AttributesMixin,
+    LineEditFormatMixin,
 ):
     """LineEdit with automatic Menu and OptionBox integration.
 
     Features:
     - self.menu: Context menu (via MenuMixin)
     - self.option_box: OptionBox functionality (via OptionBoxMixin)
-    - self.option_box.menu: Separate option box menu
     - self.option_box.clear_option: Enable/disable clear button
+    - self.option_box.menu: Separate option box menu
+    - The standard editing chords — ``Ctrl+A``/``C``/``X``/``V``/``Z``/``Y`` and
+      word-delete — stay with the field even when a host binds the same sequence
+      (via ShortcutGuardMixin, which must precede ``QLineEdit`` in the MRO so its
+      ``event`` override wins). Read-only-aware: such a field keeps Copy and
+      Select All and releases the writes.
     - self.set_validator(...): Optional debounced text validation with
       visual feedback (via LineEditFormatMixin). Emits ``validated``.
 

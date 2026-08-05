@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-06_
+_Generated: 2026-08-04_
 
 ## Index
 
@@ -157,6 +157,8 @@ Per-target-language value formatters for bridge parameter rendering.
 Registry helpers for bridge parameter dicts.
 
 - **[`class Parameters(_ParametersInternal)`](uitk/uitk/bridge/parameters.py#L38)** — Registry helpers operating over a ``{key: AttributeSpec}`` PARAMS dict.
+  - `Parameters.scope_spec(default: str = 'selected', section: str = 'Export') -> AttributeSpec` *(static)* — The shared **Scope** parameter every hand-off bridge exposes.
+  - `Parameters.shader_type_spec(default: str = 'stingray', section: str = '') -> AttributeSpec` *(static)* — The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.
   - `Parameters.referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]` *(static)* — Return registry keys whose ``__KEY__`` token appears in *script_text*.
   - `Parameters.defaults(params: Dict[str, AttributeSpec]) -> Dict[str, Any]` *(static)* — Return ``{key: default}`` for every registered parameter.
   - `Parameters.render_context(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = Formatters.python_literal) -> Dict[str, str]` *(static)* — Format *values* through *formatter* for ``StrUtils.replace_delimited``.
@@ -175,6 +177,9 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
   - `BridgeSlotsBase.list_template_modes(self) -> List[Tuple[str, str]]`
   - `BridgeSlotsBase.b000(self)` — Implement the per-bridge send action.
+  - `BridgeSlotsBase.resolve_scope_objects(self, scope: str)` — Hook: turn a ``SCOPE`` value into host objects.
+  - `BridgeSlotsBase.empty_scope_message(scope: str) -> str` *(static)* — The message shown when a scope resolves to nothing.
+  - `BridgeSlotsBase.scoped_objects(self, params, warn: bool = True)` — Objects for the ``SCOPE`` in *params*;
   - `BridgeSlotsBase.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int` — Return the index of the preferred initial entry in *pairs*.
   - `BridgeSlotsBase.default_output_dir(self) -> str` — Hook: fallback path when the user leaves Output Dir blank.
   - `BridgeSlotsBase.template_description(self, template_path: Path) -> Optional[str]` — Hook: extract a brief description from a template file.
@@ -186,6 +191,7 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.panel_log(self, message: str, level: str = 'info') -> None` — Log to the panel, working whether or not the engine exists.
   - `BridgeSlotsBase.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
   - `BridgeSlotsBase.require_output_dir(self) -> Optional[str]` — Return the Output Dir or log an error on empty.
+  - `BridgeSlotsBase.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None` — Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
   - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
   - `BridgeSlotsBase.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
   - `BridgeSlotsBase.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
@@ -204,8 +210,8 @@ Attribute spec + kind-handler registry for parameterised forms.
 - **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L55)** — Description of one editable attribute / bridge parameter.
   - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
   - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L126)** — Bundle of callables that build / read / write a widget kind.
-- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L622)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L127)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L669)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
   - `KindFactory.infer_kind(value: Any) -> str` *(static)* — Map a Python value to one of the built-in kinds.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
@@ -1145,14 +1151,14 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 <a id="widgets--lineEdit"></a>
 ### `widgets/lineEdit.py`
 
-- **[`class LineEditFormatMixin`](uitk/uitk/widgets/lineEdit.py#L11)** — Lazily formats QLineEdit with reversible visual state feedback.
+- **[`class LineEditFormatMixin`](uitk/uitk/widgets/lineEdit.py#L12)** — Lazily formats QLineEdit with reversible visual state feedback.
   - `LineEditFormatMixin.set_action_color(self, key: str) -> None`
   - `LineEditFormatMixin.reset_action_color(self) -> None`
   - `LineEditFormatMixin.set_validator(self, validator, *, debounce_ms: int = 300, invalid_tooltip: str = 'Invalid', valid_tooltip=None, empty_tooltip=None, empty_is_valid: bool = True)` — Install a debounced text validator with visual feedback.
   - `LineEditFormatMixin.clear_validator(self)` — Remove any installed validator and reset visual state.
   - `LineEditFormatMixin.is_valid(self)` *(property)* — Last validation result, or ``None`` if no validator is set.
   - `LineEditFormatMixin.validate_now(self)` — Cancel any pending debounce and validate the current text now.
-- **[`class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L214)** — LineEdit with automatic Menu and OptionBox integration.
+- **[`class LineEdit(ShortcutGuardMixin, QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L215)** — LineEdit with automatic Menu and OptionBox integration.
   - `LineEdit.set_value(self, value, display=None)` — Set the field's underlying value and an optional display string.
   - `LineEdit.value(self)` — The field's value: the stored data payload, or :meth:`text` if none.
   - `LineEdit.data(self)` — The stored data payload, or ``None`` when the text *is* the value.
@@ -1464,14 +1470,14 @@ OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 
 Keep an editing chord with the widget the user is actually typing in.
 
-- **[`class ShortcutGuardMixin`](uitk/uitk/widgets/mixins/shortcut_guard.py#L41)** — Mixin: claim the standard editing shortcuts for the focused widget.
+- **[`class ShortcutGuardMixin`](uitk/uitk/widgets/mixins/shortcut_guard.py#L53)** — Mixin: claim the standard editing shortcuts for the focused widget.
   - `ShortcutGuardMixin.claim_override(cls, widget, event: QtCore.QEvent) -> bool` *(class)* — Accept *event* on *widget*'s behalf when it's a chord *widget* should own.
   - `ShortcutGuardMixin.claims(cls, widget, event: QtGui.QKeyEvent) -> bool` *(class)* — Whether *widget* should handle *event*'s chord itself.
   - `ShortcutGuardMixin.is_read_only(widget) -> bool` *(static)* — ``widget.isReadOnly()`` when it has one, else False.
   - `ShortcutGuardMixin.has_selection(widget) -> bool` *(static)* — Whether *widget* holds a text selection.
   - `ShortcutGuardMixin.event(self, event: QtCore.QEvent)`
   - `ShortcutGuardMixin.claims_shortcut(self, event: QtGui.QKeyEvent) -> bool` — Whether *event* is an editing chord this widget should handle itself.
-- **[`class ShortcutGuardFilter(QtCore.QObject)`](uitk/uitk/widgets/mixins/shortcut_guard.py#L156)** — Event-filter form of :class:`ShortcutGuardMixin`, for widgets uitk can't subclass.
+- **[`class ShortcutGuardFilter(QtCore.QObject)`](uitk/uitk/widgets/mixins/shortcut_guard.py#L172)** — Event-filter form of :class:`ShortcutGuardMixin`, for widgets uitk can't subclass.
   - `ShortcutGuardFilter.eventFilter(self, obj, event: QtCore.QEvent) -> bool`
 
 <a id="widgets--mixins--size_grip"></a>
@@ -2264,6 +2270,9 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TableWidget.set_stretch_column(self, col: int)` — Set a column to automatically stretch to fill the available space.
   - `TableWidget.resizeEvent(self, event)`
   - `TableWidget.stretch_column_to_fill(self, stretch_col: int)`
+  - `TableWidget.compute_autofit_size(content, chrome, scrollbar, maximum, minimum)` *(static)* — Return the ``(w, h)`` window size that shows *content* whole, capped.
+  - `TableWidget.max_autofit_size(self, max_fraction=None)` — Return the ``(w, h)`` ceiling for :meth:`fit_window_to_contents`.
+  - `TableWidget.fit_window_to_contents(self, max_fraction=None, defer=True)` — Resize this table's window so the table's contents fit exactly.
   - `TableWidget.get_selected_data(self, columns=None, include_current=True)` — Get data from selected rows for specified columns.
   - `TableWidget.get_selection(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]` — Return detailed selection payload keyed by column aliases.
   - `TableWidget.register_menu_action(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)` — Attach a context-menu item to a callable that receives selection data.

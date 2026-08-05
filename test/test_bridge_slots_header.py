@@ -65,7 +65,11 @@ def _labels(header):
 
 
 class DefaultHeaderMenuTest(unittest.TestCase):
-    """The base default = Open Templates / Refresh / Clear Log, no help."""
+    """The base default = Clear Log only, no help.
+
+    Template management (Refresh / Open Folder) deliberately lives on the
+    template combo's own menu (``cmb000_init``), not the header.
+    """
 
     def _slot(self):
         # Bypass __init__ (needs a live switchboard/panel); header_init only
@@ -76,24 +80,31 @@ class DefaultHeaderMenuTest(unittest.TestCase):
         slot = self._slot()
         header = _FakeHeader()
         slot.header_init(header)
-        # A leading "Utilities" separator, then the three default buttons.
+        # A leading "Utilities" separator, then the panel-level utility.
         self.assertEqual(header.menu.adds[0][0], "Separator")
-        self.assertEqual(
-            _labels(header),
-            ["Open Templates Folder", "Refresh Templates", "Clear Log"],
-        )
+        self.assertEqual(_labels(header), ["Clear Log"])
 
     def test_default_handlers_resolve_to_base_methods(self):
         slot = self._slot()
         calls = []
-        slot.open_templates_folder = lambda: calls.append("templates")
-        slot.refresh_templates = lambda: calls.append("refresh")
         slot.clear_log = lambda: calls.append("clear")
         header = _FakeHeader()
         slot.header_init(header)
-        for name in ("btn_open_templates", "btn_refresh_templates", "btn_clear_log"):
-            header.menu._buttons[name].clicked.emit()
-        self.assertEqual(calls, ["templates", "refresh", "clear"])
+        header.menu._buttons["btn_clear_log"].clicked.emit()
+        self.assertEqual(calls, ["clear"])
+
+    def test_template_actions_absent_from_header(self):
+        # The moved actions must not silently reappear in the default header.
+        slot = self._slot()
+        header = _FakeHeader()
+        slot.header_init(header)
+        self.assertNotIn("btn_open_templates", header.menu._buttons)
+        self.assertNotIn("btn_refresh_templates", header.menu._buttons)
+        # The handlers themselves stay on the base (the combo menu and any
+        # subclass header override -- e.g. rizom's "Open Scripts Folder" --
+        # still resolve them).
+        self.assertTrue(callable(slot.open_templates_folder))
+        self.assertTrue(callable(slot.refresh_templates))
 
     def test_no_help_when_spec_absent(self):
         slot = self._slot()

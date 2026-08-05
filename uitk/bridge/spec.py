@@ -65,9 +65,10 @@ class AttributeSpec:
         key: Identifier used as the widget's objectName. Required.
         label: Display label. Defaults to *key* if empty.
         kind: One of the registered kinds (``"bool" | "int" | "float" |
-            "str" | "choice" | "path" | "file_list"``) or ``"auto"`` to
-            derive from ``type(default)``. Custom kinds added via
-            :meth:`KindFactory.register_kind` are also accepted.
+            "str" | "choice" | "check_list" | "path" | "file_list" |
+            "action"``) or ``"auto"`` to derive from ``type(default)``.
+            Custom kinds added via :meth:`KindFactory.register_kind` are
+            also accepted.
         default: Initial widget value.
         minimum / maximum / step: Numeric range and step (int/float kinds).
         decimals: Float precision (float kind only).
@@ -483,6 +484,52 @@ class _KindFactoryInternal(object):
             lambda *_: callback(_KindFactoryInternal._read_file_list(widget))
         )
 
+    # ---- action: composite (row of action buttons) -------------------------
+    #
+    # A parameter row whose "value" is a set of ACTIONS, not data: each
+    # ``choices`` entry is ``(label, action_id)`` / ``(label, action_id, tip)``
+    # and becomes one QPushButton. The container exposes
+    # ``_action_buttons = {action_id: QPushButton}`` so the hosting panel can
+    # wire each button to its own method after build (BridgeSlotsBase does
+    # this automatically for action ids that name a slot method). ``read``
+    # returns ``None`` -- there is no value to collect or preset -- and the
+    # change-wirer is a deliberate no-op so preset dirty-tracking ignores
+    # clicks. The first action is the primary affordance and takes the row's
+    # stretch; the rest stay compact.
+
+    @staticmethod
+    def _build_action(spec, parent):
+        container = QtWidgets.QWidget(parent)
+        hl = QtWidgets.QHBoxLayout(container)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(2)
+        container._action_buttons = {}  # noqa: SLF001 -- intentional public attr
+        for i, entry in enumerate(spec.choices or []):
+            label, action_id, tip = _KindFactoryInternal._split_choice(entry)
+            if action_id is _NO_VALUE:
+                action_id = str(label)
+            btn = QtWidgets.QPushButton(str(label), container)
+            btn.setMinimumHeight(19)
+            btn.setMaximumHeight(19)
+            if tip:
+                btn.setToolTip(tip)
+            hl.addWidget(btn, 1 if i == 0 else 0)
+            container._action_buttons[str(action_id)] = btn
+        return container
+
+    @staticmethod
+    def _read_action(widget):
+        return None
+
+    @staticmethod
+    def _write_action(widget, value):
+        pass
+
+    @staticmethod
+    def _connect_action(widget, callback):
+        # Actions are not values; nothing to observe.
+        pass
+
     # ---- check_list: QListWidget of checkable rows -------------------------
     #
     # Multi-pick over a fixed entry set -- the plural counterpart to
@@ -813,5 +860,14 @@ KindFactory.register_kind(
         _KindFactoryInternal._read_file_list,
         _KindFactoryInternal._write_file_list,
         connect=_KindFactoryInternal._connect_file_list,
+    ),
+)
+KindFactory.register_kind(
+    "action",
+    KindHandler(
+        _KindFactoryInternal._build_action,
+        _KindFactoryInternal._read_action,
+        _KindFactoryInternal._write_action,
+        connect=_KindFactoryInternal._connect_action,
     ),
 )

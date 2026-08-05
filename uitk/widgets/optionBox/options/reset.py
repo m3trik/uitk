@@ -74,7 +74,7 @@ class ResetOption(ButtonOption):
         *,
         reset: Optional[Callable] = None,
         icon: str = "undo",
-        tooltip: str = "Reset to default.    Alt/Ctrl+click: hold at default (bypass).",
+        tooltip: str = "Reset to default.\n\nAlt/Ctrl+click: hold at default (bypass).",
         tooltip_bypassed: str = "Held at default (bypassed). Click to restore your value.",
         disabled_color: str = _DEFAULT_DISABLED_COLOR,
         bypass_modifier: QtCore.Qt.KeyboardModifier = _DEFAULT_BYPASS_MODIFIER,

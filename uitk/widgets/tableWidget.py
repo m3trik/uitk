@@ -1384,6 +1384,173 @@ class TableWidget(
         new_width = max(50, total_width - other_cols_width)
         self.setColumnWidth(stretch_col, new_width)
 
+    # ------------------------------------------------------------------
+    # Auto-fit the host window to the table's contents
+    # ------------------------------------------------------------------
+
+    # Default ceiling for :meth:`fit_window_to_contents`, as a fraction of
+    # the screen's available geometry — ``(width, height)``.  Past this the
+    # window stops growing and the table scrolls instead; an unbounded row
+    # count would otherwise size the window larger than the display, with
+    # no way to reach the bottom rows.
+    MAX_AUTOFIT_FRACTION = (0.5, 0.5)
+
+    @staticmethod
+    def compute_autofit_size(content, chrome, scrollbar, maximum, minimum):
+        """Return the ``(w, h)`` window size that shows *content* whole, capped.
+
+        Pure arithmetic — no Qt — so the sizing policy is testable on its own.
+
+        Parameters:
+            content (tuple): Total width of the visible columns, total
+                height of the visible rows.
+            chrome (tuple): Window furniture outside the table's scrollable
+                viewport (margins, table frame, the table's own headers).
+                Must *exclude* the scrollbars — those are applied from
+                *scrollbar*, for the post-resize state.
+            scrollbar (tuple): ``(vertical_width, horizontal_height)``, added
+                only on the axis where the cap forces a scrollbar to appear.
+            maximum (tuple): Size ceiling.
+            minimum (tuple): The window's minimum size. Wins over *maximum*.
+
+        Returns:
+            (tuple) The target ``(width, height)``.
+        """
+        w = content[0] + chrome[0]
+        h = content[1] + chrome[1]
+
+        # Capping the height clips rows, so a vertical scrollbar appears
+        # and eats viewport width — widen to keep the columns whole.
+        if h > maximum[1]:
+            h = maximum[1]
+            w += scrollbar[0]
+        # Mirror case: a width cap brings in the horizontal scrollbar,
+        # which eats height that the height cap must still bound.
+        if w > maximum[0]:
+            w = maximum[0]
+            h = min(h + scrollbar[1], maximum[1])
+
+        return (max(w, minimum[0]), max(h, minimum[1]))
+
+    def max_autofit_size(self, max_fraction=None):
+        """Return the ``(w, h)`` ceiling for :meth:`fit_window_to_contents`.
+
+        *max_fraction* (default :attr:`MAX_AUTOFIT_FRACTION`) of the available
+        geometry of the screen this table's window sits on — multi-monitor
+        safe — falling back to the primary screen and finally to no cap.
+        """
+        win = self.window()
+        screen = None
+        getter = getattr(win, "screen", None) if win else None  # Qt 5.14+
+        if callable(getter):
+            screen = getter()
+        if screen is None:
+            screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            return (16777215, 16777215)  # QWIDGETSIZE_MAX — no cap
+        avail = screen.availableGeometry()
+        frac_w, frac_h = max_fraction or self.MAX_AUTOFIT_FRACTION
+        return (int(avail.width() * frac_w), int(avail.height() * frac_h))
+
+    def fit_window_to_contents(self, max_fraction=None, defer=True):
+        """Resize this table's window so the table's contents fit exactly.
+
+        Growth stops at :meth:`max_autofit_size`; past that the table keeps
+        its own scrollbars (``ScrollBarAsNeeded``) and the user scrolls. The
+        window widens to absorb the scrollbar a cap brings in, so no column
+        is clipped.
+
+        Only ``ResizeToContents`` columns are recomputed — a blanket
+        ``resizeColumnsToContents()`` would override ``Fixed``-width columns
+        (action columns sized to row height by :class:`TableActions`) and
+        inflate them, masking the real content total.
+
+        Args:
+            max_fraction (tuple, optional): Override the screen-fraction
+                ceiling for this call.
+            defer (bool): Run on a later event-loop tick (default). Deferring
+                twice lets a caller's ``setUpdatesEnabled`` / signal-block
+                unwind, then gives ``ResizeToContents`` columns a tick to
+                apply their final widths before they are measured. Pass
+                ``False`` only when the table is already fully laid out.
+        """
+        if not defer:
+            self._do_fit_window_to_contents(max_fraction)
+            return
+        QtCore.QTimer.singleShot(
+            0,
+            lambda: QtCore.QTimer.singleShot(
+                0, lambda: self._do_fit_window_to_contents(max_fraction)
+            ),
+        )
+
+    def _do_fit_window_to_contents(self, max_fraction=None):
+        """Measure and apply the fit. See :meth:`fit_window_to_contents`."""
+        try:
+            win = self.window()
+            if win is None:
+                return
+
+            QHV = QtWidgets.QHeaderView
+            header = self.horizontalHeader()
+            for col in range(self.columnCount()):
+                if (
+                    not self.isColumnHidden(col)
+                    and header.sectionResizeMode(col) == QHV.ResizeToContents
+                ):
+                    self.resizeColumnToContents(col)
+
+            lay = win.layout()
+            if lay is not None:
+                lay.activate()
+            cw = win.centralWidget() if hasattr(win, "centralWidget") else None
+            if cw is not None and cw.layout() is not None:
+                cw.layout().activate()
+
+            header_len = header.length()
+            if header_len <= 0:
+                return
+
+            viewport = self.viewport()
+            if viewport.width() <= 0 or viewport.height() <= 0:
+                return  # not laid out yet — nothing meaningful to measure
+
+            # Chrome = every pixel of the window OUTSIDE the scrollable
+            # viewport: window margins, table frame, and the table's own
+            # headers (which live in the viewport margins, not the
+            # viewport).  One ``win - viewport`` measurement captures all
+            # of it — adding frame / header sizes on top double-counts
+            # them.  It also includes whichever scrollbars are showing
+            # *right now*, so those are subtracted back out and re-applied
+            # by ``compute_autofit_size`` for the post-resize state.
+            vbar = self.verticalScrollBar()
+            hbar = self.horizontalScrollBar()
+            vsb_now = vbar.width() if (vbar and vbar.isVisible()) else 0
+            hsb_now = hbar.height() if (hbar and hbar.isVisible()) else 0
+            chrome_w = max(win.width() - viewport.width() - vsb_now, 0)
+            chrome_h = max(win.height() - viewport.height() - hsb_now, 0)
+
+            rows_h = 0
+            for row in range(self.rowCount()):
+                if not self.isRowHidden(row):
+                    rows_h += self.rowHeight(row)
+
+            target_w, target_h = self.compute_autofit_size(
+                content=(header_len, rows_h),
+                chrome=(chrome_w, chrome_h),
+                scrollbar=(
+                    vbar.sizeHint().width() if vbar else 0,
+                    hbar.sizeHint().height() if hbar else 0,
+                ),
+                maximum=self.max_autofit_size(max_fraction),
+                minimum=(win.minimumWidth(), win.minimumHeight()),
+            )
+
+            if target_w != win.width() or target_h != win.height():
+                win.resize(target_w, target_h)
+        except RuntimeError:
+            pass  # widget (or its window) destroyed mid-fit
+
     def get_selected_data(self, columns=None, include_current=True):
         """
         Get data from selected rows for specified columns.

@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-06_
+_Generated: 2026-08-04_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -14,11 +14,11 @@ _Generated: 2026-08-06_
 
 ### `bridge/parameters.py` — Registry helpers for bridge parameter dicts.
 - `class Parameters(_ParametersInternal)`
-  - methods: referenced_keys, defaults, render_context
+  - methods: scope_spec, shader_type_spec, referenced_keys, defaults, render_context
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
+  - methods: params_module, template_dir, make_bridge, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
 - `class AttributeSpec`
@@ -273,7 +273,7 @@ _Generated: 2026-08-06_
 ### `widgets/lineEdit.py`
 - `class LineEditFormatMixin`
   - methods: set_action_color, reset_action_color, set_validator, clear_validator, is_valid, validate_now
-- `class LineEdit(QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`
+- `class LineEdit(ShortcutGuardMixin, QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`
   - methods: set_value, value, data, clear_value, contextMenuEvent, showEvent, hideEvent
 
 ### `widgets/mainWindow.py`
@@ -578,7 +578,7 @@ _Generated: 2026-08-06_
 - `class TableSelection`
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`
-  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, get_selected_data, get_selection, register_menu_action, unregister_menu_action
+  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, compute_autofit_size, max_autofit_size, fit_window_to_contents, get_selected_data, get_selection, register_menu_action, unregister_menu_action
 
 ### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
 - `class TableActions`

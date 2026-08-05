@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-08-06",
+  "generated_at": "2026-08-04",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -94,12 +94,30 @@
           ],
           "members": [
             {
+              "name": "scope_spec",
+              "qualname": "Parameters.scope_spec",
+              "kind": "staticmethod",
+              "signature": "(default: str = 'selected', section: str = 'Export') -> AttributeSpec",
+              "summary": "The shared **Scope** parameter every hand-off bridge exposes.",
+              "line": 42,
+              "deprecated": false
+            },
+            {
+              "name": "shader_type_spec",
+              "qualname": "Parameters.shader_type_spec",
+              "kind": "staticmethod",
+              "signature": "(default: str = 'stingray', section: str = '') -> AttributeSpec",
+              "summary": "The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.",
+              "line": 78,
+              "deprecated": false
+            },
+            {
               "name": "referenced_keys",
               "qualname": "Parameters.referenced_keys",
               "kind": "staticmethod",
               "signature": "(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]",
               "summary": "Return registry keys whose ``__KEY__`` token appears in *script_text*.",
-              "line": 42,
+              "line": 130,
               "deprecated": false
             },
             {
@@ -108,7 +126,7 @@
               "kind": "staticmethod",
               "signature": "(params: Dict[str, AttributeSpec]) -> Dict[str, Any]",
               "summary": "Return ``{key: default}`` for every registered parameter.",
-              "line": 54,
+              "line": 142,
               "deprecated": false
             },
             {
@@ -117,7 +135,7 @@
               "kind": "staticmethod",
               "signature": "(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = Formatters.python_literal) -> Dict[str, str]",
               "summary": "Format *values* through *formatter* for ``StrUtils.replace_delimited``.",
-              "line": 59,
+              "line": 147,
               "deprecated": false
             }
           ]
@@ -143,7 +161,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 251,
+              "line": 244,
               "deprecated": false
             },
             {
@@ -152,7 +170,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "",
-              "line": 255,
+              "line": 248,
               "deprecated": false
             },
             {
@@ -161,7 +179,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return a fresh bridge instance.",
-              "line": 258,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -170,7 +188,7 @@
               "kind": "staticmethod",
               "signature": "(spec: str, import_name: str = None) -> bool",
               "summary": "Is an optional package importable in THIS interpreter? Silent.",
-              "line": 264,
+              "line": 257,
               "deprecated": false
             },
             {
@@ -179,7 +197,7 @@
               "kind": "method",
               "signature": "(self, spec: str, import_name: str = None, *, feature: str = None) -> bool",
               "summary": "Make an optional package importable, offering to install it on demand.",
-              "line": 312,
+              "line": 305,
               "deprecated": false
             },
             {
@@ -188,7 +206,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hook: return a :class:`pythontk.PresetStore` to switch presets into",
-              "line": 453,
+              "line": 446,
               "deprecated": false
             },
             {
@@ -197,7 +215,7 @@
               "kind": "method",
               "signature": "(self) -> List[Tuple[str, str]]",
               "summary": "",
-              "line": 471,
+              "line": 464,
               "deprecated": false
             },
             {
@@ -206,7 +224,34 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Implement the per-bridge send action.",
-              "line": 474,
+              "line": 467,
+              "deprecated": false
+            },
+            {
+              "name": "resolve_scope_objects",
+              "qualname": "BridgeSlotsBase.resolve_scope_objects",
+              "kind": "method",
+              "signature": "(self, scope: str)",
+              "summary": "Hook: turn a ``SCOPE`` value into host objects.",
+              "line": 472,
+              "deprecated": false
+            },
+            {
+              "name": "empty_scope_message",
+              "qualname": "BridgeSlotsBase.empty_scope_message",
+              "kind": "staticmethod",
+              "signature": "(scope: str) -> str",
+              "summary": "The message shown when a scope resolves to nothing.",
+              "line": 486,
+              "deprecated": false
+            },
+            {
+              "name": "scoped_objects",
+              "qualname": "BridgeSlotsBase.scoped_objects",
+              "kind": "method",
+              "signature": "(self, params, warn: bool = True)",
+              "summary": "Objects for the ``SCOPE`` in *params*;",
+              "line": 501,
               "deprecated": false
             },
             {
@@ -215,7 +260,7 @@
               "kind": "method",
               "signature": "(self, pairs: List[Tuple[str, str]]) -> int",
               "summary": "Return the index of the preferred initial entry in *pairs*.",
-              "line": 478,
+              "line": 515,
               "deprecated": false
             },
             {
@@ -224,7 +269,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: fallback path when the user leaves Output Dir blank.",
-              "line": 486,
+              "line": 523,
               "deprecated": false
             },
             {
@@ -233,7 +278,7 @@
               "kind": "method",
               "signature": "(self, template_path: Path) -> Optional[str]",
               "summary": "Hook: extract a brief description from a template file.",
-              "line": 495,
+              "line": 532,
               "deprecated": false
             },
             {
@@ -242,7 +287,7 @@
               "kind": "method",
               "signature": "(self, spec: AttributeSpec) -> str",
               "summary": "Hook: build the rich-text tooltip for one parameter spec.",
-              "line": 499,
+              "line": 536,
               "deprecated": false
             },
             {
@@ -251,7 +296,7 @@
               "kind": "staticmethod",
               "signature": "(handler: Callable) -> None",
               "summary": "Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel",
-              "line": 506,
+              "line": 543,
               "deprecated": false
             },
             {
@@ -260,7 +305,7 @@
               "kind": "staticmethod",
               "signature": "(tag: str) -> str",
               "summary": "Create (once per host process) and return a temp Output Dir for *tag*.",
-              "line": 519,
+              "line": 556,
               "deprecated": false
             },
             {
@@ -269,7 +314,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-instantiated bridge (caches a single instance per slot).",
-              "line": 580,
+              "line": 620,
               "deprecated": false
             },
             {
@@ -278,7 +323,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "The bridge if it can be built, else ``None`` — never raises.",
-              "line": 601,
+              "line": 641,
               "deprecated": false
             },
             {
@@ -287,7 +332,7 @@
               "kind": "method",
               "signature": "(self, message: str, level: str = 'info') -> None",
               "summary": "Log to the panel, working whether or not the engine exists.",
-              "line": 624,
+              "line": 664,
               "deprecated": false
             },
             {
@@ -296,7 +341,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Return the current Output Dir text trimmed of whitespace.",
-              "line": 764,
+              "line": 804,
               "deprecated": false
             },
             {
@@ -305,7 +350,16 @@
               "kind": "method",
               "signature": "(self) -> Optional[str]",
               "summary": "Return the Output Dir or log an error on empty.",
-              "line": 774,
+              "line": 814,
+              "deprecated": false
+            },
+            {
+              "name": "set_param_enabled",
+              "qualname": "BridgeSlotsBase.set_param_enabled",
+              "kind": "method",
+              "signature": "(self, key: str, enabled: bool, reason: str = '') -> None",
+              "summary": "Grey out (or re-enable) one parameter row, with *reason* as its tooltip.",
+              "line": 956,
               "deprecated": false
             },
             {
@@ -314,7 +368,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Any]",
               "summary": "Snapshot every widget's current value, regardless of visibility.",
-              "line": 912,
+              "line": 1030,
               "deprecated": false
             },
             {
@@ -323,7 +377,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Switchboard hook: populate the template combobox + wire change handler.",
-              "line": 1109,
+              "line": 1235,
               "deprecated": false
             },
             {
@@ -332,7 +386,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-scan disk and rebuild the template combo + parameter UI.",
-              "line": 1130,
+              "line": 1277,
               "deprecated": false
             },
             {
@@ -341,7 +395,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, str, str, str], ...]",
               "summary": "Hook: the header-menu items.",
-              "line": 1259,
+              "line": 1407,
               "deprecated": false
             },
             {
@@ -350,7 +404,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[Dict[str, Any]]",
               "summary": "Hook: the ``fmt()`` keyword dict for the header help, or ``None``.",
-              "line": 1263,
+              "line": 1411,
               "deprecated": false
             },
             {
@@ -359,7 +413,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Default header menu: a \"Utilities\" separator, the declared",
-              "line": 1270,
+              "line": 1418,
               "deprecated": false
             },
             {
@@ -368,7 +422,7 @@
               "kind": "method",
               "signature": "(self, path) -> bool",
               "summary": "Open *path* in the OS file manager (logs + returns False if missing).",
-              "line": 1298,
+              "line": 1446,
               "deprecated": false
             },
             {
@@ -377,7 +431,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Reveal :attr:`template_dir` in the OS file manager.",
-              "line": 1314,
+              "line": 1462,
               "deprecated": false
             },
             {
@@ -386,7 +440,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear the log panel (wired by subclass header menus).",
-              "line": 1318,
+              "line": 1466,
               "deprecated": false
             }
           ]
@@ -410,7 +464,7 @@
               "kind": "classmethod",
               "signature": "(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'",
               "summary": "Build a minimal spec from a Python value (AttributeWindow style).",
-              "line": 111,
+              "line": 112,
               "deprecated": false
             },
             {
@@ -419,7 +473,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "",
-              "line": 121,
+              "line": 122,
               "deprecated": false
             }
           ]
@@ -427,14 +481,14 @@
         {
           "name": "KindHandler",
           "summary": "Bundle of callables that build / read / write a widget kind.",
-          "line": 126,
+          "line": 127,
           "bases": [],
           "members": []
         },
         {
           "name": "KindFactory",
           "summary": "Build / read / write Qt widgets by ``kind``, backed by the registry.",
-          "line": 622,
+          "line": 669,
           "bases": [
             "_KindFactoryInternal"
           ],
@@ -445,7 +499,7 @@
               "kind": "staticmethod",
               "signature": "(value: Any) -> str",
               "summary": "Map a Python value to one of the built-in kinds.",
-              "line": 637,
+              "line": 684,
               "deprecated": false
             },
             {
@@ -454,7 +508,7 @@
               "kind": "staticmethod",
               "signature": "(name: str, handler: KindHandler) -> None",
               "summary": "Register a new kind (or override an existing one).",
-              "line": 662,
+              "line": 709,
               "deprecated": false
             },
             {
@@ -463,7 +517,7 @@
               "kind": "staticmethod",
               "signature": "(kind: str) -> KindHandler",
               "summary": "Return the handler for *kind* (raises KeyError if unregistered).",
-              "line": 667,
+              "line": 714,
               "deprecated": false
             },
             {
@@ -472,7 +526,7 @@
               "kind": "staticmethod",
               "signature": "(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget",
               "summary": "Build a Qt widget for *spec*.",
-              "line": 677,
+              "line": 724,
               "deprecated": false
             },
             {
@@ -481,7 +535,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget) -> Any",
               "summary": "Return the current value of a factory-built widget.",
-              "line": 693,
+              "line": 740,
               "deprecated": false
             },
             {
@@ -490,7 +544,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Set the value of a factory-built widget.",
-              "line": 700,
+              "line": 747,
               "deprecated": false
             },
             {
@@ -499,7 +553,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None",
               "summary": "Repopulate a choice-driven widget's entries after it was built.",
-              "line": 707,
+              "line": 754,
               "deprecated": false
             },
             {
@@ -508,7 +562,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None",
               "summary": "Wire the widget's value-change signal to ``callback(new_value)``.",
-              "line": 727,
+              "line": 774,
               "deprecated": false
             }
           ]
@@ -6905,7 +6959,7 @@
         {
           "name": "LineEditFormatMixin",
           "summary": "Lazily formats QLineEdit with reversible visual state feedback.",
-          "line": 11,
+          "line": 12,
           "bases": [],
           "members": [
             {
@@ -6914,7 +6968,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> None",
               "summary": "",
-              "line": 34,
+              "line": 35,
               "deprecated": false
             },
             {
@@ -6923,7 +6977,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "",
-              "line": 39,
+              "line": 40,
               "deprecated": false
             },
             {
@@ -6932,7 +6986,7 @@
               "kind": "method",
               "signature": "(self, validator, *, debounce_ms: int = 300, invalid_tooltip: str = 'Invalid', valid_tooltip=None, empty_tooltip=None, empty_is_valid: bool = True)",
               "summary": "Install a debounced text validator with visual feedback.",
-              "line": 65,
+              "line": 66,
               "deprecated": false
             },
             {
@@ -6941,7 +6995,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove any installed validator and reset visual state.",
-              "line": 124,
+              "line": 125,
               "deprecated": false
             },
             {
@@ -6950,7 +7004,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Last validation result, or ``None`` if no validator is set.",
-              "line": 142,
+              "line": 143,
               "deprecated": false
             },
             {
@@ -6959,7 +7013,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Cancel any pending debounce and validate the current text now.",
-              "line": 146,
+              "line": 147,
               "deprecated": false
             }
           ]
@@ -6967,8 +7021,9 @@
         {
           "name": "LineEdit",
           "summary": "LineEdit with automatic Menu and OptionBox integration.",
-          "line": 214,
+          "line": 215,
           "bases": [
+            "ShortcutGuardMixin",
             "QtWidgets.QLineEdit",
             "MenuMixin",
             "OptionBoxMixin",
@@ -6982,7 +7037,7 @@
               "kind": "method",
               "signature": "(self, value, display=None)",
               "summary": "Set the field's underlying value and an optional display string.",
-              "line": 284,
+              "line": 295,
               "deprecated": false
             },
             {
@@ -6991,7 +7046,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "The field's value: the stored data payload, or :meth:`text` if none.",
-              "line": 304,
+              "line": 315,
               "deprecated": false
             },
             {
@@ -7000,7 +7055,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "The stored data payload, or ``None`` when the text *is* the value.",
-              "line": 308,
+              "line": 319,
               "deprecated": false
             },
             {
@@ -7009,7 +7064,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Drop the stored data payload (leaves the visible text untouched).",
-              "line": 316,
+              "line": 327,
               "deprecated": false
             },
             {
@@ -7018,7 +7073,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Override the standard context menu if there is a custom one.",
-              "line": 327,
+              "line": 338,
               "deprecated": false
             },
             {
@@ -7027,7 +7082,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle show event.",
-              "line": 334,
+              "line": 345,
               "deprecated": false
             },
             {
@@ -7036,7 +7091,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle hide event.",
-              "line": 339,
+              "line": 350,
               "deprecated": false
             }
           ]
@@ -7173,7 +7228,7 @@
               "kind": "method",
               "signature": "(self, menu: QtWidgets.QWidget) -> None",
               "summary": "Track a child Menu under this window.",
-              "line": 465,
+              "line": 485,
               "deprecated": false
             },
             {
@@ -7182,7 +7237,7 @@
               "kind": "method",
               "signature": "(self, *, visible: Optional[bool] = None, pinned: Optional[bool] = None, persistent: Optional[bool] = None) -> List[QtWidgets.QWidget]",
               "summary": "Return this window's tracked child menus, filtered by status.",
-              "line": 476,
+              "line": 496,
               "deprecated": false
             },
             {
@@ -7191,7 +7246,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Executes all deferred methods, in priority order.",
-              "line": 579,
+              "line": 599,
               "deprecated": false
             },
             {
@@ -7200,7 +7255,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[], Any]) -> None",
               "summary": "Run *callback* once this window's child widgets are registered.",
-              "line": 591,
+              "line": 611,
               "deprecated": false
             },
             {
@@ -7209,7 +7264,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, force=False) -> None",
               "summary": "Restores the state of a given widget if it has a restore_state attribute.",
-              "line": 609,
+              "line": 629,
               "deprecated": false
             },
             {
@@ -7218,7 +7273,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Persist a widget's value and mirror it across related surfaces.",
-              "line": 639,
+              "line": 659,
               "deprecated": false
             },
             {
@@ -7227,7 +7282,7 @@
               "kind": "method",
               "signature": "(self, watched, event) -> bool",
               "summary": "Override the event filter to register widgets when they are polished.",
-              "line": 728,
+              "line": 748,
               "deprecated": false
             },
             {
@@ -7236,7 +7291,7 @@
               "kind": "method",
               "signature": "(self, delta: int, baseline: Optional[int] = None) -> None",
               "summary": "Apply a signed pixel delta to the window's height.",
-              "line": 804,
+              "line": 824,
               "deprecated": false
             },
             {
@@ -7245,7 +7300,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Snap the window's height to its layout's natural content size.",
-              "line": 845,
+              "line": 865,
               "deprecated": false
             },
             {
@@ -7254,7 +7309,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Save the current window geometry (size and position) to settings.",
-              "line": 881,
+              "line": 901,
               "deprecated": false
             },
             {
@@ -7263,7 +7318,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Restore the window geometry (size and position) from settings.",
-              "line": 904,
+              "line": 924,
               "deprecated": false
             },
             {
@@ -7272,7 +7327,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear any saved window geometry from settings.",
-              "line": 951,
+              "line": 971,
               "deprecated": false
             },
             {
@@ -7281,7 +7336,7 @@
               "kind": "method",
               "signature": "(self, visible: bool) -> None",
               "summary": "Override setVisible to respect pin state when hiding.",
-              "line": 1009,
+              "line": 1029,
               "deprecated": false
             },
             {
@@ -7290,7 +7345,7 @@
               "kind": "method",
               "signature": "(self, pos=None, app_exec=False) -> None",
               "summary": "Show the MainWindow.",
-              "line": 1015,
+              "line": 1035,
               "deprecated": false
             },
             {
@@ -7299,7 +7354,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the show event to initialize untracked widgets and restore their states.",
-              "line": 1036,
+              "line": 1056,
               "deprecated": false
             },
             {
@@ -7308,7 +7363,7 @@
               "kind": "method",
               "signature": "(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None",
               "summary": "Registers all child widgets starting from the given widget (or central widget if None).",
-              "line": 1115,
+              "line": 1135,
               "deprecated": false
             },
             {
@@ -7317,7 +7372,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the focus event to set the current UI when this window gains focus.",
-              "line": 1150,
+              "line": 1170,
               "deprecated": false
             },
             {
@@ -7326,7 +7381,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1156,
+              "line": 1176,
               "deprecated": false
             },
             {
@@ -7335,7 +7390,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on resize so pinned/non-hidden windows persist size.",
-              "line": 1160,
+              "line": 1180,
               "deprecated": false
             },
             {
@@ -7344,7 +7399,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on move so pinned/non-hidden windows persist position.",
-              "line": 1166,
+              "line": 1186,
               "deprecated": false
             },
             {
@@ -7353,7 +7408,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement hideEvent to emit custom signal when window is hidden.",
-              "line": 1172,
+              "line": 1192,
               "deprecated": false
             },
             {
@@ -7362,7 +7417,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement closeEvent to save window geometry and emit custom signal.",
-              "line": 1196,
+              "line": 1216,
               "deprecated": false
             },
             {
@@ -7371,7 +7426,7 @@
               "kind": "method",
               "signature": "(self, style: str) -> None",
               "summary": "Overrides the setStyleSheet method to respect locking.",
-              "line": 1204,
+              "line": 1224,
               "deprecated": false
             },
             {
@@ -7380,7 +7435,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Resets the window's stylesheet to its original state.",
-              "line": 1218,
+              "line": 1238,
               "deprecated": false
             }
           ]
@@ -9247,7 +9302,7 @@
         {
           "name": "ShortcutGuardMixin",
           "summary": "Mixin: claim the standard editing shortcuts for the focused widget.",
-          "line": 41,
+          "line": 53,
           "bases": [],
           "members": [
             {
@@ -9256,7 +9311,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget, event: QtCore.QEvent) -> bool",
               "summary": "Accept *event* on *widget*'s behalf when it's a chord *widget* should own.",
-              "line": 83,
+              "line": 99,
               "deprecated": false
             },
             {
@@ -9265,7 +9320,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget, event: QtGui.QKeyEvent) -> bool",
               "summary": "Whether *widget* should handle *event*'s chord itself.",
-              "line": 100,
+              "line": 116,
               "deprecated": false
             },
             {
@@ -9274,7 +9329,7 @@
               "kind": "staticmethod",
               "signature": "(widget) -> bool",
               "summary": "``widget.isReadOnly()`` when it has one, else False.",
-              "line": 122,
+              "line": 138,
               "deprecated": false
             },
             {
@@ -9283,7 +9338,7 @@
               "kind": "staticmethod",
               "signature": "(widget) -> bool",
               "summary": "Whether *widget* holds a text selection.",
-              "line": 128,
+              "line": 144,
               "deprecated": false
             },
             {
@@ -9292,7 +9347,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent)",
               "summary": "",
-              "line": 144,
+              "line": 160,
               "deprecated": false
             },
             {
@@ -9301,7 +9356,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QKeyEvent) -> bool",
               "summary": "Whether *event* is an editing chord this widget should handle itself.",
-              "line": 151,
+              "line": 167,
               "deprecated": false
             }
           ]
@@ -9309,7 +9364,7 @@
         {
           "name": "ShortcutGuardFilter",
           "summary": "Event-filter form of :class:`ShortcutGuardMixin`, for widgets uitk can't subclass.",
-          "line": 156,
+          "line": 172,
           "bases": [
             "QtCore.QObject"
           ],
@@ -9320,7 +9375,7 @@
               "kind": "method",
               "signature": "(self, obj, event: QtCore.QEvent) -> bool",
               "summary": "",
-              "line": 172,
+              "line": 188,
               "deprecated": false
             }
           ]
@@ -14674,12 +14729,39 @@
               "deprecated": false
             },
             {
+              "name": "compute_autofit_size",
+              "qualname": "TableWidget.compute_autofit_size",
+              "kind": "staticmethod",
+              "signature": "(content, chrome, scrollbar, maximum, minimum)",
+              "summary": "Return the ``(w, h)`` window size that shows *content* whole, capped.",
+              "line": 1399,
+              "deprecated": false
+            },
+            {
+              "name": "max_autofit_size",
+              "qualname": "TableWidget.max_autofit_size",
+              "kind": "method",
+              "signature": "(self, max_fraction=None)",
+              "summary": "Return the ``(w, h)`` ceiling for :meth:`fit_window_to_contents`.",
+              "line": 1435,
+              "deprecated": false
+            },
+            {
+              "name": "fit_window_to_contents",
+              "qualname": "TableWidget.fit_window_to_contents",
+              "kind": "method",
+              "signature": "(self, max_fraction=None, defer=True)",
+              "summary": "Resize this table's window so the table's contents fit exactly.",
+              "line": 1455,
+              "deprecated": false
+            },
+            {
               "name": "get_selected_data",
               "qualname": "TableWidget.get_selected_data",
               "kind": "method",
               "signature": "(self, columns=None, include_current=True)",
               "summary": "Get data from selected rows for specified columns.",
-              "line": 1387,
+              "line": 1554,
               "deprecated": false
             },
             {
@@ -14688,7 +14770,7 @@
               "kind": "method",
               "signature": "(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]",
               "summary": "Return detailed selection payload keyed by column aliases.",
-              "line": 1415,
+              "line": 1582,
               "deprecated": false
             },
             {
@@ -14697,7 +14779,7 @@
               "kind": "method",
               "signature": "(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)",
               "summary": "Attach a context-menu item to a callable that receives selection data.",
-              "line": 1427,
+              "line": 1594,
               "deprecated": false
             },
             {
@@ -14706,7 +14788,7 @@
               "kind": "method",
               "signature": "(self, object_name: str)",
               "summary": "",
-              "line": 1458,
+              "line": 1625,
               "deprecated": false
             }
           ]

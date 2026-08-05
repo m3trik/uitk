@@ -26,6 +26,7 @@ from conftest import BaseTestCase, setup_qt_application
 app = setup_qt_application()
 
 import pythontk as ptk  # noqa: E402
+from qtpy import QtCore, QtWidgets  # noqa: E402
 from uitk.bridge.slots import BridgeSlotsBase  # noqa: E402
 from uitk.bridge.spec import AttributeSpec, KindFactory  # noqa: E402
 from uitk.managers.preset_manager import PresetManager  # noqa: E402
@@ -427,6 +428,158 @@ class TestPathWidgetPresetPersistence(BaseTestCase):
         self.assertEqual(KindFactory.read_value(container), "")
         mgr.load("hero")
         self.assertEqual(KindFactory.read_value(container), "C:/renders/hero.png")
+
+
+class TestActionKind(BaseTestCase):
+    """The ``action`` kind -- a row of command buttons, not a value.
+
+    ``read`` returns None (nothing to collect or preset), the change-wirer is
+    a deliberate no-op (clicks never dirty a preset), and
+    ``BridgeSlotsBase._wire_action_params`` connects each action id to the
+    same-named slot method -- or disables the button when none exists.
+    """
+
+    CHOICES = [
+        ("Set From Selection", "do_set", "primary tip"),
+        ("Clear", "do_clear"),
+    ]
+
+    def _widget(self, **kwargs):
+        return KindFactory.make_widget(
+            AttributeSpec(key="acts", kind="action", **kwargs)
+        )
+
+    def test_buttons_built_and_exposed(self):
+        w = self._widget(choices=self.CHOICES)
+        self.assertEqual(sorted(w._action_buttons), ["do_clear", "do_set"])
+        self.assertEqual(w._action_buttons["do_set"].text(), "Set From Selection")
+        self.assertEqual(w._action_buttons["do_set"].toolTip(), "primary tip")
+
+    def test_read_none_write_and_connect_are_noops(self):
+        w = self._widget(choices=self.CHOICES)
+        self.assertIsNone(KindFactory.read_value(w))
+        KindFactory.set_value(w, "anything")  # must not raise
+        # The no-op wirer: a click after connect_changed must NOT fire the
+        # callback (preset dirty-tracking ignores commands).
+        fired = []
+        KindFactory.connect_changed(w, lambda *_: fired.append(1))
+        w._action_buttons["do_set"].click()
+        self.assertEqual(fired, [])
+
+    def test_wire_action_params_connects_and_disables(self):
+        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        w = self._widget(choices=self.CHOICES)
+        slot._param_widgets = {"acts": w}
+        calls = []
+        slot.do_set = lambda *a: calls.append("set")  # 'do_clear' left absent
+        slot._wire_action_params()
+        w._action_buttons["do_set"].click()
+        self.assertEqual(calls, ["set"])
+        self.assertTrue(w._action_buttons["do_set"].isEnabled())
+        self.assertFalse(w._action_buttons["do_clear"].isEnabled())
+        self.assertIn("do_clear", w._action_buttons["do_clear"].toolTip())
+
+    def test_collect_param_values_excludes_action_rows(self):
+        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot._param_widgets = {
+            "acts": self._widget(choices=self.CHOICES),
+            "depth": KindFactory.make_widget(
+                AttributeSpec(key="depth", kind="int", default=3)
+            ),
+        }
+        self.assertEqual(slot.collect_param_values(), {"depth": 3})
+
+
+class _ShowableUi(QtCore.QObject):
+    """Stand-in for a panel root carrying uitk ``MainWindow``'s show signal."""
+
+    on_show = QtCore.Signal()
+
+
+class TestParamEnablement(BaseTestCase):
+    """``set_param_enabled`` -- grey a row whose relevance is session state.
+
+    Distinct from visibility (which answers "does this template use the
+    knob?"): the row stays on screen so the user can see the value that
+    *would* apply, and the reason it currently doesn't.
+    """
+
+    def _slot_with_row(self):
+        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        row = QtWidgets.QWidget()
+        hbox = QtWidgets.QHBoxLayout(row)
+        label = QtWidgets.QLabel("Source Suffix:", row)
+        widget = KindFactory.make_widget(
+            AttributeSpec(key="sfx", kind="choice", default="a", choices=["a", "b"]),
+            row,
+        )
+        hbox.addWidget(label)
+        hbox.addWidget(widget)
+        slot._param_rows = {"sfx": row}
+        slot._param_widgets = {"sfx": widget}
+        return slot, row, label, widget
+
+    def test_disable_greys_children_and_puts_reason_on_the_row(self):
+        slot, row, label, widget = self._slot_with_row()
+        was_hidden = row.isHidden()
+        slot.set_param_enabled("sfx", False, "superseded by the explicit set")
+
+        # Children disabled; the ROW stays enabled so it still receives the
+        # hover a disabled child ignores -- Qt delivers no tooltip event to a
+        # disabled widget, so the reason has to live on the parent.
+        self.assertFalse(label.isEnabled())
+        self.assertFalse(widget.isEnabled())
+        self.assertTrue(row.isEnabled())
+        self.assertEqual(row.toolTip(), "superseded by the explicit set")
+        # Greyed, never hidden: enablement must not touch visibility (that
+        # belongs to _refresh_param_visibility), so the value stays readable.
+        self.assertIs(row.isHidden(), was_hidden)
+
+    def test_re_enable_clears_the_reason(self):
+        slot, row, label, widget = self._slot_with_row()
+        slot.set_param_enabled("sfx", False, "because")
+        slot.set_param_enabled("sfx", True)
+        self.assertTrue(label.isEnabled())
+        self.assertTrue(widget.isEnabled())
+        self.assertEqual(row.toolTip(), "")
+
+    def test_unknown_key_is_ignored(self):
+        slot, _row, _label, _widget = self._slot_with_row()
+        slot.set_param_enabled("not_registered", False, "x")  # must not raise
+
+    def test_disabled_row_still_reports_its_value(self):
+        """A greyed row is inert, not excluded -- ``collect_param_values``
+        still reports it, so the send params keep their full shape."""
+        slot, _row, _label, _widget = self._slot_with_row()
+        slot.set_param_enabled("sfx", False, "because")
+        self.assertEqual(slot.collect_param_values(), {"sfx": "a"})
+
+    def test_refresh_hook_defaults_to_noop(self):
+        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        self.assertIsNone(slot._refresh_param_enablement())
+
+    def test_panel_show_re_evaluates_enablement(self):
+        """A reopened panel must not keep the PREVIOUS scene's rows locked out.
+
+        The template-change trigger answers "does this template use the
+        knob?"; the show answers "is it in effect in THIS scene?" -- session
+        state can change entirely while the panel is closed.
+        """
+        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot.ui = _ShowableUi()
+        calls = []
+        slot._refresh_param_enablement = lambda: calls.append(1)
+        slot._wire_enablement_refresh()
+
+        slot.ui.on_show.emit()
+        slot.ui.on_show.emit()
+        self.assertEqual(calls, [1, 1])
+
+    def test_show_wiring_tolerates_a_ui_without_on_show(self):
+        """Not every panel's root is a uitk MainWindow -- that's a no-op."""
+        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot.ui = QtWidgets.QWidget()
+        slot._wire_enablement_refresh()  # must not raise
 
 
 class TestCheckListKind(BaseTestCase):
@@ -886,6 +1039,54 @@ class TestEnsureOptionalPackage(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 BridgeSlotsBase._install_optional_package(slots, "anything")
         self.assertIn("sibling", str(ctx.exception).lower())
+
+
+class TestSharedSpecs(BaseTestCase):
+    """The specs uitk owns on behalf of every bridge (see Parameters).
+
+    A spec that lives here exists so several bridges cannot drift apart on the
+    same knob — which only holds if each caller gets its OWN object.
+    """
+
+    def test_shader_type_vocabulary_is_the_shader_engine_s_own(self):
+        from uitk.bridge import Parameters
+
+        spec = Parameters.shader_type_spec()
+        self.assertEqual(spec.key, "SHADER_TYPE")
+        # GameShader's vocabulary verbatim — a second spelling here would have
+        # to be translated somewhere, and that somewhere is where it rots.
+        self.assertEqual(
+            [value for _label, value in spec.choices],
+            ["stingray", "standard_surface", "open_pbr"],
+        )
+        # The game shader leads: these bridges feed a game engine, and it is the
+        # only family whose declared slots survive the trip back out.
+        self.assertEqual(spec.default, "stingray")
+
+    def test_each_caller_gets_a_distinct_spec(self):
+        """AttributeSpec is a mutable dataclass: a shared instance would let one
+        bridge's tweak leak into every other bridge's panel."""
+        from uitk.bridge import Parameters
+
+        first, second = Parameters.shader_type_spec(), Parameters.shader_type_spec()
+        self.assertIsNot(first, second)
+        self.assertIsNot(first.choices, second.choices)
+
+    def test_default_is_overridable_per_bridge(self):
+        from uitk.bridge import Parameters
+
+        self.assertEqual(
+            Parameters.shader_type_spec(default="open_pbr").default, "open_pbr"
+        )
+
+    def test_no_section_by_default(self):
+        """A titled separator claims every FOLLOWING spec until the next
+        section, so a lone sectioned param in an otherwise unsectioned registry
+        re-labels its neighbours instead of grouping itself."""
+        from uitk.bridge import Parameters
+
+        self.assertEqual(Parameters.shader_type_spec().section, "")
+        self.assertEqual(Parameters.shader_type_spec(section="Import").section, "Import")
 
 
 if __name__ == "__main__":
