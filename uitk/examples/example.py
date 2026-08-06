@@ -331,8 +331,19 @@ class ExampleSlots(ptk.LoggingMixin):
         with QtCore.QSignalBlocker(self.ui.txt_input):
             self.ui.txt_input.setText(text)
 
-    def txt_input(self, text):
-        """Default signal = textChanged (debounced 300 ms via ``widget.debounce``)."""
+    def txt_input(self, text=None):
+        """Default signal = textChanged (debounced 300 ms via ``widget.debounce``).
+
+        *text* is optional because a slot is not only driven by its signal: a
+        keyboard shortcut (this one is bindable — see the shortcut editor) and
+        a bare ``widget.call_slot()`` both dispatch with **no** arguments.
+        ``Switchboard._adapt_shortcut_callback`` injects only ``widget``, so a
+        required payload positional would raise ``TypeError`` inside Qt's
+        activated handler — a bare traceback, attributable to nothing. Reading
+        the field is also what a manual invoke should mean.
+        """
+        if text is None:
+            text = self.ui.txt_input.text()
         text = (text or "").strip()
         if not text:
             return

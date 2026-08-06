@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-04_
+_Generated: 2026-08-06_
 
 ## Index
 
@@ -80,7 +80,7 @@ _Generated: 2026-08-04_
 - [`widgets/mixins/option_box_mixin.py`](#widgets--mixins--option_box_mixin) — OptionBoxMixin - simple drop-in mixin for OptionBox functionality.
 - [`widgets/mixins/shortcut_guard.py`](#widgets--mixins--shortcut_guard) — Keep an editing chord with the widget the user is actually typing in.
 - [`widgets/mixins/size_grip.py`](#widgets--mixins--size_grip) — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
-- [`widgets/mixins/spin_box_text_color.py`](#widgets--mixins--spin_box_text_color) — Shared value-text coloring for spin-box widgets.
+- [`widgets/mixins/spin_box_display.py`](#widgets--mixins--spin_box_display) — Shared display behaviour for the spin-box widgets.
 - [`widgets/mixins/text.py`](#widgets--mixins--text) — Text rendering for uitk widgets.
 - [`widgets/mixins/tooltip_mixin.py`](#widgets--mixins--tooltip_mixin)
 - [`widgets/mixins/wheel_step.py`](#widgets--mixins--wheel_step) — Shared modifier-driven wheel-step handling for spin-box widgets.
@@ -293,7 +293,7 @@ UITK Example — a polished tour of the framework.
 - **[`class ExampleSlots(ptk.LoggingMixin)`](uitk/uitk/examples/example.py#L49)** — Slots for the UITK Example — method names match widget objectNames.
   - `ExampleSlots.header_init(self, widget)`
   - `ExampleSlots.txt_input_init(self, widget)` — Wire the full option_box plugin stack onto the path field.
-  - `ExampleSlots.txt_input(self, text)` — Default signal = textChanged (debounced 300 ms via ``widget.debounce``).
+  - `ExampleSlots.txt_input(self, text=None)` — Default signal = textChanged (debounced 300 ms via ``widget.debounce``).
   - `ExampleSlots.cmb_options_init(self, widget)` — Populate the package combo with every importable UITK subpackage.
   - `ExampleSlots.cmb_options(self, index)` — Default signal = currentIndexChanged.
   - `ExampleSlots.cmb_view_init(self, widget)` — Inline checkbox panel for tree view options.
@@ -894,9 +894,8 @@ In-cell key-combination capture for item views.
 <a id="widgets--doubleSpinBox"></a>
 ### `widgets/doubleSpinBox.py`
 
-- **[`class DoubleSpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L11)** — Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
+- **[`class DoubleSpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L12)** — Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
   - `DoubleSpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box, removing trailing zeros and unnecessary decimal points.
-  - `DoubleSpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
 
 <a id="widgets--editors--color_mapping_editor"></a>
 ### `widgets/editors/color_mapping_editor.py`
@@ -1035,6 +1034,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `ExpandableList.setFixedItemHeight(self, value: int) -> None` — Set the per-item fixed height;
   - `ExpandableList.setSublistXOffset(self, value: int) -> None` — Set the horizontal offset applied to sublists.
   - `ExpandableList.setSublistYOffset(self, value: int) -> None` — Set the vertical offset applied to sublists.
+  - `ExpandableList.setOpenDelay(self, value: int) -> None` — Set the hover-intent dwell (ms) before the starting flyout opens.
   - `ExpandableList.apply_preset(self, preset_name)` — Apply a named preset to configure expansion behavior.
   - `ExpandableList.get_items(self)` — Get all items in the list and its sublists.
   - `ExpandableList.get_item_text(self, widget)` — Get the textual representation of a widget.
@@ -1500,14 +1500,22 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
   - `SizeGripMixin.sync_window_max_to_content(window: QtWidgets.QWidget) -> None` *(static)* — Sync the window's maximum size to its content's real maximum.
   - `SizeGripMixin.create_size_grip(self, container: Optional[QtWidgets.QWidget] = None, layout: Optional[QtWidgets.QLayout] = None, *, alignment: Optional[QtCore.Qt.Alignment] = None) -> Optional[QtWidgets.QSizeGrip]` — Create or reuse a size grip and ensure it is inserted in *layout*.
 
-<a id="widgets--mixins--spin_box_text_color"></a>
-### `widgets/mixins/spin_box_text_color.py`
+<a id="widgets--mixins--spin_box_display"></a>
+### `widgets/mixins/spin_box_display.py`
 
-Shared value-text coloring for spin-box widgets.
+Shared display behaviour for the spin-box widgets.
 
-- **[`class SpinBoxTextColorMixin`](uitk/uitk/widgets/mixins/spin_box_text_color.py#L20)** — Tint a spin box's displayed value text.
+- **[`class SpinBoxTextColorMixin`](uitk/uitk/widgets/mixins/spin_box_display.py#L24)** — Tint a spin box's displayed value text.
   - `SpinBoxTextColorMixin.set_text_color(self, color) -> None` — Tint the displayed value text.
   - `SpinBoxTextColorMixin.text_color(self)` — The current value-text color override, or ``None`` if unset.
+- **[`class PrefixColumnMixin`](uitk/uitk/widgets/mixins/spin_box_display.py#L54)** — Lay a spin box's ``prefix`` label and its value out as a column.
+  - `PrefixColumnMixin.setPrefix(self, prefix: str) -> None` — Set the label shown ahead of the value (separator managed here).
+  - `PrefixColumnMixin.prefix_label(self) -> str` — The prefix as set, without the separator (or elision) applied here.
+  - `PrefixColumnMixin.resizeEvent(self, event)`
+  - `PrefixColumnMixin.showEvent(self, event)`
+  - `PrefixColumnMixin.changeEvent(self, event)`
+  - `PrefixColumnMixin.sizeHint(self)`
+  - `PrefixColumnMixin.minimumSizeHint(self)`
 
 <a id="widgets--mixins--text"></a>
 ### `widgets/mixins/text.py`
@@ -1573,11 +1581,11 @@ Shared modifier-driven wheel-step handling for spin-box widgets.
 
 OptionBox - Plugin-based container for wrapping widgets with action buttons.
 
-- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L52)** — Container widget that wraps a widget with option buttons.
+- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L64)** — Container widget that wraps a widget with option buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.showEvent(self, event)` — Re-fit to content when shown without a managing parent layout.
-  - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled-state and height changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L228)** — Plugin-based option manager that wraps widgets with action buttons.
+  - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled/visibility and height changes.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L262)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
@@ -2198,13 +2206,12 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
 <a id="widgets--spinBox"></a>
 ### `widgets/spinBox.py`
 
-- **[`class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L14)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
+- **[`class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L15)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
   - `SpinBox.value(self) -> Union[float, int]` — Return integer if decimals is 0, else float.
   - `SpinBox.setCustomDisplayValues(self, *args)` — Set a mapping of values to custom display strings.
   - `SpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box.
   - `SpinBox.valueFromText(self, text: str) -> float` — Convert text back to value.
   - `SpinBox.validate(self, text: str, pos: int) -> object` — Validate input, allowing custom display strings.
-  - `SpinBox.setPrefix(self, prefix: str) -> None` — Add a tab space after the prefix for clearer display.
   - `SpinBox.stepBy(self, steps: int) -> None` — Step by the given number of steps, snapping to the step-size grid.
 
 <a id="widgets--tableWidget"></a>

@@ -4,7 +4,8 @@ from qtpy import QtWidgets
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.feedback import FeedbackMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
-from uitk.widgets.mixins.spin_box_text_color import SpinBoxTextColorMixin
+from uitk.widgets.mixins.spin_box_display import PrefixColumnMixin
+from uitk.widgets.mixins.spin_box_display import SpinBoxTextColorMixin
 from uitk.widgets.mixins.wheel_step import WheelStepMixin
 
 
@@ -12,6 +13,7 @@ class DoubleSpinBox(
     WheelStepMixin,
     FeedbackMixin,
     SpinBoxTextColorMixin,
+    PrefixColumnMixin,
     QtWidgets.QDoubleSpinBox,
     MenuMixin,
     AttributesMixin,
@@ -19,9 +21,11 @@ class DoubleSpinBox(
     """Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
 
     See :class:`uitk.widgets.mixins.wheel_step.WheelStepMixin` for the
-    Ctrl / Ctrl+Shift / Alt / Ctrl+Alt modifier contract, and
+    Ctrl / Ctrl+Shift / Alt / Ctrl+Alt modifier contract,
     :class:`uitk.widgets.mixins.feedback.FeedbackMixin` for the transient
-    HUD popup that surfaces the step amount.
+    HUD popup that surfaces the step amount, and
+    :class:`uitk.widgets.mixins.spin_box_display.PrefixColumnMixin` for the
+    label/value column that ``setPrefix`` lays out.
     """
 
     # Qt Designer widget-box entry.
@@ -39,11 +43,6 @@ class DoubleSpinBox(
     def textFromValue(self, value: float) -> str:
         """Format the text displayed in the spin box, removing trailing zeros and unnecessary decimal points."""
         return "{:g}".format(value)
-
-    def setPrefix(self, prefix: str) -> None:
-        """Add a tab space after the prefix for clearer display."""
-        formatted_prefix = f"{prefix}\t"
-        super().setPrefix(formatted_prefix)
 
 
 # ----------------------------------------------------------------------------

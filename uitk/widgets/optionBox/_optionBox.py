@@ -49,6 +49,18 @@ _TYPE_TO_KEY = {
 from uitk.themes.style_sheet import StyleSheet
 
 
+# Every way Qt reports a widget's own visibility changing. The ``*ToParent``
+# pair is what arrives instead of Show/Hide once the parent is itself
+# invisible — which is exactly the state a collapsed container leaves the
+# widget in, so omitting them makes the collapse one-way.
+_VISIBILITY_EVENTS = (
+    QtCore.QEvent.Show,
+    QtCore.QEvent.Hide,
+    QtCore.QEvent.ShowToParent,
+    QtCore.QEvent.HideToParent,
+)
+
+
 class OptionBoxContainer(QtWidgets.QWidget):
     """Container widget that wraps a widget with option buttons.
 
@@ -183,10 +195,32 @@ class OptionBoxContainer(QtWidgets.QWidget):
             pass  # underlying C++ object already deleted
 
     def eventFilter(self, obj, event):
-        """Watch the wrapped widget for enabled-state and height changes."""
+        """Watch the wrapped widget for enabled/visibility and height changes."""
         etype = event.type()
         if etype == QtCore.QEvent.EnabledChange:
             self._sync_option_buttons_enabled()
+        elif etype in _VISIBILITY_EVENTS:
+            # A panel toggling one of its fields calls setVisible on the
+            # WIDGET; wrap() put this container in the widget's place in the
+            # parent layout, so without this the option buttons stay on
+            # screen (and keep holding layout space) after the field goes.
+            #
+            # ``isHidden``, not ``isVisible``: only an *explicit* hide should
+            # collapse the container. An ancestor hiding already takes the
+            # container with it, and reacting to that cascade would mark the
+            # container explicitly hidden — it would then stay invisible when
+            # the ancestor came back.
+            #
+            # ``*ToParent`` is not optional: once the container is hidden, a
+            # later ``setVisible(True)`` on the widget cannot send Show (its
+            # parent is invisible), so Qt sends ShowToParent instead and the
+            # field would never come back.
+            #
+            # Comparing the two hidden states keeps this idempotent: the
+            # cascade our own setVisible triggers re-enters here with both
+            # sides agreeing, and stops.
+            if obj is not self and obj.isHidden() != self.isHidden():
+                self.setVisible(not obj.isHidden())
         elif etype == QtCore.QEvent.Resize:
             # Re-square the option buttons to the wrapped widget's new height so
             # they track a height change applied *after* wrap (e.g. a later

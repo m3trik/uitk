@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-04_
+_Generated: 2026-08-06_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -209,8 +209,8 @@ _Generated: 2026-08-04_
 - `class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorderDelegate)`
 
 ### `widgets/doubleSpinBox.py`
-- `class DoubleSpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`
-  - methods: textFromValue, setPrefix
+- `class DoubleSpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`
+  - methods: textFromValue
 
 ### `widgets/editors/color_mapping_editor.py` — Reusable color-mapping editor widget.
 - `class ColorMappingEditor(QtWidgets.QWidget)`
@@ -253,7 +253,7 @@ _Generated: 2026-08-04_
 
 ### `widgets/expandableList.py`
 - `class ExpandableList(QtWidgets.QWidget, AttributesMixin)`
-  - methods: getExpandPosition, setExpandPosition, setMinItemHeight, setMaxItemHeight, setFixedItemHeight, setSublistXOffset, setSublistYOffset, apply_preset, get_items, get_item_text, get_parent_item_text, get_item_data, get_parent_item_data, set_item_data, clear, add, hide, showEvent, hideEvent, get_padding, sizeHint, eventFilter, leaveEvent
+  - methods: getExpandPosition, setExpandPosition, setMinItemHeight, setMaxItemHeight, setFixedItemHeight, setSublistXOffset, setSublistYOffset, setOpenDelay, apply_preset, get_items, get_item_text, get_parent_item_text, get_item_data, get_parent_item_data, set_item_data, clear, add, hide, showEvent, hideEvent, get_padding, sizeHint, eventFilter, leaveEvent
 
 ### `widgets/footer.py`
 - `class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`
@@ -360,9 +360,11 @@ _Generated: 2026-08-04_
 - `class SizeGripMixin`
   - methods: content_max_size, content_min_height, sync_window_max_to_content, create_size_grip
 
-### `widgets/mixins/spin_box_text_color.py` — Shared value-text coloring for spin-box widgets.
+### `widgets/mixins/spin_box_display.py` — Shared display behaviour for the spin-box widgets.
 - `class SpinBoxTextColorMixin`
   - methods: set_text_color, text_color
+- `class PrefixColumnMixin`
+  - methods: setPrefix, prefix_label, resizeEvent, showEvent, changeEvent, sizeHint, minimumSizeHint
 
 ### `widgets/mixins/text.py` — Text rendering for uitk widgets.
 - `class RichTextFormatter`
@@ -567,8 +569,8 @@ _Generated: 2026-08-04_
 - `class Slider(QtWidgets.QSlider, MenuMixin, OptionBoxMixin, AttributesMixin)`
 
 ### `widgets/spinBox.py`
-- `class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`
-  - methods: value, setCustomDisplayValues, textFromValue, valueFromText, validate, setPrefix, stepBy
+- `class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`
+  - methods: value, setCustomDisplayValues, textFromValue, valueFromText, validate, stepBy
 
 ### `widgets/tableWidget.py`
 - `class HeaderMixin`

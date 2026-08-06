@@ -563,7 +563,7 @@ uitk/
 │       ├── text.py            # RichText, TextOverlay, TextTruncation
 │       ├── tooltip_mixin.py   # lazy-refreshed tooltips via event filter
 │       ├── convert.py, docking.py, size_grip.py, feedback.py,
-│       ├── icon_states.py, spin_box_text_color.py, wheel_step.py
+│       ├── icon_states.py, spin_box_display.py, wheel_step.py
 │
 ├── icons/                     # monochrome SVGs (auto-colored)
 └── examples/

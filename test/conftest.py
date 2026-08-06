@@ -450,6 +450,23 @@ def visual_state_snapshot(root, ignore=()):
     return state
 
 
+def rendered_text_width(text, font):
+    """Natural px width *text* occupies when laid out in *font*.
+
+    Unlike ``QFontMetrics.horizontalAdvance`` this resolves **tab stops** the
+    way the renderer will, so it is the only honest way to ask whether a string
+    containing a tab fits a field (see ``PrefixColumnMixin``).
+    """
+    from qtpy import QtGui
+
+    layout = QtGui.QTextLayout(text, font)
+    layout.beginLayout()
+    line = layout.createLine()
+    line.setLineWidth(1e6)
+    layout.endLayout()
+    return line.naturalTextWidth()
+
+
 def diff_visual_state(before, after):
     """Human-readable per-widget deltas between two snapshots."""
     lines = []

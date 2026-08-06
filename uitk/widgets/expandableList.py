@@ -92,8 +92,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             fullscreen marking-menu overlay: the root hugs its content height
             and flyouts are shown as frameless focusless Tool windows (with a
             screen clamp) so the host's bounds can't clip them. Root-list
-            authoritative, set via ``apply_preset`` (``header_menu`` = embedded
+            authoritative, set via ``apply_preset`` (``hover_menu`` = embedded
             hover, ``click_menu`` = embedded click).
+        open_delay (int): Hover-intent delay in milliseconds before the
+            *starting* flyout opens — the first sublist of an otherwise
+            collapsed hierarchy. 0 (the default) opens immediately. Once any
+            sublist is up the user has committed to the menu, so sibling
+            switches and nested fan-out are always instant. Root-list
+            authoritative, set via ``apply_preset`` (``hover_menu`` opts in at
+            :attr:`HOVER_INTENT_MS`).
         min_item_height (int): The minimum height for items in the list. If None, the minimum height is not set.
         max_item_height (int): The maximum height for items in the list. If None, the maximum height is not set.
         fixed_item_height (int): The fixed height for items in the list. If None, the height is not fixed.
@@ -139,6 +146,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     # and its newly-shown sublist.
     HIDE_DELAY_MS = 180
 
+    # Hover-intent dwell a preset opts into via its ``open_delay`` key (see
+    # ``open_delay`` in the class docstring). Long enough that a cursor merely
+    # crossing the menu row on its way somewhere else never pops the starting
+    # flyout, and still well under the 400 ms Windows itself waits before
+    # opening a submenu (HKCU\Control Panel\Desktop\MenuShowDelay), so a
+    # deliberate hover lands sooner than the platform's own menus rather than
+    # feeling like lag.
+    HOVER_INTENT_MS = 250
+
     # Preset configurations for common layout patterns.
     # Each preset defines:
     #   root_position:      Direction the first sublist expands from the root widget.
@@ -154,6 +170,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     #                       content height, and flyouts are shown as frameless Tool
     #                       windows (with a screen clamp) so the host's bounds can't
     #                       clip them.
+    #   open_delay:         Optional. Hover-intent dwell (ms) before the STARTING
+    #                       flyout opens; 0 (default) opens immediately. Never gates
+    #                       navigation inside an already-open chain.
     PRESETS = {
         "expand_right": {
             "root_position": "right",
@@ -224,19 +243,31 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             "activation": "click",
             "embedded": True,
         },
-        # Hover-driven menu entry for a list embedded in a normal window or a
-        # popup menu (e.g. a panel's header menu): sublists open on mouse-over
-        # and fan out to the right, shown as frameless Tool windows so the
-        # host's bounds can't clip them. Same feel as expand_right in the
-        # marking-menu overlay, adapted to a small embedded host.
-        "header_menu": {
+        # Hover-driven counterpart to click_menu, for a list embedded in a
+        # normal window or a popup menu (a panel's main menu row, a header
+        # menu): sublists open on mouse-over and fan out to the right, shown as
+        # frameless Tool windows so the host's bounds can't clip them. Same feel
+        # as expand_right in the marking-menu overlay, adapted to a small
+        # embedded host — with one difference the overlay doesn't need: an
+        # embedded menu row is something the cursor crosses on its way to the
+        # panel body, so the STARTING flyout waits out a hover-intent dwell
+        # instead of popping open in passing.
+        "hover_menu": {
             "root_position": "right",
             "root_offset": (0, 0),
             "child_position": "right",
             "child_offset": (-1, 0),
             "embedded": True,
+            "open_delay": HOVER_INTENT_MS,
         },
     }
+
+    # Back-compat alias for this preset's pre-rename name ("header_menu" —
+    # narrower than its actual use, which is any embedded hover menu). Kept
+    # because the release cascade publishes uitk ahead of its consumers, so a
+    # newer uitk routinely runs against an older tentacle. Same dict object, so
+    # the two names cannot drift.
+    PRESETS["header_menu"] = PRESETS["hover_menu"]
 
     on_item_added = QtCore.Signal(object)
     on_item_interacted = QtCore.Signal(object)
@@ -273,6 +304,13 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # Whether this root is embedded in a normal layout-managed host (see
         # the PRESETS key docs); authoritative on the root list only.
         self.embedded = False
+        # Hover-intent dwell (ms) before the starting flyout opens; 0 = open
+        # immediately. Root-authoritative, set via apply_preset.
+        self.open_delay = 0
+        # Armed hover-intent open (root list only): the single-shot timer and
+        # the (owning list, trigger item) it will open when it fires.
+        self._pending_open_timer = None
+        self._pending_open = None
         # Click-mode session state (root list only): True while a click-opened
         # flyout chain is up and the app-level dismiss filter is installed.
         self._click_chain_open = False
@@ -350,6 +388,10 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         """Set the vertical offset applied to sublists."""
         self.sublist_y_offset = int(value)
 
+    def setOpenDelay(self, value: int) -> None:
+        """Set the hover-intent dwell (ms) before the starting flyout opens."""
+        self.open_delay = max(0, int(value))
+
     expandPosition = QtCore.Property(
         str, fget=getExpandPosition, fset=setExpandPosition
     )
@@ -367,6 +409,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     )
     sublistYOffset = QtCore.Property(
         int, fget=lambda self: self.sublist_y_offset, fset=setSublistYOffset
+    )
+    openDelay = QtCore.Property(
+        int, fget=lambda self: self.open_delay, fset=setOpenDelay
     )
 
     def apply_preset(self, preset_name):
@@ -433,6 +478,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 f"{', '.join(self.VALID_ACTIVATIONS)}"
             )
         self.activation = activation
+
+        # Hover-intent dwell for the starting flyout. Root-authoritative for
+        # the same reason as activation, and always assigned (not only when the
+        # preset carries the key) so re-applying a delay-free preset over a
+        # delayed one clears it.
+        self.open_delay = max(0, int(preset.get("open_delay", 0)))
 
         self.embedded = bool(preset.get("embedded", False))
         if self.embedded:
@@ -1071,7 +1122,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         show_pos = getattr(root, "_suppress_open_pos", None)
         if show_pos is None:
             return False
-        if QtGui.QCursor.pos() == show_pos:
+        if self._cursor_pos() == show_pos:
             return True
         root._suppress_open_pos = None
         return False
@@ -1142,7 +1193,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # the sublist that was expanded before the hide — the list "reshown in
         # its previously-expanded state". Record the show-time cursor position;
         # auto-open stays latched off until the cursor actually moves.
-        self._suppress_open_pos = QtGui.QCursor.pos()
+        self._suppress_open_pos = self._cursor_pos()
 
         if not self._is_layout_managed():
             self.resize(self.sizeHint())
@@ -1274,14 +1325,112 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 # module's name binding.
                 QtWidgets.QWidget.hide(w.sublist)
 
-        # Click mode: a full collapse ends the menu session. Funneling the
-        # teardown through here means every dismiss path — outside press,
-        # Escape, leaf activation, watched-window Hide/WindowBlocked/
+        # Root-only session teardown: the sublist recursion above must not
+        # touch it. Funneling through here means every dismiss path — outside
+        # press, Escape, leaf activation, watched-window Hide/WindowBlocked/
         # WindowDeactivate, on_hide, hideEvent, showEvent's defensive reset,
-        # clear() — retires the app-level filter without its own wiring.
-        # Root-only: sublist recursion above must not touch session state.
-        if not hasattr(self, "parent_list") and self.activation == "click":
-            self._end_click_chain()
+        # clear() — is covered without its own wiring.
+        if not hasattr(self, "parent_list"):
+            # An armed hover-intent open must not outlive the collapse, or the
+            # starting flyout reopens moments after the menu was dismissed.
+            self._cancel_pending_open()
+            # Click mode: a full collapse ends the menu session.
+            if self.activation == "click":
+                self._end_click_chain()
+
+    def _open_delay(self):
+        """Hover-intent dwell (ms) before the starting flyout opens.
+
+        Root-authoritative for the same drift-free reason as ``_click_mode``:
+        the dwell describes the menu as a whole, so there is no per-sublist copy
+        to go stale when a preset is re-applied on the root.
+        """
+        return getattr(self._get_root_list(), "open_delay", 0)
+
+    def _request_widget_open(self, widget):
+        """Route a hover Enter to the open handler, honoring the open delay.
+
+        The dwell guards only the *starting* flyout — the first sublist of an
+        otherwise collapsed hierarchy — because that is the one a cursor merely
+        crossing the menu row on its way elsewhere pops open by accident. Once
+        any sublist is up the user has committed to the menu, so sibling
+        switches and nested fan-out open immediately; delaying those would read
+        as lag rather than intent (standard menubar behavior).
+        """
+        root = self._get_root_list()
+        if self._open_delay() <= 0 or root._any_sublist_visible():
+            self._cancel_pending_open()
+            self._handle_widget_enter_event(widget)
+            return
+        self._arm_pending_open(widget)
+
+    def _arm_pending_open(self, widget):
+        """(Re)start the hover-intent timer for *widget*, this list's trigger.
+
+        The timer and its target live on the root — one armed open at a time,
+        since only a collapsed hierarchy can arm one — but ``self`` is recorded
+        alongside the widget: it is the list whose layout holds the trigger, so
+        it is the instance whose geometry math must run when the timer fires.
+        """
+        root = self._get_root_list()
+        timer = root._pending_open_timer
+        if timer is None:
+            timer = QtCore.QTimer(root)
+            timer.setSingleShot(True)
+            timer.timeout.connect(root._fire_pending_open)
+            root._pending_open_timer = timer
+        root._pending_open = (self, widget)
+        timer.start(self._open_delay())
+
+    def _cancel_pending_open(self):
+        """Drop any armed hover-intent open (routed to the root list)."""
+        root = self._get_root_list()
+        timer = root._pending_open_timer
+        if timer is not None and timer.isActive():
+            timer.stop()
+        root._pending_open = None
+
+    @staticmethod
+    def _cursor_pos():
+        """Where the pointer is, for the "is it still there?" checks (test seam).
+
+        Three places ask it: the hover-intent fire, the hide engagement
+        re-check, and the reshow latch. All compare the *live* pointer against
+        something recorded earlier, so a test driving them is at the mercy of
+        whatever the machine's actual mouse does in between — under the native
+        QPA that is a real, moving pointer. Patch this to pin it.
+
+        The live event-path read in the click filter is deliberately NOT routed
+        here: it reads the pointer of the event being dispatched, not a
+        recorded one, and a test pinning that would be lying about the click.
+        """
+        return QtGui.QCursor.pos()
+
+    def _fire_pending_open(self):
+        """Open the armed flyout unless the cursor has since left its trigger.
+
+        The dwell re-check mirrors ``_maybe_hide_sublist``'s engagement check.
+        A Leave normally cancels first, but not every departure delivers one
+        (the item can be hidden, or the mouse grabbed out from under it), and a
+        flyout landing behind a cursor that has already moved on is exactly what
+        the delay exists to prevent.
+        """
+        root = self._get_root_list()
+        pending = root._pending_open
+        root._pending_open = None
+        if pending is None:
+            return
+        owner, widget = pending
+        try:
+            if not widget.isVisible():
+                return
+            if not widget.rect().contains(widget.mapFromGlobal(self._cursor_pos())):
+                return
+            owner._handle_widget_enter_event(widget)
+        except RuntimeError:
+            # Trigger item or its list died (clear()/teardown) while the timer
+            # was armed — nothing left to open.
+            pass
 
     def _schedule_sublist_hide(self, item):
         """Start (or restart) a deferred hide of ``item.sublist``.
@@ -1322,7 +1471,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             sublist = item.sublist
             if not sublist.isVisible():
                 return
-            cursor_pos = QtGui.QCursor.pos()
+            cursor_pos = self._cursor_pos()
             on_item = item.rect().contains(item.mapFromGlobal(cursor_pos))
         except RuntimeError:
             return
@@ -1633,9 +1782,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             # opens one from idle. The chain flag lives on the root.
             if not self._auto_open_suppressed():
                 if not self._click_mode() or self._get_root_list()._click_chain_open:
-                    self._handle_widget_enter_event(widget)
+                    self._request_widget_open(widget)
 
         elif event_type == QtCore.QEvent.Leave:
+            # A cursor that leaves the trigger before the hover-intent dwell
+            # elapses never wanted the flyout — disarm it.
+            pending = self._get_root_list()._pending_open
+            if pending is not None and pending[1] is widget:
+                self._cancel_pending_open()
+
             # Schedule a deferred hide of this item's sublist (if any),
             # plus the sublist that owns this item (if we're inside one).
             # The engagement re-check at fire time prevents the close
