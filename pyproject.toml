@@ -20,7 +20,7 @@ classifiers = [
 # shim with no binding dependency, imported unconditionally, so it must ship
 # (a clean `pip install` into stock mayapy has no qtpy and fails at import).
 dependencies = [
-    "pythontk>=0.9.5",
+    "pythontk>=0.9.7",
     "qtpy>=2.0",  # PySide6 support landed in 2.0
 ]
 
