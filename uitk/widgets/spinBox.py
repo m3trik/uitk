@@ -7,7 +7,8 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.feedback import FeedbackMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
-from uitk.widgets.mixins.spin_box_text_color import SpinBoxTextColorMixin
+from uitk.widgets.mixins.spin_box_display import PrefixColumnMixin
+from uitk.widgets.mixins.spin_box_display import SpinBoxTextColorMixin
 from uitk.widgets.mixins.wheel_step import WheelStepMixin
 
 
@@ -15,6 +16,7 @@ class SpinBox(
     WheelStepMixin,
     FeedbackMixin,
     SpinBoxTextColorMixin,
+    PrefixColumnMixin,
     QtWidgets.QDoubleSpinBox,
     MenuMixin,
     OptionBoxMixin,
@@ -26,6 +28,8 @@ class SpinBox(
     - Custom value-to-text mapping (e.g. -1 -> "Auto")
     - Modifier-driven wheel stepping (see
       :class:`uitk.widgets.mixins.wheel_step.WheelStepMixin`)
+    - Tab-aligned prefix label that collapses on a narrow field (see
+      :class:`uitk.widgets.mixins.spin_box_display.PrefixColumnMixin`)
     - Themed HUD feedback popup (see
       :class:`uitk.widgets.mixins.feedback.FeedbackMixin`)
     - Lazy float/int behavior (using decimals)
@@ -103,11 +107,6 @@ class SpinBox(
                 return (QtGui.QValidator.Intermediate, text, pos)
 
         return super().validate(text, pos)
-
-    def setPrefix(self, prefix: str) -> None:
-        """Add a tab space after the prefix for clearer display."""
-        formatted_prefix = f"{prefix}\t"
-        super().setPrefix(formatted_prefix)
 
     def stepBy(self, steps: int) -> None:
         """Step by the given number of steps, snapping to the step-size grid.

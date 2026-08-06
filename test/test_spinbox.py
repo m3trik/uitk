@@ -16,7 +16,7 @@ Run standalone: python -m pytest test/test_spinbox.py -v
 import unittest
 from unittest.mock import MagicMock
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, rendered_text_width, setup_qt_application
 
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
@@ -592,6 +592,46 @@ class TestSpinBoxPrefix(QtBaseTestCase):
         sb = self.track_widget(SpinBox())
         sb.setPrefix("Value:")
         self.assertEqual(sb.prefix(), "Value:\t")
+
+    def test_prefix_is_idempotent(self):
+        """A ``.ui`` round-trip replays the stored, already-tab-suffixed string
+        through setPrefix — the label must not grow a tab stop each time."""
+        from uitk.widgets.spinBox import SpinBox
+
+        sb = self.track_widget(SpinBox())
+        sb.setPrefix("Value:")
+        sb.setPrefix(sb.prefix())
+        self.assertEqual(sb.prefix(), "Value:\t")
+        self.assertEqual(sb.prefix_label(), "Value:")
+
+    def test_narrow_field_keeps_the_value_visible(self):
+        """PrefixColumnMixin reaches SpinBox too (its own MRO). See
+        test_double_spin_box.TestPrefixColumn for the full contract."""
+        from qtpy import QtWidgets
+        from uitk.widgets.spinBox import SpinBox
+
+        # Hosted, and started wide: a top-level widget's resize is negotiated
+        # with the platform window, which offscreen honors only sometimes — a
+        # silently clamped one leaves the assertion measuring nothing.
+        host = self.track_widget(QtWidgets.QWidget())
+        host.resize(600, 80)
+        sb = SpinBox(host)
+        sb.setDecimals(3)
+        sb.setRange(0.0, 1.0)
+        sb.setPrefix("Value:")
+        sb.setValue(0.5)
+        sb.resize(500, sb.sizeHint().height())
+        host.show()
+        app.processEvents()
+
+        compact = sb.fontMetrics().horizontalAdvance("Value: 0.5")
+        chrome = sb.width() - sb.lineEdit().width()
+        sb.setFixedWidth(int(chrome + compact + 6))
+        app.processEvents()
+        self.assertEqual(sb.lineEdit().width(), compact + 6)  # the resize landed
+
+        rendered = rendered_text_width(sb.lineEdit().text(), sb.font())
+        self.assertLessEqual(rendered, sb.lineEdit().width())
 
 
 class TestSpinBoxTextColor(QtBaseTestCase):

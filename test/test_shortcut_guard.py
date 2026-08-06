@@ -24,6 +24,11 @@ selection) and ``TestRegisteredPaneKeepsCopy`` (a ``.ui``-declared plain
 ``QTextBrowser`` claims Copy once ``MainWindow`` registration installs the filter
 form of the guard, so even a *stale* console selection can't take it).
 
+The same guard also carries the *field* contract (:class:`TestFieldOwnsTheEditingFamily`):
+Ctrl+A and the copy/paste family hold against a competing shortcut unaided, but the
+word-delete chords — performed by every field, claimed by none — did not until the guard
+took them.
+
 Run standalone: python -m test.test_shortcut_guard
 """
 
@@ -74,8 +79,25 @@ SEQUENCE_KEYS = {
     QtGui.QKeySequence.Cut: QtCore.Qt.Key_X,
     QtGui.QKeySequence.Paste: QtCore.Qt.Key_V,
     QtGui.QKeySequence.Undo: QtCore.Qt.Key_Z,
+    QtGui.QKeySequence.Redo: QtCore.Qt.Key_Y,
     QtGui.QKeySequence.SelectAll: QtCore.Qt.Key_A,
+    QtGui.QKeySequence.DeleteStartOfWord: QtCore.Qt.Key_Backspace,
+    QtGui.QKeySequence.DeleteEndOfWord: QtCore.Qt.Key_Delete,
 }
+
+# The whole family a text field is expected to own, in the order a user would
+# name them. Ctrl+A is the one this list exists for: it is the chord hosts most
+# often bind to something else.
+EDITING_FAMILY = (
+    QtGui.QKeySequence.SelectAll,
+    QtGui.QKeySequence.Copy,
+    QtGui.QKeySequence.Cut,
+    QtGui.QKeySequence.Paste,
+    QtGui.QKeySequence.Undo,
+    QtGui.QKeySequence.Redo,
+    QtGui.QKeySequence.DeleteStartOfWord,
+    QtGui.QKeySequence.DeleteEndOfWord,
+)
 
 
 def _override_event(sequence):
@@ -131,27 +153,11 @@ def _key_click(widget, key, modifier):
 
 
 class TestWidgetClaims(QtBaseTestCase):
-    """Which widgets keep an editing chord for themselves, and which hand it on."""
+    """Which widgets keep an editing chord for themselves, and which hand it on.
 
-    def test_editable_field_owns_the_editing_family(self):
-        le = self.track_widget(LineEdit())
-        le.setText("abc")
-        for sequence in (
-            QtGui.QKeySequence.Copy,
-            QtGui.QKeySequence.Cut,
-            QtGui.QKeySequence.Paste,
-            QtGui.QKeySequence.Undo,
-            QtGui.QKeySequence.SelectAll,
-        ):
-            with self.subTest(sequence=sequence):
-                self.assertTrue(_claims(le, sequence))
-
-    def test_read_only_field_keeps_copy_and_releases_the_writes(self):
-        le = self.track_widget(LineEdit())
-        le.setText("abc")
-        le.setReadOnly(True)
-        self.assertTrue(_claims(le, QtGui.QKeySequence.Copy))
-        self.assertFalse(_claims(le, QtGui.QKeySequence.Paste))
+    Text *views* only — the field contract (a superset of what this class used to
+    assert about ``LineEdit``) lives in :class:`TestFieldOwnsTheEditingFamily`.
+    """
 
     def test_plain_read_only_browser_claims_nothing(self):
         """Why the mixin exists: bare Qt hands Copy to whatever is bound app-wide."""
@@ -336,6 +342,26 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
         self.assertEqual(self._copy_from(button), "")
 
 
+def _window_registering(test_case, *widgets):
+    """A ``MainWindow`` with *widgets* registered on it — the ``.ui``-declared path."""
+    central = QtWidgets.QWidget()
+    layout = QtWidgets.QVBoxLayout(central)
+    for widget in widgets:
+        layout.addWidget(widget)
+    window = test_case.track_widget(
+        MainWindow(
+            name="test_shortcut_guard_window",
+            switchboard_instance=_BareSwitchboard(),
+            central_widget=central,
+            restore_window_size=False,
+            ensure_on_screen=False,
+        )
+    )
+    for widget in widgets:
+        window.register_widget(widget)
+    return window
+
+
 class TestRegisteredPaneKeepsCopy(QtBaseTestCase):
     """Panels declare log panes as plain ``QTextBrowser`` in their ``.ui`` (mayatk /
     blendertk scene_exporter ``txt003`` and ~20 siblings), so the mixin can't reach
@@ -343,19 +369,7 @@ class TestRegisteredPaneKeepsCopy(QtBaseTestCase):
 
     def _window_with_pane(self, pane):
         pane.setObjectName("txt003")
-        central = QtWidgets.QWidget()
-        QtWidgets.QVBoxLayout(central).addWidget(pane)
-        window = self.track_widget(
-            MainWindow(
-                name="test_shortcut_guard_window",
-                switchboard_instance=_BareSwitchboard(),
-                central_widget=central,
-                restore_window_size=False,
-                ensure_on_screen=False,
-            )
-        )
-        window.register_widget(pane)
-        return window
+        return _window_registering(self, pane)
 
     def test_bare_browser_claims_copy_once_registered(self):
         pane = QtWidgets.QTextBrowser()
@@ -456,6 +470,110 @@ class TestConsoleShortcutIsGatedOnSelection(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
         self.assertEqual(clipboard.text(), "PANE TEXT")
         self.assertFalse(console._copy_shortcut.isEnabled())  # it never armed
+
+
+class TestFieldOwnsTheEditingFamily(QtBaseTestCase):
+    """Ctrl+A and the rest of the copy/paste family belong to the focused field.
+
+    Qt's own ``QLineEdit`` claims most of the family through the override protocol,
+    so a plain field already outranks a competing ``QShortcut`` — but two chords it
+    *performs* were never in that answer (measured: ``Ctrl+Backspace`` /
+    ``Ctrl+Del`` delete a word yet claim nothing), so any host binding on them won
+    outright. ``ShortcutGuardMixin`` on uitk's ``LineEdit`` — and the filter form on
+    ``.ui``-declared fields — closes that and makes the whole family a uitk contract
+    rather than a Qt implementation detail that a subclass could quietly lose.
+    """
+
+    def _shortcut(self, sequence, host, fired):
+        # QtWidgets, not QtGui: QShortcut only moved to QtGui in Qt6, and qtpy
+        # keeps the QtWidgets spelling working on both (uitk supports PySide2).
+        shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(sequence), host)
+        shortcut.setContext(QtCore.Qt.ApplicationShortcut)
+        shortcut.activated.connect(lambda: fired.append(sequence))
+        return shortcut
+
+    def _focused_field(self, text="alpha beta"):
+        window = self.track_widget(QtWidgets.QWidget())
+        field = LineEdit()
+        field.setText(text)
+        QtWidgets.QVBoxLayout(window).addWidget(field)
+        window.show()
+        window.activateWindow()
+        QtWidgets.QApplication.processEvents()
+        field.setFocus(QtCore.Qt.MouseFocusReason)
+        QtWidgets.QApplication.processEvents()
+        return window, field
+
+    def test_field_claims_the_whole_family(self):
+        """Deliberately with NO selection, which also pins the guard's additive-only
+        property: the mixin declines Copy/Cut without one, and the field claims them
+        anyway through Qt's own answer underneath. Guarding can add a claim, never
+        subtract one."""
+        field = self.track_widget(LineEdit())
+        field.setText("alpha beta")
+        for sequence in EDITING_FAMILY:
+            with self.subTest(sequence=sequence):
+                self.assertTrue(_claims(field, sequence))
+
+    def test_read_only_field_keeps_the_reads_and_releases_the_writes(self):
+        field = self.track_widget(LineEdit())
+        field.setText("alpha beta")
+        field.setReadOnly(True)
+        self.assertTrue(_claims(field, QtGui.QKeySequence.SelectAll))
+        self.assertTrue(_claims(field, QtGui.QKeySequence.Copy))
+        self.assertFalse(_claims(field, QtGui.QKeySequence.Paste))
+        self.assertFalse(_claims(field, QtGui.QKeySequence.DeleteStartOfWord))
+        self.assertFalse(_claims(field, QtGui.QKeySequence.DeleteEndOfWord))
+
+    def test_registered_plain_field_claims_the_family(self):
+        """Panels declare ordinary ``QLineEdit``s in their ``.ui``; registration has
+        to reach those too, exactly as it does for text panes."""
+        field = QtWidgets.QLineEdit()
+        field.setObjectName("txt000")
+        field.setText("alpha beta")
+        _window_registering(self, field)
+        for sequence in EDITING_FAMILY:
+            with self.subTest(sequence=sequence):
+                self.assertTrue(_claims_through_filters(field, sequence))
+
+    def test_registered_spin_box_line_edit_is_guarded(self):
+        """A spin box keeps its editor as a private child that registration never
+        sees on its own."""
+        spin = QtWidgets.QSpinBox()
+        spin.setObjectName("s000")
+        _window_registering(self, spin)
+        editor = spin.lineEdit()
+        self.assertTrue(
+            _claims_through_filters(editor, QtGui.QKeySequence.DeleteStartOfWord)
+        )
+
+    def test_ctrl_a_selects_all_against_an_app_scope_binding(self):
+        """The user-facing promise, end to end."""
+        window, field = self._focused_field("alpha beta")
+        fired = []
+        self._shortcut(QtGui.QKeySequence.SelectAll, window, fired)
+        QtWidgets.QApplication.processEvents()
+        self.assertIs(QtWidgets.QApplication.focusWidget(), field)
+
+        field.deselect()
+        _key_click(field, QtCore.Qt.Key_A, QtCore.Qt.ControlModifier)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(field.selectedText(), "alpha beta")
+        self.assertFalse(fired)
+
+    def test_word_delete_survives_an_app_scope_binding(self):
+        """The chord Qt left unclaimed: a host binding on Ctrl+Backspace used to take
+        it, so the field's word-delete silently did nothing."""
+        window, field = self._focused_field("alpha beta")
+        fired = []
+        self._shortcut("Ctrl+Backspace", window, fired)
+        QtWidgets.QApplication.processEvents()
+        field.setCursorPosition(len(field.text()))
+
+        _key_click(field, QtCore.Qt.Key_Backspace, QtCore.Qt.ControlModifier)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(field.text(), "alpha ")
+        self.assertFalse(fired)
 
 
 if __name__ == "__main__":

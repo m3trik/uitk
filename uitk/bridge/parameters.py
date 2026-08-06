@@ -39,6 +39,94 @@ class Parameters(_ParametersInternal):
     """Registry helpers operating over a ``{key: AttributeSpec}`` PARAMS dict."""
 
     @staticmethod
+    def scope_spec(
+        default: str = "selected", section: str = "Export"
+    ) -> AttributeSpec:
+        """The shared **Scope** parameter every hand-off bridge exposes.
+
+        Which objects a send acts on is a property of hand-off bridges in
+        general, not of any one target app, so the spec lives here rather than
+        being copy-pasted into each ``parameters.py``: one label set, one
+        choice vocabulary, one tooltip across every bridge and both DCCs.
+        Only the *resolution* is DCC-specific -- each package's bridge-slots
+        base turns the chosen value into real objects (``cmds.ls`` vs ``bpy``).
+
+        Returns a FRESH spec per call: ``AttributeSpec`` is a mutable
+        dataclass, and a single shared instance handed to a dozen registries
+        would let one bridge's tweak leak into all the others.
+        """
+        return AttributeSpec(
+            key="SCOPE",
+            label="Scope",
+            kind="choice",
+            default=default,
+            choices=[
+                ("Selected", "selected"),
+                ("Entire Scene", "all"),
+                ("Visible Only", "visible"),
+            ],
+            section=section,
+            tooltip=(
+                "Which objects to export:\n"
+                "• Selected — the current selection.\n"
+                "• Entire Scene — every mesh in the scene.\n"
+                "• Visible Only — every currently-visible mesh."
+            ),
+        )
+
+    @staticmethod
+    def shader_type_spec(default: str = "stingray", section: str = "") -> AttributeSpec:
+        """The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.
+
+        Which shader a hand-off rebuilds materials as is a property of the
+        rebuild, not of the direction it travels or which app launched it: a
+        Blender->Maya *send* and a Maya-side *pull of a .blend* run the very
+        same rebuild. The spec lives here so every panel that grows this control
+        gets one label set, one choice vocabulary and one tooltip rather than a
+        copy that drifts. The values are the shader engine's own
+        (``mayatk.GameShader``), so no second spelling exists to keep in step.
+
+        Panel-side there is one consumer today (blendertk's Maya-bridge send);
+        the pull direction takes the same choice as an ``import_scene``
+        keyword, defaulted to match, because it has no parameter panel at all.
+
+        Unlike :meth:`scope_spec`, *section* defaults to EMPTY (no divider): a
+        titled separator claims every following spec until the next section, so
+        one sectioned param dropped into an otherwise unsectioned registry
+        re-labels its neighbours rather than grouping itself. Pass a section
+        only where the whole registry is organised into contiguous ones.
+
+        Default ``stingray``: Maya's game shader is the game-engine-bound
+        target, and it is the only family that DECLARES its texture slots --
+        which is what lets a material round-trip back out with its maps intact
+        instead of being re-guessed from filenames.
+
+        Returns a FRESH spec per call: ``AttributeSpec`` is a mutable dataclass,
+        and a single shared instance handed to several registries would let one
+        bridge's tweak leak into the others.
+        """
+        return AttributeSpec(
+            key="SHADER_TYPE",
+            label="Rebuild Shader",
+            kind="choice",
+            default=default,
+            choices=[
+                ("Stingray PBS", "stingray"),
+                ("Standard Surface", "standard_surface"),
+                ("OpenPBR Surface", "open_pbr"),
+            ],
+            section=section,
+            tooltip=(
+                "Which Maya shader the materials are rebuilt as:\n"
+                "• Stingray PBS — the game shader; its declared texture slots\n"
+                "  round-trip back out intact. Needs the shaderFX plugin.\n"
+                "• Standard Surface — renders anywhere, no plugin needed.\n"
+                "• OpenPBR Surface — the open PBR standard; needs a recent Maya 2025+.\n"
+                "A type this Maya cannot build falls back to Standard Surface."
+            ),
+        )
+
+    @staticmethod
     def referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]:
         """Return registry keys whose ``__KEY__`` token appears in *script_text*.
 

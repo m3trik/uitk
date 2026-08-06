@@ -135,6 +135,54 @@ class TestOptionBoxWrappingVisibility(QtBaseTestCase):
         # Container itself is always shown by wrap()
         self.assertFalse(container.isHidden(), "Container should be shown by wrap()")
 
+    def test_hiding_the_wrapped_widget_hides_the_container(self):
+        """A panel toggling a field must not leave its option buttons behind.
+
+        ``wrap()`` puts the container in the widget's place in the parent
+        layout, but panels call ``setVisible`` on the *widget* (e.g.
+        Blendshape Animator's mode switch on ``le001``). Without propagation
+        the field vanished while its clear/menu buttons stayed on screen,
+        still holding layout space.
+        """
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        field = QtWidgets.QLineEdit("text")
+        layout.addWidget(field)
+
+        container = OptionBox(options=[]).wrap(field)
+        self.track_widget(container)
+        parent.show()
+
+        field.setVisible(False)
+        self.assertTrue(container.isHidden(), "Container must follow an explicit hide.")
+
+        field.setVisible(True)
+        self.assertFalse(container.isHidden(), "Container must follow a re-show.")
+
+    def test_ancestor_hide_does_not_explicitly_hide_the_container(self):
+        """Only an *explicit* hide collapses the container.
+
+        A cascade from an ancestor already hides the container implicitly;
+        reacting to it would mark the container explicitly hidden, so it
+        would stay invisible after the ancestor came back.
+        """
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        field = QtWidgets.QLineEdit("text")
+        layout.addWidget(field)
+
+        container = OptionBox(options=[]).wrap(field)
+        self.track_widget(container)
+        parent.show()
+
+        parent.hide()
+        parent.show()
+
+        self.assertFalse(
+            container.isHidden(), "Container must survive an ancestor hide/show cycle."
+        )
+        self.assertFalse(field.isHidden())
+
     def test_collapsed_group_expand_shows_wrapped_buttons(self):
         """End-to-end: buttons wrapped while group is collapsed must appear on expand.
 

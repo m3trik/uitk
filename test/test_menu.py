@@ -2717,7 +2717,7 @@ class TestMenuNestedContainerTrigger(QtBaseTestCase):
         )
         lw = menu.add(ExpandableList, setObjectName="list000")
         lw.fixed_item_height = 18
-        lw.apply_preset("header_menu")
+        lw.apply_preset("hover_menu")
         root_item = lw.add("Menu")
         root_item.sublist.add(["Leaf A", "Leaf B"])
         menu.show()

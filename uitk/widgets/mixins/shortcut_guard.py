@@ -5,9 +5,19 @@
 Qt asks the focus widget first: before resolving ``Ctrl+C`` to a shortcut it
 sends the widget a :attr:`QEvent.ShortcutOverride`, and accepting that cancels
 the lookup so the plain ``KeyPress`` arrives instead. ``QLineEdit`` and an
-editable ``QTextEdit`` already answer yes for the whole editing family
+editable ``QTextEdit`` already answer yes for most of the editing family
 (read-only-aware: a read-only field claims Copy/SelectAll but leaves
-Cut/Paste/Undo alone), so they need nothing from this module.
+Cut/Paste/Undo alone), so ``Ctrl+A`` and the copy/paste chords hold against a
+competing ``QShortcut`` unaided.
+
+**Two chords are the exception.** Measured on PySide6 6.10: a field *performs*
+``DeleteStartOfWord`` (``Ctrl+Backspace``) and ``DeleteEndOfWord`` (``Ctrl+Del``)
+but Qt's override handler never claims them, so any window- or app-scope binding
+on those sequences takes them outright and word-delete silently does nothing.
+They are in :attr:`ShortcutGuardMixin.guarded_shortcuts` for that reason, which is
+also why an editable field wants the guard at all — Qt's answer covers the rest,
+and the mixin only ever *adds* claims (it falls through to the widget when it
+declines), so guarding a field can't cost it a chord Qt already owns.
 
 **Read-only text views do.** A read-only ``QTextEdit`` / ``QTextBrowser`` claims
 *nothing* — not even Copy — so any app-wide binding outranks it: the chord is
@@ -19,11 +29,13 @@ did). Both flavours of that bug are what this module exists to prevent.
 
 Two ways in, same policy:
 
-* :class:`ShortcutGuardMixin` — inherit it, for widgets uitk defines.
+* :class:`ShortcutGuardMixin` — inherit it, for widgets uitk defines
+  (``LineEdit``, ``TextEdit``, ``ScriptOutput``, ``TextViewBox``'s viewer).
 * :class:`ShortcutGuardFilter` — install it, for widgets uitk does not define,
-  such as a ``QTextBrowser`` declared in a ``.ui`` file. ``MainWindow``
-  registration installs one on every text view it registers, so panel authors
-  get the guard without promoting anything.
+  such as a ``QLineEdit`` or ``QTextBrowser`` declared in a ``.ui`` file.
+  ``MainWindow`` registration installs one on every text view and text field it
+  registers (and on the private editor a combo box or spin box keeps), so panel
+  authors get the guard without promoting anything.
 
 The corollary, learned the hard way (see ``ScriptOutput``'s ``app_wide_copy``):
 **never reach for an application-level event filter to win a chord.** A filter on
@@ -65,6 +77,8 @@ class ShortcutGuardMixin:
         QtGui.QKeySequence.Undo,
         QtGui.QKeySequence.Redo,
         QtGui.QKeySequence.SelectAll,
+        QtGui.QKeySequence.DeleteStartOfWord,
+        QtGui.QKeySequence.DeleteEndOfWord,
     )
 
     mutating_shortcuts = frozenset(
@@ -73,6 +87,8 @@ class ShortcutGuardMixin:
             QtGui.QKeySequence.Paste,
             QtGui.QKeySequence.Undo,
             QtGui.QKeySequence.Redo,
+            QtGui.QKeySequence.DeleteStartOfWord,
+            QtGui.QKeySequence.DeleteEndOfWord,
         }
     )
 

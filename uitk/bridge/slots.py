@@ -224,20 +224,13 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     # (rizom's UV-editor + scripts, unity's project folder, the
     # photogrammetry panels' cancel/output) override ``HEADER_MENU_ITEMS``;
     # the handlers they name live on the subclass.
+    #
+    # Template management deliberately does NOT live here: the template combo
+    # owns those tasks (it re-scans on panel open, and its context menu --
+    # built in ``cmb000_init`` -- carries Refresh / Open Folder), so the
+    # header stays for panel-level utilities only.
     HEADER_MENU_TITLE: str = "Utilities"
     HEADER_MENU_ITEMS: Tuple[Tuple[str, str, str, str], ...] = (
-        (
-            "Open Templates Folder",
-            "btn_open_templates",
-            "Reveal the bundled template folder in Explorer.",
-            "open_templates_folder",
-        ),
-        (
-            "Refresh Templates",
-            "btn_refresh_templates",
-            "Re-scan the templates folder and rebuild the template combo.",
-            "refresh_templates",
-        ),
         ("Clear Log", "btn_clear_log", "Clear the log panel below.", "clear_log"),
     )
     # ``fmt()`` keyword dict (``title`` / ``body`` / ``steps`` / ``sections`` /
@@ -475,6 +468,50 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         """Implement the per-bridge send action."""
         raise NotImplementedError
 
+    # ------------------------------------------------------------------ scope
+    def resolve_scope_objects(self, scope: str):  # pragma: no cover - contract
+        """Hook: turn a ``SCOPE`` value into host objects. DCC-specific.
+
+        Implemented once per package on the DCC bridge-slots base
+        (``MayaBridgeSlotsBase`` / ``BlenderBridgeSlotsBase``), so every bridge
+        that ships the shared :meth:`uitk.bridge.Parameters.scope_spec`
+        parameter resolves it identically. The default returns the empty list:
+        a base that never overrides this simply has no scope support, and
+        :meth:`scoped_objects` then reports "nothing selected" rather than
+        silently exporting the wrong set.
+        """
+        return []
+
+    @staticmethod
+    def empty_scope_message(scope: str) -> str:
+        """The message shown when a scope resolves to nothing.
+
+        Scope-aware on purpose: "nothing selected" is actively misleading when
+        the user asked for Entire Scene and the scene is empty.
+        """
+        return {
+            "all": "The scene contains no mesh geometry to export.",
+            "visible": "No visible mesh geometry to export.",
+        }.get(
+            scope,
+            "Nothing selected. Select one or more objects, or change "
+            "Scope to 'Entire Scene' / 'Visible Only'.",
+        )
+
+    def scoped_objects(self, params, warn: bool = True):
+        """Objects for the ``SCOPE`` in *params*; logs when the scope is empty.
+
+        The one call site per bridge:
+        ``objects = self.scoped_objects(params)`` then bail if falsy. A panel
+        that doesn't expose SCOPE resolves ``"selected"`` -- the behavior every
+        bridge had before the parameter existed.
+        """
+        scope = (params or {}).get("SCOPE", "selected")
+        objects = self.resolve_scope_objects(scope)
+        if not objects and warn:
+            self.bridge.logger.warning(self.empty_scope_message(scope))
+        return objects
+
     def select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int:
         """Return the index of the preferred initial entry in *pairs*.
 
@@ -565,7 +602,10 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         if self.REQUIRE_OUTPUT_DIR:
             self._build_output_dir_row()
         self._build_param_widgets()
+        self._wire_action_params()
         self._build_preset_controls()
+
+        self._wire_enablement_refresh()
 
         try:
             self._redirect_log_to_panel()
@@ -890,6 +930,84 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         parent_layout.insertWidget(insert_at, grp)
         self._param_group = grp
 
+    def _wire_action_params(self) -> None:
+        """Connect ``action``-kind param buttons to same-named slot methods.
+
+        An ``action`` row's container exposes ``_action_buttons``
+        (``{action_id: QPushButton}``, see :mod:`uitk.bridge.spec`); each id
+        that names a callable on this slot is wired to it, so a registry can
+        declare panel actions as data with zero per-panel wiring code. An id
+        with no matching method is disabled rather than silently inert.
+        """
+        for key, widget in self._param_widgets.items():
+            buttons = getattr(widget, "_action_buttons", None)
+            if not buttons:
+                continue
+            for action_id, btn in buttons.items():
+                handler = getattr(self, action_id, None)
+                if callable(handler):
+                    btn.clicked.connect(handler)
+                else:
+                    btn.setEnabled(False)
+                    btn.setToolTip(
+                        f"No handler '{action_id}' on {type(self).__name__}."
+                    )
+
+    def set_param_enabled(self, key: str, enabled: bool, reason: str = "") -> None:
+        """Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
+
+        For parameters whose relevance depends on live session state rather
+        than on the template -- e.g. a suffix-pairing fallback that the scene's
+        explicit set makes moot. Visibility already answers "does this template
+        use the knob?" (:meth:`_refresh_param_visibility`); this answers "is it
+        in effect right now?", which is a different question and reads better
+        greyed than hidden -- the user can still see the value that *would*
+        apply, and why it doesn't.
+
+        The row container itself stays enabled and carries *reason*: Qt does
+        not deliver tooltip events to disabled widgets, but a disabled child
+        doesn't consume the hover either, so the parent's tooltip is what
+        surfaces. Unknown keys are ignored -- a shared base can offer the row
+        without every panel registering it.
+        """
+        row = self._param_rows.get(key)
+        if row is None:
+            return
+        layout = row.layout()
+        for i in range(layout.count() if layout is not None else 0):
+            child = layout.itemAt(i).widget()
+            if child is not None:
+                child.setEnabled(enabled)
+        row.setToolTip("" if enabled else reason)
+
+    def _wire_enablement_refresh(self) -> None:
+        """Re-run :meth:`_refresh_param_enablement` every time the panel shows.
+
+        Enablement keys off LIVE session state, which can change while the
+        panel is closed (a new scene, a set deleted from the outliner). The
+        template-change trigger alone would leave a row greyed for the
+        PREVIOUS scene locked out in the next one -- worse than merely stale,
+        because the control it hides is the one now in effect.
+
+        A panel whose root widget isn't a uitk ``MainWindow`` has no
+        ``on_show`` to hook; that's a no-op, not an error.
+        """
+        on_show = getattr(self.ui, "on_show", None)
+        if on_show is not None:
+            on_show.connect(self._refresh_param_enablement)
+
+    def _refresh_param_enablement(self) -> None:
+        """Hook: re-evaluate which rows are *in effect* for the live session.
+
+        Called on every template change and on every panel show; panels also
+        call it themselves after an action that changes the state it keys off.
+        Default is a no-op -- :meth:`set_param_enabled` is the tool a subclass
+        drives here. Must not touch ``self.bridge``: this runs during panel
+        construction, where the engine may be an optional package the user
+        declined to install.
+        """
+        return
+
     def _read_param(self, key: str) -> Any:
         """Extract the current value via the registered KindHandler."""
         return KindFactory.read_value(self._param_widgets[key])
@@ -910,8 +1028,16 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         KindFactory.set_choices(self._param_widgets[key], choices)
 
     def collect_param_values(self) -> Dict[str, Any]:
-        """Snapshot every widget's current value, regardless of visibility."""
-        return {key: self._read_param(key) for key in self._param_widgets}
+        """Snapshot every widget's current value, regardless of visibility.
+
+        ``action`` rows carry no value (their buttons are commands, not
+        data) and are excluded, so send params stay purely value-shaped.
+        """
+        return {
+            key: self._read_param(key)
+            for key, widget in self._param_widgets.items()
+            if not hasattr(widget, "_action_buttons")
+        }
 
     def _relevant_param_keys(self) -> Optional[set]:
         """Hook: the param keys whose rows should be visible for the current
@@ -1107,9 +1233,30 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         return f"{template} ({mode})" if mode else template
 
     def cmb000_init(self, widget) -> None:
-        """Switchboard hook: populate the template combobox + wire change handler."""
+        """Switchboard hook: populate the template combobox + wire change handler.
+
+        Template management lives ON the template widget: its context menu
+        carries Refresh / Open Folder (the header menu stays panel-level).
+        """
         self._populate_template_combo(widget)
         widget.currentIndexChanged.connect(lambda _: self._on_template_changed())
+        try:
+            widget.menu.add(
+                "QPushButton",
+                setText="Refresh Templates",
+                setObjectName="btn_refresh_templates",
+                setToolTip="Re-scan the templates folder and rebuild this list.",
+            )
+            widget.menu.btn_refresh_templates.clicked.connect(self.refresh_templates)
+            widget.menu.add(
+                "QPushButton",
+                setText="Open Templates Folder",
+                setObjectName="btn_open_templates",
+                setToolTip="Reveal the template folder in the file manager.",
+            )
+            widget.menu.btn_open_templates.clicked.connect(self.open_templates_folder)
+        except Exception:  # noqa: BLE001 -- menu chrome must never block the combo
+            pass
         self._on_template_changed()
 
     def _populate_template_combo(self, widget) -> None:
@@ -1148,13 +1295,14 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         return None
 
     def _on_template_changed(self) -> None:
-        """Re-show rows + re-point preset dir + log description on combo change.
+        """Re-show/-enable rows + re-point preset dir + log description on combo change.
 
         In semantic-preset mode the preset set is template-agnostic (one shared
         store), so the preset dir is *not* re-pointed per template — only the
         widget-state bridges keep per-template preset subdirs.
         """
         self._refresh_param_visibility()
+        self._refresh_param_enablement()
         if self._preset_mgr is not None and not self._semantic_presets:
             self._preset_mgr.preset_dir = self.PRESETS_ROOT / self._active_template()
             refresh = getattr(self._preset_mgr, "_refresh_combo", None)
