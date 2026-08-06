@@ -15,9 +15,13 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-# Dependencies - exclude optional system deps (qtpy)
+# Dependencies - Qt BINDINGS (PySide2/6, shiboken) are deliberately excluded:
+# the host DCC provides its own. qtpy is NOT a binding — it's a pure-Python
+# shim with no binding dependency, imported unconditionally, so it must ship
+# (a clean `pip install` into stock mayapy has no qtpy and fails at import).
 dependencies = [
     "pythontk>=0.9.5",
+    "qtpy>=2.0",  # PySide6 support landed in 2.0
 ]
 
 [project.urls]

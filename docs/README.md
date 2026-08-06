@@ -21,11 +21,11 @@ UITK's intent is to make the *well-behaved* version of a tool the cheapest one t
 ## Install
 
 ```bash
-pip install uitk qtpy PySide6   # standalone — PySide2 works too
+pip install uitk PySide6   # standalone — PySide2 works too
 ```
 
 <!-- sync:qt-install-note -->
-Inside a DCC, install only `uitk qtpy` — the host provides its own Qt binding (uitk deliberately doesn't pull one in).
+Inside a DCC, `pip install uitk` is enough — the host provides its own Qt binding (uitk pulls in the pure-Python `qtpy` shim but deliberately no binding).
 <!-- /sync:qt-install-note -->
 
 ## Live demo
