@@ -17,9 +17,24 @@ Switchboard class and all its dependencies):
     SlotWrapper   — slot invocation wrapper
     Shortcut      — slot keyboard-shortcut decorator
     Cancelable    — slot decorator enabling Esc-cancel + warning dialog
+    OverrideCursorGuard — leak-proof application override cursor
+
+``OverrideCursorGuard`` is published because this package owns the
+application override-cursor policy (``utils.py``: the stack primitives,
+the modal suspension, the drain) and widgets outside it — the marking
+menu's gesture cursor — must participate in that policy rather than push
+their own unmanaged override. Reach it from here, not from ``utils``:
+the submodules stay package-internal.
 """
 
-__all__ = ["Switchboard", "Signals", "SlotWrapper", "Shortcut", "Cancelable"]
+__all__ = [
+    "Switchboard",
+    "Signals",
+    "SlotWrapper",
+    "Shortcut",
+    "Cancelable",
+    "OverrideCursorGuard",
+]
 
 # Map public symbol -> (submodule suffix, attribute name). Resolved on
 # first attribute access; the imported submodule is the only thing
@@ -31,6 +46,7 @@ _LAZY = {
     "SlotWrapper": ("slots", "SlotWrapper"),
     "Shortcut": ("shortcuts", "Shortcut"),
     "Cancelable": ("slots", "Cancelable"),
+    "OverrideCursorGuard": ("utils", "OverrideCursorGuard"),
 }
 
 

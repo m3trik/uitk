@@ -36,8 +36,8 @@ class _Path:
     def start_pos(self):
         return self._entries[0][2] if self._entries else None
 
-    def reset(self):
-        self._entries = [(None, None, QtGui.QCursor.pos())]
+    def reset(self, pos=None):
+        self._entries = [(None, None, pos if pos is not None else QtGui.QCursor.pos())]
 
     def clear(self):
         self._entries = []
@@ -54,15 +54,19 @@ class _Overlay:
         self.path = _Path()
 
     def start_gesture(self, global_pos):
-        # Mirror real Overlay.start_gesture: reset path which captures
-        # the current cursor position as start_pos.
-        self.path.reset()
+        # Mirror real Overlay.start_gesture: the path origin is the CALLER's
+        # anchor (the point the menu is centered on), not a live cursor read.
+        self.path.reset(global_pos)
 
     def clone_widgets_along_path(self, *_a, **_kw):
         pass
 
     def clear_paint_events(self):
         # Part of the real Overlay interface hide() consumes (buffer flush).
+        pass
+
+    def end_gesture(self):
+        # Ditto, from _relinquish_input_control: releases the gesture cursor.
         pass
 
 

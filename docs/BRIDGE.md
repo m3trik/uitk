@@ -10,17 +10,17 @@ Every "drive an external app from a panel" tool is the same tool wearing a diffe
 
 ## Anatomy of a bridge
 
-The subsystem is five modules under [`uitk/bridge/`](../uitk/bridge/), all re-exported from [`__init__.py`](../uitk/bridge/__init__.py) so consumers write `from uitk.bridge import AttributeSpec, BridgeSlotsBase, ...`:
+The subsystem is five modules under [`uitk/bridge/`](../uitk/bridge/), all re-exported from [`__init__.py`](../uitk/bridge/__init__.py) so consumers write `from uitk.bridge import AttributeSpec, KindFactory, Formatters, Parameters, Tooltip, BridgeSlotsBase`:
 
 | Module | Owns |
 |:---|:---|
-| [`spec.py`](../uitk/bridge/spec.py) | `AttributeSpec` + the `KindHandler` registry (widget build/read/write/change-signal per kind) |
-| [`formatters.py`](../uitk/bridge/formatters.py) | Per-target-language value renderers (`python_literal`, `lua_literal`, `js_literal`, `cli_raw`) |
-| [`parameters.py`](../uitk/bridge/parameters.py) | Helpers over a per-bridge `PARAMS` dict (`referenced_keys`, `defaults`, `render_context`) |
-| [`tooltip.py`](../uitk/bridge/tooltip.py) | Rich-text parameter tooltips + per-template description extraction |
+| [`spec.py`](../uitk/bridge/spec.py) | `AttributeSpec` + `KindFactory` — the `KindHandler` registry (widget build/read/write/change-signal per kind) |
+| [`formatters.py`](../uitk/bridge/formatters.py) | `Formatters` — per-target-language value renderers (`python_literal`, `lua_literal`, `js_literal`, `cli_raw`) |
+| [`parameters.py`](../uitk/bridge/parameters.py) | `Parameters` — helpers over a per-bridge `PARAMS` dict (`referenced_keys`, `defaults`, `render_context`) plus the shared specs (`scope_spec`, `shader_type_spec`) |
+| [`tooltip.py`](../uitk/bridge/tooltip.py) | `Tooltip` — rich-text parameter tooltips + per-template description extraction |
 | [`slots.py`](../uitk/bridge/slots.py) | `BridgeSlotsBase` — the slot base class that assembles it all into a panel |
 
-`BridgeParam` is an alias for `AttributeSpec` (kept in `__init__.py` for existing call sites).
+**The surface is class-only.** Each module exposes one class namespace; there are no flat function re-exports (`KindFactory.make_widget`, `Formatters.python_literal`, `Parameters.referenced_keys`, `Tooltip.format_param_tooltip`). `BridgeParam` is an alias for `AttributeSpec` (kept in `__init__.py` for existing call sites).
 
 ### The panel `.ui` contract
 
@@ -38,7 +38,7 @@ A subclass **must** set / implement (from the `BridgeSlotsBase` docstring and bo
 
 - `UI_NAME` — the loaded-ui attribute name (e.g. `"marmoset_bridge"`). Empty raises `ValueError` at init.
 - `PRESETS_ROOT` — per-bridge preset storage root (required unless `make_preset_store` returns a store; then presets are semantic and `PRESETS_ROOT` is unused).
-- `params_module` (class attr or property) — a module exposing `PARAMS`, `referenced_keys`, `defaults` (see [Value formatters](#value-formatters-and-the-params-module)).
+- `params_module` (class attr or property) — a module (or class namespace) exposing `PARAMS`, `referenced_keys`, `defaults` (see [Value formatters](#value-formatters-and-the-params-module)).
 - `template_dir` (class attr or property) — the per-bridge template directory.
 - `make_bridge()` — factory returning the transport instance; called once, lazily, via the `bridge` property. The instance must expose `.logger` and `.send(...)`, optionally `.STARTUP_INFO`. In practice this is a `pythontk.ScriptLaunchBridge` subclass (from `pythontk.core_utils.app_handoff`), whose `send()` runs the shared resolve → preflight → produce → deliver skeleton and inherits `.logger` from `LoggingMixin`.
 - `list_template_modes()` — `[(stem, mode), ...]` pairs for the combo.
@@ -90,14 +90,15 @@ A frozen dataclass describing one editable parameter: `key` (required, non-empty
 
 A `KindHandler` bundles four callables per kind: `build(spec, parent)`, `read(widget)`, `write(widget, value)`, and either `signal` (the name of a Qt signal on the built widget) or `connect` (a custom `(widget, callback)` wirer for composite widgets whose change signal lives on an inner child). One of the two is required — the constructor raises `ValueError` otherwise — and `connect` wins when both are set.
 
-The module-level functions are the whole consumer API:
+`KindFactory`'s staticmethods are the whole consumer API:
 
-- `register_kind(name, handler)` — register a new kind or override an existing one.
-- `get_handler(kind)` — look up a handler (`KeyError` listing known kinds if unregistered).
-- `make_widget(spec, parent)` — resolve `"auto"`, build the widget, set its `objectName` to `spec.key`, apply the plain tooltip, and stamp the resolved kind on the widget (`_attr_kind` property).
-- `read_value(widget)` / `set_value(widget, value)` / `connect_changed(widget, callback)` — operate on any widget produced by `make_widget`, using the stamped kind to find the handler (`ValueError` on an unstamped widget).
+- `KindFactory.register_kind(name, handler)` — register a new kind or override an existing one.
+- `KindFactory.get_handler(kind)` — look up a handler (`KeyError` listing known kinds if unregistered).
+- `KindFactory.make_widget(spec, parent)` — resolve `"auto"`, build the widget, set its `objectName` to `spec.key`, apply the plain tooltip, and stamp the resolved kind on the widget.
+- `KindFactory.read_value(widget)` / `.set_value(widget, value)` / `.connect_changed(widget, callback)` — operate on any widget produced by `make_widget`, using the stamped kind to find the handler (`ValueError` on an unstamped widget).
+- `KindFactory.kind_of(widget)` — the non-raising probe: the stamped kind, or `None` if this factory didn't build the widget. For consumers handling a *mixed* set (`PresetManager` snapshots kind-built rows alongside plain `.ui` widgets). The stamp is a Qt **dynamic property**, not a Python attribute, so a hand-written `getattr(widget, "_attr_kind", None)` silently answers `None` for everything — always go through `kind_of`.
 
-Registering a custom kind is one call — exactly how the built-ins register themselves at the bottom of `spec.py`, e.g. `register_kind("path", KindHandler(_build_path, _read_path, _write_path, connect=_connect_path))`. New bridges inherit every registered kind automatically; `_build_param_widgets` builds each row through `make_widget`, so a custom kind needs no slot-side changes.
+Registering a custom kind is one call — exactly how the built-ins register themselves at the bottom of `spec.py`, e.g. `KindFactory.register_kind("path", KindHandler(_build_path, _read_path, _write_path, connect=_connect_path))`. New bridges inherit every registered kind automatically; `_build_param_widgets` builds each row through `make_widget`, so a custom kind needs no slot-side changes.
 
 ### Built-in kinds
 
@@ -120,47 +121,55 @@ The choice-driven kinds (`choice`, `check_list`) take `choices` as bare values, 
 
 ### Formatters
 
-Each formatter in [`formatters.py`](../uitk/bridge/formatters.py) has the signature `formatter(spec, value) -> str` and renders a value as a literal in one target language. Decoupling formatters from the spec lets one `AttributeSpec` serve any number of target languages — the bridge author picks a formatter at render time. All four share one float renderer that honours `spec.decimals` then strips trailing zeros.
+Each formatter is a `Formatters` staticmethod in [`formatters.py`](../uitk/bridge/formatters.py) with the signature `formatter(spec, value) -> str`, rendering a value as a literal in one target language. Decoupling formatters from the spec lets one `AttributeSpec` serve any number of target languages — the bridge author picks a formatter at render time. All four share one float renderer that honours `spec.decimals` then strips trailing zeros.
 
 | Formatter | Booleans | Strings | Used by |
 |:---|:---|:---|:---|
-| `python_literal` | `True` / `False` | `repr()` | Marmoset Toolbag `.py` templates, and any `.py` substitution target |
-| `lua_literal` | `true` / `false` | passed through bare (Rizom templates quote in the body) | RizomUV `.lua` preset scripts |
-| `js_literal` | `true` / `false` | double-quoted, `\` and `"` escaped | Substance Painter RPC payloads |
-| `cli_raw` | `true` / `false` | raw token, no quoting; lists join with `os.pathsep` | Substance Painter `--mesh ...` argv flags |
+| `Formatters.python_literal` | `True` / `False` | `repr()` | Marmoset Toolbag `.py` templates, and any `.py` substitution target |
+| `Formatters.lua_literal` | `true` / `false` | passed through bare (Rizom templates quote in the body) | RizomUV `.lua` preset scripts |
+| `Formatters.js_literal` | `true` / `false` | double-quoted, `\` and `"` escaped | Substance Painter RPC payloads |
+| `Formatters.cli_raw` | `true` / `false` | raw token, no quoting; lists join with `os.pathsep` | Substance Painter `--mesh ...` argv flags |
 
 ### The per-bridge `parameters` module
 
-[`parameters.py`](../uitk/bridge/parameters.py) defines the helpers that operate over a per-bridge `PARAMS` dict (`{key: AttributeSpec}`, display order = iteration order):
+[`parameters.py`](../uitk/bridge/parameters.py) defines the `Parameters` staticmethods that operate over a per-bridge `PARAMS` dict (`{key: AttributeSpec}`, display order = iteration order):
 
-- `referenced_keys(script_text, params)` — the registry keys whose `__KEY__` token appears in the text (placeholder pattern: `__` + upper-case letter + upper-case letters/digits/underscores + `__`). Unregistered tokens are silently ignored — substitution leaves them intact for the target app to complain about. This drives per-template row visibility.
-- `defaults(params)` — `{key: default}` for every spec.
-- `render_context(values, params, formatter=python_literal)` — formats registered keys through the formatter; unknown keys (bridge-injected tokens like `FBX_PATH`) fall through to `str(value)`. The result feeds `pythontk.StrUtils.replace_delimited` (via `pythontk.core_utils.script_template.render_template` in the `ScriptLaunchBridge` transports).
+- `Parameters.referenced_keys(script_text, params)` — the registry keys whose `__KEY__` token appears in the text (placeholder pattern: `__` + upper-case letter + upper-case letters/digits/underscores + `__`). Unregistered tokens are silently ignored — substitution leaves them intact for the target app to complain about. This drives per-template row visibility.
+- `Parameters.defaults(params)` — `{key: default}` for every spec.
+- `Parameters.render_context(values, params, formatter=Formatters.python_literal)` — formats registered keys through the formatter; unknown keys (bridge-injected tokens like `FBX_PATH`) fall through to `str(value)`. The result feeds `pythontk.StrUtils.replace_delimited` (via `pythontk.core_utils.script_template.ScriptTemplate.render_template` in the `ScriptLaunchBridge` transports).
+
+It also owns the specs uitk holds **on behalf of** several bridges, so they cannot drift apart on the same knob: `Parameters.scope_spec()` (selected / visible / all) and `Parameters.shader_type_spec()`. Each call returns a fresh object.
 
 Each bridge wraps these once with its own `PARAMS` and formatter, so the slot machinery calls `params_module.referenced_keys(text)` without passing the dict. Condensed from `mayatk.env_utils.blender_bridge.parameters`:
 
 ```python
-from uitk.bridge import (
-    AttributeSpec, python_literal,
-    referenced_keys as _refkeys, defaults as _defaults, render_context as _render_context,
-)
+from uitk.bridge import AttributeSpec, Formatters, Parameters as _BridgeParams
 
-PARAMS = {
-    "CLEAR_SCENE": AttributeSpec(
-        key="CLEAR_SCENE", label="Clear Scene First", kind="bool", default=False,
-        tooltip="Delete the existing scene objects before importing.",
-    ),
-    # ... one entry per __KEY__ token the templates may reference
-}
 
-def referenced_keys(script_text):
-    return _refkeys(script_text, PARAMS)
+class Parameters:
+    """Parameters — module namespace."""
 
-def defaults():
-    return _defaults(PARAMS)
+    PARAMS = {
+        "CLEAR_SCENE": AttributeSpec(
+            key="CLEAR_SCENE", label="Clear Scene First", kind="bool", default=False,
+            tooltip="Delete the existing scene objects before importing.",
+        ),
+        # ... one entry per __KEY__ token the templates may reference
+    }
 
-def render_context(values):
-    return _render_context(values, PARAMS, formatter=python_literal)
+    @staticmethod
+    def referenced_keys(script_text):
+        return _BridgeParams.referenced_keys(script_text, Parameters.PARAMS)
+
+    @staticmethod
+    def defaults():
+        return _BridgeParams.defaults(Parameters.PARAMS)
+
+    @staticmethod
+    def render_context(values):
+        return _BridgeParams.render_context(
+            values, Parameters.PARAMS, formatter=Formatters.python_literal
+        )
 ```
 
 ## Templates: discovery, modes, description
@@ -173,7 +182,7 @@ On every combo change, `BridgeSlotsBase`:
 
 1. **Refreshes row visibility** — the default `_relevant_param_keys()` reads `<template><TEMPLATE_EXTENSION>` from `template_dir` and shows only rows whose keys `params_module.referenced_keys` finds in it. Section separators hide when their whole section is hidden; the Parameters group hides when nothing is relevant.
 2. **Re-points the preset dir** (widget-state preset mode only) to `PRESETS_ROOT / <template stem>`.
-3. **Logs the template's description** — `template_description(path)` (from [`tooltip.py`](../uitk/bridge/tooltip.py)) dispatches on extension: `.py` returns the module docstring via `ast.get_docstring` (parsing works pre-substitution because `__KEY__` tokens are valid Python names); `.lua` returns the contiguous leading `--` comment block; anything else returns `None` (nothing logged).
+3. **Logs the template's description** — `template_description(path)` — the slot hook, delegating to `Tooltip.template_description` (from [`tooltip.py`](../uitk/bridge/tooltip.py)) dispatches on extension: `.py` returns the module docstring via `ast.get_docstring` (parsing works pre-substitution because `__KEY__` tokens are valid Python names); `.lua` returns the contiguous leading `--` comment block; anything else returns `None` (nothing logged).
 
 ## Panel services
 
@@ -186,7 +195,7 @@ What every subclass gets for free from [`slots.py`](../uitk/bridge/slots.py):
 - *Widget-state mode* (default, `make_preset_store()` → `None`): raw widget snapshots keyed by `objectName`, stored per-template under `PRESETS_ROOT`. Used by the DCC bridges.
 - *Semantic mode* (return a `pythontk.PresetStore`): presets are `{param_key: value}` run-templates keyed by spec name, shared with a headless CLI through the same store (built-in + user tiers), template-agnostic. Captured via `collect_param_values`; applied with overlay semantics — unknown keys ignored, absent keys keep current widget values.
 
-Every parameter widget's change signal (via `connect_changed`) re-evaluates the combo's "modified" marker. `_reset_to_defaults` restores each widget to its spec's `default` and abandons the active preset.
+Every parameter widget's change signal (via `KindFactory.connect_changed`) re-evaluates the combo's "modified" marker. `_reset_to_defaults` restores each widget to its spec's `default` and abandons the active preset.
 
 **Log panel** — the bridge's logger is piped into `txt000` through the registered `TextEditLogHandler` widget (no-op when unavailable). `action://open?path=...` links in log output open the path in the OS file manager cross-platform — handled inside uitk so panels work as standalone apps; node-based actions (select / reveal in the Maya Outliner) are delegated to mayatk's `UiUtils.dispatch_log_link`, imported lazily so uitk keeps no hard DCC dependency. `STARTUP_INFO` on the bridge class, if declared, is logged once at panel load.
 
@@ -229,7 +238,7 @@ class MyBridgeSlots(BridgeSlotsBase):
                          params=self.collect_param_values())
 ```
 
-6. **Custom widget kinds** (only if needed) — `register_kind("my_kind", KindHandler(...))` once at import time; every spec with `kind="my_kind"` then renders through it, in this bridge and every other registry consumer.
+6. **Custom widget kinds** (only if needed) — `KindFactory.register_kind("my_kind", KindHandler(...))` once at import time; every spec with `kind="my_kind"` then renders through it, in this bridge and every other registry consumer.
 
 ## See also
 

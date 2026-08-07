@@ -30,6 +30,9 @@ from qtpy import QtCore, QtWidgets  # noqa: E402
 from uitk.bridge.slots import BridgeSlotsBase  # noqa: E402
 from uitk.bridge.spec import AttributeSpec, KindFactory  # noqa: E402
 from uitk.managers.preset_manager import PresetManager  # noqa: E402
+from uitk.managers.optional_package_manager import (  # noqa: E402
+    OptionalPackageManager,
+)
 
 
 PARAMS = {
@@ -392,42 +395,66 @@ class TestPathWidgetPresetPersistence(BaseTestCase):
     """A ``path``-kind widget's inner QLineEdit must be name-keyed so it
     survives widget-state presets.
 
-    The DCC bridges snapshot the value-bearing child, substituting the
-    container's ``_line_edit`` into the managed set
-    (``[getattr(w, "_line_edit", w) for w in ...]``). ``_capture_values`` /
-    ``load`` skip empty-objectName widgets, so before the fix the inner edit
-    (objectName "") was silently dropped -- a saved path came back empty.
+    Historically the DCC bridges snapshotted the value-bearing *child*,
+    substituting the container's ``_line_edit`` into the managed set, because
+    ``PresetManager`` could not read a composite container at all. That is no
+    longer how it works (see :class:`TestKindWidgetPresetRoundTrip`), but the
+    inner edit keeps its objectName: ``_capture_values`` / ``load`` skip
+    empty-objectName widgets, and an unnamed child is a trap either way.
     """
 
     def test_path_inner_edit_has_objectname(self):
-        # The fix: make_widget's path container names its inner edit.
         w = KindFactory.make_widget(AttributeSpec(key="render_output", kind="path"))
         self.assertEqual(w._line_edit.objectName(), "render_output")
 
-    def test_path_value_round_trips_through_widget_state_preset(self):
-        tmp = Path(tempfile.mkdtemp(prefix="bridge_path_preset_"))
+
+class TestKindWidgetPresetRoundTrip(BaseTestCase):
+    """Every kind the bridges build must survive a widget-state preset.
+
+    ``PresetManager`` reads and writes a ``KindFactory``-built widget through the
+    handler that built it (the ``_attr_kind`` stamp), so the managed set is now
+    the real widgets rather than substituted inner children. Before that, the
+    isinstance ladder returned ``None`` for a composite container and
+    ``_capture_values`` dropped the key: ``check_list`` and ``file_list`` params
+    neither saved nor restored, silently.
+    """
+
+    CASES = (
+        ("render_output", dict(kind="path"), "C:/renders/hero.png"),
+        ("scripts", dict(kind="check_list", choices=["a", "b", "c"]), ["a", "c"]),
+        ("meshes", dict(kind="file_list"), ["C:/m/a.fbx", "C:/m/b.fbx"]),
+        ("scale", dict(kind="float", default=1.0), 2.5),
+        ("clear", dict(kind="bool", default=False), True),
+        ("shader", dict(kind="choice", choices=["x", "y"], default="x"), "y"),
+    )
+
+    def _round_trip(self, key, spec_kw, value, empty):
+        tmp = Path(tempfile.mkdtemp(prefix="bridge_kind_preset_"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
-        container = KindFactory.make_widget(
-            AttributeSpec(key="render_output", kind="path")
-        )
-        KindFactory.set_value(container, "C:/renders/hero.png")
+        widget = KindFactory.make_widget(AttributeSpec(key=key, **spec_kw))
+        KindFactory.set_value(widget, value)
 
-        # Mirror _build_preset_controls' widget-state managed set: the inner
-        # edit stands in for the composite path container.
-        managed = [getattr(container, "_line_edit", container)]
-        mgr = PresetManager.from_widgets(preset_dir=tmp / "user", widgets=managed)
-        mgr.save("hero")
+        # Exactly what _build_preset_controls now passes: the kind-built widgets.
+        mgr = PresetManager.from_widgets(preset_dir=tmp / "user", widgets=[widget])
+        mgr.save("p")
 
-        # The path actually reached disk (before the fix the key was absent).
-        saved = json.loads((tmp / "user" / "hero.json").read_text(encoding="utf-8"))
-        self.assertEqual(saved.get("render_output"), "C:/renders/hero.png")
+        saved = json.loads((tmp / "user" / "p.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved.get(key), value, f"{key} never reached disk")
 
-        # And it restores after the field is cleared.
-        KindFactory.set_value(container, "")
-        self.assertEqual(KindFactory.read_value(container), "")
-        mgr.load("hero")
-        self.assertEqual(KindFactory.read_value(container), "C:/renders/hero.png")
+        KindFactory.set_value(widget, empty)
+        self.assertEqual(KindFactory.read_value(widget), empty)
+        mgr.load("p")
+        self.assertEqual(KindFactory.read_value(widget), value, f"{key} did not restore")
+
+    def test_every_kind_round_trips(self):
+        empties = {
+            "path": "", "check_list": [], "file_list": [],
+            "float": 0.0, "bool": False, "choice": "x",
+        }
+        for key, spec_kw, value in self.CASES:
+            with self.subTest(kind=spec_kw["kind"]):
+                self._round_trip(key, spec_kw, value, empties[spec_kw["kind"]])
 
 
 class TestActionKind(BaseTestCase):
@@ -786,7 +813,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
     # on the requirement string so the probe, the prompt and pip read one value.
 
     def test_requirement_splits_into_name_and_floor(self):
-        split = BridgeSlotsBase._split_requirement
+        split = OptionalPackageManager.split_requirement
         self.assertEqual(split("unitytk>=0.0.8"), ("unitytk", (0, 0, 8)))
         self.assertEqual(split("unitytk >= 0.0.8"), ("unitytk", (0, 0, 8)))
         # A bare name keeps the historical "any version will do" behaviour.
@@ -795,7 +822,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         self.assertEqual(split("mayatk[unity]"), ("mayatk", None))
 
     def test_version_tuple_orders_and_truncates_at_a_suffix(self):
-        vt = BridgeSlotsBase._version_tuple
+        vt = OptionalPackageManager.version_tuple
         self.assertEqual(vt("0.0.8"), (0, 0, 8))
         self.assertLess(vt("0.0.7"), vt("0.0.8"))
         self.assertLess(vt("0.9.9"), vt("1.0.0"))
@@ -880,7 +907,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         — driving pip through the host binary would hang it, so "no answer" is
         the correct answer.
         """
-        exe = BridgeSlotsBase._optional_package_python()
+        exe = OptionalPackageManager.pip_python()
         if exe is not None:
             self.assertNotIn(
                 Path(exe).name.lower(), ("maya.exe", "blender.exe", "3dsmax.exe")
@@ -1037,7 +1064,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         # stands in for pip elsewhere in this class is bypassed.
         with patch.object(_sys, "executable", lone_host):
             with self.assertRaises(RuntimeError) as ctx:
-                BridgeSlotsBase._install_optional_package(slots, "anything")
+                OptionalPackageManager.default_install("anything")
         self.assertIn("sibling", str(ctx.exception).lower())
 
 

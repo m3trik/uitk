@@ -548,6 +548,26 @@ QLabel:disabled {
     border: {BORDER_W} solid {DISABLED_BACKGROUND};
 }
 
+/* WidgetComboBox popup row caption (the opt-in `set_row_label`). Reads as a
+   caption beside the control, so it drops the base QLabel chrome -- the row's
+   own background must show through, and a bordered box beside every field
+   would fight the control it describes. */
+QLabel#widgetComboBoxRowLabel {
+    background: transparent;
+    border: none;
+    color: {TEXT_COLOR};
+    padding: 0px {TEXT_INSET} 0px 0px;
+}
+QLabel#widgetComboBoxRowLabel:hover {
+    background: transparent;
+    border: none;
+}
+QLabel#widgetComboBoxRowLabel:disabled {
+    background: transparent;
+    border: none;
+    color: {TEXT_DISABLED};
+}
+
 /* ExpandableList items behave like menu rows -- highlight on hover. */
 .ExpandableList QLabel:hover {
     background-color: {BUTTON_HOVER};

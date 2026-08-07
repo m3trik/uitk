@@ -169,6 +169,7 @@ DEFAULT_INCLUDE = {
     ],
     # Standalone services (uitk.managers / uitk.themes)
     "managers.icon_manager": "IconManager",
+    "managers.optional_package_manager": "OptionalPackageManager",
     "managers.preset_manager": "PresetManager",
     "managers.recent_values_store": "RecentValuesStore",
     "managers.registry_manager": ["FileRegistry", "RegistryManager"],

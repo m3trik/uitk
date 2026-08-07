@@ -282,6 +282,11 @@ class _OverlayStub:
         # Part of the real Overlay interface hide() consumes (buffer flush).
         pass
 
+    def end_gesture(self):
+        # Part of the real Overlay interface _relinquish_input_control consumes
+        # (releases the gesture cursor). Counted so the hide paths can assert it.
+        self.gestures_ended = getattr(self, "gestures_ended", 0) + 1
+
 
 class _MouseTrackingStub:
     # Mirror the slice of the real MouseTracking interface the menu touches: the

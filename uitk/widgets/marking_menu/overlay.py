@@ -4,6 +4,8 @@ import sys
 from operator import methodcaller
 from qtpy import QtWidgets, QtGui, QtCore
 
+from uitk.switchboard import OverrideCursorGuard
+
 
 class OverlayFactoryFilter(QtCore.QObject):
     def __init__(self, overlay: QtWidgets.QWidget):
@@ -125,11 +127,23 @@ class Path:
             None,
         )
 
-    def reset(self):
-        """Clears the path and appends the current cursor position as the new starting position."""
+    def reset(self, pos: QtCore.QPoint = None):
+        """Clear the path and start it at ``pos`` (default: the live cursor).
+
+        The origin must be the CALLER's point, not a fresh cursor read.
+        ``MarkingMenu._show_marking_menu`` deliberately resolves one anchor per
+        activation ("so every consumer reads the same point") and centers the
+        menu on it; re-reading the cursor here recorded a gesture origin a few
+        px away from the menu the user actually sees whenever the hand was
+        still moving — and that origin is what every directional flick is
+        measured against. Same drift for a press: the event position is where
+        the button went down, which is not necessarily where the pointer is by
+        the time this runs under a host that pumps Qt from its own loop.
+        """
         self.clear()
-        curPos = QtGui.QCursor.pos()
-        self._path.append((None, None, curPos))
+        if pos is None:
+            pos = QtGui.QCursor.pos()
+        self._path.append((None, None, pos))
 
     def clear(self):
         """Clears the entire path."""
@@ -235,6 +249,14 @@ class Overlay(QtWidgets.QWidget):
     # return the existing QApplication object, or create a new one if none exist.
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
+    # Gesture cursor. The shape is owned exclusively by the overlay's guard —
+    # nothing else in the process may push a CrossCursor override (see
+    # OverrideCursorGuard). The watchdog period is the worst-case delay before
+    # a stranded gesture cursor is reclaimed; short enough to read as
+    # instant, long enough to be free on the event loop.
+    GESTURE_CURSOR = QtCore.Qt.CrossCursor
+    CURSOR_WATCHDOG_MS = 250
+
     def __init__(self, parent=None, antialiasing=False):
         super().__init__(parent)
 
@@ -265,7 +287,11 @@ class Overlay(QtWidgets.QWidget):
 
         self.painter = QtGui.QPainter()
         self.path = Path()
-        self._cursor_overridden = False
+        self._cursor_guard = OverrideCursorGuard(
+            self.GESTURE_CURSOR,
+            is_live=self._gesture_is_live,
+            interval_ms=self.CURSOR_WATCHDOG_MS,
+        )
 
         self._event_filter = OverlayFactoryFilter(self)
         if parent:
@@ -329,6 +355,20 @@ class Overlay(QtWidgets.QWidget):
 
         return region_widget
 
+    def _gesture_is_live(self) -> bool:
+        """The gesture cursor's invariant: it may exist ONLY while the overlay
+        is on screen. (A necessary condition, not an equivalence — a release
+        ends the cursor with the overlay still up; the guard only ever clears,
+        never re-applies.)
+
+        Read by the guard's watchdog, so this — not the arrival of a release
+        or hide event — is what ultimately governs the cursor. ``isVisible()``
+        is False the moment the marking-menu window goes down (a child of a
+        hidden window is never visible), and raises ``RuntimeError`` once the
+        C++ object is deleted; the guard treats both as "release it".
+        """
+        return self.isVisible()
+
     def start_gesture(self, global_pos: QtCore.QPoint) -> None:
         """Begin a gesture at the given global position.
 
@@ -338,15 +378,19 @@ class Overlay(QtWidgets.QWidget):
         Parameters:
             global_pos: The global screen position to start the gesture.
         """
-        if not self._cursor_overridden:
-            QtWidgets.QApplication.setOverrideCursor(
-                QtGui.QCursor(QtCore.Qt.CrossCursor)
-            )
-            self._cursor_overridden = True
+        self._cursor_guard.apply()
 
         self.clear_paint_events()
-        self.path.reset()
+        self.path.reset(global_pos)
         self.mouseMovePos = self.mapFromGlobal(global_pos)
+
+    def end_gesture(self) -> None:
+        """Release the gesture cursor. Idempotent, and safe to call from any
+        path that ends (or may have ended) a gesture — including one that
+        never started. The watchdog is the backstop for the paths that never
+        reach here at all, so callers add coverage without owning correctness.
+        """
+        self._cursor_guard.clear()
 
     def clone_widgets_along_path(self, ui, return_func):
         """Re-constructs the relevant widgets from the previous UI for the new UI, and positions them.
@@ -474,9 +518,7 @@ class Overlay(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release by restoring cursor and clearing painting."""
-        if self._cursor_overridden:
-            QtWidgets.QApplication.restoreOverrideCursor()
-            self._cursor_overridden = False
+        self.end_gesture()
 
         self.clear_paint_events()
         super().mouseReleaseEvent(event)
@@ -492,9 +534,7 @@ class Overlay(QtWidgets.QWidget):
     def hideEvent(self, event):
         """Clears the path and restores the cursor when the overlay is hidden."""
         self.path.clear()
-        if self._cursor_overridden:
-            QtWidgets.QApplication.restoreOverrideCursor()
-            self._cursor_overridden = False
+        self.end_gesture()
         super().hideEvent(event)
 
 
