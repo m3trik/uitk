@@ -3,10 +3,14 @@
 """Tests for MarkingMenu show/hide behaviour when standalone windows are opened."""
 
 import unittest
-from qtpy import QtWidgets, QtCore
+from unittest import mock
+from qtpy import QtWidgets, QtCore, QtGui, QtTest
 
 from conftest import QtBaseTestCase
 from uitk.widgets.marking_menu._resolver import MenuResolver
+from uitk.widgets.marking_menu._marking_menu import MarkingMenu
+from uitk.widgets.marking_menu.overlay import Overlay
+from uitk.switchboard.utils import SwitchboardUtilsMixin
 
 resolve_target_menu = MenuResolver.resolve_target_menu
 
@@ -805,6 +809,169 @@ class TestHostedWindowThemes(QtBaseTestCase):
 
         self.assertEqual(self.StyleSheet._widget_configs[page]["theme"], "light")
         self.assertEqual(self.StyleSheet._widget_configs[window]["theme"], "dark")
+
+
+class _FastCursorOverlay(Overlay):
+    """Overlay with a watchdog fast enough to observe inside a test."""
+
+    CURSOR_WATCHDOG_MS = 10
+
+
+class TestOverlayGestureCursor(QtBaseTestCase):
+    """The gesture cursor must always come back — including on the paths
+    where the overlay stops receiving events.
+
+    Bug: ``start_gesture`` pushed a ``CrossCursor`` override that only
+    ``Overlay.mouseReleaseEvent`` / ``Overlay.hideEvent`` ever popped. Neither
+    is dependable: a release migrated to a child that holds the mouse grab
+    never reaches the overlay, and a live DCC host does not deliver hide
+    events down the child chain the way the offscreen platform does (see
+    test_expandable_list's live-Maya note). The menu then went away with the
+    cross cursor still applied to the entire application. The overlay now owns
+    the cursor through an ``OverrideCursorGuard`` whose watchdog enforces
+    "cursor exists only while the overlay is visible" without needing any
+    event at all. Fixed: 2026-08-06
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._drain_cursors()
+        self.host = self.track_widget(QtWidgets.QWidget())
+        self.host.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        self.overlay = _FastCursorOverlay(self.host)
+        # Held separately: a failing assertion must not leave a holding guard
+        # (and its live watchdog timer) registered for the rest of the suite,
+        # and the destroyed-overlay case has no widget left to ask.
+        self.guard = self.overlay._cursor_guard
+        self.host.show()
+        QtWidgets.QApplication.processEvents()
+
+    def tearDown(self):
+        self.guard.clear()
+        self._drain_cursors()
+        super().tearDown()
+
+    # The production drain (pops the stack AND drops guard ownership), so a
+    # test can't leave either half of that state behind for the next one.
+    _drain_cursors = staticmethod(SwitchboardUtilsMixin._drain_override_cursor)
+
+    def _override_shape(self):
+        cursor = QtWidgets.QApplication.instance().overrideCursor()
+        return None if cursor is None else cursor.shape()
+
+    def test_gesture_origin_is_the_caller_anchor_not_a_live_cursor_read(self):
+        """``start_gesture(anchor)`` must record exactly ``anchor``.
+
+        ``_show_marking_menu`` resolves ONE anchor per activation and centers
+        the menu on it; ``Path.reset`` used to re-read ``QCursor.pos()``, so a
+        pointer that moved between the two reads left the recorded gesture
+        origin — what every directional flick is measured against — offset
+        from the menu the user sees. Guarded here by moving the "cursor" after
+        the anchor is resolved, which is what a moving hand does.
+        """
+        anchor = QtCore.QPoint(300, 400)
+        drifted = anchor + QtCore.QPoint(7, 7)
+        with mock.patch.object(QtGui.QCursor, "pos", return_value=drifted):
+            self.overlay.start_gesture(anchor)
+        self.assertEqual(
+            self.overlay.path.start_pos,
+            anchor,
+            "the gesture origin drifted off the anchor the menu was centered on",
+        )
+
+    def test_gesture_applies_the_cross_cursor(self):
+        self.overlay.start_gesture(QtCore.QPoint(10, 10))
+        self.assertEqual(self._override_shape(), QtCore.Qt.CrossCursor)
+
+    def test_release_restores(self):
+        self.overlay.start_gesture(QtCore.QPoint(10, 10))
+        self.overlay.mouseReleaseEvent(
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonRelease,
+                QtCore.QPointF(10, 10),
+                QtCore.QPointF(10, 10),
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoButton,
+                QtCore.Qt.NoModifier,
+            )
+        )
+        self.assertIsNone(self._override_shape())
+
+    def test_watchdog_restores_when_no_event_ever_arrives(self):
+        """The live-DCC case: the gesture ends with the overlay hearing nothing.
+
+        Both event hooks are stubbed out, so the ONLY thing that can restore
+        the cursor is the invariant check — which is the whole point.
+        """
+        noop = lambda self, e: None  # noqa: E731 — deliberate event no-ops
+        with mock.patch.object(Overlay, "hideEvent", noop), mock.patch.object(
+            Overlay, "mouseReleaseEvent", noop
+        ):
+            self.overlay.start_gesture(QtCore.QPoint(10, 10))
+            self.assertEqual(self._override_shape(), QtCore.Qt.CrossCursor)
+
+            self.host.hide()  # menu goes down; no event reaches the overlay
+            QtWidgets.QApplication.processEvents()
+            self.assertEqual(
+                self._override_shape(),
+                QtCore.Qt.CrossCursor,
+                "precondition: nothing but the watchdog can clear this",
+            )
+
+            QtTest.QTest.qWait(60)  # a few watchdog periods
+            self.assertIsNone(
+                self._override_shape(), "cursor stranded after the menu went down"
+            )
+
+    def test_watchdog_leaves_a_live_gesture_alone(self):
+        self.overlay.start_gesture(QtCore.QPoint(10, 10))
+        QtTest.QTest.qWait(60)
+        self.assertEqual(
+            self._override_shape(),
+            QtCore.Qt.CrossCursor,
+            "watchdog cleared the cursor mid-gesture",
+        )
+
+    def test_destroyed_overlay_releases_the_cursor(self):
+        """Destruction sends no hide event — the guard outlives its owner."""
+        self.overlay.start_gesture(QtCore.QPoint(10, 10))
+        guard = self.overlay._cursor_guard
+
+        self.host.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.overlay = None
+
+        guard._on_tick()
+        self.assertIsNone(
+            self._override_shape(), "cursor outlived the destroyed overlay"
+        )
+
+    def test_end_gesture_is_idempotent(self):
+        self.overlay.end_gesture()  # never started
+        self.overlay.start_gesture(QtCore.QPoint(10, 10))
+        self.overlay.end_gesture()
+        self.overlay.end_gesture()
+        self.assertIsNone(self._override_shape())
+
+    def test_relinquish_input_control_ends_the_gesture(self):
+        """MarkingMenu.hide()'s own cleanup releases the cursor directly.
+
+        The overlay's hideEvent is a child-chain event a live host may not
+        deliver; ``_relinquish_input_control`` runs on the widget actually
+        being hidden (and on ``retire()``'s hide of an already-hidden menu,
+        which sends no hide event at all).
+        """
+        double = mock.Mock()
+        double._input_logging_on = False
+        double._activation_key_held = True
+        double.overlay = self.overlay
+
+        self.overlay.start_gesture(QtCore.QPoint(10, 10))
+        MarkingMenu._relinquish_input_control(double)
+
+        self.assertFalse(double._activation_key_held)
+        double._release_input_grab.assert_called_once()
+        self.assertIsNone(self._override_shape(), "hide path left the cursor applied")
 
 
 if __name__ == "__main__":

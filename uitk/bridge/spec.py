@@ -737,6 +737,22 @@ class KindFactory(_KindFactoryInternal):
         return widget
 
     @staticmethod
+    def kind_of(widget: QtWidgets.QWidget) -> Optional[str]:
+        """The kind stamped on *widget*, or ``None`` if this factory didn't build it.
+
+        The non-raising probe :meth:`read_value` / :meth:`set_value` lack. Consumers
+        that handle a MIXED widget set -- ``PresetManager`` snapshots kind-built
+        parameter rows alongside plain ``.ui`` widgets -- need to ask "is this mine?"
+        without catching an exception per widget.
+
+        The stamp is a Qt **dynamic property**, not a Python attribute, so a
+        ``getattr(widget, "_attr_kind", None)`` written by hand silently answers
+        ``None`` for every widget. Routing through here is what keeps that mistake
+        from being re-made per consumer.
+        """
+        return widget.property(_KIND_PROP) or None
+
+    @staticmethod
     def read_value(widget: QtWidgets.QWidget) -> Any:
         """Return the current value of a factory-built widget."""
         return KindFactory.get_handler(_KindFactoryInternal._widget_kind(widget)).read(

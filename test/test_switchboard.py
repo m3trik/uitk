@@ -24,7 +24,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.switchboard import Switchboard
-from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.switchboard.utils import SwitchboardUtilsMixin, OverrideCursorGuard
 
 _suspend_override_cursor = SwitchboardUtilsMixin._suspend_override_cursor
 _drain_override_cursor = SwitchboardUtilsMixin._drain_override_cursor
@@ -2367,6 +2367,150 @@ class TestSuspendOverrideCursor(QtBaseTestCase):
             )
         finally:
             dlg.close()
+
+
+class TestOverrideCursorGuard(QtBaseTestCase):
+    """An interaction-scoped override cursor must never outlive the interaction.
+
+    Bug: the marking menu's gesture ``CrossCursor`` was a balanced
+    setOverrideCursor/restoreOverrideCursor pair driven by the overlay's
+    mouse-release and hide events. Whenever neither arrived — the release
+    landed on a child holding the mouse grab, the window was destroyed
+    instead of hidden, a modal suspension snapshot re-pushed the stack after
+    the owner had let go — the cross cursor was stranded over the whole
+    application. ``OverrideCursorGuard`` replaces the bookkeeping with an
+    enforced invariant. Fixed: 2026-08-06
+    """
+
+    # A shape nothing else in the process pushes — the guard's exclusivity
+    # contract, honored by the test itself.
+    SHAPE = QtCore.Qt.WhatsThisCursor
+
+    def setUp(self):
+        super().setUp()
+        _drain_override_cursor()
+        self.live = True
+        self.guard = OverrideCursorGuard(
+            self.SHAPE, is_live=lambda: self.live, interval_ms=10
+        )
+
+    def tearDown(self):
+        self.guard.clear()
+        _drain_override_cursor()
+        super().tearDown()
+
+    @property
+    def _app(self):
+        return QtWidgets.QApplication.instance()
+
+    def _shapes(self):
+        """The whole override stack, top-first, restored afterwards."""
+        saved = SwitchboardUtilsMixin.pop_override_cursor_stack(self._app)
+        for cursor in reversed(saved):
+            self._app.setOverrideCursor(cursor)
+        return [c.shape() for c in saved]
+
+    def test_apply_and_clear_are_idempotent(self):
+        self.guard.apply()
+        self.guard.apply()
+        self.assertEqual(self._shapes(), [self.SHAPE], "double apply stacked twice")
+        self.guard.clear()
+        self.guard.clear()
+        self.assertIsNone(self._app.overrideCursor())
+
+    def test_watchdog_clears_when_predicate_dies(self):
+        """The core guarantee: no event has to arrive for the cursor to go."""
+        self.guard.apply()
+        self.live = False
+        self.guard._on_tick()
+        self.assertIsNone(
+            self._app.overrideCursor(), "watchdog left the override in place"
+        )
+        self.assertFalse(self.guard.holding)
+
+    def test_watchdog_keeps_cursor_while_live(self):
+        self.guard.apply()
+        self.guard._on_tick()
+        self.assertEqual(self._shapes(), [self.SHAPE], "watchdog fired too eagerly")
+
+    def test_raising_predicate_counts_as_dead(self):
+        """A deleted C++ owner raises RuntimeError — release, never strand."""
+
+        def boom():
+            raise RuntimeError("wrapped C/C++ object has been deleted")
+
+        self.guard._is_live = boom
+        self.guard.apply()
+        self.guard._on_tick()
+        self.assertIsNone(self._app.overrideCursor())
+
+    def test_clear_removes_a_buried_entry_without_popping_the_stranger(self):
+        """A slot's busy cursor pushed on top must survive our release."""
+        self.guard.apply()
+        self._app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+        self.guard.clear()
+        self.assertEqual(
+            self._shapes(),
+            [QtCore.Qt.WaitCursor],
+            "clear must remove OUR entry, not whatever sits on top",
+        )
+
+    def test_apply_reconciles_a_leaked_entry(self):
+        """A cursor stranded by an earlier interaction is dropped, not stacked."""
+        self._app.setOverrideCursor(QtGui.QCursor(self.SHAPE))  # the leak
+        self.guard.apply()
+        self.assertEqual(self._shapes(), [self.SHAPE])
+        self.guard.clear()
+        self.assertIsNone(self._app.overrideCursor(), "leaked entry survived")
+
+    def test_suspension_does_not_resurrect_a_released_cursor(self):
+        """The modal-dialog snapshot/restore path (the re-push leak).
+
+        A slot opens a modal dialog while the gesture cursor is up: the whole
+        stack is popped for the dialog's lifetime. The gesture ends *during*
+        that dialog, so by the time the stack is restored the guard has
+        released — its entry must not come back, since nothing would ever pop
+        it again.
+        """
+        self.guard.apply()
+        self._app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+
+        saved = SwitchboardUtilsMixin.pop_override_cursor_stack(self._app)
+        self.guard.clear()  # gesture ends while the stack is suspended
+        SwitchboardUtilsMixin.push_override_cursor_stack(self._app, saved)
+
+        self.assertEqual(
+            self._shapes(),
+            [QtCore.Qt.WaitCursor],
+            "the released gesture cursor was resurrected by the restore",
+        )
+
+    def test_suspension_restores_a_still_held_cursor(self):
+        """The same path with the gesture still live must be untouched."""
+        self.guard.apply()
+        saved = SwitchboardUtilsMixin.pop_override_cursor_stack(self._app)
+        self.assertIsNone(self._app.overrideCursor())
+        SwitchboardUtilsMixin.push_override_cursor_stack(self._app, saved)
+        self.assertEqual(self._shapes(), [self.SHAPE])
+
+    def test_drain_drops_ownership_so_apply_re_asserts(self):
+        """A drain takes our entry too — the guard must not keep claiming it.
+
+        Left claiming, ``apply`` short-circuits and the rest of the
+        interaction runs with no cursor at all.
+        """
+        self.guard.apply()
+        _drain_override_cursor()  # e.g. a slot opening a non-modal viewer
+        self.assertFalse(self.guard.holding, "guard still claims a drained entry")
+
+        self.guard.apply()
+        self.assertEqual(self._shapes(), [self.SHAPE], "cursor never came back")
+
+    def test_unclaimed_shapes_are_never_filtered(self):
+        """reconcile/restore only ever touch shapes a guard claims."""
+        self._app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.BusyCursor))
+        OverrideCursorGuard.reconcile()
+        self.assertEqual(self._shapes(), [QtCore.Qt.BusyCursor])
 
 
 class TestModalBusyCursorFilter(QtBaseTestCase):

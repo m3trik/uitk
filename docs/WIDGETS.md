@@ -500,6 +500,16 @@ widget.add([
 ], header="VIEW OPTIONS")
 ```
 
+**Row captions.** A checkbox labels itself, but a `ComboBox` / `QLineEdit` row renders as a bare control — and a placeholder disappears the moment the field holds a value. `set_row_label` adds a persistent caption inside the row:
+
+```python
+ui.set_attributes(field, set_row_label="Max Size (MB)")   # then add `field` as a row
+```
+
+It only stamps a `rowLabel` dynamic property; the caption is drawn by `_wrap_widget` in the marginless container every row already has, so nothing is reparented and row height (taken from the widget's own `sizeHint`) is unchanged. Captions are width-aligned on each `showPopup` so the fields line up. Style via `QLabel#widgetComboBoxRowLabel`. The item's display text is never painted under an embedded-widget row (the delegate blanks it) — it exists for `get_item_text` and the closed combo's line, not for rendering beneath the widget.
+
+The attribute is **inert in any other host** — deliberately. Adding an option box to a `Menu` item replaces the grid-cell occupant, which drops the item out of `Menu.get_items()` and breaks that menu's focus/defaults handling; captions avoid that class of bug by never wrapping anything.
+
 ## ToolBox
 
 Enhanced `QToolBox`. `.add(widget, text, icon=None)`.

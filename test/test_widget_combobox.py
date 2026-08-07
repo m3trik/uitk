@@ -532,5 +532,192 @@ class TestWidgetComboBoxRowTracking(QtBaseTestCase):
         self.assertNotIn(id(cb), combo._widget_defaults)
 
 
+class TestWidgetComboBoxRowLabels(QtBaseTestCase):
+    """The opt-in ``rowLabel`` caption drawn inside each row's container.
+
+    It lives here rather than in an option-box wrap on purpose: wrapping
+    replaces the host's cell occupant, which is what drops a Menu item out of
+    ``Menu.get_items()``. These tests pin the properties that make the caption
+    invisible to WidgetComboBox's own bookkeeping.
+    """
+
+    @staticmethod
+    def _labelled(text="Max size (MB)", widget=None):
+        """A widget carrying the opt-in row-label property."""
+        widget = widget if widget is not None else QtWidgets.QLineEdit()
+        widget.setProperty("rowLabel", text)
+        return widget
+
+    def _combo_with(self, *widgets):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        # One call: add() defaults to clear=True, so adding in a loop would
+        # leave only the last widget.
+        combo.add(list(widgets))
+        return combo
+
+    def test_no_property_leaves_container_unchanged(self):
+        """A widget without the property must yield the original single-child
+        container — the opt-in guarantee every existing caller relies on."""
+        combo = self._combo_with(QtWidgets.QCheckBox("plain"))
+
+        layout = combo._row_containers[0].layout()
+        self.assertEqual(layout.count(), 1)
+        self.assertEqual(combo._row_labels(), [])
+
+    def test_label_rendered_before_widget(self):
+        """The caption is added ahead of the widget it describes."""
+        field = self._labelled("Max size (MB)")
+        combo = self._combo_with(field)
+
+        layout = combo._row_containers[0].layout()
+        label = layout.itemAt(0).widget()
+        self.assertIsInstance(label, QtWidgets.QLabel)
+        self.assertEqual(label.text(), "Max size (MB)")
+        self.assertIs(layout.itemAt(layout.count() - 1).widget(), field)
+
+    def test_label_does_not_disturb_widget_tracking(self):
+        """`_widget_items` / `_embedded_widget` must still resolve to the real
+        field, not the caption — every consumer (defaults capture/restore,
+        currentWidget, takeWidgetAt) keys off these."""
+        field = self._labelled()
+        combo = self._combo_with(field)
+
+        self.assertIs(combo.widgetAt(0), field)
+        self.assertIs(
+            combo._row_containers[0].property("_embedded_widget"), field
+        )
+        self.assertIn(id(field), combo._widget_defaults)
+
+    def test_label_does_not_grow_row_height(self):
+        """Row height comes from the widget's sizeHint, so a caption must not
+        change it — otherwise labelled rows would sit taller than plain ones."""
+        plain = QtWidgets.QLineEdit()
+        bare = self._combo_with(plain)
+        expected = bare._model.item(0).sizeHint().height()
+
+        labelled = self._combo_with(self._labelled())
+        self.assertEqual(labelled._model.item(0).sizeHint().height(), expected)
+
+    def test_take_widget_returns_field_and_drops_label(self):
+        """Removing a labelled row returns the field and takes the caption with
+        it — a caption outliving its row would skew label alignment."""
+        field = self._labelled()
+        combo = self._combo_with(field)
+
+        self.assertIs(combo.takeWidgetAt(0), field)
+        self.assertEqual(combo._row_labels(), [])
+
+    def test_labels_share_a_common_width(self):
+        """Ragged captions start each field at a different x. Alignment gives
+        every caption the widest one's width."""
+        combo = self._combo_with(
+            self._labelled("Max"),
+            self._labelled("A considerably longer caption"),
+        )
+        combo._align_row_labels()
+
+        labels = combo._row_labels()
+        self.assertEqual(len(labels), 2)
+        widest = max(lb.sizeHint().width() for lb in labels)
+        self.assertEqual({lb.width() for lb in labels}, {widest})
+
+    def test_alignment_is_idempotent(self):
+        """Re-running alignment must not ratchet the caption column wider —
+        ``showPopup`` calls it on every open."""
+        combo = self._combo_with(self._labelled("Max"), self._labelled("Longer"))
+        combo._align_row_labels()
+        first = [lb.width() for lb in combo._row_labels()]
+        combo._align_row_labels()
+
+        self.assertEqual([lb.width() for lb in combo._row_labels()], first)
+
+    def test_label_only_finds_direct_children(self):
+        """An embedded widget carrying its own QLabel must not be mistaken for
+        a row caption — the lookup is FindDirectChildrenOnly."""
+        host = QtWidgets.QWidget()
+        inner = QtWidgets.QHBoxLayout(host)
+        decoy = QtWidgets.QLabel("decoy", host)
+        # Same object name, but nested one level deeper than a row caption.
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        decoy.setObjectName(WidgetComboBox._ROW_LABEL_OBJECT_NAME)
+        inner.addWidget(decoy)
+
+        combo = self._combo_with(host)
+        self.assertEqual(combo._row_labels(), [])
+
+    def test_set_row_label_attribute_stamps_property(self):
+        """``set_row_label`` is the declarative entry point; it must only stamp
+        the property (no reparenting) so it stays inert in non-row hosts."""
+        from uitk.widgets.mixins.attributes import AttributesMixin
+
+        class Host(QtWidgets.QWidget, AttributesMixin):
+            pass
+
+        host = self.track_widget(Host())
+        field = QtWidgets.QLineEdit()
+        original_parent = field.parent()
+        host.set_attributes(field, set_row_label="Version")
+
+        self.assertEqual(field.property("rowLabel"), "Version")
+        self.assertIs(field.parent(), original_parent)
+
+    def test_item_text_never_painted_under_embedded_rows(self):
+        """Regression (live Maya): the QStandardItem's display text paints
+        UNDER every embedded-widget row — a full-width opaque field just
+        happens to cover it. The row caption leaves a transparent strip, so
+        the raw item text ('export_visible_objects') ghosted through the
+        caption. The delegate must blank the painted text for embedded rows
+        while the model keeps it for programmatic consumers."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import _CurrentItemIndicatorDelegate
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.addWidgetItem(self._labelled("Scope"), "export_visible_objects")
+        combo._flush_pending_index_widgets()
+
+        delegate = _CurrentItemIndicatorDelegate(combo)
+        index = combo._model.index(0, 0)
+        self.assertIsNotNone(combo.view().indexWidget(index))
+
+        opt = QtWidgets.QStyleOptionViewItem()
+        delegate.initStyleOption(opt, index)
+        self.assertEqual(opt.text, "", "item text must not paint under a widget")
+        # The model keeps the text — get_item_text / restore-by-text rely on it.
+        self.assertEqual(combo._model.item(0).text(), "export_visible_objects")
+
+    def test_text_only_rows_keep_painted_text(self):
+        """The blanking is scoped to embedded rows — a plain text item still
+        paints its display text."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import _CurrentItemIndicatorDelegate
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.add(["plain item"])
+
+        delegate = _CurrentItemIndicatorDelegate(combo)
+        index = combo._model.index(0, 0)
+        self.assertIsNone(combo.view().indexWidget(index))
+
+        opt = QtWidgets.QStyleOptionViewItem()
+        delegate.initStyleOption(opt, index)
+        self.assertEqual(opt.text, "plain item")
+
+    def test_label_inherits_widget_tooltip(self):
+        """The caption is what the user reads first, so it carries the field's
+        tooltip too."""
+        field = self._labelled()
+        field.setToolTip("Fail the export above this size.")
+        combo = self._combo_with(field)
+
+        label = combo._row_containers[0].layout().itemAt(0).widget()
+        # Assert the type too: without the caption, itemAt(0) is the field
+        # itself and the tooltip check would pass vacuously.
+        self.assertIsInstance(label, QtWidgets.QLabel)
+        self.assertEqual(label.toolTip(), "Fail the export above this size.")
+
+
 if __name__ == "__main__":
     unittest.main()

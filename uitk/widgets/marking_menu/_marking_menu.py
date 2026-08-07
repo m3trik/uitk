@@ -2810,6 +2810,14 @@ class MarkingMenu(
             )
         self._activation_key_held = False
         self._release_input_grab()
+        # End the gesture cursor from the widget that is actually being hidden.
+        # The overlay's own hideEvent is NOT a dependable trigger in a live DCC
+        # host — Qt delivers hide events to the widget being hidden, not
+        # reliably down the child chain (the same asymmetry test_expandable_list
+        # documents), and a hide() on an already-hidden menu (retire) sends no
+        # hide event at all. Overlay's watchdog still backstops every path this
+        # one can't see; this just makes the common path instant.
+        self.overlay.end_gesture()
 
     def _release_input_grab(self):
         """Release a mouse grab held by the menu OR one of its child buttons.

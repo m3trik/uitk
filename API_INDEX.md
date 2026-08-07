@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-06_
+_Generated: 2026-08-07_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -18,14 +18,14 @@ _Generated: 2026-08-06_
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
+  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
 - `class AttributeSpec`
   - methods: from_value, display_label
 - `class KindHandler`
 - `class KindFactory(_KindFactoryInternal)`
-  - methods: infer_kind, register_kind, get_handler, make_widget, read_value, set_value, set_choices, connect_changed
+  - methods: infer_kind, register_kind, get_handler, make_widget, kind_of, read_value, set_value, set_choices, connect_changed
 
 ### `bridge/tooltip.py` — Rich-text tooltip + template-description helpers for bridge panels.
 - `class Tooltip(_TooltipInternal)`
@@ -82,6 +82,10 @@ _Generated: 2026-08-06_
 ### `managers/icon_manager.py`
 - `class IconManager`
   - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, set_label_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
+
+### `managers/optional_package_manager.py` — Provisioning for optional packages a panel needs importable in THIS session.
+- `class OptionalPackageManager(_OptionalPackageManagerInternal)`
+  - methods: available, pip_python, default_install, install, ensure, version_tuple, split_requirement
 
 ### `managers/preset_manager.py`
 - `class PresetManager(ptk.LoggingMixin)`
@@ -153,6 +157,8 @@ _Generated: 2026-08-06_
   - methods: style
 
 ### `switchboard/utils.py`
+- `class OverrideCursorGuard(QtCore.QObject)`
+  - methods: shape, holding, apply, clear, holds, is_stale, notify_stack_drained, reconcile
 - `class SwitchboardUtilsMixin`
   - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
@@ -294,7 +300,7 @@ _Generated: 2026-08-06_
 - `class Path`
   - methods: is_empty, intermediate_entries, start_pos, widget_positions, widget_position, reset, clear, clear_to_origin, add, remove
 - `class Overlay(QtWidgets.QWidget)`
-  - methods: draw_tangent, init_region, start_gesture, clone_widgets_along_path, clear_paint_events, paintEvent, mousePressEvent, mouseReleaseEvent, mouseMoveEvent, hideEvent
+  - methods: draw_tangent, init_region, start_gesture, end_gesture, clone_widgets_along_path, clear_paint_events, paintEvent, mousePressEvent, mouseReleaseEvent, mouseMoveEvent, hideEvent
 
 ### `widgets/menu.py`
 - `class MenuConfig`

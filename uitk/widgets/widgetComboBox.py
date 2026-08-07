@@ -422,18 +422,85 @@ class WidgetComboBox(ComboBox):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _wrap_widget(self, widget: QtWidgets.QWidget) -> QtWidgets.QWidget:
-        """Embed the widget inside a marginless container for layout control."""
+    # Object name of the opt-in row label, and the gap between it and the
+    # widget it describes. The name is looked up with FindDirectChildrenOnly
+    # so an embedded widget's own QLabels can never be mistaken for it.
+    _ROW_LABEL_OBJECT_NAME = "widgetComboBoxRowLabel"
+    _ROW_LABEL_SPACING = 6
 
+    def _wrap_widget(self, widget: QtWidgets.QWidget) -> QtWidgets.QWidget:
+        """Embed the widget inside a marginless container for layout control.
+
+        A widget carrying a truthy ``rowLabel`` dynamic property (set
+        declaratively via ``set_row_label``) also gets a leading QLabel inside
+        this same container. That is the point of doing it here: the container
+        already exists for every row, and all of this widget's bookkeeping keys
+        off ``_widget_items[row]`` / the ``_embedded_widget`` property rather
+        than "the container's only child", so an extra sibling is invisible to
+        it. Row height is likewise derived from the *widget's* sizeHint in
+        :meth:`_apply_uniform_height`, so a label cannot grow the row.
+
+        Opt-in by design: rows whose widget carries its own text (checkboxes,
+        push buttons) would only get a redundant second caption, so an absent
+        property leaves the container byte-identical to before.
+        """
         container = QtWidgets.QWidget(self.view())
         layout = QtWidgets.QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        row_label = widget.property("rowLabel")
+        if row_label:
+            label = QtWidgets.QLabel(str(row_label), container)
+            # The object name is the single hook: it selects the QSS rule and
+            # is what _row_labels() matches on. No `class` property -- nothing
+            # reads one here, and StyleSheet stamps that key itself.
+            label.setObjectName(self._ROW_LABEL_OBJECT_NAME)
+            # Mirror the widget's tooltip so hovering the caption explains the
+            # field too -- the label is the part the user reads first.
+            tip = widget.toolTip()
+            if tip:
+                label.setToolTip(tip)
+            layout.addWidget(label, alignment=QtCore.Qt.AlignVCenter)
+            layout.addSpacing(self._ROW_LABEL_SPACING)
         # Vertical-center the widget so rows sized to the uniform max-height
         # don't vertically stretch shorter widgets (checkboxes growing tall).
         layout.addWidget(widget, alignment=QtCore.Qt.AlignVCenter)
         container.setProperty("_embedded_widget", widget)
         return container
+
+    def _row_labels(self) -> list:
+        """Every opt-in row label currently installed, in row order."""
+        labels = []
+        for container in self._row_containers.values():
+            if container is None:
+                continue
+            try:
+                label = container.findChild(
+                    QtWidgets.QLabel,
+                    self._ROW_LABEL_OBJECT_NAME,
+                    QtCore.Qt.FindDirectChildrenOnly,
+                )
+            except RuntimeError:  # container already deleted
+                continue
+            if label is not None:
+                labels.append(label)
+        return labels
+
+    def _align_row_labels(self) -> None:
+        """Give every row label a common width so the fields line up.
+
+        Left ragged, captions of different lengths start each field at a
+        different x and the column reads as broken. ``sizeHint`` stays
+        content-based under ``setFixedWidth``, so re-running this is idempotent
+        and a row removed later still re-narrows the rest.
+        """
+        labels = self._row_labels()
+        if not labels:
+            return
+        widest = max(label.sizeHint().width() for label in labels)
+        for label in labels:
+            if label.width() != widest:
+                label.setFixedWidth(widest)
 
     def _row_target_height(self) -> int:
         """Row sizeHint height for tracked rows: the tight uniform widget
@@ -824,6 +891,9 @@ class WidgetComboBox(ComboBox):
         # popup is laid out — they may have shrunk since add-time (theme/font
         # changes), and a stale height shows as dead space between rows.
         self._recompute_uniform_heights()
+        # Equalize opt-in row-label widths before anything measures a container,
+        # so the popup-width pass below accounts for the final caption column.
+        self._align_row_labels()
 
         # Let the base chain run first (ComboBox.showPopup sets
         # view.minimumWidth from sizeHintForColumn, then QComboBox.showPopup

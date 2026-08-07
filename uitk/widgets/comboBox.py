@@ -310,14 +310,31 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
             return base
         return QtCore.QSize(base.width(), self._row_height)
 
+    def _is_embedded_row(self, index) -> bool:
+        """True when *index*'s row hosts an embedded widget (WidgetComboBox)."""
+        view = self._combo.view()
+        return view is not None and view.indexWidget(index) is not None
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # An embedded-widget row's visual content IS the widget — the item's
+        # display text exists for programmatic consumers (get_item_text,
+        # restore-by-text, the closed combo's line) and must never be painted
+        # under it. It always was painted; a full-width opaque field just
+        # happened to cover it, so any row whose widget leaves a transparent
+        # strip (a row caption, a narrow checkbox) showed the raw item text
+        # ghosting through (live-Maya screenshot: "Scope" over "export_vi…").
+        if self._is_embedded_row(index):
+            option.text = ""
+            option.features &= ~QtWidgets.QStyleOptionViewItem.HasDisplay
+
     def paint(self, painter, option, index):
         # Suppress hover/selection bg only for rows that host an embedded
         # widget (WidgetComboBox). With uniform-height rows + AlignVCenter,
         # a shorter embedded widget leaves a gap above/below where the row's
         # BUTTON_HOVER bg would otherwise show as a blue frame. Text-only
         # rows keep the full hover styling.
-        view = self._combo.view()
-        if view is not None and view.indexWidget(index) is not None:
+        if self._is_embedded_row(index):
             paint_opt = QtWidgets.QStyleOptionViewItem(option)
             paint_opt.state &= ~QtWidgets.QStyle.State_MouseOver
             paint_opt.state &= ~QtWidgets.QStyle.State_Selected

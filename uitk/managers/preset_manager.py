@@ -703,10 +703,7 @@ class PresetManager(ptk.LoggingMixin):
             obj_name = widget.objectName()
             if not obj_name:
                 continue
-            if self.state is not None:
-                value = self.state._get_current_value(widget)
-            else:
-                value = self._get_widget_value(widget)
+            value = self._read_widget(widget)
             if value is not None and PresetManager._is_serializable(value):
                 values[obj_name] = value
         return values
@@ -797,6 +794,26 @@ class PresetManager(ptk.LoggingMixin):
                         )
                         continue
 
+                    # A kind-built widget is written by the factory that built it,
+                    # not by StateManager — the same authority rule capture uses.
+                    # StateManager would reach a composite (`path`, `file_list`) by
+                    # guessing from its Qt type and write nothing.
+                    factory = PresetManager._kind_factory()
+                    if factory.kind_of(widget) is not None:
+                        was_blocked = widget.signalsBlocked()
+                        if block_signals:
+                            widget.blockSignals(True)
+                        try:
+                            factory.set_value(widget, value)
+                        finally:
+                            if block_signals:
+                                widget.blockSignals(was_blocked)
+                        applied += 1
+                        # Deliberately NOT added to applied_widgets: those get a
+                        # `state.save()` below, and StateManager never owned these
+                        # widgets. Their persistence is the preset store itself.
+                        continue
+
                     # Mirror StateManager.reset_all: default False (the
                     # module-wide default) and restore-or-remove the attribute
                     # so a load never permanently stamps ``block_signals_on_restore``
@@ -837,7 +854,7 @@ class PresetManager(ptk.LoggingMixin):
                             f"Preset key '{obj_name}' has no matching widget, skipping."
                         )
                         continue
-                    self._set_widget_value(widget, value)
+                    self._write_widget(widget, value)
                     applied += 1
             finally:
                 for w in blocked:
@@ -1054,8 +1071,81 @@ class PresetManager(ptk.LoggingMixin):
     # Standalone widget value helpers
     # ------------------------------------------------------------------
 
+    # ---- value authority ------------------------------------------------
+    # Three readers, most-specific first. A widget's own builder always knows best:
+    #
+    # 1. ``KindFactory`` — for widgets IT built (stamped ``_attr_kind``). It owns a
+    #    read/write pair per kind, so it reaches composites whose value lives on an
+    #    inner child (``path``, ``file_list``) and list-shaped kinds (``check_list``)
+    #    that neither of the readers below has any branch for. Without this those
+    #    params silently vanished from a saved preset: the manager read ``None`` from
+    #    the composite container and ``_capture_values`` dropped the key.
+    # 2. ``StateManager`` — for plain registered widgets in MainWindow mode, so
+    #    presets and session state agree on index guards / ``currentData``.
+    # 3. The ``isinstance`` ladder — standalone fallback.
+    #
+    # Kind-first, not state-first: the stamp is proof of who built the widget,
+    # whereas ``StateManager`` would answer for a composite by guessing from its Qt
+    # type and get it wrong.
+
+    @staticmethod
+    def _kind_factory():
+        """The ``KindFactory`` class.
+
+        Deferred, and resolved in ONE place: ``uitk.bridge`` imports this module, so
+        a module-level import would close the cycle -- and repeating the deferred
+        import at each use site repeats that reasoning where it can rot.
+        """
+        from uitk.bridge.spec import KindFactory
+
+        return KindFactory
+
+    @staticmethod
+    def _kind_of(widget: QtWidgets.QWidget) -> Any:
+        """The kind stamped on a widget built by ``KindFactory``, else ``None``."""
+        return PresetManager._kind_factory().kind_of(widget)
+
+    def _read_widget(self, widget: QtWidgets.QWidget) -> Any:
+        """Read *widget* through the most specific authority available."""
+        factory = PresetManager._kind_factory()
+        if factory.kind_of(widget) is not None:
+            return factory.read_value(widget)
+        if self.state is not None:
+            return self.state._get_current_value(widget)
+        return PresetManager._get_plain_widget_value(widget)
+
+    def _write_widget(self, widget: QtWidgets.QWidget, value: Any) -> None:
+        """Write *value* to *widget* through the most specific authority available."""
+        factory = PresetManager._kind_factory()
+        if factory.kind_of(widget) is not None:
+            factory.set_value(widget, value)
+            return
+        if self.state is not None:
+            self.state._set_widget_value(widget, value)
+            return
+        PresetManager._set_plain_widget_value(widget, value)
+
     @staticmethod
     def _get_widget_value(widget: QtWidgets.QWidget) -> Any:
+        """Read a widget's value without an instance (kind stamp, else the ladder).
+
+        The *candidate filter*'s reader, not capture's: ``_window_candidates`` and
+        ``_menu_candidates`` ask "does this widget bear a value at all?" of widgets
+        that may not be registered with any ``StateManager``, so this deliberately
+        skips the state tier :meth:`_read_widget` consults. Capture and apply go
+        through ``_read_widget`` / ``_write_widget``.
+
+        There is intentionally no static ``_set_widget_value`` counterpart -- the
+        filter never writes, and a setter with no caller is dead weight that reads
+        as a supported path.
+        """
+        factory = PresetManager._kind_factory()
+        if factory.kind_of(widget) is not None:
+            return factory.read_value(widget)
+        return PresetManager._get_plain_widget_value(widget)
+
+    @staticmethod
+    def _get_plain_widget_value(widget: QtWidgets.QWidget) -> Any:
         """Read the current value from a standard Qt widget."""
         if isinstance(widget, (QtWidgets.QCheckBox, QtWidgets.QRadioButton)):
             return widget.isChecked()
@@ -1072,7 +1162,7 @@ class PresetManager(ptk.LoggingMixin):
         return None
 
     @staticmethod
-    def _set_widget_value(widget: QtWidgets.QWidget, value: Any) -> None:
+    def _set_plain_widget_value(widget: QtWidgets.QWidget, value: Any) -> None:
         """Set a value on a standard Qt widget."""
         if isinstance(widget, (QtWidgets.QCheckBox, QtWidgets.QRadioButton)):
             widget.setChecked(value)

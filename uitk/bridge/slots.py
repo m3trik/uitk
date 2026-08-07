@@ -98,43 +98,6 @@ class _BridgeSlotsInternal(object):
         if path:
             shutil.rmtree(path, ignore_errors=True)
 
-    # --- Optional-package requirement parsing ------------------------------
-    #: Where a PEP 508 requirement stops being the distribution name.
-    _REQ_BOUNDARY = re.compile(r"[<>=!~;\[\s]")
-
-    @staticmethod
-    def _version_tuple(text: str) -> Tuple[int, ...]:
-        """``"0.0.8"`` -> ``(0, 0, 8)``; stops at the first non-numeric segment.
-
-        Deliberately not a full PEP 440 parser: the ecosystem versions are plain
-        ``X.Y.Z``, and truncating at a suffix (``1.2.0rc1`` -> ``(1, 2)``) errs
-        toward "older", which is the safe direction for a floor check.
-        """
-        parts: List[int] = []
-        for chunk in str(text).split("."):
-            digits = ""
-            for ch in chunk:
-                if not ch.isdigit():
-                    break
-                digits += ch
-            if not digits:
-                break
-            parts.append(int(digits))
-        return tuple(parts)
-
-    @staticmethod
-    def _split_requirement(spec: str) -> Tuple[str, Optional[Tuple[int, ...]]]:
-        """``"unitytk>=0.0.8"`` -> ``("unitytk", (0, 0, 8))``; a bare name -> floor None.
-
-        One string carries both the pip requirement and the runtime floor, so a
-        caller can never let the two drift apart. Only ``>=`` is read — that is
-        the constraint an optional-package floor is ever expressed with here.
-        """
-        name = _BridgeSlotsInternal._REQ_BOUNDARY.split(spec, 1)[0].strip()
-        match = re.search(r">=\s*([0-9][0-9A-Za-z.]*)", spec)
-        floor = _BridgeSlotsInternal._version_tuple(match.group(1)) if match else None
-        return name, floor
-
 
 class BridgeSlotsBase(_BridgeSlotsInternal):
     """Base class for DCC-bridge slot panels.
@@ -253,195 +216,61 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         raise NotImplementedError
 
     # ------------------ Optional-package provisioning ------------------
+    # Policy lives in `uitk.managers.OptionalPackageManager`; the panel supplies
+    # only the host wiring (how to prompt, where to log, how to install).
+
+    @property
+    def optional_packages(self):
+        """This panel's :class:`OptionalPackageManager` (built once, lazily)."""
+        mgr = getattr(self, "_optional_packages", None)
+        if mgr is None:
+            from uitk.managers.optional_package_manager import OptionalPackageManager
+
+            # Log through the Switchboard, not ``self.logger`` -- a slots class gets
+            # its logger from its BRIDGE, and this service exists precisely for the
+            # window before the bridge does; touching ``self.bridge`` here would
+            # recurse straight back into ``make_bridge``.
+            mgr = OptionalPackageManager(
+                prompt=self.sb.message_box,
+                logger=self.sb.logger,
+                installer=self._install_optional_package,
+            )
+            self._optional_packages = mgr
+        return mgr
+
     @staticmethod
     def optional_package_available(spec: str, import_name: str = None) -> bool:
         """Is an optional package importable in THIS interpreter? Silent.
 
-        Never prompts, never installs, never raises — the probe implicit code
-        paths use. ``make_bridge`` implementations call this: a panel whose
-        engine lives in an optional distribution must be able to *open* (and
-        say so in its log) without a dialog, because ``make_bridge`` runs from
-        ``__init__`` via the log wiring.
-
-        Prefers a real import over :func:`importlib.util.find_spec`: find_spec
-        answers "is there a module file", not "does it import", and it raises
-        ValueError for an already-imported module whose ``__spec__`` is None.
-        Importing is what the caller is about to do anyway, and a package that
-        is present but broken must read as unavailable, not as available-then-
-        exploding inside the bridge constructor.
-
-        A bare repo/workspace folder on ``sys.path`` masquerades as an empty
-        *namespace* package — ``import unitytk`` "succeeds" against
-        ``_scripts/unitytk/`` (the repo dir, which holds the real package one
-        level down) and then every attribute access fails. A module with no
-        ``__file__`` is exactly that case and reads as unavailable.
-
-        *spec* may carry a version floor (``"unitytk>=0.0.8"``), in which case an
-        installed-but-TOO-OLD package also reads as unavailable. That case is not
-        hypothetical: a pyproject ``[unity]`` extra only constrains a fresh
-        install, so a session already carrying the older release imports fine and
-        then raises ``AttributeError`` on the API the caller came for. A package
-        that declares no ``__version__`` cannot clear a floor, and refusing is the
-        safe direction — the same rule as "present but broken reads as
-        unavailable".
+        Static and prompt-free so implicit paths (``make_bridge``, which runs from
+        ``__init__``) can ask without a dialog. See
+        :meth:`uitk.managers.OptionalPackageManager.available`.
         """
-        import importlib
+        from uitk.managers.optional_package_manager import OptionalPackageManager
 
-        name, floor = _BridgeSlotsInternal._split_requirement(spec)
-        module = import_name or name.replace("-", "_")
-        try:
-            mod = importlib.import_module(module)
-        except Exception:  # noqa: BLE001 - any failure means "not usable here"
-            return False
-        if getattr(mod, "__file__", None) is None:
-            return False
-        if floor is None:
-            return True
-        return (
-            _BridgeSlotsInternal._version_tuple(getattr(mod, "__version__", ""))
-            >= floor
-        )
+        return OptionalPackageManager.available(spec, import_name)
 
     def ensure_optional_package(
         self, spec: str, import_name: str = None, *, feature: str = None
     ) -> bool:
         """Make an optional package importable, offering to install it on demand.
 
-        **Explicit user actions only.** This shows a modal dialog, so it must
-        never run from ``__init__``, ``make_bridge``, or anything reached by
-        the ``bridge`` property: a modal raised from a panel's constructor is
-        parented to a window that does not exist yet, and if construction then
-        fails the box is orphaned with no way to dismiss it. Implicit paths use
-        :meth:`optional_package_available` and report through the log instead.
-
-        On accept the package is pip-installed into the interpreter this
-        session actually imports from, so the panel works immediately rather
-        than after a restart. This is the in-process counterpart of
-        :class:`uitk.handlers.ExternalAppHandler`'s install-on-demand, which
-        provisions *subprocess* apps; the same idea, but the result has to be
-        importable HERE.
-
-        A *spec* carrying a version floor (``"unitytk>=0.0.8"``) also catches an
-        installed-but-too-old package, which mere importability let through —
-        leaving the caller to raise ``AttributeError`` on the API it came for.
-        That case offers an *update* (pip resolves the constraint) and then
-        returns **False with a restart notice**: a package already in
-        ``sys.modules`` cannot be swapped in place, so the freshly written files
-        are not what this session would call.
-
-        Parameters:
-            spec: pip requirement to install (e.g. ``"unitytk"``, ``"unitytk>=0.0.8"``).
-            import_name: Module to probe. Defaults to the requirement's
-                distribution name (with ``-`` → ``_``).
-            feature: Human name of the thing that needs it, used in the prompt.
-
-        Returns:
-            bool: True only when the package is usable **in this session** at or
-            above any floor — an upgrade written to disk returns False.
+        **Explicit user actions only** -- it shows a modal. See
+        :meth:`uitk.managers.OptionalPackageManager.ensure`.
         """
-        import importlib
-
-        if self.optional_package_available(spec, import_name):
-            return True
-
-        name, floor = self._split_requirement(spec)
-        # Present-but-too-old is a different sentence from absent — and the only
-        # one of the two the user can't act on by reading "install it".
-        stale = floor is not None and self.optional_package_available(name, import_name)
-        label = feature or "This panel"
-        verb = "update" if stale else "install"
-        answer = self.sb.message_box(
-            f"<b>{label} needs the optional <i>{spec}</i> package"
-            f"{' (the installed one is older)' if stale else ''}.</b><br><br>"
-            f"{verb.capitalize()} it now?",
-            "Yes",
-            "No",
-        )
-        # NOTE: log through the Switchboard, not ``self.logger`` — a slots class
-        # gets its logger from its BRIDGE (``self.bridge.logger``), and the whole
-        # point of this method is that the bridge does not exist yet; touching
-        # ``self.bridge`` here would recurse straight back into ``make_bridge``.
-        if answer != "Yes":
-            self.sb.logger.info(f"{spec} {verb} declined; {label} is unavailable.")
-            return False
-
-        try:
-            self._install_optional_package(spec)
-        except Exception as error:  # noqa: BLE001 - reported, never raised at the UI
-            self.sb.logger.error(f"Failed to {verb} {spec}: {error}")
-
-        # Trust the import, not pip's exit code: a --target/--user install can
-        # report a non-zero dependency-resolver error for an UNRELATED conflict
-        # in the base environment while the requested wheel installed fine.
-        importlib.invalidate_caches()
-
-        if stale:
-            # An UPGRADE cannot take effect in this process: the old package is
-            # already in ``sys.modules``, and reloading it does NOT refresh the
-            # submodules its ``__init__`` re-imports from cache — the caller
-            # would still get the old class. Report the on-disk result and stop;
-            # the probe below would read the cached ``__version__`` anyway and
-            # mis-report the upgrade as a failed install.
-            self.sb.message_box(
-                f"<b>Updated {name} on disk.</b><br><br>"
-                f"Restart this session to pick it up — a package already "
-                f"imported cannot be swapped in place.",
-                "Ok",
-            )
-            self.sb.logger.info(f"Updated {spec}; restart required.")
-            return False
-
-        if self.optional_package_available(spec, import_name):
-            self.sb.logger.info(f"Installed {spec}.")
-            return True
-
-        self.sb.message_box(
-            f"<b>Could not install {spec}.</b><br><br>"
-            f"Install it manually, then reopen {label}.",
-            "Ok",
-        )
-        return False
+        return self.optional_packages.ensure(spec, import_name, feature=feature)
 
     def _install_optional_package(self, spec: str) -> None:
         """Install *spec* so it is importable in THIS interpreter.
 
-        Default policy: ``pip install --user`` against the running interpreter
-        (substituting the sibling python when the host executable is a DCC that
-        does not take ``-c``, e.g. ``maya.exe`` → ``mayapy.exe``). A host whose
-        user-site is not on ``sys.path`` overrides this — see ``blendertk``'s
-        :class:`BlenderBridgeSlotsBase`, which installs into Blender's
-        user-modules dir instead.
-
-        Raises:
-            RuntimeError: when the running interpreter is a DCC host with no
-                sibling python. Driving pip through the host binary itself
-                routes the install into its ``-c`` handler (MEL / a blocked Qt
-                loop) and HANGS it, so refusing is the only safe answer.
+        The DCC-specific seam: ``blendertk``'s :class:`BlenderBridgeSlotsBase`
+        overrides this because Blender's bundled interpreter keeps user-site off
+        ``sys.path``, so the default ``pip install --user`` would succeed and stay
+        unimportable.
         """
-        import pythontk as ptk
+        from uitk.managers.optional_package_manager import OptionalPackageManager
 
-        python = self._optional_package_python()
-        if not python:
-            raise RuntimeError(
-                f"Cannot install {spec!r}: this session's interpreter "
-                f"({sys.executable!r}) is a DCC host with no sibling python to "
-                f"install through. Provision it into the host environment."
-            )
-        ptk.PackageManager(python_path=python).pip(f"install --user {spec}")
-
-    @staticmethod
-    def _optional_package_python() -> Optional[str]:
-        """Interpreter to drive pip with, for an install this session must import.
-
-        Single-sources the DCC-host substitution from
-        :meth:`uitk.handlers.ExternalAppHandler._pip_capable_python` so the
-        in-process and subprocess install paths can't drift — and, critically,
-        inherits its ``None`` for a host with no sibling rather than handing
-        back the host binary, which would hang on the first pip call.
-        """
-        from uitk.handlers.external_app_handler import ExternalAppHandler
-
-        return ExternalAppHandler._pip_capable_python(sys.executable)
+        OptionalPackageManager.default_install(spec)
 
     def make_preset_store(self):
         """Hook: return a :class:`pythontk.PresetStore` to switch presets into
@@ -1136,9 +965,15 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         else:
             # Widget-state mode (DCC bridges): raw snapshots keyed by objectName,
             # one preset subdir per template under PRESETS_ROOT.
-            managed = [
-                getattr(w, "_line_edit", w) for w in self._param_widgets.values()
-            ]
+            #
+            # The kind-built widgets themselves, NOT their inner children. Each
+            # carries KindFactory's `_attr_kind` stamp, which PresetManager treats
+            # as the authority for read/write — so a composite is (de)serialized by
+            # the handler that built it. Substituting `_line_edit` here used to be
+            # the only way a `path` row survived a preset (the manager could not
+            # read the container), but it drops the stamp and reaches exactly one
+            # composite: `file_list` and `check_list` were silently unsaveable.
+            managed = list(self._param_widgets.values())
             if self.PRESETS_ROOT is None:
                 raise ValueError(
                     f"{type(self).__name__} must set PRESETS_ROOT "

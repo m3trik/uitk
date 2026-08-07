@@ -8,6 +8,183 @@ from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 
+class OverrideCursorGuard(QtCore.QObject):
+    """Owns one application override cursor and guarantees its removal.
+
+    ``QApplication.setOverrideCursor`` / ``restoreOverrideCursor`` are a
+    balanced pair, so an override is only ever as reliable as the event that is
+    supposed to pop it. A cursor pushed for the duration of an interaction —
+    the marking menu's gesture ``CrossCursor`` — strands itself over the whole
+    application whenever that pop is missed, and nothing notices:
+
+      * the release lands somewhere else (a child widget holding the mouse
+        grab, the host DCC, another window), so the pushing widget never sees
+        the event that ends the interaction;
+      * the widget is *destroyed* rather than hidden — Qt sends no hide event
+        to a child in that case (only a parent ``hide()`` while visible does);
+      * a third party snapshots the stack and restores it afterwards
+        (:meth:`SwitchboardUtilsMixin._suspend_override_cursor`, the slot
+        dispatcher's modal filter). If the owner released its cursor while the
+        stack was suspended, the restore re-pushes an entry that now has no
+        owner at all.
+
+    This guard replaces balanced-call bookkeeping with an INVARIANT — *an
+    override of ``shape`` exists only while ``is_live()`` says it should* —
+    enforced from three sides:
+
+      * :meth:`apply` / :meth:`clear` — the ordinary, immediate path.
+      * a watchdog timer, running ONLY while the guard holds the override,
+        that clears it as soon as ``is_live()`` turns False. This is what
+        covers the missed events: no event has to arrive for the cursor to
+        come back. A predicate that raises (the owner's C++ object is gone)
+        counts as not-live, and the class keeps the guard — and therefore its
+        timer — alive while it holds a push, so even a destroyed owner is
+        cleaned up.
+      * :meth:`reconcile` — drops any stack entry whose shape a guard claims
+        but no guard holds (the snapshot/restore case). Run before every
+        apply, and applied as a filter inside
+        :meth:`SwitchboardUtilsMixin.push_override_cursor_stack` so a stale
+        entry is never re-pushed in the first place.
+
+    The claimed shape must be EXCLUSIVE to the guard: nothing else in the
+    process may push it, or reconcile would drop a stranger's cursor.
+
+    Parameters:
+        shape (Qt.CursorShape): The cursor this guard owns, exclusively.
+        is_live (callable): Zero-arg predicate — True while the override is
+            legitimate (e.g. ``widget.isVisible``). Raising counts as False.
+        interval_ms (int): Watchdog period while the override is held.
+    """
+
+    #: Shapes any guard has ever claimed — the set :meth:`is_stale` filters on.
+    _CLAIMED_SHAPES = set()
+    #: Guards currently holding a push. A strong ref, so a guard whose owner
+    #: was destroyed still gets ticked (and cleaned up) by its own timer.
+    _HOLDERS = set()
+
+    def __init__(self, shape, is_live: Callable[[], bool], interval_ms: int = 250):
+        super().__init__()
+        self._shape = shape
+        self._is_live = is_live
+        self._holding = False
+        # Explicitly the base class's registries: they are process-global by
+        # design (any subclass shares them), and mutating through ``type(self)``
+        # would read as per-subclass state.
+        OverrideCursorGuard._CLAIMED_SHAPES.add(shape)
+
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(interval_ms)
+        self._timer.timeout.connect(self._on_tick)
+
+    @property
+    def shape(self):
+        """The cursor shape this guard owns."""
+        return self._shape
+
+    @property
+    def holding(self) -> bool:
+        """True while this guard holds an application override cursor."""
+        return self._holding
+
+    def apply(self) -> None:
+        """Push the override (idempotent) and start the watchdog."""
+        app = QtWidgets.QApplication.instance()
+        if app is None or self._holding:
+            return
+        # Anything of our shape still on the stack is by definition stale —
+        # we hold nothing. Clear it so a leak can never accumulate a second
+        # entry that would outlive this interaction too.
+        self.reconcile()
+        app.setOverrideCursor(QtGui.QCursor(self._shape))
+        self._holding = True
+        OverrideCursorGuard._HOLDERS.add(self)
+        self._timer.start()
+
+    def clear(self) -> None:
+        """Remove the override (idempotent) and stop the watchdog."""
+        if not self._holding:
+            return
+        # Order matters: dropping ownership FIRST is what lets the removal
+        # below reuse the generic stale-entry filter for the buried case.
+        self._holding = False
+        OverrideCursorGuard._HOLDERS.discard(self)
+        self._timer.stop()
+
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+        top = app.overrideCursor()
+        if top is None:
+            # Nothing to remove — the stack is currently suspended by someone
+            # else (their restore now drops our entry via is_stale).
+            return
+        if top.shape() == self._shape:
+            app.restoreOverrideCursor()
+        else:
+            # Buried under a later push (e.g. a slot's busy cursor): rebuild
+            # the stack without our entry rather than popping theirs.
+            self.reconcile()
+
+    def _on_tick(self) -> None:
+        """Watchdog: enforce the invariant without needing any event."""
+        if self._live():
+            return
+        self.clear()
+
+    def _live(self) -> bool:
+        """``is_live()``, fail-safe. Any failure — including a deleted C++
+        owner (``RuntimeError``) — means *not* live: an override that cannot
+        prove it is still wanted must go."""
+        try:
+            return bool(self._is_live())
+        except Exception:
+            return False
+
+    @classmethod
+    def holds(cls, shape) -> bool:
+        """True if any live guard currently holds ``shape``.
+
+        Snapshots the holder set: a guard released mid-iteration (a watchdog
+        tick landing inside a stack rebuild) mutates it.
+        """
+        return any(g.holding and g.shape == shape for g in tuple(cls._HOLDERS))
+
+    @classmethod
+    def is_stale(cls, cursor) -> bool:
+        """True if ``cursor`` is a guard-owned shape that no guard holds —
+        an orphan that must not be (re-)pushed onto the stack."""
+        shape = cursor.shape()
+        return shape in cls._CLAIMED_SHAPES and not cls.holds(shape)
+
+    @classmethod
+    def notify_stack_drained(cls) -> None:
+        """Drop every guard's ownership because the whole stack was dropped
+        out from under them (see :meth:`SwitchboardUtilsMixin._drain_override_cursor`).
+
+        Without this a guard keeps claiming an entry that no longer exists:
+        ``holds`` then reports True for an orphaned shape, and — the visible
+        part — :meth:`apply` short-circuits, so the interaction runs out its
+        life with no cursor instead of re-asserting one. Only the ownership
+        flag is cleared; there is nothing left to pop.
+        """
+        for guard in tuple(cls._HOLDERS):
+            guard._holding = False
+            guard._timer.stop()
+        cls._HOLDERS.clear()
+
+    @classmethod
+    def reconcile(cls) -> None:
+        """Drop every orphaned guard cursor from the application stack,
+        wherever it sits, leaving all other entries in their original order.
+        No-op when no override is active."""
+        app = QtWidgets.QApplication.instance()
+        if app is None or app.overrideCursor() is None:
+            return
+        saved = SwitchboardUtilsMixin.pop_override_cursor_stack(app)
+        # The re-push drops stale entries (see push_override_cursor_stack).
+        SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)
+
+
 class SwitchboardUtilsMixin:
     """Utility methods for widget positioning, centering, and screen geometry."""
 
@@ -34,9 +211,17 @@ class SwitchboardUtilsMixin:
     @staticmethod
     def push_override_cursor_stack(app, saved):
         """Re-push cursors captured by :meth:`pop_override_cursor_stack`,
-        restoring the original stack order. No-op when ``app`` is ``None``."""
+        restoring the original stack order. No-op when ``app`` is ``None``.
+
+        An entry belonging to an :class:`OverrideCursorGuard` that has since
+        released it is skipped: restoring it would strand a cursor whose owner
+        is gone (the pop/push pair brackets an unbounded wait — a modal dialog
+        — during which the owning interaction can easily end).
+        """
         if app is not None:
             for cursor in reversed(saved):
+                if OverrideCursorGuard.is_stale(cursor):
+                    continue
                 app.setOverrideCursor(cursor)
 
     @staticmethod
@@ -84,10 +269,15 @@ class SwitchboardUtilsMixin:
         keeping the override stack balanced.
 
         No-op when no override is active (window opened outside a slot).
+
+        A drain takes *every* owner's entry, guards included — so they are
+        told, or a guard would keep claiming an entry that no longer exists
+        (see :meth:`OverrideCursorGuard.notify_stack_drained`).
         """
         SwitchboardUtilsMixin.pop_override_cursor_stack(
             QtWidgets.QApplication.instance()
         )
+        OverrideCursorGuard.notify_stack_drained()
 
     @staticmethod
     def get_cursor_offset_from_center(widget):

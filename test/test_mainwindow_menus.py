@@ -334,9 +334,14 @@ class _DimMM(MarkingMenu):
     established fixture pattern in this package)."""
 
     class _Overlay:
-        """The only overlay call `hide()` makes while the menu is visible."""
+        """The overlay calls the hide path makes: the buffer flush while the
+        menu is visible, and the gesture-cursor release from
+        ``_relinquish_input_control`` (which every hide runs)."""
 
         def clear_paint_events(self):
+            pass
+
+        def end_gesture(self):
             pass
 
     def __init__(self, sb, parent=None):

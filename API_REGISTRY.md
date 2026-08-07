@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-06_
+_Generated: 2026-08-07_
 
 ## Index
 
@@ -23,6 +23,7 @@ _Generated: 2026-08-06_
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - [`loaders/runtime.py`](#loaders--runtime) — Switchboard delegate that loads UIs at runtime via QUiLoader.
 - [`managers/icon_manager.py`](#managers--icon_manager)
+- [`managers/optional_package_manager.py`](#managers--optional_package_manager) — Provisioning for optional packages a panel needs importable in THIS session.
 - [`managers/preset_manager.py`](#managers--preset_manager)
 - [`managers/recent_values_store.py`](#managers--recent_values_store) — Widget-free *recent values* model — the shared source of truth for value history.
 - [`managers/registry_manager.py`](#managers--registry_manager) — Typed file registries backing Switchboard discovery.
@@ -168,10 +169,11 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L139)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L102)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
+  - `BridgeSlotsBase.optional_packages(self)` *(property)* — This panel's :class:`OptionalPackageManager` (built once, lazily).
   - `BridgeSlotsBase.optional_package_available(spec: str, import_name: str = None) -> bool` *(static)* — Is an optional package importable in THIS interpreter? Silent.
   - `BridgeSlotsBase.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make an optional package importable, offering to install it on demand.
   - `BridgeSlotsBase.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
@@ -216,6 +218,7 @@ Attribute spec + kind-handler registry for parameterised forms.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
   - `KindFactory.make_widget(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget` *(static)* — Build a Qt widget for *spec*.
+  - `KindFactory.kind_of(widget: QtWidgets.QWidget) -> Optional[str]` *(static)* — The kind stamped on *widget*, or ``None`` if this factory didn't build it.
   - `KindFactory.read_value(widget: QtWidgets.QWidget) -> Any` *(static)* — Return the current value of a factory-built widget.
   - `KindFactory.set_value(widget: QtWidgets.QWidget, value: Any) -> None` *(static)* — Set the value of a factory-built widget.
   - `KindFactory.set_choices(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None` *(static)* — Repopulate a choice-driven widget's entries after it was built.
@@ -401,6 +404,20 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
   - `IconManager.update_widget_icons(cls, root_widget: QtWidgets.QWidget, color: str)` *(class)* — Update all registered icons under a widget tree with a new color.
   - `IconManager.clear_cache(cls)` *(class)* — Clear all cached icons and SVG content.
   - `IconManager.get_cache_stats(cls) -> dict` *(class)* — Get statistics about the icon cache.
+
+<a id="managers--optional_package_manager"></a>
+### `managers/optional_package_manager.py`
+
+Provisioning for optional packages a panel needs importable in THIS session.
+
+- **[`class OptionalPackageManager(_OptionalPackageManagerInternal)`](uitk/uitk/managers/optional_package_manager.py#L71)** — Probe for, and offer to install, an optional package.
+  - `OptionalPackageManager.available(spec: str, import_name: str = None) -> bool` *(static)* — Is *spec* importable in THIS interpreter, at or above any floor? Silent.
+  - `OptionalPackageManager.pip_python() -> Optional[str]` *(static)* — Interpreter to drive pip with, for an install this session must import.
+  - `OptionalPackageManager.default_install(spec: str) -> None` *(static)* — ``pip install --user`` *spec* against the running interpreter.
+  - `OptionalPackageManager.install(self, spec: str) -> None` — Install *spec* via the injected installer, else :meth:`default_install`.
+  - `OptionalPackageManager.ensure(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make *spec* importable, offering to install it on demand.
+  - `OptionalPackageManager.version_tuple(text: str) -> Tuple[int, ...]` *(static)* — ``"0.0.8"`` -> ``(0, 0, 8)``;
+  - `OptionalPackageManager.split_requirement(spec: str) -> Tuple[str, Optional[Tuple[int, ...]]]` *(static)* — ``"unitytk>=0.0.8"`` -> ``("unitytk", (0, 0, 8))``;
 
 <a id="managers--preset_manager"></a>
 ### `managers/preset_manager.py`
@@ -664,7 +681,16 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--utils"></a>
 ### `switchboard/utils.py`
 
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L11)** — Utility methods for widget positioning, centering, and screen geometry.
+- **[`class OverrideCursorGuard(QtCore.QObject)`](uitk/uitk/switchboard/utils.py#L11)** — Owns one application override cursor and guarantees its removal.
+  - `OverrideCursorGuard.shape(self)` *(property)* — The cursor shape this guard owns.
+  - `OverrideCursorGuard.holding(self) -> bool` *(property)* — True while this guard holds an application override cursor.
+  - `OverrideCursorGuard.apply(self) -> None` — Push the override (idempotent) and start the watchdog.
+  - `OverrideCursorGuard.clear(self) -> None` — Remove the override (idempotent) and stop the watchdog.
+  - `OverrideCursorGuard.holds(cls, shape) -> bool` *(class)* — True if any live guard currently holds ``shape``.
+  - `OverrideCursorGuard.is_stale(cls, cursor) -> bool` *(class)* — True if ``cursor`` is a guard-owned shape that no guard holds —
+  - `OverrideCursorGuard.notify_stack_drained(cls) -> None` *(class)* — Drop every guard's ownership because the whole stack was dropped
+  - `OverrideCursorGuard.reconcile(cls) -> None` *(class)* — Drop every orphaned guard cursor from the application stack,
+- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L188)** — Utility methods for widget positioning, centering, and screen geometry.
   - `SwitchboardUtilsMixin.pop_override_cursor_stack(app)` *(static)* — Pop the whole application override-cursor stack.
   - `SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)` *(static)* — Re-push cursors captured by :meth:`pop_override_cursor_stack`,
   - `SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
@@ -812,7 +838,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.format_current_display_text(self, text: str) -> str` — Compose the text painted for the *current* selection only.
   - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L418)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L435)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.clear(self)`
   - `ComboBox.addItem(self, *args, **kwargs)`
   - `ComboBox.addItems(self, *args, **kwargs)`
@@ -1264,23 +1290,24 @@ Pure menu-resolution logic for the MarkingMenu.
 <a id="widgets--marking_menu--overlay"></a>
 ### `widgets/marking_menu/overlay.py`
 
-- **[`class OverlayFactoryFilter(QtCore.QObject)`](uitk/uitk/widgets/marking_menu/overlay.py#L8)**
+- **[`class OverlayFactoryFilter(QtCore.QObject)`](uitk/uitk/widgets/marking_menu/overlay.py#L10)**
   - `OverlayFactoryFilter.eventFilter(self, widget, event)`
-- **[`class Path`](uitk/uitk/widgets/marking_menu/overlay.py#L38)** — The Path class represents a sequence of widget positions and cursor positions
+- **[`class Path`](uitk/uitk/widgets/marking_menu/overlay.py#L40)** — The Path class represents a sequence of widget positions and cursor positions
   - `Path.is_empty(self) -> bool` *(property)* — Check if path has no entries.
   - `Path.intermediate_entries(self)` *(property)* — Entries between start and end (for cloning).
   - `Path.start_pos(self) -> QtCore.QPoint` *(property)* — Gets the starting position of the path.
   - `Path.widget_positions(self) -> dict` *(property)* — Gets the global position of the center of a specific widget in the path.
   - `Path.widget_position(self, target_widget)` — Gets the global position of the center of a specific widget in the path.
-  - `Path.reset(self)` — Clears the path and appends the current cursor position as the new starting position.
+  - `Path.reset(self, pos: QtCore.QPoint = None)` — Clear the path and start it at ``pos`` (default: the live cursor).
   - `Path.clear(self)` — Clears the entire path.
   - `Path.clear_to_origin(self)` — Clears the path but retains the original starting position.
   - `Path.add(self, ui, widget)` — Adds a widget and its global position to the path.
   - `Path.remove(self, target_ui)` — Removes all references to the provided ui object from the path.
-- **[`class Overlay(QtWidgets.QWidget)`](uitk/uitk/widgets/marking_menu/overlay.py#L182)** — Handles paint events as an overlay on top of an existing widget.
+- **[`class Overlay(QtWidgets.QWidget)`](uitk/uitk/widgets/marking_menu/overlay.py#L196)** — Handles paint events as an overlay on top of an existing widget.
   - `Overlay.draw_tangent(self, start_point, end_point, ellipseSize=7)` — Draws a tangent line between two points with an ellipse at the start point.
   - `Overlay.init_region(self, ui, *args, **kwargs)` — Initializes a Region widget with the specified properties and adds it to the given UI's central wid…
   - `Overlay.start_gesture(self, global_pos: QtCore.QPoint) -> None` — Begin a gesture at the given global position.
+  - `Overlay.end_gesture(self) -> None` — Release the gesture cursor.
   - `Overlay.clone_widgets_along_path(self, ui, return_func)` — Re-constructs the relevant widgets from the previous UI for the new UI, and positions them.
   - `Overlay.clear_paint_events(self)` — Clear paint events by disabling drawing and updating the overlay.
   - `Overlay.paintEvent(self, event)` — Handles the paint event for the overlay, drawing the tangent paths as needed.

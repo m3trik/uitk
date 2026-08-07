@@ -591,6 +591,13 @@ class MarkingMenuHideRelinquishesControl(QtBaseTestCase):
         # in reality — the first release clears the grabber — but our static
         # mouseGrabber mock keeps reporting self, so just assert it was released).
         self.assertTrue(spy.called, "hide() must release the menu's own grab")
+        # Same hand-off, cursor side: the gesture cursor is released from the
+        # widget being hidden rather than waiting on the overlay's own hide
+        # event, which a live DCC host may never deliver down the child chain.
+        self.assertTrue(
+            getattr(self.mm.overlay, "gestures_ended", 0),
+            "hide() must end the overlay gesture (releases the gesture cursor)",
+        )
 
     def test_hideevent_safety_net_ends_gesture(self):
         # A hide that bypasses hide() (parent hide / setVisible(False)) still
@@ -602,6 +609,10 @@ class MarkingMenuHideRelinquishesControl(QtBaseTestCase):
         self.assertFalse(
             self.mm._activation_key_held,
             "hideEvent must clear _activation_key_held, not just release the grab",
+        )
+        self.assertTrue(
+            getattr(self.mm.overlay, "gestures_ended", 0),
+            "the bypassed-hide safety net must end the overlay gesture too",
         )
 
     def test_release_input_grab_releases_a_child_button_grab(self):

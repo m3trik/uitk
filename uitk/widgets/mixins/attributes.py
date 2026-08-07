@@ -208,6 +208,7 @@ class AttributesMixin:
             set_layout_direction (str): Set the layout direction using a string value. ie. 'LeftToRight'
             set_alignment (str): Set the alignment using a string value. ie. 'AlignVCenter'
             set_button_symbols (str): Set button symbols using a string value. ex. ie. 'PlusMinus'
+            set_row_label (str): Prefix text shown beside this widget when it is embedded as a WidgetComboBox popup row. Ignored by every other host.
             set_limits (tuple): Set the min, max, step, and decimal value using a string value. ex. (0.01, 10, 1, 2)
             setCheckState (int): Set a tri-state checkbox state using an integer value. 0(unchecked), 1(partially checked), 2(checked).
             block_signals_on_restore (bool): If True, widget signals will be blocked during state restoration. Default is False (signals fire).
@@ -258,6 +259,17 @@ class AttributesMixin:
                 self.set_attributes(
                     w, setButtonSymbols=getattr(QtWidgets.QAbstractSpinBox, value)
                 )
+
+            # Row label for widgets embedded in a WidgetComboBox popup row.
+            # Deliberately only stamps a dynamic property: the label is drawn by
+            # WidgetComboBox._wrap_widget, inside the marginless container that
+            # widget already gives every row. Nothing is reparented and no
+            # option box is involved, so this stays INERT anywhere else --
+            # notably on a Menu item, where replacing the grid-cell occupant
+            # drops the item out of Menu.get_items() (see the backlog entry on
+            # the option-box wrap / Menu item-model divergence).
+            elif attr == "set_row_label":
+                w.setProperty("rowLabel", str(value))
 
             # presets
             elif attr == "set_limits":
