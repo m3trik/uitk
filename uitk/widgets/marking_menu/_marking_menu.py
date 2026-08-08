@@ -17,6 +17,7 @@ from ._resolver import MenuResolver
 from uitk.handlers.ui_handler import UiHandler
 from uitk.widgets.menuButton import MenuButton
 from uitk.managers.shortcut_manager import GlobalShortcut, ShortcutManager
+from uitk.managers.settings_manager import SettingsManager
 from uitk.themes.style_sheet import StyleSheet
 from uitk.compile import UiCompiler
 from uitk.loaders import CompiledLoader
@@ -41,7 +42,14 @@ class MarkingMenu(
 
     Parameters:
         parent (QWidget): The parent application's top level window instance. ie. the Maya main window.
-        key_show (str): The name of the key which, when pressed, will trigger the display of the marking menu. This should be one of the key names defined in QtCore.Qt. Defaults to 'Key_F12'.
+        bindings (dict): Chord string -> UI name, e.g. ``{"Key_Z": "main", "Key_Z|LeftButton": "cameras"}``.
+                This is also where the **activation key** comes from: there is no ``key_show``
+                parameter — the first ``Key_*`` part found while parsing these bindings becomes it
+                (see ``_build_bindings`` / ``MenuResolver.parse_binding_keys``), and the parsed
+                result is published on the ``key_show`` *attribute*. A caller wanting to choose the
+                key by name generates the bindings from it (tentacle's ``Tcl.chord_bindings`` does
+                exactly that). Persisted per host context and forward-merged with these defaults on
+                each construction.
         ui_source (str): The directory path or the module where the UI files are located.
                 If the given dir is not a full path, it will be treated as relative to the default path.
                 If a module is given, the path to that module will be used.
@@ -579,8 +587,10 @@ class MarkingMenu(
         kwargs["singleton_key"] = id(switchboard)
         return super().instance(**kwargs)
 
-    @staticmethod
-    def _reconcile_bindings(defaults: dict, stored: Optional[dict]) -> Optional[dict]:
+    @classmethod
+    def _reconcile_bindings(
+        cls, defaults: dict, stored: Optional[dict]
+    ) -> Optional[dict]:
         """Decide what binding dict (if any) to persist at construction.
 
         Returns the dict to write to persistent storage, or ``None`` when no
@@ -589,13 +599,24 @@ class MarkingMenu(
         * ``stored is None`` (first run) → seed with ``defaults``.
         * ``stored`` present → ``{**defaults, **stored}`` so newly-shipped default
           keys are added while the user's customizations of existing keys win on
-          overlap. Returns ``None`` when that merge equals ``stored`` (already
-          current — avoid a redundant write + ``changed`` signal).
+          overlap. Returns ``None`` when that merge equals the stored dict
+          (already current — avoid a redundant write + ``changed`` signal).
 
         Without the forward-merge a user who ran an older version keeps a frozen
         binding set and never receives new defaults — the symptom that a newly
         added chord (e.g. ``F12+L+R``) silently falls through to a sibling menu
         because its binding was never present in the resolver's lookup.
+
+        **Bindings for a different activation key are evicted first**, because a menu has exactly
+        one activation key and the resolver elects it by taking the first ``Key_*`` it meets while
+        walking this dict. Merging without eviction let several accumulate (measured in the wild:
+        one store held ``F11``, ``Z``, ``F12`` *and* ``F10``), and then whichever landed first —
+        pure insertion-order accident from some earlier session — silently became the live key.
+        That also made ``key_show`` powerless to correct it: once the requested key already
+        existed in the store with matching values, the merge equalled the stored dict, so nothing
+        was rewritten and the stale leader kept winning every launch. The caller's ``key_show`` /
+        ``bindings`` is therefore authoritative for *which key activates*; the store keeps the
+        user's chord→menu customizations on that key.
 
         A ``None`` or non-dict ``stored`` (unset, or corrupt/legacy QSettings) is
         treated as first run and re-seeded with ``defaults`` — never spread into
@@ -605,7 +626,28 @@ class MarkingMenu(
             return None
         if not isinstance(stored, dict):
             return dict(defaults)
-        merged = {**defaults, **stored}
+
+        def elect(bindings):
+            """The activation key the resolver would pick from ``bindings``.
+
+            Deferring to the resolver rather than re-implementing "first ``Key_*`` wins" keeps
+            this in step with ``_build_bindings``, which elects the live key the same way — and
+            it auto-prefixes bare forms (``"F12|LeftButton"`` → ``Key_F12``), which a local
+            prefix scan reports as None and therefore fails to evict.
+            """
+            return MenuResolver.parse_binding_keys(bindings)[1]
+
+        wanted = elect(defaults)
+        kept = stored
+        if wanted:
+            kept = {
+                chord: target
+                for chord, target in stored.items()
+                if elect({chord: target}) in (wanted, None)
+            }
+        merged = {**defaults, **kept}
+        # Compare against what is actually on disk, not the filtered copy — an eviction is
+        # itself a reason to write, even when the surviving entries match the defaults.
         return merged if merged != stored else None
 
     @staticmethod
@@ -629,6 +671,64 @@ class MarkingMenu(
         return "marking_menu_bindings" + ShortcutManager.host_namespace_suffix(
             context_tags
         )
+
+    @staticmethod
+    def _user_key_store_key(context_tags) -> str:
+        """QSettings key for the activation key the USER chose, host-namespaced
+        like :meth:`_binding_store_key` (and by the same shared suffix helper,
+        so the two stores can't disagree on a host's identity)."""
+        return "marking_menu_user_activation_key" + ShortcutManager.host_namespace_suffix(
+            context_tags
+        )
+
+    @property
+    def _user_key_store(self):
+        """The persisted user-chosen-activation-key ``SettingItem`` for this
+        menu's host context. Written only by :meth:`set_activation_key` — see
+        :meth:`stored_activation_key` for why that exclusivity is load-bearing."""
+        key = self._user_key_store_key(getattr(self.sb, "context_tags", None))
+        return getattr(self.sb.configurable, key)
+
+    @classmethod
+    def stored_activation_key(cls, context_tags=None) -> Optional[str]:
+        """The activation key the USER chose for a host context (``"Key_F11"``), or ``None``.
+
+        Written **only** by :meth:`set_activation_key` — i.e. by an actual rebind route
+        (the shortcut editor, a host Preferences panel, or an adopted DCC-side keymap
+        edit) — never by construction seeding the chord store. Presence is therefore
+        provenance: ``None`` means the user never expressed a choice, so the caller's
+        shipped default should apply — including a NEWLY shipped default, which must
+        reach exactly the installs whose user never rebound. A host resolves its launch
+        key as: this value > its own ``key_show`` default > the shipped fallback (see
+        tentacle's ``Tcl.resolve_key``); the user's choice outranks a startup script
+        re-asserting its default at every launch.
+
+        Readable **before** a menu exists — which is the point: hosts ask at launch,
+        before construction. Reads the same host-namespaced store the live menu writes
+        (:meth:`_user_key_store`) on the shared ``(org, app)`` backend. ``None`` when
+        nothing is stored, the store is unreadable, or the value is not a plausible
+        ``Key_*`` name (the write path only ever stores normalized, validated names).
+        """
+        try:
+            configurable = SettingsManager(namespace="switchboard").branch(
+                "configurable"
+            )
+            stored = getattr(configurable, cls._user_key_store_key(context_tags)).get(
+                None
+            )
+        except Exception:  # unreadable/corrupt store — the caller falls back to its default
+            return None
+        # The write path stores only validated Qt key names, so anything else is
+        # tampering/corruption. Declining it here matters: a host launches on this
+        # value, and _build_bindings leaves the menu un-triggerable on a name
+        # QtCore.Qt doesn't have — better the shipped default than a dead menu.
+        if (
+            not isinstance(stored, str)
+            or not stored.startswith("Key_")
+            or not hasattr(QtCore.Qt, stored)
+        ):
+            return None
+        return stored
 
     @property
     def _bindings_store(self):
@@ -906,6 +1006,9 @@ class MarkingMenu(
         (``"F11"``, auto-prefixed). A no-op when empty, unchanged, or not a valid
         ``QtCore.Qt.Key_*`` — the menu must always keep a working activation key
         (an invalid one leaves ``_activation_key`` None and the menu un-triggerable).
+
+        Also records the key as the USER's chosen one (:meth:`stored_activation_key`),
+        so it outranks a host's shipped default at the next launch.
         """
         if not new_key:
             return
@@ -926,6 +1029,11 @@ class MarkingMenu(
         # Persist -> _bindings_store.changed -> _build_bindings (reparse + refresh
         # the register). Then move the live activation shortcut onto the new key.
         self.bindings = rebound
+        # Record the choice as the USER's — the provenance :meth:`stored_activation_key`
+        # reads at the next launch. Only rebind routes reach this method (construction
+        # seeds the chord store directly), so a host's shipped default keeps applying
+        # until the user actually chooses.
+        self._user_key_store.set(new_part)
         self._install_activation_shortcut()
 
     def start_menu_names(self, short: bool = True) -> list:

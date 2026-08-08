@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-07_
+_Generated: 2026-08-08_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -18,7 +18,7 @@ _Generated: 2026-08-07_
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
+  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
 - `class AttributeSpec`
@@ -166,6 +166,10 @@ _Generated: 2026-08-07_
 - `class SwitchboardWidgetMixin`
   - methods: is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
 
+### `testing.py` — Test isolation for every suite in the ecosystem — keep test runs off live user state.
+- `class TestSandbox(_TestSandboxInternal)`
+  - methods: qsettings, presets, activate, is_active
+
 ### `themes/style_sheet.py`
 - `class StyleSheet(QtCore.QObject, ptk.LoggingMixin)`
   - methods: repolish_tree, theme_changed, get_icon_color, set_theme, set_theme_overrides, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
@@ -288,7 +292,7 @@ _Generated: 2026-08-07_
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`
-  - methods: retire, instance, default_bindings, bindings, on_bindings_changed, menu_theme, window_theme, resolve_hosted_theme, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
+  - methods: retire, instance, stored_activation_key, default_bindings, bindings, on_bindings_changed, menu_theme, window_theme, resolve_hosted_theme, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
 - `class MenuResolver`

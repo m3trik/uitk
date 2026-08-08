@@ -626,27 +626,43 @@ class Switchboard(
     def _get_registry_config(
         self, ui_source, slot_source, widget_source, icon_source
     ) -> dict:
-        """Return the configuration for the Switchboard registries."""
+        """Return the configuration for the Switchboard registries.
+
+        ``validate``/``path_type`` are stored on each registry's metadata so they reach
+        ``RegistryManager.resolve_path`` on every collection — including the ones driven by
+        ``FileRegistry.extend``, which merges the registry's stored metadata. Without them the
+        registries collected at ``validate=0`` and a source directory that didn't exist was
+        reported (fatally, for the class-scanning registries) from several frames deep instead of
+        being named where the caller could act on it.
+        """
         return {
             "ui_registry": {
                 "objects": ui_source,
                 "inc_files": "*.ui",
+                "validate": 1,
+                "path_type": "UI",
             },
             "slot_registry": {
                 "objects": slot_source,
                 "fields": ["classname", "classobj", "filename", "filepath"],
                 "inc_files": "*.py",
                 "exc_files": "*_ui.py",
+                "validate": 1,
+                "path_type": "Slot",
             },
             "widget_registry": {
                 "objects": widget_source,
                 "fields": ["classname", "classobj", "filename", "filepath"],
                 "inc_files": "*.py",
                 "exc_files": "*_ui.py",
+                "validate": 1,
+                "path_type": "Widget",
             },
             "icon_registry": {
                 "objects": icon_source,
                 "inc_files": ["*.svg", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.ico"],
+                "validate": 1,
+                "path_type": "Icon",
             },
         }
 
@@ -658,7 +674,7 @@ class Switchboard(
         icon_location=None,
         base_dir=1,
         recursive: bool = False,
-        validate=0,
+        validate=1,
         tags=None,
     ):
         """Add new locations to the Switchboard registries.
@@ -670,7 +686,9 @@ class Switchboard(
             icon_location: Path(s) or module(s) containing icons.
             base_dir: Base directory for relative paths. Defaults to caller's directory.
             recursive: If True, directory locations are scanned recursively.
-            validate: Validation level for paths (0=None, 1=Warn, 2=Raise).
+            validate: How loudly an unusable location is reported — 0=silent, 1=warn (default),
+                2=raise ``FileNotFoundError``. It does NOT decide whether a missing location is
+                survivable: one is always skipped rather than registered, at every level.
             tags: Optional set/list of tags to apply to UIs loaded from ui_location.
                   When a UI file from this location is loaded via add_ui(), these
                   tags are automatically merged into its tag set.
@@ -703,7 +721,12 @@ class Switchboard(
             # However, since location can be a list or module, simple string check isn't enough.
             # We rely on FileRegistry/RegistryManager to resolve and handle it.
 
-            # Helper to validate a single path item if validation is requested
+            # Strict mode only. ``extend`` below now resolves at this same ``validate`` level, so
+            # for the warn level this pre-pass would emit a SECOND identical warning for one bad
+            # source — undercutting the point of a precise message. It is kept for ``2`` so a
+            # strict register fails before the lazy registry creation below mutates any state.
+            # (It is also the weaker check of the two: a module with no ``__file__`` yields None
+            # here and is skipped silently, where ``resolve_path``'s own object branch reports it.)
             def _validate_item(item):
                 path_to_check = item
                 if inspect.ismodule(item):
@@ -723,7 +746,7 @@ class Switchboard(
                         path_type=type_name,
                     )
 
-            if validate > 0:
+            if validate > 1:
                 for item in ptk.make_iterable(location):
                     _validate_item(item)
 
@@ -745,7 +768,17 @@ class Switchboard(
                 else None
             )
 
-            registry.extend(location, base_dir=base_dir, recursive=recursive)
+            # Forward validate/path_type: without them ``extend`` merges the registry's stored
+            # metadata and re-resolves at whatever that carries, so the level computed above was
+            # discarded — ``validate=1`` warned and then raised anyway, leaving only 0 and 2
+            # reachable despite all three being documented and unit-tested on ``resolve_path``.
+            registry.extend(
+                location,
+                base_dir=base_dir,
+                recursive=recursive,
+                validate=validate,
+                path_type=type_name,
+            )
             self.logger.debug(f"[register] {type_name} location added: {location}")
 
             if registry_name == "ui_registry":

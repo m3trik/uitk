@@ -217,9 +217,14 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
         """Resolve a target object to an absolute path.
 
         Args:
-            target_obj: Object to resolve (path string or Python object).
+            target_obj: Object to resolve — a path string (environment
+                variables are expanded; relative paths are anchored on
+                ``base_dir``) or a Python object with a file location.
             validate: Validation level (0=none, 1=warn and return None,
                 2=raise) applied when the path is missing or invalid.
+                Note this governs *reporting*: collection skips an
+                unusable source at every level (see
+                :meth:`_collect_file_info`), so 0 means quiet, not fatal.
             path_type: Type description for messages (e.g. "UI", "Slot").
             **metadata: May include ``base_dir`` (str path, caller frame
                 index, or object) used to anchor relative string paths.
@@ -232,11 +237,17 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
             FileNotFoundError: If ``validate=2`` and the path is invalid.
         """
         if isinstance(target_obj, str):
+            # Expand environment variables before anything else: the validity check below is
+            # ``ptk.FileUtils.is_valid``, which expands internally, so an unexpanded
+            # ``%LOCALAPPDATA%/slots`` would validate as present and then fail every downstream
+            # os.path test on the literal string. Expanded into a local so the messages below
+            # can still quote the argument exactly as the caller wrote it.
+            expanded = os.path.expandvars(target_obj)
             base_dir = self.get_base_dir(metadata.get("base_dir", 0))
-            if os.path.isabs(target_obj):
-                path = target_obj
+            if os.path.isabs(expanded):
+                path = expanded
             else:
-                path = os.path.join(base_dir or os.getcwd(), target_obj)
+                path = os.path.join(base_dir or os.getcwd(), expanded)
             path = os.path.normpath(os.path.abspath(path))
         else:
             try:
@@ -247,9 +258,14 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
                 path = None
 
         if validate > 0 and not (path and ptk.FileUtils.is_valid(path)):
+            # Name BOTH the argument as given and where it actually resolved to. Reporting only
+            # the resolved path made a bad argument read as a uitk bug: a relative source is
+            # anchored on the caller's module, so the message quoted an absolute path inside
+            # uitk's own package that the caller had never typed.
+            detail = f" (resolved to '{path}')" if path else ""
             msg = (
-                f"[{type(self).__name__}] Invalid {path_type}: "
-                f"{path if path is not None else target_obj!r}"
+                f"[{type(self).__name__}] {path_type} source not found: "
+                f"{target_obj!r}{detail}"
             )
             if validate == 2:
                 raise FileNotFoundError(msg)
@@ -347,14 +363,36 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
         fields = ptk.make_iterable(metadata.get("fields", ["filename", "filepath"]))
         dir_path = self.resolve_path(obj, **metadata)
 
+        path_type = metadata.get("path_type", "Path")
         if dir_path is None:
             # resolve_path returns None for an invalid path under validate=1
             # ('warn'), or for an object with no resolvable path.  Skip rather
             # than fall through to os.path.isdir(None), which raises TypeError
             # — turning the documented 'warn' level into a hard crash.
-            self.logger.warning(
-                f"[{type(self).__name__}] Skipping unresolved "
-                f"{metadata.get('path_type', 'Path')}: {obj!r}"
+            # Under validate>0 resolve_path has already warned with a better
+            # message (it names the argument AND the resolved path), so this
+            # only speaks up for the silent case.
+            log = (
+                self.logger.debug
+                if metadata.get("validate", 0) > 0
+                else self.logger.warning
+            )
+            log(f"[{type(self).__name__}] Skipping unresolved {path_type}: {obj!r}")
+            return []
+
+        if not ptk.FileUtils.is_valid(dir_path):
+            # Same predicate resolve_path validates with — a second, subtly different existence
+            # test here (a bare os.path.exists) would disagree with it on any path it treats
+            # specially, skipping sources that validated fine.
+            # A missing source is skipped at EVERY validation level, including 0.
+            # validate governs how loudly an unusable source is reported, not whether
+            # a crash escapes: at 0 the path came back unchecked, and the class-scanning
+            # branch below hands it to ptk.get_classes_from_path, which raises
+            # FileNotFoundError from several frames deep. That made one bad slot
+            # directory fatal to an entire Switchboard while a missing *ui* directory
+            # — resolved through get_file_info, which skips — cost nothing.
+            self.logger.debug(
+                f"[{type(self).__name__}] Skipping missing {path_type}: {dir_path!r}"
             )
             return []
 

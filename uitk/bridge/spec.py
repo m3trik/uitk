@@ -88,6 +88,15 @@ class AttributeSpec:
             each new section, so related params read as a labelled block.
             Empty (default) = no divider. Sections are expected contiguous in
             iteration order.
+        inline: Render this spec to the RIGHT of the preceding spec instead of
+            on its own row -- for a compact modifier of the value beside it (an
+            "Auto" toggle next to the number it overrides). The builder still
+            keeps it a separately addressable row, so visibility and
+            :meth:`~uitk.bridge.BridgeSlotsBase.set_param_enabled` work per key.
+            It rides the host row's visibility, so an inline spec must be
+            referenced by the same templates as the spec it follows. Ignored on
+            the first spec of a registry (nothing to attach to) and on the first
+            spec of a section (a section's opening row is its own).
     """
 
     key: str
@@ -101,6 +110,7 @@ class AttributeSpec:
     choices: Optional[ChoicesSeq] = None
     tooltip: str = ""
     section: str = ""
+    inline: bool = False
 
     def __post_init__(self):
         # An empty key produces a widget with empty objectName that can't be

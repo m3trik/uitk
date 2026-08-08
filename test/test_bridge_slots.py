@@ -523,6 +523,18 @@ class _ShowableUi(QtCore.QObject):
     on_show = QtCore.Signal()
 
 
+def _bare_slot(params_module=None):
+    """An unconstructed slot whose ``params_module`` is a stand-in registry.
+
+    ``BridgeSlotsBase.params_module`` is an abstract property; a subclass
+    supplies it, so a test that exercises registry-reading machinery has to as
+    well (a class attribute shadows the property, exactly as a real subclass's
+    override does).
+    """
+    cls = type("_StubSlots", (BridgeSlotsBase,), {"params_module": params_module})
+    return cls.__new__(cls)
+
+
 class TestParamEnablement(BaseTestCase):
     """``set_param_enabled`` -- grey a row whose relevance is session state.
 
@@ -532,7 +544,7 @@ class TestParamEnablement(BaseTestCase):
     """
 
     def _slot_with_row(self):
-        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot = _bare_slot()
         row = QtWidgets.QWidget()
         hbox = QtWidgets.QHBoxLayout(row)
         label = QtWidgets.QLabel("Source Suffix:", row)
@@ -581,9 +593,11 @@ class TestParamEnablement(BaseTestCase):
         slot.set_param_enabled("sfx", False, "because")
         self.assertEqual(slot.collect_param_values(), {"sfx": "a"})
 
-    def test_refresh_hook_defaults_to_noop(self):
-        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+    def test_refresh_hook_does_nothing_without_declared_supersessions(self):
+        slot, _row, _label, widget = self._slot_with_row()
+        slot.PARAM_SUPERSESSIONS = ()
         self.assertIsNone(slot._refresh_param_enablement())
+        self.assertTrue(widget.isEnabled())
 
     def test_panel_show_re_evaluates_enablement(self):
         """A reopened panel must not keep the PREVIOUS scene's rows locked out.
@@ -592,7 +606,8 @@ class TestParamEnablement(BaseTestCase):
         knob?"; the show answers "is it in effect in THIS scene?" -- session
         state can change entirely while the panel is closed.
         """
-        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot, _row, _label, _widget = self._slot_with_row()
+        slot.PARAM_SUPERSESSIONS = ()
         slot.ui = _ShowableUi()
         calls = []
         slot._refresh_param_enablement = lambda: calls.append(1)
@@ -604,9 +619,151 @@ class TestParamEnablement(BaseTestCase):
 
     def test_show_wiring_tolerates_a_ui_without_on_show(self):
         """Not every panel's root is a uitk MainWindow -- that's a no-op."""
-        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot, _row, _label, _widget = self._slot_with_row()
+        slot.PARAM_SUPERSESSIONS = ()
         slot.ui = QtWidgets.QWidget()
         slot._wire_enablement_refresh()  # must not raise
+
+
+class TestParamSupersessions(BaseTestCase):
+    """A parameter whose value takes other rows out of effect.
+
+    Declared as data next to the parameters themselves, so two panels sharing
+    one registry (the Maya and Blender halves of a bridge) grey the same rows
+    without either restating the rule.
+    """
+
+    REASON = "Auto is on; this is inactive."
+
+    def _slot(self, declared_on_registry=True):
+        supersessions = (("AUTO", ("VALUE",), self.REASON),)
+        registry = type(
+            "_Registry",
+            (),
+            {"SUPERSESSIONS": supersessions} if declared_on_registry else {},
+        )
+        slot = _bare_slot(registry)
+        if not declared_on_registry:
+            slot.PARAM_SUPERSESSIONS = supersessions
+
+        rows, widgets = {}, {}
+        for key, spec in (
+            ("AUTO", AttributeSpec(key="AUTO", kind="bool", default=False)),
+            ("VALUE", AttributeSpec(key="VALUE", kind="float", default=0.02)),
+        ):
+            row = QtWidgets.QWidget()
+            hbox = QtWidgets.QHBoxLayout(row)
+            widget = KindFactory.make_widget(spec, row)
+            hbox.addWidget(widget)
+            rows[key], widgets[key] = row, widget
+        slot._param_rows, slot._param_widgets = rows, widgets
+        return slot
+
+    def test_registry_declaration_greys_the_governed_row(self):
+        slot = self._slot()
+        slot._write_param("AUTO", True)
+        slot._refresh_param_enablement()
+        self.assertFalse(slot._param_widgets["VALUE"].isEnabled())
+        self.assertEqual(slot._param_rows["VALUE"].toolTip(), self.REASON)
+
+    def test_turning_the_trigger_off_re_enables_and_clears_the_reason(self):
+        slot = self._slot()
+        slot._write_param("AUTO", True)
+        slot._refresh_param_enablement()
+        slot._write_param("AUTO", False)
+        slot._refresh_param_enablement()
+        self.assertTrue(slot._param_widgets["VALUE"].isEnabled())
+        self.assertEqual(slot._param_rows["VALUE"].toolTip(), "")
+
+    def test_class_attr_is_the_fallback_when_the_registry_declares_none(self):
+        slot = self._slot(declared_on_registry=False)
+        slot._write_param("AUTO", True)
+        slot._refresh_param_enablement()
+        self.assertFalse(slot._param_widgets["VALUE"].isEnabled())
+
+    def test_editing_the_trigger_refreshes_without_waiting_for_a_show(self):
+        """The governed row must go inert on the click, not on the next open."""
+        slot = self._slot()
+        slot.ui = _ShowableUi()
+        slot._wire_enablement_refresh()
+        slot._write_param("AUTO", True)  # fires the widget's change signal
+        self.assertFalse(slot._param_widgets["VALUE"].isEnabled())
+
+
+class TestInlineParamRows(BaseTestCase):
+    """``AttributeSpec.inline`` -- a compact modifier beside the value it governs.
+
+    An "Auto" toggle belongs next to the number it overrides, not on a row of
+    its own two lines down. It still has to be a separately addressable row,
+    or supersession (which greys the value while Auto is on) would grey the
+    toggle with it and trap the user.
+    """
+
+    def _built(self, params):
+        slot = _bare_slot(type("_Registry", (), {"PARAMS": params}))
+        slot._param_widgets, slot._param_rows = {}, {}
+        slot._param_section, slot._section_separators = {}, {}
+
+        slot.ui = QtWidgets.QWidget()
+        slot.ui.grp_process = QtWidgets.QGroupBox(slot.ui)
+        QtWidgets.QVBoxLayout(slot.ui.grp_process)
+        slot.ui.b000 = QtWidgets.QPushButton(slot.ui.grp_process)
+        slot.ui.grp_process.layout().addWidget(slot.ui.b000)
+
+        slot._build_param_widgets()
+        return slot
+
+    @staticmethod
+    def _specs(**overrides):
+        return {
+            "CAGE": AttributeSpec(key="CAGE", label="Cage Offset", kind="float", default=0.02),
+            "AUTO": AttributeSpec(
+                key="AUTO", label="Auto", kind="bool", default=False, inline=True, **overrides
+            ),
+        }
+
+    def test_inline_widget_lands_in_the_previous_row(self):
+        slot = self._built(self._specs())
+        host = slot._param_rows["CAGE"]
+        cell = slot._param_rows["AUTO"]
+        self.assertIsNot(cell, host)
+        self.assertIs(cell.parent(), host)
+        self.assertIs(slot._param_widgets["AUTO"].parent(), cell)
+
+    def test_the_inline_row_greys_independently_of_its_host(self):
+        slot = self._built(self._specs())
+        slot.set_param_enabled("CAGE", False, "Auto is on")
+        self.assertFalse(slot._param_widgets["CAGE"].isEnabled())
+        self.assertTrue(slot._param_widgets["AUTO"].isEnabled())
+
+    def test_inline_values_are_collected_like_any_other(self):
+        slot = self._built(self._specs())
+        self.assertEqual(
+            slot.collect_param_values(), {"CAGE": 0.02, "AUTO": False}
+        )
+
+    def test_a_leading_inline_spec_still_gets_its_own_row(self):
+        """Nothing to attach to -- it must not be dropped."""
+        params = {
+            "AUTO": AttributeSpec(key="AUTO", kind="bool", default=False, inline=True),
+            "CAGE": AttributeSpec(key="CAGE", kind="float", default=0.02),
+        }
+        slot = self._built(params)
+        self.assertIsNot(slot._param_rows["AUTO"], slot._param_rows["CAGE"])
+        self.assertIn("AUTO", slot._param_widgets)
+
+    def test_a_section_opener_is_never_inlined_into_the_row_above(self):
+        """A titled divider must not be followed by a row that starts on the
+        previous section's line."""
+        params = {
+            "CAGE": AttributeSpec(key="CAGE", kind="float", default=0.02),
+            "AUTO": AttributeSpec(
+                key="AUTO", kind="bool", default=False, inline=True, section="Look-dev"
+            ),
+        }
+        slot = self._built(params)
+        self.assertIsNot(slot._param_rows["AUTO"], slot._param_rows["CAGE"])
+        self.assertIsNot(slot._param_rows["AUTO"].parent(), slot._param_rows["CAGE"])
 
 
 class TestCheckListKind(BaseTestCase):

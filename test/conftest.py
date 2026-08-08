@@ -6,12 +6,8 @@ This module provides common test infrastructure, fixtures, and utilities
 used across all UITK test modules.
 """
 
-import os
 import sys
-import atexit
-import shutil
 import logging
-import tempfile
 from pathlib import Path
 from typing import Optional
 from unittest import TestCase
@@ -25,106 +21,17 @@ if str(TEST_DIR) not in sys.path:
     sys.path.insert(0, str(TEST_DIR))
 
 
-def _sandbox_qsettings() -> str:
-    """Keep the whole test process off the real ``QSettings`` store.
+# Keep the whole test process off the real QSettings + preset stores. The redirect itself lives in
+# the shipped package (``uitk.testing``) because those stores are process-wide and shared by every
+# repo in the ecosystem, so tentacle/mayatk/blendertk suites need the identical one — see that
+# module for why the Windows NativeFormat overloads have to be rewritten.
+#
+# Import-time, not a pytest fixture: it must run before the first ``QSettings`` is constructed, and
+# it has to protect direct ``unittest`` / ``mayapy`` runs too (every test module imports this
+# conftest before defining its cases).
+from uitk.testing import TestSandbox  # noqa: E402
 
-    uitk's *production* settings live in the real per-user store
-    (``HKCU\\Software\\uitk\\shared`` on Windows, ``~/.config/uitk`` on
-    Linux). Many tests construct ``SettingsManager()`` / ``QSettings(org,
-    app)`` with production-ish names and then ``setValue`` / ``clear`` them —
-    so without isolation a single ``pytest`` run reads, writes, and (worst of
-    all) wipes the developer's live marking-menu bindings, widget state, and
-    theme. Closing and relaunching the host DCC then "mysteriously" restores
-    defaults: the suite emptied the store on its way out.
-
-    The catch on Windows: ``QSettings(org, app)`` and ``QSettings(scope, org,
-    app)`` *always* use ``NativeFormat`` (the registry). They ignore
-    ``setDefaultFormat`` (which only governs the no-arg / parent-only
-    constructors), and ``setPath`` is a documented no-op for ``NativeFormat``.
-    The only reliable redirect is to rewrite those registry-bound overloads to
-    the explicit ``IniFormat`` constructor — done here by swapping
-    ``QtCore.QSettings`` for a thin subclass. ``setPath`` then steers the
-    resulting ini files into a throwaway temp dir.
-
-    Pass-through is deliberate for every other overload (explicit-format,
-    ``QSettings(path, IniFormat)``, no-arg): those don't touch the shared
-    native store. Subclassing (not a factory function) preserves
-    ``QSettings.IniFormat`` enum access and ``isinstance(x, QSettings)``.
-
-    Activated at *import* time (below) rather than via a pytest fixture so it
-    protects direct ``unittest`` / ``mayapy`` runs too — every test module
-    imports this conftest before defining its cases, and this must run before
-    the first ``QSettings`` is constructed.
-    """
-    from qtpy import QtCore
-
-    tmp = tempfile.mkdtemp(prefix="uitk_test_qsettings_")
-    real = QtCore.QSettings
-    ini, user = real.IniFormat, real.UserScope
-
-    # IniFormat files for both scopes land in the temp dir.
-    for scope in (real.UserScope, real.SystemScope):
-        real.setPath(ini, scope, tmp)
-    # Load-bearing for the no-arg / QObject-parent constructors (which the
-    # subclass below forwards verbatim): they pick up IniFormat from here.
-    real.setDefaultFormat(ini)
-
-    class _SandboxedQSettings(real):
-        """Force the NativeFormat (registry-bound) overloads onto temp ini.
-
-        Two Qt constructor overloads silently bind to the real native store
-        and ignore ``setDefaultFormat`` / ``setPath``:
-        ``QSettings(org, app[, parent])`` and ``QSettings(scope, org,
-        app[, parent])``. Both are rewritten to the explicit ``IniFormat``
-        constructor so no test can reach the real ``HKCU\\Software\\uitk``
-        hive. Every other overload (explicit-format, ``QSettings(path,
-        IniFormat)``, and the no-arg / parent-only forms already steered by
-        ``setDefaultFormat`` above) passes through unchanged.
-        """
-
-        def __init__(self, *args, **kwargs):
-            if len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
-                # (org, app[, parent]) -> (Ini, UserScope, org, app[, parent])
-                super().__init__(ini, user, *args, **kwargs)
-            elif (
-                len(args) >= 3 and isinstance(args[1], str) and isinstance(args[2], str)
-            ):
-                # (scope, org, app[, parent]) -> (Ini, scope, org, app[, parent])
-                super().__init__(ini, *args, **kwargs)
-            else:
-                super().__init__(*args, **kwargs)
-
-    QtCore.QSettings = _SandboxedQSettings
-    atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
-    return tmp
-
-
-# Sandbox QSettings storage for the entire test process. See the docstring
-# for why this is import-time and not a fixture.
-QSETTINGS_SANDBOX_DIR = _sandbox_qsettings()
-
-
-def _sandbox_presets_root() -> str:
-    """Keep the test process off the real consolidated preset store.
-
-    Presets live outside QSettings — JSON files under
-    ``<GenericConfigLocation>/uitk/<pkg>/<dir>/`` (see
-    ``preset_manager.PresetManager.get_presets_root``) — so the QSettings sandbox above
-    doesn't cover them. Merely *constructing* a preset-enabled editor touches
-    that store (legacy migration, dir creation, and the style editor's
-    first-run activation writes an ``.active`` sidecar), so without isolation
-    a test run mutates the developer's live preset state. The root honors the
-    ``UITK_PRESETS_ROOT`` env override; point it at a throwaway temp dir for
-    the whole process. Import-time for the same reason as the QSettings
-    sandbox: it must precede the first preset-dir resolution.
-    """
-    tmp = tempfile.mkdtemp(prefix="uitk_test_presets_")
-    os.environ["UITK_PRESETS_ROOT"] = tmp
-    atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
-    return tmp
-
-
-PRESETS_SANDBOX_DIR = _sandbox_presets_root()
+QSETTINGS_SANDBOX_DIR, PRESETS_SANDBOX_DIR = TestSandbox.activate()
 
 
 def setup_qt_application():

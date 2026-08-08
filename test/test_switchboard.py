@@ -2696,6 +2696,100 @@ class TestNoDuplicateTopLevelDefinitions(unittest.TestCase):
         )
 
 
+class TestMissingSourceTolerance(QtBaseTestCase):
+    """A source directory that doesn't resolve is warned about and skipped, never fatal.
+
+    Missing slots are tolerated at every other granularity — a widget with no slot method and a
+    ``.ui`` with no slot module both log at DEBUG and carry on (see the two
+    ``*_logs_debug_on_missing_slot`` tests above), and tentacle ships ~20 Blender menu pages with
+    no slot module at all. A missing *directory* used to be the lone fatal rung: slot/widget
+    registries scan via ``get_classes_from_path``, which raises ``FileNotFoundError``, while UI and
+    icon registries resolve via ``get_file_info``, which skips silently — so the same missing
+    directory was fatal or free depending only on which registry it was handed to.
+    """
+
+    MISSING = "definitely/not/a/real/source/dir"
+
+    def test_missing_slot_source_does_not_raise_at_construction(self):
+        """The whole menu used to die on one bad slot path — including panels that would work."""
+        sb = Switchboard(slot_source=self.MISSING)
+        self.assertEqual(list(sb.registry.slot_registry.filepath or []), [])
+
+    def test_missing_ui_source_does_not_raise_at_construction(self):
+        """Already true — pinned so the two sources can't drift apart again."""
+        sb = Switchboard(ui_source=self.MISSING)
+        self.assertEqual(list(sb.registry.ui_registry.filepath or []), [])
+
+    def test_missing_widget_source_does_not_raise_at_construction(self):
+        Switchboard(widget_source=self.MISSING)
+
+    def test_missing_slot_source_does_not_raise_via_register(self):
+        sb = Switchboard()
+        sb.register(slot_location=self.MISSING)
+
+    def test_register_validate_warn_does_not_raise(self):
+        """``validate=1`` is documented as 'warn and return None'.
+
+        It used to warn and then raise anyway: ``register`` computed the level, discarded the
+        result, and called ``extend`` without forwarding it — so only 0 and 2 were reachable.
+        """
+        sb = Switchboard()
+        sb.register(slot_location=self.MISSING, validate=1)
+
+    def test_register_validate_raise_still_raises(self):
+        """The strict level stays strict — tolerance must be opt-out-able."""
+        sb = Switchboard()
+        with self.assertRaises(FileNotFoundError):
+            sb.register(slot_location=self.MISSING, validate=2)
+
+    def test_warning_names_both_the_given_source_and_the_resolved_path(self):
+        """The old message named only an absolute path resolved against uitk's own internals —
+        a path the caller never typed — so it read as a uitk bug rather than a bad argument."""
+        sb = Switchboard()
+        with self.assertLogs(sb.registry.logger, level="WARNING") as caught:
+            sb.register(slot_location=self.MISSING)
+        joined = "\n".join(caught.output)
+        self.assertIn(self.MISSING, joined)  # what the caller passed
+        self.assertIn("Slot", joined)  # which source it was
+        self.assertIn("resolved to", joined)  # where it actually looked
+        # Exactly once. register() pre-validates AND extend() resolves, so forwarding the level
+        # to extend made both report the same bad source — two identical warnings undercut the
+        # precise message this test exists to protect.
+        self.assertEqual(
+            len(caught.output), 1, f"expected one warning, got: {caught.output}"
+        )
+
+    def test_a_valid_source_still_registers(self):
+        """Tolerance must not swallow the working case."""
+        from uitk import examples
+
+        sb = Switchboard(ui_source=examples)
+        self.assertTrue(list(sb.registry.ui_registry.filepath or []))
+
+    def test_env_var_source_is_expanded_not_treated_as_missing(self):
+        """A source containing an environment variable must resolve, not be skipped.
+
+        The validity check (``ptk.FileUtils.is_valid``) expands env vars internally, so an
+        unexpanded ``%VAR%/...`` validated as present and then failed every downstream os.path
+        test on the literal string — and would have been indistinguishable from a genuinely
+        missing source once missing sources became survivable.
+        """
+        import os
+        from uitk import examples
+
+        examples_dir = os.path.dirname(examples.__file__)
+        parent, leaf = os.path.dirname(examples_dir), os.path.basename(examples_dir)
+        os.environ["UITK_TEST_SRC_ROOT"] = parent
+        try:
+            sb = Switchboard(ui_source=os.path.join("%UITK_TEST_SRC_ROOT%", leaf))
+            self.assertTrue(
+                list(sb.registry.ui_registry.filepath or []),
+                "env-var source registered nothing — it was treated as missing",
+            )
+        finally:
+            os.environ.pop("UITK_TEST_SRC_ROOT", None)
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

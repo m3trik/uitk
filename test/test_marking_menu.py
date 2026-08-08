@@ -911,7 +911,12 @@ class TestOverlayGestureCursor(QtBaseTestCase):
             self.assertEqual(self._override_shape(), QtCore.Qt.CrossCursor)
 
             self.host.hide()  # menu goes down; no event reaches the overlay
-            QtWidgets.QApplication.processEvents()
+            # No processEvents before the precondition read: any event dispatch
+            # may legally run the (10 ms) watchdog tick — the very thing under
+            # test — which made this assert a race (measured: the tick fired
+            # inside processEvents and cleared the cursor "early"). hide()
+            # delivers its (stubbed) hideEvent synchronously, so the claim
+            # "no synchronous path cleared it" holds without spinning the loop.
             self.assertEqual(
                 self._override_shape(),
                 QtCore.Qt.CrossCursor,
