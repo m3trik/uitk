@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-07_
+_Generated: 2026-08-08_
 
 ## Index
 
@@ -41,6 +41,7 @@ _Generated: 2026-08-07_
 - [`switchboard/style.py`](#switchboard--style) — Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 - [`switchboard/utils.py`](#switchboard--utils)
 - [`switchboard/widgets.py`](#switchboard--widgets)
+- [`testing.py`](#testing) — Test isolation for every suite in the ecosystem — keep test runs off live user state.
 - [`themes/style_sheet.py`](#themes--style_sheet)
 - [`widgets/attributeWindow/_attributeWindow.py`](#widgets--attributeWindow--_attributeWindow)
 - [`widgets/checkBox.py`](#widgets--checkBox)
@@ -169,7 +170,7 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L102)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L101)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -194,6 +195,7 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
   - `BridgeSlotsBase.require_output_dir(self) -> Optional[str]` — Return the Output Dir or log an error on empty.
   - `BridgeSlotsBase.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None` — Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
+  - `BridgeSlotsBase.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]` — The ``(trigger, governed, reason)`` triples in effect for this panel.
   - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
   - `BridgeSlotsBase.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
   - `BridgeSlotsBase.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
@@ -212,8 +214,8 @@ Attribute spec + kind-handler registry for parameterised forms.
 - **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L55)** — Description of one editable attribute / bridge parameter.
   - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
   - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L127)** — Bundle of callables that build / read / write a widget kind.
-- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L669)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L137)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L679)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
   - `KindFactory.infer_kind(value: Any) -> str` *(static)* — Map a Python value to one of the built-in kinds.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
@@ -577,7 +579,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
   - `Switchboard.prev_ui(self) -> Optional[QtWidgets.QWidget]` *(property)* — Get the previous UI from history — the one before the current UI.
   - `Switchboard.prev_slot(self) -> object` *(property)* — Get the last called slot.
   - `Switchboard.visible_windows(self) -> set` *(property)* — Return all currently visible MainWindow instances.
-  - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=0, tags=None)` — Add new locations to the Switchboard registries.
+  - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None)` — Add new locations to the Switchboard registries.
   - `Switchboard.load_all_ui(self) -> list` — Extends the 'load_ui' method to load all UI from a given path.
   - `Switchboard.load_ui(self, file: str) -> QtWidgets.QMainWindow` — Load a UI from the given .ui path via the configured loader delegate.
   - `Switchboard.add_ui(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`
@@ -740,6 +742,17 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardWidgetMixin.get_all_windows(name=None)` *(static)* — Get Qt windows.
   - `SwitchboardWidgetMixin.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
   - `SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
+
+<a id="testing"></a>
+### `testing.py`
+
+Test isolation for every suite in the ecosystem — keep test runs off live user state.
+
+- **[`class TestSandbox(_TestSandboxInternal)`](uitk/uitk/testing.py#L51)** — Point this process's user-state stores at throwaway temp dirs.
+  - `TestSandbox.qsettings(cls)` *(class)* — Redirect every ``QSettings`` store to temp ini files;
+  - `TestSandbox.presets(cls)` *(class)* — Redirect the consolidated preset root;
+  - `TestSandbox.activate(cls)` *(class)* — Redirect both stores;
+  - `TestSandbox.is_active(cls)` *(class)* — True once :meth:`qsettings` has redirected the store.
 
 <a id="themes--style_sheet"></a>
 ### `themes/style_sheet.py`
@@ -1237,9 +1250,10 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 <a id="widgets--marking_menu--_marking_menu"></a>
 ### `widgets/marking_menu/_marking_menu.py`
 
-- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L36)** — MarkingMenu is a marking menu based on a QWidget.
+- **[`class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L37)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.retire(self) -> None` — Deactivate this instance because a newer MarkingMenu now owns
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
+  - `MarkingMenu.stored_activation_key(cls, context_tags=None) -> Optional[str]` *(class)* — The activation key the USER chose for a host context (``"Key_F11"``), or ``None``.
   - `MarkingMenu.default_bindings(self) -> dict` *(property)* — The original bindings passed at construction time.
   - `MarkingMenu.bindings(self) -> dict` *(property)* — Get bindings from persistent storage.
   - `MarkingMenu.on_bindings_changed(self, callback) -> None` — Subscribe to binding changes on this menu's persistent store.

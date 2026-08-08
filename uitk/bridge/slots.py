@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import atexit
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -200,6 +199,17 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     # ``notes``) for the header help button, or ``None`` for no help.
     # Subclasses set this (or override :meth:`help_spec` to compute it).
     HELP_SPEC: Optional[Dict[str, Any]] = None
+
+    # ------------------ Supersessions ---------------------------------
+    # ``(trigger key, governed keys, reason)`` triples: while *trigger* reads
+    # truthy, the *governed* rows grey out with *reason* as their tooltip --
+    # the "an Auto toggle takes over the controls it replaces" shape, declared
+    # as data. Read from the parameter REGISTRY (``params_module.SUPERSESSIONS``)
+    # when it declares them, because which knob supersedes which is a property
+    # of the parameter set, not of a DCC's panel -- so both DCCs' panels
+    # sharing one registry behave identically without either restating it.
+    # This class attr is the fallback for a panel whose registry declares none.
+    PARAM_SUPERSESSIONS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = ()
 
     # ------------------ Subclass hooks --------------------------------
 
@@ -709,55 +719,113 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
         Builds one row widget per registered :class:`AttributeSpec` via
         :func:`uitk.bridge.spec.make_widget` -- the shared registry powers
-        every kind including custom ones the bridge registered.
+        every kind including custom ones the bridge registered. A spec with
+        ``inline`` set is appended to the PREVIOUS row instead of claiming one
+        of its own (see :meth:`_build_inline_cell`).
         """
         grp = QtWidgets.QGroupBox("Parameters", self.ui.grp_process)
         vbox = QtWidgets.QVBoxLayout(grp)
         vbox.setContentsMargins(2, 4, 2, 2)
         vbox.setSpacing(0)
 
+        host_row: Optional[QtWidgets.QWidget] = None
         for key, spec in self.params_module.PARAMS.items():
             # Start of a new category -> a titled divider above its first row.
             # (One separator per section; sections are expected contiguous.)
             section = getattr(spec, "section", "") or ""
             self._param_section[key] = section
-            if section and section not in self._section_separators:
+            new_section = bool(section) and section not in self._section_separators
+            if new_section:
                 sep = Separator(grp, title=section)
                 vbox.addWidget(sep)
                 self._section_separators[section] = sep
+
+            tooltip_html = self.format_param_tooltip(spec)
+            # An inline spec joins the previous row; a section's opening spec
+            # starts one regardless, so a divider is never followed by a row
+            # whose first control belongs to the section above it.
+            inline = getattr(spec, "inline", False) and host_row is not None
+            if inline and not new_section:
+                self._build_inline_cell(spec, key, host_row, tooltip_html)
+                continue
 
             row = QtWidgets.QWidget(grp)
             hbox = QtWidgets.QHBoxLayout(row)
             hbox.setContentsMargins(0, 0, 0, 0)
             hbox.setSpacing(2)
 
-            tooltip_html = self.format_param_tooltip(spec)
-
             label = QtWidgets.QLabel(spec.display_label + ":", row)
             label.setMinimumWidth(self.LABEL_MIN_WIDTH)
             label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             label.setToolTip(tooltip_html)
 
-            widget = KindFactory.make_widget(spec, row)
-            # Prefix the registry key so two panels in the same window
-            # can host the same AttributeSpec without objectName clashes.
-            widget.setObjectName(f"param_{key.lower()}")
-            if spec.kind not in self.TALL_KINDS:
-                widget.setMinimumHeight(19)
-                widget.setMaximumHeight(19)
-            widget.setToolTip(tooltip_html)
+            widget = self._make_param_widget(spec, key, row, tooltip_html)
 
             hbox.addWidget(label)
             hbox.addWidget(widget, 1)
             vbox.addWidget(row)
 
-            self._param_widgets[key] = widget
             self._param_rows[key] = row
+            host_row = row
 
         parent_layout = self.ui.grp_process.layout()
         insert_at = parent_layout.indexOf(self.ui.b000)
         parent_layout.insertWidget(insert_at, grp)
         self._param_group = grp
+
+    def _make_param_widget(
+        self,
+        spec: AttributeSpec,
+        key: str,
+        parent: QtWidgets.QWidget,
+        tooltip_html: str,
+    ) -> QtWidgets.QWidget:
+        """Build, name, clamp and register one spec's widget."""
+        widget = KindFactory.make_widget(spec, parent)
+        # Prefix the registry key so two panels in the same window
+        # can host the same AttributeSpec without objectName clashes.
+        widget.setObjectName(f"param_{key.lower()}")
+        if spec.kind not in self.TALL_KINDS:
+            widget.setMinimumHeight(19)
+            widget.setMaximumHeight(19)
+        widget.setToolTip(tooltip_html)
+        self._param_widgets[key] = widget
+        return widget
+
+    def _build_inline_cell(
+        self,
+        spec: AttributeSpec,
+        key: str,
+        host_row: QtWidgets.QWidget,
+        tooltip_html: str,
+    ) -> QtWidgets.QWidget:
+        """Append *spec* to the right of *host_row*'s widget, as its own cell.
+
+        The cell (label + widget) is what gets registered as this key's "row",
+        so :meth:`set_param_enabled` greys only this control and
+        :meth:`_refresh_param_visibility` can hide it without taking the host
+        control with it. The label carries no minimum width -- an inline
+        modifier reads as a suffix to the value beside it, not as a second
+        left-aligned column -- and the cell takes no stretch, so the host
+        widget keeps the row's free space.
+        """
+        cell = QtWidgets.QWidget(host_row)
+        hbox = QtWidgets.QHBoxLayout(cell)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(2)
+
+        label = QtWidgets.QLabel(spec.display_label + ":", cell)
+        label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        label.setToolTip(tooltip_html)
+
+        widget = self._make_param_widget(spec, key, cell, tooltip_html)
+
+        hbox.addWidget(label)
+        hbox.addWidget(widget)
+        host_row.layout().addWidget(cell)
+
+        self._param_rows[key] = cell
+        return widget
 
     def _wire_action_params(self) -> None:
         """Connect ``action``-kind param buttons to same-named slot methods.
@@ -798,19 +866,25 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         doesn't consume the hover either, so the parent's tooltip is what
         surfaces. Unknown keys are ignored -- a shared base can offer the row
         without every panel registering it.
+
+        Another parameter's inline cell (see :meth:`_build_inline_cell`) lives
+        inside this row but is NOT part of it, so it is skipped: greying the
+        value an "Auto" toggle superseded must not grey the toggle sitting
+        beside it, or the user cannot turn it back off.
         """
         row = self._param_rows.get(key)
         if row is None:
             return
+        others = {r for k, r in self._param_rows.items() if k != key}
         layout = row.layout()
         for i in range(layout.count() if layout is not None else 0):
             child = layout.itemAt(i).widget()
-            if child is not None:
+            if child is not None and child not in others:
                 child.setEnabled(enabled)
         row.setToolTip("" if enabled else reason)
 
     def _wire_enablement_refresh(self) -> None:
-        """Re-run :meth:`_refresh_param_enablement` every time the panel shows.
+        """Re-run :meth:`_refresh_param_enablement` on panel show + trigger edits.
 
         Enablement keys off LIVE session state, which can change while the
         panel is closed (a new scene, a set deleted from the outliner). The
@@ -818,24 +892,54 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         PREVIOUS scene locked out in the next one -- worse than merely stale,
         because the control it hides is the one now in effect.
 
+        The supersession triggers are the other source: a parameter whose own
+        value decides whether OTHER rows apply has to re-evaluate on the
+        click, not on the next show, or the rows it governs stay live for a
+        mode that no longer reads them.
+
         A panel whose root widget isn't a uitk ``MainWindow`` has no
         ``on_show`` to hook; that's a no-op, not an error.
         """
         on_show = getattr(self.ui, "on_show", None)
         if on_show is not None:
             on_show.connect(self._refresh_param_enablement)
+        for trigger, _governed, _reason in self.param_supersessions():
+            widget = self._param_widgets.get(trigger)
+            if widget is not None:
+                KindFactory.connect_changed(
+                    widget, lambda *_: self._refresh_param_enablement()
+                )
+
+    def param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]:
+        """The ``(trigger, governed, reason)`` triples in effect for this panel.
+
+        The registry's own declaration wins; :attr:`PARAM_SUPERSESSIONS` is the
+        fallback. Override to compute them.
+        """
+        declared = getattr(self.params_module, "SUPERSESSIONS", None)
+        return tuple(declared if declared is not None else self.PARAM_SUPERSESSIONS)
 
     def _refresh_param_enablement(self) -> None:
-        """Hook: re-evaluate which rows are *in effect* for the live session.
+        """Re-evaluate which rows are *in effect*, and grey the rest.
 
-        Called on every template change and on every panel show; panels also
-        call it themselves after an action that changes the state it keys off.
-        Default is a no-op -- :meth:`set_param_enabled` is the tool a subclass
-        drives here. Must not touch ``self.bridge``: this runs during panel
-        construction, where the engine may be an optional package the user
-        declined to install.
+        Called on every template change, every panel show, and every edit of a
+        supersession trigger; panels also call it themselves after an action
+        that changes the state it keys off. The default applies the declared
+        supersessions (:meth:`param_supersessions`); a subclass adds the
+        checks that need live session state -- calling ``super()`` first, or
+        the declared ones stop being applied -- driving
+        :meth:`set_param_enabled` for each.
+
+        Must not touch ``self.bridge``: this runs during panel construction,
+        where the engine may be an optional package the user declined to
+        install.
         """
-        return
+        for trigger, governed, reason in self.param_supersessions():
+            if trigger not in self._param_widgets:
+                continue
+            active = bool(self._read_param(trigger))
+            for key in governed:
+                self.set_param_enabled(key, not active, reason if active else "")
 
     def _read_param(self, key: str) -> Any:
         """Extract the current value via the registered KindHandler."""

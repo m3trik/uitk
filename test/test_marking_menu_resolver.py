@@ -7,6 +7,7 @@ state-to-menu mapping rules in isolation.
 """
 
 import unittest
+from unittest import mock
 
 from uitk.widgets.marking_menu._resolver import (
     LEFT_BUTTON,
@@ -228,6 +229,63 @@ class TestReconcileBindings(unittest.TestCase):
         for bad in (["not", "a", "dict"], "string", 42):
             self.assertEqual(self._reconcile(defaults, bad), defaults)
 
+    # --- activation-key eviction ------------------------------------------------------------
+    # A menu has exactly ONE activation key, but the resolver elects it by taking the first
+    # ``Key_*`` while walking this dict. Merging without eviction let several accumulate and the
+    # winner became an insertion-order accident from an earlier session.
+
+    def _activation(self, bindings):
+        from uitk.widgets.marking_menu._resolver import MenuResolver
+
+        return MenuResolver.parse_binding_keys(bindings)[1]
+
+    def test_stale_activation_key_is_evicted(self):
+        defaults = {"Key_F12": "hud", "Key_F12|RightButton": "main"}
+        stored = {"Key_Z": "hud", "Key_Z|RightButton": "main"}  # an earlier key_show
+        merged = self._reconcile(defaults, stored)
+        self.assertNotIn("Key_Z", merged)
+        self.assertEqual(self._activation(merged), "Key_F12")
+
+    def test_requested_key_wins_even_when_already_stored(self):
+        """The reported break: a store led by a stale key that ``key_show`` could not dislodge.
+
+        Every requested binding was already present with identical values, so the old merge
+        equalled the stored dict and returned None — nothing was rewritten, and the stale leader
+        kept winning every launch. Reproduces a real store, which had accumulated four keys.
+        """
+        defaults = {f"Key_F12{sfx}": t for sfx, t in (("", "hud"), ("|RightButton", "main"))}
+        stored = {}
+        for key in ("Key_F11", "Key_Z", "Key_F12", "Key_F10"):  # F12 present, but not first
+            stored[key] = "hud"
+            stored[f"{key}|RightButton"] = "main"
+        self.assertEqual(self._activation(stored), "Key_F11")  # what the user was stuck on
+
+        merged = self._reconcile(defaults, stored)
+        self.assertIsNotNone(merged, "an eviction must be persisted, not skipped as 'current'")
+        self.assertEqual(self._activation(merged), "Key_F12")
+        self.assertEqual(sorted({k.split("|")[0] for k in merged}), ["Key_F12"])
+
+    def test_stale_key_in_bare_form_is_also_evicted(self):
+        """Eviction must use the resolver's election rule, not a local re-implementation.
+
+        ``parse_binding_keys`` auto-prefixes bare parts, so ``"F11|LeftButton"`` elects
+        ``Key_F11``. A hand-rolled "first part starting with Key_" check reports None for it and
+        keeps it — leaving behind exactly the kind of entry that can still win the election.
+        """
+        defaults = {"Key_F12": "hud"}
+        stored = {"F11": "hud", "F11|LeftButton": "cameras", "Key_F12": "hud"}
+        merged = self._reconcile(defaults, stored)
+        self.assertNotIn("F11", merged)
+        self.assertNotIn("F11|LeftButton", merged)
+        self.assertEqual(self._activation(merged), "Key_F12")
+
+    def test_customizations_on_the_requested_key_survive_eviction(self):
+        defaults = {"Key_F12": "hud", "Key_F12|RightButton": "main"}
+        stored = {"Key_F12": "my_custom_menu", "Key_Z": "hud"}
+        merged = self._reconcile(defaults, stored)
+        self.assertEqual(merged["Key_F12"], "my_custom_menu")  # user's edit kept
+        self.assertNotIn("Key_Z", merged)  # stale key dropped
+
 
 class TestBindingStoreKey(unittest.TestCase):
     """Per-host namespacing of the persisted-bindings QSettings key.
@@ -256,6 +314,95 @@ class TestBindingStoreKey(unittest.TestCase):
     def test_multi_tag_is_deterministic(self):
         # sorted → stable regardless of set iteration order
         self.assertEqual(self._key({"b", "a"}), "marking_menu_bindings_a_b")
+
+
+class _FakeItem:
+    """Stand-in for a ``SettingsManager.SettingItem`` — only ``get`` is exercised."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def get(self, default=None):
+        return default if self._value is None else self._value
+
+
+class _FakeSettings:
+    """Stand-in for ``SettingsManager``: attribute access yields a stored value by key."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def branch(self, _name):
+        return self
+
+    def __getattr__(self, name):  # only reached for keys not in __dict__
+        return _FakeItem(self._values.get(name))
+
+
+class TestStoredActivationKey(unittest.TestCase):
+    """Reading the key the USER chose, BEFORE a menu exists.
+
+    Written only by ``set_activation_key`` (a real rebind: shortcut editor, Preferences
+    panel, adopted DCC keymap edit) — never by construction seeding — so presence is
+    provenance. A host launches on this when present; otherwise its own ``key_show``
+    default applies, which is also how a changed shipped default reaches exactly the
+    installs whose user never rebound. The store is faked so the test never touches a
+    real QSettings backend.
+    """
+
+    @staticmethod
+    def _stored_key(values, context_tags=None):
+        from uitk.widgets.marking_menu import _marking_menu as module
+
+        with mock.patch.object(
+            module, "SettingsManager", lambda **kw: _FakeSettings(values)
+        ):
+            return module.MarkingMenu.stored_activation_key(context_tags)
+
+    def test_reads_the_user_chosen_key(self):
+        values = {"marking_menu_user_activation_key_maya": "Key_F11"}
+        self.assertEqual(self._stored_key(values, {"maya"}), "Key_F11")
+
+    def test_reads_the_hosts_own_namespace(self):
+        """Maya's chosen key must not leak into Blender's launch (the shared-backend hazard)."""
+        values = {"marking_menu_user_activation_key_maya": "Key_F11"}
+        self.assertEqual(self._stored_key(values, {"maya"}), "Key_F11")
+        self.assertIsNone(self._stored_key(values, {"blender"}))
+
+    def test_seeded_chords_alone_are_not_a_user_choice(self):
+        """The chord table is written by construction seeding every launch; only the
+        set_activation_key sidecar is provenance. Treating seeded chords as a choice is
+        what froze the shipped default forever for every existing install."""
+        values = {
+            "marking_menu_bindings_maya": {
+                "Key_F11": "hud#startmenu",
+                "Key_F11|LeftButton": "cameras#startmenu",
+            }
+        }
+        self.assertIsNone(self._stored_key(values, {"maya"}))
+
+    def test_nothing_stored_returns_none(self):
+        self.assertIsNone(self._stored_key({}))
+
+    def test_garbage_value_returns_none(self):
+        """A corrupt/legacy value must read as "no choice", not crash a host's startup.
+        The write path only stores normalized, validated Qt key names, so anything
+        else — a bare un-prefixed key, or a ``Key_``-prefixed name QtCore.Qt doesn't
+        have (which would leave the menu un-triggerable) — is garbage by definition."""
+        for value in ({}, [], "F12", 0, "", "Key_NotARealKey"):
+            with self.subTest(value=value):
+                self.assertIsNone(
+                    self._stored_key({"marking_menu_user_activation_key": value})
+                )
+
+    def test_an_unreadable_store_returns_none(self):
+        from uitk.widgets.marking_menu import _marking_menu as module
+
+        def _boom(**_kwargs):
+            raise RuntimeError("no QSettings backend")
+
+        with mock.patch.object(module, "SettingsManager", _boom):
+            self.assertIsNone(module.MarkingMenu.stored_activation_key({"maya"}))
 
 
 if __name__ == "__main__":

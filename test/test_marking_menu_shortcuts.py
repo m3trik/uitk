@@ -135,6 +135,45 @@ class TestActivationKey(_MarkingMenuRegisterFixture):
         self.assertIn("Key_F11|RightButton", self.mm.bindings)
 
 
+class TestUserKeyProvenance(_MarkingMenuRegisterFixture):
+    """Only a real rebind records a USER-chosen key; construction seeding never does.
+
+    ``stored_activation_key`` is what a host reads at launch to decide whether the user's
+    choice outranks its shipped ``key_show`` default — so seeding must not masquerade as
+    a choice (that would freeze the shipped default forever), and every rebind route must
+    record one (or the choice dies at the next restart).
+    """
+
+    def setUp(self):
+        super().setUp()
+        # The sidecar persists in the (sandboxed) QSettings across tests — clear it so
+        # each test starts from "the user never chose".
+        self.sb.configurable.clear(
+            MarkingMenu._user_key_store_key(self.sb.context_tags)
+        )
+
+    def _stored(self):
+        return MarkingMenu.stored_activation_key(self.sb.context_tags)
+
+    def test_construction_seeding_records_no_user_key(self):
+        # The fixture seeded the chord store (mirroring MarkingMenu.__init__) — that
+        # alone must not read as a choice.
+        self.assertIsNone(self._stored())
+
+    def test_set_activation_key_records_the_user_choice(self):
+        self.mm.set_activation_key("F11")
+        self.assertEqual(self._stored(), "Key_F11")
+
+    def test_editor_route_records_the_user_choice(self):
+        # The shortcut editor's route: set_command_shortcut → on_rebind → set_activation_key.
+        self.sb.set_command_shortcut("marking_menu_show", "F11", "application")
+        self.assertEqual(self._stored(), "Key_F11")
+
+    def test_invalid_rebind_records_nothing(self):
+        self.mm.set_activation_key("NotARealKey")
+        self.assertIsNone(self._stored())
+
+
 class TestActivationShortcut(_MarkingMenuRegisterFixture):
     """The activation GlobalShortcut installs and *re-installs* on the new key.
 
