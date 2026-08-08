@@ -2780,8 +2780,15 @@ class TestMissingSourceTolerance(QtBaseTestCase):
         examples_dir = os.path.dirname(examples.__file__)
         parent, leaf = os.path.dirname(examples_dir), os.path.basename(examples_dir)
         os.environ["UITK_TEST_SRC_ROOT"] = parent
+        # Spell the reference the way THIS platform's ``os.path.expandvars`` does:
+        # ntpath expands ``%VAR%`` (the reported real-world case, ``%LOCALAPPDATA%``)
+        # while posixpath expands only ``$VAR``/``${VAR}`` and leaves ``%VAR%``
+        # verbatim. Hardcoding the Windows spelling passed locally and failed the
+        # Linux CI runner for the very reason under test — the token never expanded,
+        # so the source looked missing.
+        ref = "%UITK_TEST_SRC_ROOT%" if os.name == "nt" else "${UITK_TEST_SRC_ROOT}"
         try:
-            sb = Switchboard(ui_source=os.path.join("%UITK_TEST_SRC_ROOT%", leaf))
+            sb = Switchboard(ui_source=os.path.join(ref, leaf))
             self.assertTrue(
                 list(sb.registry.ui_registry.filepath or []),
                 "env-var source registered nothing — it was treated as missing",
