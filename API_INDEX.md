@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-08_
+_Generated: 2026-08-09_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -424,7 +424,7 @@ _Generated: 2026-08-08_
   - methods: set_menu, set_wrapped_widget
 
 ### `widgets/optionBox/options/affix.py` — Affix-mode picker option for OptionBox.
-- `class AffixOption(BaseOption)`
+- `class AffixOption(ButtonOption)`
   - methods: is_compatible, create_widget, setup_widget, mode, set_mode, resolve
 
 ### `widgets/optionBox/options/browse.py` — Browse option for OptionBox - provides file/folder browsing buttons.
@@ -586,7 +586,7 @@ _Generated: 2026-08-08_
 - `class HeaderMixin`
   - methods: default_header_click_behavior
 - `class CellFormatMixin(ConvertMixin)`
-  - methods: set_column_formatter, set_header_formatter, set_cell_formatter, clear_formatters, apply_formatting, ensure_valid_color, format_item, set_action_color, action_color_formatter, make_color_map_formatter, add_section_row, is_section_row
+  - methods: set_column_formatter, set_header_formatter, set_cell_formatter, clear_formatters, set_column_truncation, column_truncation, truncated_column_text, apply_formatting, ensure_valid_color, format_item, set_action_color, action_color_formatter, make_color_map_formatter, add_section_row, is_section_row
 - `class TableSelection`
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`

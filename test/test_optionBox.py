@@ -856,10 +856,12 @@ class TestRecentValuesPopupWidthSizing(QtBaseTestCase):
     Fixed: 2026-06-09
     """
 
+    # Only their LENGTH matters -- these stand in for the long synced-drive
+    # paths a workspace history collects, which is what collapsed the popup.
     LONG_VALUES = [
-        "O:/Dropbox (Moth+Flame)/Moth+Flame Dropbox/Ryan Simpson/_tests/lightmap_bake_test/scripts",
-        "O:/Dropbox (Moth+Flame)/Moth+Flame Team Folder/Platform/Build",
-        "O:/Dropbox (Moth+Flame)/Moth+Flame Team Folder/PRODUCTION/SceneAssembly",
+        "P:/CloudSync (Studio)/Studio Team Drive/artists/_tests/lightmap_bake_test/scripts",
+        "P:/CloudSync (Studio)/Studio Team Drive/Platform/Build",
+        "P:/CloudSync (Studio)/Studio Team Drive/PRODUCTION/SceneAssembly",
     ]
 
     def test_invisible_popup_sizehint_reflects_content(self):

@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-08-08",
+  "generated_at": "2026-08-09",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -10646,10 +10646,10 @@
       "classes": [
         {
           "name": "AffixOption",
-          "summary": "Inline affix-mode picker (Auto / Suffix / Prefix) for a text widget.",
-          "line": 50,
+          "summary": "Tri-state affix-mode cycle button (Auto / Suffix / Prefix) for a text widget.",
+          "line": 40,
           "bases": [
-            "BaseOption"
+            "ButtonOption"
           ],
           "members": [
             {
@@ -10658,7 +10658,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget) -> bool",
               "summary": "Attach only to text-bearing hosts (``resolve`` reads ``text()``).",
-              "line": 97,
+              "line": 103,
               "deprecated": false
             },
             {
@@ -10666,8 +10666,8 @@
               "qualname": "AffixOption.create_widget",
               "kind": "method",
               "signature": "(self)",
-              "summary": "Create the compact, inline mode combobox.",
-              "line": 105,
+              "summary": "Create the standard option button, seeded with the current mode's glyph.",
+              "line": 111,
               "deprecated": false
             },
             {
@@ -10675,7 +10675,7 @@
               "qualname": "AffixOption.setup_widget",
               "kind": "method",
               "signature": "(self)",
-              "summary": "Seed the default selection (silently) and wire change -> callback.",
+              "summary": "Wire the cycle click and show the current mode's tooltip.",
               "line": 117,
               "deprecated": false
             },
@@ -10684,8 +10684,8 @@
               "qualname": "AffixOption.mode",
               "kind": "property",
               "signature": "(self) -> str",
-              "summary": "Current mode string — one of *values* (the default while unbuilt).",
-              "line": 134,
+              "summary": "Current mode string — ``\"auto\"`` / ``\"suffix\"`` / ``\"prefix\"``.",
+              "line": 127,
               "deprecated": false
             },
             {
@@ -10693,8 +10693,8 @@
               "qualname": "AffixOption.set_mode",
               "kind": "method",
               "signature": "(self, mode: str) -> None",
-              "summary": "Select *mode* if it is one of this picker's values (else no-op).",
-              "line": 148,
+              "summary": "Select *mode* if it is a known value (else no-op).",
+              "line": 135,
               "deprecated": false
             },
             {
@@ -10703,7 +10703,7 @@
               "kind": "method",
               "signature": "(self, text: Optional[str] = None, *, default: str = 'prefix') -> Tuple[str, str]",
               "summary": "Return ``(prefix, suffix)`` for *text* under the current mode.",
-              "line": 161,
+              "line": 150,
               "deprecated": false
             }
           ]
@@ -11703,16 +11703,16 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Current affix mode (``\"auto\"`` when no AffixOption is present).",
-              "line": 600,
+              "line": 602,
               "deprecated": false
             },
             {
               "name": "resolve_affix",
               "qualname": "OptionBoxManager.resolve_affix",
               "kind": "method",
-              "signature": "(self, *, default: str = 'prefix')",
+              "signature": "(self, text: Optional[str] = None, *, default: str = 'prefix')",
               "summary": "Return ``(prefix, suffix)`` for the wrapped field under its mode.",
-              "line": 607,
+              "line": 609,
               "deprecated": false
             },
             {
@@ -11721,7 +11721,7 @@
               "kind": "method",
               "signature": "(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)",
               "summary": "Add a per-widget *reset-to-default* button (fluent).",
-              "line": 623,
+              "line": 628,
               "deprecated": false
             },
             {
@@ -11730,7 +11730,7 @@
               "kind": "method",
               "signature": "(self, file_types=None, title='Browse', start_dir=None, mode='file', icon='folder', tooltip='Browse...', callback=None)",
               "summary": "Enable file/folder browse button (fluent interface).",
-              "line": 682,
+              "line": 687,
               "deprecated": false
             },
             {
@@ -11739,7 +11739,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Enable clear option (fluent interface)",
-              "line": 726,
+              "line": 731,
               "deprecated": false
             },
             {
@@ -11748,7 +11748,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Disable clear option (fluent interface)",
-              "line": 731,
+              "line": 736,
               "deprecated": false
             },
             {
@@ -11757,7 +11757,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all added options.",
-              "line": 736,
+              "line": 741,
               "deprecated": false
             },
             {
@@ -11766,7 +11766,7 @@
               "kind": "method",
               "signature": "(self, option_type)",
               "summary": "Find the first option of the given type.",
-              "line": 751,
+              "line": 756,
               "deprecated": false
             },
             {
@@ -11775,7 +11775,7 @@
               "kind": "method",
               "signature": "(self, order)",
               "summary": "Set option order (fluent interface)",
-              "line": 771,
+              "line": 776,
               "deprecated": false
             },
             {
@@ -11784,7 +11784,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Set clear button to appear first (fluent interface)",
-              "line": 780,
+              "line": 785,
               "deprecated": false
             },
             {
@@ -11793,7 +11793,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Check if option box is enabled",
-              "line": 785,
+              "line": 790,
               "deprecated": false
             },
             {
@@ -11802,7 +11802,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the actual option box widget",
-              "line": 790,
+              "line": 795,
               "deprecated": false
             },
             {
@@ -11811,7 +11811,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get or create a Menu instance for this option box.",
-              "line": 796,
+              "line": 801,
               "deprecated": false
             },
             {
@@ -11820,7 +11820,7 @@
               "kind": "method",
               "signature": "(self, create=False)",
               "summary": "Get menu, optionally creating if it doesn't exist.",
-              "line": 815,
+              "line": 820,
               "deprecated": false
             },
             {
@@ -11829,7 +11829,7 @@
               "kind": "method",
               "signature": "(self, menu=None, **menu_kwargs)",
               "summary": "Enable menu option using the MenuOption plugin.",
-              "line": 859,
+              "line": 864,
               "deprecated": false
             },
             {
@@ -11838,7 +11838,7 @@
               "kind": "method",
               "signature": "(self, *, title: Optional[str] = None, items=None, build_menu=None, position: str = 'cursorPos', add_header: bool = True, tooltip: str = 'Options', menu=None)",
               "summary": "Add a dropdown *option menu* button (fluent interface).",
-              "line": 976,
+              "line": 981,
               "deprecated": false
             },
             {
@@ -11847,7 +11847,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Disable the menu option (fluent interface).",
-              "line": 1037,
+              "line": 1042,
               "deprecated": false
             },
             {
@@ -11856,7 +11856,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin to this option box.",
-              "line": 1054,
+              "line": 1059,
               "deprecated": false
             },
             {
@@ -11865,7 +11865,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the container widget (for layout management).",
-              "line": 1265,
+              "line": 1270,
               "deprecated": false
             },
             {
@@ -11874,7 +11874,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove option box completely",
-              "line": 1425,
+              "line": 1430,
               "deprecated": false
             },
             {
@@ -11883,7 +11883,7 @@
               "kind": "staticmethod",
               "signature": "(widget, show_clear=False, options=None, **kwargs)",
               "summary": "Add an option box to any widget with one call.",
-              "line": 1449,
+              "line": 1454,
               "deprecated": false
             },
             {
@@ -11892,7 +11892,7 @@
               "kind": "staticmethod",
               "signature": "(widget, **kwargs)",
               "summary": "Add just a clear button to a text widget.",
-              "line": 1472,
+              "line": 1477,
               "deprecated": false
             },
             {
@@ -11901,7 +11901,7 @@
               "kind": "staticmethod",
               "signature": "(widget, menu, **kwargs)",
               "summary": "Add a menu option to any widget.",
-              "line": 1485,
+              "line": 1490,
               "deprecated": false
             },
             {
@@ -11910,7 +11910,7 @@
               "kind": "staticmethod",
               "signature": "(widget_class)",
               "summary": "Add option_box attribute to a widget class.",
-              "line": 1505,
+              "line": 1510,
               "deprecated": false
             },
             {
@@ -11919,7 +11919,7 @@
               "kind": "staticmethod",
               "signature": "()",
               "summary": "Patch common Qt widgets with option box support.",
-              "line": 1520,
+              "line": 1525,
               "deprecated": false
             }
           ]
@@ -14513,7 +14513,7 @@
         {
           "name": "HeaderMixin",
           "summary": "",
-          "line": 16,
+          "line": 18,
           "bases": [],
           "members": [
             {
@@ -14522,7 +14522,7 @@
               "kind": "method",
               "signature": "(self, col)",
               "summary": "",
-              "line": 28,
+              "line": 30,
               "deprecated": false
             }
           ]
@@ -14530,7 +14530,7 @@
         {
           "name": "CellFormatMixin",
           "summary": "Generic cell/column/header formatting for QTableWidget.",
-          "line": 43,
+          "line": 45,
           "bases": [
             "ConvertMixin"
           ],
@@ -14541,7 +14541,7 @@
               "kind": "method",
               "signature": "(self, col, formatter, append=False)",
               "summary": "Set a formatter for a specific column.",
-              "line": 65,
+              "line": 68,
               "deprecated": false
             },
             {
@@ -14550,7 +14550,7 @@
               "kind": "method",
               "signature": "(self, header, formatter, append=False)",
               "summary": "Set a formatter for a specific header.",
-              "line": 75,
+              "line": 78,
               "deprecated": false
             },
             {
@@ -14559,7 +14559,7 @@
               "kind": "method",
               "signature": "(self, row, col, formatter, append=False)",
               "summary": "Set a formatter for a specific cell (row, column).",
-              "line": 89,
+              "line": 92,
               "deprecated": false
             },
             {
@@ -14568,7 +14568,34 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all column, header, and cell formatters.",
-              "line": 97,
+              "line": 100,
+              "deprecated": false
+            },
+            {
+              "name": "set_column_truncation",
+              "qualname": "CellFormatMixin.set_column_truncation",
+              "kind": "method",
+              "signature": "(self, col, length=None, mode='start', insert='..')",
+              "summary": "Shorten a column's *displayed* text, leaving its data untouched.",
+              "line": 107,
+              "deprecated": false
+            },
+            {
+              "name": "column_truncation",
+              "qualname": "CellFormatMixin.column_truncation",
+              "kind": "method",
+              "signature": "(self, col)",
+              "summary": "Return a column's ``(length, mode, insert)`` spec, or None when off.",
+              "line": 135,
+              "deprecated": false
+            },
+            {
+              "name": "truncated_column_text",
+              "qualname": "CellFormatMixin.truncated_column_text",
+              "kind": "method",
+              "signature": "(self, col: int, text: str) -> str",
+              "summary": "Display form of ``text`` for ``col`` — the item's own data is unchanged.",
+              "line": 140,
               "deprecated": false
             },
             {
@@ -14577,7 +14604,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Apply formatting based on the registered formatters.",
-              "line": 104,
+              "line": 152,
               "deprecated": false
             },
             {
@@ -14586,7 +14613,7 @@
               "kind": "method",
               "signature": "(self, color, color_type, item, row, col)",
               "summary": "Ensure a valid QColor, using fallback if needed.",
-              "line": 129,
+              "line": 177,
               "deprecated": false
             },
             {
@@ -14595,7 +14622,7 @@
               "kind": "method",
               "signature": "(self, item: QtWidgets.QTableWidgetItem, key: str = None, italic: bool = None, bold: bool = None, fg: Any = None, bg: Any = None)",
               "summary": "Apply formatting to a table item.",
-              "line": 147,
+              "line": 195,
               "deprecated": false
             },
             {
@@ -14604,7 +14631,7 @@
               "kind": "method",
               "signature": "(self, item: QtWidgets.QTableWidgetItem, key: str, row: int = -1, col: int = -1, use_bg: bool = False)",
               "summary": "Apply semantic color, but skip reset if nothing defined.",
-              "line": 223,
+              "line": 271,
               "deprecated": false
             },
             {
@@ -14613,7 +14640,7 @@
               "kind": "method",
               "signature": "(self, item, value, *_)",
               "summary": "",
-              "line": 265,
+              "line": 313,
               "deprecated": false
             },
             {
@@ -14622,7 +14649,7 @@
               "kind": "method",
               "signature": "(self, color_map: dict)",
               "summary": "",
-              "line": 273,
+              "line": 321,
               "deprecated": false
             },
             {
@@ -14631,7 +14658,7 @@
               "kind": "staticmethod",
               "signature": "(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int",
               "summary": "Insert a non-selectable section header that spans all columns.",
-              "line": 289,
+              "line": 337,
               "deprecated": false
             },
             {
@@ -14640,7 +14667,7 @@
               "kind": "staticmethod",
               "signature": "(table: QtWidgets.QTableWidget, row: int) -> bool",
               "summary": "Return ``True`` if *row* is a section header.",
-              "line": 370,
+              "line": 418,
               "deprecated": false
             }
           ]
@@ -14648,7 +14675,7 @@
         {
           "name": "TableSelection",
           "summary": "Immutable representation of a single selected row.",
-          "line": 425,
+          "line": 473,
           "bases": [],
           "members": [
             {
@@ -14657,7 +14684,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: Any = None)",
               "summary": "",
-              "line": 435,
+              "line": 483,
               "deprecated": false
             },
             {
@@ -14666,7 +14693,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]",
               "summary": "",
-              "line": 438,
+              "line": 486,
               "deprecated": false
             },
             {
@@ -14675,7 +14702,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: str = '') -> str",
               "summary": "",
-              "line": 441,
+              "line": 489,
               "deprecated": false
             }
           ]
@@ -14683,7 +14710,7 @@
         {
           "name": "TableWidget",
           "summary": "Enhanced QTableWidget with cell formatting, sorting, and context menu support.",
-          "line": 477,
+          "line": 560,
           "bases": [
             "QtWidgets.QTableWidget",
             "MenuMixin",
@@ -14698,7 +14725,7 @@
               "kind": "method",
               "signature": "(self, columns: Iterable[int]) -> None",
               "summary": "Enable MMB-drag value scrubbing for *columns*.",
-              "line": 601,
+              "line": 684,
               "deprecated": false
             },
             {
@@ -14707,7 +14734,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Add a single column to the MMB-scrub set.",
-              "line": 613,
+              "line": 696,
               "deprecated": false
             },
             {
@@ -14716,7 +14743,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Remove a column from the MMB-scrub set.",
-              "line": 617,
+              "line": 700,
               "deprecated": false
             },
             {
@@ -14725,7 +14752,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "``True`` while an MMB scrub-drag is in progress.",
-              "line": 621,
+              "line": 704,
               "deprecated": false
             },
             {
@@ -14734,7 +14761,7 @@
               "kind": "method",
               "signature": "(self, columns: Iterable[int]) -> None",
               "summary": "Enable mouse-wheel value adjustment for *columns*.",
-              "line": 629,
+              "line": 712,
               "deprecated": false
             },
             {
@@ -14743,7 +14770,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Add a single column to the wheel-scrub set.",
-              "line": 639,
+              "line": 722,
               "deprecated": false
             },
             {
@@ -14752,7 +14779,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Remove a column from the wheel-scrub set.",
-              "line": 643,
+              "line": 726,
               "deprecated": false
             },
             {
@@ -14761,7 +14788,7 @@
               "kind": "method",
               "signature": "(self, columns: Iterable[int]) -> None",
               "summary": "Enable click-to-edit for *columns* (no double-click required).",
-              "line": 651,
+              "line": 734,
               "deprecated": false
             },
             {
@@ -14770,7 +14797,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Add a single column to the single-click-edit set.",
-              "line": 661,
+              "line": 744,
               "deprecated": false
             },
             {
@@ -14779,7 +14806,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Remove a column from the single-click-edit set.",
-              "line": 665,
+              "line": 748,
               "deprecated": false
             },
             {
@@ -14788,7 +14815,7 @@
               "kind": "method",
               "signature": "(self, columns: Iterable[int]) -> None",
               "summary": "Forward dead-space clicks to embedded cell widgets in *columns*.",
-              "line": 673,
+              "line": 756,
               "deprecated": false
             },
             {
@@ -14797,7 +14824,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Add a single column to the cell-widget click-forward set.",
-              "line": 690,
+              "line": 773,
               "deprecated": false
             },
             {
@@ -14806,7 +14833,7 @@
               "kind": "method",
               "signature": "(self, column: int) -> None",
               "summary": "Remove a column from the cell-widget click-forward set.",
-              "line": 694,
+              "line": 777,
               "deprecated": false
             },
             {
@@ -14815,7 +14842,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 747,
+              "line": 830,
               "deprecated": false
             },
             {
@@ -14824,7 +14851,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 791,
+              "line": 874,
               "deprecated": false
             },
             {
@@ -14833,7 +14860,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 824,
+              "line": 907,
               "deprecated": false
             },
             {
@@ -14842,7 +14869,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Consume wheel events on wheel-scrub columns;",
-              "line": 913,
+              "line": 996,
               "deprecated": false
             },
             {
@@ -14851,7 +14878,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Catch wheel events on editors so wheel-scrub also works in",
-              "line": 933,
+              "line": 1016,
               "deprecated": false
             },
             {
@@ -14860,7 +14887,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Return the currently-open cell editor widget, or ``None``.",
-              "line": 1001,
+              "line": 1084,
               "deprecated": false
             },
             {
@@ -14869,7 +14896,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "If a cell editor is currently open, refresh its display from",
-              "line": 1015,
+              "line": 1098,
               "deprecated": false
             },
             {
@@ -14878,7 +14905,7 @@
               "kind": "method",
               "signature": "(self, editor, hint)",
               "summary": "Propagate committed value to all drag-selected cells.",
-              "line": 1062,
+              "line": 1145,
               "deprecated": false
             },
             {
@@ -14887,7 +14914,7 @@
               "kind": "method",
               "signature": "(self, index, event=None)",
               "summary": "Optionally restrict selection changes.",
-              "line": 1101,
+              "line": 1184,
               "deprecated": false
             },
             {
@@ -14896,7 +14923,7 @@
               "kind": "method",
               "signature": "(self, column: int, selectable: bool)",
               "summary": "Set whether a specific column can trigger selection changes.",
-              "line": 1121,
+              "line": 1204,
               "deprecated": false
             },
             {
@@ -14905,7 +14932,7 @@
               "kind": "method",
               "signature": "(self, validator: Callable[[QtCore.QModelIndex], bool])",
               "summary": "Set a function to validate if an index can be selected.",
-              "line": 1128,
+              "line": 1211,
               "deprecated": false
             },
             {
@@ -14914,7 +14941,7 @@
               "kind": "method",
               "signature": "(self, column: int, action: Callable[[int, int], None])",
               "summary": "Set a callback for when a cell in a specific column is clicked.",
-              "line": 1136,
+              "line": 1219,
               "deprecated": false
             },
             {
@@ -14923,7 +14950,7 @@
               "kind": "method",
               "signature": "(self, enabled: bool)",
               "summary": "Toggle whether non-left clicks can change selection.",
-              "line": 1150,
+              "line": 1233,
               "deprecated": false
             },
             {
@@ -14932,7 +14959,7 @@
               "kind": "method",
               "signature": "(self, enabled: bool) -> None",
               "summary": "Qt-property setter for :meth:`set_left_click_select_only`.",
-              "line": 1154,
+              "line": 1237,
               "deprecated": false
             },
             {
@@ -14941,7 +14968,7 @@
               "kind": "method",
               "signature": "(self, mode_str)",
               "summary": "Change the selection mode after initialization.",
-              "line": 1185,
+              "line": 1268,
               "deprecated": false
             },
             {
@@ -14950,7 +14977,7 @@
               "kind": "method",
               "signature": "(self, row: int, column: int)",
               "summary": "",
-              "line": 1198,
+              "line": 1281,
               "deprecated": false
             },
             {
@@ -14959,7 +14986,7 @@
               "kind": "method",
               "signature": "(self, row: int, column: int, value, user_data=None)",
               "summary": "",
-              "line": 1205,
+              "line": 1288,
               "deprecated": false
             },
             {
@@ -14968,7 +14995,7 @@
               "kind": "method",
               "signature": "(self, data, clear: bool = True, headers: list = None, **kwargs)",
               "summary": "",
-              "line": 1212,
+              "line": 1295,
               "deprecated": false
             },
             {
@@ -14977,7 +15004,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 1295,
+              "line": 1378,
               "deprecated": false
             },
             {
@@ -14986,7 +15013,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 1302,
+              "line": 1385,
               "deprecated": false
             },
             {
@@ -14995,7 +15022,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all selected nodes (UserRole data from column 1)",
-              "line": 1309,
+              "line": 1392,
               "deprecated": false
             },
             {
@@ -15004,7 +15031,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all selected labels (text from column 0)",
-              "line": 1326,
+              "line": 1409,
               "deprecated": false
             },
             {
@@ -15013,7 +15040,7 @@
               "kind": "method",
               "signature": "(self, include_current=False)",
               "summary": "Get all selected row numbers",
-              "line": 1341,
+              "line": 1424,
               "deprecated": false
             },
             {
@@ -15022,7 +15049,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 1351,
+              "line": 1434,
               "deprecated": false
             },
             {
@@ -15031,7 +15058,7 @@
               "kind": "method",
               "signature": "(self, col: int)",
               "summary": "Set a column to automatically stretch to fill the available space.",
-              "line": 1354,
+              "line": 1437,
               "deprecated": false
             },
             {
@@ -15040,7 +15067,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1359,
+              "line": 1442,
               "deprecated": false
             },
             {
@@ -15049,7 +15076,7 @@
               "kind": "method",
               "signature": "(self, stretch_col: int)",
               "summary": "",
-              "line": 1364,
+              "line": 1447,
               "deprecated": false
             },
             {
@@ -15058,7 +15085,7 @@
               "kind": "staticmethod",
               "signature": "(content, chrome, scrollbar, maximum, minimum)",
               "summary": "Return the ``(w, h)`` window size that shows *content* whole, capped.",
-              "line": 1399,
+              "line": 1482,
               "deprecated": false
             },
             {
@@ -15067,7 +15094,7 @@
               "kind": "method",
               "signature": "(self, max_fraction=None)",
               "summary": "Return the ``(w, h)`` ceiling for :meth:`fit_window_to_contents`.",
-              "line": 1435,
+              "line": 1518,
               "deprecated": false
             },
             {
@@ -15076,7 +15103,7 @@
               "kind": "method",
               "signature": "(self, max_fraction=None, defer=True)",
               "summary": "Resize this table's window so the table's contents fit exactly.",
-              "line": 1455,
+              "line": 1538,
               "deprecated": false
             },
             {
@@ -15085,7 +15112,7 @@
               "kind": "method",
               "signature": "(self, columns=None, include_current=True)",
               "summary": "Get data from selected rows for specified columns.",
-              "line": 1554,
+              "line": 1637,
               "deprecated": false
             },
             {
@@ -15094,7 +15121,7 @@
               "kind": "method",
               "signature": "(self, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True) -> List[TableSelection]",
               "summary": "Return detailed selection payload keyed by column aliases.",
-              "line": 1582,
+              "line": 1665,
               "deprecated": false
             },
             {
@@ -15103,7 +15130,7 @@
               "kind": "method",
               "signature": "(self, object_name: str, handler: Callable[[List[TableSelection]], None], *, columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]] = None, include_current: bool = True, allow_empty: bool = False, transform: Optional[Callable[[List[TableSelection]], Any]] = None, pass_widget: bool = False)",
               "summary": "Attach a context-menu item to a callable that receives selection data.",
-              "line": 1594,
+              "line": 1677,
               "deprecated": false
             },
             {
@@ -15112,7 +15139,7 @@
               "kind": "method",
               "signature": "(self, object_name: str)",
               "summary": "",
-              "line": 1625,
+              "line": 1708,
               "deprecated": false
             }
           ]

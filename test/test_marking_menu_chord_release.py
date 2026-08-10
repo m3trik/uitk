@@ -20,6 +20,7 @@ So the deterministic reproduction drives ``child_mouseButtonReleaseEvent`` direc
 with the child under the mouse — modelling the grab routing — exactly as the
 sibling ``test_marking_menu_leaf_click`` models the menu-grab routing.
 """
+import time
 import unittest
 from unittest import mock
 
@@ -129,6 +130,21 @@ class MarkingMenuChordReleaseDispatch(QtBaseTestCase):
         QtCore.QTimer.singleShot(ms, loop.quit)
         loop.exec_()
         QtWidgets.QApplication.processEvents()
+
+    def _inside_tolerance(self, started_at: float) -> bool:
+        """True while wall-clock since *started_at* is still inside the tolerance.
+
+        The two real-timing tests below assert "the deferred switch has NOT run
+        yet", a claim that only holds while the 75 ms window is genuinely open.
+        Under load (a full-suite run sharing the box with another test suite)
+        an event-loop spin asked for 30 ms can return well past 75, and the
+        product then switches exactly as designed — a machine-speed failure
+        wearing a product-bug costume. Measured from *before* the release that
+        arms the timer, so this is a conservative bound: the timer started at
+        or after ``started_at``, never before.
+        """
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        return elapsed_ms < self.mm.CHORD_RELEASE_TOLERANCE_MS
 
     def test_both_button_chord_final_release_fires_and_hides(self):
         """Hold L+R, drag onto the leaf, release the last button (all up):
@@ -378,10 +394,18 @@ class MarkingMenuChordReleaseDispatch(QtBaseTestCase):
         ('cameras') menu. This is the imperfect both-buttons release the tolerance
         exists to absorb."""
         # Partial release over empty — deferred; no switch during the window.
+        started_at = time.perf_counter()
         self._release_on_menu(
             QtCore.Qt.RightButton, QtCore.Qt.LeftButton, widget_at=None
         )
         self._wait(int(self.mm.CHORD_RELEASE_TOLERANCE_MS * 0.4))
+        if not self._inside_tolerance(started_at):
+            # Every assertion below rests on still being inside the window, so
+            # there is nothing left to verify once the box has blown through it.
+            self.skipTest(
+                f"event loop overshot the {self.mm.CHORD_RELEASE_TOLERANCE_MS} ms "
+                "tolerance under load — the within-tolerance premise is unavailable"
+            )
         self.assertEqual(
             self.mm.sb.current_ui.objectName(),
             "maya",
@@ -405,14 +429,16 @@ class MarkingMenuChordReleaseDispatch(QtBaseTestCase):
         chord switch), NOT a select. The tolerance is what distinguishes this from
         an imperfect both-buttons release."""
         # Partial release over empty (no owned item) — deferred.
+        started_at = time.perf_counter()
         self._release_on_menu(
             QtCore.Qt.RightButton, QtCore.Qt.LeftButton, widget_at=None
         )
-        self.assertEqual(
-            self.mm.sb.current_ui.objectName(),
-            "maya",
-            "deferred — must not switch before the tolerance expires",
-        )
+        if self._inside_tolerance(started_at):
+            self.assertEqual(
+                self.mm.sb.current_ui.objectName(),
+                "maya",
+                "deferred — must not switch before the tolerance expires",
+            )
         # Hold past the tolerance → the timer fires → switch to the L menu.
         self._wait(int(self.mm.CHORD_RELEASE_TOLERANCE_MS * 1.8))
         self.assertEqual(

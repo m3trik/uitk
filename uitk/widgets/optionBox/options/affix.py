@@ -3,10 +3,10 @@
 """Affix-mode picker option for OptionBox.
 
 An :class:`AffixOption` turns a text field into an affix entry with a compact,
-inline "Auto / Suffix / Prefix" mode picker sitting flush beside it — the single,
-reusable home for the pattern previously duplicated across the DCC toolkits
-(mayatk / blendertk ``mat_utils``). The mode declares how the field's text is
-applied to a base name:
+tri-state icon button sitting flush beside it — the single, reusable home for
+the pattern previously duplicated across the DCC toolkits (mayatk / blendertk
+``mat_utils``). Clicking the button cycles the mode (Auto → Suffix → Prefix),
+which declares how the field's text is applied to a base name:
 
 * **Auto** — placement inferred from the delimiter: a leading ``_`` (``"_MAT"``)
   is treated as a suffix; a trailing ``_`` (``"MAT_"``) is treated as a prefix.
@@ -14,7 +14,7 @@ applied to a base name:
 * **Prefix** — always prepended (``"MAT_" + "brick" → "MAT_brick"``).
 
 The parsing itself is the widget-free :func:`pythontk.StrUtils.split_affix`
-primitive; this option only wires the picker widget and exposes the selection.
+primitive; this option only wires the picker button and exposes the selection.
 
 Usage — the ``option_box`` manager form works on any widget (``.option_box`` is
 autopatched onto plain ``QLineEdit``/etc.), so prefer it in slot code; the
@@ -26,33 +26,41 @@ autopatched onto plain ``QLineEdit``/etc.), so prefer it in slot code; the
     mode = le.option_box.affix_mode                        # 'auto'|'suffix'|'prefix'
     prefix, suffix = le.option_box.resolve_affix(default="suffix")
 """
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
-from qtpy import QtCore
 import pythontk as ptk
 
-from ._options import BaseOption
+from ._options import ButtonOption
 
 
-# Canonical mode values. The default display labels are intentionally terse so
-# the inline picker stays narrow; the long-form guidance lives in the tooltip.
+# Canonical mode values, in the click-cycle order.
 AFFIX_MODE_VALUES: Tuple[str, str, str] = ("auto", "suffix", "prefix")
-AFFIX_MODE_LABELS: Tuple[str, str, str] = ("Auto", "Suffix", "Prefix")
-AFFIX_MODE_TOOLTIP = (
-    "How the affix text is applied to the base name:\n"
-    "  Auto — leading '_' (e.g. '_MAT') is treated as a suffix;\n"
-    "         trailing '_' (e.g. 'MAT_') is treated as a prefix.\n"
-    "  Suffix — always appended (e.g. 'brick' + '_MAT' → 'brick_MAT').\n"
-    "  Prefix — always prepended (e.g. 'MAT_' + 'brick' → 'MAT_brick')."
-)
 
 
-class AffixOption(BaseOption):
-    """Inline affix-mode picker (Auto / Suffix / Prefix) for a text widget."""
+class AffixOption(ButtonOption):
+    """Tri-state affix-mode cycle button (Auto / Suffix / Prefix) for a text widget."""
 
-    # Opt out of OptionBox's icon-square (h x h) sizing — the picker needs its
-    # natural combobox width, exactly like ValueOption's editable field.
-    square = False
+    #: mode -> (display label, icon name, how-the-text-applies description).
+    #: The icon reads as "where the affix lands": start of the name (prefix),
+    #: end of the name (suffix), or wildcard-inferred (auto).
+    _MODES: Dict[str, Tuple[str, str, str]] = {
+        "auto": (
+            "Auto",
+            "asterisk",
+            "leading '_' (e.g. '_MAT') is a suffix; trailing '_' (e.g. 'MAT_') "
+            "is a prefix",
+        ),
+        "suffix": (
+            "Suffix",
+            "arrow_right",
+            "always appended (e.g. 'brick' + '_MAT' → 'brick_MAT')",
+        ),
+        "prefix": (
+            "Prefix",
+            "arrow_left",
+            "always prepended (e.g. 'MAT_' + 'brick' → 'MAT_brick')",
+        ),
+    }
 
     def __init__(
         self,
@@ -60,34 +68,32 @@ class AffixOption(BaseOption):
         *,
         default: str = "auto",
         on_change: Optional[Callable[[str], None]] = None,
-        labels: Sequence[str] = AFFIX_MODE_LABELS,
-        values: Sequence[str] = AFFIX_MODE_VALUES,
-        tooltip: str = AFFIX_MODE_TOOLTIP,
+        tooltip: Optional[str] = None,
         order: Optional[int] = None,
     ):
         """Initialize the affix option.
 
         Args:
             wrapped_widget: The text field this picker is attached to.
-            default: Initial mode — one of *values* (``"auto"`` / ``"suffix"`` /
-                ``"prefix"``). Ignored (falls back to the first value) if unknown.
+            default: Initial mode — ``"auto"`` / ``"suffix"`` / ``"prefix"``.
+                Ignored (falls back to ``"auto"``) if unknown.
             on_change: Optional callable invoked with the new mode string
-                whenever the user changes the picker.
-            labels: Display labels for the picker, positionally paired with
-                *values*.
-            values: Mode strings returned by :attr:`mode`, positionally paired
-                with *labels*.
-            tooltip: Tooltip shown on the picker.
+                whenever the mode changes on the built button (click or
+                programmatic :meth:`set_mode`).
+            tooltip: Static tooltip override. ``None`` (default) shows a
+                per-state tooltip naming the current mode and the cycle hint.
             order: Explicit sort position. See :class:`BaseOption`.
         """
-        super().__init__(wrapped_widget, order=order)
-        self._labels = tuple(labels)
-        self._values = tuple(values)
-        if len(self._labels) != len(self._values):
-            raise ValueError("labels and values must be the same length")
-        self._default = default if default in self._values else self._values[0]
+        self._mode = default if default in self._MODES else AFFIX_MODE_VALUES[0]
         self._on_change = on_change
-        self._tooltip = tooltip
+        self._tooltip_override = tooltip
+        super().__init__(
+            wrapped_widget,
+            icon=self._MODES[self._mode][1],
+            tooltip=tooltip,
+            callback=self._cycle,
+            order=order,
+        )
 
     # ------------------------------------------------------------------
     # Compatibility
@@ -99,32 +105,19 @@ class AffixOption(BaseOption):
         return widget is not None and hasattr(widget, "text")
 
     # ------------------------------------------------------------------
-    # BaseOption overrides
+    # ButtonOption overrides
     # ------------------------------------------------------------------
 
     def create_widget(self):
-        """Create the compact, inline mode combobox."""
-        from uitk.widgets.comboBox import ComboBox
-
-        combo = ComboBox()
-        combo.addItems(list(self._labels))
-        combo.setToolTip(self._tooltip)
-        combo.setFocusPolicy(QtCore.Qt.ClickFocus)
-        # QSS hook so a theme can style the inline picker distinctly.
-        combo.setProperty("class", "AffixOption")
-        return combo
+        """Create the standard option button, seeded with the current mode's glyph."""
+        # set_mode may have moved the mode between __init__ and first build.
+        self.icon = self._MODES[self._mode][1]
+        return super().create_widget()
 
     def setup_widget(self):
-        """Seed the default selection (silently) and wire change -> callback."""
-        combo = self._widget
-        # Seed with signals blocked so the initial selection never fires
-        # on_change (matches the seed-before-connect order of the original).
-        combo.blockSignals(True)
-        try:
-            combo.setCurrentIndex(self._values.index(self._default))
-        finally:
-            combo.blockSignals(False)
-        combo.currentIndexChanged.connect(self._on_index_changed)
+        """Wire the cycle click and show the current mode's tooltip."""
+        super().setup_widget()
+        self._widget.setToolTip(self._tooltip_for(self._mode))
 
     # ------------------------------------------------------------------
     # State
@@ -132,31 +125,27 @@ class AffixOption(BaseOption):
 
     @property
     def mode(self) -> str:
-        """Current mode string — one of *values* (the default while unbuilt).
+        """Current mode string — ``"auto"`` / ``"suffix"`` / ``"prefix"``.
 
-        A pure read: before the picker widget is built it reports the seeded
-        default (what the widget will show), so reading the mode never forces
-        early widget construction.
+        A pure read: the mode is plugin-owned, so reading it never forces
+        widget construction.
         """
-        if self._widget is None:
-            return self._default
-        idx = self._widget.currentIndex()
-        if 0 <= idx < len(self._values):
-            return self._values[idx]
-        return self._default
+        return self._mode
 
     def set_mode(self, mode: str) -> None:
-        """Select *mode* if it is one of this picker's values (else no-op).
+        """Select *mode* if it is a known value (else no-op).
 
-        Before the widget is built this just updates the seeded default (applied
-        when the picker is first shown); after, it moves the combobox.
+        On the built button this swaps the glyph/tooltip and fires
+        ``on_change``; before build it just re-seeds the initial state
+        (applied when the button is first shown, without firing).
         """
-        if mode not in self._values:
+        if mode not in self._MODES or mode == self._mode:
             return
-        if self._widget is None:
-            self._default = mode
-        else:
-            self._widget.setCurrentIndex(self._values.index(mode))
+        self._mode = mode
+        if self._widget is not None:
+            self._apply_mode_visual()
+            if self._on_change is not None:
+                self._on_change(mode)
 
     def resolve(
         self, text: Optional[str] = None, *, default: str = "prefix"
@@ -170,12 +159,28 @@ class AffixOption(BaseOption):
         if text is None:
             w = self.wrapped_widget
             text = w.text() if (w is not None and hasattr(w, "text")) else ""
-        return ptk.StrUtils.split_affix(text, mode=self.mode, default=default)
+        return ptk.StrUtils.split_affix(text, mode=self._mode, default=default)
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _on_index_changed(self, _index: int) -> None:
-        if self._on_change is not None:
-            self._on_change(self.mode)
+    def _cycle(self) -> None:
+        """Advance to the next mode (button click)."""
+        i = AFFIX_MODE_VALUES.index(self._mode)
+        self.set_mode(AFFIX_MODE_VALUES[(i + 1) % len(AFFIX_MODE_VALUES)])
+
+    def _apply_mode_visual(self) -> None:
+        """Swap the built button's glyph and tooltip to the current mode."""
+        self._swap_state_icon(self._MODES[self._mode][1], fallback_size=(15, 15))
+        self._widget.setToolTip(self._tooltip_for(self._mode))
+
+    def _tooltip_for(self, mode: str) -> str:
+        """Per-state tooltip (or the static override when one was given)."""
+        if self._tooltip_override is not None:
+            return self._tooltip_override
+        label, _icon, desc = self._MODES[mode]
+        return (
+            f"Affix mode: {label} — {desc}.\n"
+            "Click to cycle: Auto → Suffix → Prefix."
+        )
