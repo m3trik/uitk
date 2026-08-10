@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 from qtpy import QtWidgets, QtGui, QtCore
 
+import pythontk as ptk
+
 # From this package:
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -59,6 +61,7 @@ class CellFormatMixin(ConvertMixin):
         self._header_formatters = {}
         self._cell_formatters = {}
         self._item_defaults = {}  # {(row, col): (fg, bg)}
+        self._column_truncation = {}  # {col: (length, mode, insert)}
         self.cellChanged.connect(self._on_cell_edited)
 
     # Public API
@@ -100,6 +103,51 @@ class CellFormatMixin(ConvertMixin):
         self._header_formatters.clear()
         self._cell_formatters.clear()
         self._item_defaults.clear()
+
+    def set_column_truncation(self, col, length=None, mode="start", insert=".."):
+        """Shorten a column's *displayed* text, leaving its data untouched.
+
+        Purely a paint-time transform, applied by the item delegate through
+        :meth:`truncated_column_text`: ``item.text()``, the edit editor, the
+        tooltip, sorting and every formatter keep seeing the full value. That
+        separation is the point — the reason to want this (long filesystem
+        paths crowding a column) is also the reason the full value has to
+        survive for the commands reading the cell.
+
+        Parameters:
+            col (int/str): Column index or header text.
+            length (int): Maximum displayed characters. None/0 clears
+                truncation for the column.
+            mode (str): ``ptk.truncate`` mode — "start" keeps the tail (the
+                filename end of a path), "end" the head, "middle" both, "path"
+                both but cutting only at separators (whole path components).
+            insert (str): Characters marking the trimmed area.
+        """
+        idx = self._resolve_col(col)
+        if idx is None:
+            return
+        if not length or int(length) <= 0:
+            self._column_truncation.pop(idx, None)
+        else:
+            self._column_truncation[idx] = (int(length), mode, insert)
+        self.viewport().update()
+
+    def column_truncation(self, col):
+        """Return a column's ``(length, mode, insert)`` spec, or None when off."""
+        idx = self._resolve_col(col)
+        return self._column_truncation.get(idx) if idx is not None else None
+
+    def truncated_column_text(self, col: int, text: str) -> str:
+        """Display form of ``text`` for ``col`` — the item's own data is unchanged.
+
+        The delegate hook behind :meth:`set_column_truncation`; returns
+        ``text`` verbatim for columns with no truncation configured.
+        """
+        spec = self._column_truncation.get(col)
+        if not spec or not text:
+            return text
+        length, mode, insert = spec
+        return ptk.truncate(text, length, mode=mode, insert=insert)
 
     def apply_formatting(self):
         """Apply formatting based on the registered formatters."""
@@ -458,7 +506,42 @@ class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
     want the row-spanning border with transparent selection (so colour-
     coded cell backgrounds remain visible) should set
     :class:`RowSelectionBorderDelegate` as their item delegate instead.
+
+    Also applies the view's per-column display truncation
+    (``TableWidget.set_column_truncation``) at paint time — a table that
+    replaces this delegate wholesale opts out of that too.
     """
+
+    #: ``ptk.truncate`` mode → the Qt elide that trims the *same* end.
+    _ELIDE_BY_TRUNCATION_MODE = {
+        "start": QtCore.Qt.ElideLeft,
+        "left": QtCore.Qt.ElideLeft,
+        "end": QtCore.Qt.ElideRight,
+        "right": QtCore.Qt.ElideRight,
+        "middle": QtCore.Qt.ElideMiddle,
+        "path": QtCore.Qt.ElideMiddle,
+    }
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # option.widget is the view during paint; self.parent() covers the
+        # sizeHint / direct-call paths where it isn't populated.
+        view = getattr(option, "widget", None) or self.parent()
+        get_spec = getattr(view, "column_truncation", None)
+        if get_spec is None or not option.text:
+            return
+        col = index.column()
+        spec = get_spec(col)
+        if not spec:
+            return
+        option.text = view.truncated_column_text(col, option.text)
+        # A column too narrow for even the truncated text is elided by the
+        # style on top of it — elide the same end the mode trims, or the width
+        # elide eats the half the mode deliberately kept (a path truncated to
+        # its filename, elided right, loses that filename again).
+        option.textElideMode = self._ELIDE_BY_TRUNCATION_MODE.get(
+            str(spec[1]).lower(), option.textElideMode
+        )
 
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)

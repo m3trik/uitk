@@ -1286,6 +1286,99 @@ class TestClickActivation(QtBaseTestCase):
         )
 
 
+class TestHoverIntentDwell(QtBaseTestCase):
+    """The hover-intent dwell before the STARTING flyout opens (``open_delay``).
+
+    It exists for one situation: an embedded menu row the cursor crosses on its
+    way to the panel body, which must not pop a flyout in passing. Every other
+    preset serves a list the user navigated to deliberately — a marking-menu
+    overlay list, a submenu row — where the same wait reads as lag. So the dwell
+    is a property of ``hover_menu`` alone, and these pin it there.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.window = QtWidgets.QMainWindow()
+        self.track_widget(self.window)
+
+    def _list(self, preset):
+        lw = ExpandableList(self.window, fixed_item_height=18)
+        self.track_widget(lw)
+        lw.apply_preset(preset)
+        return lw
+
+    def test_only_hover_menu_carries_a_dwell(self):
+        """Derived from ``PRESETS`` rather than a fixed list, so a preset added
+        later is covered the day it lands — a hardcoded roster would let exactly
+        the regression this guards against in through the gap it left.
+
+        ``header_menu`` is excluded by identity: it is an alias bound to the same
+        dict object as ``hover_menu``, not a second preset.
+        """
+        delayed = ExpandableList.PRESETS["hover_menu"]
+        others = [n for n, p in ExpandableList.PRESETS.items() if p is not delayed]
+        self.assertTrue(others, "preset table lost every non-hover_menu entry")
+        for name in others:
+            with self.subTest(preset=name):
+                self.assertEqual(
+                    self._list(name).open_delay, 0, f"{name} must open immediately"
+                )
+        self.assertEqual(
+            self._list("hover_menu").open_delay, ExpandableList.HOVER_INTENT_MS
+        )
+
+    def _shown(self, preset):
+        """A shown, populated list under *preset*, plus its root item."""
+        lw = self._list(preset)
+        root_item = lw.add("Menu")
+        root_item.sublist.add(["A", "B"])
+        self.window.show()
+        # showEvent arms the synthetic-Enter latch at the live cursor position,
+        # which would swallow the open and pass both tests below vacuously —
+        # clear it so the dwell is what they actually measure.
+        lw._suppress_open_pos = None
+        return lw, root_item
+
+    def test_zero_delay_root_opens_synchronously(self):
+        """A submenu-preset row opens on the Enter itself — no timer, nothing to
+        wait out. This is what the scene submenu's Tools list relies on."""
+        lw, root_item = self._shown("expand_overlay_left")
+        lw._request_widget_open(root_item)
+        self.assertTrue(root_item.sublist.isVisible())
+        self.assertIsNone(lw._pending_open)
+
+    def test_hover_menu_root_arms_the_dwell_instead_of_opening(self):
+        """The panel row's counterpart: the Enter arms a pending open and shows
+        nothing until it fires."""
+        lw, root_item = self._shown("hover_menu")
+        lw._request_widget_open(root_item)
+        self.assertFalse(root_item.sublist.isVisible())
+        self.assertIs(lw._pending_open[0], lw)
+        self.assertIs(lw._pending_open[1], root_item)
+        self.assertTrue(lw._pending_open_timer.isActive())
+
+        # ...and firing it opens exactly that flyout — the dwell defers the open,
+        # it does not replace it. _fire_pending_open re-checks the LIVE pointer
+        # against the trigger, so pin it on the item (_cursor_pos exists as that
+        # seam); without this the assertion below is at the mercy of wherever the
+        # real mouse happens to be, which offscreen only passes by luck.
+        center = root_item.rect().center()
+        lw._cursor_pos = lambda: root_item.mapToGlobal(center)
+        lw._fire_pending_open()
+        self.assertTrue(root_item.sublist.isVisible())
+
+    def test_dwell_that_fires_after_the_cursor_left_opens_nothing(self):
+        """The other half of the seam: a flyout landing behind a cursor that has
+        already moved on is exactly what the dwell exists to prevent, and a Leave
+        does not always arrive to cancel it first."""
+        lw, root_item = self._shown("hover_menu")
+        lw._request_widget_open(root_item)
+        lw._cursor_pos = lambda: root_item.mapToGlobal(QtCore.QPoint(-500, -500))
+        lw._fire_pending_open()
+        self.assertFalse(root_item.sublist.isVisible())
+        self.assertIsNone(lw._pending_open)
+
+
 class TestEmbeddedHostMenuAdoption(QtBaseTestCase):
     """An embedded list hosted inside a hide-on-leave popup Menu.
 

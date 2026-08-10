@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-08_
+_Generated: 2026-08-09_
 
 ## Index
 
@@ -1680,12 +1680,12 @@ Action option for OptionBox - provides customizable action buttons.
 
 Affix-mode picker option for OptionBox.
 
-- **[`class AffixOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L50)** — Inline affix-mode picker (Auto / Suffix / Prefix) for a text widget.
+- **[`class AffixOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L40)** — Tri-state affix-mode cycle button (Auto / Suffix / Prefix) for a text widget.
   - `AffixOption.is_compatible(cls, widget) -> bool` *(class)* — Attach only to text-bearing hosts (``resolve`` reads ``text()``).
-  - `AffixOption.create_widget(self)` — Create the compact, inline mode combobox.
-  - `AffixOption.setup_widget(self)` — Seed the default selection (silently) and wire change -> callback.
-  - `AffixOption.mode(self) -> str` *(property)* — Current mode string — one of *values* (the default while unbuilt).
-  - `AffixOption.set_mode(self, mode: str) -> None` — Select *mode* if it is one of this picker's values (else no-op).
+  - `AffixOption.create_widget(self)` — Create the standard option button, seeded with the current mode's glyph.
+  - `AffixOption.setup_widget(self)` — Wire the cycle click and show the current mode's tooltip.
+  - `AffixOption.mode(self) -> str` *(property)* — Current mode string — ``"auto"`` / ``"suffix"`` / ``"prefix"``.
+  - `AffixOption.set_mode(self, mode: str) -> None` — Select *mode* if it is a known value (else no-op).
   - `AffixOption.resolve(self, text: Optional[str] = None, *, default: str = 'prefix') -> Tuple[str, str]` — Return ``(prefix, suffix)`` for *text* under the current mode.
 
 <a id="widgets--optionBox--options--browse"></a>
@@ -1854,7 +1854,7 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.add_value(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)` — Add an inline editable value field that mirrors the wrapped widget.
   - `OptionBoxManager.set_affix(self, *, default: str = 'auto', on_change=None, tooltip: Optional[str] = None, order=None, replace: bool = True)` — Add an inline affix-mode picker (Auto / Suffix / Prefix) — fluent.
   - `OptionBoxManager.affix_mode(self) -> str` *(property)* — Current affix mode (``"auto"`` when no AffixOption is present).
-  - `OptionBoxManager.resolve_affix(self, *, default: str = 'prefix')` — Return ``(prefix, suffix)`` for the wrapped field under its mode.
+  - `OptionBoxManager.resolve_affix(self, text: Optional[str] = None, *, default: str = 'prefix')` — Return ``(prefix, suffix)`` for the wrapped field under its mode.
   - `OptionBoxManager.set_reset(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)` — Add a per-widget *reset-to-default* button (fluent).
   - `OptionBoxManager.browse(self, file_types=None, title='Browse', start_dir=None, mode='file', icon='folder', tooltip='Browse...', callback=None)` — Enable file/folder browse button (fluent interface).
   - `OptionBoxManager.enable_clear(self)` — Enable clear option (fluent interface)
@@ -2258,13 +2258,16 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
-- **[`class HeaderMixin`](uitk/uitk/widgets/tableWidget.py#L16)**
+- **[`class HeaderMixin`](uitk/uitk/widgets/tableWidget.py#L18)**
   - `HeaderMixin.default_header_click_behavior(self, col)`
-- **[`class CellFormatMixin(ConvertMixin)`](uitk/uitk/widgets/tableWidget.py#L43)** — Generic cell/column/header formatting for QTableWidget.
+- **[`class CellFormatMixin(ConvertMixin)`](uitk/uitk/widgets/tableWidget.py#L45)** — Generic cell/column/header formatting for QTableWidget.
   - `CellFormatMixin.set_column_formatter(self, col, formatter, append=False)` — Set a formatter for a specific column.
   - `CellFormatMixin.set_header_formatter(self, header, formatter, append=False)` — Set a formatter for a specific header.
   - `CellFormatMixin.set_cell_formatter(self, row, col, formatter, append=False)` — Set a formatter for a specific cell (row, column).
   - `CellFormatMixin.clear_formatters(self)` — Clear all column, header, and cell formatters.
+  - `CellFormatMixin.set_column_truncation(self, col, length=None, mode='start', insert='..')` — Shorten a column's *displayed* text, leaving its data untouched.
+  - `CellFormatMixin.column_truncation(self, col)` — Return a column's ``(length, mode, insert)`` spec, or None when off.
+  - `CellFormatMixin.truncated_column_text(self, col: int, text: str) -> str` — Display form of ``text`` for ``col`` — the item's own data is unchanged.
   - `CellFormatMixin.apply_formatting(self)` — Apply formatting based on the registered formatters.
   - `CellFormatMixin.ensure_valid_color(self, color, color_type, item, row, col)` — Ensure a valid QColor, using fallback if needed.
   - `CellFormatMixin.format_item(self, item: QtWidgets.QTableWidgetItem, key: str = None, italic: bool = None, bold: bool = None, fg: Any = None, bg: Any = None)` — Apply formatting to a table item.
@@ -2273,11 +2276,11 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `CellFormatMixin.make_color_map_formatter(self, color_map: dict)`
   - `CellFormatMixin.add_section_row(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int` *(static)* — Insert a non-selectable section header that spans all columns.
   - `CellFormatMixin.is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool` *(static)* — Return ``True`` if *row* is a section header.
-- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L425)** — Immutable representation of a single selected row.
+- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L473)** — Immutable representation of a single selected row.
   - `TableSelection.get(self, key: str, default: Any = None)`
   - `TableSelection.item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]`
   - `TableSelection.text(self, key: str, default: str = '') -> str`
-- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L477)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L560)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
   - `TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None` — Enable MMB-drag value scrubbing for *columns*.
   - `TableWidget.add_scrub_column(self, column: int) -> None` — Add a single column to the MMB-scrub set.
   - `TableWidget.remove_scrub_column(self, column: int) -> None` — Remove a column from the MMB-scrub set.

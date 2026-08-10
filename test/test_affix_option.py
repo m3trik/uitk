@@ -2,14 +2,15 @@
 # coding=utf-8
 """Unit tests for the AffixOption option-box plugin.
 
-AffixOption adds a compact, inline "Auto / Suffix / Prefix" mode picker beside a
-text field — the single reusable home for the affix-picker pattern the DCC
-toolkits (mayatk / blendertk ``mat_utils``) used to each duplicate. These tests
-verify the headless-observable behaviour: default seeding, mode read-back,
+AffixOption adds a compact tri-state icon button beside a text field — click
+cycles the affix mode (Auto → Suffix → Prefix) — the single reusable home for
+the affix-picker pattern the DCC toolkits (mayatk / blendertk ``mat_utils``)
+used to each duplicate. These tests verify the headless-observable behaviour:
+default seeding, mode read-back, the click cycle, per-state icon swap,
 ``resolve`` delegation to ``pythontk.StrUtils.split_affix``, the on-change
-callback firing only on a user change (not the initial seed), the fluent manager
-surface (``set_affix`` / ``affix_mode`` / ``resolve_affix``), the compatibility
-gate (non-text host skipped), and inline (non-square) sizing/ordering.
+callback firing only on a real change (not the initial seed), the fluent
+manager surface (``set_affix`` / ``affix_mode`` / ``resolve_affix``), the
+compatibility gate (non-text host skipped), and standard square button sizing.
 
 Run standalone: python -m test.test_affix_option
 """
@@ -25,8 +26,16 @@ from uitk.widgets.slider import Slider
 from uitk.widgets.optionBox.options.affix import AffixOption
 
 
+def _icon_name(widget):
+    """The IconManager-registered icon name currently on *widget*."""
+    from uitk.managers.icon_manager import IconManager
+
+    info = IconManager.registered_info(widget)
+    return info.get("name") if info else None
+
+
 class TestAffixOptionState(QtBaseTestCase):
-    """mode / set_mode / resolve on a real (text) wrapped widget."""
+    """mode / set_mode / cycle / resolve on a real (text) wrapped widget."""
 
     def _make(self, *, text="", **kw):
         le = self.track_widget(LineEdit())
@@ -41,9 +50,9 @@ class TestAffixOptionState(QtBaseTestCase):
     def test_default_mode_prefix_seeded(self):
         _le, opt = self._make(default="prefix")
         self.assertEqual(opt.mode, "prefix")
-        self.assertEqual(opt.widget.currentIndex(), 2)
+        self.assertEqual(_icon_name(opt.widget), "arrow_left")
 
-    def test_unknown_default_falls_back_to_first_value(self):
+    def test_unknown_default_falls_back_to_auto(self):
         _le, opt = self._make(default="bogus")
         self.assertEqual(opt.mode, "auto")
 
@@ -66,9 +75,36 @@ class TestAffixOptionState(QtBaseTestCase):
         opt.set_mode("prefix")  # widget not built yet
         self.assertIsNone(opt._widget)
         self.assertEqual(opt.mode, "prefix")
-        # Building the picker must seed to the updated mode.
-        self.assertEqual(opt.widget.currentIndex(), 2)
+        # Building the picker must seed the updated mode's glyph.
+        self.assertEqual(_icon_name(opt.widget), "arrow_left")
         self.assertEqual(opt.mode, "prefix")
+
+    def test_click_cycles_modes(self):
+        # Auto → Suffix → Prefix → Auto, with the glyph tracking each state.
+        _le, opt = self._make()
+        button = opt.widget
+        self.assertEqual(opt.mode, "auto")
+        button.click()
+        self.assertEqual(opt.mode, "suffix")
+        self.assertEqual(_icon_name(button), "arrow_right")
+        button.click()
+        self.assertEqual(opt.mode, "prefix")
+        self.assertEqual(_icon_name(button), "arrow_left")
+        button.click()
+        self.assertEqual(opt.mode, "auto")
+        self.assertEqual(_icon_name(button), "asterisk")
+
+    def test_tooltip_names_current_mode(self):
+        _le, opt = self._make(default="suffix")
+        self.assertIn("Suffix", opt.widget.toolTip())
+        opt.widget.click()  # → prefix
+        self.assertIn("Prefix", opt.widget.toolTip())
+
+    def test_static_tooltip_override(self):
+        _le, opt = self._make(tooltip="Custom guide.")
+        self.assertEqual(opt.widget.toolTip(), "Custom guide.")
+        opt.widget.click()  # a cycle must not clobber the override
+        self.assertEqual(opt.widget.toolTip(), "Custom guide.")
 
     def test_resolve_auto_reads_widget_text(self):
         le, opt = self._make(text="_MAT")  # leading '_' → suffix
@@ -88,18 +124,24 @@ class TestAffixOptionState(QtBaseTestCase):
         opt.set_mode("prefix")
         self.assertEqual(opt.resolve(), ("XYZ", ""))
 
-    def test_on_change_fires_on_user_change_not_seed(self):
+    def test_on_change_fires_on_change_not_seed(self):
         seen = []
         _le, opt = self._make(default="prefix", on_change=seen.append)
         # Building/seeding the widget must NOT fire on_change.
-        combo = opt.widget
+        button = opt.widget
         self.assertEqual(seen, [])
-        combo.setCurrentIndex(1)  # simulates the user picking "Suffix"
-        self.assertEqual(seen, ["suffix"])
+        button.click()  # user cycles prefix → auto
+        self.assertEqual(seen, ["auto"])
+        opt.set_mode("auto")  # same mode → no re-fire
+        self.assertEqual(seen, ["auto"])
+        opt.set_mode("suffix")  # programmatic change on the built button fires
+        self.assertEqual(seen, ["auto", "suffix"])
 
-    def test_opts_out_of_square_sizing(self):
+    def test_square_button_sizing(self):
+        # A standard option-box icon button: no square opt-out, so the
+        # container gives it the same h x h footprint as every other option.
         _le, opt = self._make()
-        self.assertFalse(opt.square)
+        self.assertTrue(getattr(opt, "square", True))
 
     def test_is_compatible(self):
         le = self.track_widget(LineEdit())

@@ -556,18 +556,20 @@ class OptionBoxManager(ptk.LoggingMixin):
     ):
         """Add an inline affix-mode picker (Auto / Suffix / Prefix) — fluent.
 
-        Turns the wrapped text field into an affix entry with a compact combobox
-        beside it declaring how the field's text applies to a base name. The
-        parsing lives in ``pythontk.StrUtils.split_affix``; read the selection
-        back with :attr:`affix_mode` / :meth:`resolve_affix`. Requires a
-        text-bearing host (skipped + warned otherwise — see
+        Turns the wrapped text field into an affix entry with a tri-state icon
+        button beside it declaring how the field's text applies to a base name
+        (clicking cycles Auto → Suffix → Prefix). The parsing lives in
+        ``pythontk.StrUtils.split_affix``; read the selection back with
+        :attr:`affix_mode` / :meth:`resolve_affix`. Requires a text-bearing
+        host (skipped + warned otherwise — see
         :meth:`AffixOption.is_compatible`).
 
         Args:
             default: Initial mode — ``"auto"``, ``"suffix"`` or ``"prefix"``.
             on_change: Optional callable invoked with the new mode string
                 whenever the user changes the picker.
-            tooltip: Override the picker tooltip (defaults to the mode guide).
+            tooltip: Static tooltip override (defaults to a per-state tooltip
+                naming the current mode).
             order: Explicit sort position. See :class:`BaseOption`.
             replace: When ``True`` (default), removes any existing AffixOption
                 first.
@@ -604,20 +606,23 @@ class OptionBoxManager(ptk.LoggingMixin):
         option = self.find_option(AffixOption)
         return option.mode if option is not None else "auto"
 
-    def resolve_affix(self, *, default: str = "prefix"):
+    def resolve_affix(self, text: Optional[str] = None, *, default: str = "prefix"):
         """Return ``(prefix, suffix)`` for the wrapped field under its mode.
 
         Reads the wrapped widget's text and the AffixOption's mode (``"auto"``
         when no picker was added) and splits via
-        ``pythontk.StrUtils.split_affix``. *default* is the fallback mode used
-        when Auto is selected but the text has no boundary delimiter.
+        ``pythontk.StrUtils.split_affix``. *text* overrides the widget's text —
+        e.g. to fall back to the field's ``placeholderText()`` when it is empty.
+        *default* is the fallback mode used when Auto is selected but the text
+        has no boundary delimiter.
         """
         from uitk.widgets.optionBox.options.affix import AffixOption
 
         option = self.find_option(AffixOption)
         if option is not None:
-            return option.resolve(default=default)
-        text = self._widget.text() if hasattr(self._widget, "text") else ""
+            return option.resolve(text, default=default)
+        if text is None:
+            text = self._widget.text() if hasattr(self._widget, "text") else ""
         return ptk.StrUtils.split_affix(text, mode="auto", default=default)
 
     def set_reset(
