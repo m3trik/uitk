@@ -1,13 +1,33 @@
 # !/usr/bin/python
 # coding=utf-8
 import weakref
-from qtpy import QtCore, QtWidgets
+
+try:
+    from qtpy import QtCore, QtWidgets
+except ImportError:
+    # ImportError, not ModuleNotFoundError: qtpy raises QtBindingsNotFoundError
+    # (RuntimeError + ImportError) when it is installed but finds no binding,
+    # which ModuleNotFoundError does not catch. Both cases mean the same thing
+    # here -- no Qt -- and a genuinely broken binding still fails loudly at the
+    # first real Qt import (mainWindow's own `from qtpy import QtWidgets`).
+    # :class:`TooltipFormat` is a pure string DSL with no Qt in it, and the
+    # ecosystem's Qt-free engine surfaces build their tooltip text with it
+    # (mayatk/blendertk scene-exporter task definitions, imported under
+    # ``blender --background``, which ships no Qt binding).  Requiring a
+    # binding just to format a string would push those callers back to
+    # hand-rolled markup, so the import is optional: everything below that
+    # actually touches Qt is inert without it, and nothing headless binds a
+    # live provider anyway.
+    QtCore = QtWidgets = None
+
+#: Base for the event filter — ``object`` when there is no binding to inherit from.
+_QObjectBase = QtCore.QObject if QtCore is not None else object
 
 
-class _ProviderFilter(QtCore.QObject):
+class _ProviderFilter(_QObjectBase):
     """Event filter that refreshes a widget's toolTip just before Qt shows it."""
 
-    def __init__(self, provider, parent: QtWidgets.QWidget):
+    def __init__(self, provider, parent: "QtWidgets.QWidget"):
         super().__init__(parent)
         self._provider = provider
 
@@ -403,7 +423,7 @@ class TooltipProxy(TooltipFormat, _TooltipBindInternal):
         )
     """
 
-    def __init__(self, widget: QtWidgets.QWidget):
+    def __init__(self, widget: "QtWidgets.QWidget"):
         self._ref = weakref.ref(widget)
 
     def bind(self, provider) -> None:

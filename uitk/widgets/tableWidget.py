@@ -61,7 +61,7 @@ class CellFormatMixin(ConvertMixin):
         self._header_formatters = {}
         self._cell_formatters = {}
         self._item_defaults = {}  # {(row, col): (fg, bg)}
-        self._column_truncation = {}  # {col: (length, mode, insert)}
+        self._column_truncation = {}  # {col: (length, mode, insert, head)}
         self.cellChanged.connect(self._on_cell_edited)
 
     # Public API
@@ -104,7 +104,9 @@ class CellFormatMixin(ConvertMixin):
         self._cell_formatters.clear()
         self._item_defaults.clear()
 
-    def set_column_truncation(self, col, length=None, mode="start", insert=".."):
+    def set_column_truncation(
+        self, col, length=None, mode="start", insert="..", head=None
+    ):
         """Shorten a column's *displayed* text, leaving its data untouched.
 
         Purely a paint-time transform, applied by the item delegate through
@@ -122,6 +124,9 @@ class CellFormatMixin(ConvertMixin):
                 filename end of a path), "end" the head, "middle" both, "path"
                 both but cutting only at separators (whole path components).
             insert (str): Characters marking the trimmed area.
+            head (int): "path" mode only — cap the leading components kept
+                (``head=1`` = drive/root), handing the rest of the budget to
+                the filename end. None grows the head greedily.
         """
         idx = self._resolve_col(col)
         if idx is None:
@@ -129,11 +134,11 @@ class CellFormatMixin(ConvertMixin):
         if not length or int(length) <= 0:
             self._column_truncation.pop(idx, None)
         else:
-            self._column_truncation[idx] = (int(length), mode, insert)
+            self._column_truncation[idx] = (int(length), mode, insert, head)
         self.viewport().update()
 
     def column_truncation(self, col):
-        """Return a column's ``(length, mode, insert)`` spec, or None when off."""
+        """Return a column's ``(length, mode, insert, head)`` spec, or None when off."""
         idx = self._resolve_col(col)
         return self._column_truncation.get(idx) if idx is not None else None
 
@@ -146,8 +151,8 @@ class CellFormatMixin(ConvertMixin):
         spec = self._column_truncation.get(col)
         if not spec or not text:
             return text
-        length, mode, insert = spec
-        return ptk.truncate(text, length, mode=mode, insert=insert)
+        length, mode, insert, head = spec
+        return ptk.truncate(text, length, mode=mode, insert=insert, head=head)
 
     def apply_formatting(self):
         """Apply formatting based on the registered formatters."""

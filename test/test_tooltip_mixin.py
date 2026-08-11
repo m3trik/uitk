@@ -7,7 +7,11 @@ this file stays fast. Only the ``bind`` tests, which install a real event filter
 need a QApplication.
 """
 
+import sys
+import types
 import unittest
+import importlib.util
+from pathlib import Path
 
 from qtpy import QtWidgets
 
@@ -437,6 +441,67 @@ class TestBind(unittest.TestCase):
         proxy = TooltipProxy(w)
         del w
         proxy.bind(lambda: "x")  # must not raise
+
+
+class TestImportableWithoutQt(unittest.TestCase):
+    """The DSL must import with no Qt binding available.
+
+    ``TooltipFormat`` is a pure string builder, and the ecosystem authors its
+    tooltip text on Qt-free engine surface — the mayatk/blendertk scene-exporter
+    task definitions, which blendertk's suite builds under ``blender
+    --background``, an interpreter with no Qt at all.  A plain module-level
+    ``from qtpy import ...`` makes that an ImportError and pushes those callers
+    back to hand-rolled markup the tooltip gate cannot check, so the optional
+    import is a load-bearing contract rather than defensive noise.
+
+    The module is loaded from its path (not imported by name) so the real
+    already-imported copy is left alone.
+    """
+
+    MODULE = Path(__file__).resolve().parents[1] / "uitk/widgets/mixins/tooltip_mixin.py"
+
+    def _load_without(self, qtpy_stub):
+        """Exec the module with *qtpy_stub* standing in for qtpy."""
+        original = sys.modules.get("qtpy")
+        if qtpy_stub is None:
+            sys.modules["qtpy"] = None  # forces ModuleNotFoundError on import
+        else:
+            sys.modules["qtpy"] = qtpy_stub
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "tooltip_mixin_noqt", str(self.MODULE)
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+        finally:
+            if original is None:
+                sys.modules.pop("qtpy", None)
+            else:
+                sys.modules["qtpy"] = original
+
+    def test_dsl_works_with_qtpy_absent(self):
+        mod = self._load_without(None)
+        self.assertIsNone(mod.QtCore)
+        self.assertIn("<b>T</b>", mod.TooltipFormat.fmt(title="T"))
+        # Nothing headless binds a provider; the filter just needs a valid base.
+        self.assertIs(mod._ProviderFilter.__mro__[1], object)
+
+    def test_dsl_works_when_qtpy_finds_no_bindings(self):
+        # qtpy INSTALLED but with no binding raises QtBindingsNotFoundError,
+        # which is an ImportError but NOT a ModuleNotFoundError — guarding on
+        # the narrower class let this shape through.
+        from qtpy import QtBindingsNotFoundError
+
+        stub = types.ModuleType("qtpy")
+
+        def _raise(name):
+            raise QtBindingsNotFoundError()
+
+        stub.__getattr__ = _raise
+        mod = self._load_without(stub)
+        self.assertIsNone(mod.QtWidgets)
+        self.assertIn("<li>a</li>", mod.TooltipFormat.fmt(bullets=["a"]))
 
 
 if __name__ == "__main__":
