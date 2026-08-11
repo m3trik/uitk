@@ -865,7 +865,9 @@ class Switchboard(
         if path and self._source_tags:
             norm_path = os.path.normpath(os.path.abspath(path))
             for src_dir, src_tags in self._source_tags.items():
-                if norm_path.startswith(src_dir + os.sep) or norm_path == src_dir:
+                # is_under also normalizes case, so a registered source dir
+                # whose casing differs from the resolved path still matches.
+                if ptk.FileUtils.is_under(norm_path, src_dir):
                     tags.update(src_tags)
                     break
 

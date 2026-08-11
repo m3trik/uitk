@@ -73,6 +73,14 @@ class TestColumnTruncationData(_TruncationTestCase):
         self.assertEqual(shown, "O:/Cloud/Projects/…/textures/c130j_body_DIFF.png")
         self.assertLessEqual(len(shown), 48)
 
+    def test_head_cap_spends_the_budget_on_the_filename_end(self):
+        """``head`` caps the leading run, so the tail keeps more components."""
+        table = self._table()
+        table.set_column_truncation(1, length=48, mode="path", insert="…", head=1)
+        shown = table.truncated_column_text(1, LONG)
+        self.assertEqual(shown, "O:/…/sourceimages/textures/c130j_body_DIFF.png")
+        self.assertLessEqual(len(shown), 48)
+
     def test_value_shorter_than_length_is_untouched(self):
         table = self._table()
         table.set_column_truncation(1, length=24)
@@ -85,7 +93,7 @@ class TestColumnTruncationConfig(_TruncationTestCase):
     def test_spec_is_queryable(self):
         table = self._table()
         table.set_column_truncation(1, length=24, mode="middle", insert="…")
-        self.assertEqual(table.column_truncation(1), (24, "middle", "…"))
+        self.assertEqual(table.column_truncation(1), (24, "middle", "…", None))
 
     def test_none_length_clears(self):
         table = self._table()
@@ -97,7 +105,7 @@ class TestColumnTruncationConfig(_TruncationTestCase):
     def test_header_text_resolves_to_the_column(self):
         table = self._table()
         table.set_column_truncation("Path", length=24)
-        self.assertEqual(table.column_truncation(1), (24, "start", ".."))
+        self.assertEqual(table.column_truncation(1), (24, "start", "..", None))
 
     def test_unset_column_returns_none(self):
         table = self._table()

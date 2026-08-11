@@ -1,6 +1,7 @@
 import os
 import copy
 from typing import Optional, Dict, Any, Union, List, Tuple, Iterable
+import pythontk as ptk
 from uitk import Switchboard
 from uitk.handlers.base_handler import BaseHandler
 from uitk.handlers.handler_entry import HandlerEntry
@@ -728,7 +729,9 @@ class UiHandler(BaseHandler):
         if filepath and self.sb._source_tags:
             norm = os.path.normpath(os.path.abspath(filepath))
             for src_dir, src_tags in self.sb._source_tags.items():
-                if norm.startswith(src_dir + os.sep) or norm == src_dir:
+                # is_under also normalizes case, so a registered source dir
+                # whose casing differs from the resolved path still matches.
+                if ptk.FileUtils.is_under(norm, src_dir):
                     tags.update(src_tags)
                     break
         return tags

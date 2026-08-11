@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-09_
+_Generated: 2026-08-11_
 
 ## Index
 
@@ -348,7 +348,7 @@ Unified launchable-entry data class shared by all Switchboard handlers.
 <a id="handlers--ui_handler"></a>
 ### `handlers/ui_handler.py`
 
-- **[`class UiHandler(BaseHandler)`](uitk/uitk/handlers/ui_handler.py#L10)** — A generic, dynamic UI Handler that supports recursive discovery of UI and Slot files.
+- **[`class UiHandler(BaseHandler)`](uitk/uitk/handlers/ui_handler.py#L11)** — A generic, dynamic UI Handler that supports recursive discovery of UI and Slot files.
   - `UiHandler.editors(self)` *(property)* — Shortcut to the bound switchboard's editor registry.
   - `UiHandler.can_resolve(self, name: str) -> bool` — True if :meth:`get` would resolve *name* to a UI — without building it.
   - `UiHandler.get(self, name: str, **kwargs)` — Retrieve a standalone UI by name and apply default styling.
@@ -1598,16 +1598,16 @@ Text rendering for uitk widgets.
 <a id="widgets--mixins--tooltip_mixin"></a>
 ### `widgets/mixins/tooltip_mixin.py`
 
-- **[`class TooltipFormat`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L75)** — Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt``.
+- **[`class TooltipFormat`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L95)** — Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt``.
   - `TooltipFormat.kbd(*keys: str) -> str` *(static)* — Render keyboard key(s) as styled ``<kbd>``-like chips.
   - `TooltipFormat.hl(text: str, color: str = _C_ACCENT) -> str` *(static)* — Highlight ``text`` in ``color`` (defaults to the accent color).
   - `TooltipFormat.fmt(title: str = None, body: str = None, bullets: list = None, steps: list = None, rows: list = None, sections: list = None, notes: list = None) -> str` *(static)* — Build a rich-text HTML tooltip string.
   - `TooltipFormat.placeholder_preview(template: str, context: dict, *, title: str = None, body: str = None, descriptions: dict = None, final: str = None, final_label: str = '→', empty_text: str = None, notes: list = None) -> str` *(static)* — Build a live, self-documenting tooltip for a pattern/template field.
-- **[`class TooltipProxy(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L381)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
+- **[`class TooltipProxy(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L401)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
   - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
-- **[`class TooltipNamespace(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L428)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
+- **[`class TooltipNamespace(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L448)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
   - `TooltipNamespace.bind(self, widgets, provider, ui=None) -> list` — Bind a lazy tooltip *provider* to one widget, several, or a name range.
-- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L487)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
+- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L507)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
 
 <a id="widgets--mixins--wheel_step"></a>
 ### `widgets/mixins/wheel_step.py`
@@ -2265,8 +2265,8 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `CellFormatMixin.set_header_formatter(self, header, formatter, append=False)` — Set a formatter for a specific header.
   - `CellFormatMixin.set_cell_formatter(self, row, col, formatter, append=False)` — Set a formatter for a specific cell (row, column).
   - `CellFormatMixin.clear_formatters(self)` — Clear all column, header, and cell formatters.
-  - `CellFormatMixin.set_column_truncation(self, col, length=None, mode='start', insert='..')` — Shorten a column's *displayed* text, leaving its data untouched.
-  - `CellFormatMixin.column_truncation(self, col)` — Return a column's ``(length, mode, insert)`` spec, or None when off.
+  - `CellFormatMixin.set_column_truncation(self, col, length=None, mode='start', insert='..', head=None)` — Shorten a column's *displayed* text, leaving its data untouched.
+  - `CellFormatMixin.column_truncation(self, col)` — Return a column's ``(length, mode, insert, head)`` spec, or None when off.
   - `CellFormatMixin.truncated_column_text(self, col: int, text: str) -> str` — Display form of ``text`` for ``col`` — the item's own data is unchanged.
   - `CellFormatMixin.apply_formatting(self)` — Apply formatting based on the registered formatters.
   - `CellFormatMixin.ensure_valid_color(self, color, color_type, item, row, col)` — Ensure a valid QColor, using fallback if needed.
@@ -2276,11 +2276,11 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `CellFormatMixin.make_color_map_formatter(self, color_map: dict)`
   - `CellFormatMixin.add_section_row(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int` *(static)* — Insert a non-selectable section header that spans all columns.
   - `CellFormatMixin.is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool` *(static)* — Return ``True`` if *row* is a section header.
-- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L473)** — Immutable representation of a single selected row.
+- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L478)** — Immutable representation of a single selected row.
   - `TableSelection.get(self, key: str, default: Any = None)`
   - `TableSelection.item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]`
   - `TableSelection.text(self, key: str, default: str = '') -> str`
-- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L560)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L565)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
   - `TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None` — Enable MMB-drag value scrubbing for *columns*.
   - `TableWidget.add_scrub_column(self, column: int) -> None` — Add a single column to the MMB-scrub set.
   - `TableWidget.remove_scrub_column(self, column: int) -> None` — Remove a column from the MMB-scrub set.
