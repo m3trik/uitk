@@ -514,6 +514,34 @@ class TestOptionBoxLayoutSeating(QtBaseTestCase):
         field.setFixedHeight(28)
         self.assertEqual(OptionBox._row_height(field), 28)
 
+    def test_row_height_ignores_a_content_shaped_size_hint(self):
+        """The same runaway, inverted: a multi-line edit over-reports its HINT.
+
+        ``QTextEdit`` / ``QPlainTextEdit`` return a content-shaped ~192px
+        ``sizeHint`` that a laid-out one never wears, so trusting the hint
+        alone rasterized ~186px icons and pinned a 192px minimum — exactly the
+        failure the un-laid-out case above was fixed to stop, from the other
+        direction. The two measurements are each wrong in only one direction
+        (live height too big before layout, hint too big after), so the smaller
+        is the only value both agree the widget can hold.
+        """
+        field = self.track_widget(QtWidgets.QPlainTextEdit())
+        hint = field.sizeHint().height()
+        self.assertGreater(hint, 100, "premise: the hint is content-shaped")
+
+        field.resize(field.width(), 95)  # what a layout actually gives it
+        self.assertEqual(field.height(), 95, "premise: laid out to 95")
+
+        self.assertEqual(
+            OptionBox._row_height(field), 95, "row must follow the real height"
+        )
+
+        # And the un-laid-out direction still wins where it should: a bogus
+        # 640x480 live height must not beat a modest hint.
+        fresh = self.track_widget(QtWidgets.QLineEdit())
+        self.assertEqual(fresh.height(), 480, "premise: Qt's untouched default")
+        self.assertEqual(OptionBox._row_height(fresh), fresh.sizeHint().height())
+
 
 class TestPinValuesOptionCreation(QtBaseTestCase):
     """Tests for PinValuesOption creation and initialization."""

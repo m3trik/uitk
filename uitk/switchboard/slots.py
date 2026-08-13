@@ -538,6 +538,7 @@ class SlotWrapper:
             self.sb.logger.debug(f"Cancel provider failed to open a bracket: {e}")
 
         cancelled_by_exception = False
+        ran_to_completion = False
         try:
             monitored_slot = ptk.ExecutionMonitor.execution_monitor(
                 threshold=timeout,
@@ -549,7 +550,11 @@ class SlotWrapper:
             )(self.slot)
 
             with scope.activate():
-                return monitored_slot(*args, **kwargs)
+                outcome = monitored_slot(*args, **kwargs)
+            # Only reached when the slot returned normally; the report below
+            # distinguishes "ignored the cancel and finished" from "died".
+            ran_to_completion = True
+            return outcome
 
         except ptk.OperationCancelled:
             cancelled_by_exception = True
@@ -580,6 +585,22 @@ class SlotWrapper:
                     f"'{label}' cancelled by user ({scope.reason})."
                 )
                 self._report_cancelled(label)
+            elif scope.cancelled and ran_to_completion:
+                # Requested but never consumed, and the slot returned normally:
+                # it reached no checkpoint and finished. Saying nothing would
+                # recreate the complaint this whole mechanism exists to answer
+                # -- "I pressed Esc and nothing happened" -- so name the reason
+                # instead of leaving the user to guess, and be explicit that
+                # the work FINISHED, since that is what decides whether they
+                # need to undo anything. Gated on returning normally: a slot
+                # that raised did not run to completion, and claiming it did
+                # would send them looking for changes that were never made.
+                self.sb.logger.warning(
+                    f"'{label}' could not be cancelled: it reached no "
+                    "checkpoint, so it ran to completion. Report progress "
+                    "(sb.progress) or call ptk.CancelScope.check() inside the "
+                    "slot to make it interruptible."
+                )
 
     def _report_cancelled(self, label):
         """Surface the cancellation in the UI's footer, when it has one."""
