@@ -475,6 +475,45 @@ class TestOptionBoxLayoutSeating(QtBaseTestCase):
             "_update_sizing must leave a layout-managed container's width alone",
         )
 
+    def test_row_height_ignores_an_un_laid_out_default_size(self):
+        """A widget the layout hasn't reached yet carries Qt's 640x480 default.
+
+        Regression: taking that as the row height rasterized 480px icons and
+        pinned a 480px minimum on the field — which the buttons' fixed square
+        then held open, so the row could never shrink back. Hit by every field
+        built with ``menu.add("QLineEdit", …)``: a Menu keeps its grid layout
+        deactivated until the menu is first shown.
+        """
+        field = self.track_widget(QtWidgets.QLineEdit())  # parentless: 640x480
+        self.assertEqual(field.height(), 480, "premise: Qt's untouched default")
+        hint = field.sizeHint().height()
+
+        self.assertEqual(OptionBox._row_height(field), hint)
+
+        from uitk.widgets.optionBox.options.clear import ClearOption
+
+        clear = ClearOption(field)
+        opt = OptionBox(options=[clear])
+        self.track_widget(opt.wrap(field))
+        self.assertEqual(clear.widget.height(), hint, "icon button squared to the row")
+        self.assertEqual(field.minimumHeight(), hint, "no runaway floor on the field")
+
+        # Idempotent: the minimum wrap just set must not read back as "declares
+        # a height box" and re-trust the stale 480.
+        self.assertEqual(OptionBox._row_height(field), hint)
+
+    def test_row_height_honours_a_declared_ceiling(self):
+        """A widget with a maximum (the .ui convention, or setFixedHeight) keeps
+        driving the row from its live height — that is how the buttons track a
+        height applied after the wrap."""
+        field = self.track_widget(QtWidgets.QLineEdit())
+        field.setMinimumHeight(19)
+        field.setMaximumHeight(19)
+        self.assertEqual(OptionBox._row_height(field), 19)
+
+        field.setFixedHeight(28)
+        self.assertEqual(OptionBox._row_height(field), 28)
+
 
 class TestPinValuesOptionCreation(QtBaseTestCase):
     """Tests for PinValuesOption creation and initialization."""
@@ -1780,6 +1819,190 @@ class TestDisableOption(QtBaseTestCase):
         option.set_on(True)
         self.assertTrue(widget.isEnabled())
         self.assertTrue(gated.isEnabled())
+
+    # ---- value suppression: "disabled" must mean "no value" --------------
+
+    def test_disabled_field_reads_empty_and_restores_on_enable(self):
+        """The point of the button: a disabled value must not be readable.
+
+        Every consumer reads the field through ``text()`` — a greyed-out field
+        that still answered "LD_" would be silently applied by any slot that
+        didn't know about this button.
+        """
+        widget, option = self._make_disable(initial=True)
+        widget.setText("LD_")
+        _ = option.widget
+
+        option.set_on(False)
+        self.assertEqual(widget.text(), "", "disabled field must read empty")
+        self.assertEqual(option.held_value, "LD_")
+
+        option.set_on(True)
+        self.assertEqual(widget.text(), "LD_", "re-enabling must hand the value back")
+        self.assertIsNone(option.held_value)
+
+    def test_value_written_while_disabled_is_absorbed_not_leaked(self):
+        """A state restore landing after the option was built must not leak.
+
+        The widget is disabled, so only a programmatic write can get here; it is
+        adopted as the held value rather than left readable in the field.
+        """
+        widget, option = self._make_disable(initial=True)
+        _ = option.widget
+        option.set_on(False)
+
+        widget.setText("late-restore")  # e.g. StateManager applying saved state
+
+        self.assertEqual(widget.text(), "", "field must stay empty while disabled")
+        option.set_on(True)
+        self.assertEqual(widget.text(), "late-restore")
+
+    def test_re_disabling_does_not_clobber_the_held_value(self):
+        """``_apply_gating(False)`` re-runs (setup_widget, re-toggles); the
+        second pass must not overwrite the hold with the empty field it made."""
+        widget, option = self._make_disable(initial=True)
+        widget.setText("keep me")
+        _ = option.widget
+        option.set_on(False)
+        option._apply_gating(False)  # idempotent re-entry
+        self.assertEqual(option.held_value, "keep me")
+
+    def test_suppress_value_false_leaves_the_text_alone(self):
+        widget, option = self._make_disable(initial=True, suppress_value=False)
+        widget.setText("still here")
+        _ = option.widget
+        option.set_on(False)
+        self.assertEqual(widget.text(), "still here")
+        self.assertIsNone(option.held_value)
+
+    def test_suppression_skipped_when_the_wrapped_widget_is_not_gated(self):
+        """``gate_wrapped=False`` gates only siblings — the wrapped field keeps
+        working, so emptying it would be wrong."""
+        gated = self.track_widget(QtWidgets.QLineEdit())
+        widget, option = self._make_disable(
+            initial=True, gate_wrapped=False, gated_widgets=[gated]
+        )
+        widget.setText("mine")
+        _ = option.widget
+        option.set_on(False)
+        self.assertEqual(widget.text(), "mine")
+
+    def test_non_text_host_suppression_is_a_no_op(self):
+        """A spin box has no "no value" state; suppression must not touch it."""
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        spin = self.track_widget(QtWidgets.QSpinBox())
+        spin.setValue(7)
+        option = DisableOption(wrapped_widget=spin, settings_key=False)
+        _ = option.widget
+        option.set_on(False)
+        self.assertEqual(spin.value(), 7)
+        self.assertFalse(spin.isEnabled())
+
+    def test_hidden_data_payload_is_suppressed_with_the_text(self):
+        """A LineEdit display/data split hides the real value behind the text —
+        clearing the text alone would leave ``value()`` answering the payload."""
+        from uitk.widgets.lineEdit import LineEdit
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        widget = self.track_widget(LineEdit())
+        widget.set_value("D:/tex/rock_BaseColor.png", display="rock")
+        option = DisableOption(wrapped_widget=widget, settings_key=False)
+        _ = option.widget
+
+        option.set_on(False)
+        self.assertEqual(widget.text(), "")
+        self.assertEqual(widget.value(), "", "the payload must go with the text")
+
+        option.set_on(True)
+        self.assertEqual(widget.text(), "rock")
+        self.assertEqual(widget.value(), "D:/tex/rock_BaseColor.png")
+
+    def test_held_value_survives_a_new_session(self):
+        """A field left disabled still hands its value back next session."""
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        key = "test_disable_held_value"
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        widget.setText("archive")
+        first = DisableOption(wrapped_widget=widget, settings_key=key)
+        _ = first.widget
+        first.set_on(False)
+
+        # A fresh option on a fresh field — the next session's rebuild.
+        widget2 = self.track_widget(QtWidgets.QLineEdit())
+        second = DisableOption(wrapped_widget=widget2, settings_key=key)
+        _ = second.widget
+        self.assertFalse(second.is_on, "off state must persist")
+        self.assertEqual(second.held_value, "archive")
+
+        second.set_on(True)
+        self.assertEqual(widget2.text(), "archive")
+
+        if second._settings is not None:
+            second._settings.clear()
+            second._settings.sync()
+
+
+class TestDisableOptionInMenu(QtBaseTestCase):
+    """A disable button on a field added to a ``Menu``.
+
+    Tool option boxes build their fields with ``menu.add("QLineEdit", …)``, so
+    the wrap has to survive a QGridLayout cell — and the ban button has to stay
+    clickable inside the menu, or a field disabled there could never come back.
+    """
+
+    def _menu_field(self, **kwargs):
+        from uitk.widgets.menu import Menu
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        # Plain QtWidgets get `.option_box` only once Switchboard patches them.
+        OptionBoxManager.patch_common_widgets()
+        host = self.track_widget(QtWidgets.QPushButton("host"))
+        menu = self.track_widget(Menu(host))
+        menu.add("QLineEdit", setObjectName="txt_folder", setText="old", **kwargs)
+        return menu, menu.txt_folder
+
+    def test_menu_field_wraps_and_disables(self):
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        menu, field = self._menu_field()
+        field.option_box.set_disable(settings_key=False)
+        self.app.processEvents()
+
+        option = field.option_box.find_option(DisableOption)
+        self.assertIsNotNone(option, "the disable option must survive the wrap")
+        self.assertTrue(field.option_box._is_wrapped)
+
+        option.set_on(False)
+        self.assertEqual(field.text(), "", "a disabled field must read empty")
+        self.assertFalse(field.isEnabled())
+        self.assertTrue(
+            option.widget.isEnabled(),
+            "the ban button must stay clickable inside a menu, or the field is "
+            "disabled forever",
+        )
+
+        option.set_on(True)
+        self.assertEqual(field.text(), "old")
+
+    def test_affix_and_disable_coexist_on_one_field(self):
+        """The Optimize menu's modifier row: mode picker + disable, same field."""
+        from uitk.widgets.optionBox.options.affix import AffixOption
+        from uitk.widgets.optionBox.options.disable import DisableOption
+
+        _, field = self._menu_field()
+        field.option_box.set_affix(default="auto")
+        field.option_box.set_disable(settings_key=False)
+        self.app.processEvents()
+
+        self.assertIsNotNone(field.option_box.find_option(AffixOption))
+        disable = field.option_box.find_option(DisableOption)
+        self.assertIsNotNone(disable)
+
+        # Disabling reports "no affix at all", not an orphaned mode.
+        disable.set_on(False)
+        self.assertEqual(field.option_box.resolve_affix(), ("", ""))
 
 
 class TestOptionBoxManagerToggle(QtBaseTestCase):

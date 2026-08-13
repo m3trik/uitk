@@ -168,6 +168,7 @@ DEFAULT_INCLUDE = {
         "TextOverlay",
     ],
     # Standalone services (uitk.managers / uitk.themes)
+    "managers.cancel_manager": ["CancelManager", "CancelProvider"],
     "managers.icon_manager": "IconManager",
     "managers.optional_package_manager": "OptionalPackageManager",
     "managers.preset_manager": "PresetManager",

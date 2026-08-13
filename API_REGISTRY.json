@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-08-11",
+  "generated_at": "2026-08-13",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -1576,6 +1576,164 @@
               "signature": "(self, ui_path: str) -> None",
               "summary": "Invalidate cached metadata after .ui content has changed.",
               "line": 112,
+              "deprecated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "relpath": "managers/cancel_manager.py",
+      "summary": "Host strategy for cancelling long-running slots.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "CancelProvider",
+          "summary": "Standalone-Qt cancellation strategy;",
+          "line": 34,
+          "bases": [],
+          "members": [
+            {
+              "name": "install",
+              "qualname": "CancelProvider.install",
+              "kind": "classmethod",
+              "signature": "(cls) -> Optional['CancelProvider']",
+              "summary": "Register an instance of this provider with :class:`CancelManager`.",
+              "line": 71,
+              "deprecated": false
+            },
+            {
+              "name": "report_warning",
+              "qualname": "CancelProvider.report_warning",
+              "kind": "classmethod",
+              "signature": "(cls, message: str) -> None",
+              "summary": "Surface a warning to the user.",
+              "line": 84,
+              "deprecated": false
+            },
+            {
+              "name": "report_info",
+              "qualname": "CancelProvider.report_info",
+              "kind": "classmethod",
+              "signature": "(cls, message: str) -> None",
+              "summary": "Surface an informational message.",
+              "line": 93,
+              "deprecated": false
+            },
+            {
+              "name": "open_bracket",
+              "qualname": "CancelProvider.open_bracket",
+              "kind": "method",
+              "signature": "(self, bracket: Any) -> Any",
+              "summary": "Track *bracket* as the innermost in-flight operation;",
+              "line": 97,
+              "deprecated": false
+            },
+            {
+              "name": "close_bracket",
+              "qualname": "CancelProvider.close_bracket",
+              "kind": "method",
+              "signature": "(self, token: Any) -> Optional[Any]",
+              "summary": "Stop tracking *token*;",
+              "line": 102,
+              "deprecated": false
+            },
+            {
+              "name": "current_bracket",
+              "qualname": "CancelProvider.current_bracket",
+              "kind": "property",
+              "signature": "(self) -> Optional[Any]",
+              "summary": "The innermost in-flight operation, or ``None``.",
+              "line": 120,
+              "deprecated": false
+            },
+            {
+              "name": "create_sources",
+              "qualname": "CancelProvider.create_sources",
+              "kind": "method",
+              "signature": "(self, scope, label: str = '') -> List[Callable[[], bool]]",
+              "summary": "Pull sources for *scope*, polled on the operation's own thread.",
+              "line": 124,
+              "deprecated": false
+            },
+            {
+              "name": "begin",
+              "qualname": "CancelProvider.begin",
+              "kind": "method",
+              "signature": "(self, scope, label: str = '', rollback: bool = False) -> Any",
+              "summary": "Open the host bracket for an operation;",
+              "line": 137,
+              "deprecated": false
+            },
+            {
+              "name": "tick",
+              "qualname": "CancelProvider.tick",
+              "kind": "method",
+              "signature": "(self, value: Optional[int] = None, total: Optional[int] = None, text: Optional[str] = None) -> None",
+              "summary": "Mirror one progress step into host-native UI (no-op by default).",
+              "line": 145,
+              "deprecated": false
+            },
+            {
+              "name": "end",
+              "qualname": "CancelProvider.end",
+              "kind": "method",
+              "signature": "(self, token: Any, cancelled: bool = False, rollback: bool = False) -> None",
+              "summary": "Close the host bracket, optionally undoing a cancelled operation.",
+              "line": 158,
+              "deprecated": false
+            },
+            {
+              "name": "pump",
+              "qualname": "CancelProvider.pump",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Keep the UI responsive between work chunks.",
+              "line": 161,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "CancelManager",
+          "summary": "Process-wide registry for the active :class:`CancelProvider`.",
+          "line": 181,
+          "bases": [],
+          "members": [
+            {
+              "name": "register",
+              "qualname": "CancelManager.register",
+              "kind": "classmethod",
+              "signature": "(cls, provider: CancelProvider) -> CancelProvider",
+              "summary": "Install the host provider;",
+              "line": 194,
+              "deprecated": false
+            },
+            {
+              "name": "provider",
+              "qualname": "CancelManager.provider",
+              "kind": "classmethod",
+              "signature": "(cls) -> CancelProvider",
+              "summary": "The registered provider, or a shared standalone-Qt default.",
+              "line": 204,
+              "deprecated": false
+            },
+            {
+              "name": "reset",
+              "qualname": "CancelManager.reset",
+              "kind": "classmethod",
+              "signature": "(cls) -> None",
+              "summary": "Drop the registered provider (tests, host teardown).",
+              "line": 213,
+              "deprecated": false
+            },
+            {
+              "name": "new_scope",
+              "qualname": "CancelManager.new_scope",
+              "kind": "classmethod",
+              "signature": "(cls, label: str = '', **kwargs) -> ptk.CancelScope",
+              "summary": "Build a :class:`~pythontk.CancelScope` wired to the host provider.",
+              "line": 218,
               "deprecated": false
             }
           ]
@@ -3363,7 +3521,7 @@
         {
           "name": "Signals",
           "summary": "Decorator to specify which signals a slot should connect to.",
-          "line": 14,
+          "line": 15,
           "bases": [],
           "members": [
             {
@@ -3372,29 +3530,29 @@
               "kind": "classmethod",
               "signature": "(cls, func)",
               "summary": "Decorator that blocks widget signals during method execution.",
-              "line": 52,
+              "line": 53,
               "deprecated": false
             }
           ]
         },
         {
           "name": "Cancelable",
-          "summary": "Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.",
-          "line": 72,
+          "summary": "Decorator: enable cooperative cancel + warning dialog for a heavy slot.",
+          "line": 73,
           "bases": [],
           "members": []
         },
         {
           "name": "SlotWrapper",
           "summary": "Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…",
-          "line": 191,
+          "line": 262,
           "bases": [],
           "members": []
         },
         {
           "name": "SwitchboardSlotsMixin",
           "summary": "Mixin for managing slot connections and signal-slot handling in the Switchboard.",
-          "line": 452,
+          "line": 597,
           "bases": [],
           "members": [
             {
@@ -3403,7 +3561,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> set",
               "summary": "Retrieves the default signals for a given widget type.",
-              "line": 484,
+              "line": 629,
               "deprecated": false
             },
             {
@@ -3412,7 +3570,7 @@
               "kind": "method",
               "signature": "(self, widget, derived=True, exc=None)",
               "summary": "Get all available signals for a type of widget.",
-              "line": 507,
+              "line": 652,
               "deprecated": false
             },
             {
@@ -3421,7 +3579,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> bool",
               "summary": "",
-              "line": 620,
+              "line": 765,
               "deprecated": false
             },
             {
@@ -3430,7 +3588,7 @@
               "kind": "method",
               "signature": "(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]",
               "summary": "Get or create a slots instance for the given UI.",
-              "line": 625,
+              "line": 770,
               "deprecated": false
             },
             {
@@ -3439,7 +3597,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None",
               "summary": "",
-              "line": 1000,
+              "line": 1145,
               "deprecated": false
             },
             {
@@ -3448,7 +3606,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, *args, **kwargs)",
               "summary": "Call a slot method for a widget.",
-              "line": 1029,
+              "line": 1174,
               "deprecated": false
             },
             {
@@ -3457,7 +3615,7 @@
               "kind": "method",
               "signature": "(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]",
               "summary": "",
-              "line": 1083,
+              "line": 1228,
               "deprecated": false
             },
             {
@@ -3466,7 +3624,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]",
               "summary": "",
-              "line": 1118,
+              "line": 1263,
               "deprecated": false
             },
             {
@@ -3475,7 +3633,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.",
-              "line": 1128,
+              "line": 1273,
               "deprecated": false
             },
             {
@@ -3484,7 +3642,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.",
-              "line": 1142,
+              "line": 1287,
               "deprecated": false
             },
             {
@@ -3493,7 +3651,7 @@
               "kind": "method",
               "signature": "(self, widget, slot=None)",
               "summary": "Connect a widget's signals to its slot.",
-              "line": 1163,
+              "line": 1308,
               "deprecated": false
             },
             {
@@ -3502,7 +3660,7 @@
               "kind": "method",
               "signature": "(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)",
               "summary": "Get the slot history.",
-              "line": 1245,
+              "line": 1390,
               "deprecated": false
             }
           ]
@@ -6600,7 +6758,7 @@
               "kind": "method",
               "signature": "(self, value: Optional[int] = None, text: Optional[str] = None) -> bool",
               "summary": "Tick the progress bar and optionally update the status text.",
-              "line": 516,
+              "line": 518,
               "deprecated": false
             },
             {
@@ -6609,7 +6767,7 @@
               "kind": "method",
               "signature": "(self, text: Optional[str] = None, delay_ms: int = 1000)",
               "summary": "Finish the progress and hide the bar.",
-              "line": 548,
+              "line": 555,
               "deprecated": false
             },
             {
@@ -6618,7 +6776,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Cancel the current progress operation.",
-              "line": 560,
+              "line": 567,
               "deprecated": false
             },
             {
@@ -6627,7 +6785,7 @@
               "kind": "method",
               "signature": "(self, total: int) -> None",
               "summary": "Adjust the bar's task total mid-flight.",
-              "line": 564,
+              "line": 571,
               "deprecated": false
             },
             {
@@ -6636,7 +6794,7 @@
               "kind": "method",
               "signature": "(self, total: Optional[int] = None, text: str = '') -> 'FooterProgressContext'",
               "summary": "Context manager for cooperative progress / task feedback.",
-              "line": 573,
+              "line": 580,
               "deprecated": false
             },
             {
@@ -6645,7 +6803,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Debounce resize: restart timer on each event so we only",
-              "line": 620,
+              "line": 639,
               "deprecated": false
             },
             {
@@ -6654,7 +6812,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Ensure text is properly sized and elided on first show.",
-              "line": 626,
+              "line": 645,
               "deprecated": false
             },
             {
@@ -6663,7 +6821,7 @@
               "kind": "method",
               "signature": "(self, resolver: Optional[Callable[[], str]] = None, default_text: str | None = '', truncate_kwargs: Optional[Mapping[str, Any]] = None) -> 'FooterStatusController'",
               "summary": "Bind a :class:`FooterStatusController` to this footer and return it.",
-              "line": 694,
+              "line": 713,
               "deprecated": false
             },
             {
@@ -6672,7 +6830,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.",
-              "line": 714,
+              "line": 733,
               "deprecated": false
             }
           ]
@@ -6680,14 +6838,14 @@
         {
           "name": "FooterProgressContext",
           "summary": "Context manager for footer progress tracking.",
-          "line": 732,
+          "line": 751,
           "bases": [],
           "members": []
         },
         {
           "name": "FooterStatusController",
           "summary": "Helper that keeps a footer in sync with a resolver function.",
-          "line": 753,
+          "line": 772,
           "bases": [],
           "members": [
             {
@@ -6696,7 +6854,7 @@
               "kind": "method",
               "signature": "(self, resolver: Callable[[], str]) -> None",
               "summary": "",
-              "line": 770,
+              "line": 789,
               "deprecated": false
             },
             {
@@ -6705,7 +6863,7 @@
               "kind": "method",
               "signature": "(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None",
               "summary": "Configure truncation behavior for footer updates via StrUtils.truncate kwargs.",
-              "line": 774,
+              "line": 793,
               "deprecated": false
             },
             {
@@ -6714,7 +6872,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "",
-              "line": 788,
+              "line": 807,
               "deprecated": false
             }
           ]
@@ -9548,7 +9706,7 @@
               "kind": "property",
               "signature": "(self) -> 'OptionBoxMixin._OptionsWrapper'",
               "summary": "",
-              "line": 224,
+              "line": 226,
               "deprecated": false
             }
           ]
@@ -10292,7 +10450,7 @@
         {
           "name": "OptionBoxContainer",
           "summary": "Container widget that wraps a widget with option buttons.",
-          "line": 64,
+          "line": 70,
           "bases": [
             "QtWidgets.QWidget"
           ],
@@ -10303,7 +10461,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 94,
+              "line": 100,
               "deprecated": false
             },
             {
@@ -10312,7 +10470,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Re-fit to content when shown without a managing parent layout.",
-              "line": 99,
+              "line": 105,
               "deprecated": false
             },
             {
@@ -10321,7 +10479,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Watch the wrapped widget for enabled/visibility and height changes.",
-              "line": 197,
+              "line": 203,
               "deprecated": false
             }
           ]
@@ -10329,7 +10487,7 @@
         {
           "name": "OptionBox",
           "summary": "Plugin-based option manager that wraps widgets with action buttons.",
-          "line": 262,
+          "line": 268,
           "bases": [],
           "members": [
             {
@@ -10338,7 +10496,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin instance.",
-              "line": 306,
+              "line": 312,
               "deprecated": false
             },
             {
@@ -10347,7 +10505,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Remove an option plugin instance.",
-              "line": 317,
+              "line": 323,
               "deprecated": false
             },
             {
@@ -10356,7 +10514,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all registered option plugins.",
-              "line": 324,
+              "line": 330,
               "deprecated": false
             },
             {
@@ -10365,7 +10523,7 @@
               "kind": "method",
               "signature": "(self, order)",
               "summary": "Update the sort order and re-lay-out existing options in place.",
-              "line": 328,
+              "line": 334,
               "deprecated": false
             },
             {
@@ -10374,7 +10532,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get clear button state.",
-              "line": 581,
+              "line": 630,
               "deprecated": false
             },
             {
@@ -10383,7 +10541,7 @@
               "kind": "method",
               "signature": "(self, visible=True)",
               "summary": "Enable or disable the clear button.",
-              "line": 616,
+              "line": 665,
               "deprecated": false
             },
             {
@@ -10392,7 +10550,7 @@
               "kind": "method",
               "signature": "(self, wrapped_widget: QtWidgets.QWidget, frameless=False)",
               "summary": "Wrap target widget with option buttons.",
-              "line": 636,
+              "line": 685,
               "deprecated": false
             }
           ]
@@ -10833,11 +10991,30 @@
         {
           "name": "DisableOption",
           "summary": "Universal disable button — toggles the wrapped widget's enabled state.",
-          "line": 25,
+          "line": 49,
           "bases": [
             "BinaryToggleOption"
           ],
-          "members": []
+          "members": [
+            {
+              "name": "held_value",
+              "qualname": "DisableOption.held_value",
+              "kind": "property",
+              "signature": "(self) -> Optional[str]",
+              "summary": "Text held aside while disabled (``None`` when nothing is held).",
+              "line": 143,
+              "deprecated": false
+            },
+            {
+              "name": "setup_widget",
+              "qualname": "DisableOption.setup_widget",
+              "kind": "method",
+              "signature": "(self)",
+              "summary": "Wire the base button, then guard the wrapped field's value.",
+              "line": 242,
+              "deprecated": false
+            }
+          ]
         }
       ]
     },
@@ -11665,7 +11842,7 @@
               "name": "set_disable",
               "qualname": "OptionBoxManager.set_disable",
               "kind": "method",
-              "signature": "(self, *, icon: str = 'ban', tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, gate_wrapped: bool = True, gated_widgets=(), disabled_color: Optional[str] = None, active_color: Optional[str] = None, settings_key=None, replace: bool = True, on_toggled=None)",
+              "signature": "(self, *, icon: str = 'ban', tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, gate_wrapped: bool = True, gated_widgets=(), suppress_value: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, settings_key=None, replace: bool = True, on_toggled=None)",
               "summary": "Add a universal *disable* button (fluent interface).",
               "line": 425,
               "deprecated": false
@@ -11676,7 +11853,7 @@
               "kind": "method",
               "signature": "(self, **kwargs)",
               "summary": "Add a disable button without replacing existing ones.",
-              "line": 495,
+              "line": 504,
               "deprecated": false
             },
             {
@@ -11685,7 +11862,7 @@
               "kind": "method",
               "signature": "(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)",
               "summary": "Add an inline editable value field that mirrors the wrapped widget.",
-              "line": 503,
+              "line": 512,
               "deprecated": false
             },
             {
@@ -11694,7 +11871,7 @@
               "kind": "method",
               "signature": "(self, *, default: str = 'auto', on_change=None, tooltip: Optional[str] = None, order=None, replace: bool = True)",
               "summary": "Add an inline affix-mode picker (Auto / Suffix / Prefix) — fluent.",
-              "line": 548,
+              "line": 557,
               "deprecated": false
             },
             {
@@ -11703,7 +11880,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Current affix mode (``\"auto\"`` when no AffixOption is present).",
-              "line": 602,
+              "line": 611,
               "deprecated": false
             },
             {
@@ -11712,7 +11889,7 @@
               "kind": "method",
               "signature": "(self, text: Optional[str] = None, *, default: str = 'prefix')",
               "summary": "Return ``(prefix, suffix)`` for the wrapped field under its mode.",
-              "line": 609,
+              "line": 618,
               "deprecated": false
             },
             {
@@ -11721,7 +11898,7 @@
               "kind": "method",
               "signature": "(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)",
               "summary": "Add a per-widget *reset-to-default* button (fluent).",
-              "line": 628,
+              "line": 637,
               "deprecated": false
             },
             {
@@ -11730,7 +11907,7 @@
               "kind": "method",
               "signature": "(self, file_types=None, title='Browse', start_dir=None, mode='file', icon='folder', tooltip='Browse...', callback=None)",
               "summary": "Enable file/folder browse button (fluent interface).",
-              "line": 687,
+              "line": 696,
               "deprecated": false
             },
             {
@@ -11739,7 +11916,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Enable clear option (fluent interface)",
-              "line": 731,
+              "line": 740,
               "deprecated": false
             },
             {
@@ -11748,7 +11925,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Disable clear option (fluent interface)",
-              "line": 736,
+              "line": 745,
               "deprecated": false
             },
             {
@@ -11757,7 +11934,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all added options.",
-              "line": 741,
+              "line": 750,
               "deprecated": false
             },
             {
@@ -11766,7 +11943,7 @@
               "kind": "method",
               "signature": "(self, option_type)",
               "summary": "Find the first option of the given type.",
-              "line": 756,
+              "line": 765,
               "deprecated": false
             },
             {
@@ -11775,7 +11952,7 @@
               "kind": "method",
               "signature": "(self, order)",
               "summary": "Set option order (fluent interface)",
-              "line": 776,
+              "line": 785,
               "deprecated": false
             },
             {
@@ -11784,7 +11961,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Set clear button to appear first (fluent interface)",
-              "line": 785,
+              "line": 794,
               "deprecated": false
             },
             {
@@ -11793,7 +11970,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Check if option box is enabled",
-              "line": 790,
+              "line": 799,
               "deprecated": false
             },
             {
@@ -11802,7 +11979,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the actual option box widget",
-              "line": 795,
+              "line": 804,
               "deprecated": false
             },
             {
@@ -11811,7 +11988,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get or create a Menu instance for this option box.",
-              "line": 801,
+              "line": 810,
               "deprecated": false
             },
             {
@@ -11820,7 +11997,7 @@
               "kind": "method",
               "signature": "(self, create=False)",
               "summary": "Get menu, optionally creating if it doesn't exist.",
-              "line": 820,
+              "line": 829,
               "deprecated": false
             },
             {
@@ -11829,7 +12006,7 @@
               "kind": "method",
               "signature": "(self, menu=None, **menu_kwargs)",
               "summary": "Enable menu option using the MenuOption plugin.",
-              "line": 864,
+              "line": 873,
               "deprecated": false
             },
             {
@@ -11838,7 +12015,7 @@
               "kind": "method",
               "signature": "(self, *, title: Optional[str] = None, items=None, build_menu=None, position: str = 'cursorPos', add_header: bool = True, tooltip: str = 'Options', menu=None)",
               "summary": "Add a dropdown *option menu* button (fluent interface).",
-              "line": 981,
+              "line": 990,
               "deprecated": false
             },
             {
@@ -11847,7 +12024,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Disable the menu option (fluent interface).",
-              "line": 1042,
+              "line": 1051,
               "deprecated": false
             },
             {
@@ -11856,7 +12033,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin to this option box.",
-              "line": 1059,
+              "line": 1068,
               "deprecated": false
             },
             {
@@ -11865,7 +12042,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the container widget (for layout management).",
-              "line": 1270,
+              "line": 1279,
               "deprecated": false
             },
             {
@@ -11874,7 +12051,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove option box completely",
-              "line": 1430,
+              "line": 1439,
               "deprecated": false
             },
             {
@@ -11883,7 +12060,7 @@
               "kind": "staticmethod",
               "signature": "(widget, show_clear=False, options=None, **kwargs)",
               "summary": "Add an option box to any widget with one call.",
-              "line": 1454,
+              "line": 1463,
               "deprecated": false
             },
             {
@@ -11892,7 +12069,7 @@
               "kind": "staticmethod",
               "signature": "(widget, **kwargs)",
               "summary": "Add just a clear button to a text widget.",
-              "line": 1477,
+              "line": 1486,
               "deprecated": false
             },
             {
@@ -11901,7 +12078,7 @@
               "kind": "staticmethod",
               "signature": "(widget, menu, **kwargs)",
               "summary": "Add a menu option to any widget.",
-              "line": 1490,
+              "line": 1499,
               "deprecated": false
             },
             {
@@ -11910,7 +12087,7 @@
               "kind": "staticmethod",
               "signature": "(widget_class)",
               "summary": "Add option_box attribute to a widget class.",
-              "line": 1510,
+              "line": 1519,
               "deprecated": false
             },
             {
@@ -11919,7 +12096,7 @@
               "kind": "staticmethod",
               "signature": "()",
               "summary": "Patch common Qt widgets with option box support.",
-              "line": 1525,
+              "line": 1534,
               "deprecated": false
             }
           ]
@@ -11934,19 +12111,28 @@
         {
           "name": "ProgressBar",
           "summary": "A feature-rich progress bar with task execution support.",
-          "line": 9,
+          "line": 11,
           "bases": [
             "QtWidgets.QProgressBar",
             "AttributesMixin"
           ],
           "members": [
             {
+              "name": "scope",
+              "qualname": "ProgressBar.scope",
+              "kind": "property",
+              "signature": "(self) -> Optional['ptk.CancelScope']",
+              "summary": "The :class:`~pythontk.CancelScope` governing the current task.",
+              "line": 126,
+              "deprecated": false
+            },
+            {
               "name": "is_cancelled",
               "qualname": "ProgressBar.is_cancelled",
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Check if the operation was cancelled.",
-              "line": 101,
+              "line": 137,
               "deprecated": false
             },
             {
@@ -11955,7 +12141,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Get auto-hide setting.",
-              "line": 106,
+              "line": 146,
               "deprecated": false
             },
             {
@@ -11964,7 +12150,7 @@
               "kind": "method",
               "signature": "(self) -> int",
               "summary": "Milliseconds Escape must be held to cancel (0 disables hold-to-cancel).",
-              "line": 115,
+              "line": 155,
               "deprecated": false
             },
             {
@@ -11973,7 +12159,7 @@
               "kind": "method",
               "signature": "(self, value: int) -> None",
               "summary": "Set the hold-to-cancel duration.",
-              "line": 119,
+              "line": 159,
               "deprecated": false
             },
             {
@@ -11982,16 +12168,16 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set auto-hide (Qt-property setter for :attr:`auto_hide`).",
-              "line": 123,
+              "line": 163,
               "deprecated": false
             },
             {
               "name": "cancel",
               "qualname": "ProgressBar.cancel",
               "kind": "method",
-              "signature": "(self)",
+              "signature": "(self, reason: str = 'progress-bar')",
               "summary": "Cancel the current operation.",
-              "line": 137,
+              "line": 177,
               "deprecated": false
             },
             {
@@ -12000,7 +12186,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Reset the progress bar state.",
-              "line": 200,
+              "line": 247,
               "deprecated": false
             },
             {
@@ -12009,16 +12195,16 @@
               "kind": "method",
               "signature": "(self, total: int) -> None",
               "summary": "Adjust the task total mid-flight.",
-              "line": 207,
+              "line": 259,
               "deprecated": false
             },
             {
               "name": "start_task",
               "qualname": "ProgressBar.start_task",
               "kind": "method",
-              "signature": "(self, total: Optional[int] = 100, text: str = '', show: bool = True) -> None",
+              "signature": "(self, total: Optional[int] = 100, text: str = '', show: bool = True, scope: Optional['ptk.CancelScope'] = None, host_label: Optional[str] = None) -> None",
               "summary": "Start a new task.",
-              "line": 241,
+              "line": 293,
               "deprecated": false
             },
             {
@@ -12026,8 +12212,8 @@
               "qualname": "ProgressBar.update_progress",
               "kind": "method",
               "signature": "(self, value: int, text: Optional[str] = None) -> bool",
-              "summary": "Update progress value.",
-              "line": 281,
+              "summary": "Update progress value — and reach a cancellation checkpoint.",
+              "line": 350,
               "deprecated": false
             },
             {
@@ -12036,7 +12222,7 @@
               "kind": "method",
               "signature": "(self, text: Optional[str] = None)",
               "summary": "Complete the current task.",
-              "line": 316,
+              "line": 419,
               "deprecated": false
             },
             {
@@ -12045,7 +12231,7 @@
               "kind": "method",
               "signature": "(self, progress: int, length: int = 100) -> bool",
               "summary": "Legacy step method for backward compatibility.",
-              "line": 343,
+              "line": 446,
               "deprecated": false
             },
             {
@@ -12054,7 +12240,7 @@
               "kind": "method",
               "signature": "(self, total: Optional[int] = 100, text: str = '') -> 'ProgressTaskContext'",
               "summary": "Context manager for progress tracking.",
-              "line": 368,
+              "line": 471,
               "deprecated": false
             },
             {
@@ -12063,7 +12249,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle show event.",
-              "line": 390,
+              "line": 493,
               "deprecated": false
             }
           ]
@@ -12071,7 +12257,7 @@
         {
           "name": "ProgressTaskContext",
           "summary": "Context manager for progress bar tasks.",
-          "line": 400,
+          "line": 507,
           "bases": [],
           "members": []
         }

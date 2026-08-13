@@ -161,7 +161,7 @@ Implementation: [switchboard/slots.py](../uitk/switchboard/slots.py).
 
 ### `@Cancelable(timeout=N)` (recommended) and `widget.slot_timeout`
 
-Two equivalent ways to opt a slot into the `ExecutionMonitor` wrapper — warning dialog + Esc-cancel + near-cursor spinner after `timeout` seconds. Plain slots skip the wrapper entirely (no per-call thread spawn).
+Two equivalent ways to opt a slot into cooperative cancellation — a `ptk.CancelScope` for the call, the host's Esc source, a warning dialog and near-cursor spinner after `timeout` seconds. Plain slots skip the wrapper entirely (no per-call thread spawn).
 
 ```python
 from uitk.switchboard import Cancelable
@@ -172,12 +172,28 @@ class MyTool(SlotsBase):
     def btn_long_job(self, widget):
         ...
 
+    # Ask the host to undo partial work if cancelled (Maya: undo chunk).
+    @Cancelable(300, rollback=True)
+    def btn_bake(self, widget):
+        ...
+
     # Runtime override (wins over the decorator):
     def btn_other_init(self, widget):
         widget.slot_timeout = 60.0
 ```
 
 Fallback: `ui.default_slot_timeout` applies to slots without either of the above. Not auto-set by the marking menu anymore — opt-in only.
+
+**Cancellation is cooperative — the slot must have checkpoints.** Requesting a cancel sets a flag; the slot stops when it next reaches a checkpoint. Two ways to have one, both feeding the same scope:
+
+| Style | Call | Stops by |
+|:---|:---|:---|
+| bool | `if not update(i): break` (via `sb.progress`) | returning normally |
+| exception | `ptk.CancelScope.check()` | raising `OperationCancelled`, caught by the dispatcher |
+
+A slot whose body is a single long host call has no checkpoint and therefore cannot be stopped; the warning dialog reports that instead of implying otherwise. Nothing in-process can preempt a native call.
+
+**Host differences** are supplied by a `CancelProvider` registered at startup (`mtk.MayaCancelProvider`, `btk.BlenderCancelProvider`). The provider decides what Esc means, whether progress mirrors into host-native UI, whether `rollback=True` can be honoured (`supports_rollback` — Maya yes, Blender/standalone no), and whether the progress pump excludes queued user input. See [managers/cancel_manager.py](../uitk/managers/cancel_manager.py).
 
 ### `widget.refresh_on_show: bool`
 

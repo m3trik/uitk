@@ -154,7 +154,9 @@ From [tentacle main.py](https://github.com/m3trik/tentacle/blob/main/tentacle/sl
 
 **Problem**: a "Render All" button might take 5 minutes. The user should be able to abort.
 
-**Solution**: decorate the slot with `@Cancelable(timeout=N)`. After the threshold the dispatcher shows a "still running…" dialog (Keep Waiting / Cancel) and listens for an Esc hold to abort. A near-cursor spinner subprocess appears after the threshold lapses.
+**Solution**: decorate the slot with `@Cancelable(timeout=N)` **and give the work checkpoints**. The decorator runs the slot inside a `ptk.CancelScope`, shows a "still running…" dialog (Keep Waiting / Cancel) after the threshold, and wires the host's Esc source into the scope. Cancellation is *cooperative*: Esc sets a flag, and the slot stops at its next checkpoint.
+
+The easiest checkpoint is progress reporting — `update()` returns `False` once cancelled, so a loop that reports progress is already cancellable:
 
 ```python
 from uitk.switchboard import Cancelable
@@ -162,19 +164,36 @@ from uitk.switchboard import Cancelable
 class MyTool(SlotsBase):
     @Cancelable(300)
     def btn_render(self, widget):
-        for frame in range(1, 241):
-            render_frame(frame)   # user can press Esc to abort
+        with self.sb.progress(total=240, text="Rendering") as update:
+            for frame in range(1, 241):
+                if not update(frame):
+                    break            # user cancelled
+                render_frame(frame)
 
-    @Cancelable(60, message="Texture optimization")
+    # Rollback (Maya only): undo the partial work on cancel.
+    @Cancelable(60, message="Texture optimization", rollback=True)
     def btn_optimize(self, widget):
         ...
 ```
+
+Helpers nested arbitrarily deep can add a checkpoint without taking a scope parameter, and stay plain functions when nothing is monitoring them:
+
+```python
+import pythontk as ptk
+
+def process_all(items):
+    for item in items:
+        ptk.CancelScope.check()      # raises OperationCancelled if cancelled
+        process(item)
+```
+
+**A slot with no checkpoints cannot be cancelled.** If the whole slot is one long host call (`cmds.bakeResults`, an export), nothing can interrupt it from inside the process — the dialog says so rather than implying Esc will work. For those, either break the work into chunks that report progress, or run it in a subprocess where cancel means killing the child.
 
 Plain (undecorated) slots run without monitor overhead — the dispatcher's universal wait cursor is the only feedback. The decorator is opt-in for genuinely heavy operations so the per-invocation thread-spawn cost isn't paid for every UI click.
 
 Runtime override: `widget.slot_timeout = N` (set in a `*_init` method) takes precedence over the decorator. `ui.default_slot_timeout = N` still works as a UI-wide fallback when a host explicitly opts in.
 
-Implementation in [SlotWrapper._invoke](../uitk/switchboard/slots.py).
+Implementation in [SlotWrapper._invoke_cancelable](../uitk/switchboard/slots.py); host strategy in [managers/cancel_manager.py](../uitk/managers/cancel_manager.py).
 
 ---
 

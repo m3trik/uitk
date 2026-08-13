@@ -431,6 +431,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         initial: bool = True,
         gate_wrapped: bool = True,
         gated_widgets=(),
+        suppress_value: bool = True,
         disabled_color: Optional[str] = None,
         active_color: Optional[str] = None,
         settings_key=None,
@@ -446,6 +447,10 @@ class OptionBoxManager(ptk.LoggingMixin):
         — prefer it over a bare ``setEnabled(False)`` paired with a sibling
         toggle (which traps itself; see :class:`DisableOption`).
 
+        On a text field it also empties the field while disabled (holding the
+        value aside until re-enabled), so a disabled value cannot be read back
+        by anything — see ``suppress_value``.
+
         Args:
             icon: Icon name (default ``"ban"``).
             tooltip_on / tooltip_off: Tooltips for the enabled / disabled states.
@@ -453,6 +458,9 @@ class OptionBoxManager(ptk.LoggingMixin):
                 persisted value.
             gate_wrapped: Disable the wrapped widget itself (default ``True``).
             gated_widgets: Additional widgets to disable in sync.
+            suppress_value: Hold the wrapped text field's value aside and empty
+                it while disabled (default ``True``), so every reader sees an
+                unset field. Text hosts only; a no-op elsewhere.
             disabled_color: Hex tint while disabled (``None`` = project error
                 red).
             active_color: Hex tint while enabled (``None`` = auto theme colour).
@@ -480,6 +488,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             initial=initial,
             gate_wrapped=gate_wrapped,
             gated_widgets=gated_widgets,
+            suppress_value=suppress_value,
             settings_key=settings_key,
         )
         if disabled_color is not None:

@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-11_
+_Generated: 2026-08-13_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -78,6 +78,12 @@ _Generated: 2026-08-11_
 ### `loaders/runtime.py` — Switchboard delegate that loads UIs at runtime via QUiLoader.
 - `class RuntimeLoader`
   - methods: load, read_ui_tags, on_tags_written
+
+### `managers/cancel_manager.py` — Host strategy for cancelling long-running slots.
+- `class CancelProvider`
+  - methods: install, report_warning, report_info, open_bracket, close_bracket, current_bracket, create_sources, begin, tick, end, pump
+- `class CancelManager`
+  - methods: register, provider, reset, new_scope
 
 ### `managers/icon_manager.py`
 - `class IconManager`
@@ -438,6 +444,7 @@ _Generated: 2026-08-11_
 
 ### `widgets/optionBox/options/disable.py` — Disable option for OptionBox — the universal "disable this widget" button.
 - `class DisableOption(BinaryToggleOption)`
+  - methods: held_value, setup_widget
 
 ### `widgets/optionBox/options/filter.py` — Filter option for OptionBox — turns a text widget into a filter field.
 - `class FilterOption(BinaryToggleOption)`
@@ -481,7 +488,7 @@ _Generated: 2026-08-11_
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
-  - methods: is_cancelled, auto_hide, getCancelHoldMs, setCancelHoldMs, setAutoHide, cancel, reset, set_total, start_task, update_progress, finish_task, step, task, showEvent
+  - methods: scope, is_cancelled, auto_hide, getCancelHoldMs, setCancelHoldMs, setAutoHide, cancel, reset, set_total, start_task, update_progress, finish_task, step, task, showEvent
 - `class ProgressTaskContext`
 
 ### `widgets/pushButton.py`
