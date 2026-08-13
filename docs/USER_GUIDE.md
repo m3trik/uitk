@@ -209,8 +209,14 @@ from uitk.switchboard import Cancelable
 
 @Cancelable(300)
 def btn_render(self, widget):
-    ...  # user can hold Esc to abort
+    with self.sb.progress(total=len(frames), text="Rendering") as update:
+        for i, frame in enumerate(frames):
+            if not update(i + 1):   # False once the user cancelled
+                break
+            render_frame(frame)
 ```
+
+Cancellation is cooperative: Esc sets a flag and the slot stops at its next checkpoint. Reporting progress *is* a checkpoint; deep helpers can add one with `ptk.CancelScope.check()`. A slot with no checkpoints (one long host call) can't be stopped — the warning dialog says so. Add `rollback=True` to have the host undo partial work on cancel (Maya only; `supports_rollback` is False elsewhere and the dispatcher warns).
 
 Equivalent runtime override: `widget.slot_timeout = 300.0` in the `*_init`. UI-wide opt-in: `ui.default_slot_timeout = N`. Plain slots skip the monitor wrapper — opt-in keeps the per-call overhead off normal UI clicks.
 

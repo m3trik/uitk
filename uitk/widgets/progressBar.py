@@ -2,8 +2,10 @@
 # coding=utf-8
 from typing import Optional, Callable
 from qtpy import QtWidgets, QtCore
+import pythontk as ptk
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.managers.shortcut_manager import GlobalShortcut
+from uitk.managers.cancel_manager import CancelManager
 
 
 class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
@@ -17,6 +19,28 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         - Indeterminate / busy mode for tasks without progress signal
         - Auto-hide when complete
         - Optional status text display
+
+    Cancellation
+    ------------
+    The bar does not own its cancelled state — a
+    :class:`~pythontk.CancelScope` does, and the bar is one of several things
+    that can set it. ``start_task`` **adopts the ambient scope** when one is
+    active (the slot dispatcher activates one for ``@Cancelable`` slots), so
+    Esc held over the bar, Esc peeked natively by the host mid-crunch, and the
+    long-execution dialog's *Cancel* button all resolve to the same flag, and
+    ``update()`` reports it regardless of which one the user reached for.
+    Without an ambient scope the bar creates its own, so standalone use is
+    unchanged.
+
+    Which Esc actually fires depends on the host. Standalone, it is the
+    ``GlobalShortcut`` below, delivered by the event pump each tick drives.
+    Under a DCC provider that sets ``exclude_user_input`` (Maya, Blender) the
+    pump no longer delivers key events — deliberately, so a tick cannot
+    dispatch a queued click into a nested slot — and the scope's
+    pump-independent sources take over: the host's own peek plus a key-hold
+    probe, both polled here at the same tick. The hold duration matches, so
+    the gesture is identical; only the "Hold Esc to cancel…" hint moves, from
+    this widget to the host's own progress UI.
 
     Example:
         # Simple iteration with step()
@@ -72,8 +96,9 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         super().__init__(parent)
 
         self._auto_hide = auto_hide
-        self._is_cancelled = False
+        self._scope: Optional[ptk.CancelScope] = None
         self._task_text = ""
+        self._host_label = ""
         self._total = 100
         self._indeterminate = False
 
@@ -98,9 +123,24 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         self.set_attributes(**kwargs)
 
     @property
+    def scope(self) -> Optional["ptk.CancelScope"]:
+        """The :class:`~pythontk.CancelScope` governing the current task.
+
+        ``None`` until :meth:`start_task` runs. Slots rarely need this — the
+        ``update()`` return value and ``ptk.CancelScope.check()`` cover both
+        consumption styles — but host code that wants to add its own pull
+        source can reach it here.
+        """
+        return self._scope
+
+    @property
     def is_cancelled(self) -> bool:
-        """Check if the operation was cancelled."""
-        return self._is_cancelled
+        """Check if the operation was cancelled.
+
+        Flag read only: never polls the scope's sources, so it stays safe to
+        call from a paint path or a non-owner thread.
+        """
+        return bool(self._scope is not None and self._scope.cancelled)
 
     @property
     def auto_hide(self) -> bool:
@@ -134,9 +174,16 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     autoHide = QtCore.Property(bool, fget=lambda self: self.auto_hide, fset=setAutoHide)
     cancelHoldMs = QtCore.Property(int, fget=getCancelHoldMs, fset=setCancelHoldMs)
 
-    def cancel(self):
-        """Cancel the current operation."""
-        self._is_cancelled = True
+    def cancel(self, reason: str = "progress-bar"):
+        """Cancel the current operation.
+
+        Flags the governing scope (creating one if the bar has no task yet, so
+        a pre-emptive cancel is not silently dropped) and tears down the Esc
+        shortcut. Safe to call repeatedly.
+        """
+        if self._scope is None:
+            self._scope = CancelManager.new_scope(self._task_text or "task")
+        self._scope.cancel(reason)
         self._disable_cancel_shortcut()
         self.cancelled.emit()
         if self._auto_hide:
@@ -195,11 +242,16 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
 
     def _on_cancel_held(self):
         if self._escape_held:
-            self.cancel()
+            self.cancel("escape-hold")
 
     def reset(self):
-        """Reset the progress bar state."""
-        self._is_cancelled = False
+        """Reset the progress bar state.
+
+        Drops the scope reference rather than clearing the scope itself: the
+        scope may be owned by an enclosing ``@Cancelable`` slot, and wiping a
+        cancel the user already requested would restart work they stopped.
+        """
+        self._scope = None
         self._task_text = ""
         self.setValue(0)
         self.setFormat("%p%")
@@ -243,6 +295,8 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         total: Optional[int] = 100,
         text: str = "",
         show: bool = True,
+        scope: Optional["ptk.CancelScope"] = None,
+        host_label: Optional[str] = None,
     ) -> None:
         """Start a new task.
 
@@ -252,8 +306,23 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
                 animation and update_progress only affects status text.
             text: Optional status text to display
             show: Whether to show the progress bar
+            scope: Explicit :class:`~pythontk.CancelScope` to report into.
+                Defaults to the ambient scope (so a ``@Cancelable`` slot's
+                Esc and this bar's Esc are the same cancel), and failing
+                that a fresh host-wired scope of its own.
+            host_label: Label to mirror into host-native progress UI.
+                Defaults to *text*. Containers that show the label
+                elsewhere pass ``text=""`` to keep it off the bar itself
+                (:class:`Footer` does) — without this they would also
+                blank it in the host, which is the one place a
+                marking-menu slot's progress is still visible after its
+                window closes.
         """
         self.reset()
+        self._scope = scope or ptk.CancelScope.current() or CancelManager.new_scope(
+            text or host_label or "task"
+        )
+        self._host_label = host_label if host_label is not None else text
         self._task_text = text
 
         if total is None or total <= 0:
@@ -283,7 +352,12 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         value: int,
         text: Optional[str] = None,
     ) -> bool:
-        """Update progress value.
+        """Update progress value — and reach a cancellation checkpoint.
+
+        This is the ecosystem's canonical checkpoint: the tick that repaints
+        the bar is the same tick that polls the host for a cancel request, so
+        any loop already reporting progress is already cancellable, with no
+        extra call and no scope parameter to thread through.
 
         Parameters:
             value: Current progress value (ignored in indeterminate mode
@@ -293,7 +367,7 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         Returns:
             False if cancelled, True otherwise
         """
-        if self._is_cancelled:
+        if self._scope is not None and self._scope.cancelled:
             return False
 
         if not self._indeterminate:
@@ -310,7 +384,36 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
                     self.setFormat(f"{text} - %p%")
 
         self.progressChanged.emit(value, self._total)
-        QtWidgets.QApplication.processEvents()
+
+        provider = CancelManager.provider()
+        # Mirror into host-native UI (Maya's main progress bar) before the
+        # pump, so a slot whose own window has already closed — the marking
+        # menu case — still shows progress somewhere visible.
+        try:
+            provider.tick(value, self._total, self._task_text or self._host_label)
+        except Exception:
+            pass
+
+        try:
+            provider.pump()
+        except Exception:
+            # Mirror the provider's input policy even here. A bare
+            # processEvents() dispatches queued INPUT, which is precisely the
+            # "click lands mid-slot and runs a second slot against half-mutated
+            # scene state" hole that exclude_user_input exists to close -- so a
+            # provider failing on its own pump must not silently downgrade to
+            # the unsafe one under a DCC.
+            app = QtWidgets.QApplication.instance()
+            if app is not None:
+                if getattr(provider, "exclude_user_input", False):
+                    app.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
+                else:
+                    app.processEvents()
+
+        # Poll last: the pump may have delivered the Esc shortcut, and the
+        # host peek is cheapest right after the UI has been serviced.
+        if self._scope is not None:
+            return self._scope.tick()
         return True
 
     def finish_task(self, text: Optional[str] = None):
@@ -350,7 +453,7 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         Returns:
             False if cancelled, True otherwise
         """
-        if self._is_cancelled:
+        if self.is_cancelled:
             return False
 
         if not self.isVisible():
@@ -358,12 +461,12 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
 
         # Convert 0-based index to 1-based progress
         current = progress + 1
-        self.update_progress(current)
+        alive = self.update_progress(current)
 
         if current >= length:
             self.finish_task()
 
-        return True
+        return alive
 
     def task(
         self,
@@ -388,8 +491,12 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         return ProgressTaskContext(self, total, text)
 
     def showEvent(self, event):
-        """Handle show event."""
-        self._is_cancelled = False
+        """Handle show event.
+
+        Deliberately does *not* clear cancellation: the state lives on the
+        scope, which may be the enclosing slot's, and being re-shown is not the
+        user retracting a cancel. :meth:`start_task` is the reset point.
+        """
         super().showEvent(event)
 
     # NOTE: Escape is handled by the GlobalShortcut enabled during

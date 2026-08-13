@@ -8,6 +8,7 @@ from functools import wraps
 from typing import Optional, Union, Type, Callable
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+from uitk.managers.cancel_manager import CancelManager
 from uitk.switchboard.utils import SwitchboardUtilsMixin
 
 
@@ -70,18 +71,28 @@ class Signals:
 
 
 class Cancelable:
-    """Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
+    """Decorator: enable cooperative cancel + warning dialog for a heavy slot.
 
     Apply to slot methods that do bulk synchronous work the user might
-    want to abort mid-flight. The Switchboard dispatcher wraps decorated
-    slots in :func:`pythontk.ExecutionMonitor.execution_monitor`, which:
+    want to abort mid-flight. The Switchboard dispatcher runs a decorated
+    slot inside a :class:`~pythontk.CancelScope` — the same object the
+    progress bar reports into — and wraps it in
+    :func:`pythontk.ExecutionMonitor.execution_monitor`, which:
 
     * shows a "still running…" dialog (Keep Waiting / Cancel) after
       ``timeout`` seconds,
-    * lets the user press-and-hold Esc at any time to abort,
+    * lets the user hold Esc to request cancellation,
     * spawns a near-cursor spinner subprocess (separate process,
       animates regardless of the main-thread event loop) after the
       threshold lapses.
+
+    **Cancellation is cooperative.** Requesting it sets a flag; the slot
+    stops at its next checkpoint. A slot gets checkpoints for free by
+    reporting progress (``sb.progress`` → ``update()`` returns ``False``
+    once cancelled), and helpers nested arbitrarily deep can add one with
+    ``ptk.CancelScope.check()`` without taking a scope parameter. A slot
+    that is one monolithic host call has no checkpoint and therefore
+    cannot be stopped — the dialog says so rather than pretending.
 
     Plain (undecorated) slots run without any of this — the dispatcher's
     universal wait cursor is the only feedback. Restricting the
@@ -93,10 +104,13 @@ class Cancelable:
         @Cancelable(60)
         def tb016(self, widget):
             # Heavy: scan every animated transform in the scene.
-            # User can hold Esc to abort if they picked the wrong scope.
-            mtk.SegmentKeys.format_scene_info_html(...)
+            with self.sb.progress(text="Scanning") as update:
+                for i, obj in enumerate(objects):
+                    if not update(i + 1):
+                        break          # user cancelled
+                    scan(obj)
 
-        @Cancelable(300, message="Texture optimization")
+        @Cancelable(300, message="Texture optimization", rollback=True)
         def tb022(self, widget):
             mtk.MapOptimizer.batch_optimize_maps(...)
 
@@ -105,9 +119,20 @@ class Cancelable:
         message: Optional human-readable description used in the dialog
             and logger output. Defaults to a generic message built from
             the slot name.
+        rollback: Ask the host to undo a cancelled run (Maya: the
+            dispatcher's undo chunk). Opt-in, because a cancelled slot
+            that already cleans up after itself would be undone twice,
+            and some host operations are not safely undoable. Ignored
+            when the host provides no transaction.
     """
 
-    def __init__(self, timeout: float, *, message: Optional[str] = None):
+    def __init__(
+        self,
+        timeout: float,
+        *,
+        message: Optional[str] = None,
+        rollback: bool = False,
+    ):
         if not (isinstance(timeout, (int, float)) and timeout > 0):
             raise ValueError(
                 f"Cancelable(timeout=...): timeout must be a positive number, "
@@ -115,13 +140,59 @@ class Cancelable:
             )
         self.timeout = float(timeout)
         self.message = message
+        self.rollback = bool(rollback)
 
     def __call__(self, func: Callable) -> Callable:
         func._cancelable_meta = {
             "timeout": self.timeout,
             "message": self.message,
+            "rollback": self.rollback,
         }
         return func
+
+
+class _ThreadSafeLogProxy(QtCore.QObject):
+    """Marshal log calls from the monitor thread onto the main thread.
+
+    :class:`~pythontk.ExecutionMonitor` logs from its background thread. The
+    ecosystem's ``LoggingMixin`` routes records into Qt panel sinks, and
+    touching a widget from a non-GUI thread crashes the host — so the raw
+    logger cannot be handed across. A queued signal hands the record back to
+    the thread that owns the widgets.
+
+    Records emitted while the main thread is blocked are delivered when it
+    next services its event loop (typically when the slot returns); the
+    long-execution dialog is a separate process and still appears on time.
+    """
+
+    _record = QtCore.Signal(str, str)
+
+    def __init__(self, logger):
+        super().__init__()
+        self._logger = logger
+        # AutoConnection: direct on the main thread, queued from the monitor.
+        self._record.connect(self._write)
+
+    def _write(self, level: str, message: str):
+        try:
+            getattr(self._logger, level, self._logger.info)(message)
+        except Exception:
+            pass
+
+    def debug(self, message):
+        self._record.emit("debug", str(message))
+
+    def info(self, message):
+        self._record.emit("info", str(message))
+
+    def warning(self, message):
+        self._record.emit("warning", str(message))
+
+    def error(self, message):
+        self._record.emit("error", str(message))
+
+    def critical(self, message):
+        self._record.emit("critical", str(message))
 
 
 class _ModalBusyCursorFilter(QtCore.QObject):
@@ -406,31 +477,7 @@ class SlotWrapper:
             # Execution Strategy
             timeout = self._get_timeout()
             if timeout and timeout > 0:
-                # Honour a custom message from @Cancelable(message=...)
-                # when one was supplied; otherwise build a generic one
-                # from the slot identity.
-                meta = getattr(self.slot, "_cancelable_meta", None)
-                custom_msg = (
-                    (meta or {}).get("message") if isinstance(meta, dict) else None
-                )
-                msg = custom_msg or (
-                    f"Slot '{self.slot.__name__}' on '{self.widget.objectName()}'"
-                )
-                monitored_slot = ptk.ExecutionMonitor.execution_monitor(
-                    threshold=timeout,
-                    message=msg,
-                    logger=self.sb.logger,
-                    allow_escape_cancel=True,
-                    indicator=True,
-                )(self.slot)
-
-                try:
-                    return monitored_slot(*args, **kwargs)
-                except KeyboardInterrupt:
-                    self.sb.logger.warning(
-                        f"Execution of {self.slot.__name__} aborted by user."
-                    )
-                    return None
+                return self._invoke_cancelable(timeout, *args, **kwargs)
             else:
                 return self.slot(*args, **kwargs)
         finally:
@@ -447,6 +494,104 @@ class SlotWrapper:
                     QtWidgets.QApplication.restoreOverrideCursor()
                 except Exception:
                     pass
+
+    def _invoke_cancelable(self, timeout, *args, **kwargs):
+        """Run a ``@Cancelable`` slot inside a scope, monitor and transaction.
+
+        The scope is *activated* for the call, which is what makes the rest of
+        the stack cooperate without being passed anything: ``sb.progress``
+        adopts it in ``ProgressBar.start_task``, and any depth of nested helper
+        can reach it via ``ptk.CancelScope.check()``.
+
+        Both consumption styles land here. A slot that breaks out of its loop
+        returns normally with ``scope.cancelled`` set; one that lets
+        :class:`~pythontk.OperationCancelled` propagate is caught below. Either
+        way the same cleanup runs, so rollback and reporting can't depend on
+        which style the slot author picked.
+        """
+        meta = getattr(self.slot, "_cancelable_meta", None)
+        meta = meta if isinstance(meta, dict) else {}
+        # Honour a custom message from @Cancelable(message=...) when one was
+        # supplied; otherwise build a generic one from the slot identity.
+        label = meta.get("message") or (
+            f"Slot '{self.slot.__name__}' on '{self.widget.objectName()}'"
+        )
+        rollback = bool(meta.get("rollback"))
+
+        provider = CancelManager.provider()
+        scope = CancelManager.new_scope(label)
+
+        if rollback and not getattr(provider, "supports_rollback", False):
+            # Say so once, up front. A slot author who asked for rollback is
+            # relying on it; silently not doing it would let them ship a slot
+            # that leaves partial work behind in this host.
+            self.sb.logger.warning(
+                f"'{label}' requested rollback, but the '{provider.name}' host "
+                "cannot undo a cancelled operation; partial changes will "
+                "remain if it is cancelled."
+            )
+
+        token = None
+        try:
+            token = provider.begin(scope, label, rollback=rollback)
+        except Exception as e:
+            self.sb.logger.debug(f"Cancel provider failed to open a bracket: {e}")
+
+        cancelled_by_exception = False
+        try:
+            monitored_slot = ptk.ExecutionMonitor.execution_monitor(
+                threshold=timeout,
+                message=label,
+                logger=_ThreadSafeLogProxy(self.sb.logger),
+                allow_escape_cancel=True,
+                indicator=True,
+                cancel_scope=scope,
+            )(self.slot)
+
+            with scope.activate():
+                return monitored_slot(*args, **kwargs)
+
+        except ptk.OperationCancelled:
+            cancelled_by_exception = True
+            return None
+        except KeyboardInterrupt:
+            # Only reachable via the dialog's explicit *Force Stop* button,
+            # which the user chose knowing the operation can't stop cleanly.
+            self.sb.logger.warning(
+                f"Execution of {self.slot.__name__} force-stopped by user."
+            )
+            return None
+        finally:
+            # ``consumed``, NOT ``cancelled``: the flag being set only means a
+            # stop was requested, and a slot with no cooperative checkpoints
+            # runs to completion with it set behind it. Treating that as a
+            # cancellation would hand ``rollback=True`` a fully-completed run
+            # to undo -- destroying work the user never asked to lose, which
+            # is far worse than not offering rollback at all. ``consumed`` is
+            # True only once a checkpoint actually reported the stop, which is
+            # the only evidence the slot could have abandoned anything.
+            was_cancelled = cancelled_by_exception or scope.consumed
+            try:
+                provider.end(token, cancelled=was_cancelled, rollback=rollback)
+            except Exception as e:
+                self.sb.logger.error(f"Cancel provider failed to close cleanly: {e}")
+            if was_cancelled:
+                self.sb.logger.warning(
+                    f"'{label}' cancelled by user ({scope.reason})."
+                )
+                self._report_cancelled(label)
+
+    def _report_cancelled(self, label):
+        """Surface the cancellation in the UI's footer, when it has one."""
+        try:
+            ui = getattr(self.sb, "active_ui", None) or getattr(
+                self.sb, "_current_ui", None
+            )
+            footer = getattr(ui, "footer", None) if ui is not None else None
+            if footer is not None and hasattr(footer, "setStatusText"):
+                footer.setStatusText("Cancelled")
+        except Exception:
+            pass
 
 
 class SwitchboardSlotsMixin:

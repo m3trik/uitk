@@ -112,7 +112,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
         )
         self._progress_bar.finished.connect(self._on_progress_finished)
-        self._progress_bar.cancelled.connect(self._on_progress_finished)
+        self._progress_bar.cancelled.connect(self._on_progress_cancelled)
         self._progress_bar.holdStarted.connect(self._on_hold_started)
         self._progress_bar.holdEnded.connect(self._on_hold_ended)
         content_layout.addWidget(self._progress_bar)
@@ -510,7 +510,9 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """
         if text:
             self.setStatusText(text)
-        self._progress_bar.start_task(total, text="", show=True)
+        # text="" keeps the label off the thin bar (the footer's status label
+        # shows it); host_label still carries it into host-native progress UI.
+        self._progress_bar.start_task(total, text="", show=True, host_label=text)
         return self.update_progress
 
     def update_progress(
@@ -542,8 +544,13 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         # ``ProgressBar.update_progress`` requires an int; in
         # indeterminate mode the value is only used for the emitted
         # signal, so 0 is a safe placeholder when the caller is just
-        # ticking the marquee.
-        return self._progress_bar.update_progress(value if value is not None else 0)
+        # ticking the marquee. *text* is forwarded even though this bar
+        # draws none (``setTextVisible(False)``): the bar relays it to
+        # host-native progress UI, which would otherwise be stuck showing
+        # the label the task started with while the footer shows live text.
+        return self._progress_bar.update_progress(
+            value if value is not None else 0, text
+        )
 
     def finish_progress(self, text: Optional[str] = None, delay_ms: int = 1000):
         """Finish the progress and hide the bar.
@@ -602,6 +609,18 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """Hide and reset the bar when the task completes."""
         self._progress_bar.hide()
         self._progress_bar.reset()
+
+    def _on_progress_cancelled(self):
+        """Hide the bar on cancel, but do NOT reset it.
+
+        The cancelled task is still running -- its loop has not yet reached the
+        checkpoint that will tell it to stop. ``reset()`` drops the bar's scope
+        reference, after which ``update()`` reports "keep going" forever, so
+        routing cancel through :meth:`_on_progress_finished` meant Esc silently
+        did nothing and the work ran to completion. ``start_task`` is the reset
+        point; hiding is all that belongs here.
+        """
+        self._progress_bar.hide()
 
     def _on_hold_started(self, hold_ms: int):
         """Relay the bar's hold hint into the status label."""

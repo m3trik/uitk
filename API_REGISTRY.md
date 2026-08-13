@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-11_
+_Generated: 2026-08-13_
 
 ## Index
 
@@ -22,6 +22,7 @@ _Generated: 2026-08-11_
 - [`handlers/ui_handler.py`](#handlers--ui_handler)
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - [`loaders/runtime.py`](#loaders--runtime) — Switchboard delegate that loads UIs at runtime via QUiLoader.
+- [`managers/cancel_manager.py`](#managers--cancel_manager) — Host strategy for cancelling long-running slots.
 - [`managers/icon_manager.py`](#managers--icon_manager)
 - [`managers/optional_package_manager.py`](#managers--optional_package_manager) — Provisioning for optional packages a panel needs importable in THIS session.
 - [`managers/preset_manager.py`](#managers--preset_manager)
@@ -390,6 +391,29 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
   - `RuntimeLoader.read_ui_tags(self, ui_path: str) -> set` — Return the uitk_tags set for a .ui file via direct XML parse.
   - `RuntimeLoader.on_tags_written(self, ui_path: str) -> None` — Invalidate cached metadata after .ui content has changed.
 
+<a id="managers--cancel_manager"></a>
+### `managers/cancel_manager.py`
+
+Host strategy for cancelling long-running slots.
+
+- **[`class CancelProvider`](uitk/uitk/managers/cancel_manager.py#L34)** — Standalone-Qt cancellation strategy;
+  - `CancelProvider.install(cls) -> Optional['CancelProvider']` *(class)* — Register an instance of this provider with :class:`CancelManager`.
+  - `CancelProvider.report_warning(cls, message: str) -> None` *(class)* — Surface a warning to the user.
+  - `CancelProvider.report_info(cls, message: str) -> None` *(class)* — Surface an informational message.
+  - `CancelProvider.open_bracket(self, bracket: Any) -> Any` — Track *bracket* as the innermost in-flight operation;
+  - `CancelProvider.close_bracket(self, token: Any) -> Optional[Any]` — Stop tracking *token*;
+  - `CancelProvider.current_bracket(self) -> Optional[Any]` *(property)* — The innermost in-flight operation, or ``None``.
+  - `CancelProvider.create_sources(self, scope, label: str = '') -> List[Callable[[], bool]]` — Pull sources for *scope*, polled on the operation's own thread.
+  - `CancelProvider.begin(self, scope, label: str = '', rollback: bool = False) -> Any` — Open the host bracket for an operation;
+  - `CancelProvider.tick(self, value: Optional[int] = None, total: Optional[int] = None, text: Optional[str] = None) -> None` — Mirror one progress step into host-native UI (no-op by default).
+  - `CancelProvider.end(self, token: Any, cancelled: bool = False, rollback: bool = False) -> None` — Close the host bracket, optionally undoing a cancelled operation.
+  - `CancelProvider.pump(self) -> None` — Keep the UI responsive between work chunks.
+- **[`class CancelManager`](uitk/uitk/managers/cancel_manager.py#L181)** — Process-wide registry for the active :class:`CancelProvider`.
+  - `CancelManager.register(cls, provider: CancelProvider) -> CancelProvider` *(class)* — Install the host provider;
+  - `CancelManager.provider(cls) -> CancelProvider` *(class)* — The registered provider, or a shared standalone-Qt default.
+  - `CancelManager.reset(cls) -> None` *(class)* — Drop the registered provider (tests, host teardown).
+  - `CancelManager.new_scope(cls, label: str = '', **kwargs) -> ptk.CancelScope` *(class)* — Build a :class:`~pythontk.CancelScope` wired to the host provider.
+
 <a id="managers--icon_manager"></a>
 ### `managers/icon_manager.py`
 
@@ -654,11 +678,11 @@ Switchboard-side keyboard shortcut machinery.
 <a id="switchboard--slots"></a>
 ### `switchboard/slots.py`
 
-- **[`class Signals`](uitk/uitk/switchboard/slots.py#L14)** — Decorator to specify which signals a slot should connect to.
+- **[`class Signals`](uitk/uitk/switchboard/slots.py#L15)** — Decorator to specify which signals a slot should connect to.
   - `Signals.blockSignals(cls, func)` *(class)* — Decorator that blocks widget signals during method execution.
-- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L72)** — Decorator: enable cancel-with-Esc + warning dialog for a heavy slot.
-- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L191)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
-- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L452)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
+- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L73)** — Decorator: enable cooperative cancel + warning dialog for a heavy slot.
+- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L262)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
+- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L597)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
   - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
   - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
   - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
@@ -1123,8 +1147,8 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `Footer.showEvent(self, event)` — Ensure text is properly sized and elided on first show.
   - `Footer.status_controller(self, resolver: Optional[Callable[[], str]] = None, default_text: str | None = '', truncate_kwargs: Optional[Mapping[str, Any]] = None) -> 'FooterStatusController'` — Bind a :class:`FooterStatusController` to this footer and return it.
   - `Footer.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.
-- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L732)** — Context manager for footer progress tracking.
-- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L753)** — Helper that keeps a footer in sync with a resolver function.
+- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L751)** — Context manager for footer progress tracking.
+- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L772)** — Helper that keeps a footer in sync with a resolver function.
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
@@ -1622,11 +1646,11 @@ Shared modifier-driven wheel-step handling for spin-box widgets.
 
 OptionBox - Plugin-based container for wrapping widgets with action buttons.
 
-- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L64)** — Container widget that wraps a widget with option buttons.
+- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L70)** — Container widget that wraps a widget with option buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.showEvent(self, event)` — Re-fit to content when shown without a managing parent layout.
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled/visibility and height changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L262)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L268)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
@@ -1716,7 +1740,9 @@ Clear option for OptionBox - provides a clear button for text widgets.
 
 Disable option for OptionBox — the universal "disable this widget" button.
 
-- **[`class DisableOption(BinaryToggleOption)`](uitk/uitk/widgets/optionBox/options/disable.py#L25)** — Universal disable button — toggles the wrapped widget's enabled state.
+- **[`class DisableOption(BinaryToggleOption)`](uitk/uitk/widgets/optionBox/options/disable.py#L49)** — Universal disable button — toggles the wrapped widget's enabled state.
+  - `DisableOption.held_value(self) -> Optional[str]` *(property)* — Text held aside while disabled (``None`` when nothing is held).
+  - `DisableOption.setup_widget(self)` — Wire the base button, then guard the wrapped field's value.
 
 <a id="widgets--optionBox--options--filter"></a>
 ### `widgets/optionBox/options/filter.py`
@@ -1849,7 +1875,7 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.set_toggle(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, gated_widgets=(), gate_wrapped: bool = False, keep_enabled_when_wrapped_disabled: bool = True, settings_key=None, replace: bool = True, on_toggled=None)` — Add a persisted binary toggle button (fluent interface).
   - `OptionBoxManager.add_toggle(self, **kwargs)` — Add a toggle without replacing existing ones.
   - `OptionBoxManager.set_filter(self, *, settings, text_key: str, on_changed, enabled_key: Optional[str] = None, initial_enabled: bool = True, on_toggled=None, tooltip_on: str = 'Filter enabled. Click to disable.', tooltip_off: str = 'Filter disabled. Click to enable.', scopes=None, scope_key: Optional[str] = None, default_scope: Optional[str] = None, on_scope_changed=None, replace: bool = True)` — Turn the wrapped text widget into a filter field (fluent interface).
-  - `OptionBoxManager.set_disable(self, *, icon: str = 'ban', tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, gate_wrapped: bool = True, gated_widgets=(), disabled_color: Optional[str] = None, active_color: Optional[str] = None, settings_key=None, replace: bool = True, on_toggled=None)` — Add a universal *disable* button (fluent interface).
+  - `OptionBoxManager.set_disable(self, *, icon: str = 'ban', tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, gate_wrapped: bool = True, gated_widgets=(), suppress_value: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, settings_key=None, replace: bool = True, on_toggled=None)` — Add a universal *disable* button (fluent interface).
   - `OptionBoxManager.add_disable(self, **kwargs)` — Add a disable button without replacing existing ones.
   - `OptionBoxManager.add_value(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)` — Add an inline editable value field that mirrors the wrapped widget.
   - `OptionBoxManager.set_affix(self, *, default: str = 'auto', on_change=None, tooltip: Optional[str] = None, order=None, replace: bool = True)` — Add an inline affix-mode picker (Auto / Suffix / Prefix) — fluent.
@@ -1882,22 +1908,23 @@ Utilities and helper functions for OptionBox.
 <a id="widgets--progressBar"></a>
 ### `widgets/progressBar.py`
 
-- **[`class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`](uitk/uitk/widgets/progressBar.py#L9)** — A feature-rich progress bar with task execution support.
+- **[`class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`](uitk/uitk/widgets/progressBar.py#L11)** — A feature-rich progress bar with task execution support.
+  - `ProgressBar.scope(self) -> Optional['ptk.CancelScope']` *(property)* — The :class:`~pythontk.CancelScope` governing the current task.
   - `ProgressBar.is_cancelled(self) -> bool` *(property)* — Check if the operation was cancelled.
   - `ProgressBar.auto_hide(self) -> bool` *(property)* — Get auto-hide setting.
   - `ProgressBar.getCancelHoldMs(self) -> int` — Milliseconds Escape must be held to cancel (0 disables hold-to-cancel).
   - `ProgressBar.setCancelHoldMs(self, value: int) -> None` — Set the hold-to-cancel duration.
   - `ProgressBar.setAutoHide(self, value: bool) -> None` — Set auto-hide (Qt-property setter for :attr:`auto_hide`).
-  - `ProgressBar.cancel(self)` — Cancel the current operation.
+  - `ProgressBar.cancel(self, reason: str = 'progress-bar')` — Cancel the current operation.
   - `ProgressBar.reset(self)` — Reset the progress bar state.
   - `ProgressBar.set_total(self, total: int) -> None` — Adjust the task total mid-flight.
-  - `ProgressBar.start_task(self, total: Optional[int] = 100, text: str = '', show: bool = True) -> None` — Start a new task.
-  - `ProgressBar.update_progress(self, value: int, text: Optional[str] = None) -> bool` — Update progress value.
+  - `ProgressBar.start_task(self, total: Optional[int] = 100, text: str = '', show: bool = True, scope: Optional['ptk.CancelScope'] = None, host_label: Optional[str] = None) -> None` — Start a new task.
+  - `ProgressBar.update_progress(self, value: int, text: Optional[str] = None) -> bool` — Update progress value — and reach a cancellation checkpoint.
   - `ProgressBar.finish_task(self, text: Optional[str] = None)` — Complete the current task.
   - `ProgressBar.step(self, progress: int, length: int = 100) -> bool` — Legacy step method for backward compatibility.
   - `ProgressBar.task(self, total: Optional[int] = 100, text: str = '') -> 'ProgressTaskContext'` — Context manager for progress tracking.
   - `ProgressBar.showEvent(self, event)` — Handle show event.
-- **[`class ProgressTaskContext`](uitk/uitk/widgets/progressBar.py#L400)** — Context manager for progress bar tasks.
+- **[`class ProgressTaskContext`](uitk/uitk/widgets/progressBar.py#L507)** — Context manager for progress bar tasks.
 
 <a id="widgets--pushButton"></a>
 ### `widgets/pushButton.py`

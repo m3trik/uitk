@@ -2,7 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-3369%20passed-brightgreen.svg)](../test/)
+[![Tests](https://img.shields.io/badge/Tests-3423%20passed-brightgreen.svg)](../test/)
 
 # uitk
 
@@ -178,6 +178,8 @@ from uitk.switchboard import Cancelable
 @Cancelable(60)
 def btn_heavy(self, widget): ...
 ```
+
+Cancellation is cooperative — the slot stops at its next checkpoint (`sb.progress`'s `update()` returning False, or `ptk.CancelScope.check()`); see [SLOTS.md](SLOTS.md#cancelabletimeoutn-recommended-and-widgetslot_timeout).
 
 ---
 

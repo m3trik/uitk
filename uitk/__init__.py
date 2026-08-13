@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.3.70"
+__version__ = "1.3.73"
 
 
 DEFAULT_INCLUDE = {
@@ -168,6 +168,7 @@ DEFAULT_INCLUDE = {
         "TextOverlay",
     ],
     # Standalone services (uitk.managers / uitk.themes)
+    "managers.cancel_manager": ["CancelManager", "CancelProvider"],
     "managers.icon_manager": "IconManager",
     "managers.optional_package_manager": "OptionalPackageManager",
     "managers.preset_manager": "PresetManager",

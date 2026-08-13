@@ -142,7 +142,9 @@ class OptionBoxMixin:
             """Add a universal disable button (see ``OptionBoxManager.set_disable``).
 
             Toggles the wrapped widget's enabled state while the button stays
-            clickable, so it can always be re-enabled.
+            clickable, so it can always be re-enabled. On a text field the value
+            is held aside and the field emptied while disabled, so nothing can
+            read it (``suppress_value``).
             """
             mgr = self._mgr
             if mgr is not None:

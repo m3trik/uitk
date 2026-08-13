@@ -49,6 +49,12 @@ _TYPE_TO_KEY = {
 from uitk.themes.style_sheet import StyleSheet
 
 
+# Qt's "no maximum" sentinel (QWIDGETSIZE_MAX). Not exposed by qtpy, and a
+# widget whose maximumHeight() is this has declared no ceiling at all — which
+# is what OptionBox._row_height keys off.
+_QWIDGETSIZE_MAX = (1 << 24) - 1
+
+
 # Every way Qt reports a widget's own visibility changing. The ``*ToParent``
 # pair is what arrives instead of Show/Hide once the parent is itself
 # invisible — which is exactly the state a collapsed container leaves the
@@ -471,6 +477,49 @@ class OptionBox:
     # and benefit from a quieter glyph.
     _ICON_MARGIN = 6
 
+    @staticmethod
+    def _row_height(widget) -> int:
+        """The row height option buttons square to — the widget's *intended* height.
+
+        ``height()`` is the right answer for a widget with a declared ceiling —
+        a ``.ui`` field (the ``maximumSize`` convention), a
+        ``setFixedHeight``-ed combo — because the live value can only ever be
+        that ceiling or less, so honouring it is both safe and what lets the
+        buttons track a height applied after the wrap.
+
+        Without a ceiling the live height may never have been computed at all. A
+        field built and handed straight to an option box — ``menu.add(
+        "QLineEdit", …)`` inside a ``Menu``, whose grid stays deactivated until
+        the menu is first shown — still carries Qt's untouched 640x480 default.
+        Reading that as the row height rasterized 480 px icons and pinned a
+        480 px minimum on the field, which the buttons' fixed square then held
+        open: the measurement fed the geometry that produced it, so the row
+        could never shrink back. Uncapped, the size hint is the only height the
+        widget has actually asked for, floored by any minimum it declares.
+
+        Deliberately not keyed off the minimum: ``wrap`` sets one from this very
+        function, so treating a minimum as "declares a box" would make the
+        second call trust the stale geometry the first one just rejected.
+        """
+        hint = widget.sizeHint().height() or widget.minimumSizeHint().height()
+        low, high = widget.minimumHeight(), widget.maximumHeight()
+        if high < _QWIDGETSIZE_MAX:  # declares a ceiling — the live height is bounded
+            return max(low, min(widget.height() or hint, high))
+
+        live = widget.height()
+        if hint and live:
+            # Neither value is trustworthy alone, and they fail in OPPOSITE
+            # directions: an un-laid-out field reports Qt's untouched 640x480
+            # default as its height, while a multi-line edit's size HINT is
+            # content-shaped (192 px for QTextEdit / QPlainTextEdit) and far
+            # taller than the height a laid-out one actually wears. Taking the
+            # hint alone therefore reproduced the very runaway this function
+            # was written to stop, merely inverted -- 192 px icons pinning a
+            # 192 px minimum. The smaller of the two is the only height both
+            # measurements agree the widget can hold.
+            return max(low, min(live, hint))
+        return max(low, hint or live)
+
     def _update_sizing(self):
         """Update sizing for all option widgets.
 
@@ -483,7 +532,7 @@ class OptionBox:
             return
         from uitk.managers.icon_manager import IconManager
 
-        h = self.wrapped_widget.height() or self.wrapped_widget.sizeHint().height()
+        h = self._row_height(self.wrapped_widget)
         for option in self._options:
             if not hasattr(option, "widget"):
                 continue
@@ -755,9 +804,10 @@ class OptionBox:
             # CT_PushButton inflation).
             StyleSheet.repolish_tree(container)
 
-            # Finalize
-            h = wrapped_widget.height() or wrapped_widget.sizeHint().height()
-            wrapped_widget.setMinimumHeight(h)
+            # Finalize. The floor comes from _row_height, not the raw geometry:
+            # pinning a not-yet-laid-out widget's default 480 px as its minimum
+            # is unrecoverable (see _row_height).
+            wrapped_widget.setMinimumHeight(self._row_height(wrapped_widget))
             self.container = container
             # Back-reference so the container's event filter can re-square the
             # option buttons when the wrapped widget's height changes later.
