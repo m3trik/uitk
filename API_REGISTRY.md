@@ -682,7 +682,7 @@ Switchboard-side keyboard shortcut machinery.
   - `Signals.blockSignals(cls, func)` *(class)* — Decorator that blocks widget signals during method execution.
 - **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L73)** — Decorator: enable cooperative cancel + warning dialog for a heavy slot.
 - **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L262)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
-- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L597)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
+- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L618)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
   - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
   - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
   - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`

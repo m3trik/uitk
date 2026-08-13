@@ -3552,7 +3552,7 @@
         {
           "name": "SwitchboardSlotsMixin",
           "summary": "Mixin for managing slot connections and signal-slot handling in the Switchboard.",
-          "line": 597,
+          "line": 618,
           "bases": [],
           "members": [
             {
@@ -3561,7 +3561,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> set",
               "summary": "Retrieves the default signals for a given widget type.",
-              "line": 629,
+              "line": 650,
               "deprecated": false
             },
             {
@@ -3570,7 +3570,7 @@
               "kind": "method",
               "signature": "(self, widget, derived=True, exc=None)",
               "summary": "Get all available signals for a type of widget.",
-              "line": 652,
+              "line": 673,
               "deprecated": false
             },
             {
@@ -3579,7 +3579,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> bool",
               "summary": "",
-              "line": 765,
+              "line": 786,
               "deprecated": false
             },
             {
@@ -3588,7 +3588,7 @@
               "kind": "method",
               "signature": "(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]",
               "summary": "Get or create a slots instance for the given UI.",
-              "line": 770,
+              "line": 791,
               "deprecated": false
             },
             {
@@ -3597,7 +3597,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None",
               "summary": "",
-              "line": 1145,
+              "line": 1166,
               "deprecated": false
             },
             {
@@ -3606,7 +3606,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, *args, **kwargs)",
               "summary": "Call a slot method for a widget.",
-              "line": 1174,
+              "line": 1195,
               "deprecated": false
             },
             {
@@ -3615,7 +3615,7 @@
               "kind": "method",
               "signature": "(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]",
               "summary": "",
-              "line": 1228,
+              "line": 1249,
               "deprecated": false
             },
             {
@@ -3624,7 +3624,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]",
               "summary": "",
-              "line": 1263,
+              "line": 1284,
               "deprecated": false
             },
             {
@@ -3633,7 +3633,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.",
-              "line": 1273,
+              "line": 1294,
               "deprecated": false
             },
             {
@@ -3642,7 +3642,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.",
-              "line": 1287,
+              "line": 1308,
               "deprecated": false
             },
             {
@@ -3651,7 +3651,7 @@
               "kind": "method",
               "signature": "(self, widget, slot=None)",
               "summary": "Connect a widget's signals to its slot.",
-              "line": 1308,
+              "line": 1329,
               "deprecated": false
             },
             {
@@ -3660,7 +3660,7 @@
               "kind": "method",
               "signature": "(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)",
               "summary": "Get the slot history.",
-              "line": 1390,
+              "line": 1411,
               "deprecated": false
             }
           ]

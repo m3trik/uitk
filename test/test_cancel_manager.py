@@ -431,6 +431,33 @@ class TestSlotWrapperCancelable(CancelStackTestCase):
             all(not c[2] for c in ends),
             f"a completed run was reported cancelled: {ends}",
         )
+        # ...but the user is still told why their Esc did nothing. Silence here
+        # would recreate the exact complaint this mechanism answers.
+        said = " ".join(str(c) for c in sb.logger.warning.call_args_list)
+        self.assertIn("could not be cancelled", said)
+        self.assertIn("ran to completion", said)
+
+    def test_a_slot_that_raised_is_not_reported_as_completed(self):
+        """A pending cancel must not turn a crash into "it finished".
+
+        Same shape as the checkpoint-less case -- flag set, nothing consumed --
+        but the slot died rather than finishing, and telling the user it "ran
+        to completion" sends them looking for changes that were never made.
+        """
+        from uitk.switchboard.slots import Cancelable
+
+        self.use_provider(RecordingProvider())
+
+        @Cancelable(60)
+        def slot():
+            ptk.CancelScope.current().cancel("esc")
+            raise ValueError("boom")
+
+        wrapper, sb = self._wrapper(slot)
+        with self.assertRaises(ValueError):
+            wrapper()
+        said = " ".join(str(c) for c in sb.logger.warning.call_args_list)
+        self.assertNotIn("ran to completion", said)
 
     def test_a_consumed_cancel_is_rolled_back(self):
         """The other side of the same line: a slot that DID stop must roll back."""
