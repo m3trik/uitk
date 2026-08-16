@@ -3,9 +3,14 @@ import unittest
 import os
 from qtpy import QtWidgets, QtCore, QtGui
 
-# Ensure script root is in path
-if r"O:\Cloud\Code\_scripts" not in sys.path:
-    sys.path.append(r"O:\Cloud\Code\_scripts")
+# Ensure the uitk REPO root is importable (derived from this file's location;
+# never the bare workspace root — that resolves uitk as an empty namespace
+# package when the real one isn't importable elsewhere).
+_UITK_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+if _UITK_ROOT not in sys.path:
+    sys.path.insert(0, _UITK_ROOT)
 
 # Check for interactive environment
 _INTERACTIVE = os.environ.get("INTERACTIVE_TESTS") == "1"

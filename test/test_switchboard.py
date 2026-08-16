@@ -715,6 +715,18 @@ class TestSwitchboardFileDialog(unittest.TestCase):
         # Options() is created but never combined with ReadOnly.
         MockFD.Options.return_value.__ior__.assert_not_called()
 
+    def test_str_file_types_coerced_like_save_file_dialog(self):
+        """A bare-str file_types must not be char-joined into the filter.
+
+        The signature advertises Union[str, List[str]]; save_file_dialog
+        coerces the str form, so file_dialog must too — without it,
+        ' '.join("*.txt") yields the filter "All Files (* . t x t)".
+        """
+        MockFD = self._patched()
+        Switchboard.file_dialog(file_types="*.txt", allow_multiple=True)
+        filter_arg = MockFD.getOpenFileNames.call_args[0][3]
+        self.assertIn("(*.txt)", filter_arg)
+
 
 class TestSwitchboardCenterWidget(QtBaseTestCase):
     """Tests for SwitchboardUtilsMixin center_widget method."""

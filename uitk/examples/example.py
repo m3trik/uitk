@@ -27,6 +27,8 @@ This single-window demo exercises the major UITK features:
 
 Every visible message comes from the shared class logger.
 """
+from __future__ import annotations
+
 import os
 import html
 import inspect

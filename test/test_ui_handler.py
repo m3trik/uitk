@@ -660,14 +660,17 @@ class TestShowRestoresCollapsedHeader(unittest.TestCase):
 
     def setUp(self):
         from conftest import setup_qt_application
+        from uitk.managers.settings_manager import SettingsManager
 
         self.app = setup_qt_application()
         self.handler = object.__new__(UiHandler)
-        # `config` is a read-only property backed by sb.configurable.
+        # `config` is a read-only property backed by sb.configurable. The
+        # double must be a real SettingsManager: a plain dict answers .get()
+        # and so hid the config-read bug this suite now pins below.
+        branch = SettingsManager(namespace="test_show_collapsed")
+        self.addCleanup(branch.clear)
         self.handler.sb = types.SimpleNamespace(
-            configurable=types.SimpleNamespace(
-                branch=lambda name: {"default_position": None}
-            )
+            configurable=types.SimpleNamespace(branch=lambda name: branch)
         )
 
     def _collapsed_window(self):
@@ -731,6 +734,59 @@ class TestShowRestoresCollapsedHeader(unittest.TestCase):
         self.addCleanup(window.deleteLater)
         self.handler.show(window, force=True)
         self.assertTrue(window.isVisible())
+
+
+class TestShowDefaultPosition(unittest.TestCase):
+    """``show`` reads ``default_position`` through the SettingsManager API.
+
+    Regression: the pos=None branch called ``self.config.get(...)``, but
+    ``config`` is a ``SettingsManager`` branch whose ``get`` is a reserved
+    name with no method behind it — so EVERY ``handler.show(ui)`` without an
+    explicit position died with ``'SettingsManager' has no attribute 'get'``.
+    Production dodged it because ``sb.editors.show`` / ``MarkingMenu`` always
+    pass ``pos="cursor"``; the bare handler path (a mayatk-only panel launch)
+    did not. The suite dodged it because the only ``show`` double handed back
+    a plain dict, which answers ``.get``.
+    Fixed: 2026-08-13
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def setUp(self):
+        from uitk.managers.settings_manager import SettingsManager
+        from qtpy import QtWidgets
+
+        self.branch = SettingsManager(namespace="test_show_default_position")
+        self.addCleanup(self.branch.clear)
+        self.handler = object.__new__(UiHandler)
+        self.handler.sb = types.SimpleNamespace(
+            configurable=types.SimpleNamespace(branch=lambda name: self.branch)
+        )
+        self.window = QtWidgets.QWidget()
+        self.addCleanup(self.window.deleteLater)
+
+    def test_show_without_pos_uses_the_unset_default(self):
+        """The out-of-the-box path: nothing stored, no explicit pos."""
+        self.handler.show(self.window)
+        self.assertTrue(self.window.isVisible())
+
+    def test_stored_default_position_reaches_position_window(self):
+        seen = []
+        self.handler._position_window = lambda win, pos: seen.append(pos)
+        self.branch.setValue("default_position", "screen")
+        self.handler.show(self.window)
+        self.assertEqual(seen, ["screen"])
+
+    def test_explicit_pos_wins_over_stored_default(self):
+        seen = []
+        self.handler._position_window = lambda win, pos: seen.append(pos)
+        self.branch.setValue("default_position", "screen")
+        self.handler.show(self.window, pos="cursor")
+        self.assertEqual(seen, ["cursor"])
 
 
 class _RecordingHeader:

@@ -787,7 +787,7 @@ class KindFactory(_KindFactoryInternal):
         still checked / selected survive the refill when they reappear.
 
         Raises:
-            KeyError: *widget* was not built by :meth:`make_widget`.
+            ValueError: *widget* was not built by :meth:`make_widget`.
             TypeError: its kind has no ``set_choices`` (e.g. ``str``, ``int``).
         """
         kind = _KindFactoryInternal._widget_kind(widget)

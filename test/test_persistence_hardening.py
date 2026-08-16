@@ -164,6 +164,30 @@ class TestCrossSurfaceSync(_Base):
             "(cross-surface divergence regression)",
         )
 
+    def test_restore_state_opt_out_writes_no_sibling_store(self):
+        """A ``restore_state=False`` widget persists nothing anywhere.
+
+        The widget's OWN save is gated by ``StateManager._get_state_key``
+        returning None — but ``sync_widget_values`` used to hand-build the
+        same key and write the sibling surfaces' stores (and mirror onto
+        live siblings) ungated, so an opted-out widget still leaked values
+        into ``#submenu``/``#startmenu`` QSettings. Opt-out means the
+        widget doesn't participate in the persistence/sync machinery at
+        all."""
+        slot = self._build()
+        sb = self._new_sb(slot)
+        panel = self._load(sb, "repro")
+        panel.chk_x.restore_state = False
+
+        panel.chk_x.setChecked(True)
+        self._drain()
+
+        self.assertIsNone(self._raw("switchboard/repro/chk_x/toggled"))
+        self.assertIsNone(
+            self._raw("switchboard/repro#submenu/chk_x/toggled"),
+            "restore_state=False widget leaked into the sibling surface's store",
+        )
+
     def test_submenu_restores_value_set_from_panel(self):
         slot = self._build()
         sb = self._new_sb(slot)

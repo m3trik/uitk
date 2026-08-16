@@ -101,6 +101,81 @@ class TestCollapsableGroupIndicatorHidden(QtBaseTestCase):
         self.assertFalse(child.isHidden())
 
 
+class TestCollapsedStatePersistenceScope(QtBaseTestCase):
+    """Collapse state persists per hosting window, not globally.
+
+    Group names repeat across forms by convention (every bridge panel has an
+    ``output_grp``); an unscoped key would share one collapse state across
+    every panel that reuses the name.
+    """
+
+    def _hosted_group(self, window_name):
+        win = self.track_widget(QtWidgets.QMainWindow())
+        win.setObjectName(window_name)
+        central = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(central)
+        group = CollapsableGroup("Log")
+        group.setObjectName("output_grp")
+        group.addWidget(QtWidgets.QLabel("content"))
+        lay.addWidget(group)
+        win.setCentralWidget(central)
+        self.addCleanup(lambda: group.settings.remove("CollapsableGroup"))
+        return win, group
+
+    def test_key_is_scoped_by_window_object_name(self):
+        _win, group = self._hosted_group("panel_a")
+        self.assertEqual(
+            group._settings_key(),
+            "CollapsableGroup/panel_a/output_grp/checked",
+        )
+
+    def test_unhosted_group_falls_back_to_legacy_key(self):
+        group = self.track_widget(CollapsableGroup("Log"))
+        group.setObjectName("output_grp")
+        self.assertEqual(
+            group._settings_key(), "CollapsableGroup/output_grp/checked"
+        )
+
+    def test_toggle_before_enforcement_does_not_persist(self):
+        """A toggle that lands before the group is settled into its window
+        resolves a DIFFERENT scope than the restore reads, so persisting it
+        would strand a value nothing reads back."""
+        group = self.track_widget(CollapsableGroup("Log"))
+        group.setObjectName("output_grp")
+        self.addCleanup(lambda: group.settings.remove("CollapsableGroup"))
+        self.assertFalse(group._state_enforced, "precondition: not yet settled")
+
+        group.setChecked(False)  # e.g. a .ui authoring checked=false
+
+        self.assertIsNone(
+            group.settings.value(group._settings_key()),
+            "a pre-enforcement toggle must not write state",
+        )
+
+    def test_toggle_after_enforcement_persists(self):
+        _win, group = self._hosted_group("panel_c")
+        group._enforce_state()
+        group.setChecked(False)
+        self.assertEqual(group.settings.value(group._settings_key()), False)
+
+    def test_same_named_groups_in_different_windows_do_not_share_state(self):
+        _win_a, group_a = self._hosted_group("panel_a")
+        _win_b, group_b = self._hosted_group("panel_b")
+        # Settle first, as a shown panel does: only a post-enforcement toggle
+        # is a user choice worth persisting.
+        group_a._enforce_state()
+        group_b._enforce_state()
+        group_a.setChecked(False)  # collapse A → persists under panel_a only
+
+        # Fresh instances restoring state: A's twin collapses, B's stays open.
+        _win_a2, group_a2 = self._hosted_group("panel_a")
+        _win_b2, group_b2 = self._hosted_group("panel_b")
+        group_a2._enforce_state()
+        group_b2._enforce_state()
+        self.assertFalse(group_a2.isChecked())
+        self.assertTrue(group_b2.isChecked())
+
+
 class TestFallbackWindowResizeFloor(QtBaseTestCase):
     """``_fallback_window_resize`` (non-``MainWindow`` hosts) clamps to the
     content's REAL minimum, using the same rule ``MainWindow`` does.

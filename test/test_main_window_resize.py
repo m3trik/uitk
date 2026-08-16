@@ -939,7 +939,11 @@ class TestFirstShowLocksRestoredCollapsedGroup(QtBaseTestCase):
         # a persisted checked=False from a prior run would collapse session 1
         # at show (locking + clamping the stretch) and silently weaken the
         # oversize precondition this test exists to exercise.
-        group1.settings.setValue(f"CollapsableGroup/{group_name}/checked", True)
+        # Key is scoped by the hosting window (group names repeat across
+        # forms), so seed under this MainWindow's objectName -- which is
+        # `name`.
+        state_key = f"CollapsableGroup/{name}/{group_name}/checked"
+        group1.settings.setValue(state_key, True)
         win1 = self.track_widget(
             MainWindow(
                 name,
@@ -960,9 +964,7 @@ class TestFirstShowLocksRestoredCollapsedGroup(QtBaseTestCase):
         # Simulate the group having been left collapsed (e.g. a prior session,
         # or pre-fix stale state): persist checked=False for session 2's group.
         central2, group2 = self._build_central(group_name)
-        group2.settings.setValue(
-            f"CollapsableGroup/{group_name}/checked", False
-        )
+        group2.settings.setValue(state_key, False)
         win2 = self.track_widget(
             MainWindow(
                 name,
